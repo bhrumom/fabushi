@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>全球法布施 - P2P网络演示</title>
+  <style>
+    body {
+      font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f5f5;
+      color: #333;
+    }
+    
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    h1 {
+      color: #1A237E;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .status-panel {
+      background-color: #f0f4ff;
+      padding: 15px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+    }
+    
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .status-item:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+    
+    .status-label {
+      font-weight: bold;
+    }
+    
+    .status-value {
+      color: #1A237E;
+    }
+    
+    .status-value.positive {
+      color: #2E7D32;
+    }
+    
+    .status-value.negative {
+      color: #C62828;
+    }
+    
+    .action-panel {
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+    
+    .action-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    
+    button {
+      background-color: #1A237E;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background-color 0.2s;
+    }
+    
+    button:hover {
+      background-color: #303F9F;
+    }
+    
+    button:disabled {
+      background-color: #9E9E9E;
+      cursor: not-allowed;
+    }
+    
+    input[type="file"] {
+      display: none;
+    }
+    
+    .file-label {
+      background-color: #303F9F;
+      color: white;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background-color 0.2s;
+      text-align: center;
+      flex: 1;
+    }
+    
+    .file-label:hover {
+      background-color: #3949AB;
+    }
+    
+    .file-info {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #666;
+    }
+    
+    .log-panel {
+      margin-top: 20px;
+      background-color: #263238;
+      color: #ECEFF1;
+      padding: 15px;
+      border-radius: 6px;
+      height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 14px;
+    }
+    
+    .log-entry {
+      margin-bottom: 5px;
+      line-height: 1.4;
+      word-break: break-all;
+    }
+    
+    .log-entry.info {
+      color: #81D4FA;
+    }
+    
+    .log-entry.success {
+      color: #A5D6A7;
+    }
+    
+    .log-entry.error {
+      color: #EF9A9A;
+    }
+    
+    .peer-list {
+      margin-top: 20px;
+      background-color: #ECEFF1;
+      padding: 15px;
+      border-radius: 6px;
+    }
+    
+    .peer-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px;
+      border-bottom: 1px solid #CFD8DC;
+    }
+    
+    .peer-item:last-child {
+      border-bottom: none;
+    }
+    
+    .peer-id {
+      font-family: monospace;
+      color: #455A64;
+    }
+    
+    .peer-actions {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .peer-actions button {
+      padding: 5px 10px;
+      font-size: 14px;
+    }
+    
+    .footer {
+      margin-top: 30px;
+      text-align: center;
+      font-size: 14px;
+      color: #757575;
+    }
+    
+    .footer a {
+      color: #1A237E;
+      text-decoration: none;
+    }
+    
+    .footer a:hover {
+      text-decoration: underline;
+    }
+    
+    @media (max-width: 600px) {
+      .action-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      
+      .file-label {
+        margin-bottom: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>全球法布施 - P2P网络演示</h1>
+    
+    <div class="status-panel">
+      <div class="status-item">
+        <span class="status-label">P2P网络状态:</span>
+        <span class="status-value" id="p2p-status">初始化中...</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">已连接节点数:</span>
+        <span class="status-value" id="connected-peers">0</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">WebRTC支持:</span>
+        <span class="status-value" id="webrtc-support">检测中...</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Web蓝牙支持:</span>
+        <span class="status-value" id="bluetooth-support">检测中...</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Service Worker状态:</span>
+        <span class="status-value" id="sw-status">检测中...</span>
+      </div>
+    </div>
+    
+    <div class="action-panel">
+      <div class="action-row">
+        <input type="file" id="file-input" multiple>
+        <label for="file-input" class="file-label">选择文件</label>
+        <button id="send-button" disabled>发送文件</button>
+      </div>
+      <div class="file-info" id="file-info">未选择文件</div>
+    </div>
+    
+    <div class="peer-list" id="peer-list">
+      <h3>已连接节点</h3>
+      <div id="peer-items">
+        <div class="peer-item">
+          <span class="peer-id">暂无连接的节点</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="log-panel" id="log-panel">
+      <div class="log-entry info">P2P网络演示页面已加载</div>
+      <div class="log-entry info">正在初始化P2P网络...</div>
+    </div>
+    
+    <div class="footer">
+      <p>全球法布施 - 无中继服务器文件传输演示 | <a href="index.html">返回主应用</a></p>
+    </div>
+  </div>
+  
+  <script src="p2p-network.js"></script>
+  <script>
+    // 日志函数
+    function log(message, type = 'info') {
+      const logPanel = document.getElementById('log-panel');
+      const logEntry = document.createElement('div');
+      logEntry.className = `log-entry ${type}`;
+      logEntry.textContent = message;
+      logPanel.appendChild(logEntry);
+      logPanel.scrollTop = logPanel.scrollHeight;
+    }
+    
+    // 更新状态显示
+    function updateStatus(id, value, isPositive = null) {
+      const element = document.getElementById(id);
+      element.textContent = value;
+      
+      if (isPositive !== null) {
+        element.className = 'status-value ' + (isPositive ? 'positive' : 'negative');
+      } else {
+        element.className = 'status-value';
+      }
+    }
+    
+    // 检测浏览器功能支持
+    function checkBrowserSupport() {
+      // 检测WebRTC支持
+      const webrtcSupported = !!(window.RTCPeerConnection && window.RTCSessionDescription);
+      updateStatus('webrtc-support', webrtcSupported ? '支持' : '不支持', webrtcSupported);
+      
+      // 检测Web蓝牙支持
+      const bluetoothSupported = !!(navigator.bluetooth);
+      updateStatus('bluetooth-support', bluetoothSupported ? '支持' : '不支持', bluetoothSupported);
+      
+      // 检测Service Worker支持
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(registration => {
+          const swSupported = !!registration;
+          updateStatus('sw-status', swSupported ? '已注册' : '未注册', swSupported);
+        });
+      } else {
+        updateStatus('sw-status', '不支持', false);
+      }
+    }
+    
+    // 初始化P2P网络
+    async function initP2PNetwork() {
+      try {
+        if (!window.p2pNetwork) {
+          log('P2P网络库未加载，请确保p2p-network.js已正确加载', 'error');
+          updateStatus('p2p-status', '未加载', false);
+          return;
+        }
+        
+        log('正在初始化P2P网络...');
+        const result = await window.p2pNetwork.initialize();
+        
+        if (result) {
+          log('P2P网络初始化成功', 'success');
+          updateStatus('p2p-status', '已连接', true);
+          
+          // 开始定期更新连接状态
+          setInterval(updateConnectedPeers, 3000);
+          updateConnectedPeers();
+        } else {
+          log('P2P网络初始化失败', 'error');
+          updateStatus('p2p-status', '连接失败', false);
+        }
+      } catch (error) {
+        log(`P2P网络初始化错误: ${error.message}`, 'error');
+        updateStatus('p2p-status', '错误', false);
+      }
+    }
+    
+    // 更新已连接节点
+    function updateConnectedPeers() {
+      try {
+        const count = window.p2pNetwork.getConnectedPeersCount();
+        const peerIds = window.p2pNetwork.getConnectedPeerIds();
+        
+        updateStatus('connected-peers', count);
+        
+        // 更新节点列表
+        const peerItems = document.getElementById('peer-items');
+        peerItems.innerHTML = '';
+        
+        if (peerIds.length === 0) {
+          const peerItem = document.createElement('div');
+          peerItem.className = 'peer-item';
+          peerItem.innerHTML = '<span class="peer-id">暂无连接的节点</span>';
+          peerItems.appendChild(peerItem);
+        } else {
+          peerIds.forEach(peerId => {
+            const peerItem = document.createElement('div');
+            peerItem.className = 'peer-item';
+            
+            const peerIdSpan = document.createElement('span');
+            peerIdSpan.className = 'peer-id';
+            peerIdSpan.textContent = peerId;
+            
+            const peerActions = document.createElement('div');
+            peerActions.className = 'peer-actions';
+            
+            const sendButton = document.createElement('button');
+            sendButton.textContent = '发送文件';
+            sendButton.onclick = () => sendFileToPeer(peerId);
+            
+            peerActions.appendChild(sendButton);
+            peerItem.appendChild(peerIdSpan);
+            peerItem.appendChild(peerActions);
+            peerItems.appendChild(peerItem);
+          });
+        }
+      } catch (error) {
+        log(`更新连接状态错误: ${error.message}`, 'error');
+      }
+    }
+    
+    // 发送文件到特定节点
+    async function sendFileToPeer(peerId) {
+      const fileInput = document.getElementById('file-input');
+      
+      if (fileInput.files.length === 0) {
+        log('请先选择文件', 'error');
+        return;
+      }
+      
+      const file = fileInput.files[0];
+      log(`准备向节点 ${peerId} 发送文件: ${file.name} (${formatFileSize(file.size)})`);
+      
+      try {
+        const result = await window.p2pNetwork.sendFileToPeer(file, peerId);
+        
+        if (result.success) {
+          log(`文件发送成功: ${file.name}`, 'success');
+        } else {
+          log(`文件发送失败: ${result.message}`, 'error');
+        }
+      } catch (error) {
+        log(`发送文件错误: ${error.message}`, 'error');
+      }
+    }
+    
+    // 广播文件到所有节点
+    async function broadcastFile() {
+      const fileInput = document.getElementById('file-input');
+      
+      if (fileInput.files.length === 0) {
+        log('请先选择文件', 'error');
+        return;
+      }
+      
+      const sendButton = document.getElementById('send-button');
+      sendButton.disabled = true;
+      
+      try {
+        for (let i = 0; i < fileInput.files.length; i++) {
+          const file = fileInput.files[i];
+          log(`准备广播文件: ${file.name} (${formatFileSize(file.size)})`);
+          
+          const result = await window.p2pNetwork.broadcastFile(file);
+          
+          if (result.success) {
+            log(`文件广播成功: ${file.name}, 已发送到 ${result.sentCount} 个节点`, 'success');
+          } else {
+            log(`文件广播失败: ${result.message}`, 'error');
+          }
+        }
+      } catch (error) {
+        log(`广播文件错误: ${error.message}`, 'error');
+      } finally {
+        sendButton.disabled = false;
+      }
+    }
+    
+    // 格式化文件大小
+    function formatFileSize(bytes) {
+      if (bytes < 1024) {
+        return bytes + ' B';
+      } else if (bytes < 1024 * 1024) {
+        return (bytes / 1024).toFixed(2) + ' KB';
+      } else if (bytes < 1024 * 1024 * 1024) {
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+      } else {
+        return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+      }
+    }
+    
+    // 页面加载完成后执行
+    window.addEventListener('load', () => {
+      // 检测浏览器支持
+      checkBrowserSupport();
+      
+      // 初始化P2P网络
+      initP2PNetwork();
+      
+      // 文件选择事件
+      const fileInput = document.getElementById('file-input');
+      const fileInfo = document.getElementById('file-info');
+      const sendButton = document.getElementById('send-button');
+      
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) {
+          const fileList = Array.from(fileInput.files)
+            .map(file => `${file.name} (${formatFileSize(file.size)})`)
+            .join(', ');
+          
+          fileInfo.textContent = `已选择 ${fileInput.files.length} 个文件: ${fileList}`;
+          sendButton.disabled = false;
+        } else {
+          fileInfo.textContent = '未选择文件';
+          sendButton.disabled = true;
+        }
+      });
+      
+      // 发送按钮事件
+      sendButton.addEventListener('click', broadcastFile);
+    });
+    
+    // 监听P2P网络事件
+    window.addEventListener('p2p-fileMetaReceived', (event) => {
+      const { meta, peerId } = event.detail;
+      log(`接收到来自节点 ${peerId} 的文件: ${meta.name}, 大小: ${formatFileSize(meta.size)}`, 'info');
+    });
+    
+    window.addEventListener('p2p-fileEndReceived', (event) => {
+      const { meta, peerId } = event.detail;
+      log(`文件接收完成: ${meta.name}`, 'success');
+    });
+  </script>
+</body>
+</html>

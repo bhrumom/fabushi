@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>全球法布施</title>
+  <link rel="preload" href="main.dart.js" as="script">
+  <style>
+    body { margin: 0; background: #f5f5f5; font-family: Arial, sans-serif; }
+    .loading { 
+      display: flex; 
+      flex-direction: column; 
+      align-items: center; 
+      justify-content: center; 
+      height: 100vh; 
+    }
+    .spinner { 
+      width: 40px; 
+      height: 40px; 
+      border: 4px solid #ddd; 
+      border-top: 4px solid #2196F3; 
+      border-radius: 50%; 
+      animation: spin 1s linear infinite; 
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .text { margin-top: 20px; color: #666; }
+  </style>
+</head>
+<body>
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    <div class="text">正在加载应用...</div>
+  </div>
+  
+  <script src="flutter.js" defer></script>
+  <script src="flutter-no-connection-bridge.js"></script>
+  <script src="direct-global-sender.js"></script>
+  <script src="real-sender.js"></script>
+  <script>
+    // 初始化Web服务
+    window.webServiceInitialized = false;
+    
+    function initializeWebServices() {
+      try {
+        // 初始化真实发送器
+        if (typeof RealSender !== 'undefined') {
+          window.realSender = new RealSender();
+          console.log('🚀 真实发送器初始化成功');
+        }
+        
+        // 初始化直接发送器
+        if (typeof DirectGlobalSender !== 'undefined') {
+          window.directSender = new DirectGlobalSender();
+          console.log('🌍 直接发送器初始化成功');
+        }
+        
+        // 初始化无连接桥接
+        if (typeof NoConnectionBridge !== 'undefined') {
+          window.noConnectionBridge = new NoConnectionBridge();
+          console.log('🔗 无连接桥接初始化成功');
+        }
+        
+        window.webServiceInitialized = true;
+        console.log('✅ Web服务初始化完成');
+        
+      } catch (e) {
+        console.error('❌ Web服务初始化失败:', e);
+        // 即使初始化失败也标记为已初始化，避免阻塞应用启动
+        window.webServiceInitialized = true;
+      }
+    }
+    
+    window.addEventListener('load', function(ev) {
+      document.querySelector('.text').textContent = '正在初始化Web服务...';
+      initializeWebServices();
+      
+      document.querySelector('.text').textContent = '正在初始化Flutter...';
+      _flutter.loader.load().then(function(engineInitializer) {
+        document.querySelector('.text').textContent = '正在启动应用...';
+        return engineInitializer.initializeEngine();
+      }).then(function(appRunner) {
+        document.getElementById('loading').style.display = 'none';
+        return appRunner.runApp();
+      });
+    });
+  </script>
+</body>
+</html>

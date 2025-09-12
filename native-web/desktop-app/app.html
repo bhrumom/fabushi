@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全球法布施 - 桌面版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            position: relative;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .auth-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            background: linear-gradient(145deg, #f6d365 0%, #fda085 100%);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px 0 rgba(252, 166, 118, 0.4);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px 0 rgba(252, 166, 118, 0.6);
+        }
+
+        .btn-primary {
+            background: linear-gradient(145deg, #89f7fe 0%, #66a6ff 100%);
+            box-shadow: 0 4px 15px 0 rgba(118, 204, 252, 0.4);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 7px 20px 0 rgba(118, 204, 252, 0.6);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(145deg, #a8e6cf 0%, #88d8a3 100%);
+            box-shadow: 0 4px 15px 0 rgba(168, 230, 207, 0.4);
+        }
+
+        .btn-secondary:hover {
+            box-shadow: 0 7px 20px 0 rgba(168, 230, 207, 0.6);
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.25);
+        }
+
+        .card h2 {
+            font-size: 1.8em;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .action-button {
+            flex: 1;
+            min-width: 150px;
+        }
+
+        .file-list {
+            margin-top: 20px;
+            min-height: 100px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.03);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px dashed #ccc;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid #eee;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .file-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .stat {
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(145deg, rgba(255,255,255,0.9), rgba(255,255,255,0.6));
+            border-radius: 12px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #ff8a65;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #555;
+            margin-top: 4px;
+        }
+
+        #log {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 16px;
+            border-radius: 12px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: 'SF Mono', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.7;
+        }
+
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px dotted #34495e;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .progress {
+            width: 100%;
+            height: 12px;
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #f6d365 0%, #fda085 100%);
+            transition: width 0.4s ease;
+            border-radius: 6px;
+        }
+
+        .update-info {
+            text-align: center;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.8);
+            color: #2c3e50;
+            font-size: 14px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .card {
+                padding: 20px;
+            }
+            
+            .btn-row {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✨ 全球法布施 ✨</h1>
+            <div class="user-info">
+                <div id="userInfo" style="display: none;">
+                    <span id="username">用户</span>
+                    <button class="btn" onclick="logout()">退出</button>
+                </div>
+                <div id="authButtons" class="auth-buttons">
+                    <button class="btn btn-primary" onclick="showLogin()">登录</button>
+                    <button class="btn" onclick="showRegister()">注册</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🌸 选择法宝</h2>
+            <div class="btn-row">
+                <button type="button" onclick="selectFiles()" class="btn action-button">📂 选择本地善缘</button>
+                <button type="button" onclick="selectBuiltInAssets()" class="btn action-button">🎨 选取内置法宝</button>
+            </div>
+            
+            <div id="fileList" class="file-list">
+                <div class="file-item" style="text-align: center; color: #999;">尚未选择任何善缘或法宝</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🕊️ 开始传送</h2>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value" id="fileCount">0</div>
+                    <div class="stat-label">待发送文件</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">249</div>
+                    <div class="stat-label">目标国家</div>
+                </div>
+            </div>
+            
+            <div class="btn-row">
+                <button type="button" id="startBtn" onclick="startSending()" class="btn btn-primary action-button">🚀 开始发送</button>
+                <button type="button" id="stopBtn" onclick="stopSending()" class="btn action-button" disabled>⏹️ 停止发送</button>
+                <button type="button" onclick="checkForUpdates()" class="btn btn-secondary action-button">🔄 检查更新</button>
+            </div>
+            
+            <div id="updateInfo" class="update-info" style="display: none;"></div>
+            
+            <div class="progress">
+                <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📋 发送日志</h2>
+            <div id="log">
+                <div class="log-entry">欢迎使用全球法布施桌面版！</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 文件队列
+        let fileQueue = [];
+        
+        // 日志函数
+        function addLog(message) {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logElement.appendChild(logEntry);
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        // 显示更新信息
+        function showUpdateInfo(message) {
+            const updateInfoElement = document.getElementById('updateInfo');
+            updateInfoElement.textContent = message;
+            updateInfoElement.style.display = 'block';
+            
+            // 3秒后隐藏
+            setTimeout(() => {
+                updateInfoElement.style.display = 'none';
+            }, 3000);
+        }
+        
+        // 更新文件列表显示
+        function updateFileList() {
+            const fileListElement = document.getElementById('fileList');
+            const fileCountElement = document.getElementById('fileCount');
+            
+            fileCountElement.textContent = fileQueue.length;
+            
+            if (fileQueue.length === 0) {
+                fileListElement.innerHTML = '<div class="file-item" style="text-align: center; color: #999;">尚未选择任何善缘或法宝</div>';
+                return;
+            }
+            
+            fileListElement.innerHTML = '';
+            fileQueue.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `
+                    <div class="file-info">
+                        <span>📄</span>
+                        <span>${file.name}</span>
+                    </div>
+                    <button class="btn" onclick="removeFile(${index})" style="padding: 5px 10px; font-size: 12px;">删除</button>
+                `;
+                fileListElement.appendChild(fileItem);
+            });
+        }
+        
+        // 选择文件
+        async function selectFiles() {
+            try {
+                // 在Electron环境中调用主进程选择文件
+                if (typeof window.electronAPI !== 'undefined') {
+                    const result = await window.electronAPI.selectFiles();
+                    if (!result.canceled && result.files) {
+                        result.files.forEach(file => {
+                            fileQueue.push({
+                                name: file.name,
+                                path: file.path,
+                                size: file.size,
+                                content: file.content,
+                                type: file.type
+                            });
+                        });
+                        updateFileList();
+                        addLog(`已选择 ${result.files.length} 个文件`);
+                    }
+                } else {
+                    addLog('请选择文件功能在桌面应用中可用');
+                }
+            } catch (error) {
+                addLog(`选择文件时出错: ${error.message}`);
+            }
+        }
+        
+        // 选择内置资源（模拟）
+        function selectBuiltInAssets() {
+            addLog('选取内置法宝功能正在开发中...');
+        }
+        
+        // 删除文件
+        function removeFile(index) {
+            fileQueue.splice(index, 1);
+            updateFileList();
+            addLog('已删除文件');
+        }
+        
+        // 开始发送
+        function startSending() {
+            if (fileQueue.length === 0) {
+                addLog('请先选择要发送的文件');
+                return;
+            }
+            
+            addLog('🚀 开始发送文件到全球249个国家...');
+            
+            // 禁用开始按钮，启用停止按钮
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            
+            // 模拟发送过程
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 5;
+                if (progress > 100) {
+                    progress = 100;
+                    clearInterval(interval);
+                    
+                    // 启用开始按钮，禁用停止按钮
+                    document.getElementById('startBtn').disabled = false;
+                    document.getElementById('stopBtn').disabled = true;
+                    
+                    addLog('✅ 所有文件发送完成！');
+                }
+                
+                document.getElementById('progressBar').style.width = progress + '%';
+            }, 200);
+        }
+        
+        // 停止发送
+        function stopSending() {
+            addLog('⏹️ 发送任务已被用户中断');
+            
+            // 启用开始按钮，禁用停止按钮
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            
+            // 重置进度条
+            document.getElementById('progressBar').style.width = '0%';
+        }
+        
+        // 检查更新
+        async function checkForUpdates() {
+            try {
+                if (typeof window.electronAPI !== 'undefined') {
+                    showUpdateInfo('正在检查更新...');
+                    const result = await window.electronAPI.checkForUpdates();
+                    if (result.success) {
+                        showUpdateInfo('正在检查更新...');
+                    } else {
+                        showUpdateInfo('检查更新失败: ' + (result.error || '未知错误'));
+                    }
+                } else {
+                    showUpdateInfo('更新功能在桌面应用中可用');
+                }
+            } catch (error) {
+                showUpdateInfo('检查更新时出错: ' + error.message);
+            }
+        }
+        
+        // 显示登录界面（模拟）
+        function showLogin() {
+            addLog('登录功能正在开发中...');
+        }
+        
+        // 显示注册界面（模拟）
+        function showRegister() {
+            addLog('注册功能正在开发中...');
+        }
+        
+        // 退出登录（模拟）
+        function logout() {
+            addLog('退出功能正在开发中...');
+        }
+        
+        // 监听更新消息
+        if (typeof window.electronAPI !== 'undefined') {
+            window.electronAPI.on('update-message', (message) => {
+                showUpdateInfo(message);
+            });
+        }
+        
+        // 页面加载完成后的初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            addLog('全球法布施桌面版已启动');
+            
+            // 获取应用版本
+            if (typeof window.electronAPI !== 'undefined') {
+                window.electronAPI.getAppVersion().then(result => {
+                    addLog(`版本: ${result.version}`);
+                }).catch(error => {
+                    console.error('获取版本信息时出错:', error);
+                });
+            }
+        });
+    </script>
+</body>
+</html>

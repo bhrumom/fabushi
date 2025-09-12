@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>兑换码使用 - 全球发送</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        .header {
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+            text-align: left;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 15px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 15px;
+            font-size: 18px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: border-color 0.3s;
+            font-family: 'Courier New', monospace;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            width: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 15px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .message-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .message-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .back-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.3s;
+        }
+
+        .back-link:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .login-notice {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #856404;
+        }
+
+        .code-format-hint {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+            font-style: italic;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 30px 20px;
+                margin: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .form-input {
+                font-size: 16px;
+                padding: 12px 16px;
+            }
+            
+            .btn {
+                font-size: 16px;
+                padding: 12px 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎫 兑换码使用</h1>
+            <p>输入兑换码获取会员权限</p>
+        </div>
+
+        <div id="loginNotice" class="login-notice" style="display: none;">
+            <div style="display: flex; align-items: center; gap: 8px; justify-content: center;">
+                <span>🔒</span>
+                <span>请先 <a href="/index.html" style="color: #667eea; text-decoration: underline;">登录</a> 后再使用兑换码</span>
+            </div>
+        </div>
+
+        <form id="redeemForm" style="display: none;">
+            <div class="form-group">
+                <label class="form-label" for="redeemCode">兑换码</label>
+                <input 
+                    type="text" 
+                    id="redeemCode" 
+                    class="form-input" 
+                    placeholder="请输入12位兑换码"
+                    maxlength="12"
+                    required
+                >
+                <div class="code-format-hint">格式：XXXXXXXXXXXX (12位字母数字组合)</div>
+            </div>
+
+            <button type="submit" class="btn" id="redeemBtn">
+                <span id="redeemBtnText">立即兑换</span>
+            </button>
+        </form>
+
+        <div id="messageContainer"></div>
+
+        <div style="margin-top: 30px;">
+            <a href="/index.html" class="back-link">← 返回首页</a>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            checkLoginStatus();
+            setupEventListeners();
+        });
+
+        // 检查登录状态
+        async function checkLoginStatus() {
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                showLoginNotice();
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/auth/verify', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    showRedeemForm();
+                } else {
+                    localStorage.removeItem('authToken');
+                    showLoginNotice();
+                }
+            } catch (error) {
+                console.error('认证检查失败:', error);
+                showLoginNotice();
+            }
+        }
+
+        function showLoginNotice() {
+            document.getElementById('loginNotice').style.display = 'block';
+            document.getElementById('redeemForm').style.display = 'none';
+        }
+
+        function showRedeemForm() {
+            document.getElementById('loginNotice').style.display = 'none';
+            document.getElementById('redeemForm').style.display = 'block';
+            document.getElementById('redeemCode').focus();
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            document.getElementById('redeemForm').addEventListener('submit', handleRedeem);
+            
+            // 兑换码输入格式化
+            document.getElementById('redeemCode').addEventListener('input', function(e) {
+                let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                if (value.length > 12) {
+                    value = value.substring(0, 12);
+                }
+                e.target.value = value;
+            });
+        }
+
+        // 处理兑换
+        async function handleRedeem(event) {
+            event.preventDefault();
+
+            const btn = document.getElementById('redeemBtn');
+            const btnText = document.getElementById('redeemBtnText');
+            const messageContainer = document.getElementById('messageContainer');
+            const codeInput = document.getElementById('redeemCode');
+
+            const code = codeInput.value.trim();
+            if (!code) {
+                showMessage('请输入兑换码', 'error');
+                return;
+            }
+
+            if (code.length !== 12) {
+                showMessage('兑换码必须是12位字符', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            btnText.innerHTML = '<span class="loading"></span> 兑换中...';
+            messageContainer.innerHTML = '';
+
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch('/api/admin/use-redeem-code', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ code })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage(`🎉 ${data.message}`, 'success');
+                    showMessage(`会员类型：${data.membershipType === 'trial' ? '试用会员' : '付费会员'}`, 'info');
+                    showMessage(`有效期至：${new Date(data.expiresAt).toLocaleString()}`, 'info');
+                    
+                    // 清空输入框
+                    codeInput.value = '';
+                    
+                    // 3秒后跳转到会员中心
+                    setTimeout(() => {
+                        window.location.href = '/membership.html';
+                    }, 3000);
+
+                } else {
+                    showMessage(data.error || '兑换失败', 'error');
+                    
+                    // 如果是兑换码相关错误，清空输入框
+                    if (data.error && (data.error.includes('不存在') || data.error.includes('已被使用') || data.error.includes('错误'))) {
+                        codeInput.value = '';
+                    }
+                }
+
+            } catch (error) {
+                console.error('兑换失败:', error);
+                showMessage('兑换失败，请检查网络连接后重试', 'error');
+            } finally {
+                btn.disabled = false;
+                btnText.textContent = '立即兑换';
+            }
+        }
+
+        // 显示消息
+        function showMessage(text, type = 'info') {
+            const container = document.getElementById('messageContainer');
+            const message = document.createElement('div');
+            
+            message.className = `message message-${type}`;
+            message.innerHTML = text;
+            
+            container.appendChild(message);
+            
+            // 5秒后自动移除消息（成功消息除外）
+            if (type !== 'success') {
+                setTimeout(() => {
+                    if (message.parentNode) {
+                        message.remove();
+                    }
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+</html>

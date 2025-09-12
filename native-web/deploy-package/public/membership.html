@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>会员中心 - 全球发送</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.2rem;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .membership-status {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .status-active {
+            border: 2px solid #28a745;
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        }
+
+        .status-inactive {
+            border: 2px solid #dc3545;
+            background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+        }
+
+        .status-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        .status-text {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .status-details {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .pricing-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .pricing-card {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .pricing-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            border-color: #4facfe;
+        }
+
+        .pricing-card.selected {
+            border-color: #4facfe;
+            background: linear-gradient(135deg, #f8f9ff 0%, #e7f3ff 100%);
+        }
+
+        .pricing-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .price {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #4facfe;
+            margin-bottom: 10px;
+        }
+
+        .price-unit {
+            font-size: 1rem;
+            color: #666;
+        }
+
+        .features {
+            list-style: none;
+            margin: 20px 0;
+        }
+
+        .features li {
+            padding: 5px 0;
+            color: #666;
+        }
+
+        .features li:before {
+            content: "✓";
+            color: #28a745;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .payment-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .payment-button {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+        }
+
+        .payment-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(79, 172, 254, 0.4);
+        }
+
+        .payment-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .qr-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .qr-content {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .qr-code {
+            width: 200px;
+            height: 200px;
+            margin: 20px auto;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 30px;
+            cursor: pointer;
+            color: white;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4facfe;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .info-message {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .history-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+        }
+
+        .history-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .tab-button {
+            background: none;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #666;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button.active {
+            color: #4facfe;
+            border-bottom-color: #4facfe;
+        }
+
+        .tab-button:hover {
+            color: #4facfe;
+        }
+
+        .history-content {
+            min-height: 200px;
+        }
+
+        .history-item {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-left: 4px solid #4facfe;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .history-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .history-item-title {
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: #333;
+        }
+
+        .history-item-date {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .history-item-details {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .history-item-amount {
+            color: #28a745;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        .loading-placeholder {
+            text-align: center;
+            color: #666;
+            padding: 40px;
+            font-style: italic;
+        }
+
+        .empty-history {
+            text-align: center;
+            color: #666;
+            padding: 40px;
+        }
+
+        .empty-history-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+            
+            .header, .content {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .pricing-cards {
+                grid-template-columns: 1fr;
+            }
+
+            .history-tabs {
+                flex-direction: column;
+                gap: 5px;
+            }
+
+            .tab-button {
+                text-align: left;
+                padding: 10px 16px;
+            }
+
+            .history-item-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>会员中心</h1>
+            <p>解锁全球发送的全部功能</p>
+        </div>
+
+        <div class="content">
+            <div class="membership-status" id="membershipStatus">
+                <!-- 会员状态将在这里动态显示 -->
+            </div>
+
+            <div class="pricing-cards">
+                <div class="pricing-card selected" data-plan="monthly" data-months="1" data-price="21">
+                    <h3>月度会员</h3>
+                    <div class="price">¥21<span class="price-unit">/月</span></div>
+                    <ul class="features">
+                        <li>无限发送文件</li>
+                        <li>大文件支持</li>
+                        <li>优先客服支持</li>
+                        <li>无广告体验</li>
+                    </ul>
+                </div>
+
+                <div class="pricing-card" data-plan="quarterly" data-months="3" data-price="63">
+                    <h3>季度会员</h3>
+                    <div class="price">¥63<span class="price-unit">/3个月</span></div>
+                    <ul class="features">
+                        <li>无限发送文件</li>
+                        <li>大文件支持</li>
+                        <li>优先客服支持</li>
+                        <li>无广告体验</li>
+                        <li>9折优惠</li>
+                    </ul>
+                </div>
+
+                <div class="pricing-card" data-plan="yearly" data-months="12" data-price="252">
+                    <h3>年度会员</h3>
+                    <div class="price">¥252<span class="price-unit">/年</span></div>
+                    <ul class="features">
+                        <li>无限发送文件</li>
+                        <li>大文件支持</li>
+                        <li>优先客服支持</li>
+                        <li>无广告体验</li>
+                        <li>8折优惠</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="payment-section">
+                <h3>选择会员时长</h3>
+                <p>已选择: <span id="selectedMonths">1</span>个月 - ¥<span id="selectedPrice">21</span></p>
+                <button class="payment-button" id="alipayButton" onclick="createAlipayOrder()">
+                    使用支付宝支付
+                </button>
+            </div>
+
+            <!-- 购买记录和兑换记录 -->
+            <div class="history-section" style="margin-top: 40px;">
+                <div class="history-tabs">
+                    <button class="tab-button active" onclick="showTab('purchase')">购买记录</button>
+                    <button class="tab-button" onclick="showTab('redeem')">兑换记录</button>
+                </div>
+                
+                <div id="purchaseHistory" class="history-content">
+                    <div class="loading-placeholder">正在加载购买记录...</div>
+                </div>
+                
+                <div id="redeemHistory" class="history-content" style="display: none;">
+                    <div class="loading-placeholder">正在加载兑换记录...</div>
+                </div>
+            </div>
+
+            <div id="messageContainer"></div>
+        </div>
+    </div>
+
+    <!-- 二维码支付弹窗 -->
+    <div class="qr-modal" id="qrModal">
+        <div class="close-btn" onclick="closeQrModal()">&times;</div>
+        <div class="qr-content">
+            <h3>请使用支付宝扫码支付</h3>
+            <div class="qr-code" id="qrCode">
+                <div>正在生成二维码...</div>
+            </div>
+            <p>订单金额: ¥<span id="qrAmount">21</span></p>
+            <p>支付完成后，会员将自动激活</p>
+            <button class="payment-button" onclick="checkPaymentStatus(true)">我已支付</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script>
+        let selectedPlan = 'monthly';
+        let currentOrderId = null;
+        let paymentCheckInterval = null;
+        let isAdmin = false;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setupPricingCards();
+            loadMembershipStatus();
+            checkAdminStatus();
+            loadPurchaseHistory();
+            loadRedeemHistory();
+        });
+
+        function setupPricingCards() {
+            const cards = document.querySelectorAll('.pricing-card');
+            cards.forEach(card => {
+                card.addEventListener('click', function() {
+                    cards.forEach(c => c.classList.remove('selected'));
+                    this.classList.add('selected');
+                    
+                    selectedPlan = this.dataset.plan;
+                    const months = this.dataset.months;
+                    const price = isAdmin ? '0.01' : this.dataset.price;
+                    updateSelectedPrice(months, price);
+                });
+            });
+            updateSelectedPrice(1, 21);
+        }
+
+        function updateSelectedPrice(months, price) {
+            document.getElementById('selectedMonths').textContent = months;
+            document.getElementById('selectedPrice').textContent = price;
+        }
+
+        // 检查管理员状态
+        async function checkAdminStatus() {
+            const token = localStorage.getItem('authToken');
+            if (!token) return;
+
+            try {
+                const response = await fetch('/api/admin/check-status', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    isAdmin = data.isAdmin;
+                    
+                    if (isAdmin) {
+                        updatePricingForAdmin();
+                        showAdminBadge();
+                    }
+                }
+            } catch (error) {
+                console.error('检查管理员状态失败:', error);
+            }
+        }
+
+        // 为管理员更新价格显示
+        function updatePricingForAdmin() {
+            const cards = document.querySelectorAll('.pricing-card');
+            cards.forEach(card => {
+                const priceElement = card.querySelector('.price');
+                const originalPrice = priceElement.textContent;
+                
+                // 添加管理员价格标识
+                priceElement.innerHTML = `¥0.01<span class="price-unit">${originalPrice.includes('/') ? originalPrice.split('¥')[1] : ''}</span>`;
+                
+                // 添加原价显示
+                const originalPriceSpan = document.createElement('div');
+                originalPriceSpan.style.cssText = 'font-size: 14px; color: #999; text-decoration: line-through; margin-top: 5px;';
+                originalPriceSpan.textContent = `原价: ${originalPrice}`;
+                priceElement.parentNode.insertBefore(originalPriceSpan, priceElement.nextSibling);
+                
+                // 添加管理员标识
+                const adminBadge = document.createElement('div');
+                adminBadge.style.cssText = 'background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%); color: white; padding: 4px 8px; border-radius: 10px; font-size: 12px; margin-top: 10px; font-weight: bold;';
+                adminBadge.textContent = '管理员特价';
+                card.appendChild(adminBadge);
+            });
+
+            // 更新选择的价格显示
+            document.getElementById('selectedPrice').textContent = '0.01';
+        }
+
+        // 显示管理员徽章
+        function showAdminBadge() {
+            const header = document.querySelector('.header');
+            const adminBadge = document.createElement('div');
+            adminBadge.style.cssText = 'background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%); color: white; padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: bold; margin-top: 15px; display: inline-block;';
+            adminBadge.textContent = '🛡️ 管理员账户';
+            header.appendChild(adminBadge);
+        }
+
+        async function loadMembershipStatus() {
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                window.location.href = '/login.html?redirect=membership.html';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/alipay/check-membership', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.status === 401) {
+                    localStorage.removeItem('authToken');
+                    window.location.href = '/login.html?redirect=membership.html';
+                    return;
+                }
+
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+                const data = await response.json();
+                displayMembershipStatus(data);
+            } catch (error) {
+                console.error('加载会员状态失败:', error);
+                showMessage('加载会员状态失败，请刷新页面重试', 'error');
+            }
+        }
+
+        function displayMembershipStatus(data) {
+            const statusDiv = document.getElementById('membershipStatus');
+            const membership = data.membership;
+            
+            if (membership.isActive) {
+                statusDiv.className = 'membership-status status-active';
+                statusDiv.innerHTML = `
+                    <div class="status-icon">✅</div>
+                    <div class="status-text">${membership.type === 'trial' ? '试用会员' : '付费会员'}</div>
+                    <div class="status-details">有效期至: ${membership.expiresAt ? new Date(membership.expiresAt).toLocaleDateString() : '未知'}</div>
+                `;
+            } else {
+                statusDiv.className = 'membership-status status-inactive';
+                statusDiv.innerHTML = `
+                    <div class="status-icon">❌</div>
+                    <div class="status-text">未开通会员</div>
+                    <div class="status-details">开通会员享受全部功能</div>
+                `;
+            }
+        }
+
+        async function createAlipayOrder() {
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                showMessage('请先登录', 'error');
+                window.location.href = '/login.html?redirect=membership.html';
+                return;
+            }
+
+            const button = document.getElementById('alipayButton');
+            button.disabled = true;
+            button.innerHTML = '<span class="loading"></span> 创建订单中...';
+
+            try {
+                const response = await fetch('/api/alipay/create-order', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ plan: selectedPlan })
+                });
+
+                if (response.status === 401) {
+                    showMessage('登录已过期，请重新登录', 'error');
+                    window.location.href = '/login.html?redirect=membership.html';
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentOrderId = data.orderId;
+                    showQrModal(data.qrCode, data.amount);
+                    startPaymentPolling();
+                } else {
+                    showMessage(data.error || '创建订单失败', 'error');
+                }
+            } catch (error) {
+                console.error('创建订单失败:', error);
+                showMessage('创建订单失败，请重试', 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = '使用支付宝支付';
+            }
+        }
+
+        function showQrModal(qrCodeUrl, amount) {
+            document.getElementById('qrAmount').textContent = amount;
+            document.getElementById('qrModal').style.display = 'flex';
+            
+            const qrDiv = document.getElementById('qrCode');
+            qrDiv.innerHTML = '';
+            new QRCode(qrDiv, {
+                text: qrCodeUrl,
+                width: 180,
+                height: 180,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+        }
+
+        function closeQrModal() {
+            document.getElementById('qrModal').style.display = 'none';
+            if (paymentCheckInterval) {
+                clearInterval(paymentCheckInterval);
+                paymentCheckInterval = null;
+            }
+            currentOrderId = null;
+        }
+
+        async function checkPaymentStatus(isManualClick = false) {
+            if (!currentOrderId) return;
+
+            const button = document.querySelector('.qr-content .payment-button');
+            if (isManualClick) {
+                button.disabled = true;
+                button.innerHTML = '<span class=\"loading\"></span> 查询中...';
+            }
+
+            try {
+                const response = await fetch(`/api/alipay/query-order?orderId=${currentOrderId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('支付状态查询结果:', data);
+
+                const tradeStatus = (data.trade_status || data.status || '').toUpperCase();
+                if (data.success === true || tradeStatus === 'TRADE_SUCCESS' || tradeStatus === 'PAID') {
+                    closeQrModal(); // This function now correctly stops the polling
+                    showMessage('支付成功！会员已激活。', 'success');
+                    // 延迟一小段时间再刷新状态和历史记录，确保后端数据已完全同步
+                    setTimeout(() => {
+                        loadMembershipStatus();
+                        loadPurchaseHistory();
+                    }, 500);
+                } else {
+                    if (isManualClick) {
+                        showMessage('订单尚未支付成功，请稍后再试。', 'error');
+                    }
+                }
+            } catch (error) {
+                console.error('检查支付状态失败:', error);
+                if (isManualClick) {
+                    showMessage('检查支付状态失败，请稍后手动刷新页面。', 'error');
+                }
+            } finally {
+                if (isManualClick) {
+                    button.disabled = false;
+                    button.innerHTML = '我已支付';
+                }
+            }
+        }
+
+        function startPaymentPolling() {
+            if (paymentCheckInterval) clearInterval(paymentCheckInterval);
+
+            // 显示提示信息
+            showMessage('请使用支付宝沙箱APP扫码支付，支付完成后点击"我已支付"按钮', 'info');
+            
+            paymentCheckInterval = setInterval(async () => {
+                if (!currentOrderId) {
+                    clearInterval(paymentCheckInterval);
+                    return;
+                }
+                await checkPaymentStatus();
+            }, 3000); // 轮询间隔调整为3秒
+
+            // 15分钟后自动停止轮询并关闭二维码
+            setTimeout(() => {
+                if (paymentCheckInterval) {
+                    closeQrModal();
+                    showMessage('支付二维码已过期，请重新下单。', 'error');
+                }
+            }, 900000); // 15分钟
+        }
+
+        function showMessage(text, type = 'info') {
+            const container = document.getElementById('messageContainer');
+            const message = document.createElement('div');
+            
+            if (type === 'success') {
+                message.className = 'success-message';
+            } else if (type === 'error') {
+                message.className = 'error-message';
+            } else {
+                message.className = 'info-message';
+            }
+            message.textContent = text;
+            
+            container.innerHTML = '';
+            container.appendChild(message);
+            
+            setTimeout(() => {
+                message.remove();
+            }, 5000);
+        }
+
+        // 标签页切换
+        function showTab(tabName) {
+            // 更新标签按钮状态
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // 显示对应内容
+            document.getElementById('purchaseHistory').style.display = tabName === 'purchase' ? 'block' : 'none';
+            document.getElementById('redeemHistory').style.display = tabName === 'redeem' ? 'block' : 'none';
+        }
+
+        // 加载购买记录
+        async function loadPurchaseHistory() {
+            const token = localStorage.getItem('authToken');
+            if (!token) return;
+
+            try {
+                const response = await fetch('/api/admin/purchase-history', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayPurchaseHistory(data.purchases);
+                } else {
+                    document.getElementById('purchaseHistory').innerHTML = 
+                        '<div class="loading-placeholder">加载购买记录失败</div>';
+                }
+            } catch (error) {
+                console.error('加载购买记录失败:', error);
+                document.getElementById('purchaseHistory').innerHTML = 
+                    '<div class="loading-placeholder">加载购买记录失败</div>';
+            }
+        }
+
+        // 加载兑换记录
+        async function loadRedeemHistory() {
+            const token = localStorage.getItem('authToken');
+            if (!token) return;
+
+            try {
+                const response = await fetch('/api/admin/redeem-history', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayRedeemHistory(data.redeems);
+                } else {
+                    document.getElementById('redeemHistory').innerHTML = 
+                        '<div class="loading-placeholder">加载兑换记录失败</div>';
+                }
+            } catch (error) {
+                console.error('加载兑换记录失败:', error);
+                document.getElementById('redeemHistory').innerHTML = 
+                    '<div class="loading-placeholder">加载兑换记录失败</div>';
+            }
+        }
+
+        // 显示购买记录
+        function displayPurchaseHistory(purchases) {
+            const container = document.getElementById('purchaseHistory');
+            
+            if (!purchases || purchases.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-history">
+                        <div class="empty-history-icon">🛒</div>
+                        <div>暂无购买记录</div>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = purchases.map(purchase => `
+                <div class="history-item">
+                    <div class="history-item-header">
+                        <div class="history-item-title">${getPlanName(purchase.plan)}</div>
+                        <div class="history-item-amount">¥${purchase.amount}</div>
+                    </div>
+                    <div class="history-item-details">
+                        <div>订单号: ${purchase.orderId}</div>
+                        <div>购买时间: ${new Date(purchase.purchasedAt).toLocaleString()}</div>
+                        <div>有效期: ${new Date(purchase.validFrom).toLocaleDateString()} - ${new Date(purchase.validTo).toLocaleDateString()}</div>
+                        <div>支付方式: ${purchase.paymentMethod === 'alipay' ? '支付宝' : purchase.paymentMethod}</div>
+                        <div>状态: <span style="color: #28a745;">已完成</span></div>
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = html;
+        }
+
+        // 显示兑换记录
+        function displayRedeemHistory(redeems) {
+            const container = document.getElementById('redeemHistory');
+            
+            if (!redeems || redeems.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-history">
+                        <div class="empty-history-icon">🎫</div>
+                        <div>暂无兑换记录</div>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = redeems.map(redeem => `
+                <div class="history-item">
+                    <div class="history-item-header">
+                        <div class="history-item-title">${redeem.name}</div>
+                        <div class="history-item-date">${new Date(redeem.redeemedAt).toLocaleDateString()}</div>
+                    </div>
+                    <div class="history-item-details">
+                        <div>兑换码: ${redeem.code}</div>
+                        <div>兑换时间: ${new Date(redeem.redeemedAt).toLocaleString()}</div>
+                        <div>增加天数: ${redeem.days}天</div>
+                        <div>有效期: ${new Date(redeem.validFrom).toLocaleDateString()} - ${new Date(redeem.validTo).toLocaleDateString()}</div>
+                        ${redeem.previousExpiryDate ? 
+                            `<div>原到期时间: ${new Date(redeem.previousExpiryDate).toLocaleDateString()}</div>` : 
+                            '<div>首次开通会员</div>'
+                        }
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = html;
+        }
+
+        // 获取套餐名称
+        function getPlanName(plan) {
+            const names = {
+                'monthly': '月度会员',
+                'quarterly': '季度会员', 
+                'yearly': '年度会员'
+            };
+            return names[plan] || plan;
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            window.location.href = 'login.html';
+        }
+    </script>
+</body>
+</html>
