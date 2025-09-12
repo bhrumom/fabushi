@@ -1,9 +1,0 @@
-name = "r2-test"
-main = "test-r2-simple.js"
-compatibility_date = "2024-06-05"
-
-# R2存储配置
-[[r2_buckets]]
-binding = "R2_BUCKET"
-bucket_name = "bushi"
-preview_bucket_name = "bushi"
