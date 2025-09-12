@@ -5,7 +5,7 @@ compatibility_date = "2024-06-05"
 # Flutter Web静态文件服务配置
 [assets]
 binding = "ASSETS"
-directory = "./build/web"
+directory = "../build/web"
 
 # KV存储配置 - 复用后端的KV存储
 [[kv_namespaces]]
