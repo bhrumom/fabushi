@@ -1,0 +1,47 @@
+name: global_dharma_sharing
+description: A new Flutter project.
+publish_to: 'none' 
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  file_picker: ^8.0.0+1
+  path_provider: ^2.0.15
+  permission_handler: ^11.0.1
+  provider: ^6.0.5
+  http: ^1.1.0
+  shelf: ^1.4.1
+  shelf_static: ^1.1.2
+  network_info_plus: ^5.0.3
+  flutter_local_notifications: ^17.0.0
+  path: ^1.8.3
+  latlong2: ^0.9.0
+  flutter_map: ^7.0.0
+  geolocator: ^12.0.0
+  vector_math: ^2.1.4
+  shared_preferences: ^2.2.2
+  archive: ^3.4.9
+  csv: ^6.0.0
+  dio: ^5.4.1
+  connectivity_plus: ^6.0.3
+  js: ^0.6.7
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    # IP data excluded from web build
+    # - assets/ip_data/

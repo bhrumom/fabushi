@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简单中止测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .start { background: #28a745; color: white; border: none; border-radius: 3px; }
+        .stop { background: #dc3545; color: white; border: none; border-radius: 3px; }
+        .result { margin: 10px 0; padding: 10px; border-radius: 3px; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .error { background: #f8d7da; color: #721c24; }
+        .success { background: #d4edda; color: #155724; }
+        .warning { background: #fff3cd; color: #856404; }
+    </style>
+</head>
+<body>
+    <h1>简单中止测试</h1>
+    
+    <div>
+        <button class="start" onclick="startSimpleDownload()">开始简单下载</button>
+        <button class="stop" onclick="stopSimpleDownload()">停止下载</button>
+    </div>
+    
+    <div id="result"></div>
+
+    <script>
+        let currentController = null;
+        let currentReader = null;
+
+        function showResult(message, type = 'info') {
+            const element = document.getElementById('result');
+            element.innerHTML = `<div class="result ${type}">${message}</div>`;
+        }
+
+        async function startSimpleDownload() {
+            if (currentController) {
+                showResult('已有下载在进行中', 'warning');
+                return;
+            }
+
+            try {
+                showResult('开始下载...', 'info');
+                
+                currentController = new AbortController();
+                const url = '/?file=佛說大如意寶珠輪牛王守護神咒.amitabha';
+                
+                const response = await fetch(url, { 
+                    signal: currentController.signal 
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                showResult('开始读取响应流...', 'info');
+                currentReader = response.body.getReader();
+                
+                const chunks = [];
+                let totalBytes = 0;
+                
+                while (true) {
+                    // 检查是否被中止
+                    if (currentController.signal.aborted) {
+                        showResult('下载被中止', 'warning');
+                        break;
+                    }
+                    
+                    const { done, value } = await currentReader.read();
+                    if (done) {
+                        showResult(`下载完成! 总大小: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`, 'success');
+                        break;
+                    }
+                    
+                    chunks.push(value);
+                    totalBytes += value.length;
+                    
+                    // 每1MB显示一次进度
+                    if (totalBytes % (1024 * 1024) < value.length) {
+                        showResult(`已下载: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`, 'info');
+                    }
+                }
+                
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    showResult('下载被用户中止', 'warning');
+                } else {
+                    showResult(`下载失败: ${error.message}`, 'error');
+                }
+            } finally {
+                // 清理资源
+                if (currentReader) {
+                    try {
+                        currentReader.releaseLock();
+                    } catch (e) {
+                        console.warn('释放 reader 锁时出错:', e);
+                    }
+                    currentReader = null;
+                }
+                currentController = null;
+            }
+        }
+
+        function stopSimpleDownload() {
+            if (currentController) {
+                console.log('正在中止下载...');
+                currentController.abort();
+                showResult('正在停止下载...', 'warning');
+            } else {
+                showResult('没有正在进行的下载', 'info');
+            }
+        }
+
+        // 页面卸载时清理
+        window.addEventListener('beforeunload', () => {
+            if (currentController) {
+                currentController.abort();
+            }
+        });
+    </script>
+</body>
+</html>
