@@ -146,7 +146,7 @@ flutter build windows --release
 ```dart
 class AppConfig {
   // 后端API地址
-  static const String backendUrl = 'https://fabushi.ombhrum.com';
+  static const String backendUrl = 'https://ombhrum.com';
   
   // 支持的国家列表
   static const List<String> countryCodes = ['ALL', 'US', 'CN', 'IN', ...];

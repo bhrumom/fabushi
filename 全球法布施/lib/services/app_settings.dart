@@ -6,8 +6,8 @@ class AppSettings {
   static const String _backendUrlKey = 'backend_url';
   
   // 默认设置
-  static const bool _defaultTestMode = false; // 使用真实的 Cloudflare Worker 后端
-  static String get _defaultBackendUrl => AppConfig.getCurrentBackendUrl();
+  static const bool _defaultTestMode = false; // 使用真实后端
+  static String get _defaultBackendUrl => AppConfig.backendUrl; // 直接使用主要后端地址
   
   // 获取测试模式状态
   static Future<bool> getTestMode() async {
