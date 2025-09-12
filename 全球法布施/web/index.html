@@ -1,89 +1,201 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
   <base href="$FLUTTER_BASE_HREF">
+
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="全球法布施 - 佛教经文分享平台">
+
+  <!-- iOS meta tags & icons -->
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="全球法布施">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
   <title>全球法布施</title>
-  <link rel="preload" href="main.dart.js" as="script">
-  <style>
-    body { margin: 0; background: #f5f5f5; font-family: Arial, sans-serif; }
-    .loading { 
-      display: flex; 
-      flex-direction: column; 
-      align-items: center; 
-      justify-content: center; 
-      height: 100vh; 
-    }
-    .spinner { 
-      width: 40px; 
-      height: 40px; 
-      border: 4px solid #ddd; 
-      border-top: 4px solid #2196F3; 
-      border-radius: 50%; 
-      animation: spin 1s linear infinite; 
-    }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .text { margin-top: 20px; color: #666; }
-  </style>
-</head>
-<body>
-  <div id="loading" class="loading">
-    <div class="spinner"></div>
-    <div class="text">正在加载应用...</div>
-  </div>
-  
-  <script src="flutter.js" defer></script>
-  <script src="flutter-no-connection-bridge.js"></script>
-  <script src="direct-global-sender.js"></script>
-  <script src="real-sender.js"></script>
+  <link rel="manifest" href="manifest.json">
+
   <script>
-    // 初始化Web服务
-    window.webServiceInitialized = false;
+    // The value below is injected by flutter build, do not touch.
+    const serviceWorkerVersion = null;
+  </script>
+  <!-- This script adds the flutter initialization JS inline -->
+  <script src="flutter.js" defer></script>
+  
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden;
+    }
     
-    function initializeWebServices() {
-      try {
-        // 初始化真实发送器
-        if (typeof RealSender !== 'undefined') {
-          window.realSender = new RealSender();
-          console.log('🚀 真实发送器初始化成功');
-        }
-        
-        // 初始化直接发送器
-        if (typeof DirectGlobalSender !== 'undefined') {
-          window.directSender = new DirectGlobalSender();
-          console.log('🌍 直接发送器初始化成功');
-        }
-        
-        // 初始化无连接桥接
-        if (typeof NoConnectionBridge !== 'undefined') {
-          window.noConnectionBridge = new NoConnectionBridge();
-          console.log('🔗 无连接桥接初始化成功');
-        }
-        
-        window.webServiceInitialized = true;
-        console.log('✅ Web服务初始化完成');
-        
-      } catch (e) {
-        console.error('❌ Web服务初始化失败:', e);
-        // 即使初始化失败也标记为已初始化，避免阻塞应用启动
-        window.webServiceInitialized = true;
+    .loading-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      z-index: 9999;
+    }
+    
+    .loading-content {
+      text-align: center;
+      color: white;
+    }
+    
+    .app-title {
+      font-size: 2.5rem;
+      font-weight: 300;
+      margin-bottom: 2rem;
+      opacity: 0;
+      animation: fadeInUp 1s ease-out 0.5s forwards;
+    }
+    
+    .loading-spinner {
+      width: 60px;
+      height: 60px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-top: 3px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 2rem;
+    }
+    
+    .loading-text {
+      font-size: 1.1rem;
+      opacity: 0.9;
+      margin-bottom: 1rem;
+    }
+    
+    .loading-progress {
+      width: 200px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 2px;
+      overflow: hidden;
+      margin: 0 auto;
+    }
+    
+    .loading-progress-bar {
+      height: 100%;
+      background: white;
+      border-radius: 2px;
+      width: 0%;
+      animation: progressLoad 3s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
       }
     }
     
+    @keyframes progressLoad {
+      0% { width: 0%; }
+      50% { width: 70%; }
+      100% { width: 100%; }
+    }
+    
+    .fade-out {
+      animation: fadeOut 0.5s ease-out forwards;
+    }
+    
+    @keyframes fadeOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="loading-container">
+    <div class="loading-content">
+      <h1 class="app-title">全球法布施</h1>
+      <div class="loading-spinner"></div>
+      <div class="loading-text" id="loading-text">正在初始化应用...</div>
+      <div class="loading-progress">
+        <div class="loading-progress-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
     window.addEventListener('load', function(ev) {
-      document.querySelector('.text').textContent = '正在初始化Web服务...';
-      initializeWebServices();
+      const loadingText = document.getElementById('loading-text');
+      const loadingContainer = document.getElementById('loading');
       
-      document.querySelector('.text').textContent = '正在初始化Flutter...';
-      _flutter.loader.load().then(function(engineInitializer) {
-        document.querySelector('.text').textContent = '正在启动应用...';
-        return engineInitializer.initializeEngine();
-      }).then(function(appRunner) {
-        document.getElementById('loading').style.display = 'none';
-        return appRunner.runApp();
+      // 更新加载状态
+      function updateLoadingText(text) {
+        if (loadingText) {
+          loadingText.textContent = text;
+        }
+      }
+      
+      // 隐藏加载界面
+      function hideLoading() {
+        if (loadingContainer) {
+          loadingContainer.classList.add('fade-out');
+          setTimeout(() => {
+            loadingContainer.style.display = 'none';
+          }, 500);
+        }
+      }
+      
+      updateLoadingText('正在加载Flutter引擎...');
+      
+      // Download main.dart.js
+      _flutter.loader.loadEntrypoint({
+        serviceWorker: {
+          serviceWorkerVersion: serviceWorkerVersion,
+        },
+        onEntrypointLoaded: function(engineInitializer) {
+          updateLoadingText('正在初始化引擎...');
+          
+          engineInitializer.initializeEngine().then(function(appRunner) {
+            updateLoadingText('正在启动应用...');
+            
+            setTimeout(() => {
+              hideLoading();
+              appRunner.runApp();
+            }, 500);
+          }).catch(function(error) {
+            console.error('Flutter引擎初始化失败:', error);
+            updateLoadingText('应用启动失败，请刷新页面重试');
+          });
+        }
       });
     });
   </script>

@@ -86,7 +86,7 @@ class AuthModel extends ChangeNotifier {
         ));
         
         // 验证token是否仍然有效
-        final isValid = await _authService.verifyToken(token);
+        final isValid = await _authService.verifyToken();
         if (!isValid) {
           await logout();
         } else {
@@ -144,7 +144,12 @@ class AuthModel extends ChangeNotifier {
     _clearError();
 
     try {
-      final result = await _authService.register(username, email, password, verificationCode);
+      final result = await _authService.register(
+        username: username,
+        email: email,
+        password: password,
+        verificationCode: verificationCode,
+      );
       
       if (result['success'] == true) {
         // 注册成功后自动登录
@@ -164,7 +169,10 @@ class AuthModel extends ChangeNotifier {
 
   Future<bool> sendVerificationCode(String email, {String type = 'register'}) async {
     try {
-      final result = await _authService.sendVerificationCode(email, type: type);
+      final result = await _authService.sendVerificationCode(
+        email: email,
+        type: type,
+      );
       return result['success'] == true;
     } catch (e) {
       _setError('发送验证码失败: $e');
@@ -198,7 +206,11 @@ class AuthModel extends ChangeNotifier {
     _clearError();
 
     try {
-      final result = await _authService.resetPassword(email, token, newPassword);
+      final result = await _authService.resetPassword(
+        email: email,
+        token: token,
+        newPassword: newPassword,
+      );
       _setLoading(false);
       
       if (result['success'] == true) {
@@ -218,12 +230,21 @@ class AuthModel extends ChangeNotifier {
     if (_token == null) return;
 
     try {
-      final result = await _authService.verifyToken(_token!);
+      final result = await _authService.verifyToken();
       if (result) {
-        // 获取最新用户信息
-        final userInfo = await _authService.getUserInfo(_token!);
-        if (userInfo['success'] == true) {
-          _currentUser = User.fromJson(userInfo['user']);
+        // 刷新用户信息
+        await _authService.refreshUserInfo();
+        if (_authService.currentUser != null) {
+          final userModel = _authService.currentUser!;
+          _currentUser = User(
+            username: userModel.username,
+            email: userModel.email ?? '',
+            membershipType: userModel.membership.type,
+            membershipExpiry: userModel.membership.expiresAt != null 
+                ? DateTime.parse(userModel.membership.expiresAt!)
+                : null,
+            isAdmin: false, // UserModel中没有isAdmin字段，默认为false
+          );
           await _storeAuth();
           notifyListeners();
         }
@@ -237,9 +258,7 @@ class AuthModel extends ChangeNotifier {
 
   Future<void> logout() async {
     try {
-      if (_token != null) {
-        await _authService.logout(_token!);
-      }
+      await _authService.logout();
     } catch (e) {
       debugPrint('登出请求失败: $e');
     } finally {

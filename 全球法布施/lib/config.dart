@@ -49,16 +49,16 @@ class AppConfig {
     'AU': '澳大利亚',
   };
 
-  // 后端代理URL - 支持多种部署方式
+  // 后端代理URL - 首选地址
   static const String backendUrl = 'https://ombhrum.com';
   
-  // Cloudflare Worker URL（优先使用）
+  // Cloudflare Worker URL（备用地址）
   static String get cloudflareWorkerUrl => CloudflareConfig.getCurrentWorkerUrl();
   
   // 获取当前使用的后端 URL
   static String getCurrentBackendUrl() {
-    // 优先使用 Cloudflare Worker
-    const useCloudflareWorker = bool.fromEnvironment('USE_CLOUDFLARE_WORKER', defaultValue: true);
+    // 优先使用主要后端地址 ombhrum.com
+    const useCloudflareWorker = bool.fromEnvironment('USE_CLOUDFLARE_WORKER', defaultValue: false);
     
     if (useCloudflareWorker) {
       return cloudflareWorkerUrl;
