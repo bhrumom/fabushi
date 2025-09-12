@@ -1,0 +1,2101 @@
+// 全球法布施控制器 - v3.1 (支持拖拽排序和删除)
+class GlobalDharmaSender {
+    constructor() {
+        // 单例模式：防止重复初始化导致事件重复绑定
+        if (window.globalDharmaSenderInstance) {
+            console.warn("GlobalDharmaSender 已被实例化，将返回现有实例。");
+            return window.globalDharmaSenderInstance;
+        }
+        window.globalDharmaSenderInstance = this;
+
+        this.isRunning = false;
+        this.fileQueue = []; // 统一管理所有待发送项
+        this.sortable = null; // SortableJS 实例
+        
+        // 修复：更准确的状态跟踪变量
+        this.totalItemsToSend = 0;
+        this.totalFiles = 0;
+        this.totalCountries = 0;
+        this.completedFiles = 0;
+        this.completedTasks = 0;
+        this.currentFile = '';
+        this.currentCycle = 1;
+        this.isLoopMode = false;
+        this.hasError = false;
+        
+        this.startTime = 0;
+        this.progressTimer = null; // 循环模式下的进度条动画定时器
+        this.wakeLock = null; // 屏幕常亮锁
+        this.isTogglingAssets = false; // 用于 toggleBuiltInAssets 防抖
+        this.useFallback = false; // 新增：降级模式标志
+
+        // 修复：循环模式下的累计计数
+        this.grandTotalCompletedFiles = 0;
+        this.grandTotalCompletedTasks = 0;
+        this.lastCycleHandledForTotal = 0;
+
+        // 日志优化：只在控制台输出，不显示在界面上
+        
+        // 状态更新优化：减少频繁的DOM操作
+        this.lastStatsUpdate = 0;
+        this.statsUpdateInterval = 1000; // 最小更新间隔 1 秒
+        this.lastProgressPercentage = 0;
+        this.lastStatusText = '';
+        this.isStatsUpdateScheduled = false;
+        
+        // 进度日志控制：避免过于频繁的日志输出
+        this.lastProgressLogTime = 0;
+        this.progressLogInterval = 5000; // 每5秒最多记录一次进度日志
+
+        // 从全局对象获取国家和服务器信息 (修复：创建副本以防外部修改)
+        this.countries = window.globalCountryServers ? [...window.globalCountryServers.getAllCountries()] : [];
+        this.countryServers = window.globalCountryServers ? window.globalCountryServers.servers : {};
+        this.countryNames = window.globalCountryServers ? window.globalCountryServers.countryNames : {};
+        this.assetTreeData = window.dharmaAssets || {};
+        
+        // 添加调试信息
+        console.log('🌳 法宝树数据初始化:', {
+            hasData: !!window.dharmaAssets,
+            categories: Object.keys(this.assetTreeData).length,
+            categoryNames: Object.keys(this.assetTreeData)
+        });
+
+        // 国家发送状态跟踪
+        this.countryStatus = new Map(); // 存储每个国家的发送状态
+        this.countryStatsEl = null; // 国家统计显示元素
+        this.countryUpdateQueue = new Set();
+        this.isCountryUpdateScheduled = false;
+
+        // 速度控制元素
+        // this.speedSlider = document.getElementById('speedSlider'); // 已移除：并发设置
+        // this.speedValue = document.getElementById('speedValue'); // 已移除：并发设置
+
+        this.initElements();
+        this.bindEvents();
+        this.updateGlobalStatsUI();
+    }
+    
+    // 新增：控制进度日志输出频率的方法
+    shouldLogProgress() {
+        const now = Date.now();
+        if (now - this.lastProgressLogTime >= this.progressLogInterval) {
+            this.lastProgressLogTime = now;
+            return true;
+        }
+        return false;
+    }
+
+    initElements() {
+        this.fileInput = document.getElementById('fileInput');
+        this.fileListEl = document.getElementById('fileList');
+        this.builtInAssetsBtn = document.getElementById('builtInAssetsBtn');
+        this.builtInAssetsContainer = document.getElementById('builtInAssetsContainer');
+        this.assetSearchEl = document.getElementById('assetSearch');
+        this.assetTreeEl = document.getElementById('assetTree');
+        this.startBtn = document.getElementById('startBtn');
+        this.stopBtn = document.getElementById('stopBtn');
+        this.loopMode = document.getElementById('loopMode');
+        this.countryCountEl = document.getElementById('countryCount');
+        this.sentCountEl = document.getElementById('sentCount');
+        this.sentDataEl = document.getElementById('sentData'); // 重用为显示进度
+        // this.sendSpeedEl = document.getElementById('sendSpeed'); // 已移除：并发设置 // 将被隐藏
+        this.progressBar = document.getElementById('progressBar');
+        // 国家状态相关元素
+        this.countryStatsContainer = document.getElementById('countryStatsContainer');
+        this.countryStatsEl = document.getElementById('countryStats');
+        // 速度控制元素
+        // this.speedSlider = document.getElementById('speedSlider');
+        // this.speedValue = document.getElementById('speedValue');
+    }
+
+    bindEvents() {
+        this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+        this.builtInAssetsBtn.addEventListener('click', () => this.toggleBuiltInAssets());
+        this.assetSearchEl.addEventListener('input', (e) => this.renderAssetTree(this.assetTreeData, e.target.value));
+        this.assetTreeEl.addEventListener('click', (e) => this.handleAssetTreeClick(e));
+        this.fileListEl.addEventListener('click', (e) => this.handleFileListItemClick(e));
+        this.startBtn.addEventListener('click', (e) => { e.preventDefault(); this.startSending(); });
+        this.stopBtn.addEventListener('click', (e) => { e.preventDefault(); this.stopSending(); });
+        // 速度控制事件监听
+        // this.speedSlider.addEventListener('input', (e) => this.updateSpeedValue(e.target.value)); // 已移除：并发设置
+
+        this.registerServiceWorker();
+    }
+
+    registerServiceWorker() {
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                // Service Worker registration - let the browser handle updates
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('Service Worker 注册成功: ', registration);
+                        this.logMessage('✅ 后台服务已准备就绪。');
+                        
+                        // 监听来自 Service Worker 的消息
+                        navigator.serviceWorker.addEventListener('message', event => {
+                            this.handleWorkerMessage(event);
+                        });
+                        
+                        // 初始化通知权限检查
+                        this.checkNotificationPermission();
+                    })
+                    .catch(error => {
+                        console.error('Service Worker 注册失败: ', error);
+                        this.logMessage('❌ 无法启动后台服务，将自动降级到前台发送模式。');
+                        this.logMessage('⚠️ 前台模式下，关闭或切换页面将中断发送。');
+                        this.useFallback = true;
+                    });
+            });
+        } else {
+            this.logMessage('❌ 您的浏览器不支持 Service Worker，已自动降级到前台发送模式。');
+            this.logMessage('⚠️ 前台模式下，关闭或切换页面将中断发送。');
+            this.useFallback = true;
+        }
+    }
+
+    // 新增：检查通知权限
+    checkNotificationPermission() {
+        if (!('Notification' in window)) {
+            console.log('⚠️ 此浏览器不支持通知功能');
+            return;
+        }
+
+        const permission = Notification.permission;
+        console.log('🔔 当前通知权限状态:', permission);
+        
+        // 通知Service Worker当前权限状态
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            const messageType = permission === 'granted' ? 
+                'NOTIFICATION_PERMISSION_GRANTED' : 
+                'NOTIFICATION_PERMISSION_DENIED';
+            
+            navigator.serviceWorker.controller.postMessage({
+                type: messageType
+            });
+        }
+        
+        if (permission === 'granted') {
+            this.logMessage('✅ 锁屏通知已启用，您可以在通知栏查看发送进度');
+        } else if (permission === 'denied') {
+            this.logMessage('⚠️ 通知权限被拒绝，无法在锁屏时显示进度');
+        }
+    }
+
+    updateGlobalStatsUI() {
+        this.countryCountEl.textContent = this.countries.length;
+        // 初始化速度显示
+        // if (this.speedValue) { // 已移除：并发设置
+        //     this.speedValue.textContent = this.speedSlider.value; // 已移除：并发设置
+        // }
+    }
+
+    updateSpeedValue(value) {
+        if (this.speedValue) {
+            this.speedValue.textContent = value;
+        }
+    }
+
+    handleFileSelect(event) {
+        const newFiles = Array.from(event.target.files);
+        newFiles.forEach(file => {
+            // 避免重复添加
+            if (!this.fileQueue.some(item => item.type === 'file' && item.file.name === file.name)) {
+                this.fileQueue.push({
+                    type: 'file',
+                    id: `file_${file.name}_${file.lastModified}`, // 创建一个更唯一的ID
+                    name: file.name,
+                    file: file
+                });
+            }
+        });
+        this.updateFileListUI();
+    }
+
+    toggleBuiltInAssets() {
+        // 防抖：防止因重复调用导致的状态错乱
+        if (this.isTogglingAssets) {
+            return;
+        }
+        this.isTogglingAssets = true;
+        setTimeout(() => { this.isTogglingAssets = false; }, 100); // 100毫秒的冷却时间
+
+        // 终极修复：使用 window.getComputedStyle 来准确判断元素的当前显示状态
+        const isVisible = window.getComputedStyle(this.builtInAssetsContainer).display !== 'none';
+        
+        if (isVisible) {
+            // 如果可见，则隐藏
+            this.builtInAssetsContainer.style.display = 'none';
+            this.builtInAssetsBtn.textContent = '🎨 选取内置法宝';
+        } else {
+            // 如果隐藏，则显示并渲染内容
+            this.builtInAssetsContainer.style.display = 'block';
+            this.builtInAssetsBtn.textContent = '📁 隐藏法宝';
+            this.logMessage('🌳 正在加载内置法宝树...');
+            this.renderAssetTree(this.assetTreeData);
+            
+            // 添加调试信息
+            setTimeout(() => {
+                const folderItems = this.assetTreeEl.querySelectorAll('.folder-item');
+                const folderNames = this.assetTreeEl.querySelectorAll('.folder-name');
+                console.log(`法宝树加载完成: 找到 ${folderItems.length} 个文件夹项, ${folderNames.length} 个文件夹名称`);
+                this.logMessage(`✅ 法宝树加载完成，共 ${folderItems.length} 个文件夹可展开`);
+            }, 100);
+        }
+    }
+
+
+    renderAssetTree(node, searchTerm = '', currentPath = '') {
+        const term = searchTerm.trim().toLowerCase();
+        const isR2File = (fileInfo) => {
+            // 检查文件是否为R2资源：如果是对象且有path属性，则为R2资源
+            return typeof fileInfo === 'object' && fileInfo.path;
+        };
+        const isR2Node = (key) => {
+            // 检查节点是否包含R2资源
+            const nodeData = node[key];
+            return nodeData && nodeData._files && nodeData._files.some(file => isR2File(file));
+        };
+
+        const generateFileListItem = (fileInfo, path) => {
+            const isR2 = isR2File(fileInfo);
+            const icon = isR2 ? '☁️' : '📄';
+            // R2 文件是对象 {name, path}, 本地文件是字符串
+            const fileName = typeof fileInfo === 'object' ? fileInfo.name : fileInfo;
+            const filePath = typeof fileInfo === 'object' ? fileInfo.path : (path ? `${path}/${fileInfo}` : fileInfo);
+            const itemType = isR2 ? 'r2-asset' : 'asset';
+            
+            const isSelected = this.fileQueue.some(item => item.path === filePath);
+
+            return `
+                <li class="file-item ${isSelected ? 'selected' : ''}" data-path="${filePath}" data-name="${fileName}" data-type="${itemType}">
+                    ${icon} ${fileName} ${isR2 ? `<span style="color: #999; font-size: 12px;">(云端)</span>` : ''}
+                </li>`;
+        };
+
+        // 搜索模式：扁平化列表
+        if (term) {
+            let html = '<ul class="asset-folder">';
+            const search = (currentNode, path) => {
+                if (currentNode._files) {
+                    currentNode._files.forEach(file => {
+                        const fileName = typeof file === 'object' ? file.name : file;
+                        if (fileName.toLowerCase().includes(term)) {
+                            html += generateFileListItem(file, path);
+                        }
+                    });
+                }
+                for (const key in currentNode) {
+                    if (key !== '_files') {
+                        search(currentNode[key], path ? `${path}/${key}` : key);
+                    }
+                }
+            };
+            search(node, '');
+            html += '</ul>';
+            this.assetTreeEl.innerHTML = html;
+            return;
+        }
+
+        // 默认模式：树状结构
+        const generateTreeHtml = (currentNode, path) => {
+            let html = '<ul class="asset-folder">';
+            // 先渲染文件夹
+            for (const key in currentNode) {
+                if (key === '_files') continue;
+                const newPath = path ? `${path}/${key}` : key;
+                const icon = isR2Node(key) ? '☁️' : '';
+                const subTreeHtml = generateTreeHtml(currentNode[key], newPath);
+                // 修复：确保HTML结构正确，移除icon因为CSS会自动添加
+                html += `
+                    <li class="folder-item">
+                        <span class="folder-name">${icon}${key}</span>
+                        ${subTreeHtml}
+                    </li>`;
+            }
+            // 再渲染文件
+            if (currentNode._files) {
+                currentNode._files.forEach(file => {
+                    html += generateFileListItem(file, path);
+                });
+            }
+            html += '</ul>';
+            return html;
+        };
+        this.assetTreeEl.innerHTML = generateTreeHtml(node, currentPath);
+    }
+    
+    handleAssetTreeClick(event) {
+        const target = event.target;
+        
+        // 修复：更准确地检测文件夹名称点击
+        const folderName = target.closest('.folder-name');
+        if (folderName) {
+            event.preventDefault();
+            event.stopPropagation();
+            const folderItem = folderName.parentElement;
+            folderItem.classList.toggle('open');
+            
+            // 添加调试日志
+            const isOpen = folderItem.classList.contains('open');
+            console.log(`文件夹 ${folderName.textContent} ${isOpen ? '已展开' : '已收起'}`);
+            return;
+        }
+
+        const fileItem = target.closest('.file-item[data-path]');
+        if (fileItem) {
+            const path = fileItem.dataset.path;
+            // 传递整个元素以获取所有 data-* 属性
+            this.toggleAssetSelection(path, fileItem);
+        }
+    }
+    
+    // 在toggleAssetSelection方法中添加认证检查
+    
+    toggleAssetSelection(path, element) {
+    const itemType = element.dataset.type || 'asset'; // 从 data-type 获取类型
+    const name = element.dataset.name;
+    const id = `${itemType}_${path}`;
+    
+    element.classList.toggle('selected');
+    const existingIndex = this.fileQueue.findIndex(item => item.id === id);
+    
+        if (existingIndex > -1) {
+            // 如果已存在，则移除
+            this.fileQueue.splice(existingIndex, 1);
+        } else {
+            // 如果不存在，则添加
+            this.fileQueue.push({
+                type: itemType,
+                id: id,
+                name: name,
+                path: path
+            });
+        }
+        this.updateFileListUI();
+    }
+    
+    handleFileListItemClick(event) {
+        if (event.target.classList.contains('delete-btn')) {
+            const itemEl = event.target.closest('.file-item-draggable');
+            const id = itemEl.dataset.id;
+            this.removeItemFromQueue(id);
+        }
+    }
+
+    removeItemFromQueue(id) {
+        const index = this.fileQueue.findIndex(item => item.id === id);
+        if (index > -1) {
+            const item = this.fileQueue[index];
+            this.fileQueue.splice(index, 1);
+
+            // 如果是内置或云端素材，需要取消其在素材树中的选中状态
+            if (item.type === 'asset' || item.type === 'r2-asset') { 
+                const assetEl = this.assetTreeEl.querySelector(`[data-path="${item.path}"]`);
+                if (assetEl) {
+                    assetEl.classList.remove('selected');
+                }
+            }
+            this.updateFileListUI();
+        }
+    }
+
+    updateFileListUI() {
+        this.fileListEl.innerHTML = ''; // 清空列表
+
+        if (this.fileQueue.length === 0) {
+            this.fileListEl.innerHTML = `<div class="file-item" style="text-align: center; color: #999;">尚未选择任何善缘或法宝</div>`;
+            return;
+        }
+
+        this.fileQueue.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'file-item-draggable';
+            div.dataset.id = item.id;
+            
+            // 根据项目类型选择图标
+            const icon = item.type === 'r2-asset' ? '☁️' : '📄';
+            const sizeInfo = item.type === 'file' ? ` <span style="color: #666; font-size: 12px;">(${this.formatFileSize(item.file.size)})</span>` : '';
+
+            div.innerHTML = `
+                <span class="file-item-name">${icon} ${item.name}${sizeInfo}</span>
+                <button class="delete-btn" title="删除此项">×</button>
+            `;
+            this.fileListEl.appendChild(div);
+        });
+
+        this.initSortable();
+    }
+    
+    initSortable() {
+        if (this.sortable) {
+            this.sortable.destroy();
+        }
+        this.sortable = new Sortable(this.fileListEl, {
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            onEnd: (evt) => {
+                const item = this.fileQueue.splice(evt.oldIndex, 1)[0];
+                this.fileQueue.splice(evt.newIndex, 0, item);
+                // 无需重新渲染，SortableJS已经处理了DOM
+            }
+        });
+    }
+
+    formatFileSize(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${['B', 'KB', 'MB', 'GB'][i]}`;
+    }
+
+    // 检查用户会员状态
+    async checkMembershipStatus(token) {
+        try {
+            const response = await fetch('/api/stripe/membership-status', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    throw new Error('认证失败，请重新登录');
+                }
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            return data.membership;
+        } catch (error) {
+            console.error('获取会员状态失败:', error);
+            throw error;
+        }
+    }
+
+    // 简化日志系统，只在控制台输出错误信息
+    logMessage(message, level = 'info') {
+        // 只输出错误、警告和重要信息
+        const isErrorMessage = message.includes('❌') || message.includes('失败') || 
+                              message.includes('错误') || message.includes('超时') ||
+                              message.includes('异常') || level === 'error';
+        
+        const isWarningMessage = message.includes('⚠️') || message.includes('警告') ||
+                               level === 'warning';
+        
+        const isImportantMessage = message.includes('🚀') || message.includes('⏹️') ||
+                                 message.includes('启动') || message.includes('停止') ||
+                                 level === 'important';
+        
+        // 只在控制台输出错误、警告和重要信息
+        if (isErrorMessage || isWarningMessage || isImportantMessage) {
+            console.log(message);
+        }
+    }
+
+
+
+
+    async startSending() {
+        this.logMessage('▶️ “开始”按钮点击事件已触发。');
+        // 检查用户登录状态
+        const token = localStorage.getItem('authToken');
+        if (!token) {
+            this.logMessage('❌ 请先登录后再使用全球法布施功能。');
+            alert('请先登录后再使用全球法布施功能！');
+            if (typeof showLoginModal === 'function') {
+                showLoginModal();
+            }
+            return;
+        }
+
+        // 检查用户会员状态
+        this.logMessage('🔍 正在验证会员权限...');
+        try {
+            const membershipStatus = await this.checkMembershipStatus(token);
+            if (!membershipStatus.isActive) {
+                this.logMessage('❌ 全球法布施功能需要会员权限。');
+                const upgradeMessage = membershipStatus.type === 'trial' && membershipStatus.isExpired 
+                    ? '您的免费试用期已结束，请升级为付费会员以继续使用全球发送功能。'
+                    : '全球法布施功能仅限会员使用，请先开通会员服务。';
+                
+                alert(`🔒 ${upgradeMessage}\n\n点击确定前往会员页面。`);
+                
+                // 跳转到会员页面
+                if (typeof showMembershipModal === 'function') {
+                    showMembershipModal();
+                } else {
+                    window.location.href = '/membership.html';
+                }
+                return;
+            }
+            
+            this.logMessage(`✅ 会员验证通过 (${membershipStatus.type === 'trial' ? '试用期' : '付费会员'})`);
+            if (membershipStatus.daysLeft && membershipStatus.daysLeft <= 7) {
+                this.logMessage(`⚠️ 提醒：您的会员服务将在 ${membershipStatus.daysLeft} 天后到期`);
+            }
+        } catch (error) {
+            this.logMessage('❌ 会员状态验证失败，请重新登录或联系客服。');
+            console.error('会员状态检查失败:', error);
+            alert('会员状态验证失败，请重新登录后重试。');
+            return;
+        }
+        
+        if (this.isRunning) {
+            this.logMessage('⚠️ 发送任务已在运行中。');
+            return;
+        }
+
+        // 自动降级判断
+        if (this.useFallback || !navigator.serviceWorker || !navigator.serviceWorker.controller) {
+            if (this.fileQueue.length === 0) {
+                alert('请先选择文件或内置素材');
+                this.logMessage('🤷‍♀️ 未选择任何内容，已停止。');
+                return;
+            }
+            
+            const confirmMessage = `🙏 全球法布施 (前台模式)\n\n将向全球 ${this.countries.length} 个国家发送 ${this.fileQueue.length} 个内容项。\n\n⚠️ 注意：\n• 当前为前台发送模式，请勿关闭或切换浏览器页面，否则发送将中断。\n\n确定开始吗？`;
+
+            if (confirm(confirmMessage)) {
+                if (!this.useFallback) {
+                    this.logMessage('⚠️ 后台服务未就绪，临时切换到前台模式。');
+                }
+                this.startSendingInForeground();
+            } else {
+                this.logMessage('🤷‍♀️ 用户取消了操作。');
+            }
+            return;
+        }
+
+        if (this.fileQueue.length === 0) {
+            alert('请先选择文件或内置素材');
+            this.logMessage('🤷‍♀️ 未选择任何内容，已停止。');
+            return;
+        }
+
+        this.logMessage('🙏 正在准备法布施内容...');
+        // 核心改动：不再预读文件，而是直接构建包含 File 对象的队列
+        const contentQueue = this.buildContentQueue();
+        this.logMessage(`✔️ 内容列表准备完成，共找到 ${contentQueue.length} 个项目。`);
+
+        if (contentQueue.length === 0) {
+            this.logMessage('🤷‍♀️ 内容准备失败，或所有选定素材都无法加载。');
+            return;
+        }
+
+        this.logMessage('🤔 正在弹出确认对话框...');
+        
+        // 检查是否有大文件并给出特别提醒
+        const largeFiles = contentQueue.filter(item => {
+            if (item.type === 'file' && item.size > 100 * 1024 * 1024) {
+                return true;
+            }
+            return false;
+        });
+        
+        let confirmMessage = `🙏 全球法布施\n\n将向全球 ${this.countries.length} 个国家发送 ${contentQueue.length} 个内容项。\n\n⚠️ 注意：\n• 所有文件将先下载到本地再发送\n• R2云端资源会单独询问确认\n• 大于25MB的文件会单独询问确认`;
+        
+        if (largeFiles.length > 0) {
+            const largeFileNames = largeFiles.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`).join('\n  ');
+            confirmMessage += `\n\n🚨 检测到大文件：\n  ${largeFileNames}\n\n大文件发送需要更长时间，建议：\n• 确保网络连接稳定\n• 避免切换应用或关闭浏览器\n• 耐心等待，系统会自动重试失败的上传`;
+        }
+        
+        confirmMessage += `\n\n确定开始吗？`;
+        
+        const confirmed = confirm(confirmMessage);
+        if (!confirmed) {
+            this.logMessage('🤷‍♀️ 用户取消了操作。');
+            return;
+        }
+        this.logMessage('✅ 用户已确认，开始发送流程。');
+
+        this.isRunning = true;
+        // 请求屏幕常亮，减少移动端息屏/切后台导致的中断
+        this.requestWakeLock();
+        this.startBtn.disabled = true;
+        this.stopBtn.disabled = false;
+        
+        // 修复：重置所有状态变量
+        this.completedFiles = 0;
+        this.completedTasks = 0;
+        this.grandTotalCompletedFiles = 0;
+        this.grandTotalCompletedTasks = 0;
+        this.lastCycleHandledForTotal = 0;
+        this.totalFiles = this.fileQueue.length;
+        this.totalCountries = this.countries.length;
+        this.totalItemsToSend = 0; // 总数将由 worker 初始化
+        this.currentFile = '';
+        this.currentCycle = 1;
+        this.isLoopMode = this.loopMode.checked;
+        this.hasError = false;
+
+        // 初始化国家状态跟踪
+        this.initCountryStatus();
+
+        // 重置UI
+        this.progressBar.style.width = '0%';
+        this.sentCountEl.textContent = '0';
+        this.sentDataEl.innerHTML = `<div>准备中...</div>`;
+        this.sentDataEl.style.color = '';
+        
+        // 停止之前的动画（如果有）
+        this.stopProgressAnimation();
+        
+        this.logMessage('👷‍♂️ 正在通过后台服务启动发送任务...');
+
+        const payload = {
+            countryServers: this.countryServers,
+            countryNames: this.countryNames,
+            contentQueue: contentQueue,
+            loopMode: this.loopMode.checked,
+            loopDelay: 3000, // 循环模式下的延迟（修改为3秒）
+            enableChunkUpload: true,
+            // 修复：传递并发设置
+            concurrency: 1 // 已修改：默认单线程模式
+        };
+
+        // [修复] 使用 navigator.serviceWorker.ready 确保服务就绪，特别针对Safari等浏览器
+        navigator.serviceWorker.ready.then(registration => {
+            this.logMessage('✅ 后台服务确认就绪，正在发送启动指令...');
+            // 使用 registration.active.postMessage 是更稳妥的方式
+            registration.active.postMessage({ command: 'start', payload });
+        }).catch(err => {
+            this.logMessage(`❌ 等待后台服务就绪时出错: ${err.message}`);
+            this.stopSending(); // 停止发送流程
+        });
+    }
+
+    handleWorkerMessage(event) {
+        const { type, payload, message, data } = event.data;
+        
+        switch (type) {
+            case 'started':
+                this.logMessage('✅ 后台服务已启动');
+                break;
+                
+            case 'progress':
+                this.handleProgressUpdate(payload);
+                break;
+                
+            case 'progress-update':
+                // Detailed progress update
+                this.completedTasks = payload.completedTasks || this.completedTasks;
+                this.updateStats();
+                break;
+                
+            case 'finished':
+                this.stopSending(true);
+                break;
+                
+            case 'stopped':
+                if (this.isRunning) {
+                    this.logMessage('⏹️ 后台服务已停止');
+                }
+                break;
+                
+            case 'log':
+                this.logMessage(message);
+                break;
+                
+            case 'fileProcessingStart':
+                this.handleFileProcessingStart(payload);
+                break;
+                
+            case 'fileProcessingComplete':
+                this.handleFileProcessingComplete(payload);
+                break;
+                
+            case 'countryStatus':
+                this.handleCountryStatusUpdate(payload);
+                break;
+                
+            case 'country-completed':
+                this.handleCountryComplete({
+                    countryCode: data.countryCode,
+                    fileName: this.currentFile,
+                    success: data.success,
+                    error: data.error
+                }= payload;
+
+        this.countryStatus[country] = 'complete';
+        this.updateCountryStatus();
+    }handleCycleComplete(payload) {
+        const { cycle, completedFiles, totalDispatches }= payload;
+
+        this.logMessage(`✅ 第${cycle}轮完成: ${completedFiles} 个文件，${totalDispatches} 个任务`);
+    }handleDelayProgress(payload) {
+        const { delay }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在等待 ${delay} 秒 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                请保持网络畅通，后台仍在努力发送
+            </div>
+        `;
+    }handleWorkerProgress(payload) {
+        const { progress }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在处理任务 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                ${progress}%
+            </div>
+        `;
+    }= payload;
+
+        this.countryStatus[country] = status;
+        this.updateCountryStatus();
+    }= payload;
+
+        this.countryStatus[country] = 'complete';
+        this.updateCountryStatus();
+    }= payload;
+
+        this.logMessage(`✅ 第${cycle}轮完成: ${completedFiles} 个文件，${totalDispatches} 个任务`);
+    }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在等待 ${delay} 秒 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                请保持网络畅通，后台仍在努力发送
+            </div>
+        `;
+    }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在处理任务 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                ${progress}%
+            </div>
+        `;
+    }= payload;
+
+        this.countryStatus[country] = status;
+        this.updateCountryStatus();
+    }= payload;
+
+        this.countryStatus[country] = 'complete';
+        this.updateCountryStatus();
+    }= payload;
+
+        this.logMessage(`✅ 第${cycle}轮完成: ${completedFiles} 个文件，${totalDispatches} 个任务`);
+    }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在等待 ${delay} 秒 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                请保持网络畅通，后台仍在努力发送
+            </div>
+        `;
+    }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在处理任务 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                ${progress}%
+            </div>
+        `;
+    }= payload;
+
+        this.countryStatus[country] = status;
+        this.updateCountryStatus();
+    }= payload;
+
+        this.countryStatus[country] = 'complete';
+        this.updateCountryStatus();
+    }= payload;
+
+        this.logMessage(`✅ 第${cycle}轮完成: ${completedFiles} 个文件，${totalDispatches} 个任务`);
+    }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在等待 ${delay} 秒 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                请保持网络畅通，后台仍在努力发送
+            </div>
+        `;
+    }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在处理任务 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                ${progress}%
+            </div>
+        `;
+    }= payload;
+
+        this.countryStatus[country] = status;
+        this.updateCountryStatus();
+    }= payload;
+
+        this.countryStatus[country] = 'complete';
+        this.updateCountryStatus();
+    }= payload;
+
+        this.logMessage(`✅ 第${cycle}轮完成: ${completedFiles} 个文件，${totalDispatches} 个任务`);
+    }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在等待 ${delay} 秒 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                请保持网络畅通，后台仍在努力发送
+            </div>
+        `;
+    }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在处理任务 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                ${progress}%
+            </div>
+        `;
+    }= payload;
+
+        this.countryStatus[country] = status;
+        this.updateCountryStatus();
+    }= payload;
+
+        this.countryStatus[country] = 'complete';
+        this.updateCountryStatus();
+    }= payload;
+
+        this.logMessage(`✅ 第${cycle}轮完成: ${completedFiles} 个文件，${totalDispatches} 个任务`);
+    }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在等待 ${delay} 秒 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                请保持网络畅通，后台仍在努力发送
+            </div>
+        `;
+    }= payload;
+
+        this.sentDataEl.innerHTML = `
+            <div style="color: #e67e22; font-weight: bold;">
+                ... 正在处理任务 ...
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                ${progress}%
+            </div>
+        `;
+    }= payload;
+
+        this.countryStatus[country] = status;
+        this.updateCountryStatus();
+    }= payload;
+
+        this.countryStatus[country] = 'complete';
+        this.updateCountryStatus();
+    }= payload;
+        
+        if (this.isRunning && this.isLoopMode) {
+            // 简化循环日志
+            this.logMessage(`🔄 第${cycle}轮完成 | 文件${completedFiles} 任务${totalDispatches} | ${nextCycleIn}s后继续`);
+            
+            // 更新循环状态显示
+            const cycleInfo = document.createElement('div');
+            cycleInfo.className = 'progress-info cycle-complete';
+            cycleInfo.style.cssText = 'font-size: 13px; color: #28a745; margin-top: 5px; padding: 5px 10px; background: #d4edda; border-radius: 4px; border-left: 3px solid #28a745; font-weight: bold;';
+            cycleInfo.innerHTML = `🔄 第 ${cycle} 轮完成，${nextCycleIn}秒后开始下一轮`;
+            
+            // 移除旧的循环信息
+            const oldCycleInfo = this.sentDataEl.querySelector('.cycle-complete');
+            if (oldCycleInfo) {
+                oldCycleInfo.remove();
+            }
+            
+            this.sentDataEl.appendChild(cycleInfo);
+        }
+    }
+
+    handleDelayProgress(payload) {
+        const { remaining, total, progress } = payload;
+        
+        if (this.isRunning && this.isLoopMode) {
+            // 更新延迟进度显示
+            const delayInfo = document.createElement('div');
+            delayInfo.className = 'progress-info delay-progress';
+            delayInfo.style.cssText = 'font-size: 12px; color: #ffc107; margin-top: 5px; padding: 3px 8px; background: #fff3cd; border-radius: 4px; border-left: 3px solid #ffc107;';
+            delayInfo.innerHTML = `⏳ 循环延迟: ${remaining}秒 (${progress}%)`;
+            
+            // 移除旧的延迟信息
+            const oldDelayInfo = this.sentDataEl.querySelector('.delay-progress');
+            if (oldDelayInfo) {
+                oldDelayInfo.remove();
+            }
+            
+            this.sentDataEl.appendChild(delayInfo);
+            
+            // 2秒后自动移除
+            setTimeout(() => {
+                if (delayInfo.parentNode) {
+                    delayInfo.remove();
+                }
+            }, 2000);
+        }
+    }
+
+    handleWorkerProgress(payload) {
+        const { fileName, processedCountries, totalCountries, successCount, failureCount } = payload;
+        
+        if (this.isRunning) {
+            const progress = ((processedCountries / totalCountries) * 100).toFixed(1);
+            const successRate = processedCountries > 0 ? ((successCount / processedCountries) * 100).toFixed(1) : 100;
+            
+            // 只在达到关键进度节点时记录日志（每25%）
+            if (progress >= 25 && parseFloat(progress) % 25 === 0) {
+                this.logMessage(`📊 文件进度: ${fileName} ${progress}% (成功率${successRate}%)`, 'progress');
+            }
+            
+            // 更新worker进度显示
+            const workerInfo = document.createElement('div');
+            workerInfo.className = 'progress-info worker-progress';
+            workerInfo.style.cssText = 'font-size: 12px; color: #17a2b8; margin-top: 5px; padding: 3px 8px; background: #d1ecf1; border-radius: 4px; border-left: 3px solid #17a2b8;';
+            workerInfo.innerHTML = `📊 ${fileName}: ${processedCountries}/${totalCountries} (${progress}%) | 成功率: ${successRate}%`;
+            
+            // 移除旧的worker进度
+            const oldWorkerInfo = this.sentDataEl.querySelector('.worker-progress');
+            if (oldWorkerInfo) {
+                oldWorkerInfo.remove();
+            }
+            
+            this.sentDataEl.appendChild(workerInfo);
+            
+            // 3秒后自动移除
+            setTimeout(() => {
+                if (workerInfo.parentNode) {
+                    workerInfo.remove();
+                }
+            }, 3000);
+        }
+    }
+
+    // 初始化国家状态跟踪
+    initCountryStatus() {
+        this.countryStatus.clear();
+        this.countries.forEach(countryCode => {
+            this.countryStatus.set(countryCode, {
+                code: countryCode,
+                name: this.countryNames[countryCode] || countryCode,
+                status: 'pending', // pending, sending, success, failed
+                filesCompleted: 0,
+                totalFiles: this.totalFiles,
+                currentFile: '',
+                lastUpdate: Date.now(),
+                errors: []
+            });
+        });
+        this.updateCountryStatsDisplay();
+    }
+
+    // 更新单个国家的状态
+    updateCountryStatus(countryCode, updates) {
+        if (this.countryStatus.has(countryCode)) {
+            const current = this.countryStatus.get(countryCode);
+            const updated = { ...current, ...updates, lastUpdate: Date.now() };
+            this.countryStatus.set(countryCode, updated);
+            this.scheduleCountryUpdate(countryCode);
+        }
+    }
+
+    // 优化：使用批量更新减少DOM操作频率
+    scheduleCountryUpdate(countryCode) {
+        this.countryUpdateQueue.add(countryCode);
+        if (!this.isCountryUpdateScheduled) {
+            this.isCountryUpdateScheduled = true;
+            // 使用更长的延迟，减少更新频率
+            requestAnimationFrame(() => this.flushCountryUpdateQueue());
+        }
+    }
+
+    // 优化：批量处理所有待更新的国家
+    flushCountryUpdateQueue() {
+        this.isCountryUpdateScheduled = false;
+        if (this.countryUpdateQueue.size === 0) {
+            return;
+        }
+
+        const codesToUpdate = [...this.countryUpdateQueue];
+        this.countryUpdateQueue.clear();
+
+        // 优化：使用DocumentFragment进行批量DOM操作
+        const fragment = document.createDocumentFragment();
+        let hasUpdates = false;
+
+        codesToUpdate.forEach(countryCode => {
+            const country = this.countryStatus.get(countryCode);
+            if (country && this.updateCountryItemDisplay(countryCode, country)) {
+                hasUpdates = true;
+            }
+        });
+
+        // 只在有实际更新时才触发UI刷新
+        if (hasUpdates) {
+            requestAnimationFrame(() => {
+                // 如果需要重新排序（状态改变时），则重新渲染
+                this.updateCountryStatsDisplay();
+            });
+        }
+    }
+
+    // 更新国家统计显示
+    updateCountryStatsDisplay() {
+        if (!this.countryStatsEl) return;
+
+        // 显示国家统计容器
+        if (this.countryStatsContainer) {
+            this.countryStatsContainer.style.display = 'block';
+        }
+
+        // 清空现有显示
+        this.countryStatsEl.innerHTML = '';
+
+        // 按状态排序：发送中 > 成功 > 失败 > 等待
+        const statusOrder = { sending: 0, success: 1, failed: 2, pending: 3 };
+        const sortedCountries = Array.from(this.countryStatus.values()).sort((a, b) => {
+            if (statusOrder[a.status] !== statusOrder[b.status]) {
+                return statusOrder[a.status] - statusOrder[b.status];
+            }
+            return a.name.localeCompare(b.name);
+        });
+
+        // 创建国家项目
+        sortedCountries.forEach(country => {
+            this.createCountryItem(country);
+        });
+    }
+
+    // 创建单个国家显示项
+    createCountryItem(country) {
+        const item = document.createElement('div');
+        item.className = `country-item ${country.status}`;
+        item.setAttribute('data-country', country.code);
+        item.setAttribute('data-status', country.status);
+
+        const statusIcon = this.getStatusIcon(country.status);
+        const progress = country.totalFiles > 0 ? (country.filesCompleted / country.totalFiles * 100) : 0;
+
+        // 优化：为可变元素添加特定类名，以便高效更新
+        item.innerHTML = `
+            <div class="country-name">${country.name}</div>
+            <div class="country-status">
+                <span class="country-status-icon">${statusIcon}</span>
+                <span class="country-progress-text">${country.filesCompleted}/${country.totalFiles}</span>
+                <div class="country-progress">
+                    <div class="country-progress-bar" style="width: ${progress}%"></div>
+                </div>
+            </div>
+        `;
+
+        // 添加点击事件显示详细信息
+        item.addEventListener('click', () => {
+            this.showCountryDetails(country);
+        });
+
+        this.countryStatsEl.appendChild(item);
+    }
+
+    // 优化：更新单个国家项目显示，返回是否有实际更新
+    updateCountryItemDisplay(countryCode, country) {
+        const item = this.countryStatsEl.querySelector(`[data-country="${countryCode}"]`);
+        if (!item) return false;
+
+        let hasUpdates = false;
+
+        // 优化：只在状态实际改变时才更新DOM
+        const newClassName = `country-item ${country.status}`;
+        if (item.className !== newClassName) {
+            item.className = newClassName;
+            hasUpdates = true;
+        }
+        
+        if (item.getAttribute('data-status') !== country.status) {
+            item.setAttribute('data-status', country.status);
+            hasUpdates = true;
+        }
+
+        // 优化：只更新变化的DOM元素，而不是重写innerHTML
+        const statusIconEl = item.querySelector('.country-status-icon');
+        const progressTextEl = item.querySelector('.country-progress-text');
+        const progressBarEl = item.querySelector('.country-progress-bar');
+
+        const statusIcon = this.getStatusIcon(country.status);
+        if (statusIconEl && statusIconEl.textContent !== statusIcon) {
+            statusIconEl.textContent = statusIcon;
+            hasUpdates = true;
+        }
+
+        const progressText = `${country.filesCompleted}/${country.totalFiles}`;
+        if (progressTextEl && progressTextEl.textContent !== progressText) {
+            progressTextEl.textContent = progressText;
+            hasUpdates = true;
+        }
+
+        const progress = country.totalFiles > 0 ? (country.filesCompleted / country.totalFiles * 100) : 0;
+        const progressWidth = `${progress.toFixed(2)}%`;
+        if (progressBarEl && progressBarEl.style.width !== progressWidth) {
+            progressBarEl.style.width = progressWidth;
+            hasUpdates = true;
+        }
+
+        return hasUpdates;
+    }
+
+    // 获取状态图标
+    getStatusIcon(status) {
+        const icons = {
+            pending: '⏳',
+            sending: '📤',
+            success: '✅',
+            failed: '❌'
+        };
+        return icons[status] || '❓';
+    }
+
+    // 过滤国家显示
+    filterCountries(filterType = 'all') {
+        // 更新按钮状态
+        document.querySelectorAll('.country-filter-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.getAttribute('data-filter') === filterType) {
+                btn.classList.add('active');
+            }
+        });
+
+        // 过滤显示
+        const items = this.countryStatsEl.querySelectorAll('.country-item');
+        let visibleCount = 0;
+        items.forEach(item => {
+            const status = item.getAttribute('data-status');
+            if (filterType === 'all' || status === filterType) {
+                item.style.display = ''; // 修复：恢复默认显示，而不是硬编码 'flex'
+                visibleCount++;
+            } else {
+                item.style.display = 'none';
+            }
+        });
+        
+        const filterName = filterType === 'all' ? '全部' : filterType;
+        // this.logMessage(`🔍 国家过滤: ${filterName} | 显示 ${visibleCount} / ${this.countries.length} 个国家`);
+    }
+
+    // 显示国家详细信息
+    showCountryDetails(country) {
+        const details = [
+            `国家: ${country.name} (${country.code})`,
+            `状态: ${this.getStatusIcon(country.status)} ${country.status}`,
+            `进度: ${country.filesCompleted}/${country.totalFiles}`,
+            `当前文件: ${country.currentFile || '无'}`,
+            `最后更新: ${new Date(country.lastUpdate).toLocaleTimeString()}`
+        ];
+
+        if (country.errors.length > 0) {
+            details.push(`错误: ${country.errors.slice(-3).join(', ')}`);
+        }
+
+        alert(details.join('\n'));
+    }
+
+    // 隐藏国家统计显示
+    hideCountryStats() {
+        if (this.countryStatsContainer) {
+            this.countryStatsContainer.style.display = 'none';
+        }
+    }
+
+    // 处理国家状态更新
+    handleCountryStatusUpdate(payload) {
+        const { countryCode, status, fileName, error } = payload;
+        
+        if (this.countryStatus.has(countryCode)) {
+            const updates = { status };
+            
+            if (fileName) {
+                updates.currentFile = fileName;
+            }
+            
+            if (error) {
+                const country = this.countryStatus.get(countryCode);
+                updates.errors = [...(country.errors || []), error].slice(-5); // 保留最近5个错误
+            }
+            
+            this.updateCountryStatus(countryCode, updates);
+
+            // 优化：只在状态为失败或有错误时才记录日志，成功状态只记录在国家状态中
+            if (status === 'failed' || error) {
+                const countryName = this.countryNames[countryCode] || countryCode;
+                const statusText = this.getStatusText(status);
+                this.logMessage(`🌍 ${countryName}: ${statusText}${fileName ? ` | ${fileName}` : ''}${error ? ` - ${error}` : ''}`);
+            }
+            // 成功的状态更新不再输出到控制台
+        }
+    }
+
+    // 处理国家完成
+    handleCountryComplete(payload) {
+        const { countryCode, fileName, success, error } = payload;
+        
+        if (this.countryStatus.has(countryCode)) {
+            const country = this.countryStatus.get(countryCode);
+            const updates = {
+                status: success ? 'success' : 'failed',
+                filesCompleted: country.filesCompleted + 1
+            };
+            
+            if (error && !success) {
+                updates.errors = [...(country.errors || []), error].slice(-5);
+            }
+            
+            this.updateCountryStatus(countryCode, updates);
+            
+            // 优化：只在失败时记录日志，成功信息只记录在国家状态中
+            if (!success) {
+                const countryName = this.countryNames[countryCode] || countryCode;
+                this.logMessage(`❌ ${countryName}: ${fileName} 发送失败 ${error ? `- ${error}` : ''}`);
+            }
+            // 成功的国家发送信息不再输出到控制台，只记录在国家状态中
+        }
+    }
+
+    // 获取状态文本
+    getStatusText(status) {
+        const statusTexts = {
+            pending: '等待中',
+            sending: '发送中',
+            success: '已完成',
+            failed: '发送失败'
+        };
+        return statusTexts[status] || status;
+    }
+
+    // 获取国家统计摘要
+    getCountryStatsSummary() {
+        const stats = { success: 0, failed: 0, pending: 0, sending: 0, total: 0 };
+        
+        this.countryStatus.forEach(country => {
+            stats[country.status] = (stats[country.status] || 0) + 1;
+            stats.total++;
+        });
+        
+        return stats;
+    }
+
+    handleLargeFileConfirmation(payload) {
+        const { confirmationId, fileName, sizeMB, fileType } = payload;
+        const fileTypeText = fileType === 'r2-asset' ? '云端文件' : '本地文件';
+        
+        const confirmed = confirm(
+            `⚠️ 大文件下载确认\n\n` +
+            `文件名: ${fileName}\n` +
+            `文件大小: ${sizeMB} MB\n` +
+            `文件类型: ${fileTypeText}\n\n` +
+            `此文件较大，下载可能需要一些时间。\n` +
+            `确定要下载并发送吗？`
+        );
+        
+        // 发送确认结果回service worker
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+                type: 'largeFileConfirmed',
+                payload: {
+                    confirmationId: confirmationId,
+                    confirmed: confirmed
+                }
+            });
+        }
+        
+        if (confirmed) {
+            this.logMessage(`✅ 用户确认下载大文件: ${fileName} (${sizeMB}MB)`);
+        } else {
+            this.logMessage(`❌ 用户取消下载大文件: ${fileName} (${sizeMB}MB)`);
+        }
+    }
+
+    buildContentQueue() {
+        this.logMessage('... 正在构建文件列表以备后台发送...');
+        const contentQueue = this.fileQueue.map((item) => {
+            if (item.type === 'file') {
+                // 本地文件：直接传递 File 对象
+                return {
+                    type: 'file',
+                    name: item.name,
+                    file: item.file,
+                    fileType: item.file.type,
+                    size: item.file.size
+                };
+            }
+            if (item.type === 'asset') {
+                // 本地内置素材
+                return {
+                    type: 'asset',
+                    name: item.name,
+                    path: `assets/${item.path}`
+                };
+            }
+            if (item.type === 'r2-asset') {
+                // R2 云端素材 - 现在也需要先下载
+                return {
+                    type: 'r2-asset',
+                    name: item.name,
+                    path: item.path // R2 的路径 (key)
+                };
+            }
+            return null;
+        });
+
+        const validResults = contentQueue.filter(item => item !== null);
+        this.logMessage(`... 文件列表构建完毕，共 ${validResults.length} 个有效项目。`);
+        return validResults;
+    }
+
+    updateStats() {
+        // 状态更新节流：减少频繁更新
+        const now = Date.now();
+        if (now - this.lastStatsUpdate < this.statsUpdateInterval && !this.isStatsUpdateScheduled) {
+            this.isStatsUpdateScheduled = true;
+            setTimeout(() => {
+                this.isStatsUpdateScheduled = false;
+                this.performStatsUpdate();
+            }, this.statsUpdateInterval - (now - this.lastStatsUpdate));
+            return;
+        }
+        
+        this.performStatsUpdate();
+    }
+    
+    performStatsUpdate() {
+        this.lastStatsUpdate = Date.now();
+        
+        // 优化：减少不必要的 DOM 操作和计算
+        const completedFiles = this.completedFiles || 0;
+        const totalFiles = this.totalFiles || this.fileQueue.length;
+        const completedTasks = this.completedTasks || 0;
+        const totalCountries = this.totalCountries || this.countries.length;
+        
+        // 优化：使用 textContent 而不是 innerHTML，提高性能
+        this.sentCountEl.textContent = completedTasks;
+        
+        // 优化：缓存计算结果，避免重复计算
+        let progressPercentage = 0;
+        let statusText = '';
+        
+        if (this.isLoopMode && this.isRunning) {
+            const currentCycle = this.currentCycle || 1;
+            const currentFile = this.currentFile || '';
+            
+            // 修复：计算当前周期的完成文件数，以避免UI显示混淆
+            const cycleCompletedFiles = this.completedFiles - this.grandTotalCompletedFiles;
+
+            statusText = `第 ${currentCycle} 轮 | 文件: ${cycleCompletedFiles}/${totalFiles}`;
+            if (currentFile) {
+                statusText += ` | 当前: ${currentFile}`;
+            }
+            
+            if (totalFiles > 0) {
+                // 修复：进度条也应反映当前周期的进度
+                progressPercentage = (cycleCompletedFiles / totalFiles) * 100;
+            }
+        } else {
+            statusText = `文件: ${completedFiles}/${totalFiles} | 任务: ${completedTasks}/${this.totalItemsToSend === Infinity ? '∞' : this.totalItemsToSend}`;
+            
+            if (this.totalItemsToSend > 0 && this.totalItemsToSend !== Infinity) {
+                progressPercentage = (completedTasks / this.totalItemsToSend) * 100;
+            } else if (totalFiles > 0) {
+                progressPercentage = (completedFiles / totalFiles) * 100;
+            }
+        }
+        
+        // 简化状态显示，少产生日志
+        let speedInfo = '';
+        let etaInfo = '';
+        if (this.isRunning && this.startTime) {
+            const elapsed = (Date.now() - this.startTime) / 1000; // 秒
+            const speed = completedTasks / elapsed; // 任务/秒
+            const remaining = this.totalItemsToSend - completedTasks;
+            
+            if (speed > 0.1) { // 只在有意义的速度时显示
+                speedInfo = `速度: ${speed.toFixed(1)}任务/秒`;
+                
+                const eta = remaining > 0 ? remaining / speed : 0;
+                if (eta > 0 && eta < 3600) {
+                    etaInfo = `预计: ${Math.ceil(eta)}秒`;
+                } else if (eta >= 3600) {
+                    etaInfo = `预计: ${Math.ceil(eta / 60)}分钟`;
+                }
+            }
+        }
+        
+        // 创建简化的状态显示
+        const basicInfo = `${statusText} (进度: ${progressPercentage.toFixed(1)}%)`;
+        let detailedStatusHTML = `<div style="font-weight: bold; margin-bottom: 8px; font-size: 14px;">${basicInfo}</div>`;
+        
+        if (speedInfo || etaInfo) {
+            detailedStatusHTML += `<div style="font-size: 12px; color: #666;">`;
+            if (speedInfo) detailedStatusHTML += `⚡ ${speedInfo} `;
+            if (etaInfo) detailedStatusHTML += `⏱️ ${etaInfo}`;
+            detailedStatusHTML += `</div>`;
+        }
+        
+        // 优化：只在内容真正改变时才更新 DOM
+        if (this.sentDataEl.innerHTML !== detailedStatusHTML) {
+            this.sentDataEl.innerHTML = detailedStatusHTML;
+        }
+        
+        // 优化：只在进度真正改变时才更新进度条
+        if (Math.abs(this.lastProgressPercentage - progressPercentage) > 0.5) {
+            this.progressBar.style.width = `${progressPercentage}%`;
+            this.lastProgressPercentage = progressPercentage;
+        }
+        
+        // 优化：只在错误状态改变时才更新样式
+        const shouldShowError = this.hasError;
+        const currentColor = this.sentDataEl.style.color;
+        const errorColor = '#ff7675';
+        
+        if (shouldShowError && currentColor !== errorColor) {
+            this.sentDataEl.style.color = errorColor;
+        } else if (!shouldShowError && currentColor === errorColor) {
+            this.sentDataEl.style.color = '';
+        }
+    }
+    
+    startProgressAnimation() {
+        // 移除动态动画，现在使用实际进度数据
+        this.stopProgressAnimation();
+    }
+    
+    stopProgressAnimation() {
+        if (this.progressTimer) {
+            clearInterval(this.progressTimer);
+            this.progressTimer = null;
+        }
+    }
+
+    async startSending() {
+        if (this.isRunning) return;
+        
+        if (this.fileQueue.length === 0) {
+            this.logMessage('⚠️ 请先选择要发送的文件或素材');
+            return;
+        }
+        
+        // 检查国家列表
+        if (this.countries.length === 0) {
+            this.logMessage('❌ 未获取到国家列表，请刷新页面重试');
+            return;
+        }
+        
+        this.isRunning = true;
+        this.requestWakeLock();
+        this.startBtn.disabled = true;
+        this.stopBtn.disabled = false;
+        
+        this.completedFiles = 0;
+        this.completedTasks = 0;
+        this.totalFiles = this.fileQueue.length;
+        this.totalCountries = this.countries.length;
+        this.isLoopMode = this.loopMode.checked;
+        this.totalItemsToSend = this.isLoopMode ? Infinity : this.totalFiles * this.totalCountries;
+        this.startTime = Date.now();
+        this.hasError = false;
+        
+        this.initCountryStatus();
+        this.updateStats();
+        
+        // 使用 Web Worker 发送（现代方式）
+        await this.startSendingWithWebWorker();
+    }
+    
+    async startSendingWithWebWorker() {
+        try {
+            // Create Web Worker if not exists
+            if (!this.webWorkerSender) {
+                this.webWorkerSender = new Worker('/js/send-worker.js');
+                this.webWorkerSender.onmessage = this.handleWebWorkerMessage.bind(this);
+                this.webWorkerSender.onerror = this.handleWebWorkerError.bind(this);
+            }
+            
+            // Process each file in the queue
+            for (let i = 0; i < this.fileQueue.length; i++) {
+                if (!this.isRunning) break;
+                
+                const item = this.fileQueue[i];
+                this.currentFile = item.name;
+                
+                // Notify file processing start
+                this.handleFileProcessingStart({ 
+                    fileName: item.name, 
+                    fileIndex: i, 
+                    totalFiles: this.fileQueue.length 
+                });
+                
+                // Get file blob
+                const fileBlob = await this.getFileBlob(item);
+                if (!fileBlob) {
+                    this.logMessage(`❌ 无法获取 "${item.name}" 的内容，跳过。`);
+                    this.completedFiles++;
+                    this.updateStats();
+                    continue;
+                }
+                
+                // Generate transfer ID
+                const transferId = `transfer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                this.currentTransferId = transferId;
+                
+                // Send to all countries
+                const allCountryCodes = Object.keys(this.countryServers);
+                
+                // Send message to worker
+                this.webWorkerSender.postMessage({
+                    type: 'start-transfer',
+                    data: {
+                        transferId,
+                        file: fileBlob,
+                        countries: allCountryCodes,
+                        countryServers: this.countryServers,
+                        countryNames: this.countryNames,
+                        options: {
+                            concurrency: 3,
+                            retryAttempts: 3
+                        }
+                    }
+                });
+                
+                // Wait for transfer completion
+                await this.waitForTransferCompletion(transferId);
+                
+                this.completedFiles++;
+                this.updateStats();
+            }
+            
+            // Handle loop mode
+            if (this.isLoopMode && this.isRunning) {
+                this.logMessage(`🔄 循环完成，3秒后开始下一轮...`);
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                this.completedFiles = 0;
+                this.completedTasks = 0;
+                await this.startSendingWithWebWorker(); // Recursive call for loop mode
+            }
+            
+        } catch (error) {
+            this.logMessage(`❌ 发送过程中出现错误: ${error.message}`);
+            this.hasError = true;
+        } finally {
+            if (this.isRunning) {
+                this.stopSending(true);
+            }
+        }
+    }
+    
+    async waitForTransferCompletion(transferId) {
+        return new Promise((resolve) => {
+            const checkCompletion = () => {
+                if (!this.isRunning || this.currentTransferId !== transferId) {
+                    resolve();
+                } else {
+                    setTimeout(checkCompletion, 100);
+                }
+            };
+            checkCompletion();
+        });
+    }
+    
+    handleWebWorkerMessage(event) {
+        const { type, data } = event.data;
+        
+        switch (type) {
+            case 'transfer-started':
+                // Transfer started
+                break;
+                
+            case 'transfer-progress':
+                // Update progress
+                this.updateStats();
+                break;
+                
+            case 'progress-update':
+                // Handle detailed progress update
+                this.completedTasks = data.completedTasks || this.completedTasks;
+                this.totalItemsToSend = data.totalTasks || this.totalItemsToSend;
+                this.updateStats();
+                break;
+                
+            case 'transfer-completed':
+                // Transfer completed
+                this.logMessage(`✅ 传输完成: ${data.completed} 成功, ${data.failed} 失败`);
+                break;
+                
+            case 'transfer-error':
+                // Transfer error
+                this.logMessage(`❌ 传输错误: ${data.error}`);
+                this.hasError = true;
+                break;
+                
+            case 'country-started':
+                // Country sending started
+                this.handleCountryStatusUpdate({
+                    countryCode: data.countryCode,
+                    status: 'sending',
+                    fileName: this.currentFile
+                });
+                break;
+                
+            case 'country-completed':
+                // Country sending completed
+                this.handleCountryComplete({
+                    countryCode: data.countryCode,
+                    fileName: this.currentFile,
+                    success: data.success,
+                    error: data.error
+                });
+                
+                // Update completed tasks count
+                if (data.success) {
+                    this.completedTasks++;
+                }
+                this.updateStats();
+                break;
+                
+            case 'progress-update':
+                // Detailed progress update
+                this.completedTasks = data.completedTasks || this.completedTasks;
+                this.updateStats();
+                break;
+                
+            default:
+                console.warn('Unknown message from worker:', type);
+        }
+    }
+    
+    handleWebWorkerError(error) {
+        this.logMessage(`❌ Web Worker 错误: ${error.message}`);
+        this.hasError = true;
+    }
+    
+    async getFileBlob(item) {
+        if (item.type === 'file') {
+            return item.file;
+        }
+        
+        try {
+            let url;
+            if (item.type === 'asset') {
+                url = item.path;
+            } else if (item.type === 'r2-asset') {
+                url = `/r2?file=${encodeURIComponent(item.path)}`;
+            } else {
+                return null;
+            }
+            
+            this.logMessage(`📥 正在下载: ${item.name}`);
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`下载失败: ${response.status}`);
+            const blob = await response.blob();
+            this.logMessage(`✅ 下载完成: ${item.name}`);
+            return blob;
+        } catch (error) {
+            this.logMessage(`❌ 下载素材失败: ${item.name} - ${error.message}`);
+            return null;
+        }
+    }
+    
+    stopSending(isFinished = false) {
+        // Cancel current transfer if exists
+        if (this.currentTransferId && this.webWorkerSender) {
+            this.webWorkerSender.postMessage({
+                type: 'cancel-transfer',
+                data: {
+                    transferId: this.currentTransferId
+                }
+            });
+            this.currentTransferId = null;
+        }
+        
+        // Stop all ModernSender workers
+        if (window.modernSender && typeof window.modernSender.destroy === 'function') {
+            window.modernSender.destroy();
+        }
+        
+        // Stop the service worker if it's running
+        if (!isFinished && navigator.serviceWorker && navigator.serviceWorker.controller) {
+            this.logMessage('📫 正在向后台服务发送停止指令...');
+            navigator.serviceWorker.controller.postMessage({ command: 'stop' });
+        }
+        
+        if (!this.isRunning && !isFinished) {
+            this.logMessage('ℹ️ 当前没有运行中的发送任务');
+            return;
+        }
+        
+        this.isRunning = false;
+        this.startBtn.disabled = false;
+        this.stopBtn.disabled = true;
+        this.releaseWakeLock();
+        
+        // Stop progress animation
+        this.stopProgressAnimation();
+        
+        if (isFinished) {
+            this.logMessage('✅ 所有任务已完成。');
+            if (!this.loopMode.checked) {
+                this.progressBar.style.width = '100%';
+            }
+        } else {
+            this.progressBar.style.width = '0%';
+            this.logMessage('⏹️ 全球法布施已停止');
+        }
+        
+        // Hide country stats
+        if (!isFinished) {
+            this.hideCountryStats();
+        }
+        
+        if (this.completedTasks > 0 || this.completedFiles > 0) {
+            const elapsed = (Date.now() - this.startTime) / 1000;
+            const finalFileCount = this.completedFiles;
+            const finalTaskCount = this.completedTasks;
+            const totalFiles = this.totalFiles || this.fileQueue.length;
+            const totalTasks = this.totalItemsToSend > 0 ? this.totalItemsToSend : 'N/A';
+            
+            // Get country stats
+            const countryStats = this.getCountryStatsSummary();
+            
+            this.logMessage(`🙏 本次法布施功德圆满！`);
+            this.logMessage(`📄 共处理 ${finalFileCount} / ${totalFiles} 个文件。`);
+            this.logMessage(`🌍 共完成 ${finalTaskCount} / ${totalTasks} 个发送任务。`);
+            this.logMessage(`🌍 国家统计: 成功 ${countryStats.success} | 失败 ${countryStats.failed} | 总计 ${countryStats.total}`);
+            if (this.isLoopMode && this.currentCycle > 1) {
+                this.logMessage(`🔄 循环模式共完成 ${this.currentCycle} 轮发送。`);
+            }
+            this.logMessage(`⏱️ 总用时 ${elapsed.toFixed(1)} 秒。`);
+            this.logMessage(`💫 愿此功德回向法界众生，愿众生离苦得乐，早证菩提！`);
+        }
+    }
+
+    async requestWakeLock() {
+        if (!('wakeLock' in navigator)) {
+            this.logMessage('ℹ️ 当前环境不支持屏幕常亮API');
+            return;
+        }
+        try {
+            this.wakeLock = await navigator.wakeLock.request('screen');
+            this.logMessage('🔒 已获取屏幕常亮锁');
+            this.wakeLock.addEventListener('release', () => {
+                this.logMessage('⚠️ 屏幕常亮锁已释放');
+                if (this.isRunning && !document.hidden) {
+                    this.requestWakeLock();
+                }
+            });
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden && this.isRunning && !this.wakeLock) {
+                    this.requestWakeLock();
+                }
+            }, { once: true });
+        } catch (e) {
+            this.logMessage(`⚠️ 获取屏幕常亮锁失败: ${e.message}`);
+        }
+    }
+
+    async releaseWakeLock() {
+        try {
+            if (this.wakeLock) {
+                await this.wakeLock.release();
+                this.wakeLock = null;
+                this.logMessage('🔓 已释放屏幕常亮锁');
+            }
+        } catch (e) {
+            this.logMessage(`⚠️ 释放屏幕常亮锁失败: ${e.message}`);
+        }
+    }
+            }
+        } catch (_) {
+            // ignore
+        }
+    }
+
+    async startSending() {
+        if (this.isRunning) return;
+        
+        if (this.fileQueue.length === 0) {
+            this.logMessage('⚠️ 请先选择要发送的文件或素材');
+            return;
+        }
+        
+        // 检查国家列表
+        if (this.countries.length === 0) {
+            this.logMessage('❌ 未获取到国家列表，请刷新页面重试');
+            return;
+        }
+        
+        this.isRunning = true;
+        this.requestWakeLock();
+        this.startBtn.disabled = true;
+        this.stopBtn.disabled = false;
+        
+        this.completedFiles = 0;
+        this.completedTasks = 0;
+        this.totalFiles = this.fileQueue.length;
+        this.totalCountries = this.countries.length;
+        this.isLoopMode = this.loopMode.checked;
+        this.totalItemsToSend = this.isLoopMode ? Infinity : this.totalFiles * this.totalCountries;
+        this.startTime = Date.now();
+        this.hasError = false;
+        this.currentCycle = 1;
+        
+        this.initCountryStatus();
+        this.updateStats();
+        
+        // 使用现代 Web Worker 发送（默认方式）
+        await this.startSendingWithWebWorker();
+    }
+    
+    async startSendingWithWebWorker() {
+        this.logMessage(`🚀 使用 Web Worker 发送 (多线程模式)`);
+
+        // 检查ModernSender是否可用
+        if (window.modernSender && window.modernSender.isSupported) {
+            // 使用ModernSender进行发送
+            try {
+                const contentQueue = this.buildContentQueue();
+                const allCountryCodes = Object.keys(this.countryServers);
+                this.isLoopMode = this.loopMode.checked;
+                
+                for (let i = 0; i < contentQueue.length; i++) {
+                    const item = contentQueue[i];
+                    if (!this.isRunning) break;
+
+                    this.handleFileProcessingStart({ fileName: item.name, fileIndex: i, totalFiles: contentQueue.length });
+                    this.currentFile = item.name;
+
+                    let fileBlob;
+                    if (item.type === 'file') {
+                        fileBlob = item.file;
+                    } else {
+                        // 对于内置或R2资源，需要先下载
+                        fileBlob = await this.getForegroundFileBlob(item);
+                        if (!fileBlob) {
+                            this.logMessage(`❌ 无法获取 "${item.name}" 的内容，跳过。`);
+                            this.completedFiles++;
+                            this.updateStats();
+                            continue;
+                        }
+                    }
+                    
+                    // 使用支持循环发送的新方法
+                    if (window.modernSender.sendToCountriesWithLoop) {
+                        await window.modernSender.sendToCountriesWithLoop(
+                            fileBlob, 
+                            allCountryCodes, 
+                            this.countryServers, 
+                            this.countryNames,
+                            {
+                                concurrency: 1,  // 已修改：默认单线程模式
+                                retryAttempts: 3,
+                                loopMode: this.isLoopMode,
+                                onProgress: (data) => {
+                                    this.completedTasks = data.completedTasks || this.completedTasks;
+                                    this.updateStats();
+                                },
+                                onComplete: (result) => {
+                                    this.completedFiles++;
+                                    this.handleFileProcessingComplete({ fileName: item.name, successCount: this.completedTasks, totalCountries: allCountryCodes.length, duration: 0 });
+                                    this.updateStats();
+                                },
+                                onError: (error) => {
+                                    this.logMessage(`❌ 发送文件 "${item.name}" 时出现错误: ${error.message}`);
+                                    this.hasError = true;
+                                }
+                            }
+                        );
+                    } else {
+                        // 回退到旧的方法
+                        await window.modernSender.sendToCountries(
+                            fileBlob, 
+                            allCountryCodes, 
+                            this.countryServers, 
+                            this.countryNames,
+                            {
+                                concurrency: 1,  // 已修改：默认单线程模式
+                                retryAttempts: 3,
+                                onProgress: (data) => {
+                                    this.completedTasks = data.completedTasks || this.completedTasks;
+                                    this.updateStats();
+                                },
+                                onComplete: (result) => {
+                                    this.completedFiles++;
+                                    this.handleFileProcessingComplete({ fileName: item.name, successCount: this.completedTasks, totalCountries: allCountryCodes.length, duration: 0 });
+                                    this.updateStats();
+                                },
+                                onError: (error) => {
+                                    this.logMessage(`❌ 发送文件 "${item.name}" 时出现错误: ${error.message}`);
+                                    this.hasError = true;
+                                }
+                            }
+                        );
+                    }
+                    
+                    if (!this.isRunning) break;
+                }
+                
+                this.stopSending(true);
+            } catch (error) {
+                this.logMessage(`❌ Web Worker 发送失败: ${error.message}`);
+                this.hasError = true;
+                this.stopSending();
+            }
+        } else {
+            this.logMessage('❌ ModernSender 不可用，回退到传统发送方式');
+            await this.startSendingLegacy();
+        }
+    }
+
+    async startSendingInForeground() {
+        if (this.isRunning) return;
+
+        this.isRunning = true;
+        this.requestWakeLock();
+        this.startBtn.disabled = true;
+        this.stopBtn.disabled = false;
+        
+        this.completedFiles = 0;
+        this.completedTasks = 0;
+        this.totalFiles = this.fileQueue.length;
+        this.totalCountries = this.countries.length;
+        this.isLoopMode = this.loopMode.checked;
+        this.totalItemsToSend = this.isLoopMode ? Infinity : this.totalFiles * this.totalCountries;
+        this.startTime = Date.now();
+
+        this.initCountryStatus();
+        this.updateStats();
+
+        const contentQueue = this.buildContentQueue();
+        const allCountryCodes = Object.keys(this.countryServers);
+        const concurrency = 1;
+
+        this.logMessage(`🚀 前台发送启动 (单线程模式)`);
+
+        try {
+            do {
+                for (let i = 0; i < contentQueue.length; i++) {
+                    const item = contentQueue[i];
+                    if (!this.isRunning) break;
+
+                    this.handleFileProcessingStart({ fileName: item.name, fileIndex: i, totalFiles: contentQueue.length });
+
+                    const fileBlob = await this.getForegroundFileBlob(item);
+                    if (!fileBlob) {
+                        this.logMessage(`❌ 无法获取 "${item.name}" 的内容，跳过。`);
+                        this.completedFiles++; // Still count as "processed"
+                        this.updateStats();
+                        continue;
+                    }
+
+                    const countryQueue = [...allCountryCodes];
+                    
+                    const worker = async () => {
+                        while (countryQueue.length > 0 && this.isRunning) {
+                            const countryCode = countryQueue.shift();
+                            if (!countryCode) break;
+
+                            const serverUrl = this.countryServers[countryCode]?.[0];
+                            if (!serverUrl) continue;
+
+                            const countryName = this.countryNames[countryCode] || countryCode;
+                            this.handleCountryStatusUpdate({ countryCode, status: 'sending', fileName: item.name });
+
+                            const formData = new FormData();
+                            formData.append('file', fileBlob, item.name);
+
+                            // Fire-and-forget: 不等待响应，立即发送到下一个
+                            fetch(serverUrl, {
+                                method: 'POST',
+                                body: formData,
+                                mode: 'no-cors'
+                            }).catch(err => {
+                                // 即发即忘模式下的错误处理：只记录日志，不影响整体进度
+                                // 因为我们无法知道请求最终是否会成功，所以不将任务标记为失败。
+                                this.logMessage(`⚠️ 向 ${countryName} 的请求在发送时遇到初始错误 (已忽略): ${err.message}`);
+                            });
+
+                            // 立即将任务标记为“已发送”并更新进度，然后继续处理下一个国家
+                            this.completedTasks++;
+                            this.handleCountryComplete({ countryCode, fileName: item.name, success: true }); // 乐观地标记为成功
+                            this.updateStats();
+                        }
+                    };
+
+                    const workerPool = Array.from({ length: concurrency }, () => worker());
+                    await Promise.all(workerPool);
+
+                    this.completedFiles++;
+                    this.handleFileProcessingComplete({ fileName: item.name, successCount: this.completedTasks, totalCountries: allCountryCodes.length, duration: 0 });
+                    this.updateStats();
+                }
+
+                if (this.isLoopMode && this.isRunning) {
+                    this.logMessage(`🔄 循环完成，3秒后开始下一轮...`);
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    this.completedFiles = 0;
+                    this.completedTasks = 0;
+                }
+
+            } while (this.isLoopMode && this.isRunning);
+
+        } catch (error) {
+            this.logMessage(`❌ 前台发送流程出错: ${error.message}`);
+        } finally {
+            this.stopSending(true);
+        }
+    }
+
+    async getForegroundFileBlob(item) {
+        if (item.type === 'file') {
+            return item.file;
+        }
+        try {
+            let url;
+            if (item.type === 'asset') {
+                url = item.path;
+            } else if (item.type === 'r2-asset') {
+                url = `/r2?file=${encodeURIComponent(item.path)}`;
+            } else {
+                return null;
+            }
+            this.logMessage(`📥 (前台) 正在下载: ${item.name}`);
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`下载失败: ${response.status}`);
+            const blob = await response.blob();
+            this.logMessage(`✅ (前台) 下载完成: ${item.name}`);
+            return blob;
+        } catch (error) {
+            this.logMessage(`❌ (前台) 下载素材失败: ${item.name} - ${error.message}`);
+            return null;
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    new GlobalDharmaSender();
+});
