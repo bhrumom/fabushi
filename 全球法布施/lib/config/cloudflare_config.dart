@@ -1,11 +1,11 @@
 class CloudflareConfig {
-  // Cloudflare Worker 部署 URL
+  // Cloudflare Worker 部署 URL（备用地址）
   static const String workerUrl = 'https://fabushi.bhrumom.workers.dev';
   
   // 备用 URL（如果有多个部署环境）
   static const String stagingWorkerUrl = 'https://fabushi.bhrumom.workers.dev';
   
-  // 生产环境 URL
+  // 生产环境 URL（备用地址）
   static const String productionWorkerUrl = 'https://fabushi.bhrumom.workers.dev';
   
   // 获取当前环境的 Worker URL

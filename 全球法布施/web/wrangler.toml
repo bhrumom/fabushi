@@ -1,0 +1,94 @@
+name = "fabushi-flutter-web"
+main = "worker.js"
+compatibility_date = "2024-06-05"
+
+# Flutter Web静态文件服务配置
+[assets]
+binding = "ASSETS"
+directory = "./build/web"
+
+# KV存储配置 - 复用后端的KV存储
+[[kv_namespaces]]
+binding = "USERS_KV"
+id = "20bc68276a0345ab9b5cbf17c1bd51c5"
+preview_id = "6b219f4753b944f4a74043f385497c3b"
+
+# 支付宝订单KV存储
+[[kv_namespaces]]
+binding = "ORDERS_KV"
+id = "94534f35a0a34023a428a065f77f1911"
+preview_id = "preview_orders_kv"
+
+# 支付宝会员KV存储
+[[kv_namespaces]]
+binding = "MEMBERSHIP_KV"
+id = "773e778850ea429d99686ff4fbbe1180"
+preview_id = "preview_membership_kv"
+
+# 兑换码KV存储
+[[kv_namespaces]]
+binding = "REDEEM_CODES_KV"
+id = "59c5263942b4436191e6dffbaacc5957"
+preview_id = "preview_redeem_codes_kv"
+
+# R2存储配置
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "bushi"
+preview_bucket_name = "bushi"
+
+# Email Workers配置
+[[send_email]]
+name = "EMAIL"
+destination_address = "131551832@qq.com"
+
+# 环境变量
+[vars]
+FROM_EMAIL = "amitabha@ombhrum.com"
+JWT_SECRET = "please_set_from_secret_in_production"
+FLUTTER_WEB = "true"
+
+# 生产环境配置
+[env.production]
+name = "fabushi-flutter-web-prod"
+
+[[env.production.kv_namespaces]]
+binding = "USERS_KV"
+id = "20bc68276a0345ab9b5cbf17c1bd51c5"
+
+[[env.production.kv_namespaces]]
+binding = "ORDERS_KV"
+id = "94534f35a0a34023a428a065f77f1911"
+
+[[env.production.kv_namespaces]]
+binding = "MEMBERSHIP_KV"
+id = "773e778850ea429d99686ff4fbbe1180"
+
+[[env.production.kv_namespaces]]
+binding = "REDEEM_CODES_KV"
+id = "59c5263942b4436191e6dffbaacc5957"
+
+[[env.production.r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "bushi"
+
+[[env.production.send_email]]
+name = "EMAIL"
+destination_address = "131551832@qq.com"
+
+[env.production.vars]
+FROM_EMAIL = "amitabha@ombhrum.com"
+JWT_SECRET = "please_set_from_secret_in_production"
+FLUTTER_WEB = "true"
+
+# 开发环境配置
+[env.development]
+name = "fabushi-flutter-web-dev"
+
+[env.development.vars]
+FROM_EMAIL = "amitabha@ombhrum.com"
+JWT_SECRET = "dev_secret_key"
+FLUTTER_WEB = "true"
+
+[observability.logs]
+enabled = true

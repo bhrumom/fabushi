@@ -1,0 +1,89 @@
+name = "fabushi-prod"
+main = "worker.js"
+compatibility_date = "2024-06-05"
+
+# 添加静态文件服务配置
+[assets]
+binding = "ASSETS"
+directory = "./public"
+
+# KV存储配置
+[[kv_namespaces]]
+binding = "USERS_KV"
+id = "20bc68276a0345ab9b5cbf17c1bd51c5"
+preview_id = "6b219f4753b944f4a74043f385497c3b"
+
+# 支付宝订单KV存储
+[[kv_namespaces]]
+binding = "ORDERS_KV"
+id = "94534f35a0a34023a428a065f77f1911"
+preview_id = "preview_orders_kv"
+
+# 支付宝会员KV存储
+[[kv_namespaces]]
+binding = "MEMBERSHIP_KV"
+id = "773e778850ea429d99686ff4fbbe1180"
+preview_id = "preview_membership_kv"
+
+# 兑换码KV存储
+[[kv_namespaces]]
+binding = "REDEEM_CODES_KV"
+id = "59c5263942b4436191e6dffbaacc5957"
+preview_id = "preview_redeem_codes_kv"
+
+# R2存储配置
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "bushi"
+preview_bucket_name = "bushi"
+
+# Email Workers配置 - 需在 Cloudflare 控制台为域名启用 Email Routing 并绑定
+[[send_email]]
+name = "EMAIL"
+destination_address = "131551832@qq.com"
+
+# 环境变量 - 使用你的真实发件邮箱
+[vars]
+FROM_EMAIL = "amitabha@ombhrum.com"
+JWT_SECRET = "please_set_from_secret_in_production"
+# RESEND_API_KEY 将通过 secret 设置，这里不需要添加
+
+# 生产环境配置
+[env.production]
+name = "fabushi"
+
+[[env.production.kv_namespaces]]
+binding = "USERS_KV"
+id = "20bc68276a0345ab9b5cbf17c1bd51c5"
+preview_id = "6b219f4753b944f4a74043f385497c3b"
+
+# 生产环境支付宝KV存储
+# The 'id' will be filled in automatically by Wrangler upon the first deployment.
+[[env.production.kv_namespaces]]
+binding = "ORDERS_KV"
+id = "94534f35a0a34023a428a065f77f1911"
+
+[[env.production.kv_namespaces]]
+binding = "MEMBERSHIP_KV"
+id = "773e778850ea429d99686ff4fbbe1180"
+
+[[env.production.kv_namespaces]]
+binding = "REDEEM_CODES_KV"
+id = "59c5263942b4436191e6dffbaacc5957"
+
+# 为生产环境添加R2存储配置
+[[env.production.r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "bushi"
+preview_bucket_name = "bushi-dev"
+
+[[env.production.send_email]]
+name = "EMAIL"
+destination_address = "131551832@qq.com"
+
+[env.production.vars]
+FROM_EMAIL = "amitabha@ombhrum.com"
+JWT_SECRET = "please_set_from_secret_in_production"
+
+[observability.logs]
+enabled = true
