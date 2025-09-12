@@ -1,0 +1,43 @@
+# 排除 native-web 文件夹
+native-web/
+
+# 常见的忽略文件
+.DS_Store
+.vscode/
+.idea/
+*.log
+node_modules/
+.env
+.env.local
+
+# Flutter/Dart 相关
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# iOS 相关
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.xcuserstate
+
+# Android 相关
+*.iml
+.gradle
+/local.properties
+/.idea/workspace.xml
+/.idea/libraries
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
