@@ -1,0 +1,20 @@
+{
+  "path": "/Users/gloriachan/Documents/全球发送/native-web/deploy-package/deploy-lite",
+  "desc": "这是一个佛教经文发送系统，基于Cloudflare Worker构建，包含用户认证、会员管理、支付宝集成、Stripe支付、兑换码系统等功能。前端提供登录注册、会员管理、经文发送等界面。",
+  "id": "f242ba15e8be4144b9ec9b2762be72c2",
+  "data": {
+    "spaceKey": "f242ba15e8be4144b9ec9b2762be72c2",
+    "connections": {
+      "webIDE": "https://f242ba15e8be4144b9ec9b2762be72c2.ap-singapore.cloudstudio.club",
+      "preview": "https://f242ba15e8be4144b9ec9b2762be72c2--{port}.ap-singapore.cloudstudio.club",
+      "api": "https://f242ba15e8be4144b9ec9b2762be72c2--api.ap-singapore.cloudstudio.club",
+      "pty": "https://f242ba15e8be4144b9ec9b2762be72c2--pty.ap-singapore.cloudstudio.club"
+    }
+  },
+  "config": {
+    "api": "https://f242ba15e8be4144b9ec9b2762be72c2--api.ap-singapore.cloudstudio.club",
+    "pty": "https://f242ba15e8be4144b9ec9b2762be72c2--pty.ap-singapore.cloudstudio.club",
+    "region": "ap-shanghai",
+    "spaceKey": "f242ba15e8be4144b9ec9b2762be72c2"
+  }
+}

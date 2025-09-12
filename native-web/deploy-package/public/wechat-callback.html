@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>微信登录回调 - 全球法布施</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+            background: linear-gradient(160deg, #a8edea 0%, #fed6e3 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .callback-container {
+            max-width: 500px;
+            width: 90%;
+            margin: 20px;
+        }
+
+        .callback-card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+            text-align: center;
+        }
+
+        .callback-title {
+            font-family: 'Noto Serif SC', serif;
+            font-size: 2.2em;
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-weight: 700;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(102, 166, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #66a6ff;
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-message {
+            font-size: 18px;
+            color: #34495e;
+            margin-bottom: 30px;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            font-size: 16px;
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(231, 76, 60, 0.1);
+            border-radius: 10px;
+        }
+
+        .success-message {
+            color: #27ae60;
+            font-size: 16px;
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(39, 174, 96, 0.1);
+            border-radius: 10px;
+        }
+
+        .btn {
+            background: linear-gradient(145deg, #89f7fe 0%, #66a6ff 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px 0 rgba(118, 204, 252, 0.4);
+            margin: 10px;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px 0 rgba(118, 204, 252, 0.6);
+        }
+
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .wechat-user-info {
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .wechat-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            margin-right: 15px;
+            vertical-align: middle;
+        }
+
+        .wechat-nickname {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+            vertical-align: middle;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #34495e;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #66a6ff;
+            box-shadow: 0 0 0 3px rgba(102, 166, 255, 0.1);
+        }
+
+        .action-buttons {
+            margin-top: 30px;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="callback-container">
+        <div class="callback-card">
+            <h1 class="callback-title">✨ 微信登录 ✨</h1>
+            
+            <!-- 加载状态 -->
+            <div id="loadingState">
+                <div class="loading"></div>
+                <div class="status-message">正在处理微信登录...</div>
+            </div>
+
+            <!-- 错误状态 -->
+            <div id="errorState" class="hidden">
+                <div class="error-message" id="errorMessage"></div>
+                <div class="action-buttons">
+                    <a href="/login.html" class="btn">返回登录</a>
+                    <a href="/register.html" class="btn">去注册</a>
+                </div>
+            </div>
+
+            <!-- 需要绑定现有账号 -->
+            <div id="bindState" class="hidden">
+                <div class="wechat-user-info">
+                    <img id="wechatAvatar" class="wechat-avatar" src="" alt="微信头像">
+                    <span id="wechatNickname" class="wechat-nickname"></span>
+                </div>
+                <div class="success-message">检测到您已有账号，请输入密码绑定微信</div>
+                <form id="bindForm">
+                    <div class="form-group">
+                        <label class="form-label" for="bindEmail">邮箱</label>
+                        <input type="email" id="bindEmail" class="form-input" placeholder="请输入您的注册邮箱" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bindPassword">密码</label>
+                        <input type="password" id="bindPassword" class="form-input" placeholder="请输入密码" required>
+                    </div>
+                    <button type="submit" class="btn" id="bindBtn">
+                        <span id="bindText">绑定微信账号</span>
+                    </button>
+                </form>
+                <div class="action-buttons">
+                    <a href="/login.html" class="btn">返回登录</a>
+                </div>
+            </div>
+
+            <!-- 需要注册新账号 -->
+            <div id="registerState" class="hidden">
+                <div class="wechat-user-info">
+                    <img id="registerWechatAvatar" class="wechat-avatar" src="" alt="微信头像">
+                    <span id="registerWechatNickname" class="wechat-nickname"></span>
+                </div>
+                <div class="success-message">欢迎新用户！请完善账号信息</div>
+                <form id="registerForm">
+                    <div class="form-group">
+                        <label class="form-label" for="registerUsername">用户名</label>
+                        <input type="text" id="registerUsername" class="form-input" placeholder="请输入用户名" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="registerEmail">邮箱（可选）</label>
+                        <input type="email" id="registerEmail" class="form-input" placeholder="可填写用于找回密码与通知">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="registerPassword">密码</label>
+                        <input type="password" id="registerPassword" class="form-input" placeholder="请输入密码" required>
+                    </div>
+                    <button type="submit" class="btn" id="registerBtn">
+                        <span id="registerText">注册并绑定微信</span>
+                    </button>
+                </form>
+                <div class="action-buttons">
+                    <a href="/login.html" class="btn">返回登录</a>
+                </div>
+            </div>
+
+            <!-- 登录成功状态 -->
+            <div id="successState" class="hidden">
+                <div class="success-message">登录成功！正在跳转...</div>
+                <div class="action-buttons">
+                    <a href="/index.html" class="btn">进入首页</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let wechatUser = null;
+        
+        // 将微信昵称转为建议用户名（英数与下划线，长度3-20）
+        function suggestUsernameFromNickname(nickname, fallbackId) {
+            if (!nickname || typeof nickname !== 'string') {
+                nickname = '';
+            }
+            // 替换所有非字母数字为下划线
+            let base = nickname
+                .normalize('NFKD')
+                .replace(/[^a-zA-Z0-9_]+/g, '_')
+                .replace(/^_+|_+$/g, '')
+                .replace(/_{2,}/g, '_');
+
+            // 若为空则使用 wx_ + openid 末尾
+            if (!base) {
+                const suffix = fallbackId ? String(fallbackId).slice(-6) : Math.random().toString(36).slice(2, 8);
+                base = `wx_${suffix}`;
+            }
+
+            // 最少3位，不足则填充随机字符
+            if (base.length < 3) {
+                base = (base + Math.random().toString(36).slice(2, 5)).slice(0, 3);
+            }
+
+            // 最多20位
+            base = base.slice(0, 20);
+
+            // 不能以下划线开头（根据多数规则），若是则前置字母
+            if (/^_/.test(base)) base = `wx${base}`.slice(0, 20);
+
+            // 附加短随机段，尽量减少重名（仍允许用户修改）
+            const rnd = Math.random().toString(36).slice(2, 6);
+            let suggestion = base;
+            if (base.length <= 16) {
+                suggestion = `${base}_${rnd}`;
+            }
+            // 再次裁剪到20位
+            return suggestion.slice(0, 20);
+        }
+
+        function getUrlParam(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+
+        // 页面加载时处理微信回调
+        document.addEventListener('DOMContentLoaded', async function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const state = urlParams.get('state');
+            const error = urlParams.get('error');
+
+            if (error) {
+                showError('微信授权失败: ' + error);
+                return;
+            }
+
+            if (!code) {
+                showError('未获取到微信授权码');
+                return;
+            }
+
+            try {
+                // 调用微信登录API
+                const response = await fetch('/api/auth/wechat/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ code, state })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    if (data.isNewUser === false) {
+                        // 已有绑定账号，直接登录成功
+                        localStorage.setItem('authToken', data.token);
+                        localStorage.setItem('username', data.username);
+                        showSuccess();
+                        setTimeout(() => {
+                            window.location.href = '/index.html';
+                        }, 2000);
+                    } else {
+                        // 新用户或需要绑定
+                        wechatUser = data.wechatUser;
+                        if (data.needsBinding) {
+                            showBindForm();
+                        } else {
+                            showRegisterForm();
+                        }
+                    }
+                } else {
+                    showError(data.error || '微信登录失败');
+                }
+            } catch (error) {
+                console.error('微信登录处理失败:', error);
+                showError('网络错误，请稍后重试');
+            }
+        });
+
+        function showError(message) {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('errorState').classList.remove('hidden');
+            document.getElementById('errorMessage').textContent = message;
+        }
+
+        function showSuccess() {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('successState').classList.remove('hidden');
+        }
+
+        function showBindForm() {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('bindState').classList.remove('hidden');
+            
+            if (wechatUser) {
+                document.getElementById('wechatAvatar').src = wechatUser.headimgurl || '/default-avatar.png';
+                document.getElementById('wechatNickname').textContent = wechatUser.nickname || '微信用户';
+            }
+
+            // 自动填充邮箱（若URL中带有 email 参数）
+            const presetEmail = getUrlParam('email');
+            if (presetEmail) {
+                const emailInput = document.getElementById('bindEmail');
+                emailInput.value = presetEmail;
+            }
+            // 聚焦到密码输入，优化绑定流程
+            setTimeout(() => {
+                const pwd = document.getElementById('bindPassword');
+                if (pwd) pwd.focus();
+            }, 0);
+        }
+
+        function showRegisterForm() {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('registerState').classList.remove('hidden');
+            
+            if (wechatUser) {
+                document.getElementById('registerWechatAvatar').src = wechatUser.headimgurl || '/default-avatar.png';
+                document.getElementById('registerWechatNickname').textContent = wechatUser.nickname || '微信用户';
+            }
+
+            // 自动填充用户名与邮箱
+            const unameInput = document.getElementById('registerUsername');
+            const emailInput = document.getElementById('registerEmail');
+
+            if (unameInput && wechatUser) {
+                const suggestion = suggestUsernameFromNickname(wechatUser.nickname, wechatUser.openid || wechatUser.unionid);
+                unameInput.value = suggestion;
+            }
+
+            // 从URL参数带入邮箱（若存在）
+            const presetEmail = getUrlParam('email');
+            if (presetEmail && emailInput) {
+                emailInput.value = presetEmail;
+            }
+
+            // 优先让用户输入邮箱
+            setTimeout(() => {
+                if (emailInput && !emailInput.value) emailInput.focus();
+                else {
+                    const pwd = document.getElementById('registerPassword');
+                    if (pwd) pwd.focus();
+                }
+            }, 0);
+        }
+
+        // 绑定现有账号
+        document.getElementById('bindForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('bindEmail').value.trim();
+            const password = document.getElementById('bindPassword').value;
+            const bindBtn = document.getElementById('bindBtn');
+            const bindText = document.getElementById('bindText');
+
+            if (!email || !password) {
+                showError('请填写邮箱和密码');
+                return;
+            }
+
+            bindBtn.disabled = true;
+            bindText.innerHTML = '<span class="loading"></span> 绑定中...';
+
+            try {
+                const response = await fetch('/api/auth/wechat/bind', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        openid: wechatUser.openid, 
+                        email, 
+                        password 
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('authToken', data.token);
+                    localStorage.setItem('username', data.username);
+                    showSuccess();
+                    setTimeout(() => {
+                        window.location.href = '/index.html';
+                    }, 2000);
+                } else {
+                    showError(data.error || '绑定失败');
+                    bindBtn.disabled = false;
+                    bindText.textContent = '绑定微信账号';
+                }
+            } catch (error) {
+                console.error('绑定失败:', error);
+                showError('网络错误，请稍后重试');
+                bindBtn.disabled = false;
+                bindText.textContent = '绑定微信账号';
+            }
+        });
+
+        // 注册新账号
+        document.getElementById('registerForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('registerUsername').value.trim();
+            const email = document.getElementById('registerEmail').value.trim();
+            const password = document.getElementById('registerPassword').value;
+            const registerBtn = document.getElementById('registerBtn');
+            const registerText = document.getElementById('registerText');
+
+            if (!username || !password) {
+                showError('请填写用户名与密码');
+                return;
+            }
+
+            if (password.length < 6) {
+                showError('密码长度至少为6位');
+                return;
+            }
+
+            registerBtn.disabled = true;
+            registerText.innerHTML = '<span class="loading"></span> 注册中...';
+
+            try {
+                const response = await fetch('/api/auth/wechat/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        openid: wechatUser.openid,
+                        nickname: wechatUser.nickname,
+                        headimgurl: wechatUser.headimgurl,
+                        username, 
+                        email, 
+                        password 
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('authToken', data.token);
+                    localStorage.setItem('username', data.username);
+                    showSuccess();
+                    setTimeout(() => {
+                        window.location.href = '/index.html';
+                    }, 2000);
+                } else {
+                    showError(data.error || '注册失败');
+                    registerBtn.disabled = false;
+                    registerText.textContent = '注册并绑定微信';
+                }
+            } catch (error) {
+                console.error('注册失败:', error);
+                showError('网络错误，请稍后重试');
+                registerBtn.disabled = false;
+                registerText.textContent = '注册并绑定微信';
+            }
+        });
+    </script>
+</body>
+</html>

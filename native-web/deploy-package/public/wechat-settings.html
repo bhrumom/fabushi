@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>微信账号管理 - 全球法布施</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+            background: linear-gradient(160deg, #a8edea 0%, #fed6e3 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .title {
+            font-family: 'Noto Serif SC', serif;
+            font-size: 2.5em;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .subtitle {
+            color: #7f8c8d;
+            font-size: 1.1em;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+            margin-bottom: 20px;
+        }
+
+        .wechat-status {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+
+        .wechat-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .wechat-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 3px solid #2dc653;
+        }
+
+        .wechat-details h3 {
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .wechat-details p {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .status-bound {
+            background: rgba(39, 174, 96, 0.1);
+            color: #27ae60;
+        }
+
+        .status-unbound {
+            background: rgba(231, 76, 60, 0.1);
+            color: #e74c3c;
+        }
+
+        .btn {
+            background: linear-gradient(145deg, #89f7fe 0%, #66a6ff 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px 0 rgba(118, 204, 252, 0.4);
+            text-decoration: none;
+            display: inline-block;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px 0 rgba(118, 204, 252, 0.6);
+        }
+
+        .btn-danger {
+            background: linear-gradient(145deg, #e74c3c 0%, #c0392b 100%);
+            box-shadow: 0 4px 15px 0 rgba(231, 76, 60, 0.4);
+        }
+
+        .btn-danger:hover {
+            box-shadow: 0 7px 20px 0 rgba(231, 76, 60, 0.6);
+        }
+
+        .btn-wechat {
+            background: linear-gradient(145deg, #1aad19 0%, #2dc653 100%);
+            box-shadow: 0 4px 15px 0 rgba(45, 198, 83, 0.4);
+        }
+
+        .btn-wechat:hover {
+            box-shadow: 0 7px 20px 0 rgba(45, 198, 83, 0.6);
+        }
+
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .success-message {
+            background: rgba(39, 174, 96, 0.1);
+            color: #27ae60;
+            border: 1px solid rgba(39, 174, 96, 0.2);
+        }
+
+        .error-message {
+            background: rgba(231, 76, 60, 0.1);
+            color: #e74c3c;
+            border: 1px solid rgba(231, 76, 60, 0.2);
+        }
+
+        .info-message {
+            background: rgba(52, 152, 219, 0.1);
+            color: #3498db;
+            border: 1px solid rgba(52, 152, 219, 0.2);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #66a6ff;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .back-link:hover {
+            color: #4a90e2;
+        }
+
+        .section-title {
+            font-size: 1.3em;
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .feature-list li {
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+
+        .feature-icon {
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/index.html" class="back-link">← 返回首页</a>
+        
+        <div class="header">
+            <h1 class="title">✨ 微信账号管理 ✨</h1>
+            <p class="subtitle">管理您的微信登录绑定状态</p>
+        </div>
+
+        <div id="messageContainer"></div>
+
+        <!-- 微信绑定状态 -->
+        <div class="card">
+            <h2 class="section-title">微信绑定状态</h2>
+            <div id="wechatStatusContainer">
+                <div class="loading"></div>
+                <p>正在加载微信绑定信息...</p>
+            </div>
+        </div>
+
+        <!-- 微信登录功能说明 -->
+        <div class="card">
+            <h2 class="section-title">微信登录功能</h2>
+            <ul class="feature-list">
+                <li>
+                    <span class="feature-icon">🔐</span>
+                    <span>使用微信账号快速登录，无需记住密码</span>
+                </li>
+                <li>
+                    <span class="feature-icon">🔗</span>
+                    <span>绑定现有邮箱账号，享受双重登录方式</span>
+                </li>
+                <li>
+                    <span class="feature-icon">🛡️</span>
+                    <span>微信官方授权，安全可靠</span>
+                </li>
+                <li>
+                    <span class="feature-icon">⚡</span>
+                    <span>一键登录，提升用户体验</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="card">
+            <h2 class="section-title">操作</h2>
+            <div id="actionButtons">
+                <button class="btn btn-wechat" id="bindWechatBtn" onclick="bindWechat()">
+                    <span class="feature-icon">📱</span>
+                    绑定微信账号
+                </button>
+                <button class="btn btn-danger" id="unbindWechatBtn" onclick="unbindWechat()" style="display: none;">
+                    <span class="feature-icon">❌</span>
+                    解绑微信账号
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let userInfo = null;
+
+        // 页面加载时检查登录状态和微信绑定状态
+        document.addEventListener('DOMContentLoaded', async function() {
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                showMessage('请先登录', 'error');
+                setTimeout(() => {
+                    window.location.href = '/login.html';
+                }, 2000);
+                return;
+            }
+
+            await loadWechatStatus();
+        });
+
+        // 加载微信绑定状态
+        async function loadWechatStatus() {
+            try {
+                const response = await fetch('/api/auth/verify', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('登录状态无效');
+                }
+
+                const data = await response.json();
+                userInfo = data;
+
+                // 获取用户详细信息（包含微信绑定信息）
+                const userResponse = await fetch('/api/auth/user-info', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+                    }
+                });
+
+                if (userResponse.ok) {
+                    const userData = await userResponse.json();
+                    displayWechatStatus(userData);
+                } else {
+                    // 如果获取用户信息失败，显示未绑定状态
+                    displayWechatStatus({ wechatOpenid: null });
+                }
+            } catch (error) {
+                console.error('加载微信状态失败:', error);
+                showMessage('加载微信绑定状态失败', 'error');
+                displayWechatStatus({ wechatOpenid: null });
+            }
+        }
+
+        // 显示微信绑定状态
+        function displayWechatStatus(userData) {
+            const container = document.getElementById('wechatStatusContainer');
+            const bindBtn = document.getElementById('bindWechatBtn');
+            const unbindBtn = document.getElementById('unbindWechatBtn');
+
+            if (userData.wechatOpenid) {
+                // 已绑定微信
+                container.innerHTML = `
+                    <div class="wechat-status">
+                        <div class="wechat-info">
+                            <img src="${userData.wechatHeadimgurl || '/default-avatar.png'}" 
+                                 alt="微信头像" class="wechat-avatar">
+                            <div class="wechat-details">
+                                <h3>${userData.wechatNickname || '微信用户'}</h3>
+                                <p>绑定时间: ${userData.wechatBoundAt ? new Date(userData.wechatBoundAt).toLocaleString() : '未知'}</p>
+                            </div>
+                        </div>
+                        <span class="status-badge status-bound">已绑定</span>
+                    </div>
+                `;
+                bindBtn.style.display = 'none';
+                unbindBtn.style.display = 'inline-block';
+            } else {
+                // 未绑定微信
+                container.innerHTML = `
+                    <div class="wechat-status">
+                        <div class="wechat-info">
+                            <div style="width: 60px; height: 60px; border-radius: 50%; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 24px;">
+                                📱
+                            </div>
+                            <div class="wechat-details">
+                                <h3>未绑定微信账号</h3>
+                                <p>绑定后可使用微信快速登录</p>
+                            </div>
+                        </div>
+                        <span class="status-badge status-unbound">未绑定</span>
+                    </div>
+                `;
+                bindBtn.style.display = 'inline-block';
+                unbindBtn.style.display = 'none';
+            }
+        }
+
+        // 绑定微信账号
+        async function bindWechat() {
+            const bindBtn = document.getElementById('bindWechatBtn');
+            const originalText = bindBtn.innerHTML;
+            
+            try {
+                bindBtn.disabled = true;
+                bindBtn.innerHTML = '<span class="loading"></span> 获取绑定链接...';
+                
+                // 获取微信登录URL
+                const response = await fetch('/api/auth/wechat/login-url', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // 跳转到微信授权页面
+                    window.location.href = data.authUrl;
+                } else {
+                    showMessage(data.error || '获取微信绑定链接失败', 'error');
+                    bindBtn.disabled = false;
+                    bindBtn.innerHTML = originalText;
+                }
+            } catch (error) {
+                console.error('绑定微信失败:', error);
+                showMessage('网络错误，请稍后重试', 'error');
+                bindBtn.disabled = false;
+                bindBtn.innerHTML = originalText;
+            }
+        }
+
+        // 解绑微信账号
+        async function unbindWechat() {
+            if (!confirm('确定要解绑微信账号吗？解绑后将无法使用微信登录。')) {
+                return;
+            }
+
+            const unbindBtn = document.getElementById('unbindWechatBtn');
+            const originalText = unbindBtn.innerHTML;
+            
+            try {
+                unbindBtn.disabled = true;
+                unbindBtn.innerHTML = '<span class="loading"></span> 解绑中...';
+                
+                const response = await fetch('/api/auth/wechat/unbind', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showMessage('微信账号解绑成功', 'success');
+                    await loadWechatStatus(); // 重新加载状态
+                } else {
+                    showMessage(data.error || '解绑失败', 'error');
+                }
+            } catch (error) {
+                console.error('解绑微信失败:', error);
+                showMessage('网络错误，请稍后重试', 'error');
+            } finally {
+                unbindBtn.disabled = false;
+                unbindBtn.innerHTML = originalText;
+            }
+        }
+
+        // 显示消息
+        function showMessage(message, type) {
+            const container = document.getElementById('messageContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}-message`;
+            messageDiv.textContent = message;
+            
+            container.innerHTML = '';
+            container.appendChild(messageDiv);
+            
+            // 3秒后自动隐藏
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
+

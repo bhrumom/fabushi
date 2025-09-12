@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全球法布施 - 注册</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+            background: linear-gradient(160deg, #a8edea 0%, #fed6e3 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .register-container {
+            max-width: 400px;
+            width: 90%;
+            margin: 20px;
+        }
+
+        .register-card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+            text-align: center;
+        }
+
+        .register-title {
+            font-family: 'Noto Serif SC', serif;
+            font-size: 2.2em;
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-weight: 700;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #34495e;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #66a6ff;
+            box-shadow: 0 0 0 3px rgba(102, 166, 255, 0.1);
+        }
+
+        .btn {
+            width: 100%;
+            background: linear-gradient(145deg, #89f7fe 0%, #66a6ff 100%);
+            color: white;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px 0 rgba(118, 204, 252, 0.4);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px 0 rgba(118, 204, 252, 0.6);
+        }
+
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 14px;
+            width: auto;
+            margin-left: 10px;
+        }
+
+        .verification-group {
+            display: flex;
+            align-items: flex-end;
+        }
+
+        .verification-input {
+            flex: 1;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            font-size: 14px;
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(231, 76, 60, 0.1);
+            border-radius: 8px;
+        }
+
+        .success-message {
+            color: #27ae60;
+            font-size: 14px;
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(39, 174, 96, 0.1);
+            border-radius: 8px;
+        }
+
+        .login-link {
+            margin-top: 20px;
+            color: #66a6ff;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .login-link:hover {
+            color: #4a90e2;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .password-requirements {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+
+        .countdown {
+            color: #7f8c8d;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
+        .wechat-login-section {
+            margin-top: 30px;
+        }
+
+        .divider {
+            position: relative;
+            text-align: center;
+            margin: 20px 0;
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        .divider::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: #ddd;
+        }
+
+        .divider span {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 0 15px;
+            position: relative;
+        }
+
+        .btn-wechat {
+            background: linear-gradient(145deg, #1aad19 0%, #2dc653 100%);
+            box-shadow: 0 4px 15px 0 rgba(45, 198, 83, 0.4);
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-wechat:hover {
+            box-shadow: 0 7px 20px 0 rgba(45, 198, 83, 0.6);
+        }
+
+        .wechat-icon {
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="register-container">
+        <div class="register-card">
+            <h1 class="register-title">✨ 创建账号 ✨</h1>
+            <form id="registerForm">
+                <div class="form-group">
+                    <label class="form-label" for="username">用户名</label>
+                    <input type="text" id="username" class="form-input" placeholder="请输入用户名" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="email">邮箱</label>
+                    <input type="email" id="email" class="form-input" placeholder="请输入邮箱" required>
+                </div>
+                <div class="form-group verification-group">
+                    <div style="flex: 1;">
+                        <label class="form-label" for="verificationCode">验证码</label>
+                        <input type="text" id="verificationCode" class="form-input verification-input" placeholder="请输入验证码" required>
+                    </div>
+                    <button type="button" class="btn btn-small" id="sendCodeBtn" onclick="sendVerificationCode()">
+                        发送验证码
+                    </button>
+                </div>
+                <div class="countdown" id="countdown"></div>
+                <div class="form-group">
+                    <label class="form-label" for="password">密码</label>
+                    <input type="password" id="password" class="form-input" placeholder="请输入密码" required>
+                    <div class="password-requirements">密码至少6位，包含字母和数字</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="confirmPassword">确认密码</label>
+                    <input type="password" id="confirmPassword" class="form-input" placeholder="请再次输入密码" required>
+                </div>
+                <button type="submit" class="btn" id="registerBtn">
+                    <span id="registerText">注册</span>
+                </button>
+                <div id="registerMessage"></div>
+            </form>
+            
+            <!-- 微信登录按钮 -->
+            <div class="wechat-login-section">
+                <div class="divider">
+                    <span>或</span>
+                </div>
+                <button class="btn btn-wechat" id="wechatLoginBtn" onclick="wechatLogin()">
+                    <span class="wechat-icon">📱</span>
+                    微信登录
+                </button>
+            </div>
+            
+            <!-- 调试按钮 -->
+            <div style="margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 10px;">
+                <div style="font-size: 12px; color: #666; margin-bottom: 10px;">调试工具</div>
+                <button type="button" class="btn btn-small" onclick="debugRegisterFlow()" style="margin-right: 10px;">
+                    测试注册流程
+                </button>
+                <button type="button" class="btn btn-small" onclick="checkEnvironment()">
+                    检查环境
+                </button>
+            </div>
+            
+            <div class="login-link" onclick="showLogin()">已有账号？立即登录</div>
+        </div>
+    </div>
+
+    <!-- 引入调试脚本 -->
+    <script src="debug-register.js"></script>
+    
+    <script>
+        const registerForm = document.getElementById('registerForm');
+        const registerBtn = document.getElementById('registerBtn');
+        const registerText = document.getElementById('registerText');
+        const registerMessage = document.getElementById('registerMessage');
+        const sendCodeBtn = document.getElementById('sendCodeBtn');
+        const countdownEl = document.getElementById('countdown');
+
+        let countdownInterval = null;
+        
+        // 页面加载完成后检查环境
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('注册页面加载完成');
+            checkEnvironment();
+        });
+
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const verificationCode = document.getElementById('verificationCode').value.trim();
+
+            if (!username || !email || !password || !confirmPassword || !verificationCode) {
+                const missingFields = [];
+                if (!username) missingFields.push('用户名');
+                if (!email) missingFields.push('邮箱');
+                if (!password) missingFields.push('密码');
+                if (!confirmPassword) missingFields.push('确认密码');
+                if (!verificationCode) missingFields.push('验证码');
+                
+                const errorMsg = `请填写以下必填字段: ${missingFields.join(', ')}`;
+                showMessage(errorMsg, 'error');
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                showMessage('两次输入的密码不一致', 'error');
+                return;
+            }
+
+            if (password.length < 6) {
+                showMessage('密码长度至少为6位', 'error');
+                return;
+            }
+
+            registerBtn.disabled = true;
+            registerText.innerHTML = '<span class="loading"></span> 注册中...';
+
+            try {
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, email, password, verificationCode })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage('注册成功！正在跳转登录...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/login.html';
+                    }, 1500);
+                } else {
+                    showMessage(data.error || '注册失败', 'error');
+                }
+            } catch (error) {
+                console.error('注册过程中发生错误:', error);
+                showMessage('网络错误，请稍后重试', 'error');
+            } finally {
+                registerBtn.disabled = false;
+                registerText.textContent = '注册';
+            }
+        });
+
+        async function sendVerificationCode() {
+            const email = document.getElementById('email').value.trim();
+            
+            if (!email) {
+                showMessage('请先输入邮箱地址', 'error');
+                return;
+            }
+
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showMessage('请输入有效的邮箱地址', 'error');
+                return;
+            }
+
+            sendCodeBtn.disabled = true;
+            sendCodeBtn.innerHTML = '<span class="loading"></span> 发送中...';
+
+            try {
+                console.log('正在发送验证码到邮箱:', email);
+                const response = await fetch('/api/auth/send-verification-code', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email })
+                });
+
+                console.log('发送验证码响应:', { status: response.status, statusText: response.statusText });
+                const data = await response.json();
+                console.log('发送验证码结果:', data);
+
+                if (response.ok) {
+                    showMessage('验证码已发送到您的邮箱，请查收', 'success');
+                    startCountdown(60); // 60秒倒计时
+                } else {
+                    showMessage(data.error || '发送失败', 'error');
+                    sendCodeBtn.disabled = false;
+                    sendCodeBtn.textContent = '发送验证码';
+                }
+            } catch (error) {
+                console.error('发送验证码时发生错误:', error);
+                showMessage('网络错误，请稍后重试', 'error');
+                sendCodeBtn.disabled = false;
+                sendCodeBtn.textContent = '发送验证码';
+            }
+        }
+
+        function startCountdown(seconds) {
+            let remaining = seconds;
+            countdownEl.textContent = `请等待 ${remaining} 秒后重试`;
+            
+            countdownInterval = setInterval(() => {
+                remaining--;
+                if (remaining <= 0) {
+                    clearInterval(countdownInterval);
+                    countdownEl.textContent = '';
+                    sendCodeBtn.disabled = false;
+                    sendCodeBtn.textContent = '发送验证码';
+                } else {
+                    countdownEl.textContent = `请等待 ${remaining} 秒后重试`;
+                }
+            }, 1000);
+        }
+
+        function showMessage(message, type) {
+            console.log(`显示消息 [${type}]:`, message);
+            registerMessage.innerHTML = `<div class="${type}-message">${message}</div>`;
+            registerMessage.style.display = 'block';
+            
+            // 错误消息显示更长时间，成功消息显示较短时间
+            const displayTime = type === 'error' ? 10000 : 5000;
+            setTimeout(() => {
+                registerMessage.innerHTML = '';
+                registerMessage.style.display = 'none';
+            }, displayTime);
+        }
+
+        function showLogin() {
+            window.location.href = '/login.html';
+        }
+
+        // 微信登录功能
+        async function wechatLogin() {
+            const wechatBtn = document.getElementById('wechatLoginBtn');
+            const originalText = wechatBtn.innerHTML;
+            
+            try {
+                wechatBtn.disabled = true;
+                wechatBtn.innerHTML = '<span class="loading"></span> 获取登录链接...';
+                
+                // 获取微信登录URL
+                const response = await fetch('/api/auth/wechat/login-url', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // 跳转到微信授权页面
+                    window.location.href = data.authUrl;
+                } else {
+                    showMessage(data.error || '获取微信登录链接失败', 'error');
+                    wechatBtn.disabled = false;
+                    wechatBtn.innerHTML = originalText;
+                }
+            } catch (error) {
+                console.error('微信登录失败:', error);
+                showMessage('网络错误，请稍后重试', 'error');
+                wechatBtn.disabled = false;
+                wechatBtn.innerHTML = originalText;
+            }
+        }
+    </script>
+</body>
+</html>

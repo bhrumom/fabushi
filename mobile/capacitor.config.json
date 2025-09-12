@@ -1,0 +1,9 @@
+{
+  "appId": "com.ombhrum.fabushi",
+  "appName": "全球法布施",
+  "webDir": "www",
+  "server": {
+    "url": "https://ombhrum.com",
+    "cleartext": true
+  }
+}

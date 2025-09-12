@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>会员状态测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .status-box {
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .active { border-color: #28a745; background-color: #d4edda; }
+        .inactive { border-color: #dc3545; background-color: #f8d7da; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>会员状态测试页面</h1>
+    
+    <div class="status-box" id="statusBox">
+        <h3>当前会员状态</h3>
+        <div id="statusContent">点击"检查会员状态"按钮获取状态</div>
+    </div>
+    
+    <div>
+        <button onclick="checkMembershipStatus()">检查会员状态</button>
+        <button onclick="testRedeemCode()">测试兑换码</button>
+        <button onclick="clearLog()">清空日志</button>
+    </div>
+    
+    <div class="log" id="logArea"></div>
+
+    <script>
+        function log(message) {
+            const logArea = document.getElementById('logArea');
+            const timestamp = new Date().toLocaleTimeString();
+            logArea.textContent += `[${timestamp}] ${message}\n`;
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        async function checkMembershipStatus() {
+            log('开始检查会员状态...');
+            
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                log('错误: 未找到认证token，请先登录');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/alipay/check-membership', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+                log(`API响应状态: ${response.status}`);
+                log(`响应数据: ${JSON.stringify(data, null, 2)}`);
+
+                if (response.ok) {
+                    displayMembershipStatus(data);
+                } else {
+                    log(`错误: ${data.error || '获取会员状态失败'}`);
+                }
+            } catch (error) {
+                log(`网络错误: ${error.message}`);
+            }
+        }
+
+        function displayMembershipStatus(data) {
+            const statusBox = document.getElementById('statusBox');
+            const statusContent = document.getElementById('statusContent');
+            const membership = data.membership;
+            
+            if (membership.isActive) {
+                statusBox.className = 'status-box active';
+                statusContent.innerHTML = `
+                    <h4>✅ 会员已激活</h4>
+                    <p><strong>会员类型:</strong> ${membership.type === 'trial' ? '试用会员' : '付费会员'}</p>
+                    <p><strong>到期时间:</strong> ${membership.expiresAt ? new Date(membership.expiresAt).toLocaleString() : '未知'}</p>
+                    <p><strong>剩余天数:</strong> ${membership.daysLeft || 0} 天</p>
+                `;
+                log('会员状态: 已激活');
+            } else {
+                statusBox.className = 'status-box inactive';
+                statusContent.innerHTML = `
+                    <h4>❌ 会员未激活</h4>
+                    <p>当前没有有效的会员权限</p>
+                `;
+                log('会员状态: 未激活');
+            }
+        }
+
+        async function testRedeemCode() {
+            const code = prompt('请输入兑换码:');
+            if (!code) return;
+
+            log(`开始测试兑换码: ${code}`);
+            
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                log('错误: 未找到认证token，请先登录');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/use-redeem-code', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ code })
+                });
+
+                const data = await response.json();
+                log(`兑换码使用响应状态: ${response.status}`);
+                log(`兑换码使用响应数据: ${JSON.stringify(data, null, 2)}`);
+
+                if (response.ok) {
+                    log('兑换码使用成功！正在重新检查会员状态...');
+                    setTimeout(() => checkMembershipStatus(), 1000);
+                } else {
+                    log(`兑换码使用失败: ${data.error || '未知错误'}`);
+                }
+            } catch (error) {
+                log(`兑换码使用网络错误: ${error.message}`);
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('logArea').textContent = '';
+        }
+
+        // 页面加载时自动检查会员状态
+        window.addEventListener('load', () => {
+            log('页面加载完成');
+            checkMembershipStatus();
+        });
+    </script>
+</body>
+</html>
