@@ -1,161 +1,120 @@
-// Flutter应用API配置
-// 配置Cloudflare Worker后端的API端点
-
 class ApiConfig {
-  // 基础URL - 请替换为你的Cloudflare Worker域名
-  static const String baseUrl = 'https://fabushi-prod.你的账户名.workers.dev';
+  // 环境检测
+  static bool get isProduction {
+    // 通过 --dart-define=ENVIRONMENT=... 在构建时注入环境
+    const environment = String.fromEnvironment('ENVIRONMENT', defaultValue: 'production');
+    return environment == 'production';
+  }
   
-  // 如果使用自定义域名，请替换为:
-  // static const String baseUrl = 'https://api.ombhrum.com';
+  static bool get isDevelopment => !isProduction;
   
-  // 认证相关API端点
-  static const String loginUrl = '$baseUrl/api/auth/login';
-  static const String registerUrl = '$baseUrl/api/auth/register';
-  static const String verifyUrl = '$baseUrl/api/auth/verify';
-  static const String logoutUrl = '$baseUrl/api/auth/logout';
-  static const String sendVerificationCodeUrl = '$baseUrl/api/auth/send-verification-code';
-  static const String verifyCodeUrl = '$baseUrl/api/auth/verify-code';
-  static const String forgotPasswordUrl = '$baseUrl/api/auth/forgot-password';
-  static const String resetPasswordUrl = '$baseUrl/api/auth/reset-password';
+  // 基础URL - 根据环境自动选择
+  static String get baseUrl {
+    if (isProduction) {
+      // 生产环境地址
+      return 'https://fabushi-flutter-web-prod.bhrumom.workers.dev';
+    } else {
+      // 开发环境地址
+      return 'https://fabushi-flutter-web-dev.bhrumom.workers.dev';
+    }
+  }
   
-  // 用户信息API
-  static const String userInfoUrl = '$baseUrl/api/auth/user-info';
-  static const String bindEmailUrl = '$baseUrl/api/auth/bind-email';
+  // 本地开发URL
+  static String get localUrl => 'http://localhost:8787';
   
-  // 微信登录API端点
-  static const String wechatLoginUrlApi = '$baseUrl/api/auth/wechat/login-url';
-  static const String wechatLoginUrl = '$baseUrl/api/auth/wechat/login';
-  static const String wechatBindUrl = '$baseUrl/api/auth/wechat/bind';
-  static const String wechatRegisterUrl = '$baseUrl/api/auth/wechat/register';
-  static const String wechatUnbindUrl = '$baseUrl/api/auth/wechat/unbind';
+  // 当前使用的URL（优先使用本地开发服务器）
+  static String get currentUrl {
+    // 直接根据构建环境决定URL，不再强制使用localhost
+    return baseUrl;
+  }
   
-  // 支付宝支付API端点
-  static const String alipayCreateOrderUrl = '$baseUrl/api/alipay/create-order';
-  static const String alipayQueryOrderUrl = '$baseUrl/api/alipay/query-order';
-  static const String alipayNotifyUrl = '$baseUrl/api/alipay/notify';
-  static const String alipayMembershipStatusUrl = '$baseUrl/api/alipay/check-membership';
+  // 认证相关API
+  static String get loginUrl => '${currentUrl}/api/auth/login';
+  static String get registerUrl => '${currentUrl}/api/auth/register';
+  static String get verifyUrl => '${currentUrl}/api/auth/verify';
+  static String get logoutUrl => '${currentUrl}/api/auth/logout';
+  static String get sendVerificationCodeUrl => '${currentUrl}/api/auth/send-verification-code';
+  static String get verifyCodeUrl => '${currentUrl}/api/auth/verify-code';
+  static String get forgotPasswordUrl => '${currentUrl}/api/auth/forgot-password';
+  static String get resetPasswordUrl => '${currentUrl}/api/auth/reset-password';
   
-  // Stripe支付API端点
-  static const String stripeMembershipStatusUrl = '$baseUrl/api/stripe/membership-status';
-  static const String stripeCreateSubscriptionUrl = '$baseUrl/api/stripe/create-subscription';
-  static const String stripeCancelSubscriptionUrl = '$baseUrl/api/stripe/cancel-subscription';
-  static const String stripeWebhookUrl = '$baseUrl/api/stripe/webhook';
+  // 用户相关API
+  static String get userInfoUrl => '${currentUrl}/api/auth/user-info';
+  static String get bindEmailUrl => '${currentUrl}/api/auth/bind-email';
   
-  // 管理员系统API端点
-  static const String adminCheckStatusUrl = '$baseUrl/api/admin/check-status';
-  static const String adminCreateRedeemCodeUrl = '$baseUrl/api/admin/create-redeem-code';
-  static const String adminRedeemCodesUrl = '$baseUrl/api/admin/redeem-codes';
-  static const String adminUseRedeemCodeUrl = '$baseUrl/api/admin/use-redeem-code';
-  static const String adminDeleteRedeemCodeUrl = '$baseUrl/api/admin/delete-redeem-code';
-  static const String adminGetPriceUrl = '$baseUrl/api/admin/get-price';
-  static const String adminPurchaseHistoryUrl = '$baseUrl/api/admin/purchase-history';
-  static const String adminRedeemHistoryUrl = '$baseUrl/api/admin/redeem-history';
+  // 微信登录相关API
+  static String get wechatLoginUrlApi => '${currentUrl}/api/auth/wechat/login-url';
+  static String get wechatLoginUrl => '${currentUrl}/api/auth/wechat/login';
+  static String get wechatBindUrl => '${currentUrl}/api/auth/wechat/bind';
+  static String get wechatRegisterUrl => '${currentUrl}/api/auth/wechat/register';
+  static String get wechatUnbindUrl => '${currentUrl}/api/auth/wechat/unbind';
   
-  // R2文件存储API
-  static const String r2ListUrl = '$baseUrl/r2?list=true';
-  static String r2FileUrl(String fileName) => '$baseUrl/r2?file=$fileName';
+  // 支付宝相关API
+  static String get alipayCreateOrderUrl => '${currentUrl}/api/alipay/create-order';
+  static String get alipayQueryOrderUrl => '${currentUrl}/api/alipay/query-order';
+  static String get alipayNotifyUrl => '${currentUrl}/api/alipay/notify';
+  static String get alipayMembershipStatusUrl => '${currentUrl}/api/alipay/check-membership';
   
-  // 请求超时配置
+  // Stripe相关API
+  static String get stripeMembershipStatusUrl => '${currentUrl}/api/stripe/membership-status';
+  static String get stripeCreateSubscriptionUrl => '${currentUrl}/api/stripe/create-subscription';
+  static String get stripeCancelSubscriptionUrl => '${currentUrl}/api/stripe/cancel-subscription';
+  static String get stripeWebhookUrl => '${currentUrl}/api/stripe/webhook';
+  
+  // 管理员相关API
+  static String get adminCheckStatusUrl => '${currentUrl}/api/admin/check-status';
+  static String get adminCreateRedeemCodeUrl => '${currentUrl}/api/admin/create-redeem-code';
+  static String get adminRedeemCodesUrl => '${currentUrl}/api/admin/redeem-codes';
+  static String get adminUseRedeemCodeUrl => '${currentUrl}/api/admin/use-redeem-code';
+  static String get adminDeleteRedeemCodeUrl => '${currentUrl}/api/admin/delete-redeem-code';
+  static String get adminGetPriceUrl => '${currentUrl}/api/admin/get-price';
+  static String get adminPurchaseHistoryUrl => '${currentUrl}/api/admin/purchase-history';
+  static String get adminRedeemHistoryUrl => '${currentUrl}/api/admin/redeem-history';
+  
+  // 文件上传相关API
+  static String get r2ListUrl => '${currentUrl}/r2?list=true';
+  
+  // 请求头配置
+  static Map<String, String> get defaultHeaders => {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
+  
+  // 超时配置
   static const Duration requestTimeout = Duration(seconds: 30);
-  static const Duration connectionTimeout = Duration(seconds: 10);
+  static const Duration connectTimeout = Duration(seconds: 10);
+  
+  // 存储键名
+  static const String tokenStorageKey = 'auth_token';
+  static const String userInfoStorageKey = 'user_info';
+  
+  // 调试和日志配置
+  static const bool enableApiLogging = true;
   
   // 重试配置
   static const int maxRetries = 3;
   static const Duration retryDelay = Duration(seconds: 1);
   
-  // 分页配置
-  static const int defaultPageSize = 20;
-  static const int maxPageSize = 100;
-  
-  // 验证码配置
-  static const int verificationCodeLength = 6;
-  static const Duration verificationCodeExpiry = Duration(minutes: 10);
-  static const Duration verificationCodeCooldown = Duration(seconds: 60);
-  
-  // 会员配置
-  static const List<String> membershipPlans = ['monthly', 'quarterly', 'yearly'];
-  static const Map<String, String> membershipPlanNames = {
-    'monthly': '月度会员',
-    'quarterly': '季度会员',
-    'yearly': '年度会员',
-  };
-  
-  // 兑换码类型
-  static const Map<String, String> redeemCodeTypes = {
-    'trial_7': '7天试用',
-    'monthly': '月度会员',
-    'quarterly': '季度会员',
-    'yearly': '年度会员',
-  };
-  
-  // 错误消息
+  // 错误消息配置
   static const Map<String, String> errorMessages = {
     'network_error': '网络连接失败，请检查网络设置',
-    'timeout_error': '请求超时，请重试',
     'server_error': '服务器错误，请稍后重试',
+    'timeout_error': '请求超时，请检查网络连接',
     'auth_error': '认证失败，请重新登录',
     'permission_error': '权限不足',
-    'validation_error': '输入数据格式错误',
-    'not_found_error': '请求的资源不存在',
+    'validation_error': '数据验证失败',
+    'unknown_error': '未知错误，请联系客服',
   };
   
-  // 开发模式配置
-  static const bool isDevelopment = bool.fromEnvironment('dart.vm.product') == false;
-  
-  // 日志配置
-  static const bool enableApiLogging = isDevelopment;
-  static const bool enableErrorReporting = !isDevelopment;
-  
-  // 缓存配置
-  static const Duration tokenCacheExpiry = Duration(days: 7);
-  static const Duration userInfoCacheExpiry = Duration(hours: 1);
-  static const Duration membershipStatusCacheExpiry = Duration(minutes: 30);
-  
-  // 安全配置
-  static const String tokenStorageKey = 'auth_token';
-  static const String userInfoStorageKey = 'user_info';
-  static const String membershipStatusStorageKey = 'membership_status';
-  
-  // 获取完整的API URL
-  static String getApiUrl(String endpoint) {
-    if (endpoint.startsWith('http')) {
-      return endpoint;
-    }
-    return '$baseUrl$endpoint';
-  }
-  
-  // 获取带参数的URL
-  static String getUrlWithParams(String url, Map<String, dynamic> params) {
-    if (params.isEmpty) return url;
-    
-    final uri = Uri.parse(url);
-    final newUri = uri.replace(queryParameters: {
-      ...uri.queryParameters,
-      ...params.map((key, value) => MapEntry(key, value.toString())),
-    });
-    
-    return newUri.toString();
-  }
-  
-  // 验证URL是否有效
-  static bool isValidUrl(String url) {
-    try {
-      final uri = Uri.parse(url);
-      return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
-    } catch (e) {
-      return false;
-    }
-  }
-  
-  // 获取环境特定的配置
-  static Map<String, dynamic> getEnvironmentConfig() {
-    return {
-      'isDevelopment': isDevelopment,
-      'baseUrl': baseUrl,
-      'enableLogging': enableApiLogging,
-      'enableErrorReporting': enableErrorReporting,
-      'requestTimeout': requestTimeout.inMilliseconds,
-      'maxRetries': maxRetries,
-    };
+  // 调试信息
+  static void printCurrentConfig() {
+    print('=== API配置信息 ===');
+    print('当前环境: ${isProduction ? "生产环境" : "开发环境"}');
+    print('基础URL: $baseUrl');
+    print('当前URL: $currentUrl');
+    print('本地URL: $localUrl');
+    print('启用日志: $enableApiLogging');
+    print('最大重试次数: $maxRetries');
+    print('================');
   }
 }

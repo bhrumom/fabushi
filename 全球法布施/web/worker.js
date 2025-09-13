@@ -132,24 +132,38 @@ async function createPasswordHash(password) {
 }
 
 async function verifyPassword(password, user) {
-  // 新版
-  if (user && user.passwordHash && user.salt) {
-    const saltBytes = base64UrlDecodeToArray(user.salt);
-    const iterations = user.iterations || 100000;
-    const hashBytes = await derivePbkdf2(password, saltBytes, iterations);
-    const computed = base64UrlEncode(hashBytes);
-    return computed === user.passwordHash;
+  try {
+    // 优先检查新版 PBKDF2 哈希
+    if (user && user.passwordHash && user.salt) {
+      console.log("Attempting to verify password with new PBKDF2 hash.");
+      const saltBytes = base64UrlDecodeToArray(user.salt);
+      const iterations = user.iterations || 100000;
+      const hashBytes = await derivePbkdf2(password, saltBytes, iterations);
+      const computed = base64UrlEncode(hashBytes);
+      const result = computed === user.passwordHash;
+      console.log(`PBKDF2 comparison result: ${result}`);
+      if (!result) console.error("PBKDF2 comparison failed.");
+      return result;
+    }
+    // 兼容旧版（纯 SHA-256 十六进制），用于平滑迁移
+    if (user && user.password) {
+      console.log("Attempting to verify password with old SHA-256 hash.");
+      const encoder = new TextEncoder();
+      const data = encoder.encode(password);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      const result = hex === user.password;
+      console.log(`SHA-256 comparison result: ${result}`);
+      if (!result) console.error("SHA-256 comparison failed.");
+      return result;
+    }
+    console.error("User object has no recognizable password format:", JSON.stringify(user));
+    return false;
+  } catch (e) {
+    console.error('Password verification crashed:', e.stack);
+    return false;
   }
-  // 兼容旧版（纯 SHA-256 十六进制），用于平滑迁移
-  if (user && user.password) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    return hex === user.password;
-  }
-  return false;
 }
 
 // 如果用户为旧版哈希且验证通过，则升级为 PBKDF2
@@ -814,31 +828,75 @@ async function handleResetPassword(request, env) {
   }
 }
 
-// 更新登录处理函数（保持不变）
+// 更新登录处理函数，支持邮箱登录并为旧数据回填
 async function handleLogin(request, env) {
   try {
-    const { username, password } = await request.json();
+    console.log("--- New Login Attempt ---");
+    const { username: loginIdentifier, password } = await request.json();
+    console.log(`Login identifier received: "${loginIdentifier}"`);
 
-    if (!username || !password) {
-      return jsonResponse({ error: '用户名和密码不能为空' }, 400);
+    if (!loginIdentifier || !password) {
+      console.error("Error: Missing login identifier or password.");
+      return jsonResponse({ error: '用户名或邮箱和密码不能为空' }, 400);
+    }
+
+    let username = loginIdentifier.trim();
+    // 检查登录标识符是否为邮箱
+    if (username.includes('@')) {
+      const email = username.toLowerCase();
+      console.log(`Identifier is an email: ${email}`);
+      let mappedUsername = await env.USERS_KV.get(`email_to_username:${email}`);
+      
+      if (!mappedUsername) {
+        console.log(`Email-to-username mapping not found for ${email}. Attempting backfill.`);
+        const list = await env.USERS_KV.list({ prefix: 'user:' });
+        for (const key of list.keys) {
+            const userJson = await env.USERS_KV.get(key.name);
+            if (userJson) {
+                const user = JSON.parse(userJson);
+                if (user.email && user.email.toLowerCase() === email) {
+                    mappedUsername = user.username;
+                    await env.USERS_KV.put(`email_to_username:${email}`, mappedUsername);
+                    console.log(`Backfilled mapping for ${email} to ${mappedUsername}.`);
+                    break;
+                }
+            }
+        }
+      }
+
+      if (!mappedUsername) {
+        console.error(`User not found for email: ${email}`);
+        return jsonResponse({ error: '用户不存在' }, 401);
+      }
+      username = mappedUsername;
+      console.log(`Email mapped to username: ${username}`);
+    } else {
+      console.log(`Identifier is a username: ${username}`);
     }
 
     const userData = await env.USERS_KV.get(`user:${username}`);
     if (!userData) {
+      console.error(`User data not found in KV for key: user:${username}`);
       return jsonResponse({ error: '用户不存在' }, 401);
     }
+    console.log(`User data found for ${username}.`);
 
     let user = JSON.parse(userData);
+    
     const ok = await verifyPassword(password, user);
     if (!ok) {
+      console.error(`Password verification failed for user: ${username}`);
       return jsonResponse({ error: '密码错误' }, 401);
     }
-    // 旧用户密码平滑升级
+    console.log(`Password verified for ${username}.`);
+    
     user = await upgradePasswordIfNeeded(password, username, user, env);
 
     const token = await generateToken(username, env);
+    console.log(`Token generated for ${username}. Login successful.`);
     return jsonResponse({ token, username });
   } catch (error) {
+    console.error('Login function crashed:', error.stack);
     return jsonResponse({ error: '登录失败' }, 500);
   }
 }
@@ -3244,7 +3302,20 @@ export default {
       // }
 
       // 对于所有其他请求，让Cloudflare的静态文件服务处理
-      const response = await env.ASSETS.fetch(request);
+      if (!env.ASSETS) {
+        return new Response('Error: [ASSETS] binding is not configured. Check your wrangler.toml file.', { status: 500 });
+      }
+      let response = await env.ASSETS.fetch(request);
+
+      // SPA fallback for 404s
+      if (response.status === 404) {
+        const url = new URL(request.url);
+        // Heuristic for navigation requests: not an API call and no file extension.
+        if (!url.pathname.startsWith('/api/') && !/\.[^/]+$/.test(url.pathname)) {
+            const spaRequest = new Request(new URL('/index.html', request.url), request);
+            response = await env.ASSETS.fetch(spaRequest);
+        }
+      }
 
       // 为所有响应添加CORS头
       if (response) {
