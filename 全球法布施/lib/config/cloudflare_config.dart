@@ -1,25 +1,28 @@
+import 'package:flutter/foundation.dart';
+
 class CloudflareConfig {
-  // Cloudflare Worker 部署 URL（备用地址）
-  static const String workerUrl = 'https://fabushi.bhrumom.workers.dev';
+  // 默认的 Worker URL，指向生产环境
+  static const String workerUrl = 'https://fabushi-flutter-web-prod.bhrumom.workers.dev';
   
-  // 备用 URL（如果有多个部署环境）
-  static const String stagingWorkerUrl = 'https://fabushi.bhrumom.workers.dev';
+  // 开发/Staging 环境 URL
+  static const String stagingWorkerUrl = 'https://fabushi-flutter-web-dev.bhrumom.workers.dev';
   
-  // 生产环境 URL（备用地址）
-  static const String productionWorkerUrl = 'https://fabushi.bhrumom.workers.dev';
+  // 生产环境 URL
+  static const String productionWorkerUrl = 'https://fabushi-flutter-web-prod.bhrumom.workers.dev';
   
   // 获取当前环境的 Worker URL
   static String getCurrentWorkerUrl() {
-    // 可以根据环境变量或配置来决定使用哪个 URL
+    // 通过 --dart-define=ENVIRONMENT=... 在构建时注入环境
     const environment = String.fromEnvironment('ENVIRONMENT', defaultValue: 'production');
     
     switch (environment) {
-      case 'staging':
-        return stagingWorkerUrl;
+      case 'development':
+        return stagingWorkerUrl; // 开发环境 API
       case 'production':
-        return productionWorkerUrl;
+        return productionWorkerUrl; // 生产环境 API
       default:
-        return workerUrl;
+        // 默认回退到生产环境，以保安全
+        return productionWorkerUrl;
     }
   }
   

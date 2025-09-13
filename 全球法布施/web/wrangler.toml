@@ -1,11 +1,6 @@
 name = "fabushi-flutter-web"
 main = "worker.js"
-compatibility_date = "2024-06-05"
-
-# Flutter Web静态文件服务配置
-[assets]
-binding = "ASSETS"
-directory = "../build/web"
+compatibility_date = "2024-08-01"
 
 # KV存储配置 - 复用后端的KV存储
 [[kv_namespaces]]
@@ -81,14 +76,47 @@ FROM_EMAIL = "amitabha@ombhrum.com"
 JWT_SECRET = "please_set_from_secret_in_production"
 FLUTTER_WEB = "true"
 
+[env.production.assets]
+binding = "ASSETS"
+directory = "../build/web"
+
 # 开发环境配置
 [env.development]
 name = "fabushi-flutter-web-dev"
 
+[[env.development.kv_namespaces]]
+binding = "USERS_KV"
+id = "20bc68276a0345ab9b5cbf17c1bd51c5"
+
+[[env.development.kv_namespaces]]
+binding = "ORDERS_KV"
+id = "94534f35a0a34023a428a065f77f1911"
+
+[[env.development.kv_namespaces]]
+binding = "MEMBERSHIP_KV"
+id = "773e778850ea429d99686ff4fbbe1180"
+
+[[env.development.kv_namespaces]]
+binding = "REDEEM_CODES_KV"
+id = "59c5263942b4436191e6dffbaacc5957"
+
+[[env.development.r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "bushi-dev"
+
+[[env.development.send_email]]
+name = "EMAIL"
+destination_address = "131551832@qq.com"
+
 [env.development.vars]
 FROM_EMAIL = "amitabha@ombhrum.com"
-JWT_SECRET = "dev_secret_key"
+JWT_SECRET = "dev_secret_key_2025"
 FLUTTER_WEB = "true"
+ENVIRONMENT = "development"
+
+[env.development.assets]
+binding = "ASSETS"
+directory = "../build/web"
 
 [observability.logs]
 enabled = true
