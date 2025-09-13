@@ -34,7 +34,7 @@ class FileTransferModel extends ChangeNotifier {
   double _globalDataSentMB = 0.0;
   
   // 传输服务
-  GlobalTransferService? _globalTransferService;
+  // GlobalTransferService? _globalTransferService; // 暂时禁用旧的全局服务引用
   WebRTCDirectService? _webrtcDirectService;
   
   // Getters
@@ -173,16 +173,16 @@ class FileTransferModel extends ChangeNotifier {
       // 初始化传输服务
       await _initializeServices();
       
-      // 启动全球发送
-      if (_isGlobalSendEnabled && _globalTransferService != null) {
-        debugPrint('🌍 启动全球发送服务');
-        _globalTransferService!.startSending(
-          files: _selectedFiles,
-          isWeb: kIsWeb,
-          isLoop: _isLooping,
-          country: _countryList.first,
-        );
-      }
+      // 全球发送逻辑已迁移到 GlobalDharmaScreen，此处禁用
+      // if (_isGlobalSendEnabled && _globalTransferService != null) {
+      //   debugPrint('🌍 启动全球发送服务');
+      //   _globalTransferService!.startSending(
+      //     files: _selectedFiles,
+      //     isWeb: kIsWeb,
+      //     isLoop: _isLooping,
+      //     country: _countryList.first,
+      //   );
+      // }
       
       // 启动WebRTC直接传输
       if (_webrtcDirectService != null) {
@@ -211,7 +211,7 @@ class FileTransferModel extends ChangeNotifier {
     _status = TransferStatus.idle;
     
     // 停止所有传输服务
-    _globalTransferService?.stopSending();
+    // _globalTransferService?.stopSending(); // 禁用
     _webrtcDirectService?.stopSending();
     
     debugPrint('🛑 所有传输服务已停止');
@@ -220,22 +220,22 @@ class FileTransferModel extends ChangeNotifier {
   
   /// 初始化传输服务
   Future<void> _initializeServices() async {
-    // 初始化全球传输服务
-    if (_isGlobalSendEnabled) {
-      _globalTransferService = GlobalTransferService(
-        onProgress: (count) {
-          _globalSentCount = count;
-          notifyListeners();
-        },
-        onDataSent: (mb) {
-          _globalDataSentMB = mb;
-          notifyListeners();
-        },
-        onStopped: () {
-          debugPrint('🌍 全球发送服务已停止');
-        },
-      );
-    }
+    // 初始化全球传输服务 (已禁用，逻辑迁移到 GlobalDharmaScreen)
+    // if (_isGlobalSendEnabled) {
+    //   _globalTransferService = GlobalTransferService(
+    //     onProgress: (count) {
+    //       _globalSentCount = count;
+    //       notifyListeners();
+    //     },
+    //     onDataSent: (mb) {
+    //       _globalDataSentMB = mb;
+    //       notifyListeners();
+    //     },
+    //     onStopped: () {
+    //       debugPrint('🌍 全球发送服务已停止');
+    //     },
+    //   );
+    // }
     
 
     
