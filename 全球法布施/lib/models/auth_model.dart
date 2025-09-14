@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
+import '../services/membership_service.dart';
 
 class User {
   final String username;
@@ -50,12 +51,13 @@ class User {
   }
 
   bool get isPremiumMember {
-    return membershipType == 'premium' && hasPremiumMembership;
+    return membershipType == 'paid' && hasPremiumMembership;
   }
 }
 
 class AuthModel extends ChangeNotifier {
   final AuthService _authService = AuthService();
+  final MembershipService _membershipService = MembershipService();
   
   User? _currentUser;
   bool _isLoading = false;
@@ -119,16 +121,30 @@ class AuthModel extends ChangeNotifier {
       
       if (result['success'] == true) {
         _token = result['token'];
-        _currentUser = User.fromJson(result['user']);
+        final userJson = result['user'];
         
-        // 存储认证信息
+        // 登录后，额外获取管理员状态
+        final adminStatusResult = await _membershipService.getAdminStats(_token!);
+        final bool isAdmin = adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
+
+        final membershipJson = userJson['membership'] ?? {};
+        _currentUser = User(
+          username: userJson['username'] ?? '',
+          email: userJson['email'] ?? '',
+          membershipType: membershipJson['type'],
+          membershipExpiry: membershipJson['expiresAt'] != null
+              ? DateTime.parse(membershipJson['expiresAt'])
+              : null,
+          isAdmin: isAdmin,
+        );
+        
         await _storeAuth();
         
         _setLoading(false);
         notifyListeners();
         return true;
       } else {
-        _setError(result['message'] ?? '登录失败');
+        _setError(result['error'] ?? '登录失败');
         _setLoading(false);
         return false;
       }
@@ -230,20 +246,24 @@ class AuthModel extends ChangeNotifier {
     if (_token == null) return;
 
     try {
-      final result = await _authService.verifyToken();
-      if (result) {
-        // 刷新用户信息
+      final isValidToken = await _authService.verifyToken();
+      if (isValidToken) {
         await _authService.refreshUserInfo();
-        if (_authService.currentUser != null) {
-          final userModel = _authService.currentUser!;
+        final userModel = _authService.currentUser;
+
+        if (userModel != null) {
+          // 刷新时，额外获取管理员状态
+          final adminStatusResult = await _membershipService.getAdminStats(_token!);
+          final bool isAdmin = adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
+
           _currentUser = User(
             username: userModel.username,
             email: userModel.email ?? '',
             membershipType: userModel.membership.type,
-            membershipExpiry: userModel.membership.expiresAt != null 
+            membershipExpiry: userModel.membership.expiresAt != null
                 ? DateTime.parse(userModel.membership.expiresAt!)
                 : null,
-            isAdmin: false, // UserModel中没有isAdmin字段，默认为false
+            isAdmin: isAdmin,
           );
           await _storeAuth();
           notifyListeners();
