@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import '../config.dart';
+import '../config/unified_config.dart';
 import 'app_settings.dart';
 import 'api_client.dart';
 import 'worker_config.dart';
@@ -21,12 +22,14 @@ class MembershipService {
 
   Future<Map<String, dynamic>> getMembershipStatus(String token) async {
     try {
-      final response = await _apiClient.get('/api/stripe/membership-status', token: token);
+      // 统一使用 /api/alipay/check-membership 端点，它能处理所有类型的会员
+      final endpoint = Uri.parse(UnifiedConfig.alipayMembershipStatusUrl).path;
+      final response = await _apiClient.get(endpoint, token: token);
       
       if (response['success'] == true) {
         return {
           'success': true,
-          'membership': response['data'],
+          'membership': response['membership'],
         };
       } else {
         return {
@@ -45,16 +48,17 @@ class MembershipService {
 
   Future<Map<String, dynamic>> createPaymentSession(String token, String priceType) async {
     try {
-      final response = await _apiClient.post('/api/stripe/create-subscription', body: {
+      final endpoint = Uri.parse(UnifiedConfig.stripeCreateSubscriptionUrl).path;
+      final response = await _apiClient.post(endpoint, body: {
         'currency': priceType == 'usd' ? 'usd' : 'cny',
       }, token: token);
 
       if (response['success'] == true) {
         return {
           'success': true,
-          'subscriptionId': response['data']['subscriptionId'],
-          'clientSecret': response['data']['clientSecret'],
-          'customerId': response['data']['customerId'],
+          'subscriptionId': response['subscriptionId'],
+          'clientSecret': response['clientSecret'],
+          'customerId': response['customerId'],
         };
       } else {
         return {
@@ -73,17 +77,18 @@ class MembershipService {
 
   Future<Map<String, dynamic>> createAlipayOrder(String token, String plan) async {
     try {
-      final response = await _apiClient.post('/api/alipay/create-order', body: {
+      final endpoint = Uri.parse(UnifiedConfig.alipayCreateOrderUrl).path;
+      final response = await _apiClient.post(endpoint, body: {
         'plan': plan, // monthly, quarterly, yearly
       }, token: token);
 
       if (response['success'] == true) {
         return {
           'success': true,
-          'qrCode': response['data']['qrCode'],
-          'orderId': response['data']['orderId'],
-          'amount': response['data']['amount'],
-          'plan': response['data']['plan'],
+          'qrCode': response['qrCode'],
+          'orderId': response['orderId'],
+          'amount': response['amount'],
+          'plan': response['plan'],
         };
       } else {
         return {
@@ -102,7 +107,8 @@ class MembershipService {
 
   Future<Map<String, dynamic>> redeemCode(String token, String code) async {
     try {
-      final response = await _apiClient.post('/api/admin/use-redeem-code', body: {
+      final endpoint = Uri.parse(UnifiedConfig.adminUseRedeemCodeUrl).path;
+      final response = await _apiClient.post(endpoint, body: {
         'code': code,
       }, token: token);
 
@@ -110,9 +116,9 @@ class MembershipService {
         return {
           'success': true,
           'message': response['message'] ?? '兑换成功',
-          'membershipType': response['data']['membershipType'],
-          'expiresAt': response['data']['expiresAt'],
-          'daysAdded': response['data']['daysAdded'],
+          'membershipType': response['membershipType'],
+          'expiresAt': response['expiresAt'],
+          'daysAdded': response['daysAdded'],
         };
       } else {
         return {
@@ -131,7 +137,8 @@ class MembershipService {
 
   Future<Map<String, dynamic>> generateRedeemCodes(String token, String codeType, int quantity, {String description = ''}) async {
     try {
-      final response = await _apiClient.post('/api/admin/create-redeem-code', body: {
+      final endpoint = Uri.parse(UnifiedConfig.adminCreateRedeemCodeUrl).path;
+      final response = await _apiClient.post(endpoint, body: {
         'type': codeType, // trial_7, monthly, quarterly, yearly
         'quantity': quantity,
         'description': description,
@@ -140,8 +147,8 @@ class MembershipService {
       if (response['success'] == true) {
         return {
           'success': true,
-          'codes': response['data']['codes'],
-          'type': response['data']['type'],
+          'codes': response['codes'],
+          'type': response['type'],
           'message': response['message'],
         };
       } else {
@@ -161,14 +168,15 @@ class MembershipService {
 
   Future<Map<String, dynamic>> getAdminStats(String token) async {
     try {
-      final response = await _apiClient.get('/api/admin/check-status', token: token);
+      final endpoint = Uri.parse(UnifiedConfig.adminCheckStatusUrl).path;
+      final response = await _apiClient.get(endpoint, token: token);
 
       if (response['success'] == true) {
         return {
           'success': true,
-          'isAdmin': response['data']['isAdmin'],
-          'email': response['data']['email'],
-          'username': response['data']['username'],
+          'isAdmin': response['isAdmin'],
+          'email': response['email'],
+          'username': response['username'],
         };
       } else {
         return {
@@ -196,15 +204,16 @@ class MembershipService {
         queryParams['status'] = status;
       }
       
-      final response = await _apiClient.get('/api/admin/redeem-codes', token: token, queryParams: queryParams);
+      final endpoint = Uri.parse(UnifiedConfig.adminRedeemCodesUrl).path;
+      final response = await _apiClient.get(endpoint, token: token, queryParams: queryParams);
 
       if (response['success'] == true) {
         return {
           'success': true,
-          'codes': response['data']['codes'],
-          'total': response['data']['total'],
-          'page': response['data']['page'],
-          'totalPages': response['data']['totalPages'],
+          'codes': response['codes'],
+          'total': response['total'],
+          'page': response['page'],
+          'totalPages': response['totalPages'],
         };
       } else {
         return {
@@ -224,12 +233,13 @@ class MembershipService {
   // 查询支付宝订单状态
   Future<Map<String, dynamic>> queryAlipayOrder(String orderId) async {
     try {
-      final response = await _apiClient.get('/api/alipay/query-order', queryParams: {'orderId': orderId});
+      final endpoint = Uri.parse(UnifiedConfig.alipayQueryOrderUrl).path;
+      final response = await _apiClient.get(endpoint, queryParams: {'orderId': orderId});
 
       if (response['success'] == true) {
         return {
           'success': true,
-          'order': response['data'],
+          'order': response,
         };
       } else {
         return {
@@ -239,6 +249,58 @@ class MembershipService {
       }
     } catch (e) {
       debugPrint('查询支付宝订单失败: $e');
+      return {
+        'success': false,
+        'message': '网络连接失败',
+      };
+    }
+  }
+
+  // 获取购买记录
+  Future<Map<String, dynamic>> getPurchaseHistory(String token) async {
+    try {
+      final endpoint = Uri.parse(UnifiedConfig.adminPurchaseHistoryUrl).path;
+      final response = await _apiClient.get(endpoint, token: token);
+      
+      if (response['success'] == true) {
+        return {
+          'success': true,
+          'purchases': response['purchases'],
+        };
+      } else {
+        return {
+          'success': false,
+          'message': response['message'] ?? '获取购买记录失败',
+        };
+      }
+    } catch (e) {
+      debugPrint('获取购买记录失败: $e');
+      return {
+        'success': false,
+        'message': '网络连接失败',
+      };
+    }
+  }
+
+  // 获取兑换记录
+  Future<Map<String, dynamic>> getRedeemHistory(String token) async {
+    try {
+      final endpoint = Uri.parse(UnifiedConfig.adminRedeemHistoryUrl).path;
+      final response = await _apiClient.get(endpoint, token: token);
+
+      if (response['success'] == true) {
+        return {
+          'success': true,
+          'redeems': response['redeems'],
+        };
+      } else {
+        return {
+          'success': false,
+          'message': response['message'] ?? '获取兑换记录失败',
+        };
+      }
+    } catch (e) {
+      debugPrint('获取兑换记录失败: $e');
       return {
         'success': false,
         'message': '网络连接失败',

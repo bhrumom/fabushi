@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
+import '../models/user_model.dart';
 import '../services/membership_service.dart';
 import 'login_screen.dart';
 import 'membership_screen.dart';
@@ -12,9 +13,13 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
   final _redeemCodeController = TextEditingController();
   final MembershipService _membershipService = MembershipService();
+  late TabController _tabController;
+  List<PurchaseRecord> _purchaseHistory = [];
+  List<RedeemRecord> _redeemHistory = [];
+  bool _isLoadingHistory = true;
 
   @override
   void dispose() {
@@ -25,13 +30,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    // 刷新用户信息
+    _tabController = TabController(length: 2, vsync: this);
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authModel = Provider.of<AuthModel>(context, listen: false);
       if (authModel.isLoggedIn) {
         authModel.refreshUserInfo();
+        _loadHistory(authModel.authToken!);
       }
     });
+  }
+
+  Future<void> _loadHistory(String token) async {
+    setState(() {
+      _isLoadingHistory = true;
+    });
+
+    try {
+      final purchaseResult = await _membershipService.getPurchaseHistory(token);
+      final redeemResult = await _membershipService.getRedeemHistory(token);
+
+      if (mounted) {
+        setState(() {
+          if (purchaseResult['success'] == true) {
+            _purchaseHistory = (purchaseResult['purchases'] as List)
+                .map((p) => PurchaseRecord.fromJson(p))
+                .toList();
+          }
+          if (redeemResult['success'] == true) {
+            _redeemHistory = (redeemResult['redeems'] as List)
+                .map((r) => RedeemRecord.fromJson(r))
+                .toList();
+          }
+          _isLoadingHistory = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingHistory = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('加载历史记录失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _handleLogout() async {
@@ -390,6 +436,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          
+          // 历史记录
+          _buildHistorySection(),
+
+          const SizedBox(height: 16),
 
           // 功能菜单
           Card(
@@ -462,5 +513,81 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (user.isPremiumMember) return Colors.amber;
     if (user.isTrialMember) return Colors.blue;
     return Colors.grey;
+  }
+
+  Widget _buildHistorySection() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(text: '购买记录'),
+                Tab(text: '兑换记录'),
+              ],
+              labelColor: const Color(0xFF667eea),
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: const Color(0xFF667eea),
+            ),
+            SizedBox(
+              height: 300, // 固定高度以避免布局问题
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildPurchaseHistoryList(),
+                  _buildRedeemHistoryList(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPurchaseHistoryList() {
+    if (_isLoadingHistory) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_purchaseHistory.isEmpty) {
+      return const Center(child: Text('暂无购买记录'));
+    }
+    return ListView.builder(
+      itemCount: _purchaseHistory.length,
+      itemBuilder: (context, index) {
+        final item = _purchaseHistory[index];
+        return ListTile(
+          title: Text(item.planDisplayName),
+          subtitle: Text('订单号: ${item.orderId}'),
+          trailing: Text('¥${item.amount}'),
+        );
+      },
+    );
+  }
+
+  Widget _buildRedeemHistoryList() {
+    if (_isLoadingHistory) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_redeemHistory.isEmpty) {
+      return const Center(child: Text('暂无兑换记录'));
+    }
+    return ListView.builder(
+      itemCount: _redeemHistory.length,
+      itemBuilder: (context, index) {
+        final item = _redeemHistory[index];
+        return ListTile(
+          title: Text(item.name),
+          subtitle: Text('兑换码: ${item.code}'),
+          trailing: Text('+${item.days}天'),
+        );
+      },
+    );
   }
 }
