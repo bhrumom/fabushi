@@ -4,9 +4,20 @@ import 'models/file_transfer_model.dart';
 import 'models/settings_model.dart';
 import 'models/auth_model.dart';
 import 'models/country_sending_model.dart';
-import 'screens/home_screen.dart';
+import 'services/app_initializer.dart';
+import 'widgets/app_wrapper.dart';
 
-void main() {
+void main() async {
+  // 确保Flutter绑定初始化
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // 初始化应用
+  try {
+    await AppInitializer.initialize();
+  } catch (e) {
+    debugPrint('应用初始化失败，但继续启动: $e');
+  }
+  
   runApp(const MyApp());
 }
 
@@ -63,7 +74,7 @@ class MyApp extends StatelessWidget {
             ),
           ),
         ),
-        home: const HomeScreen(),
+        home: const AppWrapper(),
       ),
     );
   }

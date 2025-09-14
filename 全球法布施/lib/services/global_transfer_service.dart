@@ -11,6 +11,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import 'app_settings.dart';
 import '../core/locations.dart';
 import '../utils/http_with_progress.dart';
 
@@ -545,7 +546,8 @@ class GlobalTransferService {
     required String country,
   }) async {
     debugPrint('Web端全球发送服务已启动');
-    final url = Uri.parse('${AppConfig.backendUrl}/send-global');
+    final backendUrl = await AppSettings.getBackendUrl();
+    final url = Uri.parse('$backendUrl/send-global');
 
     do {
       for (final file in files) {

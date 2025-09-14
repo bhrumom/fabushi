@@ -4,13 +4,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config/api_config.dart';
+import '../config/unified_config.dart';
 import '../models/user_model.dart';
 import 'http_service.dart';
 
 class AuthService {
-  static const String _tokenKey = ApiConfig.tokenStorageKey;
-  static const String _userInfoKey = ApiConfig.userInfoStorageKey;
+  static const String _tokenKey = UnifiedConfig.tokenStorageKey;
+  static const String _userInfoKey = UnifiedConfig.userInfoStorageKey;
   
   // 单例模式
   static final AuthService _instance = AuthService._internal();
@@ -86,7 +86,7 @@ class AuthService {
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
       final response = await HttpService.post(
-        ApiConfig.loginUrl,
+        UnifiedConfig.loginUrl,
         body: {
           'username': username,
           'password': password,
@@ -131,7 +131,7 @@ class AuthService {
   }) async {
     try {
       final response = await HttpService.post(
-        ApiConfig.registerUrl,
+        UnifiedConfig.registerUrl,
         body: {
           'username': username,
           'email': email,
@@ -168,7 +168,7 @@ class AuthService {
   }) async {
     try {
       final response = await HttpService.post(
-        ApiConfig.sendVerificationCodeUrl,
+        UnifiedConfig.sendVerificationCodeUrl,
         body: {
           'email': email,
           'type': type,
@@ -203,7 +203,7 @@ class AuthService {
   }) async {
     try {
       final response = await HttpService.post(
-        ApiConfig.verifyCodeUrl,
+        UnifiedConfig.verifyCodeUrl,
         body: {
           'email': email,
           'code': code,
@@ -235,7 +235,7 @@ class AuthService {
   Future<Map<String, dynamic>> forgotPassword(String email) async {
     try {
       final response = await HttpService.post(
-        ApiConfig.forgotPasswordUrl,
+        UnifiedConfig.forgotPasswordUrl,
         body: {'email': email},
       );
       
@@ -268,7 +268,7 @@ class AuthService {
   }) async {
     try {
       final response = await HttpService.post(
-        ApiConfig.resetPasswordUrl,
+        UnifiedConfig.resetPasswordUrl,
         body: {
           'email': email,
           'token': token,
@@ -303,7 +303,7 @@ class AuthService {
     
     try {
       final response = await HttpService.get(
-        ApiConfig.verifyUrl,
+        UnifiedConfig.verifyUrl,
         useAuth: true,
       );
       
@@ -332,12 +332,12 @@ class AuthService {
   Future<UserModel> _fetchUserInfoWithToken(String token) async {
     try {
       final response = await http.get(
-        Uri.parse(ApiConfig.userInfoUrl),
+        Uri.parse(UnifiedConfig.userInfoUrl),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-      ).timeout(ApiConfig.requestTimeout);
+      ).timeout(UnifiedConfig.requestTimeout);
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -374,7 +374,7 @@ class AuthService {
   }) async {
     try {
       final response = await HttpService.post(
-        ApiConfig.bindEmailUrl,
+        UnifiedConfig.bindEmailUrl,
         body: {
           'email': email,
           'verificationCode': verificationCode,
@@ -412,7 +412,7 @@ class AuthService {
       // 调用服务器登出接口（可选）
       if (_currentToken != null) {
         await HttpService.post(
-          ApiConfig.logoutUrl,
+          UnifiedConfig.logoutUrl,
           useAuth: true,
         );
       }
