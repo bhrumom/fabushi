@@ -17,6 +17,7 @@ class ApiClient {
 
   // 获取后端URL
   Future<String> get baseUrl async {
+    // 优先使用统一配置，如果用户有自定义设置则使用自定义设置
     return await AppSettings.getBackendUrl();
   }
 

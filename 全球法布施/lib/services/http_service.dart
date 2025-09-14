@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config/api_config.dart';
+import '../config/unified_config.dart';
 
 class HttpService {
   // 单例模式
@@ -37,7 +37,7 @@ class HttpService {
   static Future<String?> _getStoredToken() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(ApiConfig.tokenStorageKey);
+      return prefs.getString(UnifiedConfig.tokenStorageKey);
     } catch (e) {
       print('获取存储的token失败: $e');
       return null;
@@ -46,7 +46,7 @@ class HttpService {
   
   // 处理HTTP响应
   static Map<String, dynamic> _handleResponse(http.Response response) {
-    if (ApiConfig.enableApiLogging) {
+    if (UnifiedConfig.enableApiLogging) {
       print('HTTP ${response.request?.method} ${response.request?.url}');
       print('Status: ${response.statusCode}');
       print('Response: ${response.body.length > 500 ? response.body.substring(0, 500) + '...' : response.body}');
@@ -64,16 +64,16 @@ class HttpService {
     String errorMessage;
     
     if (error is SocketException) {
-      errorMessage = ApiConfig.errorMessages['network_error'] ?? '网络连接失败';
+      errorMessage = UnifiedConfig.errorMessages['network_error'] ?? '网络连接失败';
     } else if (error is HttpException) {
-      errorMessage = ApiConfig.errorMessages['server_error'] ?? '服务器错误';
+      errorMessage = UnifiedConfig.errorMessages['server_error'] ?? '服务器错误';
     } else if (error.toString().contains('TimeoutException')) {
-      errorMessage = ApiConfig.errorMessages['timeout_error'] ?? '请求超时';
+      errorMessage = UnifiedConfig.errorMessages['timeout_error'] ?? '请求超时';
     } else {
       errorMessage = '请求失败: ${error.toString()}';
     }
     
-    if (ApiConfig.enableApiLogging) {
+    if (UnifiedConfig.enableApiLogging) {
       print('HTTP $method $url 失败: $errorMessage');
       print('错误详情: $error');
     }
@@ -89,21 +89,21 @@ class HttpService {
   ) async {
     int attempts = 0;
     
-    while (attempts < ApiConfig.maxRetries) {
+    while (attempts < UnifiedConfig.maxRetries) {
       try {
         final response = await request();
         return response;
       } catch (e) {
         attempts++;
         
-        if (attempts >= ApiConfig.maxRetries) {
+        if (attempts >= UnifiedConfig.maxRetries) {
           throw _handleError(e, method, url);
         }
         
         // 等待后重试
-        await Future.delayed(ApiConfig.retryDelay * attempts);
+        await Future.delayed(UnifiedConfig.retryDelay * attempts);
         
-        if (ApiConfig.enableApiLogging) {
+        if (UnifiedConfig.enableApiLogging) {
           print('重试 $method $url (第 $attempts 次)');
         }
       }
@@ -127,7 +127,7 @@ class HttpService {
       final headers = await _getHeaders(useAuth: useAuth);
       
       return await _retryRequest(
-        () => _client.get(finalUri, headers: headers).timeout(ApiConfig.requestTimeout),
+        () => _client.get(finalUri, headers: headers).timeout(UnifiedConfig.requestTimeout),
         'GET',
         url,
       );
@@ -151,7 +151,7 @@ class HttpService {
           Uri.parse(url),
           headers: headers,
           body: jsonBody,
-        ).timeout(ApiConfig.requestTimeout),
+        ).timeout(UnifiedConfig.requestTimeout),
         'POST',
         url,
       );
@@ -175,7 +175,7 @@ class HttpService {
           Uri.parse(url),
           headers: headers,
           body: jsonBody,
-        ).timeout(ApiConfig.requestTimeout),
+        ).timeout(UnifiedConfig.requestTimeout),
         'PUT',
         url,
       );
@@ -196,7 +196,7 @@ class HttpService {
         () => _client.delete(
           Uri.parse(url),
           headers: headers,
-        ).timeout(ApiConfig.requestTimeout),
+        ).timeout(UnifiedConfig.requestTimeout),
         'DELETE',
         url,
       );
@@ -220,7 +220,7 @@ class HttpService {
           Uri.parse(url),
           headers: headers,
           body: jsonBody,
-        ).timeout(ApiConfig.requestTimeout),
+        ).timeout(UnifiedConfig.requestTimeout),
         'PATCH',
         url,
       );
@@ -257,11 +257,11 @@ class HttpService {
         request.fields.addAll(fields);
       }
       
-      if (ApiConfig.enableApiLogging) {
+      if (UnifiedConfig.enableApiLogging) {
         print('上传文件: $filePath 到 $url');
       }
       
-      return await request.send().timeout(ApiConfig.requestTimeout);
+      return await request.send().timeout(UnifiedConfig.requestTimeout);
     } catch (e) {
       throw _handleError(e, 'UPLOAD', url);
     }
@@ -275,7 +275,7 @@ class HttpService {
       final response = await _client.get(
         Uri.parse(url),
         headers: headers,
-      ).timeout(ApiConfig.requestTimeout);
+      ).timeout(UnifiedConfig.requestTimeout);
       
       if (response.statusCode == 200) {
         return response.bodyBytes;
@@ -291,7 +291,7 @@ class HttpService {
   static Future<bool> checkConnectivity() async {
     try {
       final response = await _client.get(
-        Uri.parse('${ApiConfig.baseUrl}/api/auth/verify'),
+        Uri.parse('${UnifiedConfig.currentBackendUrl}/api/auth/verify'),
         headers: {'Content-Type': 'application/json'},
       ).timeout(const Duration(seconds: 5));
       

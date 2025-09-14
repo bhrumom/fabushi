@@ -243,8 +243,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ],
                               ),
                               const SizedBox(height: 16),
+
                               ListTile(
-                                title: const Text('后端URL'),
+                                title: const Text('当前后端URL'),
                                 subtitle: Text(
                                   _backendUrl.isNotEmpty ? _backendUrl : '未设置',
                                   style: const TextStyle(fontFamily: 'monospace'),
