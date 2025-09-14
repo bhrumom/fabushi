@@ -1,19 +1,17 @@
 // lib/config.dart
+// 注意：此文件已被弃用，请使用 config/unified_config.dart
+// 为了保持向后兼容性，此文件仍然保留
 
-import 'config/cloudflare_config.dart';
+import 'config/unified_config.dart';
 
 class AppConfig {
   // 重要提示：
-  // 请将此URL替换为您部署的后端代理服务器的实际地址。
-  //
-  // 示例:
-  // static const String backendUrl = 'https://your-backend-service.com';
-  //
-  // 本地开发时可以指向本地服务器:
-  // static const String backendUrl = 'http://localhost:8080';
-  //
-  // Cloudflare Worker 部署:
-  // 使用 CloudflareConfig.getCurrentWorkerUrl() 获取 Worker URL
+  // 此配置已迁移到 UnifiedConfig，建议使用新的统一配置系统
+  // 新的配置支持：
+  // - 智能后端地址选择
+  // - 多环境支持
+  // - 自动故障转移
+  // - 统一的API管理
   
   // 国家代码列表
   static const List<String> countryCodes = [
@@ -49,22 +47,15 @@ class AppConfig {
     'AU': '澳大利亚',
   };
 
-  // 后端代理URL - 首选地址
+  // 后端代理URL - 首选地址（已弃用，使用 UnifiedConfig.currentBackendUrl）
+  @Deprecated('使用 UnifiedConfig.currentBackendUrl 替代')
   static const String backendUrl = 'https://ombhrum.com';
   
-  // Cloudflare Worker URL（备用地址）
-  static String get cloudflareWorkerUrl => CloudflareConfig.getCurrentWorkerUrl();
-  
-  // 获取当前使用的后端 URL
+  // 获取当前使用的后端 URL（已弃用，使用 UnifiedConfig.currentBackendUrl）
+  @Deprecated('使用 UnifiedConfig.currentBackendUrl 替代')
   static String getCurrentBackendUrl() {
-    // 优先使用主要后端地址 ombhrum.com
-    const useCloudflareWorker = bool.fromEnvironment('USE_CLOUDFLARE_WORKER', defaultValue: false);
-    
-    if (useCloudflareWorker) {
-      return cloudflareWorkerUrl;
-    }
-    
-    return backendUrl;
+    // 使用新的统一配置
+    return UnifiedConfig.currentBackendUrl;
   }
   
   // Cloudflare Worker API 端点
