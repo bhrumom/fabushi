@@ -12,6 +12,7 @@ import '../widgets/enhanced_transfer_stats.dart';
 import '../widgets/transfer_mode_selector.dart';
 import '../services/no_connection_service.dart';
 import 'no_connection_screen.dart';
+import 'asset_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -239,7 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(width: 16),
                             Expanded(
                               child: ElevatedButton.icon(
-                                onPressed: () => context.read<FileTransferModel>().selectBuiltInAssets(),
+                                onPressed: () => context.read<FileTransferModel>().selectBuiltInAssets(context),
                                 icon: const Icon(Icons.image),
                                 label: const Text('内置素材'),
                               ),
