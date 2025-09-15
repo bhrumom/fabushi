@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
-import '../config.dart';
+
 import '../config/unified_config.dart';
 import 'app_settings.dart';
 import 'api_client.dart';

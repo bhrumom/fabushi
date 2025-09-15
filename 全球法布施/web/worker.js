@@ -2884,6 +2884,76 @@ export default {
     }
 
     try {
+      // 健康检查端点
+      if (pathname === '/health') {
+        return jsonResponse({ status: 'ok', timestamp: new Date().toISOString() });
+      }
+
+      // 获取统一的素材列表
+      if (pathname === '/api/assets/list' && method === 'GET') {
+        try {
+          // 1. 获取 R2 文件列表
+          let r2Files = [];
+          if (env.R2_BUCKET) {
+            const r2Objects = await env.R2_BUCKET.list();
+            if (r2Objects && r2Objects.objects) {
+              r2Files = r2Objects.objects.map(obj => ({
+                key: obj.key,
+                size: obj.size,
+                uploaded: obj.uploaded,
+                source: 'r2' // 标记来源为 R2
+              }));
+            }
+          }
+
+          // 2. 获取静态文件清单
+          let staticFiles = [];
+          if (env.ASSETS) {
+            const manifestUrl = new URL('/asset-manifest.json', request.url);
+            const manifestRequest = new Request(manifestUrl);
+            const manifestResponse = await env.ASSETS.fetch(manifestRequest);
+
+            if (manifestResponse.ok) {
+              try {
+                staticFiles = await manifestResponse.json();
+              } catch (e) {
+                console.error("Failed to parse asset-manifest.json", e);
+              }
+            }
+          }
+
+          // 3. 合并列表
+          const allFiles = [...staticFiles, ...r2Files];
+
+          // 4. 去重（以 R2 中的文件为准，R2 优先）
+          const finalFiles = [];
+          const seenKeys = new Set();
+          // R2 files first
+          for (const file of r2Files) {
+             if (!seenKeys.has(file.key)) {
+                finalFiles.push(file);
+                seenKeys.add(file.key);
+             }
+          }
+          // Then static files
+          for (const file of staticFiles) {
+             if (!seenKeys.has(file.key)) {
+                finalFiles.push(file);
+                seenKeys.add(file.key);
+             }
+          }
+
+          return jsonResponse({
+            files: finalFiles,
+            count: finalFiles.length,
+          });
+
+        } catch (error) {
+          console.error('获取素材列表失败:', error);
+          return jsonResponse({ error: '获取素材列表失败: ' + error.message }, 500);
+        }
+      }
+      
       // API 路由
       if (pathname.startsWith('/api/auth/')) {
         if (pathname === '/api/auth/register' && method === 'POST') {

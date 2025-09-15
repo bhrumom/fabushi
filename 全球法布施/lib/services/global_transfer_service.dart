@@ -10,7 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 
-import '../config.dart';
+import '../config/unified_config.dart';
 import 'app_settings.dart';
 import '../core/locations.dart';
 import '../utils/http_with_progress.dart';
