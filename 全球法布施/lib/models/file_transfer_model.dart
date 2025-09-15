@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/global_transfer_service.dart';
+import '../screens/asset_screen.dart';
 import '../services/wifi_broadcast_service.dart';
 import '../services/webrtc_direct_service.dart';
 
@@ -93,9 +95,11 @@ class FileTransferModel extends ChangeNotifier {
   }
   
   /// 选择内置素材
-  Future<void> selectBuiltInAssets() async {
-    // 这里可以添加内置素材的逻辑
-    debugPrint('选择内置素材功能待实现');
+  Future<void> selectBuiltInAssets(BuildContext context) async {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AssetScreen()),
+    );
   }
   
   /// 添加文件

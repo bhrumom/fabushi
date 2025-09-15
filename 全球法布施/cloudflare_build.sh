@@ -1,21 +1,33 @@
 #!/bin/bash
-
-# Cloudflare Pages 专用构建脚本
+# This script is for building the Flutter web app and preparing it for Cloudflare Worker deployment.
 set -e
 
-echo "===== 开始构建用于 Cloudflare Pages 的 Flutter Web 应用 ====="
+# Change to the project root directory, which is the directory of this script.
+cd "$(dirname "$0")"
 
-# 构建 Flutter Web 应用
-echo "构建 Flutter Web 应用..."
-flutter build web --release --web-renderer canvaskit --base-href /
+echo "===== Building Flutter Web App for Cloudflare Worker ====="
 
-# 复制 Cloudflare Pages 配置文件
-echo "复制 Cloudflare Pages 配置文件..."
-cp ../../_headers build/web/
-cp ../../_redirects build/web/
+# Build Flutter Web app
+echo "Building Flutter Web app..."
+flutter build web --release --base-href /
 
-# 复制必要的 Web 文件
-echo "复制必要的 Web 文件..."
+# Copy static assets to the build directory, skipping existing files
+echo "Copying static assets (skipping existing files)..."
+if [ -d "web/assets" ]; then
+    # Use rsync with --ignore-existing to copy only new files.
+    rsync -a --ignore-existing web/assets/ build/web/assets/
+fi
+
+# Generate the manifest for static assets
+echo "Generating static asset manifest..."
+if [ -f "generate-asset-manifest.js" ]; then
+    node generate-asset-manifest.js
+else
+    echo "Warning: generate-asset-manifest.js not found. Skipping manifest generation."
+fi
+
+# Copy other necessary web files
+echo "Copying other necessary web files..."
 if [ -d "web/wasm-proxy/pkg" ]; then
     cp -r web/wasm-proxy/pkg build/web/wasm-proxy/
 fi
@@ -24,6 +36,6 @@ if [ -f "web/service-worker.js" ]; then
     cp web/service-worker.js build/web/
 fi
 
-echo "===== 构建完成 ====="
-echo "构建输出目录: build/web"
-echo "可以直接上传到 Cloudflare Pages"
+echo "===== Build complete ====="
+echo "Build output is in: build/web"
+echo "Ready for 'wrangler deploy'."
