@@ -55,10 +55,13 @@ class UnifiedConfig {
       // 默认使用生产环境
       return cloudflareWorkerProdUrl;
     } else {
-      // 其他平台（移动端、桌面端）：与Web平台保持一致，使用Cloudflare Worker
+      // 其他平台（移动端、桌面端）：优先使用Cloudflare Worker
+      // 因为主要后端地址（ombhrum.com）可能不稳定或返回404
       if (isProduction) {
+        // 生产环境优先使用Cloudflare Worker生产地址
         return cloudflareWorkerProdUrl;
       } else {
+        // 开发环境使用Cloudflare Worker开发地址
         return cloudflareWorkerDevUrl;
       }
     }
@@ -186,9 +189,10 @@ class UnifiedConfig {
   // ===== 备用地址列表 =====
   static List<String> get fallbackUrls {
     // 所有平台统一策略：优先使用Cloudflare Worker，ombhrum.com作为备用
+    final workerUrl = isProduction ? cloudflareWorkerProdUrl : cloudflareWorkerDevUrl;
     return [
-      isProduction ? cloudflareWorkerProdUrl : cloudflareWorkerDevUrl,
-      primaryBackendUrl,
+      workerUrl,           // Cloudflare Worker（优先）
+      primaryBackendUrl,   // 主要后端（备用）
     ];
   }
   
@@ -201,7 +205,7 @@ class UnifiedConfig {
     if (isWeb) {
       print('Web平台策略: 直接调用Cloudflare Worker');
     } else {
-      print('Native平台策略: 使用Cloudflare Worker，ombhrum.com作为备用');
+      print('Native平台策略: 优先使用Cloudflare Worker');
     }
     print('主要后端: $primaryBackendUrl');
     print('Cloudflare生产: $cloudflareWorkerProdUrl');
