@@ -80,6 +80,15 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
         } else if (task.status == DownloadStatus.failed) {
           debugPrint('DownloadProgressDialog: Stream收到失败状态，关闭对话框');
           _onError(task.error ?? '下载失败');
+        } else if (task.status == DownloadStatus.paused && task.error == '下载已取消') {
+          debugPrint('DownloadProgressDialog: Stream收到取消状态，关闭对话框');
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('下载已取消'),
+              backgroundColor: Colors.orange,
+            ),
+          );
         }
       }
     }, onError: (error) {
@@ -287,6 +296,11 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
   }
 
   String _getStatusText(DownloadStatus status) {
+    // 检查当前任务是否是被取消的状态
+    if (_currentTask?.error == '下载已取消') {
+      return '下载已取消';
+    }
+    
     switch (status) {
       case DownloadStatus.pending:
         return '等待下载...';
@@ -302,6 +316,11 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
   }
 
   Color _getStatusColor(DownloadStatus status) {
+    // 检查当前任务是否是被取消的状态
+    if (_currentTask?.error == '下载已取消') {
+      return Colors.orange;
+    }
+    
     switch (status) {
       case DownloadStatus.pending:
         return Colors.grey;
