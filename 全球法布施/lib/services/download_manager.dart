@@ -372,7 +372,15 @@ class DownloadManager {
     final task = _tasks[taskId];
     if (task == null || task.startTime == null) return 0.0;
 
-    final elapsedSeconds = DateTime.now().difference(task.startTime!).inSeconds;
+    // 如果任务已暂停，使用暂停时间来计算实际下载时间
+    final DateTime endTime;
+    if (task.status == DownloadStatus.paused && task.pauseTime != null) {
+      endTime = task.pauseTime!;
+    } else {
+      endTime = DateTime.now();
+    }
+
+    final elapsedSeconds = endTime.difference(task.startTime!).inSeconds;
     if (elapsedSeconds == 0) return 0.0;
 
     return task.downloadedBytes / elapsedSeconds;
