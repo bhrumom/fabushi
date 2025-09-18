@@ -5,10 +5,13 @@ import 'dart:convert';
 import 'dart:convert' as convert;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import 'dart:async';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../config/unified_config.dart';
 import '../services/downloaded_assets_service.dart';
+import '../services/download_manager.dart';
+import '../widgets/download_progress_widget.dart';
 
 // 导入Web平台特定的包
 import 'package:universal_html/html.dart' as html;
@@ -30,6 +33,9 @@ class _AssetScreenState extends State<AssetScreen> {
   List<Map<String, dynamic>> _treeAssets = []; // 法宝树素材列表
   Set<String> _selectedAssets = {}; // 用户选择的素材
   final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
+  final DownloadManager _downloadManager = DownloadManager();
+  Map<String, String> _assetToTaskMap = {}; // assetPath到taskId的映射
+  StreamSubscription<DownloadTask>? _downloadSubscription; // 下载监听器订阅
 
 
   @override
@@ -40,6 +46,49 @@ class _AssetScreenState extends State<AssetScreen> {
     
     // 初始化已下载素材服务
     _initializeDownloadedAssetsService();
+    
+    // 监听下载任务更新
+    _setupDownloadListener();
+  }
+
+  /// 设置下载监听器
+  void _setupDownloadListener() {
+    _downloadSubscription = _downloadManager.taskStream.listen((task) {
+      if (mounted) {
+        setState(() {
+          // 更新下载进度
+          if (task.status == DownloadStatus.downloading || 
+              task.status == DownloadStatus.completed || 
+              task.status == DownloadStatus.failed) {
+            _downloadProgress[task.assetPath] = task.progress;
+            
+            if (task.status == DownloadStatus.completed) {
+              _downloadingAssets.remove(task.assetPath);
+              _assetToTaskMap.remove(task.assetPath);
+              
+              // 标记为已下载
+              _downloadedAssetsService.markAssetAsDownloaded(task.assetPath);
+              
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${task.fileName} 下载完成！')),
+              );
+            } else if (task.status == DownloadStatus.failed) {
+              _downloadingAssets.remove(task.assetPath);
+              _assetToTaskMap.remove(task.assetPath);
+              
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${task.fileName} 下载失败: ${task.error}'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        });
+      }
+    }, onError: (error) {
+      print('下载监听器错误: $error');
+    });
   }
 
   /// 初始化已下载素材服务
@@ -367,12 +416,24 @@ class _AssetScreenState extends State<AssetScreen> {
     }
   }
 
+  /// 下载素材（增强版，支持进度显示、暂停、断点续传）
   Future<void> _downloadAsset(Map<String, dynamic> assetInfo) async {
     final String assetPath = assetInfo['key'];
     final String fileName = assetInfo['name'];
     final String source = assetInfo['source'];
 
     if (_downloadingAssets.contains(assetPath)) return;
+
+    // 检查是否已有下载任务
+    final existingTaskId = _assetToTaskMap[assetPath];
+    if (existingTaskId != null) {
+      final task = _downloadManager.tasks[existingTaskId];
+      if (task != null && task.status == DownloadStatus.paused) {
+        // 如果任务已暂停，显示恢复对话框
+        _showDownloadDialog(existingTaskId, fileName);
+        return;
+      }
+    }
 
     setState(() {
       _downloadingAssets.add(assetPath);
@@ -404,71 +465,70 @@ class _AssetScreenState extends State<AssetScreen> {
       }
       
       print('从以下URL下载素材: $url');
-      
-      final request = http.Request('GET', Uri.parse(url));
-      final http.StreamedResponse response = await http.Client().send(request);
 
-      if (response.statusCode != 200) {
-        throw Exception('下载失败: ${response.statusCode}');
-      }
+      // 创建下载任务
+      final taskId = await _downloadManager.createTask(url, fileName, assetPath);
+      _assetToTaskMap[assetPath] = taskId;
 
-      final contentLength = response.contentLength;
-      List<int> bytes = [];
-      int receivedBytes = 0;
+      // 显示下载进度对话框
+      _showDownloadDialog(taskId, fileName);
 
-      await for (var chunk in response.stream) {
-        bytes.addAll(chunk);
-        receivedBytes += chunk.length;
-        if (contentLength != null) {
-          setState(() {
-            _downloadProgress[assetPath] = receivedBytes / contentLength;
-          });
-        }
-      }
-      
-      final Directory? dir;
-      if (kIsWeb) {
-        // Web平台使用IndexedDB或浏览器存储来保存文件
-        // 这里使用html包来实现Web平台的文件保存
-        print("Web平台下载完成，大小: ${bytes.length} bytes");
-        
-        // 保存文件到浏览器的IndexedDB或本地存储
-        // 这里使用简单的实现，实际项目中可能需要更复杂的存储逻辑
-        await _saveFileForWeb(fileName, bytes);
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$fileName 已保存到Web应用存储')),
-        );
-      } else {
-        if (Platform.isAndroid) {
-          dir = await getExternalStorageDirectory();
-        } else {
-          dir = await getApplicationDocumentsDirectory();
-        }
-        
-        if (dir == null) {
-          throw Exception("无法获取下载目录");
-        }
-
-        final filePath = '${dir.path}/$fileName';
-        final file = File(filePath);
-        await file.writeAsBytes(bytes);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$fileName 已下载到: ${dir.path}')),
-        );
-      }
+      // 开始下载
+      await _downloadManager.startDownload(taskId);
 
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('下载 $fileName 失败: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
       setState(() {
         _downloadingAssets.remove(assetPath);
         _downloadProgress.remove(assetPath);
+        _assetToTaskMap.remove(assetPath);
       });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('下载 $fileName 失败: $e'), backgroundColor: Colors.red),
+      );
     }
+  }
+
+  /// 显示下载进度对话框
+  void _showDownloadDialog(String taskId, String fileName) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => DownloadProgressDialog(
+        taskId: taskId,
+        downloadManager: _downloadManager,
+        onComplete: () {
+          debugPrint('🎉 AssetScreen: 下载完成回调触发');
+          
+          try {
+            // 下载完成后的处理
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('$fileName 下载完成！'),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 3),
+                ),
+              );
+              debugPrint('✅ AssetScreen: 下载完成提示已显示');
+            }
+          } catch (e) {
+            debugPrint('❌ AssetScreen: 显示下载完成提示时出错: $e');
+          }
+          
+          // 清理下载状态
+          try {
+            setState(() {
+              _downloadingAssets.removeWhere((asset) => asset.contains(fileName));
+              _downloadProgress.removeWhere((asset, progress) => asset.contains(fileName));
+            });
+            debugPrint('🧹 AssetScreen: 下载状态已清理');
+          } catch (e) {
+            debugPrint('❌ AssetScreen: 清理下载状态时出错: $e');
+          }
+        },
+      ),
+    );
   }
 
   // 确认选择素材并返回
@@ -477,6 +537,15 @@ class _AssetScreenState extends State<AssetScreen> {
     
     // 将选中的素材信息传递回上一个页面
     Navigator.pop(context, _selectedAssets.toList());
+  }
+
+  @override
+  void dispose() {
+    // 取消下载监听器订阅
+    _downloadSubscription?.cancel();
+    // 释放下载管理器资源
+    _downloadManager.dispose();
+    super.dispose();
   }
 
   @override
@@ -580,33 +649,59 @@ class _AssetScreenState extends State<AssetScreen> {
             final bool isSelected = _selectedAssets.contains(assetPath);
             final String? description = assetInfo['description'];
 
-            return CheckboxListTile(
-              title: Row(
-                children: [
-                  Expanded(child: Text(fileName)),
-                  if (_downloadedAssetsService.isAssetDownloaded(assetPath))
-                    Icon(Icons.check_circle, color: Colors.green, size: 20),
-                ],
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_downloadedAssetsService.isAssetDownloaded(assetPath)) 
-                    Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12)),
-                  if (description != null && description.isNotEmpty)
-                    Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-                ],
-              ),
-              value: isSelected,
-              onChanged: (bool? value) {
-                setState(() {
-                  if (value == true) {
-                    _selectedAssets.add(assetPath);
-                  } else {
-                    _selectedAssets.remove(assetPath);
-                  }
-                });
-              },
+            return Column(
+              children: [
+                CheckboxListTile(
+                  title: Row(
+                    children: [
+                      Expanded(child: Text(fileName)),
+                      if (_downloadedAssetsService.isAssetDownloaded(assetPath))
+                        Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    ],
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_downloadedAssetsService.isAssetDownloaded(assetPath)) 
+                        Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12)),
+                      if (description != null && description.isNotEmpty)
+                        Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                    ],
+                  ),
+                  value: isSelected,
+                  onChanged: (bool? value) {
+                    setState(() {
+                      if (value == true) {
+                        _selectedAssets.add(assetPath);
+                      } else {
+                        _selectedAssets.remove(assetPath);
+                      }
+                    });
+                  },
+                ),
+                // 显示下载进度
+                if (_downloadingAssets.contains(assetPath))
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: LinearProgressIndicator(
+                            value: _downloadProgress[assetPath] ?? 0.0,
+                            minHeight: 4,
+                            backgroundColor: Colors.grey[300],
+                            valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          '${((_downloadProgress[assetPath] ?? 0.0) * 100).toStringAsFixed(0)}%',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             );
           }).toList(),
         );
