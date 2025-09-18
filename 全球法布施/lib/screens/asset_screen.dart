@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:convert' as convert;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../config/unified_config.dart';
+import '../services/downloaded_assets_service.dart';
+
+// 导入Web平台特定的包
+import 'package:universal_html/html.dart' as html;
 
 // 定义素材服务器的基地址
 // const String _baseUrl = 'https://fabushi-flutter-web.workers.dev';
@@ -21,57 +27,200 @@ class _AssetScreenState extends State<AssetScreen> {
   String? _error;
   Set<String> _downloadingAssets = {};
   Map<String, double> _downloadProgress = {};
+  List<Map<String, dynamic>> _treeAssets = []; // 法宝树素材列表
+  Set<String> _selectedAssets = {}; // 用户选择的素材
+  final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
 
   @override
   void initState() {
     super.initState();
-    _fetchAssets();
+    print('当前平台: ${kIsWeb ? "Web" : "非Web"}');
+    print('素材来源: 本地资源文件');
+    
+    // 初始化已下载素材服务
+    _initializeDownloadedAssetsService();
   }
 
-  Future<void> _fetchAssets() async {
+  /// 初始化已下载素材服务
+  Future<void> _initializeDownloadedAssetsService() async {
+    await _downloadedAssetsService.initialize();
+    // 所有平台都从本地加载素材列表
+    _loadLocalAssets();
+  }
+
+  // 获取法宝树素材列表（仅用于展示，不实际下载）
+  Future<void> _fetchTreeAssets() async {
+  // 所有平台都从本地加载素材列表，不再从网络获取
+  await _loadLocalAssets();
+  
+  // 如果需要树形结构，可以在这里对本地素材列表进行转换
+  // 目前保持与之前相同的平面结构
+}
+
+  // 从本地加载素材列表
+  Future<void> _loadLocalAssets() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
+    
     try {
-      final response = await http.get(Uri.parse('${UnifiedConfig.currentBackendUrl}/api/assets/list'));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final files = List<Map<String, dynamic>>.from(data['files']);
+      // 从本地资源文件加载素材列表
+      final String manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
+      final List<dynamic> files = json.decode(manifestString);
+      
+      print('从本地加载的文件数量: ${files.length}');
+      
+      // 按目录分组 - 支持多级目录结构
+      final Map<String, List<Map<String, dynamic>>> groups = {};
+      final List<Map<String, dynamic>> treeAssets = [];
+      
+      for (var fileInfo in files) {
+        String key = fileInfo['key'];
         
-        // 按目录分组
-        final Map<String, List<Map<String, dynamic>>> groups = {};
-        for (var fileInfo in files) {
-          String key = fileInfo['key'];
-          if (key.contains('/')) {
-            final parts = key.split('/');
-            final dir = parts[0];
-            final fileName = parts.sublist(1).join('/');
-            
-            if (!groups.containsKey(dir)) {
-              groups[dir] = [];
+        // 过滤掉JSON文件和隐藏文件（如.DS_Store）
+        if (key.toLowerCase().endsWith('.json') || key.contains('/.DS_Store') || key.startsWith('.')) {
+          continue;
+        }
+        
+        if (key.contains('/')) {
+          final parts = key.split('/');
+          
+          // 构建多级目录结构
+          String currentPath = '';
+          for (int i = 0; i < parts.length - 1; i++) {
+            final dir = parts[i];
+            if (i > 0) {
+              currentPath += '/';
             }
-            groups[dir]!.add({
-              'name': fileName,
-              'source': fileInfo['source'],
-              'key': key,
-            });
+            currentPath += dir;
+            
+            final fullPath = currentPath;
+            final fileName = parts.sublist(i + 1).join('/');
+            
+            // 只在最后一层添加文件
+            if (i == parts.length - 2) {
+              if (!groups.containsKey(fullPath)) {
+                groups[fullPath] = [];
+              }
+              
+              final assetInfo = {
+                'name': fileName,
+                'source': fileInfo['source'],
+                'key': key,
+                'directory': fullPath,
+              };
+              
+              groups[fullPath]!.add(assetInfo);
+              treeAssets.add(assetInfo);
+            }
           }
         }
-
-        setState(() {
-          _assetGroups = groups;
-          _isLoading = false;
-        });
-      } else {
-        throw Exception('Failed to load assets: ${response.statusCode}');
       }
+
+      print('分组后的目录数量: ${groups.length}');
+      print('素材总数: ${treeAssets.length}');
+
+      setState(() {
+        _assetGroups = groups;
+        _treeAssets = treeAssets;
+        _isLoading = false;
+      });
+      
     } catch (e) {
+      print('从本地加载素材失败: $e');
       setState(() {
         _isLoading = false;
-        _error = e.toString();
+        _error = '从本地加载素材失败: $e';
       });
-      print(e);
+    }
+  }
+
+  // Web平台文件保存方法
+  Future<void> _saveFileForWeb(String fileName, List<int> bytes) async {
+    if (!kIsWeb) return;
+    
+    try {
+      // 使用Web的本地存储API保存文件
+      // 这里使用localStorage来保存文件信息，实际文件数据可以使用IndexedDB
+      final fileData = {
+        'name': fileName,
+        'size': bytes.length,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'data': convert.base64.encode(bytes), // 将文件数据转换为base64字符串存储
+      };
+      
+      // 获取已保存的文件列表
+      final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
+      final List<dynamic> savedFiles = json.decode(savedFilesStr);
+      
+      // 检查是否已存在同名文件，如果存在则替换
+      int existingIndex = savedFiles.indexWhere((f) => f['name'] == fileName);
+      if (existingIndex >= 0) {
+        savedFiles[existingIndex] = fileData;
+      } else {
+        savedFiles.add(fileData);
+      }
+      
+      // 保存更新后的文件列表
+      html.window.localStorage['saved_files'] = json.encode(savedFiles);
+      
+      // 保存文件数据到单独的存储项
+      html.window.localStorage['file_$fileName'] = fileData['data'].toString();
+      
+      print('Web平台文件保存成功: $fileName, 大小: ${bytes.length} bytes');
+    } catch (e) {
+      print('Web平台文件保存失败: $e');
+      throw Exception('Web平台文件保存失败: $e');
+    }
+  }
+
+  // 从Web平台存储读取文件数据
+  List<int>? _readFileDataFromWeb(String fileName) {
+    if (!kIsWeb) return null;
+    
+    try {
+      final fileDataStr = html.window.localStorage['file_$fileName'];
+      if (fileDataStr == null) return null;
+      
+      return convert.base64.decode(fileDataStr);
+    } catch (e) {
+      print('读取Web平台文件失败: $e');
+      return null;
+    }
+  }
+
+  // 获取Web平台已保存的文件列表
+  List<Map<String, dynamic>> _getSavedFilesForWeb() {
+    if (!kIsWeb) return [];
+    
+    try {
+      final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
+      final List<dynamic> savedFiles = json.decode(savedFilesStr);
+      
+      return savedFiles.map((f) => {
+        'name': f['name'],
+        'size': f['size'],
+        'timestamp': f['timestamp'],
+      }).toList();
+    } catch (e) {
+      print('获取Web平台已保存文件失败: $e');
+      return [];
+    }
+  }
+
+  // 从Web平台存储中读取文件数据
+  List<int>? _readFileForWeb(String fileName) {
+    if (!kIsWeb) return null;
+    
+    try {
+      final fileDataStr = html.window.localStorage['file_$fileName'];
+      if (fileDataStr == null) return null;
+      
+      return convert.base64.decode(fileDataStr);
+    } catch (e) {
+      print('读取Web平台文件失败: $e');
+      return null;
     }
   }
 
@@ -102,11 +251,16 @@ class _AssetScreenState extends State<AssetScreen> {
       }
 
       final String url;
+      // 所有平台统一使用Cloudflare Worker下载素材，确保素材来源一致
+      final String baseUrl = UnifiedConfig.isProduction ? UnifiedConfig.cloudflareWorkerProdUrl : UnifiedConfig.cloudflareWorkerDevUrl;
+      
       if (source == 'r2') {
-        url = '${UnifiedConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(assetPath)}';
+        url = '$baseUrl/r2?file=${Uri.encodeComponent(assetPath)}';
       } else { // 'static'
-        url = '${UnifiedConfig.currentBackendUrl}/$assetPath';
+        url = '$baseUrl/$assetPath';
       }
+      
+      print('从以下URL下载素材: $url');
       
       final request = http.Request('GET', Uri.parse(url));
       final http.StreamedResponse response = await http.Client().send(request);
@@ -131,10 +285,16 @@ class _AssetScreenState extends State<AssetScreen> {
       
       final Directory? dir;
       if (kIsWeb) {
-        // Web平台无法直接保存文件，这里仅作演示
+        // Web平台使用IndexedDB或浏览器存储来保存文件
+        // 这里使用html包来实现Web平台的文件保存
         print("Web平台下载完成，大小: ${bytes.length} bytes");
+        
+        // 保存文件到浏览器的IndexedDB或本地存储
+        // 这里使用简单的实现，实际项目中可能需要更复杂的存储逻辑
+        await _saveFileForWeb(fileName, bytes);
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$fileName 已在内存中准备好 (Web)')),
+          SnackBar(content: Text('$fileName 已保存到Web应用存储')),
         );
       } else {
         if (Platform.isAndroid) {
@@ -168,15 +328,23 @@ class _AssetScreenState extends State<AssetScreen> {
     }
   }
 
+  // 确认选择素材并返回
+  void _confirmSelection() {
+    if (_selectedAssets.isEmpty) return;
+    
+    // 将选中的素材信息传递回上一个页面
+    Navigator.pop(context, _selectedAssets.toList());
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('内置素材'),
+        title: Text('素材列表'),
         actions: [
           IconButton(
             icon: Icon(Icons.refresh),
-            onPressed: _isLoading ? null : _fetchAssets,
+            onPressed: _isLoading ? null : _loadLocalAssets,
           ),
         ],
       ),
@@ -197,7 +365,7 @@ class _AssetScreenState extends State<AssetScreen> {
             Text('加载失败: $_error', style: TextStyle(color: Colors.red)),
             SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _fetchAssets,
+              onPressed: _loadLocalAssets,
               child: Text('重试'),
             ),
           ],
@@ -209,48 +377,82 @@ class _AssetScreenState extends State<AssetScreen> {
       return Center(child: Text('没有找到任何素材。'));
     }
 
-    return ListView.builder(
-      itemCount: _assetGroups.keys.length,
-      itemBuilder: (context, index) {
-        final dir = _assetGroups.keys.elementAt(index);
-        final files = _assetGroups[dir]!;
-        return ExpansionTile(
-          title: Text(dir, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          children: files.map((assetInfo) {
-            final String assetPath = assetInfo['key'];
-            final String fileName = assetInfo['name'];
-            final isDownloading = _downloadingAssets.contains(assetPath);
-            final progress = _downloadProgress[assetPath];
+    // 所有平台都使用相同的UI逻辑：显示素材列表，可以选择发送
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(
+            '素材列表',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Text(
+            '选择您需要的素材，点击"选择发送"后将自动从云端服务器下载',
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+        ),
+        Divider(),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _assetGroups.keys.length,
+            itemBuilder: (context, index) {
+              final dir = _assetGroups.keys.elementAt(index);
+              final files = _assetGroups[dir]!;
+              
+              // 提取目录名称（显示最后一级目录）
+              final dirName = dir.contains('/') ? dir.split('/').last : dir;
+              
+              return ExpansionTile(
+                title: Text(dirName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                subtitle: dir.contains('/') ? Text(dir, style: TextStyle(fontSize: 12, color: Colors.grey)) : null,
+                children: files.map((assetInfo) {
+                  final String assetPath = assetInfo['key'];
+                  final String fileName = assetInfo['name'];
+                  final bool isSelected = _selectedAssets.contains(assetPath);
 
-            return ListTile(
-              title: Text(fileName),
-              trailing: isDownloading
-                  ? SizedBox(
-                      width: 100,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              value: progress,
-                              strokeWidth: 3,
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Text('${((progress ?? 0) * 100).toStringAsFixed(0)}%'),
-                        ],
-                      ),
-                    )
-                  : IconButton(
-                      icon: Icon(Icons.download),
-                      onPressed: () => _downloadAsset(assetInfo),
+                  return CheckboxListTile(
+                    title: Row(
+                      children: [
+                        Expanded(child: Text(fileName)),
+                        if (_downloadedAssetsService.isAssetDownloaded(assetPath))
+                          Icon(Icons.check_circle, color: Colors.green, size: 20),
+                      ],
                     ),
-            );
-          }).toList(),
-        );
-      },
+                    subtitle: _downloadedAssetsService.isAssetDownloaded(assetPath) 
+                        ? Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12))
+                        : null,
+                    value: isSelected,
+                    onChanged: (bool? value) {
+                      setState(() {
+                        if (value == true) {
+                          _selectedAssets.add(assetPath);
+                        } else {
+                          _selectedAssets.remove(assetPath);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ),
+        if (_selectedAssets.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: ElevatedButton(
+              onPressed: _confirmSelection,
+              child: Text('选择发送 (${_selectedAssets.length})'),
+              style: ElevatedButton.styleFrom(
+                minimumSize: Size(double.infinity, 50),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

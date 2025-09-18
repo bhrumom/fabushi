@@ -3,12 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../services/global_transfer_service.dart';
 import '../screens/asset_screen.dart';
 import '../services/wifi_broadcast_service.dart';
 import '../services/webrtc_direct_service.dart';
 import '../config/unified_config.dart';
+import '../services/downloaded_assets_service.dart';
+
+// Web平台特定的导入
+import 'package:universal_html/html.dart' as html;
 
 /// 传输状态枚举
 enum TransferStatus {
@@ -42,6 +48,9 @@ class FileTransferModel extends ChangeNotifier {
   // 传输服务
   GlobalTransferService? _globalTransferService;
   WebRTCDirectService? _webrtcDirectService;
+  
+  // 已下载素材服务
+  final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
   
   // Getters
   bool get isGlobalSendEnabled => _isGlobalSendEnabled;
@@ -117,28 +126,136 @@ class FileTransferModel extends ChangeNotifier {
   /// 下载选中的素材
   Future<void> _downloadSelectedAssets(BuildContext context, List<String> assetPaths) async {
     try {
-      // 显示下载提示
+      // 初始化已下载素材服务
+      await _downloadedAssetsService.initialize();
+      
+      // 分离已下载和未下载的素材
+      final List<String> needDownloadAssets = [];
+      final List<String> alreadyDownloadedAssets = [];
+      
+      for (String assetPath in assetPaths) {
+        if (_downloadedAssetsService.isAssetDownloaded(assetPath)) {
+          alreadyDownloadedAssets.add(assetPath);
+        } else {
+          needDownloadAssets.add(assetPath);
+        }
+      }
+      
+      // 显示智能提示
+      String message = '';
+      if (alreadyDownloadedAssets.isNotEmpty && needDownloadAssets.isNotEmpty) {
+        message = '发现 ${alreadyDownloadedAssets.length} 个素材已下载，将下载 ${needDownloadAssets.length} 个新素材';
+      } else if (alreadyDownloadedAssets.isNotEmpty) {
+        message = '所有 ${alreadyDownloadedAssets.length} 个素材都已下载，将直接复用';
+      } else if (needDownloadAssets.isNotEmpty) {
+        message = '开始下载 ${needDownloadAssets.length} 个素材';
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('开始下载 ${assetPaths.length} 个素材')),
+        SnackBar(content: Text(message)),
       );
       
-      // 逐个下载素材
-      for (String assetPath in assetPaths) {
-        await _downloadSingleAsset(context, assetPath);
+      // 处理已下载的素材（直接复用）
+      if (alreadyDownloadedAssets.isNotEmpty) {
+        await _reuseDownloadedAssets(context, alreadyDownloadedAssets);
+      }
+      
+      // 下载未下载的素材
+      if (needDownloadAssets.isNotEmpty) {
+        for (String assetPath in needDownloadAssets) {
+          await _downloadSingleAsset(context, assetPath);
+        }
       }
       
       // 下载完成提示
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('所有素材下载完成')),
+        SnackBar(content: Text('所有素材处理完成')),
       );
     } catch (e) {
       // 下载失败提示
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('下载失败: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('处理失败: $e'), backgroundColor: Colors.red),
       );
     }
   }
   
+  /// 复用已下载的素材
+  Future<void> _reuseDownloadedAssets(BuildContext context, List<String> assetPaths) async {
+    try {
+      for (String assetPath in assetPaths) {
+        final fileName = assetPath.split('/').last;
+        
+        if (kIsWeb) {
+          // Web平台：从本地存储读取文件数据
+          final fileData = await _getFileFromWebStorage(fileName);
+          if (fileData != null) {
+            final fileInfo = PlatformFile(
+              name: fileName,
+              size: fileData.length,
+              path: null, // Web平台没有本地路径
+              bytes: Uint8List.fromList(fileData),
+            );
+            addFiles([fileInfo]);
+            debugPrint('Web平台复用已下载素材: $fileName');
+          }
+        } else {
+          // 本地平台：从本地文件读取
+          final Directory? dir;
+          if (Platform.isAndroid) {
+            dir = await getExternalStorageDirectory();
+          } else {
+            dir = await getApplicationDocumentsDirectory();
+          }
+          
+          if (dir != null) {
+            final filePath = '${dir.path}/$fileName';
+            final file = File(filePath);
+            
+            if (await file.exists()) {
+              final fileInfo = PlatformFile(
+                name: fileName,
+                size: await file.length(),
+                path: filePath,
+              );
+              addFiles([fileInfo]);
+              debugPrint('本地平台复用已下载素材: $fileName');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('复用已下载素材失败: $e');
+      rethrow;
+    }
+  }
+
+  /// 从Web存储获取文件
+  Future<List<int>?> _getFileFromWebStorage(String fileName) async {
+    try {
+      // 从Web平台的localStorage获取文件数据
+      final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
+      final List<dynamic> savedFiles = json.decode(savedFilesStr);
+      
+      // 查找文件信息
+      final fileInfo = savedFiles.firstWhere(
+        (f) => f['name'] == fileName,
+        orElse: () => null,
+      );
+      
+      if (fileInfo == null) return null;
+      
+      // 获取文件数据
+      final fileDataStr = html.window.localStorage['file_$fileName'];
+      if (fileDataStr == null) return null;
+      
+      // 解码base64数据
+      return base64.decode(fileDataStr);
+    } catch (e) {
+      debugPrint('从Web存储获取文件失败: $e');
+      return null;
+    }
+  }
+
   /// 下载单个素材
   Future<void> _downloadSingleAsset(BuildContext context, String assetPath) async {
     try {
@@ -181,6 +298,9 @@ class FileTransferModel extends ChangeNotifier {
           bytes: response.bodyBytes,
         );
         addFiles([fileInfo]);
+        
+        // 标记素材为已下载
+        await _downloadedAssetsService.markAssetAsDownloaded(assetPath);
         debugPrint('Web平台素材下载完成: $fileName');
         return;
       }
@@ -210,6 +330,9 @@ class FileTransferModel extends ChangeNotifier {
       );
       
       addFiles([fileInfo]);
+      
+      // 标记素材为已下载
+      await _downloadedAssetsService.markAssetAsDownloaded(assetPath);
       
       debugPrint('素材下载完成: $fileName');
     } catch (e) {
