@@ -59,7 +59,8 @@ class _AssetScreenState extends State<AssetScreen> {
           // 更新下载进度
           if (task.status == DownloadStatus.downloading || 
               task.status == DownloadStatus.completed || 
-              task.status == DownloadStatus.failed) {
+              task.status == DownloadStatus.failed ||
+              task.status == DownloadStatus.paused) {
             _downloadProgress[task.assetPath] = task.progress;
             
             if (task.status == DownloadStatus.completed) {
@@ -80,6 +81,18 @@ class _AssetScreenState extends State<AssetScreen> {
                 SnackBar(
                   content: Text('${task.fileName} 下载失败: ${task.error}'),
                   backgroundColor: Colors.red,
+                ),
+              );
+            } else if (task.status == DownloadStatus.paused && task.error == '下载已取消') {
+              // 处理取消状态
+              _downloadingAssets.remove(task.assetPath);
+              _assetToTaskMap.remove(task.assetPath);
+              _downloadProgress.remove(task.assetPath);
+              
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${task.fileName} 下载已取消'),
+                  backgroundColor: Colors.orange,
                 ),
               );
             }
