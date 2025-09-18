@@ -30,6 +30,11 @@ class _AssetScreenState extends State<AssetScreen> {
   List<Map<String, dynamic>> _treeAssets = []; // 法宝树素材列表
   Set<String> _selectedAssets = {}; // 用户选择的素材
   final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
+  
+  // 高能素材相关
+  Map<String, List<Map<String, dynamic>>> _highEnergyAssetGroups = {};
+  List<Map<String, dynamic>> _highEnergyTreeAssets = [];
+  bool _showHighEnergyAssets = false; // 是否显示高能素材
 
   @override
   void initState() {
@@ -46,6 +51,8 @@ class _AssetScreenState extends State<AssetScreen> {
     await _downloadedAssetsService.initialize();
     // 所有平台都从本地加载素材列表
     _loadLocalAssets();
+    // 加载本地R2文件列表，无需查询即可查看
+    _loadLocalR2FilesList();
   }
 
   // 获取法宝树素材列表（仅用于展示，不实际下载）
@@ -133,6 +140,155 @@ class _AssetScreenState extends State<AssetScreen> {
         _isLoading = false;
         _error = '从本地加载素材失败: $e';
       });
+    }
+  }
+
+  // 加载本地R2文件列表（无需查询即可查看）
+  Future<void> _loadLocalR2FilesList() async {
+    try {
+      // 从本地资源文件加载R2文件列表
+      final String r2FilesString = await rootBundle.loadString('assets/data/r2-files-list.json');
+      final Map<String, dynamic> r2Data = json.decode(r2FilesString);
+      
+      // 获取文件列表（兼容objects和files字段）
+      final List<dynamic> files = r2Data['objects'] ?? r2Data['files'] ?? [];
+      
+      print('从本地加载的R2文件数量: ${files.length}');
+      
+      // 按目录分组 - R2文件都在根目录，统一放入一个分组
+      final Map<String, List<Map<String, dynamic>>> groups = {};
+      final List<Map<String, dynamic>> treeAssets = [];
+      
+      for (var fileInfo in files) {
+        String key = fileInfo['key'];
+        
+        // 过滤掉JSON文件和隐藏文件（如.DS_Store）
+        if (key.toLowerCase().endsWith('.json') || key.contains('/.DS_Store') || key.startsWith('.')) {
+          continue;
+        }
+        
+        // R2存储桶中的文件统一放入"R2存储桶文件"分组
+        const String directory = 'R2存储桶文件';
+        final assetInfo = {
+          'name': key, // 文件名就是key
+          'source': 'r2', // R2存储桶中的文件
+          'key': key,
+          'directory': directory,
+          'description': fileInfo['key'] ?? '', // 使用key作为描述
+          'size': fileInfo['size'] ?? 0,
+          'uploaded': fileInfo['uploaded'], // R2特有的上传时间
+          'isDownloaded': false, // 标记是否已下载
+        };
+        
+        if (!groups.containsKey(directory)) {
+          groups[directory] = [];
+        }
+        
+        groups[directory]!.add(assetInfo);
+        treeAssets.add(assetInfo);
+      }
+
+      print('R2文件分组后的目录数量: ${groups.length}');
+      print('R2文件总数: ${treeAssets.length}');
+
+      setState(() {
+        _highEnergyAssetGroups = groups;
+        _highEnergyTreeAssets = treeAssets;
+      });
+      
+      print('本地R2文件列表加载完成');
+    } catch (e) {
+      print('加载本地R2文件列表失败: $e');
+      // 如果加载失败，保持高能素材为空，不影响主功能
+      setState(() {
+        _highEnergyAssetGroups = {};
+        _highEnergyTreeAssets = [];
+      });
+    }
+  }
+
+  // 查询R2存储桶中的文件列表（手动触发）
+  Future<void> _queryR2Files() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    
+    try {
+      // 从R2存储桶获取实际文件列表
+      final String baseUrl = UnifiedConfig.isProduction ? UnifiedConfig.cloudflareWorkerProdUrl : UnifiedConfig.cloudflareWorkerDevUrl;
+      final String url = '$baseUrl/r2?list';
+      
+      print('查询R2存储桶文件列表: $url');
+      
+      final response = await http.get(Uri.parse(url));
+      
+      if (response.statusCode != 200) {
+        throw Exception('获取R2文件列表失败: ${response.statusCode}');
+      }
+      
+      final data = json.decode(response.body);
+      final List<dynamic> files = data['files'] ?? data['objects'] ?? [];
+      
+      print('从R2存储桶获取的文件数量: ${files.length}');
+      
+      // 按目录分组 - R2文件都在根目录，统一放入一个分组
+      final Map<String, List<Map<String, dynamic>>> groups = {};
+      final List<Map<String, dynamic>> treeAssets = [];
+      
+      for (var fileInfo in files) {
+        String key = fileInfo['key'];
+        
+        // 过滤掉JSON文件和隐藏文件（如.DS_Store）
+        if (key.toLowerCase().endsWith('.json') || key.contains('/.DS_Store') || key.startsWith('.')) {
+          continue;
+        }
+        
+        // R2存储桶中的文件统一放入“R2存储桶文件”分组
+        const String directory = 'R2存储桶文件';
+        final assetInfo = {
+          'name': key, // 文件名就是key
+          'source': 'r2', // R2存储桶中的文件
+          'key': key,
+          'directory': directory,
+          'description': fileInfo['key'] ?? '', // 使用key作为描述
+          'size': fileInfo['size'] ?? 0,
+          'uploaded': fileInfo['uploaded'], // R2特有的上传时间
+          'isDownloaded': false, // 标记是否已下载
+        };
+        
+        if (!groups.containsKey(directory)) {
+          groups[directory] = [];
+        }
+        
+        groups[directory]!.add(assetInfo);
+        treeAssets.add(assetInfo);
+      }
+
+      print('R2文件分组后的目录数量: ${groups.length}');
+      print('R2文件总数: ${treeAssets.length}');
+
+      setState(() {
+        _highEnergyAssetGroups = groups;
+        _highEnergyTreeAssets = treeAssets;
+        _isLoading = false;
+      });
+      
+      // 显示成功提示
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('成功获取 ${files.length} 个R2文件')),
+      );
+      
+    } catch (e) {
+      print('查询R2存储桶文件失败: $e');
+      setState(() {
+        _isLoading = false;
+        _error = '查询R2存储桶文件失败: $e';
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('查询R2文件失败: $e')),
+      );
     }
   }
 
@@ -340,11 +496,26 @@ class _AssetScreenState extends State<AssetScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('素材列表'),
+        title: Text(_showHighEnergyAssets ? '高能素材列表' : '素材列表'),
         actions: [
           IconButton(
+            icon: Icon(_showHighEnergyAssets ? Icons.arrow_back : Icons.bolt),
+            onPressed: () {
+              setState(() {
+                _showHighEnergyAssets = !_showHighEnergyAssets;
+              });
+            },
+            tooltip: _showHighEnergyAssets ? '返回普通素材' : '查看高能素材',
+          ),
+          IconButton(
             icon: Icon(Icons.refresh),
-            onPressed: _isLoading ? null : _loadLocalAssets,
+            onPressed: _isLoading ? null : () {
+              if (_showHighEnergyAssets) {
+                _queryR2Files();
+              } else {
+                _loadLocalAssets();
+              }
+            },
           ),
         ],
       ),
@@ -353,11 +524,11 @@ class _AssetScreenState extends State<AssetScreen> {
   }
 
   Widget _buildBody() {
-    if (_isLoading) {
+    if (_isLoading && !_showHighEnergyAssets) {
       return Center(child: CircularProgressIndicator());
     }
 
-    if (_error != null) {
+    if (_error != null && !_showHighEnergyAssets) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -373,8 +544,32 @@ class _AssetScreenState extends State<AssetScreen> {
       );
     }
 
-    if (_assetGroups.isEmpty) {
-      return Center(child: Text('没有找到任何素材。'));
+    // 根据当前模式选择要显示的素材
+    final currentAssetGroups = _showHighEnergyAssets ? _highEnergyAssetGroups : _assetGroups;
+    final currentTreeAssets = _showHighEnergyAssets ? _highEnergyTreeAssets : _treeAssets;
+
+    if (currentAssetGroups.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(_showHighEnergyAssets ? '暂无高能素材' : '没有找到任何素材。'),
+            if (_showHighEnergyAssets) ...[
+              SizedBox(height: 20),
+              Text('R2文件列表已本地加载，无需查询即可查看'),
+              SizedBox(height: 10),
+              ElevatedButton.icon(
+                onPressed: _isLoading ? null : _queryR2Files,
+                icon: Icon(Icons.refresh),
+                label: Text('刷新R2文件列表'),
+                style: ElevatedButton.styleFrom(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
     }
 
     // 所有平台都使用相同的UI逻辑：显示素材列表，可以选择发送
@@ -384,24 +579,26 @@ class _AssetScreenState extends State<AssetScreen> {
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: Text(
-            '素材列表',
+            _showHighEnergyAssets ? '高能素材列表' : '素材列表',
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Text(
-            '选择您需要的素材，点击"选择发送"后将自动从云端服务器下载',
+            _showHighEnergyAssets 
+              ? '选择高能素材，这些素材具有更强的加持力和功德'
+              : '选择您需要的素材，点击"选择发送"后将自动从云端服务器下载',
             style: TextStyle(color: Colors.grey[600]),
           ),
         ),
         Divider(),
         Expanded(
           child: ListView.builder(
-            itemCount: _assetGroups.keys.length,
+            itemCount: currentAssetGroups.keys.length,
             itemBuilder: (context, index) {
-              final dir = _assetGroups.keys.elementAt(index);
-              final files = _assetGroups[dir]!;
+              final dir = currentAssetGroups.keys.elementAt(index);
+              final files = currentAssetGroups[dir]!;
               
               // 提取目录名称（显示最后一级目录）
               final dirName = dir.contains('/') ? dir.split('/').last : dir;
@@ -413,6 +610,7 @@ class _AssetScreenState extends State<AssetScreen> {
                   final String assetPath = assetInfo['key'];
                   final String fileName = assetInfo['name'];
                   final bool isSelected = _selectedAssets.contains(assetPath);
+                  final String? description = assetInfo['description'];
 
                   return CheckboxListTile(
                     title: Row(
@@ -422,9 +620,15 @@ class _AssetScreenState extends State<AssetScreen> {
                           Icon(Icons.check_circle, color: Colors.green, size: 20),
                       ],
                     ),
-                    subtitle: _downloadedAssetsService.isAssetDownloaded(assetPath) 
-                        ? Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12))
-                        : null,
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_downloadedAssetsService.isAssetDownloaded(assetPath)) 
+                          Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12)),
+                        if (description != null && description.isNotEmpty)
+                          Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                      ],
+                    ),
                     value: isSelected,
                     onChanged: (bool? value) {
                       setState(() {
