@@ -30,11 +30,7 @@ class _AssetScreenState extends State<AssetScreen> {
   List<Map<String, dynamic>> _treeAssets = []; // 法宝树素材列表
   Set<String> _selectedAssets = {}; // 用户选择的素材
   final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
-  
-  // 高能素材相关
-  Map<String, List<Map<String, dynamic>>> _highEnergyAssetGroups = {};
-  List<Map<String, dynamic>> _highEnergyTreeAssets = [];
-  bool _showHighEnergyAssets = false; // 是否显示高能素材
+
 
   @override
   void initState() {
@@ -143,7 +139,7 @@ class _AssetScreenState extends State<AssetScreen> {
     }
   }
 
-  // 加载本地R2文件列表（无需查询即可查看）
+  // 加载本地R2文件列表并合并到普通素材中
   Future<void> _loadLocalR2FilesList() async {
     try {
       // 从本地资源文件加载R2文件列表
@@ -155,9 +151,8 @@ class _AssetScreenState extends State<AssetScreen> {
       
       print('从本地加载的R2文件数量: ${files.length}');
       
-      // 按目录分组 - R2文件都在根目录，统一放入一个分组
-      final Map<String, List<Map<String, dynamic>>> groups = {};
-      final List<Map<String, dynamic>> treeAssets = [];
+      // 将R2文件合并到普通素材分组中
+      final Map<String, List<Map<String, dynamic>>> currentGroups = Map.from(_assetGroups);
       
       for (var fileInfo in files) {
         String key = fileInfo['key'];
@@ -167,43 +162,35 @@ class _AssetScreenState extends State<AssetScreen> {
           continue;
         }
         
-        // R2存储桶中的文件统一放入"R2存储桶文件"分组
-        const String directory = 'R2存储桶文件';
+        // R2文件统一放入"R2素材"分组
+        const String directory = 'R2素材';
         final assetInfo = {
           'name': key, // 文件名就是key
           'source': 'r2', // R2存储桶中的文件
           'key': key,
           'directory': directory,
-          'description': fileInfo['key'] ?? '', // 使用key作为描述
           'size': fileInfo['size'] ?? 0,
           'uploaded': fileInfo['uploaded'], // R2特有的上传时间
           'isDownloaded': false, // 标记是否已下载
         };
         
-        if (!groups.containsKey(directory)) {
-          groups[directory] = [];
+        if (!currentGroups.containsKey(directory)) {
+          currentGroups[directory] = [];
         }
         
-        groups[directory]!.add(assetInfo);
-        treeAssets.add(assetInfo);
+        currentGroups[directory]!.add(assetInfo);
       }
 
-      print('R2文件分组后的目录数量: ${groups.length}');
-      print('R2文件总数: ${treeAssets.length}');
+      print('R2文件已合并到普通素材，当前分组数量: ${currentGroups.length}');
 
       setState(() {
-        _highEnergyAssetGroups = groups;
-        _highEnergyTreeAssets = treeAssets;
+        _assetGroups = currentGroups;
       });
       
-      print('本地R2文件列表加载完成');
+      print('本地R2文件列表已合并完成');
     } catch (e) {
       print('加载本地R2文件列表失败: $e');
-      // 如果加载失败，保持高能素材为空，不影响主功能
-      setState(() {
-        _highEnergyAssetGroups = {};
-        _highEnergyTreeAssets = [];
-      });
+      // 如果加载失败，不影响主功能
     }
   }
 
@@ -269,8 +256,8 @@ class _AssetScreenState extends State<AssetScreen> {
       print('R2文件总数: ${treeAssets.length}');
 
       setState(() {
-        _highEnergyAssetGroups = groups;
-        _highEnergyTreeAssets = treeAssets;
+        _assetGroups.addAll(groups);
+        _treeAssets.addAll(treeAssets);
         _isLoading = false;
       });
       
@@ -496,25 +483,12 @@ class _AssetScreenState extends State<AssetScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_showHighEnergyAssets ? '高能素材列表' : '素材列表'),
+        title: Text('素材列表'),
         actions: [
-          IconButton(
-            icon: Icon(_showHighEnergyAssets ? Icons.arrow_back : Icons.bolt),
-            onPressed: () {
-              setState(() {
-                _showHighEnergyAssets = !_showHighEnergyAssets;
-              });
-            },
-            tooltip: _showHighEnergyAssets ? '返回普通素材' : '查看高能素材',
-          ),
           IconButton(
             icon: Icon(Icons.refresh),
             onPressed: _isLoading ? null : () {
-              if (_showHighEnergyAssets) {
-                _queryR2Files();
-              } else {
-                _loadLocalAssets();
-              }
+              _loadLocalAssets();
             },
           ),
         ],
@@ -524,11 +498,11 @@ class _AssetScreenState extends State<AssetScreen> {
   }
 
   Widget _buildBody() {
-    if (_isLoading && !_showHighEnergyAssets) {
+    if (_isLoading) {
       return Center(child: CircularProgressIndicator());
     }
 
-    if (_error != null && !_showHighEnergyAssets) {
+    if (_error != null && _assetGroups.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -544,119 +518,99 @@ class _AssetScreenState extends State<AssetScreen> {
       );
     }
 
-    // 根据当前模式选择要显示的素材
-    final currentAssetGroups = _showHighEnergyAssets ? _highEnergyAssetGroups : _assetGroups;
-    final currentTreeAssets = _showHighEnergyAssets ? _highEnergyTreeAssets : _treeAssets;
-
-    if (currentAssetGroups.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(_showHighEnergyAssets ? '暂无高能素材' : '没有找到任何素材。'),
-            if (_showHighEnergyAssets) ...[
-              SizedBox(height: 20),
-              Text('R2文件列表已本地加载，无需查询即可查看'),
-              SizedBox(height: 10),
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _queryR2Files,
-                icon: Icon(Icons.refresh),
-                label: Text('刷新R2文件列表'),
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-              ),
-            ],
-          ],
-        ),
-      );
-    }
-
-    // 所有平台都使用相同的UI逻辑：显示素材列表，可以选择发送
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            _showHighEnergyAssets ? '高能素材列表' : '素材列表',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Text(
-            _showHighEnergyAssets 
-              ? '选择高能素材，这些素材具有更强的加持力和功德'
-              : '选择您需要的素材，点击"选择发送"后将自动从云端服务器下载',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-        ),
-        Divider(),
-        Expanded(
-          child: ListView.builder(
-            itemCount: currentAssetGroups.keys.length,
-            itemBuilder: (context, index) {
-              final dir = currentAssetGroups.keys.elementAt(index);
-              final files = currentAssetGroups[dir]!;
-              
-              // 提取目录名称（显示最后一级目录）
-              final dirName = dir.contains('/') ? dir.split('/').last : dir;
-              
-              return ExpansionTile(
-                title: Text(dirName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                subtitle: dir.contains('/') ? Text(dir, style: TextStyle(fontSize: 12, color: Colors.grey)) : null,
-                children: files.map((assetInfo) {
-                  final String assetPath = assetInfo['key'];
-                  final String fileName = assetInfo['name'];
-                  final bool isSelected = _selectedAssets.contains(assetPath);
-                  final String? description = assetInfo['description'];
-
-                  return CheckboxListTile(
-                    title: Row(
-                      children: [
-                        Expanded(child: Text(fileName)),
-                        if (_downloadedAssetsService.isAssetDownloaded(assetPath))
-                          Icon(Icons.check_circle, color: Colors.green, size: 20),
-                      ],
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_downloadedAssetsService.isAssetDownloaded(assetPath)) 
-                          Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12)),
-                        if (description != null && description.isNotEmpty)
-                          Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-                      ],
-                    ),
-                    value: isSelected,
-                    onChanged: (bool? value) {
-                      setState(() {
-                        if (value == true) {
-                          _selectedAssets.add(assetPath);
-                        } else {
-                          _selectedAssets.remove(assetPath);
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
-              );
-            },
-          ),
-        ),
-        if (_selectedAssets.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: ElevatedButton(
-              onPressed: _confirmSelection,
-              child: Text('选择发送 (${_selectedAssets.length})'),
-              style: ElevatedButton.styleFrom(
-                minimumSize: Size(double.infinity, 50),
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 素材列表（包含普通素材和R2素材）
+          if (_assetGroups.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                '素材列表',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
             ),
-          ),
-      ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Text(
+                '选择您需要的素材，点击"选择发送"后将自动从云端服务器下载',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ),
+            Divider(),
+            _buildAssetList(_assetGroups),
+          ],
+          
+          if (_selectedAssets.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: ElevatedButton(
+                onPressed: _confirmSelection,
+                child: Text('选择发送 (${_selectedAssets.length})'),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: Size(double.infinity, 50),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建素材列表的通用方法
+  Widget _buildAssetList(Map<String, List<Map<String, dynamic>>> assetGroups) {
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: NeverScrollableScrollPhysics(), // 禁用内部滚动，由外部ListView控制
+      itemCount: assetGroups.keys.length,
+      itemBuilder: (context, index) {
+        final dir = assetGroups.keys.elementAt(index);
+        final files = assetGroups[dir]!;
+        
+        // 提取目录名称（显示最后一级目录）
+        final dirName = dir.contains('/') ? dir.split('/').last : dir;
+        
+        return ExpansionTile(
+          title: Text(dirName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          subtitle: dir.contains('/') ? Text(dir, style: TextStyle(fontSize: 12, color: Colors.grey)) : null,
+          children: files.map((assetInfo) {
+            final String assetPath = assetInfo['key'];
+            final String fileName = assetInfo['name'];
+            final bool isSelected = _selectedAssets.contains(assetPath);
+            final String? description = assetInfo['description'];
+
+            return CheckboxListTile(
+              title: Row(
+                children: [
+                  Expanded(child: Text(fileName)),
+                  if (_downloadedAssetsService.isAssetDownloaded(assetPath))
+                    Icon(Icons.check_circle, color: Colors.green, size: 20),
+                ],
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_downloadedAssetsService.isAssetDownloaded(assetPath)) 
+                    Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12)),
+                  if (description != null && description.isNotEmpty)
+                    Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                ],
+              ),
+              value: isSelected,
+              onChanged: (bool? value) {
+                setState(() {
+                  if (value == true) {
+                    _selectedAssets.add(assetPath);
+                  } else {
+                    _selectedAssets.remove(assetPath);
+                  }
+                });
+              },
+            );
+          }).toList(),
+        );
+      },
     );
   }
 }
