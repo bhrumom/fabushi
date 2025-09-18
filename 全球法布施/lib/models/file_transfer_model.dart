@@ -12,6 +12,8 @@ import '../services/wifi_broadcast_service.dart';
 import '../services/webrtc_direct_service.dart';
 import '../config/unified_config.dart';
 import '../services/downloaded_assets_service.dart';
+import '../services/download_manager.dart';
+import '../widgets/download_progress_widget.dart';
 
 // Web平台特定的导入
 import 'package:universal_html/html.dart' as html;
@@ -51,6 +53,8 @@ class FileTransferModel extends ChangeNotifier {
   
   // 已下载素材服务
   final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
+  final DownloadManager _downloadManager = DownloadManager();
+  Map<String, String> _assetToTaskMap = {};
   
   // Getters
   bool get isGlobalSendEnabled => _isGlobalSendEnabled;
@@ -256,7 +260,7 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
 
-  /// 下载单个素材
+  /// 下载单个素材（增强版，支持进度显示、暂停、断点续传）
   Future<void> _downloadSingleAsset(BuildContext context, String assetPath) async {
     try {
       // 构建下载URL - 根据素材路径判断是静态文件还是R2文件
@@ -277,68 +281,140 @@ class FileTransferModel extends ChangeNotifier {
       
       debugPrint('下载素材URL: $url');
       
-      // 发送请求
-      final response = await http.get(Uri.parse(url));
-      
-      if (response.statusCode != 200) {
-        throw Exception('下载失败: ${response.statusCode}');
-      }
-      
       // 获取文件名
       final fileName = assetPath.split('/').last;
       
-      // Web平台不支持本地文件保存，直接返回成功
-      if (kIsWeb) {
-        debugPrint('Web平台跳过文件保存: $fileName');
-        // Web平台直接添加到已选文件列表，不保存到本地
-        final fileInfo = PlatformFile(
-          name: fileName,
-          size: response.bodyBytes.length,
-          path: null, // Web平台没有本地路径
-          bytes: response.bodyBytes,
-        );
-        addFiles([fileInfo]);
-        
-        // 标记素材为已下载
-        await _downloadedAssetsService.markAssetAsDownloaded(assetPath);
-        debugPrint('Web平台素材下载完成: $fileName');
-        return;
+      // 检查是否已有下载任务
+      final existingTaskId = _assetToTaskMap[assetPath];
+      if (existingTaskId != null) {
+        final task = _downloadManager.tasks[existingTaskId];
+        if (task != null && task.status == DownloadStatus.paused) {
+          // 如果任务已暂停，恢复下载
+          await _downloadManager.resumeDownload(existingTaskId);
+          return;
+        }
       }
       
-      // 获取保存目录（仅移动端）
-      final Directory? dir;
-      if (Platform.isAndroid) {
-        dir = await getExternalStorageDirectory();
-      } else {
-        dir = await getApplicationDocumentsDirectory();
-      }
+      // 创建下载任务
+      final taskId = await _downloadManager.createTask(url, fileName, assetPath);
+      _assetToTaskMap[assetPath] = taskId;
       
-      if (dir == null) {
-        throw Exception("无法获取下载目录");
-      }
+      // 显示下载进度对话框
+      _showDownloadProgressDialog(context, taskId, fileName);
       
-      // 创建文件并写入数据
-      final filePath = '${dir.path}/$fileName';
-      final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes);
+      // 开始下载
+      await _downloadManager.startDownload(taskId);
       
-      // 将下载的文件添加到已选文件列表
-      final fileInfo = PlatformFile(
-        name: fileName,
-        size: response.bodyBytes.length,
-        path: filePath,
-      );
-      
-      addFiles([fileInfo]);
-      
-      // 标记素材为已下载
-      await _downloadedAssetsService.markAssetAsDownloaded(assetPath);
-      
-      debugPrint('素材下载完成: $fileName');
     } catch (e) {
       debugPrint('下载素材失败: $e');
       rethrow;
     }
+  }
+
+  /// 显示下载进度对话框
+  void _showDownloadProgressDialog(BuildContext context, String taskId, String fileName) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => DownloadProgressDialog(
+        taskId: taskId,
+        downloadManager: _downloadManager,
+        onComplete: () async {
+          debugPrint('📥 下载完成回调开始执行');
+          
+          try {
+            // 获取下载的文件
+            final task = _downloadManager.tasks[taskId];
+            if (task != null && task.status == DownloadStatus.completed) {
+              final fileName = task.fileName;
+              debugPrint('📁 处理下载完成的文件: $fileName');
+              
+              if (kIsWeb) {
+                // Web平台：从localStorage获取文件
+                debugPrint('🌐 Web平台：获取下载的文件数据');
+                final fileData = await _downloadManager.getDownloadedFile(fileName);
+                if (fileData != null) {
+                  debugPrint('📊 文件数据获取成功，大小: ${fileData.length} bytes');
+                  final fileInfo = PlatformFile(
+                    name: fileName,
+                    size: fileData.length,
+                    path: null, // Web平台没有本地路径
+                    bytes: fileData,
+                  );
+                  
+                  // 添加文件到选择列表
+                  addFiles([fileInfo]);
+                  debugPrint('✅ 文件已添加到选择列表');
+                  
+                  // 标记素材为已下载
+                  await _downloadedAssetsService.markAssetAsDownloaded(task.assetPath);
+                  debugPrint('🏷️ 素材已标记为已下载');
+                  
+                  // 延迟确保UI更新
+                  await Future.delayed(Duration(milliseconds: 200));
+                  debugPrint('⏱️ UI更新延迟完成');
+                } else {
+                  debugPrint('❌ Web平台文件数据获取失败');
+                }
+              } else {
+                // 本地平台：从文件系统获取文件
+                debugPrint('📱 本地平台：获取下载的文件');
+                final Directory? dir;
+                if (Platform.isAndroid) {
+                  dir = await getExternalStorageDirectory();
+                } else {
+                  dir = await getApplicationDocumentsDirectory();
+                }
+                
+                if (dir != null) {
+                  final filePath = '${dir.path}/$fileName';
+                  final file = File(filePath);
+                  
+                  if (await file.exists()) {
+                    debugPrint('📂 文件存在，路径: $filePath');
+                    final fileInfo = PlatformFile(
+                      name: fileName,
+                      size: await file.length(),
+                      path: filePath,
+                    );
+                    
+                    // 添加文件到选择列表
+                    addFiles([fileInfo]);
+                    debugPrint('✅ 文件已添加到选择列表');
+                    
+                    // 标记素材为已下载
+                    await _downloadedAssetsService.markAssetAsDownloaded(task.assetPath);
+                    debugPrint('🏷️ 素材已标记为已下载');
+                    
+                    // 延迟确保UI更新
+                    await Future.delayed(Duration(milliseconds: 200));
+                    debugPrint('⏱️ UI更新延迟完成');
+                  } else {
+                    debugPrint('❌ 本地文件不存在: $filePath');
+                  }
+                } else {
+                  debugPrint('❌ 无法获取本地目录');
+                }
+              }
+            } else {
+              debugPrint('❌ 下载任务不存在或状态不正确');
+            }
+          } catch (e) {
+            debugPrint('❌ 下载完成处理出错: $e');
+          } finally {
+            // 清理任务
+            _assetToTaskMap.remove(taskId);
+            debugPrint('🧹 任务清理完成');
+            
+            // 确保关闭对话框
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+              debugPrint('🔒 对话框已关闭');
+            }
+          }
+        },
+      ),
+    );
   }
   
   /// 添加文件
