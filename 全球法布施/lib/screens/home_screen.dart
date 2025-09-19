@@ -184,6 +184,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                // 添加文件选择卡片，显示已选择的文件
+                FileSelectionCard(
+                  onSelectFiles: () => context.read<FileTransferModel>().selectFiles(),
+                  onSelectAssets: () => context.read<FileTransferModel>().selectBuiltInAssets(context),
+                ),
+                const SizedBox(height: 16),
                 const EnhancedTransferStats(),
                 const SizedBox(height: 16),
                 const TransferModeSelector(),
