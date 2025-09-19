@@ -108,9 +108,9 @@ class _AssetScreenState extends State<AssetScreen> {
   Future<void> _initializeDownloadedAssetsService() async {
     await _downloadedAssetsService.initialize();
     // 所有平台都从本地加载素材列表
-    _loadLocalAssets();
+    await _loadLocalAssets();
     // 加载本地R2文件列表，无需查询即可查看
-    _loadLocalR2FilesList();
+    await _loadLocalR2FilesList();
   }
 
   // 获取法宝树素材列表（仅用于展示，不实际下载）
@@ -468,13 +468,21 @@ class _AssetScreenState extends State<AssetScreen> {
       }
 
       final String url;
-      // 所有平台统一使用Cloudflare Worker下载素材，确保素材来源一致
-      final String baseUrl = UnifiedConfig.isProduction ? UnifiedConfig.cloudflareWorkerProdUrl : UnifiedConfig.cloudflareWorkerDevUrl;
       
       if (source == 'r2') {
+        // R2文件通过Cloudflare Worker下载
+        final String baseUrl = UnifiedConfig.isProduction ? UnifiedConfig.cloudflareWorkerProdUrl : UnifiedConfig.cloudflareWorkerDevUrl;
         url = '$baseUrl/r2?file=${Uri.encodeComponent(assetPath)}';
-      } else { // 'static'
-        url = '$baseUrl/$assetPath';
+      } else {
+        // 静态文件直接从当前域名下载
+        if (kIsWeb) {
+          // Web平台：使用相对路径直接访问静态文件
+          url = '/$assetPath';
+        } else {
+          // 移动端：使用完整URL访问静态文件
+          final String baseUrl = UnifiedConfig.isProduction ? UnifiedConfig.cloudflareWorkerProdUrl : UnifiedConfig.cloudflareWorkerDevUrl;
+          url = '$baseUrl/$assetPath';
+        }
       }
       
       print('从以下URL下载素材: $url');
