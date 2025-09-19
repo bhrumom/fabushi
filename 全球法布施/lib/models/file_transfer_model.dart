@@ -272,10 +272,16 @@ class FileTransferModel extends ChangeNotifier {
       
       final String url;
       if (isStaticFile) {
-        // 静态文件直接访问
-        url = '${UnifiedConfig.currentBackendUrl}/$assetPath';
+        // 静态文件直接从当前域名下载
+        if (kIsWeb) {
+          // Web平台：使用相对路径直接访问静态文件
+          url = '/$assetPath';
+        } else {
+          // 移动端：使用完整URL访问静态文件
+          url = '${UnifiedConfig.currentBackendUrl}/$assetPath';
+        }
       } else {
-        // 其他文件使用R2端点
+        // R2文件通过Cloudflare Worker下载
         url = '${UnifiedConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(assetPath)}';
       }
       

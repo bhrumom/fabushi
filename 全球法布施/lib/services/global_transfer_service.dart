@@ -5,6 +5,7 @@ import 'package:async/async.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
 import 'package:global_dharma_sharing/services/app_settings.dart';
 import '../config/country_servers.dart';
 import '../config/dharma_assets.dart';
@@ -71,6 +72,7 @@ class GlobalTransferService {
   bool _loopMode = false;
   int _concurrency = 5;
   bool _stopSignal = false;
+  bool _isRunning = false;
   // final _queueLock = Lock(); // Temporarily removed due to build issue
 
   /// 开始全球发送流程
@@ -202,6 +204,7 @@ class GlobalTransferService {
     required String country,
   }) async {
     debugPrint('Web端全球发送服务已启动');
+    _isRunning = true;
     final backendUrl = await AppSettings.getBackendUrl();
     final url = Uri.parse('$backendUrl/send-global');
 
@@ -214,7 +217,9 @@ class GlobalTransferService {
           break;
         }
       }
-    }
+    } while (isLoop && _isRunning);
+    
+    _isRunning = false;
   }
 
   /// 并发处理国家的 "Worker"
@@ -292,5 +297,12 @@ class GlobalTransferService {
   /// 清理资源
   void dispose() {
     _progressController.close();
+  }
+  
+  /// 获取下一个IP地址
+  Map<String, dynamic>? _getNextIp(String country) {
+    // 这里应该实现获取IP地址的逻辑
+    // 目前返回null作为占位符
+    return null;
   }
 }
