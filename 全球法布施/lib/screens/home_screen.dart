@@ -4,16 +4,14 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/file_transfer_model.dart';
 import '../models/auth_model.dart';
 import 'settings_screen.dart';
-import 'p2p_demo_screen.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
 import '../widgets/file_selection_card.dart';
 import '../widgets/enhanced_transfer_stats.dart';
 import '../widgets/transfer_mode_selector.dart';
-import '../services/no_connection_service.dart';
-import 'no_connection_screen.dart';
+
 import 'asset_screen.dart';
-import 'global_dharma_screen.dart'; // 导入新创建的屏幕
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -164,23 +162,22 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                         const SizedBox(height: 24),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => const GlobalDharmaScreen()),
+                        Consumer<FileTransferModel>(
+                          builder: (context, model, child) {
+                            return ElevatedButton.icon(
+                              onPressed: model.hasFiles ? () => model.startGlobalTransfer() : null,
+                              icon: const Icon(Icons.public, color: Colors.white),
+                              label: const Text('开始全球法布施', style: TextStyle(fontSize: 18)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF667eea),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
                             );
                           },
-                          icon: const Icon(Icons.public, color: Colors.white),
-                          label: const Text('开始全球法布施', style: TextStyle(fontSize: 18)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF667eea),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
                         ),
                       ],
                     ),
