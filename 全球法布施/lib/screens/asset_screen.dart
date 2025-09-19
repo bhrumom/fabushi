@@ -584,6 +584,15 @@ class _AssetScreenState extends State<AssetScreen> {
         ],
       ),
       body: _buildBody(),
+      floatingActionButton: _selectedAssets.isNotEmpty
+          ? FloatingActionButton.extended(
+              onPressed: _confirmSelection,
+              icon: Icon(Icons.send),
+              label: Text('选择发送 (${_selectedAssets.length})'),
+              backgroundColor: Theme.of(context).primaryColor,
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
@@ -631,18 +640,6 @@ class _AssetScreenState extends State<AssetScreen> {
             Divider(),
             _buildAssetList(_assetGroups),
           ],
-          
-          if (_selectedAssets.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: ElevatedButton(
-                onPressed: _confirmSelection,
-                child: Text('选择发送 (${_selectedAssets.length})'),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: Size(double.infinity, 50),
-                ),
-              ),
-            ),
         ],
       ),
     );
