@@ -16,8 +16,7 @@ const RESOURCES_TO_CACHE = [
   '/main.dart.js',
   '/flutter.js',
   '/manifest.json',
-  '/direct-mode.js',
-  '/p2p-network.js'
+
 ];
 
 // 安装事件 - 缓存核心资源
@@ -213,10 +212,10 @@ async function handleWifiBroadcast(request) {
 }
 
 /**
- * 处理全球发送请求
+ * 处理全球发送请求 - 简化版本
  */
 async function handleGlobalSend(request) {
-  console.log('处理全球发送请求');
+  console.log('处理全球发送请求 - 简化版本');
   
   try {
     // 检查是否是POST请求
@@ -265,17 +264,17 @@ async function handleGlobalSend(request) {
     
     console.log(`接收到全球发送请求: ${fileName}, 大小: ${fileSize} 字节, 目标国家: ${country}`);
     
-    // 使用WebRTC数据通道发送文件
-    // 注意：这里需要实现一个全球P2P网络，这超出了当前示例的范围
-    // 在实际应用中，可以使用WebRTC信令服务器来连接不同国家的用户
+    // 简化版本：仅记录请求信息，不再使用复杂的WebRTC发送
+    // 在实际应用中，这里可以添加简单的HTTP上传逻辑
     
     // 模拟发送成功
     return new Response(JSON.stringify({
       success: true,
-      method: 'webrtc-global',
+      method: 'simplified-global',
       country: country,
       sentCount: 1,
-      dataSentInMB: parseFloat(fileSize) / (1024 * 1024)
+      dataSentInMB: parseFloat(fileSize) / (1024 * 1024),
+      message: '全球发送请求已接收（简化版本）'
     }), {
       status: 200,
       headers: {
@@ -298,27 +297,18 @@ async function handleGlobalSend(request) {
 }
 
 /**
- * 通过P2P网络广播文件
+ * 通过P2P网络广播文件 - 已移除
  */
 async function broadcastFileViaP2P(file) {
-  try {
-    // 检查P2P网络是否可用
-    if (!self.p2pNetwork) {
-      console.log('P2P网络不可用');
-      return { success: false, message: 'P2P网络不可用' };
-    }
-    
-    // 广播文件
-    const result = await self.p2pNetwork.broadcastFile(file);
-    
-    return result;
-  } catch (error) {
-    console.error('通过P2P网络广播文件时出错:', error);
-    return { success: false, message: error.message };
-  }
+  // 简化版本：不再支持P2P网络广播
+  console.log('P2P网络广播已移除');
+  return { 
+    success: false, 
+    message: 'P2P网络广播功能已移除' 
+  };
 }
 
-// 消息处理
+// 消息处理 - 简化版本
 self.addEventListener('message', (event) => {
   const { type, data } = event.data;
   
@@ -326,61 +316,48 @@ self.addEventListener('message', (event) => {
   
   switch (type) {
     case 'init-p2p-network':
-      // 初始化P2P网络
-      initP2PNetwork()
-        .then((result) => {
-          // 向所有客户端发送初始化结果
-          self.clients.matchAll().then((clients) => {
-            clients.forEach((client) => {
-              client.postMessage({
-                type: 'p2p-network-initialized',
-                success: result.success,
-                connectedPeers: result.connectedPeers || 0
-              });
-            });
+      // P2P网络功能已移除
+      console.log('P2P网络功能已移除');
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'p2p-network-initialized',
+            success: false,
+            message: 'P2P网络功能已移除',
+            connectedPeers: 0
           });
         });
+      });
       break;
       
     case 'check-direct-mode':
-      // 检查直接模式支持情况
-      checkDirectModeSupport()
-        .then((support) => {
-          // 向发送消息的客户端回复
-          event.source.postMessage({
-            type: 'direct-mode-support',
-            support
-          });
-        });
+      // 直接模式功能已移除
+      console.log('直接模式功能已移除');
+      event.source.postMessage({
+        type: 'direct-mode-support',
+        support: {
+          message: '所有复杂发送方式已移除',
+          webrtc: false,
+          bluetooth: false,
+          webTransport: false,
+          webUSB: false,
+          serviceWorker: true
+        }
+      });
       break;
   }
 });
 
 /**
- * 初始化P2P网络
+ * 初始化P2P网络 - 已移除
  */
 async function initP2PNetwork() {
-  try {
-    // 导入P2P网络脚本
-    importScripts('p2p-network.js');
-    
-    // 初始化P2P网络
-    if (self.p2pNetwork) {
-      const result = await self.p2pNetwork.initialize();
-      
-      console.log(`P2P网络初始化${result ? '成功' : '失败'}`);
-      
-      return {
-        success: result,
-        connectedPeers: self.p2pNetwork.getConnectedPeersCount()
-      };
-    }
-    
-    return { success: false, message: 'P2P网络不可用' };
-  } catch (error) {
-    console.error('初始化P2P网络时出错:', error);
-    return { success: false, message: error.message };
-  }
+  // 简化版本：不再支持P2P网络
+  console.log('P2P网络初始化已移除');
+  return { 
+    success: false, 
+    message: 'P2P网络功能已移除' 
+  };
 }
 
 /**

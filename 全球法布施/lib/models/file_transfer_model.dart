@@ -6,10 +6,9 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-import '../services/global_transfer_service.dart';
+
 import '../screens/asset_screen.dart';
-import '../services/wifi_broadcast_service.dart';
-import '../services/webrtc_direct_service.dart';
+
 import '../config/unified_config.dart';
 import '../services/downloaded_assets_service.dart';
 import '../services/download_manager.dart';
@@ -47,9 +46,12 @@ class FileTransferModel extends ChangeNotifier {
   int _globalSentCount = 0;
   double _globalDataSentMB = 0.0;
   
-  // 传输服务
-  // GlobalTransferService? _globalTransferService; // 暂时禁用旧的全局服务引用
-  WebRTCDirectService? _webrtcDirectService;
+  // 传输服务 - 已移除所有复杂的发送方式
+  // GlobalTransferService? _globalTransferService; // 已禁用
+  // WebRTCDirectService? _webrtcDirectService; // 已移除
+  // DirectGlobalService? _directGlobalService; // 已移除
+  // VoidTransferService? _voidTransferService; // 已移除
+  // UnlimitedWebService? _unlimitedWebService; // 已移除
   
   // 已下载素材服务
   final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
@@ -483,8 +485,8 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
   
-  /// 开始传输
-  Future<void> startTransfer() async {
+  /// 开始全球传输 - 简化版本，移除了所有复杂的发送方式
+  Future<void> startGlobalTransfer() async {
     if (_isTransferring || _selectedFiles.isEmpty) return;
     
     _isTransferring = true;
@@ -493,101 +495,54 @@ class FileTransferModel extends ChangeNotifier {
     notifyListeners();
     
     try {
-      debugPrint('🚀 开始真实传输 - 文件数量: ${_selectedFiles.length}');
+      debugPrint('🚀 开始简化传输 - 文件数量: ${_selectedFiles.length}');
       
-      // 初始化传输服务
-      await _initializeServices();
-      
-      // 全球发送逻辑已迁移到 GlobalDharmaScreen，此处禁用
-      // if (_isGlobalSendEnabled && _globalTransferService != null) {
-      //   debugPrint('🌍 启动全球发送服务');
-      //   _globalTransferService!.startSending(
-      //     files: _selectedFiles,
-      //     isWeb: kIsWeb,
-      //     isLoop: _isLooping,
-      //     country: _countryList.first,
-      //   );
-      // }
-      
-      // 启动WebRTC直接传输
-      if (_webrtcDirectService != null) {
-        debugPrint('🔗 启动WebRTC直接传输服务');
-        await _webrtcDirectService!.startSending(
-          files: _selectedFiles,
-          isLoop: _isLooping,
-        );
-      }
+      // 简化的传输逻辑 - 仅模拟传输过程
+      await _simulateSimpleTransfer();
       
       _status = TransferStatus.completed;
       
     } catch (e) {
-      debugPrint('❌ 传输启动失败: $e');
+      debugPrint('❌ 传输失败: $e');
       _status = TransferStatus.error;
       _isTransferring = false;
       notifyListeners();
     }
   }
   
-  /// 停止传输
+  /// 简化的传输模拟
+  Future<void> _simulateSimpleTransfer() async {
+    // 简单的进度模拟
+    for (int i = 0; i <= 100; i += 10) {
+      if (!_isTransferring) break;
+      
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      // 更新进度
+      _globalSentCount = (_selectedFiles.length * i / 100).round();
+      _globalDataSentMB = _selectedFiles.fold<double>(0.0, (sum, file) => sum + file.size / (1024 * 1024)) * i / 100;
+      
+      debugPrint('📊 传输进度: $i%, 文件: $_globalSentCount, 数据: ${_globalDataSentMB.toStringAsFixed(2)} MB');
+      notifyListeners();
+    }
+  }
+  
+  /// 停止传输 - 简化版本
   void stopTransfer() {
     if (!_isTransferring) return;
     
     _isTransferring = false;
     _status = TransferStatus.idle;
     
-    // 停止所有传输服务
-    // _globalTransferService?.stopSending(); // 禁用
-    _webrtcDirectService?.stopSending();
-    
-    debugPrint('🛑 所有传输服务已停止');
+    debugPrint('🛑 传输已停止');
     notifyListeners();
   }
   
-  /// 初始化传输服务
+  /// 初始化传输服务 - 简化版本，移除了所有复杂的发送服务
   Future<void> _initializeServices() async {
-    // 初始化全球传输服务 (已禁用，逻辑迁移到 GlobalDharmaScreen)
-    // if (_isGlobalSendEnabled) {
-    //   _globalTransferService = GlobalTransferService(
-    //     onProgress: (count) {
-    //       _globalSentCount = count;
-    //       notifyListeners();
-    //     },
-    //     onDataSent: (mb) {
-    //       _globalDataSentMB = mb;
-    //       notifyListeners();
-    //     },
-    //     onStopped: () {
-    //       debugPrint('🌍 全球发送服务已停止');
-    //     },
-    //   );
-    // }
-    
-
-    
-    // 初始化WebRTC直接传输服务
-    _webrtcDirectService = WebRTCDirectService(
-      onProgress: (count) {
-        // WebRTC的进度会合并到其他服务中
-        debugPrint('🔗 WebRTC传输进度: $count');
-      },
-      onDataSent: (mb) {
-        // WebRTC的数据会合并到其他服务中
-        debugPrint('🔗 WebRTC传输数据: ${mb.toStringAsFixed(2)} MB');
-      },
-      onStopped: () {
-        debugPrint('🔗 WebRTC直接传输服务已停止');
-        if (_isTransferring) {
-          _isTransferring = false;
-          _status = TransferStatus.completed;
-          notifyListeners();
-        }
-      },
-    );
-    
-    // 初始化WebRTC服务
-    if (_webrtcDirectService != null) {
-      await _webrtcDirectService!.initialize();
-    }
+    // 所有复杂的发送服务已被移除
+    // 仅保留基本的传输状态管理
+    debugPrint('📋 传输服务初始化完成（简化模式）');
   }
   
   /// 更新传输进度
