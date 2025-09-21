@@ -12,6 +12,7 @@ import '../screens/asset_screen.dart';
 import '../config/unified_config.dart';
 import '../services/downloaded_assets_service.dart';
 import '../services/download_manager.dart';
+import '../services/real_global_send_service.dart';
 import '../widgets/download_progress_widget.dart';
 
 // Web平台特定的导入
@@ -46,12 +47,8 @@ class FileTransferModel extends ChangeNotifier {
   int _globalSentCount = 0;
   double _globalDataSentMB = 0.0;
   
-  // 传输服务 - 已移除所有复杂的发送方式
-  // GlobalTransferService? _globalTransferService; // 已禁用
-  // WebRTCDirectService? _webrtcDirectService; // 已移除
-  // DirectGlobalService? _directGlobalService; // 已移除
-  // VoidTransferService? _voidTransferService; // 已移除
-  // UnlimitedWebService? _unlimitedWebService; // 已移除
+  // 真实的全球发送服务
+  RealGlobalSendService? _realGlobalSendService;
   
   // 已下载素材服务
   final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
@@ -485,7 +482,7 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
   
-  /// 开始全球传输 - 简化版本，移除了所有复杂的发送方式
+  /// 开始全球传输 - 使用真实的全球发送服务
   Future<void> startGlobalTransfer() async {
     if (_isTransferring || _selectedFiles.isEmpty) return;
     
@@ -495,10 +492,16 @@ class FileTransferModel extends ChangeNotifier {
     notifyListeners();
     
     try {
-      debugPrint('🚀 开始简化传输 - 文件数量: ${_selectedFiles.length}');
+      debugPrint('🚀 开始真实全球传输 - 文件数量: ${_selectedFiles.length}');
       
-      // 简化的传输逻辑 - 仅模拟传输过程
-      await _simulateSimpleTransfer();
+      // 初始化真实的全球发送服务
+      await _initializeRealGlobalSendService();
+      
+      // 开始真实的全球发送
+      await _realGlobalSendService?.startSending(
+        files: _selectedFiles,
+        isLoop: _isLooping,
+      );
       
       _status = TransferStatus.completed;
       
@@ -510,39 +513,44 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
   
-  /// 简化的传输模拟
+  /// 简化的传输模拟（已废弃，使用真实全球发送服务）
   Future<void> _simulateSimpleTransfer() async {
-    // 简单的进度模拟
-    for (int i = 0; i <= 100; i += 10) {
-      if (!_isTransferring) break;
-      
-      await Future.delayed(const Duration(milliseconds: 200));
-      
-      // 更新进度
-      _globalSentCount = (_selectedFiles.length * i / 100).round();
-      _globalDataSentMB = _selectedFiles.fold<double>(0.0, (sum, file) => sum + file.size / (1024 * 1024)) * i / 100;
-      
-      debugPrint('📊 传输进度: $i%, 文件: $_globalSentCount, 数据: ${_globalDataSentMB.toStringAsFixed(2)} MB');
-      notifyListeners();
-    }
+    // 此方法已废弃，真实发送由 RealGlobalSendService 处理
   }
   
-  /// 停止传输 - 简化版本
+  /// 停止传输 - 停止真实的全球发送服务
   void stopTransfer() {
     if (!_isTransferring) return;
     
     _isTransferring = false;
     _status = TransferStatus.idle;
     
+    // 停止真实的全球发送服务
+    _realGlobalSendService?.stopSending();
+    
     debugPrint('🛑 传输已停止');
     notifyListeners();
   }
   
-  /// 初始化传输服务 - 简化版本，移除了所有复杂的发送服务
-  Future<void> _initializeServices() async {
-    // 所有复杂的发送服务已被移除
-    // 仅保留基本的传输状态管理
-    debugPrint('📋 传输服务初始化完成（简化模式）');
+  /// 初始化真实的全球发送服务
+  Future<void> _initializeRealGlobalSendService() async {
+    _realGlobalSendService = RealGlobalSendService(
+      onProgress: (count) {
+        updateProgress(count);
+      },
+      onDataSent: (dataMB) {
+        updateDataSent(dataMB);
+      },
+      onStopped: () {
+        stopTransfer();
+      },
+      onLog: (message) {
+        debugPrint('🌍 全球发送: $message');
+      },
+    );
+    
+    await _realGlobalSendService?.initialize();
+    debugPrint('📋 真实全球发送服务初始化完成');
   }
   
   /// 更新传输进度
@@ -571,6 +579,7 @@ class FileTransferModel extends ChangeNotifier {
   
   @override
   void dispose() {
+    _realGlobalSendService?.stopSending();
     stopTransfer();
     super.dispose();
   }
