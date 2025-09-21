@@ -6,7 +6,6 @@ import '../models/auth_model.dart';
 import 'settings_screen.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
-import '../widgets/file_selection_card.dart';
 import '../widgets/enhanced_transfer_stats.dart';
 import '../widgets/transfer_mode_selector.dart';
 
@@ -21,6 +20,21 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+
+  IconData _getIconForFileType(String fileType) {
+    switch (fileType) {
+      case '图片':
+        return Icons.image;
+      case '文档':
+        return Icons.article;
+      case '音频':
+        return Icons.audiotrack;
+      case '视频':
+        return Icons.videocam;
+      default:
+        return Icons.insert_drive_file;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -161,6 +175,72 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 16),
+                        // 已选文件框
+                        Consumer<FileTransferModel>(
+                          builder: (context, model, child) {
+                            return Card(
+                              elevation: 1,
+                              margin: EdgeInsets.zero,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('已选文件', style: Theme.of(context).textTheme.titleMedium),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      height: 120,
+                                      child: model.hasFiles
+                                          ? ListView.builder(
+                                              itemCount: model.selectedFiles.length,
+                                              itemBuilder: (context, index) {
+                                                final file = model.selectedFiles[index];
+                                                return ListTile(
+                                                  dense: true,
+                                                  leading: Icon(_getIconForFileType(model.getFileType(file.name)), size: 20),
+                                                  title: Text(file.name, style: const TextStyle(fontSize: 14)),
+                                                  subtitle: Text(model.getFileSizeString(file.size), style: const TextStyle(fontSize: 12)),
+                                                  trailing: IconButton(
+                                                    icon: const Icon(Icons.delete, color: Colors.red, size: 18),
+                                                    onPressed: () => model.removeFile(file),
+                                                  ),
+                                                );
+                                              },
+                                            )
+                                          : Container(
+                                              decoration: BoxDecoration(
+                                                color: Colors.grey[200],
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: const Center(
+                                                child: Text(
+                                                  '请选择要发送的文件',
+                                                  style: TextStyle(
+                                                    color: Colors.black54,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                    ),
+                                    if (model.hasFiles) ...[
+                                      const SizedBox(height: 8),
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: TextButton.icon(
+                                          icon: const Icon(Icons.clear_all, color: Colors.red, size: 16),
+                                          label: const Text('清空', style: TextStyle(color: Colors.red, fontSize: 12)),
+                                          onPressed: () => model.clearFiles(),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                         const SizedBox(height: 24),
                         Consumer<FileTransferModel>(
                           builder: (context, model, child) {
@@ -182,12 +262,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                // 添加文件选择卡片，显示已选择的文件
-                FileSelectionCard(
-                  onSelectFiles: () => context.read<FileTransferModel>().selectFiles(),
-                  onSelectAssets: () => context.read<FileTransferModel>().selectBuiltInAssets(context),
                 ),
                 const SizedBox(height: 16),
                 const EnhancedTransferStats(),
