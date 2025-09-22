@@ -474,18 +474,20 @@ class _AssetScreenState extends State<AssetScreen> {
         final String baseUrl = UnifiedConfig.isProduction ? UnifiedConfig.cloudflareWorkerProdUrl : UnifiedConfig.cloudflareWorkerDevUrl;
         url = '$baseUrl/r2?file=${Uri.encodeComponent(assetPath)}';
       } else {
-        // 静态文件直接从当前域名下载
+        // 静态文件下载策略
         if (kIsWeb) {
-          // Web平台：使用相对路径直接访问静态文件
+          // Web平台：使用相对路径，避免CORS问题
           url = '/$assetPath';
         } else {
-          // 移动端：使用完整URL访问静态文件
+          // 非Web平台：使用Cloudflare Worker的完整URL访问静态文件
+          // 因为静态文件部署在Web平台上，需要通过Worker代理访问
           final String baseUrl = UnifiedConfig.isProduction ? UnifiedConfig.cloudflareWorkerProdUrl : UnifiedConfig.cloudflareWorkerDevUrl;
           url = '$baseUrl/$assetPath';
         }
       }
       
       print('从以下URL下载素材: $url');
+      print('平台: ${kIsWeb ? "Web" : "Native"}, 来源: $source, 环境: ${UnifiedConfig.isProduction ? "生产" : "开发"}');
 
       // 创建下载任务
       final taskId = await _downloadManager.createTask(url, fileName, assetPath);

@@ -1,16 +1,18 @@
 const fs = require('fs');
 const path = require('path');
 
-const assetsDir = path.join(__dirname, 'build', 'web', 'assets');
-const manifestPath = path.join(__dirname, 'build', 'web', 'asset-manifest.json');
+const assetsDir = path.join(__dirname, 'web', 'assets');
+const manifestPath = path.join(__dirname, 'web', 'asset-manifest.json');
 
 function getFiles(dir) {
   const dirents = fs.readdirSync(dir, { withFileTypes: true });
   const files = dirents.map((dirent) => {
     const res = path.resolve(dir, dirent.name);
-    // Get the relative path from the 'build/web' directory
-    const relativePath = path.relative(path.join(__dirname, 'build', 'web'), res).replace(/\\/g, '/');
-    return dirent.isDirectory() ? getFiles(res) : { key: relativePath, source: 'static' };
+    // 从web/assets目录开始计算相对路径
+    const relativePath = path.relative(path.join(__dirname, 'web', 'assets'), res).replace(/\\/g, '/');
+    // 添加assets/前缀，因为实际部署时文件在assets目录下
+    const finalPath = 'assets/' + relativePath;
+    return dirent.isDirectory() ? getFiles(res) : { key: finalPath, source: 'static' };
   });
   return Array.prototype.concat(...files);
 }

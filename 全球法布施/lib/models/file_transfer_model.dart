@@ -274,13 +274,18 @@ class FileTransferModel extends ChangeNotifier {
       
       final String url;
       if (isStaticFile) {
-        // 静态文件直接从当前域名下载
+        // 静态文件下载策略
+        // 修复：去掉assetPath中的web/前缀
+        final cleanAssetPath = assetPath.startsWith('web/') ? assetPath.substring(4) : assetPath;
+        
         if (kIsWeb) {
-          // Web平台：使用相对路径直接访问静态文件
-          url = '/$assetPath';
+          // Web平台：使用相对路径，避免CORS问题
+          url = '/$cleanAssetPath';
         } else {
-          // 移动端：使用完整URL访问静态文件
-          url = '${UnifiedConfig.currentBackendUrl}/$assetPath';
+          // 非Web平台：使用Cloudflare Worker的完整URL访问静态文件
+          // 因为静态文件部署在Web平台上，需要通过Worker代理访问
+          final String baseUrl = UnifiedConfig.isProduction ? UnifiedConfig.cloudflareWorkerProdUrl : UnifiedConfig.cloudflareWorkerDevUrl;
+          url = '$baseUrl/$cleanAssetPath';
         }
       } else {
         // R2文件通过Cloudflare Worker下载
@@ -288,6 +293,7 @@ class FileTransferModel extends ChangeNotifier {
       }
       
       debugPrint('下载素材URL: $url');
+      debugPrint('平台: ${kIsWeb ? "Web" : "Native"}, 静态文件: $isStaticFile, 环境: ${UnifiedConfig.isProduction ? "生产" : "开发"}');
       
       // 获取文件名
       final fileName = assetPath.split('/').last;
