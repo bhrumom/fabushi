@@ -38,9 +38,10 @@ function updateAssetManifest() {
     console.log('扫描 web/assets 目录...');
     const webFiles = getAllFiles(webAssetsDir);
     webFiles.forEach(filePath => {
-      const relativePath = path.relative(__dirname, filePath).replace(/\\/g, '/');
+      const relativePath = path.relative(webAssetsDir, filePath).replace(/\\/g, '/');
+      const finalPath = 'assets/' + relativePath;
       manifest.push({
-        key: relativePath,
+        key: finalPath,
         source: 'static'
       });
     });
