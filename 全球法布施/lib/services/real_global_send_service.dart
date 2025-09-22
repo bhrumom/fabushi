@@ -111,6 +111,11 @@ class RealGlobalSendService {
           break; // 成功发送到一个服务器就跳过该国家的其他服务器
         } catch (e) {
           onLog('⚠️ 发送到 $serverUrl 失败: $e');
+          // 如果是认证错误，尝试下一个服务器
+          if (e.toString().contains('401') || e.toString().contains('认证失败')) {
+            onLog('🔄 认证失败，尝试下一个服务器');
+            continue;
+          }
           continue;
         }
       }
@@ -182,21 +187,34 @@ class RealGlobalSendService {
         }
         
       } else if (serverUrl.contains('reqres.in')) {
-        // 使用 ReqRes 测试服务
-        final response = await http.post(
-          Uri.parse(serverUrl),
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'GlobalDharmaSender/1.0',
-          },
-          body: jsonEncode({
-            'name': file.name,
-            'job': 'Global Dharma Send to $countryName',
-          }),
-        ).timeout(Duration(seconds: 10));
-        
-        if (response.statusCode != 201) {
-          throw Exception('HTTP ${response.statusCode}');
+        // 使用 ReqRes 测试服务 - 处理401错误
+        try {
+          final response = await http.post(
+            Uri.parse(serverUrl),
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'GlobalDharmaSender/1.0',
+            },
+            body: jsonEncode({
+              'name': file.name,
+              'job': 'Global Dharma Send to $countryName',
+            }),
+          ).timeout(Duration(seconds: 10));
+          
+          if (response.statusCode == 401) {
+            // reqres.in现在需要API密钥，改用其他测试服务
+            onLog('⚠️ reqres.in需要API密钥，改用其他测试服务');
+            throw Exception('reqres.in API需要认证');
+          } else if (response.statusCode != 201) {
+            throw Exception('HTTP ${response.statusCode}');
+          }
+        } catch (e) {
+          if (e.toString().contains('401') || e.toString().contains('需要认证')) {
+            // 如果reqres.in失败，回退到其他测试服务
+            onLog('🔄 reqres.in认证失败，尝试回退服务');
+            throw Exception('API认证失败，需要回退服务');
+          }
+          rethrow;
         }
       }
       

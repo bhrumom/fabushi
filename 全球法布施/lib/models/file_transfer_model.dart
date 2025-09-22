@@ -55,6 +55,9 @@ class FileTransferModel extends ChangeNotifier {
   final DownloadManager _downloadManager = DownloadManager();
   Map<String, String> _assetToTaskMap = {};
   
+  // 用于跟踪widget是否被dispose
+  bool _isDisposed = false;
+  
   // Getters
   bool get isGlobalSendEnabled => _isGlobalSendEnabled;
   bool get isLooping => _isLooping;
@@ -411,10 +414,16 @@ class FileTransferModel extends ChangeNotifier {
             _assetToTaskMap.remove(taskId);
             debugPrint('🧹 任务清理完成');
             
-            // 确保关闭对话框
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-              debugPrint('🔒 对话框已关闭');
+            // 确保关闭对话框 - 检查widget是否还活跃
+            if (!_isDisposed && context.mounted) {
+              try {
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                  debugPrint('🔒 对话框已关闭');
+                }
+              } catch (e) {
+                debugPrint('⚠️ 关闭对话框时出错: $e');
+              }
             }
           }
         },
@@ -579,6 +588,7 @@ class FileTransferModel extends ChangeNotifier {
   
   @override
   void dispose() {
+    _isDisposed = true;
     _realGlobalSendService?.stopSending();
     stopTransfer();
     super.dispose();
