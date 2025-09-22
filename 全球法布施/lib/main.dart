@@ -52,6 +52,8 @@ class MyApp extends StatelessWidget {
             seedColor: const Color(0xFF667eea),
             brightness: Brightness.light,
           ),
+          // 设置默认字体以支持中文字符
+          fontFamily: 'NotoSansSC',
           appBarTheme: const AppBarTheme(
             centerTitle: true,
             elevation: 0,

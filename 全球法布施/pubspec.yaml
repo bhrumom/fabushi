@@ -51,3 +51,14 @@ flutter:
     - assets/built_in/
     # IP data excluded from web build
     # - assets/ip_data/
+  fonts:
+    - family: NotoSansSC
+      fonts:
+        - asset: fonts/NotoSansSC-Regular.otf
+        - asset: fonts/NotoSansSC-Bold.otf
+          weight: 700
+    - family: NotoSerifSC
+      fonts:
+        - asset: fonts/NotoSerifSC-Regular.otf
+        - asset: fonts/NotoSerifSC-Bold.otf
+          weight: 700
