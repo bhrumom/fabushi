@@ -8,6 +8,7 @@ import 'login_screen.dart';
 import 'profile_screen.dart';
 import '../widgets/enhanced_transfer_stats.dart';
 import '../widgets/transfer_mode_selector.dart';
+import 'global_dharma_screen.dart';
 
 import 'asset_screen.dart';
 
@@ -245,7 +246,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         Consumer<FileTransferModel>(
                           builder: (context, model, child) {
                             return ElevatedButton.icon(
-                              onPressed: model.hasFiles ? () => model.startGlobalTransfer() : null,
+                              onPressed: model.hasFiles ? () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const GlobalDharmaScreen(),
+                                  ),
+                                );
+                              } : null,
                               icon: const Icon(Icons.public, color: Colors.white),
                               label: const Text('开始全球法布施', style: TextStyle(fontSize: 18)),
                               style: ElevatedButton.styleFrom(

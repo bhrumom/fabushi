@@ -95,21 +95,32 @@ class DownloadManager {
   /// 开始下载
   Future<void> startDownload(String taskId) async {
     final task = _tasks[taskId];
-    if (task == null) return;
+    if (task == null) {
+      debugPrint('DownloadManager: 任务不存在: $taskId');
+      return;
+    }
 
-    if (task.status == DownloadStatus.downloading) return;
+    if (task.status == DownloadStatus.downloading) {
+      debugPrint('DownloadManager: 任务已在下载中: $taskId');
+      return;
+    }
 
+    debugPrint('DownloadManager: 开始下载任务: $taskId, URL: ${task.url}');
     task.status = DownloadStatus.downloading;
     task.error = null;
     _notifyTaskUpdate(task);
 
     try {
       if (kIsWeb) {
+        debugPrint('DownloadManager: Web平台下载');
         await _downloadForWeb(task);
       } else {
+        debugPrint('DownloadManager: 本地平台下载');
         await _downloadWithResume(task);
       }
+      debugPrint('DownloadManager: 下载任务完成: $taskId');
     } catch (e) {
+      debugPrint('DownloadManager: 下载任务失败: $taskId, 错误: $e');
       task.status = DownloadStatus.failed;
       task.error = e.toString();
       _notifyTaskUpdate(task);
