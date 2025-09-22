@@ -549,6 +549,16 @@ class _AssetScreenState extends State<AssetScreen> {
           } catch (e) {
             debugPrint('❌ AssetScreen: 清理下载状态时出错: $e');
           }
+          
+          // 确保关闭对话框 - 与Web平台保持一致
+          try {
+            if (mounted && Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+              debugPrint('🔒 AssetScreen: 下载进度对话框已关闭');
+            }
+          } catch (e) {
+            debugPrint('⚠️ AssetScreen: 关闭对话框时出错: $e');
+          }
         },
       ),
     );
@@ -566,8 +576,8 @@ class _AssetScreenState extends State<AssetScreen> {
   void dispose() {
     // 取消下载监听器订阅
     _downloadSubscription?.cancel();
-    // 释放下载管理器资源
-    _downloadManager.dispose();
+    // 注意：下载管理器是单例，不应在这里释放，避免影响正在进行的下载任务
+    // _downloadManager.dispose(); // 移除这行，避免提前释放
     super.dispose();
   }
 
