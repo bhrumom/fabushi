@@ -31,8 +31,8 @@ class UnifiedConfig {
   static const String primaryBackendUrl = 'https://ombhrum.com';
   
   // Cloudflare Worker 地址 - 备用
-  static const String cloudflareWorkerProdUrl = 'https://fabushi-flutter-web-prod.bhrumom.workers.dev';
-  static const String cloudflareWorkerDevUrl = 'https://fabushi-flutter-web-dev.bhrumom.workers.dev';
+  static const String cloudflareWorkerProdUrl = 'https://flutter.ombhrum.com';
+  static const String cloudflareWorkerDevUrl = 'https://flutter-dev.ombhrum.com';
   
   // 本地开发地址
   static const String localDevUrl = 'http://localhost:8787';
