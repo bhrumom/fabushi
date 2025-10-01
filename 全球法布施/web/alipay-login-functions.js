@@ -1,5 +1,7 @@
 // 支付宝登录相关处理函数
 
+import { generateToken, verifyToken, jsonResponse, verifyPassword, createPasswordHash } from './auth-utils.js';
+
 // 生成支付宝登录URL
 async function generateAlipayLoginUrl(env) {
   try {
@@ -328,18 +330,71 @@ async function handleAlipayUnbind(request, env) {
   }
 }
 
-// 辅助函数：JSON响应
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+// 处理支付宝登录回调
+async function handleAlipayCallback(request, env) {
+  try {
+    const url = new URL(request.url);
+    const authCode = url.searchParams.get('auth_code');
+    const state = url.searchParams.get('state');
+    
+    console.log('收到支付宝登录回调:', { authCode, state });
+    
+    if (!authCode) {
+      return Response.redirect(new URL('/login.html?error=missing_auth_code', request.url).toString(), 302);
     }
-  });
+    
+    // 验证state
+    if (state) {
+      const storedState = await env.USERS_KV.get(`alipay_state:${state}`);
+      if (!storedState) {
+        console.error('无效的state参数:', state);
+        return Response.redirect(new URL('/login.html?error=invalid_state', request.url).toString(), 302);
+      }
+      // 删除已使用的state
+      await env.USERS_KV.delete(`alipay_state:${state}`);
+    }
+    
+    // 获取支付宝用户信息
+    const alipayUser = await getAlipayUserInfo(authCode, env);
+    
+    // 检查是否已有绑定账号
+    const existingBinding = await env.USERS_KV.get(`alipay_binding:${alipayUser.user_id}`);
+    
+    if (existingBinding) {
+      // 已有绑定，直接登录
+      const userData = await env.USERS_KV.get(`user:${existingBinding}`);
+      if (userData) {
+        const user = JSON.parse(userData);
+        const token = await generateToken(user.username, env);
+        
+        // 重定向到前端页面，带上token
+        const redirectUrl = new URL('/member-center.html', request.url);
+        redirectUrl.searchParams.set('alipay_login_success', 'true');
+        redirectUrl.searchParams.set('token', token);
+        redirectUrl.searchParams.set('username', user.username);
+        redirectUrl.searchParams.set('login_method', 'alipay');
+        
+        console.log('支付宝登录成功，重定向到:', redirectUrl.toString());
+        return Response.redirect(redirectUrl.toString(), 302);
+      }
+    }
+    
+    // 新用户或未绑定，重定向到登录页面进行绑定或注册
+    const redirectUrl = new URL('/login.html', request.url);
+    redirectUrl.searchParams.set('alipay_auth_code', authCode);
+    redirectUrl.searchParams.set('alipay_user_id', alipayUser.user_id);
+    redirectUrl.searchParams.set('alipay_nickname', alipayUser.nick_name || '');
+    redirectUrl.searchParams.set('alipay_avatar', alipayUser.avatar || '');
+    redirectUrl.searchParams.set('needs_binding', 'true');
+    
+    console.log('新用户或未绑定，重定向到绑定页面:', redirectUrl.toString());
+    return Response.redirect(redirectUrl.toString(), 302);
+    
+  } catch (error) {
+    console.error('支付宝回调处理失败:', error);
+    return Response.redirect(new URL('/login.html?error=callback_failed', request.url).toString(), 302);
+  }
 }
 
 // 导出函数
-export { generateAlipayLoginUrl, handleAlipayLogin, handleAlipayBind, handleAlipayRegister };
+export { generateAlipayLoginUrl, handleAlipayLogin, handleAlipayBind, handleAlipayRegister, handleAlipayCallback };
