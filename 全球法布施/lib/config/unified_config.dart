@@ -88,6 +88,13 @@ class UnifiedConfig {
   static String get wechatRegisterUrl => '$currentBackendUrl/api/auth/wechat/register';
   static String get wechatUnbindUrl => '$currentBackendUrl/api/auth/wechat/unbind';
   
+  // 支付宝登录相关API
+  static String get alipayLoginUrlApi => '$currentBackendUrl/api/auth/alipay/login-url';
+  static String get alipayLoginUrl => '$currentBackendUrl/api/auth/alipay/login';
+  static String get alipayBindUrl => '$currentBackendUrl/api/auth/alipay/bind';
+  static String get alipayRegisterUrl => '$currentBackendUrl/api/auth/alipay/register';
+  static String get alipayUnbindUrl => '$currentBackendUrl/api/auth/alipay/unbind';
+  
   // 支付宝相关API
   static String get alipayCreateOrderUrl => '$currentBackendUrl/api/alipay/create-order';
   static String get alipayQueryOrderUrl => '$currentBackendUrl/api/alipay/query-order';

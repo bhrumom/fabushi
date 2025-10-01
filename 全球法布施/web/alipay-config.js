@@ -18,6 +18,9 @@ export const ALIPAY_CONFIG = {
     
     // 授权回调地址 - 用户支付完成后跳转回应用的地址
     RETURN_URL: '/membership.html',
+    
+    // 支付宝登录回调地址
+    LOGIN_RETURN_URL: '/login.html',
   },
   
   // 当面付产品码
