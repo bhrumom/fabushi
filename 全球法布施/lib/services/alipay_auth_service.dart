@@ -27,7 +27,7 @@ class AlipayAuthService {
         final data = jsonDecode(response.body);
         return {
           'success': true,
-          'authUrl': data['authUrl'],
+          'loginUrl': data['authUrl'], // 注意：前端期望的是loginUrl而不是authUrl
           'state': data['state'],
           'appId': data['appId'],
         };
