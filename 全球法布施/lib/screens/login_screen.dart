@@ -4,7 +4,8 @@ import '../models/auth_model.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:html' as html;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:universal_html/html.dart' as html;
 import 'dart:async';
 
 class LoginScreen extends StatefulWidget {
@@ -32,13 +33,15 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    // 监听URL变化，用于处理支付宝登录回调
-    _urlSubscription = html.window.onMessage.listen((event) {
-      final data = event.data;
-      if (data is Map && data.containsKey('alipay_auth_code')) {
-        _handleAlipayCallback(data['alipay_auth_code']);
-      }
-    });
+    // 监听URL变化，用于处理支付宝登录回调（仅在Web平台）
+    if (kIsWeb) {
+      _urlSubscription = html.window.onMessage.listen((event) {
+        final data = event.data;
+        if (data is Map && data.containsKey('alipay_auth_code')) {
+          _handleAlipayCallback(data['alipay_auth_code']);
+        }
+      });
+    }
   }
 
   Future<void> _handleAlipayCallback(String authCode) async {
@@ -76,8 +79,8 @@ class _LoginScreenState extends State<LoginScreen> {
         // 在Web平台上打开支付宝登录页面
         if (await canLaunch(loginUrl)) {
           await launch(loginUrl);
-        } else {
-          // 如果无法打开，使用window.open
+        } else if (kIsWeb) {
+          // 如果无法打开，在Web平台上使用window.open
           html.window.open(loginUrl, '_self');
         }
       } else {

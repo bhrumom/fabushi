@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
-import 'dart:html' as html;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:universal_html/html.dart' as html;
 
 class AlipayBindingScreen extends StatefulWidget {
   const AlipayBindingScreen({Key? key}) : super(key: key);
@@ -31,8 +32,8 @@ class _AlipayBindingScreenState extends State<AlipayBindingScreen> {
         // 尝试使用url_launcher打开URL
         if (await canLaunch(loginUrl)) {
           await launch(loginUrl);
-        } else {
-          // 如果无法打开，使用html.window.open作为备选
+        } else if (kIsWeb) {
+          // 如果无法打开，在Web平台上使用html.window.open作为备选
           html.window.open(loginUrl, '_blank');
         }
         
