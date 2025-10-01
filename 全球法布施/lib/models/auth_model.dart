@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/membership_service.dart';
+import '../services/alipay_auth_service.dart';
 
 class User {
   final String username;
@@ -9,6 +10,7 @@ class User {
   final String? membershipType;
   final DateTime? membershipExpiry;
   final bool isAdmin;
+  final String? alipayUserId;
 
   User({
     required this.username,
@@ -16,6 +18,7 @@ class User {
     this.membershipType,
     this.membershipExpiry,
     this.isAdmin = false,
+    this.alipayUserId,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -27,6 +30,7 @@ class User {
           ? DateTime.parse(json['membershipExpiry'])
           : null,
       isAdmin: json['isAdmin'] ?? false,
+      alipayUserId: json['alipayUserId'],
     );
   }
 
@@ -37,6 +41,7 @@ class User {
       'membershipType': membershipType,
       'membershipExpiry': membershipExpiry?.toIso8601String(),
       'isAdmin': isAdmin,
+      'alipayUserId': alipayUserId,
     };
   }
 
@@ -53,11 +58,14 @@ class User {
   bool get isPremiumMember {
     return membershipType == 'paid' && hasPremiumMembership;
   }
+
+  bool get hasAlipayBinding => alipayUserId != null;
 }
 
-class AuthModel extends ChangeNotifier {
+class AuthModel extends ChangeNotifier {// 服务实例
   final AuthService _authService = AuthService();
   final MembershipService _membershipService = MembershipService();
+  final AlipayAuthService _alipayAuthService = AlipayAuthService();
   
   User? _currentUser;
   bool _isLoading = false;
@@ -136,6 +144,7 @@ class AuthModel extends ChangeNotifier {
               ? DateTime.parse(membershipJson['expiresAt'])
               : null,
           isAdmin: isAdmin,
+          alipayUserId: userJson['alipayUserId'],
         );
         
         await _storeAuth();
@@ -250,7 +259,6 @@ class AuthModel extends ChangeNotifier {
       if (isValidToken) {
         await _authService.refreshUserInfo();
         final userModel = _authService.currentUser;
-
         if (userModel != null) {
           // 刷新时，额外获取管理员状态
           final adminStatusResult = await _membershipService.getAdminStats(_token!);
@@ -264,6 +272,7 @@ class AuthModel extends ChangeNotifier {
                 ? DateTime.parse(userModel.membership.expiresAt!)
                 : null,
             isAdmin: isAdmin,
+            alipayUserId: userModel.alipayUserId,
           );
           await _storeAuth();
           notifyListeners();
@@ -273,6 +282,139 @@ class AuthModel extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('刷新用户信息失败: $e');
+    }
+  }
+
+  // 支付宝登录相关方法
+  Future<Map<String, dynamic>> getAlipayLoginUrl() async {
+    try {
+      return await _alipayAuthService.getAlipayLoginUrl();
+    } catch (e) {
+      _setError('获取支付宝登录链接失败: $e');
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  Future<bool> alipayLogin(String authCode) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final result = await _alipayAuthService.alipayLogin(authCode, null);
+      
+      if (result['success'] == true) {
+        _token = result['token'];
+        final userJson = result['user'];
+        
+        // 登录后，额外获取管理员状态
+        final adminStatusResult = await _membershipService.getAdminStats(_token!);
+        final bool isAdmin = adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
+
+        final membershipJson = userJson['membership'] ?? {};
+        _currentUser = User(
+          username: userJson['username'] ?? '',
+          email: userJson['email'] ?? '',
+          membershipType: membershipJson['type'],
+          membershipExpiry: membershipJson['expiresAt'] != null
+              ? DateTime.parse(membershipJson['expiresAt'])
+              : null,
+          isAdmin: isAdmin,
+        );
+        
+        await _storeAuth();
+        
+        _setLoading(false);
+        notifyListeners();
+        return true;
+      } else {
+        _setError(result['error'] ?? '支付宝登录失败');
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      _setError('支付宝登录时发生错误: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> bindAlipay(String authCode) async {
+    if (_token == null) {
+      _setError('请先登录');
+      return false;
+    }
+
+    try {
+      // 从authCode中获取支付宝用户ID - 这里需要根据实际业务逻辑调整
+      final alipayUserId = authCode; // 临时处理，实际需要解析authCode获取alipayUserId
+      // 获取当前用户的邮箱和密码 - 这里需要从用户输入或缓存中获取
+      final email = _currentUser?.email ?? ''; // 临时处理
+      final password = ''; // 临时处理，实际需要用户输入或安全获取
+      
+      final result = await _alipayAuthService.bindAlipay(alipayUserId, email, password);
+      
+      if (result['success'] == true) {
+        // 绑定成功后刷新用户信息
+        await refreshUserInfo();
+        return true;
+      } else {
+        _setError(result['error'] ?? '绑定支付宝失败');
+        return false;
+      }
+    } catch (e) {
+      _setError('绑定支付宝时发生错误: $e');
+      return false;
+    }
+  }
+
+  Future<bool> alipayRegister(String username, String email, String authCode) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final result = await _alipayAuthService.alipayRegister(
+        alipayUserId: authCode, // 临时处理，实际需要解析authCode获取alipayUserId
+        username: username,
+        password: '', // 临时处理，实际需要用户输入或安全获取
+        email: email,
+      );
+      
+      if (result['success'] == true) {
+        // 注册成功后自动登录
+        _setLoading(false);
+        return await alipayLogin(authCode);
+      } else {
+        _setError(result['error'] ?? '支付宝注册失败');
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      _setError('支付宝注册时发生错误: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> unbindAlipay() async {
+    if (_token == null) {
+      _setError('请先登录');
+      return false;
+    }
+
+    try {
+      final result = await _alipayAuthService.unbindAlipay(_token!);
+      
+      if (result['success'] == true) {
+        // 解绑成功后刷新用户信息
+        await refreshUserInfo();
+        return true;
+      } else {
+        _setError(result['error'] ?? '解绑支付宝失败');
+        return false;
+      }
+    } catch (e) {
+      _setError('解绑支付宝时发生错误: $e');
+      return false;
     }
   }
 

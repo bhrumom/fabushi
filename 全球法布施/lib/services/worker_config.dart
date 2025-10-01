@@ -21,6 +21,13 @@ class WorkerConfig {
     'wechatRegister': '/api/auth/wechat/register',
     'wechatUnbind': '/api/auth/wechat/unbind',
     
+    // 支付宝登录相关
+    'alipayLoginUrl': '/api/auth/alipay/login-url',
+    'alipayLogin': '/api/auth/alipay/login',
+    'alipayBind': '/api/auth/alipay/bind',
+    'alipayRegister': '/api/auth/alipay/register',
+    'alipayUnbind': '/api/auth/alipay/unbind',
+    
     // Stripe 支付相关
     'membershipStatus': '/api/stripe/membership-status',
     'createSubscription': '/api/stripe/create-subscription',

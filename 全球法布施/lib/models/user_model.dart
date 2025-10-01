@@ -10,6 +10,10 @@ class UserModel {
   final String? wechatNickname;
   final String? wechatHeadimgurl;
   final String? wechatBoundAt;
+  final String? alipayUserId;
+  final String? alipayNickname;
+  final String? alipayAvatar;
+  final String? alipayBoundAt;
   final MembershipInfo membership;
   
   UserModel({
@@ -21,6 +25,10 @@ class UserModel {
     this.wechatNickname,
     this.wechatHeadimgurl,
     this.wechatBoundAt,
+    this.alipayUserId,
+    this.alipayNickname,
+    this.alipayAvatar,
+    this.alipayBoundAt,
     required this.membership,
   });
   
@@ -35,6 +43,10 @@ class UserModel {
       wechatNickname: json['wechatNickname'] as String?,
       wechatHeadimgurl: json['wechatHeadimgurl'] as String?,
       wechatBoundAt: json['wechatBoundAt'] as String?,
+      alipayUserId: json['alipayUserId'] as String?,
+      alipayNickname: json['alipayNickname'] as String?,
+      alipayAvatar: json['alipayAvatar'] as String?,
+      alipayBoundAt: json['alipayBoundAt'] as String?,
       membership: MembershipInfo.fromJson(json['membership'] ?? {}),
     );
   }
@@ -50,6 +62,10 @@ class UserModel {
       'wechatNickname': wechatNickname,
       'wechatHeadimgurl': wechatHeadimgurl,
       'wechatBoundAt': wechatBoundAt,
+      'alipayUserId': alipayUserId,
+      'alipayNickname': alipayNickname,
+      'alipayAvatar': alipayAvatar,
+      'alipayBoundAt': alipayBoundAt,
       'membership': membership.toJson(),
     };
   }
@@ -64,6 +80,10 @@ class UserModel {
     String? wechatNickname,
     String? wechatHeadimgurl,
     String? wechatBoundAt,
+    String? alipayUserId,
+    String? alipayNickname,
+    String? alipayAvatar,
+    String? alipayBoundAt,
     MembershipInfo? membership,
   }) {
     return UserModel(
@@ -75,6 +95,10 @@ class UserModel {
       wechatNickname: wechatNickname ?? this.wechatNickname,
       wechatHeadimgurl: wechatHeadimgurl ?? this.wechatHeadimgurl,
       wechatBoundAt: wechatBoundAt ?? this.wechatBoundAt,
+      alipayUserId: alipayUserId ?? this.alipayUserId,
+      alipayNickname: alipayNickname ?? this.alipayNickname,
+      alipayAvatar: alipayAvatar ?? this.alipayAvatar,
+      alipayBoundAt: alipayBoundAt ?? this.alipayBoundAt,
       membership: membership ?? this.membership,
     );
   }
@@ -82,16 +106,30 @@ class UserModel {
   // 检查是否绑定了微信
   bool get hasWechatBinding => wechatOpenid != null;
   
+  // 检查是否绑定了支付宝
+  bool get hasAlipayBinding => alipayUserId != null;
+  
   // 获取显示名称
   String get displayName {
     if (wechatNickname != null && wechatNickname!.isNotEmpty) {
       return wechatNickname!;
     }
+    if (alipayNickname != null && alipayNickname!.isNotEmpty) {
+      return alipayNickname!;
+    }
     return username;
   }
   
   // 获取头像URL
-  String? get avatarUrl => wechatHeadimgurl;
+  String? get avatarUrl {
+    if (wechatHeadimgurl != null && wechatHeadimgurl!.isNotEmpty) {
+      return wechatHeadimgurl;
+    }
+    if (alipayAvatar != null && alipayAvatar!.isNotEmpty) {
+      return alipayAvatar;
+    }
+    return null;
+  }
   
   @override
   String toString() {
