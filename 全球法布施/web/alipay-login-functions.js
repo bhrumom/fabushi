@@ -2,16 +2,60 @@
 
 // 生成支付宝登录URL
 async function generateAlipayLoginUrl(env) {
-  const state = crypto.randomUUID();
-  const appId = env.ALIPAY_APP_ID;
-  const redirectUri = encodeURIComponent(`${env.WORKER_URL || 'https://your-worker-url.workers.dev'}/api/auth/alipay/callback`);
-  
-  const authUrl = `https://openauth.alipay.com/oauth2/publicAppAuthorize.htm?app_id=${appId}&scope=auth_user&redirect_uri=${redirectUri}&state=${state}`;
-  
-  // 存储state用于验证
-  await env.USERS_KV.put(`alipay_state:${state}`, 'valid', { expirationTtl: 600 }); // 10分钟有效
-  
-  return { authUrl, state };
+  try {
+    console.log('生成支付宝登录URL开始');
+    console.log('环境变量检查:', {
+      hasAppId: !!env.ALIPAY_APP_ID,
+      hasWorkerUrl: !!env.WORKER_URL,
+      hasUsersKv: !!env.USERS_KV
+    });
+    
+    // 生成state，兼容不同的crypto实现
+    let state;
+    try {
+      state = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
+    } catch (cryptoError) {
+      console.warn('crypto.randomUUID不可用，使用备用方案:', cryptoError);
+      state = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    }
+    const appId = env.ALIPAY_APP_ID;
+    
+    if (!appId) {
+      console.error('支付宝应用ID未配置');
+      return jsonResponse({ error: '支付宝应用ID未配置' }, 500);
+    }
+    
+    const workerUrl = env.WORKER_URL || 'https://your-worker-url.workers.dev';
+    console.log('使用worker URL:', workerUrl);
+    
+    const redirectUri = encodeURIComponent(`${workerUrl}/api/auth/alipay/callback`);
+    
+    const authUrl = `https://openauth.alipay.com/oauth2/publicAppAuthorize.htm?app_id=${appId}&scope=auth_user&redirect_uri=${redirectUri}&state=${state}`;
+    
+    console.log('生成的授权URL:', authUrl);
+    
+    // 存储state用于验证
+    if (env.USERS_KV) {
+      await env.USERS_KV.put(`alipay_state:${state}`, 'valid', { expirationTtl: 600 }); // 10分钟有效
+      console.log('state已存储到KV');
+    } else {
+      console.warn('USERS_KV未绑定，跳过state存储');
+    }
+    
+    const response = jsonResponse({ 
+      authUrl: authUrl, 
+      state: state,
+      appId: appId 
+    });
+    
+    console.log('响应数据:', { authUrl, state, appId });
+    return response;
+    
+  } catch (error) {
+    console.error('生成支付宝登录URL失败:', error);
+    console.error('错误堆栈:', error.stack);
+    return jsonResponse({ error: '生成支付宝登录URL失败: ' + error.message }, 500);
+  }
 }
 
 // 通过支付宝授权码获取用户信息
@@ -296,3 +340,6 @@ function jsonResponse(data, status = 200) {
     }
   });
 }
+
+// 导出函数
+export { generateAlipayLoginUrl, handleAlipayLogin, handleAlipayBind, handleAlipayRegister };
