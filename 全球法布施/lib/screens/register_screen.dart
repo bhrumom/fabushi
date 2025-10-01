@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:html' as html;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:universal_html/html.dart' as html;
 import 'dart:async';
 
 class RegisterScreen extends StatefulWidget {
@@ -40,13 +41,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void initState() {
     super.initState();
-    // 监听URL变化，用于处理支付宝注册回调
-    _urlSubscription = html.window.onMessage.listen((event) {
-      final data = event.data;
-      if (data is Map && data.containsKey('alipay_auth_code')) {
-        _handleAlipayRegisterCallback(data['alipay_auth_code']);
-      }
-    });
+    // 监听URL变化，用于处理支付宝注册回调（仅在Web平台）
+    if (kIsWeb) {
+      _urlSubscription = html.window.onMessage.listen((event) {
+        final data = event.data;
+        if (data is Map && data.containsKey('alipay_auth_code')) {
+          _handleAlipayRegisterCallback(data['alipay_auth_code']);
+        }
+      });
+    }
   }
 
   Future<void> _handleAlipayRegisterCallback(String authCode) async {
@@ -138,8 +141,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         // 在Web平台上打开支付宝登录页面
         if (await canLaunch(loginUrl)) {
           await launch(loginUrl);
-        } else {
-          // 如果无法打开，使用window.open
+        } else if (kIsWeb) {
+          // 如果无法打开，在Web平台上使用window.open
           html.window.open(loginUrl, '_self');
         }
       } else {

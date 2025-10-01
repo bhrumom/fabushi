@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:html' as html;
 import 'package:flutter/foundation.dart';
+import 'package:universal_html/html.dart' as html;
 
 /// WebAssembly代理服务
 /// 
