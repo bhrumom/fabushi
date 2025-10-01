@@ -43,6 +43,12 @@ FROM_EMAIL = "amitabha@ombhrum.com"
 JWT_SECRET = "please_set_from_secret_in_production"
 FLUTTER_WEB = "true"
 
+# 默认环境资源绑定
+[assets]
+binding = "ASSETS"
+directory = "../build/web"
+exclude = ["node_modules/**", "**/.*/**", "**/*.log", "**/workerd"]
+
 # 生产环境配置
 [env.production]
 name = "fabushi-flutter-web-prod"
@@ -79,6 +85,7 @@ FLUTTER_WEB = "true"
 [env.production.assets]
 binding = "ASSETS"
 directory = "../build/web"
+exclude = ["node_modules/**", "**/.*/**", "**/*.log", "**/workerd"]
 
 # 开发环境配置
 [env.development]
@@ -117,6 +124,7 @@ ENVIRONMENT = "development"
 [env.development.assets]
 binding = "ASSETS"
 directory = "../build/web"
+exclude = ["node_modules/**", "**/.*/**", "**/*.log", "**/workerd"]
 
 [observability.logs]
 enabled = true
