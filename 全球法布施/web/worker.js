@@ -1812,6 +1812,9 @@ function getOriginalPrice(plan) {
 import { ALIPAY_CONFIG } from './alipay-config.js';
 import { importPrivateKey, importPublicKey, generateSign, verifySign } from './alipay-utils.js';
 
+// 支付宝登录相关处理函数
+import { generateAlipayLoginUrl, handleAlipayLogin, handleAlipayBind, handleAlipayRegister } from './alipay-login-functions.js';
+
 // Helper to get Alipay config from environment
 function getAlipayEnvConfig(env) {
   const isSandbox = env.ALIPAY_SANDBOX === 'true';
@@ -2995,6 +2998,28 @@ export default {
         }
         if (pathname === '/api/auth/wechat/unbind' && method === 'POST') {
           return await handleWechatUnbind(request, env);
+        }
+        
+        // 支付宝登录相关API
+        if (pathname === '/api/auth/alipay/login-url' && method === 'GET') {
+          console.log('收到支付宝登录URL请求');
+          try {
+            const result = await generateAlipayLoginUrl(env);
+            console.log('支付宝登录URL生成结果:', result);
+            return result;
+          } catch (error) {
+            console.error('支付宝登录URL请求处理失败:', error);
+            return jsonResponse({ error: '支付宝登录URL请求处理失败: ' + error.message }, 500);
+          }
+        }
+        if (pathname === '/api/auth/alipay/login' && method === 'POST') {
+          return await handleAlipayLogin(request, env);
+        }
+        if (pathname === '/api/auth/alipay/bind' && method === 'POST') {
+          return await handleAlipayBind(request, env);
+        }
+        if (pathname === '/api/auth/alipay/register' && method === 'POST') {
+          return await handleAlipayRegister(request, env);
         }
         if (pathname === '/api/auth/user-info' && method === 'GET') {
           return await handleGetUserInfo(request, env);
