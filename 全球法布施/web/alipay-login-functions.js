@@ -98,7 +98,7 @@ async function getAlipayUserInfo(authCode, env) {
     
     if (!tokenResult || tokenResult.code !== '10000') {
       console.error('获取access_token失败:', tokenResult);
-      throw new Error('支付宝授权失败: ' + (tokenResult?.msg || '未知错误'));
+      throw new Error('支付宝授权失败: ' + (tokenResult?.msg || tokenResult?.sub_msg || '未知错误'));
     }
     
     const { access_token, user_id } = tokenResult;
@@ -112,13 +112,13 @@ async function getAlipayUserInfo(authCode, env) {
       console.error('获取用户信息失败:', userInfoResult);
       // 如果获取用户信息失败，但至少返回了基本的user_id信息
       return {
-        user_id: user_id,
-        nick_name: '支付宝用户',
-        avatar: '',
-        province: '',
-        city: '',
-        gender: 'M'
-      };
+      user_id: user_id,
+      nick_name: userInfoResult?.nick_name || '支付宝用户',
+      avatar: userInfoResult?.avatar || '',
+      province: userInfoResult?.province || '',
+      city: userInfoResult?.city || '',
+      gender: userInfoResult?.gender || 'M'
+    };
     }
     
     const userInfo = userInfoResult;
@@ -605,11 +605,11 @@ async function getUserInfoWithToken(accessToken, env) {
       if (userInfoResponse.code === '10000') {
         return {
           code: '10000',
-          nick_name: userInfoResponse.nick_name,
-          avatar: userInfoResponse.avatar,
-          province: userInfoResponse.province,
-          city: userInfoResponse.city,
-          gender: userInfoResponse.gender,
+          nick_name: userInfoResponse.nick_name || '支付宝用户',
+          avatar: userInfoResponse.avatar || '',
+          province: userInfoResponse.province || '',
+          city: userInfoResponse.city || '',
+          gender: userInfoResponse.gender || 'M',
           user_type: userInfoResponse.user_type,
           is_certified: userInfoResponse.is_certified,
           is_student_certified: userInfoResponse.is_student_certified
