@@ -82,7 +82,7 @@ async function getAlipayUserInfo(authCode, env) {
       console.warn('支付宝配置不完整，使用模拟数据');
       // 模拟用户信息（实际应该调用支付宝API）
       const mockUserInfo = {
-        user_id: '2088123456789012',
+        user_id: 'mock_alipay_user_' + Date.now(), // 使用当前时间戳生成唯一的模拟用户ID
         nick_name: '支付宝用户',
         avatar: 'https://tfsimg.alipay.com/images/partner/T1kFldXk0rXXXXXXXX',
         province: '浙江省',
@@ -125,7 +125,7 @@ async function getAlipayUserInfo(authCode, env) {
     console.log('成功获取支付宝用户信息:', userInfo);
     
     return {
-      user_id: user_id,
+      user_id: user_id, // 使用从token获取的user_id（或open_id）
       nick_name: userInfo.nick_name || '支付宝用户',
       avatar: userInfo.avatar || '',
       province: userInfo.province || '',
@@ -407,6 +407,13 @@ async function handleAlipayCallback(request, env) {
     
     // 获取支付宝用户信息
     const alipayUser = await getAlipayUserInfo(authCode, env);
+    console.log('获取到的支付宝用户信息:', alipayUser);
+    
+    // 检查用户信息是否完整
+    if (!alipayUser || !alipayUser.user_id) {
+      console.error('支付宝用户信息不完整:', alipayUser);
+      return Response.redirect(new URL('/assets/login.html?error=invalid_alipay_user', request.url).toString(), 302);
+    }
     
     // 检查是否已有绑定账号
     const existingBinding = await env.USERS_KV.get(`alipay_binding:${alipayUser.user_id}`);
@@ -513,7 +520,7 @@ async function getAccessToken(authCode, env) {
         return {
           code: '10000',
           access_token: tokenResponse.access_token,
-          user_id: tokenResponse.user_id,
+          user_id: tokenResponse.user_id || tokenResponse.open_id, // 支付宝可能返回user_id或open_id
           expires_in: tokenResponse.expires_in,
           refresh_token: tokenResponse.refresh_token,
           re_expires_in: tokenResponse.re_expires_in
