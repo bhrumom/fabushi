@@ -298,6 +298,14 @@
                 // 如果needs_binding为true，显示绑定表单
                 if (params.needs_binding === 'true') {
                     showBindingForm(params);
+                } else if (params.alipay_login_success === 'true' && params.token) {
+                    // 已有绑定用户直接登录成功
+                    localStorage.setItem('authToken', params.token);
+                    localStorage.setItem('username', params.username);
+                    showMessage('登录成功！正在跳转...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1500);
                 } else {
                     // 直接跳转到主应用
                     setTimeout(() => {
@@ -365,13 +373,16 @@
 
                 const result = await response.json();
 
-                if (result.success) {
+                if (response.ok && result.token) {
+                    // 绑定成功，保存token并跳转
+                    localStorage.setItem('authToken', result.token);
+                    localStorage.setItem('username', result.username);
                     showMessage('绑定成功！', 'success');
                     setTimeout(() => {
                         window.location.href = '/';
                     }, 1500);
                 } else {
-                    showMessage(result.message || '绑定失败', 'error');
+                    showMessage(result.error || result.message || '绑定失败', 'error');
                 }
             } catch (error) {
                 showMessage('网络错误，请重试', 'error');
@@ -428,8 +439,8 @@
         // 处理支付宝登录
         async function handleAlipayLogin() {
             try {
-                const response = await fetch('/api/auth/alipay/login', {
-                    method: 'POST',
+                const response = await fetch('/api/auth/alipay/login-url', {
+                    method: 'GET',
                     headers: {
                         'Content-Type': 'application/json',
                     }
@@ -437,9 +448,9 @@
 
                 const result = await response.json();
 
-                if (result.success && result.loginUrl) {
+                if (result.authUrl) {
                     // 重定向到支付宝登录页面
-                    window.location.href = result.loginUrl;
+                    window.location.href = result.authUrl;
                 } else {
                     showMessage('支付宝登录初始化失败', 'error');
                 }
