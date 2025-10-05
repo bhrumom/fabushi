@@ -1,6 +1,7 @@
 import { EmailMessage } from 'cloudflare:email';
 import { STRIPE_CONFIG, createStripeClient, checkMembershipStatus, calculateTrialEndDate } from './stripe-config.js';
 import { base64UrlEncode, base64UrlDecodeToArray, randomBytes, derivePbkdf2, createPasswordHash, verifyPassword, upgradePasswordIfNeeded, generateToken, verifyToken, jsonResponse } from './auth-utils.js';
+import { generateAlipayLoginUrl, handleAlipayLogin, handleAlipayBind, handleAlipayRegister, handleAlipayCallback, handleMacOSAlipayCallback } from './alipay-login-functions.js';
 // 管理员系统配置
 const ADMIN_EMAIL = '1315518325@qq.com';
 const ADMIN_PRICES = {
@@ -1657,8 +1658,7 @@ function getOriginalPrice(plan) {
 import { ALIPAY_CONFIG } from './alipay-config.js';
 import { importPrivateKey, importPublicKey, generateSign, verifySign } from './alipay-utils.js';
 
-// 支付宝登录相关处理函数
-import { generateAlipayLoginUrl, handleAlipayLogin, handleAlipayBind, handleAlipayRegister, handleAlipayCallback } from './alipay-login-functions.js';
+
 
 // Helper to get Alipay config from environment
 function getAlipayEnvConfig(env) {
@@ -2850,7 +2850,11 @@ export default {
         if (pathname === '/api/auth/alipay/login-url' && method === 'GET') {
           console.log('收到支付宝登录URL请求');
           try {
-            const result = await generateAlipayLoginUrl(env);
+            // 获取平台参数
+            const url = new URL(request.url);
+            const platform = url.searchParams.get('platform');
+            
+            const result = await generateAlipayLoginUrl(env, platform);
             console.log('支付宝登录URL生成结果:', result);
             return result;
           } catch (error) {
@@ -2869,6 +2873,9 @@ export default {
         }
         if (pathname === '/api/auth/alipay/callback' && method === 'GET') {
           return await handleAlipayCallback(request, env);
+        }
+        if (pathname === '/api/auth/alipay/macos-callback' && method === 'GET') {
+          return await handleMacOSAlipayCallback(request, env);
         }
         if (pathname === '/api/auth/user-info' && method === 'GET') {
           return await handleGetUserInfo(request, env);

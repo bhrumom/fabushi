@@ -4,8 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
 import '../services/app_initializer.dart';
 import '../screens/home_screen.dart';
-// Conditional import for dart:html
-import 'dart:html' if (dart.library.io) 'dart:io' as html_stub;
+import '../services/platform_service.dart';
 
 class AppWrapper extends StatefulWidget {
   const AppWrapper({Key? key}) : super(key: key);
@@ -18,6 +17,7 @@ class _AppWrapperState extends State<AppWrapper> {
   bool _isInitialized = false;
   bool _initStarted = false;
   String? _initError;
+  final PlatformService _platformService = PlatformServiceFactory.create();
 
   @override
   void didChangeDependencies() {
@@ -67,7 +67,8 @@ class _AppWrapperState extends State<AppWrapper> {
   Future<bool> _processUrlHash(AuthModel authModel) async {
     if (kIsWeb) {
       try {
-        final uri = Uri.parse(html_stub.window.location.href);
+        final currentUrl = _platformService.currentUrl;
+        final uri = Uri.parse(currentUrl);
         if (uri.fragment.isNotEmpty) {
           final params = Uri.splitQueryString(uri.fragment);
           
@@ -88,7 +89,7 @@ class _AppWrapperState extends State<AppWrapper> {
             }
             
             // Clean the URL hash.
-            html_stub.window.history.replaceState(null, '', '/');
+            _platformService.replaceHistoryState('/');
             return false; // 不认为登录成功
           }
           
@@ -113,7 +114,7 @@ class _AppWrapperState extends State<AppWrapper> {
             }
             
             // Clean the URL hash.
-            html_stub.window.history.replaceState(null, '', '/');
+            _platformService.replaceHistoryState('/');
             return false; // 不自动登录，等待用户绑定
           }
           
@@ -126,7 +127,7 @@ class _AppWrapperState extends State<AppWrapper> {
             await authModel.setTokenDirectly(token, username);
 
             // Clean the URL hash.
-            html_stub.window.history.replaceState(null, '', '/');
+            _platformService.replaceHistoryState('/');
             
             // 显示成功消息
             String welcomeMessage = '登录成功！欢迎 $username';
@@ -151,6 +152,12 @@ class _AppWrapperState extends State<AppWrapper> {
       }
     }
     return false; // Signal that login was not handled.
+  }
+
+  @override
+  void dispose() {
+    _platformService.dispose();
+    super.dispose();
   }
 
   @override
