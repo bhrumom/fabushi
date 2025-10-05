@@ -275,9 +275,9 @@ class AuthModel extends ChangeNotifier {// 服务实例
   }
 
   // 支付宝登录相关方法
-  Future<Map<String, dynamic>> getAlipayLoginUrl() async {
+  Future<Map<String, dynamic>> getAlipayLoginUrl({String? platform}) async {
     try {
-      return await _alipayAuthService.getAlipayLoginUrl();
+      return await _alipayAuthService.getAlipayLoginUrl(platform: platform);
     } catch (e) {
       _setError('获取支付宝登录链接失败: $e');
       return {'success': false, 'error': e.toString()};
@@ -439,6 +439,58 @@ class AuthModel extends ChangeNotifier {// 服务实例
 
     // In the background, fetch the full user details from the server.
     await refreshUserInfo();
+  }
+
+  // 使用token直接登录（用于macOS支付宝登录）
+  Future<void> loginWithToken(String token, String username) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      // Update the AuthService singleton so subsequent API calls are authenticated.
+      final basicUserModel = UserModel(
+        username: username,
+        email: '',
+        emailVerified: false,
+        createdAt: DateTime.now().toIso8601String(),
+        membership: MembershipInfo(type: 'expired', isActive: false),
+      );
+      await _authService.setAuth(token, basicUserModel);
+
+      // 获取完整的用户信息
+      await _authService.refreshUserInfo();
+      final userModel = _authService.currentUser;
+      
+      if (userModel != null) {
+        // 登录后，额外获取管理员状态
+        final adminStatusResult = await _membershipService.getAdminStats(token);
+        final bool isAdmin = adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
+
+        final membershipJson = userModel.membership.toJson();
+        _currentUser = User(
+          username: userModel.username,
+          email: userModel.email ?? '',
+          membershipType: membershipJson['type'],
+          membershipExpiry: membershipJson['expiresAt'] != null
+              ? DateTime.parse(membershipJson['expiresAt'])
+              : null,
+          isAdmin: isAdmin,
+          alipayUserId: userModel.alipayUserId,
+        );
+        
+        _token = token;
+        await _storeAuth();
+        
+        _setLoading(false);
+        notifyListeners();
+      } else {
+        throw Exception('获取用户信息失败');
+      }
+    } catch (e) {
+      _setError('使用token登录时发生错误: $e');
+      _setLoading(false);
+      rethrow;
+    }
   }
 
   Future<void> logout() async {

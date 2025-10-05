@@ -4,13 +4,27 @@ import { generateToken, verifyToken, jsonResponse, verifyPassword, createPasswor
 import { importPrivateKey, importPublicKey, generateSign, verifySign } from './alipay-utils.js';
 
 // 生成支付宝登录URL
-async function generateAlipayLoginUrl(env) {
+async function generateAlipayLoginUrl(env, platform) {
   try {
     console.log('生成支付宝登录URL开始');
+    
+    // 检查平台参数，是否为macOS应用
+    let isMacOSApp = false;
+    let callbackType = 'web';
+    
+    if (platform === 'macos') {
+      isMacOSApp = true;
+      callbackType = 'macos';
+    }
+    
+    console.log('平台检测:', { platform, isMacOSApp, callbackType });
+    
     console.log('环境变量检查:', {
       hasAppId: !!env.ALIPAY_APP_ID,
       hasWorkerUrl: !!env.WORKER_URL,
-      hasUsersKv: !!env.USERS_KV
+      hasUsersKv: !!env.USERS_KV,
+      isMacOSApp,
+      callbackType
     });
     
     // 生成state，兼容不同的crypto实现
@@ -31,16 +45,31 @@ async function generateAlipayLoginUrl(env) {
     const workerUrl = env.WORKER_URL || 'https://your-worker-url.workers.dev';
     console.log('使用worker URL:', workerUrl);
     
-    const redirectUri = encodeURIComponent(`${workerUrl}/api/auth/alipay/callback`);
+    // 根据平台类型选择不同的回调地址
+    let redirectUri;
+    if (isMacOSApp) {
+      // macOS应用使用专用的回调地址
+      redirectUri = encodeURIComponent(`${workerUrl}/api/auth/alipay/macos-callback`);
+      console.log('macOS应用专用回调地址:', redirectUri);
+    } else {
+      // Web应用使用标准回调地址
+      redirectUri = encodeURIComponent(`${workerUrl}/api/auth/alipay/callback`);
+      console.log('Web应用标准回调地址:', redirectUri);
+    }
     
     const authUrl = `https://openauth.alipay.com/oauth2/publicAppAuthorize.htm?app_id=${appId}&scope=auth_user&redirect_uri=${redirectUri}&state=${state}`;
     
     console.log('生成的授权URL:', authUrl);
     
-    // 存储state用于验证
+    // 存储state用于验证，macOS应用需要特殊标记
     if (env.USERS_KV) {
-      await env.USERS_KV.put(`alipay_state:${state}`, 'valid', { expirationTtl: 600 }); // 10分钟有效
-      console.log('state已存储到KV');
+      const stateData = {
+        type: callbackType,
+        timestamp: Date.now(),
+        valid: true
+      };
+      await env.USERS_KV.put(`alipay_state:${state}`, JSON.stringify(stateData), { expirationTtl: 600 }); // 10分钟有效
+      console.log('state已存储到KV:', stateData);
     } else {
       console.warn('USERS_KV未绑定，跳过state存储');
     }
@@ -48,10 +77,11 @@ async function generateAlipayLoginUrl(env) {
     const response = jsonResponse({ 
       authUrl: authUrl, 
       state: state,
-      appId: appId 
+      appId: appId,
+      platform: callbackType
     });
     
-    console.log('响应数据:', { authUrl, state, appId });
+    console.log('响应数据:', { authUrl, state, appId, platform: callbackType });
     return response;
     
   } catch (error) {
@@ -381,6 +411,91 @@ async function handleAlipayUnbind(request, env) {
   }
 }
 
+// 处理macOS应用支付宝登录回调 - 重定向到macOS应用URL scheme
+async function handleMacOSAlipayCallback(request, env) {
+  try {
+    const url = new URL(request.url);
+    const authCode = url.searchParams.get('auth_code');
+    const state = url.searchParams.get('state');
+    
+    console.log('收到macOS应用支付宝登录回调:', { authCode, state });
+    
+    if (!authCode) {
+      // macOS应用回调失败，重定向到应用并传递错误信息
+      const redirectUrl = `globaldharma://error=missing_auth_code&error_message=${encodeURIComponent('缺少授权码')}`;
+      console.error('macOS支付宝回调缺少授权码，重定向到应用:', redirectUrl);
+      return Response.redirect(redirectUrl, 302);
+    }
+    
+    // 验证state
+    if (state) {
+      const storedStateData = await env.USERS_KV.get(`alipay_state:${state}`);
+      if (!storedStateData) {
+        console.error('macOS支付宝回调无效的state参数:', state);
+        const redirectUrl = `globaldharma://error=invalid_state&error_message=${encodeURIComponent('登录状态无效，请重新登录')}`;
+        return Response.redirect(redirectUrl, 302);
+      }
+      
+      // 检查是否为macOS应用的state
+      try {
+        const stateData = JSON.parse(storedStateData);
+        if (stateData.type !== 'macos') {
+          console.warn('state类型不匹配，期望macos，实际:', stateData.type);
+        }
+      } catch (parseError) {
+        console.warn('解析state数据失败:', parseError);
+      }
+      
+      // 删除已使用的state
+      await env.USERS_KV.delete(`alipay_state:${state}`);
+    }
+    
+    // 获取支付宝用户信息
+    const alipayUser = await getAlipayUserInfo(authCode, env);
+    console.log('macOS应用获取到的支付宝用户信息:', alipayUser);
+    
+    // 检查用户信息是否完整
+    if (!alipayUser || !alipayUser.user_id) {
+      console.error('macOS应用支付宝用户信息不完整:', alipayUser);
+      const redirectUrl = `globaldharma://error=invalid_alipay_user&error_message=${encodeURIComponent('支付宝用户信息不完整')}`;
+      return Response.redirect(redirectUrl, 302);
+    }
+    
+    // 检查是否已有绑定账号
+    const existingBinding = await env.USERS_KV.get(`alipay_binding:${alipayUser.user_id}`);
+    
+    if (existingBinding) {
+      // 已有绑定，直接登录
+      const userData = await env.USERS_KV.get(`user:${existingBinding}`);
+      if (userData) {
+        const user = JSON.parse(userData);
+        const token = await generateToken(user.username, env);
+        
+        console.log('macOS应用支付宝登录成功，用户已绑定:', user.username);
+        
+        // 重定向到macOS应用并传递登录成功信息
+        const redirectUrl = `globaldharma://alipay_auth_code=${authCode}&state=${state}&token=${token}&username=${user.username}&isNewUser=false&loginMethod=alipay&alipay_user_id=${alipayUser.user_id}&alipay_nickname=${encodeURIComponent(alipayUser.nick_name || '')}&alipay_avatar=${encodeURIComponent(alipayUser.avatar || '')}`;
+        
+        console.log('macOS应用支付宝登录成功，重定向到应用:', redirectUrl);
+        return Response.redirect(redirectUrl, 302);
+      }
+    }
+    
+    // 新用户或未绑定，重定向到macOS应用并传递用户信息
+    console.log('macOS应用新用户或未绑定支付宝账号，重定向到应用进行绑定');
+    
+    const redirectUrl = `globaldharma://alipay_auth_code=${authCode}&state=${state}&isNewUser=true&needsBinding=true&loginMethod=alipay&alipay_user_id=${alipayUser.user_id}&alipay_nickname=${encodeURIComponent(alipayUser.nick_name || '')}&alipay_avatar=${encodeURIComponent(alipayUser.avatar || '')}`;
+    
+    console.log('macOS应用新用户，重定向到应用进行绑定:', redirectUrl);
+    return Response.redirect(redirectUrl, 302);
+    
+  } catch (error) {
+    console.error('macOS应用支付宝回调处理失败:', error);
+    const redirectUrl = `globaldharma://error=callback_failed&error_message=${encodeURIComponent(error.message || '支付宝登录处理失败')}`;
+    return Response.redirect(redirectUrl, 302);
+  }
+}
+
 // 处理支付宝登录回调 - 直接跳转到Flutter应用，不再经过HTML登录页面
 async function handleAlipayCallback(request, env) {
   try {
@@ -644,4 +759,4 @@ async function getUserInfoWithToken(accessToken, env) {
   }
 }
 
-export { generateAlipayLoginUrl, getAlipayUserInfo, handleAlipayLogin, handleAlipayBind, handleAlipayRegister, getAccessToken, getUserInfoWithToken, handleAlipayCallback };
+export { generateAlipayLoginUrl, getAlipayUserInfo, handleAlipayLogin, handleAlipayBind, handleAlipayRegister, getAccessToken, getUserInfoWithToken, handleAlipayCallback, handleMacOSAlipayCallback };
