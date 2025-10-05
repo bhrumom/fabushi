@@ -1963,6 +1963,124 @@ async function handleGetAlipayMembershipStatus(request, env) {
   return handleGetMembershipStatus(request, env);
 }
 
+// 创建支付宝电脑网站支付订单
+async function handleCreateAlipayWebOrder(request, env) {
+  try {
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return jsonResponse({ error: '未提供认证信息' }, 401);
+    }
+
+    const token = authHeader.substring(7);
+    const tokenData = await verifyToken(token, env);
+    if (!tokenData) {
+      return jsonResponse({ error: '认证失败' }, 401);
+    }
+
+    const { plan = 'monthly' } = await request.json();
+    const planDetails = ALIPAY_CONFIG.MEMBERSHIP_PRICES[plan];
+    if (!planDetails) {
+      return jsonResponse({ error: '无效的会员计划' }, 400);
+    }
+
+    // 检查用户是否为管理员，如果是则使用管理员价格
+    const userData = await env.USERS_KV.get(`user:${tokenData.username}`);
+    if (!userData) {
+      return jsonResponse({ error: '用户不存在' }, 404);
+    }
+
+    const user = JSON.parse(userData);
+    const isAdminUser = isAdmin(user.email);
+
+    // 如果是管理员，使用管理员特殊价格
+    let finalAmount = planDetails.amount;
+    if (isAdminUser && ADMIN_PRICES[plan]) {
+      finalAmount = ADMIN_PRICES[plan];
+    }
+
+    const alipayConfig = getAlipayEnvConfig(env);
+    if (!alipayConfig.app_id || !alipayConfig.privateKey || !alipayConfig.alipayPublicKey) {
+      console.error('Alipay environment variables are not set');
+      return jsonResponse({ error: '支付服务配置不完整' }, 500);
+    }
+
+    const outTradeNo = `WEB_${tokenData.username}_${Date.now()}`;
+    const subject = `全球法布施 - ${planDetails.name}`;
+
+    const orderData = {
+      orderId: outTradeNo,
+      userId: tokenData.username,
+      plan: plan,
+      amount: finalAmount,
+      originalAmount: planDetails.amount,
+      isAdminOrder: isAdminUser,
+      status: 'PENDING',
+      paymentMethod: 'web',
+      createdAt: new Date().toISOString(),
+    };
+    await env.ORDERS_KV.put(outTradeNo, JSON.stringify(orderData));
+
+    const bizContent = {
+      out_trade_no: outTradeNo,
+      total_amount: finalAmount,
+      subject: subject,
+      product_code: ALIPAY_CONFIG.WEB_PRODUCT_CODE,
+      timeout_express: ALIPAY_CONFIG.TIMEOUT_EXPRESS,
+    };
+
+    // 支付宝要求的时间戳格式：yyyy-MM-dd HH:mm:ss
+    // 使用东八区时间（北京时间）
+    const now = new Date();
+    // 格式化为 yyyy-MM-dd HH:mm:ss
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const timestamp = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+
+    const params = {
+      app_id: alipayConfig.app_id,
+      method: 'alipay.trade.page.pay',
+      format: 'JSON',
+      charset: ALIPAY_CONFIG.APP_CONFIG.charset,
+      sign_type: ALIPAY_CONFIG.APP_CONFIG.sign_type,
+      timestamp: timestamp,
+      version: ALIPAY_CONFIG.APP_CONFIG.version,
+      notify_url: 'https://ombhrum.com/api/alipay/notify',
+      return_url: 'https://ombhrum.com/membership.html',
+      biz_content: JSON.stringify(bizContent),
+    };
+
+    console.log('支付宝电脑网站支付API参数:', params);
+
+    const privateKey = await importPrivateKey(alipayConfig.privateKey);
+    params.sign = await generateSign(params, privateKey);
+
+    // 构建支付页面URL
+    const payUrl = new URL(alipayConfig.gateway);
+    for (const key in params) {
+      payUrl.searchParams.append(key, params[key]);
+    }
+
+    console.log('支付宝电脑网站支付URL:', payUrl.toString());
+
+    return jsonResponse({
+      orderId: outTradeNo,
+      paymentUrl: payUrl.toString(),
+      amount: finalAmount,
+      originalAmount: planDetails.amount,
+      isAdminOrder: isAdminUser,
+      plan: plan,
+    });
+
+  } catch (error) {
+    console.error('创建支付宝电脑网站支付订单失败:', error);
+    return jsonResponse({ error: '创建订单失败: ' + error.message }, 500);
+  }
+}
+
 // Stripe支付相关处理函数
 
 // 获取用户会员状态
@@ -2889,6 +3007,9 @@ export default {
       if (pathname.startsWith('/api/alipay/')) {
         if (pathname === '/api/alipay/create-order' && method === 'POST') {
           return await handleCreateAlipayOrder(request, env);
+        }
+        if (pathname === '/api/alipay/create-web-order' && method === 'POST') {
+          return await handleCreateAlipayWebOrder(request, env);
         }
         if (pathname === '/api/alipay/query-order' && method === 'GET') {
           return await handleQueryAlipayOrder(request, env);
