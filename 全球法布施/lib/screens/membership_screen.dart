@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'dart:io' show Platform;
+import 'dart:async';
 import '../models/auth_model.dart';
 import '../services/membership_service.dart';
-
-class MembershipScreen extends StatefulWidget {
+import '../services/alipay_service.dart';
+// import '../widgets/membership_dialog.dart';
+import '../config/unified_config.dart';
+import 'package:url_launcher/url_launcher.dart';class MembershipScreen extends StatefulWidget {
   const MembershipScreen({Key? key}) : super(key: key);
 
   @override
@@ -12,6 +17,7 @@ class MembershipScreen extends StatefulWidget {
 
 class _MembershipScreenState extends State<MembershipScreen> {
   final MembershipService _membershipService = MembershipService();
+  final AlipayService _alipayService = AlipayService();
   bool _isLoading = false;
 
   Future<void> _purchaseMembership(String priceType) async {
@@ -32,8 +38,8 @@ class _MembershipScreenState extends State<MembershipScreen> {
     });
 
     try {
-      // 这里可以选择支付方式
-      final paymentMethod = await _showPaymentMethodDialog();
+      // 根据平台选择合适的支付方式
+      final paymentMethod = await _getPaymentMethodForPlatform();
       
       if (paymentMethod == null) {
         setState(() {
@@ -51,28 +57,46 @@ class _MembershipScreenState extends State<MembershipScreen> {
         );
         
         if (result['success'] == true) {
-          // 在实际应用中，这里应该打开浏览器或WebView
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('支付功能开发中，敬请期待'),
-              backgroundColor: Colors.blue,
-            ),
-          );
+          // Stripe支付成功，跳转到支付页面
+          final paymentUrl = result['paymentUrl'];
+          if (paymentUrl != null && mounted) {
+            _launchStripePayment(paymentUrl, result['sessionId']);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Stripe支付链接获取失败'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       } else if (paymentMethod == 'alipay') {
-        result = await _membershipService.createAlipayOrder(
-          authModel.authToken!,
-          priceType,
-        );
-        
-        if (result['success'] == true) {
-          // 在实际应用中，这里应该调用支付宝SDK
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('支付宝支付功能开发中，敬请期待'),
-              backgroundColor: Colors.blue,
-            ),
+        // 根据平台类型选择支付宝支付方式
+        if (kIsWeb || _isDesktopPlatform()) {
+          // Web和桌面端使用电脑网站支付
+          result = await _membershipService.createAlipayWebOrder(
+            authModel.authToken!,
+            priceType,
           );
+          
+          if (result['success'] == true) {
+            // 跳转到支付宝电脑网站支付页面
+            final paymentUrl = result['paymentUrl'];
+            if (paymentUrl != null && mounted) {
+              _launchAlipayWebPayment(paymentUrl, result['orderId']);
+            }
+          }
+        } else {
+          // 手机端使用支付宝APP支付
+          result = await _membershipService.createAlipayOrder(
+            authModel.authToken!,
+            priceType,
+          );
+          
+          if (result['success'] == true) {
+            // 调用支付宝APP支付
+            await _processAlipayAppPayment(result, authModel.authToken!);
+          }
         }
       } else {
         result = {'success': false, 'message': '不支持的支付方式'};
@@ -132,6 +156,279 @@ class _MembershipScreenState extends State<MembershipScreen> {
         ],
       ),
     );
+  }
+
+  /// 根据平台自动选择合适的支付方式
+  Future<String?> _getPaymentMethodForPlatform() async {
+    // Web和桌面端默认使用支付宝电脑网站支付
+    if (kIsWeb || _isDesktopPlatform()) {
+      return 'alipay';
+    }
+    
+    // 手机端检查是否安装了支付宝，如果安装了默认使用支付宝，否则显示选择对话框
+    try {
+      final alipayInitResult = await _alipayService.initAlipay();
+      if (alipayInitResult['success'] == true) {
+        return 'alipay';
+      }
+    } catch (e) {
+      debugPrint('检查支付宝安装状态失败: $e');
+    }
+    
+    // 如果支付宝不可用，显示支付方式选择对话框
+    return await _showPaymentMethodDialog();
+  }
+
+  /// 检测是否为桌面平台
+  bool _isDesktopPlatform() {
+    if (kIsWeb) return false;
+    
+    try {
+      return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    } catch (e) {
+      // 如果平台检测失败，默认为false
+      return false;
+    }
+  }
+
+  /// 处理支付宝APP支付
+  Future<void> _processAlipayAppPayment(Map<String, dynamic> orderResult, String token) async {
+    try {
+      final orderId = orderResult['orderId'];
+      final orderString = orderResult['orderString'];
+      
+      if (orderString == null || orderString.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('支付宝订单信息不完整'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // 发起支付宝APP支付
+      final payResult = await _alipayService.payWithAlipay(orderString);
+      
+      if (payResult['success'] == true) {
+        // 支付成功，检查订单状态
+        await _checkOrderStatus(orderId, token);
+      } else {
+        // 支付失败或取消
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(payResult['message'] ?? '支付失败'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('支付宝支付异常: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// 启动支付宝Web支付
+  Future<void> _launchAlipayWebPayment(String paymentUrl, String orderId) async {
+    try {
+      final uri = Uri.parse(paymentUrl);
+      
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        
+        // 启动定时器检查支付状态
+        _startOrderStatusCheck(orderId);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('无法打开支付宝支付页面'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('启动支付宝支付失败: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// 启动订单状态检查定时器
+  void _startOrderStatusCheck(String orderId) {
+    const checkInterval = Duration(seconds: 3);
+    const maxChecks = 20; // 最多检查60秒
+    int checkCount = 0;
+    
+    final timer = Timer.periodic(checkInterval, (timer) async {
+      checkCount++;
+      
+      if (checkCount >= maxChecks) {
+        timer.cancel();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('支付超时，请检查支付状态'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      
+      try {
+        final authModel = Provider.of<AuthModel>(context, listen: false);
+        final orderStatus = await
+        _membershipService.queryAlipayOrderStatus(
+          authModel.authToken!,
+          orderId,
+        );
+        
+        if (orderStatus['status'] == 'PAID') {
+          timer.cancel();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('支付成功！会员已激活'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            // 刷新用户状态
+            await authModel.refreshUserInfo();
+          }
+        }
+      } catch (e) {
+        debugPrint('检查订单状态失败: $e');
+      }
+    });
+  }
+
+  /// 启动Stripe支付
+  Future<void> _launchStripePayment(String paymentUrl, String sessionId) async {
+    try {
+      final uri = Uri.parse(paymentUrl);
+      
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        
+        // 启动定时器检查支付状态
+        _startStripeOrderStatusCheck(sessionId);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('无法打开Stripe支付页面'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('启动Stripe支付失败: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// 启动Stripe订单状态检查定时器
+  void _startStripeOrderStatusCheck(String sessionId) {
+    const checkInterval = Duration(seconds: 3);
+    const maxChecks = 20; // 最多检查60秒
+    int checkCount = 0;
+    
+    final timer = Timer.periodic(checkInterval, (timer) async {
+      checkCount++;
+      
+      if (checkCount >= maxChecks) {
+        timer.cancel();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('支付超时，请检查支付状态'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      
+      try {
+        final authModel = Provider.of<AuthModel>(context, listen: false);
+        final orderStatus = await _membershipService.queryStripeSessionStatus(
+          authModel.authToken!,
+          sessionId,
+        );
+        
+        if (orderStatus['status'] == 'complete') {
+          timer.cancel();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('支付成功！会员已激活'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            // 刷新用户状态
+            await authModel.refreshUserInfo();
+          }
+        }
+      } catch (e) {
+        debugPrint('检查Stripe订单状态失败: $e');
+      }
+    });
+  }
+
+  /// 检查订单状态
+  Future<void> _checkOrderStatus(String orderId, String token) async {
+    try {
+      const maxRetries = 10;
+      const retryDelay = Duration(seconds: 2);
+      
+      for (int i = 0; i < maxRetries; i++) {
+        await Future.delayed(retryDelay);
+        
+        final orderStatus = await _membershipService.queryAlipayOrderStatus(token, orderId);
+        
+        if (orderStatus['status'] == 'PAID') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('支付成功！会员已激活'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            // 刷新用户状态
+            final authModel = Provider.of<AuthModel>(context, listen: false);
+            await authModel.refreshUserInfo();
+          }
+          return;
+        }
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('支付状态检查超时，请稍后手动刷新'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('检查订单状态失败: $e');
+    }
   }
 
   @override
