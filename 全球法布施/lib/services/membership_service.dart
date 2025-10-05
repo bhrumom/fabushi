@@ -50,15 +50,14 @@ class MembershipService {
     try {
       final endpoint = Uri.parse(UnifiedConfig.stripeCreateSubscriptionUrl).path;
       final response = await _apiClient.post(endpoint, body: {
-        'currency': priceType == 'usd' ? 'usd' : 'cny',
+        'priceType': priceType, // monthly, quarterly, yearly
       }, token: token);
 
       if (response['success'] == true) {
         return {
           'success': true,
-          'subscriptionId': response['subscriptionId'],
-          'clientSecret': response['clientSecret'],
-          'customerId': response['customerId'],
+          'paymentUrl': response['paymentUrl'],
+          'sessionId': response['sessionId'],
         };
       } else {
         return {
@@ -98,6 +97,84 @@ class MembershipService {
       }
     } catch (e) {
       debugPrint('创建支付宝订单失败: $e');
+      return {
+        'success': false,
+        'message': '网络连接失败',
+      };
+    }
+  }
+
+  /// 创建支付宝Web端订单（电脑网站支付）
+  Future<Map<String, dynamic>> createAlipayWebOrder(String token, String plan) async {
+    try {
+      final endpoint = '/api/alipay/create-web-order';
+      final response = await _apiClient.post(endpoint, body: {
+        'plan': plan,
+        'platform': 'web', // 标识为Web端支付
+      }, token: token);
+
+      if (response['success'] == true) {
+        return {
+          'success': true,
+          'paymentUrl': response['paymentUrl'],
+          'orderId': response['orderId'],
+          'amount': response['amount'],
+          'plan': response['plan'],
+        };
+      } else {
+        return {
+          'success': false,
+          'message': response['message'] ?? '创建支付宝Web订单失败',
+        };
+      }
+    } catch (e) {
+      debugPrint('创建支付宝Web订单失败: $e');
+      return {
+        'success': false,
+        'message': '网络连接失败',
+      };
+    }
+  }
+
+  /// 查询支付宝订单状态
+  Future<Map<String, dynamic>> queryAlipayOrderStatus(String token, String orderId) async {
+    try {
+      final endpoint = '/api/alipay/query-order?orderId=$orderId';
+      final response = await _apiClient.get(endpoint, token: token);
+
+      if (response != null) {
+        return response;
+      } else {
+        return {
+          'success': false,
+          'message': '查询订单状态失败',
+        };
+      }
+    } catch (e) {
+      debugPrint('查询支付宝订单状态失败: $e');
+      return {
+        'success': false,
+        'message': '网络连接失败',
+      };
+    }
+  }
+
+  /// 查询Stripe会话状态
+  Future<Map<String, dynamic>> queryStripeSessionStatus(String token, String sessionId) async {
+    try {
+      final endpoint = Uri.parse(UnifiedConfig.stripeSessionStatusUrl).path;
+      final response = await _apiClient.get(endpoint, token: token, queryParams: {'sessionId': sessionId});
+
+      if (response != null) {
+        return response;
+      } else {
+        return {
+          'success': false,
+          'message': '查询Stripe会话状态失败',
+        };
+      }
+    } catch (e) {
+      debugPrint('查询Stripe会话状态失败: $e');
       return {
         'success': false,
         'message': '网络连接失败',
@@ -230,8 +307,8 @@ class MembershipService {
     }
   }
 
-  // 查询支付宝订单状态
-  Future<Map<String, dynamic>> queryAlipayOrder(String orderId) async {
+  // 查询支付宝订单状态（无token版本）
+  Future<Map<String, dynamic>> queryAlipayOrderPublic(String orderId) async {
     try {
       final endpoint = Uri.parse(UnifiedConfig.alipayQueryOrderUrl).path;
       final response = await _apiClient.get(endpoint, queryParams: {'orderId': orderId});
