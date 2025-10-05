@@ -15,6 +15,40 @@ class AlipayBindingScreen extends StatefulWidget {
 class _AlipayBindingScreenState extends State<AlipayBindingScreen> {
   bool _isLoading = false;
   String? _error;
+  Map<String, dynamic>? _alipayData;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkUrlParams();
+  }
+
+  void _checkUrlParams() {
+    if (kIsWeb) {
+      try {
+        final uri = Uri.parse(html.window.location.href);
+        if (uri.fragment.isNotEmpty) {
+          final params = Uri.splitQueryString(uri.fragment);
+          
+          if (params['alipay_auth_code'] != null && params['needs_binding'] == 'true') {
+            setState(() {
+              _alipayData = {
+                'alipayAuthCode': params['alipay_auth_code'],
+                'alipayUserId': params['alipay_user_id'],
+                'alipayNickname': params['alipay_nickname'] ?? '',
+                'alipayAvatar': params['alipay_avatar'] ?? '',
+              };
+            });
+            
+            // Clean the URL hash
+            html.window.history.replaceState(null, '', '/');
+          }
+        }
+      } catch (e) {
+        debugPrint('Error checking URL params: $e');
+      }
+    }
+  }
 
   Future<void> _handleAlipayLogin() async {
     setState(() {
@@ -96,26 +130,52 @@ class _AlipayBindingScreenState extends State<AlipayBindingScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 支付宝图标
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1677FF),
-                        borderRadius: BorderRadius.circular(16),
+                    // 支付宝图标或用户头像
+                    if (_alipayData != null && _alipayData!['alipayAvatar'] != null && _alipayData!['alipayAvatar'].isNotEmpty) ...[
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFF1677FF), width: 2),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: Image.network(
+                            _alipayData!['alipayAvatar'],
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              color: const Color(0xFF1677FF),
+                              child: const Icon(
+                                Icons.payment,
+                                size: 48,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.payment,
-                        size: 48,
-                        color: Colors.white,
+                    ] else ...[
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1677FF),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(
+                          Icons.payment,
+                          size: 48,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
+                    ],
                     const SizedBox(height: 24),
                     
                     // 标题
-                    const Text(
-                      '绑定支付宝账号',
-                      style: TextStyle(
+                    Text(
+                      _alipayData != null ? '绑定支付宝账号' : '绑定支付宝账号',
+                      style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                         color: Color(0xFF2c3e50),
@@ -124,15 +184,55 @@ class _AlipayBindingScreenState extends State<AlipayBindingScreen> {
                     const SizedBox(height: 16),
                     
                     // 说明文字
-                    const Text(
-                      '绑定支付宝账号后，您可以使用支付宝快速登录，享受更便捷的支付体验。',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Color(0xFF7f8c8d),
-                        height: 1.5,
+                    if (_alipayData != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0F7FF),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF1677FF).withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, color: Color(0xFF1677FF)),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '欢迎，${_alipayData!['alipayNickname'] ?? '支付宝用户'}！',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF2c3e50),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  const Text(
+                                    '检测到您的支付宝账号尚未绑定，请绑定现有账号或创建新账号',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Color(0xFF7f8c8d),
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                    ] else ...[
+                      const Text(
+                        '绑定支付宝账号后，您可以使用支付宝快速登录，享受更便捷的支付体验。',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Color(0xFF7f8c8d),
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 32),
                     
                     // 错误信息

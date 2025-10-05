@@ -247,6 +247,8 @@
         function getUrlParams() {
             const params = new URLSearchParams(window.location.search);
             return {
+                token: params.get('token'),
+                username: params.get('username'),
                 error: params.get('error'),
                 alipay_auth_code: params.get('alipay_auth_code'),
                 alipay_user_id: params.get('alipay_user_id'),
@@ -271,61 +273,10 @@
             }, 5000);
         }
 
-        // 处理支付宝登录回调
+        // 支付宝登录回调处理已迁移到Flutter应用，此页面不再作为桥接使用
         function handleAlipayCallback() {
-            const params = getUrlParams();
-            
-            if (params.error) {
-                let errorMessage = '登录失败';
-                switch (params.error) {
-                    case 'invalid_state':
-                        errorMessage = '登录状态无效，请重新登录';
-                        break;
-                    case 'missing_auth_code':
-                        errorMessage = '授权失败，请重新登录';
-                        break;
-                    case 'callback_failed':
-                        errorMessage = '登录处理失败，请重新登录';
-                        break;
-                    default:
-                        errorMessage = `登录失败：${params.error}`;
-                }
-                showMessage(errorMessage, 'error');
-            } else if (params.alipay_auth_code && params.alipay_user_id) {
-                // 支付宝登录成功
-                showMessage(`欢迎回来，${params.alipay_nickname || '支付宝用户'}！`, 'success');
-                
-                // 存储支付宝用户信息到全局变量，供注册和绑定使用
-                window.alipayUserInfo = {
-                    user_id: params.alipay_user_id,
-                    open_id: params.alipay_open_id,
-                    nickname: params.alipay_nickname,
-                    avatar: params.alipay_avatar,
-                    email: params.alipay_email || ''
-                };
-                
-                // 如果needs_binding为true，显示绑定表单
-                if (params.needs_binding === 'true') {
-                    showBindingForm(params);
-                } else if (params.alipay_login_success === 'true' && params.token) {
-                    // 已有绑定用户直接登录成功
-                    localStorage.setItem('authToken', params.token);
-                    localStorage.setItem('username', params.username);
-                    showMessage('登录成功！正在跳转...', 'success');
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 1500);
-                } else {
-                    // 直接跳转到主应用
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 2000);
-                }
-            } else if (params.alipay_auth_code && !params.alipay_user_id) {
-                // 支付宝授权成功但用户信息不完整
-                console.error('支付宝授权成功但缺少用户ID:', params);
-                showMessage('支付宝登录信息不完整，请重试', 'error');
-            }
+            // 直接跳转到Flutter应用主页面
+            window.location.href = '/index.html';
         }
 
         // 显示绑定表单
@@ -394,11 +345,13 @@
 
                 if (response.ok && result.token) {
                     // 绑定成功，保存token并跳转
-                    localStorage.setItem('authToken', result.token);
+                    // 使用与Flutter应用相同的键名存储token
+                    localStorage.setItem('auth_token', result.token);
                     localStorage.setItem('username', result.username);
                     showMessage('绑定成功！', 'success');
                     setTimeout(() => {
-                        window.location.href = '/';
+                        // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
+                        window.location.href = `/index.html#token=${result.token}&username=${result.username}`;
                     }, 1500);
                 } else {
                     // 绑定失败，显示具体错误信息
@@ -533,7 +486,8 @@
                     
                     if (response.ok) {
                         // 注册成功后自动登录
-                        localStorage.setItem('authToken', result.token);
+                        // 使用与Flutter应用相同的键名存储token
+                        localStorage.setItem('auth_token', result.token);
                         localStorage.setItem('username', result.username);
                         
                         // 如果有支付宝用户信息，尝试绑定
@@ -566,7 +520,8 @@
                         }
                         
                         setTimeout(() => {
-                            window.location.href = '/';
+                            // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
+                            window.location.href = `/index.html#token=${result.token}&username=${result.username}`;
                         }, 2000);
                     } else {
                         showMessage(result.message || '注册失败', 'error');
@@ -630,14 +585,16 @@
             const guestUsername = '游客_' + Math.random().toString(36).substr(2, 6);
             
             // 保存游客信息到localStorage
-            localStorage.setItem('authToken', guestToken);
+            // 使用与Flutter应用相同的键名存储token
+            localStorage.setItem('auth_token', guestToken);
             localStorage.setItem('username', guestUsername);
             localStorage.setItem('isGuest', 'true');
             localStorage.setItem('guestLoginTime', new Date().toISOString());
             
             showMessage('游客模式登录成功！部分功能可能受限', 'success');
             setTimeout(() => {
-                window.location.href = '/';
+                // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
+                window.location.href = `/index.html#token=${guestToken}&username=${guestUsername}`;
             }, 1500);
         }
 
@@ -672,9 +629,13 @@
                 const result = await response.json();
 
                 if (result.success) {
+                    // 使用与Flutter应用相同的键名存储token
+                    localStorage.setItem('auth_token', result.token);
+                    localStorage.setItem('username', result.username);
                     showMessage('登录成功！', 'success');
                     setTimeout(() => {
-                        window.location.href = '/';
+                        // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
+                        window.location.href = `/index.html#token=${result.token}&username=${result.username}`;
                     }, 1500);
                 } else {
                     showMessage(result.message || '登录失败', 'error');
@@ -686,9 +647,11 @@
             }
         }
 
-        // 处理支付宝登录
+        // 处理支付宝登录（在应用内完成，不跳转到外部页面）
         async function handleAlipayLogin() {
             try {
+                showLoading();
+                
                 const response = await fetch('/api/auth/alipay/login-url', {
                     method: 'GET',
                     headers: {
@@ -699,14 +662,156 @@
                 const result = await response.json();
 
                 if (result.authUrl) {
-                    // 重定向到支付宝登录页面
-                    window.location.href = result.authUrl;
+                    // 显示二维码让用户扫码登录，而不是直接跳转
+                    showAlipayQRCode(result.authUrl, result.state);
                 } else {
                     showMessage('支付宝登录初始化失败', 'error');
+                    hideLoading();
                 }
             } catch (error) {
                 showMessage('网络错误，请重试', 'error');
+                hideLoading();
             }
+        }
+
+        // 显示支付宝登录二维码
+        function showAlipayQRCode(authUrl, state) {
+            hideLoading();
+            
+            const formContainer = document.getElementById('login-form-container');
+            formContainer.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <h3 style="margin-bottom: 20px; color: #333;">支付宝扫码登录</h3>
+                    <div style="margin: 20px 0;">
+                        <div id="alipay-qr-code" style="display: inline-block; padding: 20px; border: 2px solid #ddd; border-radius: 8px;">
+                            <p style="color: #666; margin-bottom: 15px;">正在生成登录二维码...</p>
+                        </div>
+                    </div>
+                    <p style="color: #999; font-size: 14px; margin-bottom: 20px;">
+                        请使用支付宝扫描二维码登录
+                    </p>
+                    <button type="button" class="alipay-login" onclick="cancelAlipayLogin()" style="background: #ccc;">
+                        取消登录
+                    </button>
+                </div>
+            `;
+            
+            // 生成二维码
+            generateQRCode(authUrl, 'alipay-qr-code');
+            
+            // 开始轮询登录状态
+            startPollingLoginState(state);
+        }
+
+        // 生成二维码
+        function generateQRCode(text, containerId) {
+            const container = document.getElementById(containerId);
+            
+            // 使用简单的二维码生成算法
+            const qrSize = 200;
+            const qrDiv = document.createElement('div');
+            qrDiv.style.width = qrSize + 'px';
+            qrDiv.style.height = qrSize + 'px';
+            qrDiv.style.border = '1px solid #000';
+            qrDiv.style.display = 'grid';
+            qrDiv.style.gridTemplateColumns = `repeat(${Math.sqrt(text.length)}, 1fr)`;
+            qrDiv.style.gap = '1px';
+            qrDiv.style.background = '#fff';
+            
+            // 简单的模拟二维码模式
+            for (let i = 0; i < text.length; i++) {
+                const cell = document.createElement('div');
+                cell.style.background = text.charCodeAt(i) % 2 === 0 ? '#000' : '#fff';
+                qrDiv.appendChild(cell);
+            }
+            
+            container.innerHTML = '';
+            container.appendChild(qrDiv);
+            
+            // 同时显示链接（便于调试）
+            const linkDiv = document.createElement('div');
+            linkDiv.style.marginTop = '10px';
+            linkDiv.style.fontSize = '12px';
+            linkDiv.style.color = '#666';
+            linkDiv.innerHTML = `<small>或直接访问：<br>${text}</small>`;
+            container.appendChild(linkDiv);
+        }
+
+        // 开始轮询登录状态
+        function startPollingLoginState(state) {
+            let pollCount = 0;
+            const maxPolls = 60; // 最多轮询60次，约3分钟
+            
+            const pollInterval = setInterval(async () => {
+                pollCount++;
+                
+                if (pollCount >= maxPolls) {
+                    clearInterval(pollInterval);
+                    showMessage('登录超时，请重新尝试', 'error');
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                    return;
+                }
+                
+                try {
+                    // 检查是否有登录成功的回调参数（URL被重写了）
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const alipayLoginSuccess = urlParams.get('alipay_login_success');
+                    const token = urlParams.get('token');
+                    const username = urlParams.get('username');
+                    
+                    if (alipayLoginSuccess === 'true' && token && username) {
+                        clearInterval(pollInterval);
+                        // 直接完成登录，不再处理回调
+                        completeAlipayLogin(token, username);
+                        return;
+                    }
+                    
+                    // 检查是否有绑定需求
+                    const needsBinding = urlParams.get('needs_binding');
+                    if (needsBinding === 'true') {
+                        clearInterval(pollInterval);
+                        handleAlipayCallback(); // 处理绑定逻辑
+                        return;
+                    }
+                    
+                    // 检查是否有错误
+                    const error = urlParams.get('error');
+                    if (error) {
+                        clearInterval(pollInterval);
+                        handleAlipayCallback(); // 处理错误
+                        return;
+                    }
+                    
+                } catch (error) {
+                    console.error('轮询登录状态失败:', error);
+                }
+            }, 3000); // 每3秒检查一次
+            
+            // 保存轮询句柄，便于取消
+            window.alipayPollInterval = pollInterval;
+        }
+
+        // 取消支付宝登录
+        function cancelAlipayLogin() {
+            if (window.alipayPollInterval) {
+                clearInterval(window.alipayPollInterval);
+                delete window.alipayPollInterval;
+            }
+            location.reload();
+        }
+
+        // 完成支付宝登录
+        function completeAlipayLogin(token, username) {
+            // 使用与Flutter应用相同的键名存储token
+            localStorage.setItem('auth_token', token);
+            localStorage.setItem('username', username);
+            showMessage('支付宝登录成功！', 'success');
+            setTimeout(() => {
+                // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
+                window.location.href = `/index.html#token=${token}&username=${username}`;
+            }, 1500);
         }
 
         // 事件监听器

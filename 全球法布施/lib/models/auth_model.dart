@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/membership_service.dart';
 import '../services/alipay_auth_service.dart';
+import 'user_model.dart';
 
 class User {
   final String username;
@@ -80,44 +82,31 @@ class AuthModel extends ChangeNotifier {// 服务实例
   bool get isAdmin => _currentUser?.isAdmin ?? false;
 
   AuthModel() {
-    _loadStoredAuth();
+    // Initialization is now handled by the UI layer (AppWrapper) to avoid race conditions.
   }
 
-  Future<void> _loadStoredAuth() async {
+  Future<void> loadStoredAuth() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('auth_token');
-      final userJson = prefs.getString('user_data');
+      final userJsonString = prefs.getString('user_data');
       
-      if (token != null && userJson != null) {
+      if (token != null && userJsonString != null) {
         _token = token;
-        _currentUser = User.fromJson(Map<String, dynamic>.from(
-          await _parseJson(userJson)
-        ));
+        _currentUser = User.fromJson(json.decode(userJsonString));
+        notifyListeners(); // Optimistically update UI
         
-        // 验证token是否仍然有效
+        // Then, verify token in the background
         final isValid = await _authService.verifyToken();
         if (!isValid) {
-          await logout();
-        } else {
-          notifyListeners();
+          await logout(); // This will notify listeners again
         }
       }
     } catch (e) {
       debugPrint('加载存储的认证信息失败: $e');
+      // If loading fails, ensure we are logged out.
+      await logout();
     }
-  }
-
-  Future<Map<String, dynamic>> _parseJson(String jsonString) async {
-    // 在Web平台上直接解析，在其他平台上可能需要异步处理
-    if (kIsWeb) {
-      return Map<String, dynamic>.from(
-        Uri.splitQueryString(jsonString)
-      );
-    }
-    return Map<String, dynamic>.from(
-      Uri.splitQueryString(jsonString)
-    );
   }
 
   Future<bool> login(String username, String password) async {
@@ -418,6 +407,40 @@ class AuthModel extends ChangeNotifier {// 服务实例
     }
   }
 
+  // 直接从token设置认证状态（用于HTML页面登录同步）
+  Future<void> setTokenDirectly(String token, String username) async {
+    // Create a basic user model for the service layer
+    final basicUserModel = UserModel(
+      username: username,
+      email: '',
+      emailVerified: false,
+      createdAt: DateTime.now().toIso8601String(),
+      membership: MembershipInfo(type: 'expired', isActive: false),
+    );
+
+    // Update the AuthService singleton so subsequent API calls are authenticated.
+    await _authService.setAuth(token, basicUserModel);
+
+    // Update this AuthModel's state to match.
+    _token = token;
+    _currentUser = User(
+      username: username,
+      email: '', // Will be filled by refreshUserInfo
+      membershipType: null,
+      membershipExpiry: null,
+      isAdmin: false,
+    );
+
+    // Store in AuthModel's storage (redundant but part of current design)
+    await _storeAuth();
+
+    // Notify UI to show "logged in" state immediately.
+    notifyListeners();
+
+    // In the background, fetch the full user details from the server.
+    await refreshUserInfo();
+  }
+
   Future<void> logout() async {
     try {
       await _authService.logout();
@@ -441,7 +464,7 @@ class AuthModel extends ChangeNotifier {// 服务实例
     if (_token != null && _currentUser != null) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_token', _token!);
-      await prefs.setString('user_data', _currentUser!.toJson().toString());
+      await prefs.setString('user_data', json.encode(_currentUser!.toJson()));
     }
   }
 

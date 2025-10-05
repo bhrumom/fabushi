@@ -2696,7 +2696,8 @@ const loginHTML = `<!DOCTYPE html>
                 const data = await response.json();
                 
                 if (response.ok) {
-                    localStorage.setItem('authToken', data.token);
+                    // 使用与Flutter应用相同的键名存储token
+                    localStorage.setItem('auth_token', data.token);
                     messageDiv.className = 'message success';
                     messageDiv.textContent = '登录成功，正在跳转...';
                     messageDiv.style.display = 'block';
