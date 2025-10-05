@@ -26,6 +26,9 @@ export const ALIPAY_CONFIG = {
   // 当面付产品码
   PRODUCT_CODE: 'FACE_TO_FACE_PAYMENT',
   
+  // 电脑网站支付产品码
+  WEB_PRODUCT_CODE: 'FAST_INSTANT_TRADE_PAY',
+  
   // 会员价格配置
   MEMBERSHIP_PRICES: {
     monthly: {
