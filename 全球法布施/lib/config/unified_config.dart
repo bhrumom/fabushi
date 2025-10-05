@@ -106,6 +106,7 @@ class UnifiedConfig {
   static String get stripeCreateSubscriptionUrl => '$currentBackendUrl/api/stripe/create-subscription';
   static String get stripeCancelSubscriptionUrl => '$currentBackendUrl/api/stripe/cancel-subscription';
   static String get stripeWebhookUrl => '$currentBackendUrl/api/stripe/webhook';
+  static String get stripeSessionStatusUrl => '$currentBackendUrl/api/stripe/session-status';
   
   // 管理员相关API
   static String get adminCheckStatusUrl => '$currentBackendUrl/api/admin/check-status';
