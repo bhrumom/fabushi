@@ -1,9 +1,11 @@
-// 应用包装器
-// 处理应用初始化状态和错误
-
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../models/auth_model.dart';
 import '../services/app_initializer.dart';
 import '../screens/home_screen.dart';
+// Conditional import for dart:html
+import 'dart:html' if (dart.library.io) 'dart:io' as html_stub;
 
 class AppWrapper extends StatefulWidget {
   const AppWrapper({Key? key}) : super(key: key);
@@ -14,30 +16,141 @@ class AppWrapper extends StatefulWidget {
 
 class _AppWrapperState extends State<AppWrapper> {
   bool _isInitialized = false;
+  bool _initStarted = false;
   String? _initError;
 
   @override
-  void initState() {
-    super.initState();
-    _checkInitialization();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Ensure initialization runs only once.
+    if (!_initStarted) {
+      _initStarted = true;
+      _initializeApp();
+    }
   }
 
-  Future<void> _checkInitialization() async {
+  Future<void> _initializeApp() async {
     try {
-      // 检查是否已初始化
+      // didChangeDependencies is the safe place to use Provider.of with context.
+      final authModel = Provider.of<AuthModel>(context, listen: false);
+
+      // 1. Highest priority: check for login info in the URL hash.
+      final bool loggedInFromUrl = await _processUrlHash(authModel);
+
+      // 2. If not logged in from URL, try to load from local storage.
+      if (!loggedInFromUrl) {
+        await authModel.loadStoredAuth();
+      }
+
+      // 3. Perform other general app initializations.
       if (!AppInitializer.isInitialized) {
         await AppInitializer.initialize();
       }
-      
-      setState(() {
-        _isInitialized = true;
-      });
+
+      // If we are still mounted, update state to trigger rebuild to the main UI.
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _initError = e.toString();
-        _isInitialized = true; // 即使出错也继续
-      });
+      debugPrint('Error during app initialization: $e');
+      if (mounted) {
+        setState(() {
+          _initError = e.toString();
+          _isInitialized = true; // Mark as initialized to show the error screen.
+        });
+      }
     }
+  }
+
+  Future<bool> _processUrlHash(AuthModel authModel) async {
+    if (kIsWeb) {
+      try {
+        final uri = Uri.parse(html_stub.window.location.href);
+        if (uri.fragment.isNotEmpty) {
+          final params = Uri.splitQueryString(uri.fragment);
+          
+          // 处理错误情况
+          if (params['error'] != null) {
+            final error = params['error'];
+            final errorMessage = params['error_message'] ?? '发生未知错误';
+            
+            // 显示错误信息
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('登录失败: $errorMessage'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            }
+            
+            // Clean the URL hash.
+            html_stub.window.history.replaceState(null, '', '/');
+            return false; // 不认为登录成功
+          }
+          
+          // 处理支付宝绑定情况
+          if (params['alipay_auth_code'] != null && params['needs_binding'] == 'true') {
+            final authCode = params['alipay_auth_code']!;
+            final userId = params['alipay_user_id'];
+            final nickname = params['alipay_nickname'] ?? '';
+            final avatar = params['alipay_avatar'] ?? '';
+            
+            // 导航到支付宝绑定页面
+            if (mounted) {
+              Navigator.of(context).pushNamed(
+                '/alipay-binding',
+                arguments: {
+                  'alipayAuthCode': authCode,
+                  'alipayUserId': userId,
+                  'alipayNickname': nickname,
+                  'alipayAvatar': avatar,
+                },
+              );
+            }
+            
+            // Clean the URL hash.
+            html_stub.window.history.replaceState(null, '', '/');
+            return false; // 不自动登录，等待用户绑定
+          }
+          
+          // 处理直接登录情况 - 支持支付宝登录和其他登录方式
+          final token = params['token'];
+          final username = params['username'];
+          final loginMethod = params['login_method'] ?? 'traditional';
+
+          if (token != null && username != null) {
+            await authModel.setTokenDirectly(token, username);
+
+            // Clean the URL hash.
+            html_stub.window.history.replaceState(null, '', '/');
+            
+            // 显示成功消息
+            String welcomeMessage = '登录成功！欢迎 $username';
+            if (loginMethod == 'alipay') {
+              welcomeMessage = '支付宝登录成功！欢迎 $username';
+            }
+            
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(welcomeMessage),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
+            
+            return true; // Signal that login was handled.
+          }
+        }
+      } catch (e) {
+        debugPrint('Error processing URL hash: $e');
+      }
+    }
+    return false; // Signal that login was not handled.
   }
 
   @override
@@ -65,19 +178,12 @@ class _AppWrapperState extends State<AppWrapper> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.warning,
-                  color: Colors.orange,
-                  size: 48,
-                ),
+                const Icon(Icons.error, color: Colors.red, size: 48),
                 const SizedBox(height: 16),
-                const Text(
-                  '初始化警告',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                const Text('应用初始化失败', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Text(
-                  '应用初始化时遇到问题，但仍可继续使用：\n$_initError',
+                  '发生了一个错误: \n$_initError',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.grey),
                 ),
@@ -85,10 +191,13 @@ class _AppWrapperState extends State<AppWrapper> {
                 ElevatedButton(
                   onPressed: () {
                     setState(() {
+                      _initStarted = false;
+                      _isInitialized = false;
                       _initError = null;
                     });
+                    // didChangeDependencies will be called again and re-trigger initialization.
                   },
-                  child: const Text('继续使用'),
+                  child: const Text('重试'),
                 ),
               ],
             ),
@@ -97,6 +206,8 @@ class _AppWrapperState extends State<AppWrapper> {
       );
     }
 
+    // Initialization is complete, show the main screen.
+    // HomeScreen will listen to AuthModel and show the correct state (logged in/out).
     return const HomeScreen();
   }
 }

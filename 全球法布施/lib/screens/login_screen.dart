@@ -5,7 +5,7 @@ import 'register_screen.dart';
 import 'forgot_password_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:universal_html/html.dart' as html;
+import 'dart:html' as html;
 import 'dart:async';
 
 class LoginScreen extends StatefulWidget {
@@ -19,16 +19,14 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  final _emailController = TextEditingController();
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+  bool _isLoading = false;
+  bool _isRegisterMode = false;
+  String? _errorMessage;
   StreamSubscription? _urlSubscription;
-
-  @override
-  void dispose() {
-    _usernameController.dispose();
-    _passwordController.dispose();
-    _urlSubscription?.cancel();
-    super.dispose();
-  }
 
   @override
   void initState() {
@@ -44,13 +42,24 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _emailController.dispose();
+    _urlSubscription?.cancel();
+    super.dispose();
+  }
+
+
   Future<void> _handleAlipayCallback(String authCode) async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
     
     final success = await authModel.alipayLogin(authCode);
     
     if (success && mounted) {
-      Navigator.of(context).pop(); // 返回主界面
+      Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('支付宝登录成功'),
@@ -76,9 +85,10 @@ class _LoginScreenState extends State<LoginScreen> {
       if (result['success'] == true && result['loginUrl'] != null) {
         final loginUrl = result['loginUrl'] as String;
         
-        // 在Web平台上打开支付宝登录页面
-        if (await canLaunch(loginUrl)) {
-          await launch(loginUrl);
+        // 直接跳转到支付宝登录页面，不再经过HTML登录页面
+        final uri = Uri.parse(loginUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
         } else if (kIsWeb) {
           // 如果无法打开，在Web平台上使用window.open
           html.window.open(loginUrl, '_self');

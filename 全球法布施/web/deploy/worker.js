@@ -1,5 +1,6 @@
 import { EmailMessage } from 'cloudflare:email';
 import { STRIPE_CONFIG, createStripeClient, checkMembershipStatus, calculateTrialEndDate } from './stripe-config.js';
+import { base64UrlEncode, base64UrlDecodeToArray, randomBytes, derivePbkdf2, createPasswordHash, verifyPassword, upgradePasswordIfNeeded, generateToken, verifyToken, jsonResponse } from './auth-utils.js';
 // 管理员系统配置
 const ADMIN_EMAIL = '1315518325@qq.com';
 const ADMIN_PRICES = {
@@ -58,167 +59,11 @@ const corsHeaders = {
   'Content-Type': 'application/json'
 };
 
-// 工具函数
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-  });
-}
-
 function htmlResponse(html, status = 200) {
   return new Response(html, {
     status,
     headers: { 'Content-Type': 'text/html; charset=utf-8', ...corsHeaders }
   });
-}
-
-// Base64URL 工具
-function base64UrlEncode(buffer) {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function base64UrlDecodeToArray(base64url) {
-  const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = base64.length % 4 === 2 ? '==' : base64.length % 4 === 3 ? '=' : '';
-  const str = atob(base64 + pad);
-  const bytes = new Uint8Array(str.length);
-  for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i);
-  return bytes;
-}
-
-// 随机盐
-function randomBytes(size = 16) {
-  const array = new Uint8Array(size);
-  crypto.getRandomValues(array);
-  return array;
-}
-
-// PBKDF2 派生
-async function derivePbkdf2(password, saltBytes, iterations = 100000) {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(password),
-    'PBKDF2',
-    false,
-    ['deriveBits']
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt: saltBytes, iterations },
-    keyMaterial,
-    256
-  );
-  return new Uint8Array(bits);
-}
-
-// 新的密码哈希：PBKDF2 + Salt（同时兼容旧版 SHA-256 存量用户）
-async function createPasswordHash(password) {
-  const salt = randomBytes(16);
-  const iterations = 100000;
-  const hashBytes = await derivePbkdf2(password, salt, iterations);
-  return {
-    passwordHash: base64UrlEncode(hashBytes),
-    salt: base64UrlEncode(salt),
-    iterations,
-    algo: 'PBKDF2-SHA256'
-  };
-}
-
-async function verifyPassword(password, user) {
-  try {
-    // 优先检查新版 PBKDF2 哈希
-    if (user && user.passwordHash && user.salt) {
-      console.log("Attempting to verify password with new PBKDF2 hash.");
-      const saltBytes = base64UrlDecodeToArray(user.salt);
-      const iterations = user.iterations || 100000;
-      const hashBytes = await derivePbkdf2(password, saltBytes, iterations);
-      const computed = base64UrlEncode(hashBytes);
-      const result = computed === user.passwordHash;
-      console.log(`PBKDF2 comparison result: ${result}`);
-      if (!result) console.error("PBKDF2 comparison failed.");
-      return result;
-    }
-    // 兼容旧版（纯 SHA-256 十六进制），用于平滑迁移
-    if (user && user.password) {
-      console.log("Attempting to verify password with old SHA-256 hash.");
-      const encoder = new TextEncoder();
-      const data = encoder.encode(password);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      const result = hex === user.password;
-      console.log(`SHA-256 comparison result: ${result}`);
-      if (!result) console.error("SHA-256 comparison failed.");
-      return result;
-    }
-    console.error("User object has no recognizable password format:", JSON.stringify(user));
-    return false;
-  } catch (e) {
-    console.error('Password verification crashed:', e.stack);
-    return false;
-  }
-}
-
-// 如果用户为旧版哈希且验证通过，则升级为 PBKDF2
-async function upgradePasswordIfNeeded(password, username, user, env) {
-  if (user && user.password && (!user.passwordHash || !user.salt)) {
-    const updated = { ...user };
-    const { passwordHash, salt, iterations, algo } = await createPasswordHash(password);
-    delete updated.password;
-    updated.passwordHash = passwordHash;
-    updated.salt = salt;
-    updated.iterations = iterations;
-    updated.algo = algo;
-    await env.USERS_KV.put(`user:${username}`, JSON.stringify(updated));
-    return updated;
-  }
-  return user;
-}
-
-// 正式 JWT（HMAC-SHA256）
-async function generateToken(username, env) {
-  const header = { alg: 'HS256', typ: 'JWT' };
-  const payload = {
-    username,
-    exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 7天有效期
-    jti: crypto.randomUUID() // 增加一个唯一的ID，确保每次生成的token都不同
-  };
-  const enc = new TextEncoder();
-  const secret = (env && (env.JWT_SECRET || (env.vars && env.vars.JWT_SECRET))) || 'dev-secret';
-
-  const headerB64 = base64UrlEncode(enc.encode(JSON.stringify(header)));
-  const payloadB64 = base64UrlEncode(enc.encode(JSON.stringify(payload)));
-  const data = `${headerB64}.${payloadB64}`;
-
-  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(data));
-  const sigB64 = base64UrlEncode(new Uint8Array(sig));
-  return `${data}.${sigB64}`;
-}
-
-async function verifyToken(token, env) {
-  try {
-    const [h, p, s] = token.split('.');
-    if (!h || !p || !s) return null;
-    const enc = new TextEncoder();
-    const secret = (env && (env.JWT_SECRET || (env.vars && env.vars.JWT_SECRET))) || 'dev-secret';
-    const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
-    const ok = await crypto.subtle.verify('HMAC', key, base64UrlDecodeToArray(s), enc.encode(`${h}.${p}`));
-    if (!ok) return null;
-    const payloadJson = new TextDecoder().decode(base64UrlDecodeToArray(p));
-    const payload = JSON.parse(payloadJson);
-    if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
-    return { username: payload.username };
-  } catch {
-    return null;
-  }
 }
 
 // 生成6位验证码
@@ -2851,7 +2696,8 @@ const loginHTML = `<!DOCTYPE html>
                 const data = await response.json();
                 
                 if (response.ok) {
-                    localStorage.setItem('authToken', data.token);
+                    // 使用与Flutter应用相同的键名存储token
+                    localStorage.setItem('auth_token', data.token);
                     messageDiv.className = 'message success';
                     messageDiv.textContent = '登录成功，正在跳转...';
                     messageDiv.style.display = 'block';

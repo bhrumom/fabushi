@@ -39,6 +39,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // By using watch here, the entire build method will re-run when auth state changes.
+    final authModel = context.watch<AuthModel>();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('🙏 全球法布施'),
@@ -47,26 +50,24 @@ class _HomeScreenState extends State<HomeScreen> {
         foregroundColor: Colors.white,
         actions: [
           // 用户头像/登录按钮
-          Consumer<AuthModel>(
-            builder: (context, authModel, child) {
-              if (authModel.isLoggedIn) {
-                return PopupMenuButton<String>(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: CircleAvatar(
-                      backgroundColor: Colors.white,
-                      child: Text(
-                        authModel.currentUser!.username.isNotEmpty
-                            ? authModel.currentUser!.username[0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(
-                          color: Color(0xFF667eea),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+          if (authModel.isLoggedIn)
+            PopupMenuButton<String>(
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: CircleAvatar(
+                  backgroundColor: Colors.white,
+                  child: Text(
+                    authModel.currentUser!.username.isNotEmpty
+                        ? authModel.currentUser!.username[0].toUpperCase()
+                        : '?',
+                    style: const TextStyle(
+                      color: Color(0xFF667eea),
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  onSelected: (value) {
+                ),
+              ),
+              onSelected: (value) {
                     switch (value) {
                       case 'profile':
                         Navigator.push(
@@ -81,45 +82,42 @@ class _HomeScreenState extends State<HomeScreen> {
                         break;
                     }
                   },
-                  itemBuilder: (context) => [
-                    PopupMenuItem(
-                      value: 'profile',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.person),
-                          const SizedBox(width: 8),
-                          Text('个人中心 (${authModel.getMembershipStatusText()})'),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'logout',
-                      child: Row(
-                        children: [
-                          Icon(Icons.logout, color: Colors.red),
-                          SizedBox(width: 8),
-                          Text('登出', style: TextStyle(color: Colors.red)),
-                        ],
-                      ),
-                    ),
-                  ],
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'profile',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.person),
+                      const SizedBox(width: 8),
+                      Text('个人中心 (${authModel.getMembershipStatusText()})'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('登出', style: TextStyle(color: Colors.red)),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.login),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LoginScreen(),
+                  ),
                 );
-              } else {
-                return IconButton(
-                  icon: const Icon(Icons.login),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const LoginScreen(),
-                      ),
-                    );
-                  },
-                  tooltip: '登录',
-                );
-              }
-            },
-          ),
+              },
+              tooltip: '登录',
+            ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
