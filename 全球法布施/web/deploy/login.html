@@ -252,7 +252,11 @@
                 alipay_user_id: params.get('alipay_user_id'),
                 alipay_nickname: params.get('alipay_nickname'),
                 alipay_avatar: params.get('alipay_avatar'),
-                needs_binding: params.get('needs_binding')
+                needs_binding: params.get('needs_binding'),
+                alipay_login_success: params.get('alipay_login_success'),
+                token: params.get('token'),
+                username: params.get('username'),
+                login_method: params.get('login_method')
             };
         }
 
@@ -291,18 +295,23 @@
                         errorMessage = `登录失败：${params.error}`;
                 }
                 showMessage(errorMessage, 'error');
+            } else if (params.alipay_login_success === 'true' && params.token && params.username) {
+                // 支付宝直接登录成功（已有绑定账号）
+                showMessage(`欢迎回来，${params.username}！`, 'success');
+                setTimeout(() => {
+                    // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
+                    window.location.href = `/index.html#token=${params.token}&username=${params.username}`;
+                }, 1500);
             } else if (params.alipay_auth_code && params.alipay_user_id) {
-                // 支付宝登录成功
+                // 支付宝登录成功，需要绑定或注册
                 showMessage(`欢迎回来，${params.alipay_nickname || '支付宝用户'}！`, 'success');
                 
                 // 如果needs_binding为true，显示绑定表单
                 if (params.needs_binding === 'true') {
                     showBindingForm(params);
                 } else {
-                    // 直接跳转到主应用
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 2000);
+                    // 这种情况不应该发生，但还是处理一下
+                    console.warn('支付宝登录成功但没有token，需要绑定账号');
                 }
             }
         }
@@ -368,7 +377,8 @@
                 if (result.success) {
                     showMessage('绑定成功！', 'success');
                     setTimeout(() => {
-                        window.location.href = '/';
+                        // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
+                        window.location.href = `/index.html#token=${result.token}&username=${result.username}`;
                     }, 1500);
                 } else {
                     showMessage(result.message || '绑定失败', 'error');
@@ -413,7 +423,8 @@
                 if (result.success) {
                     showMessage('登录成功！', 'success');
                     setTimeout(() => {
-                        window.location.href = '/';
+                        // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
+                        window.location.href = `/index.html#token=${result.token}&username=${result.username || result.email || email}`;
                     }, 1500);
                 } else {
                     showMessage(result.message || '登录失败', 'error');

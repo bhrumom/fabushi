@@ -29,17 +29,17 @@ export const ALIPAY_CONFIG = {
   // 会员价格配置
   MEMBERSHIP_PRICES: {
     monthly: {
-      amount: "21.00", // 21元/月
+      amount: "29.99", // 29.99元/月
       duration: 30 * 24 * 60 * 60 * 1000, // 30天
       name: '月度会员'
     },
     quarterly: {
-      amount: "63.00", // 63元/季度
+      amount: "79.99", // 79.99元/季度
       duration: 90 * 24 * 60 * 60 * 1000, // 90天
       name: '季度会员'
     },
     yearly: {
-      amount: "252.00", // 252元/年
+      amount: "299.99", // 299.99元/年
       duration: 365 * 24 * 60 * 60 * 1000, // 365天
       name: '年度会员'
     }
@@ -58,5 +58,13 @@ export const ALIPAY_CONFIG = {
     sandbox: false, // 沙箱环境开关, 将由环境变量 ALIPAY_SANDBOX 控制
     // app_id, merchant_private_key, alipay_public_key 将从 env 中动态获取
     // notify_url, return_url 将在 worker 中动态构建或从 env 获取
+  },
+  
+  // 登录授权配置
+  LOGIN: {
+    SCOPE: 'auth_user', // 授权范围：auth_user（获取用户信息）或 auth_base（静默授权）
+    STATE_TIMEOUT: 600, // state参数有效期（秒）
+    GATEWAY_URL: 'https://openapi.alipay.com/gateway.do',
+    SANDBOX_GATEWAY_URL: 'https://openapi-sandbox.dl.alipaydev.com/gateway.do'
   }
 };

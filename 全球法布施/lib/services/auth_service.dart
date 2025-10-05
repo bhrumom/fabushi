@@ -67,6 +67,11 @@ class AuthService {
       throw Exception('保存认证信息失败');
     }
   }
+
+  // 从外部直接设置认证信息（例如，从Web URL hash登录时）
+  Future<void> setAuth(String token, UserModel user) async {
+    await _saveAuth(token, user);
+  }
   
   // 清除存储的认证信息
   Future<void> _clearStoredAuth() async {

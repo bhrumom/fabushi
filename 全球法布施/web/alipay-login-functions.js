@@ -381,7 +381,7 @@ async function handleAlipayUnbind(request, env) {
   }
 }
 
-// 处理支付宝登录回调
+// 处理支付宝登录回调 - 直接跳转到Flutter应用，不再经过HTML登录页面
 async function handleAlipayCallback(request, env) {
   try {
     const url = new URL(request.url);
@@ -391,7 +391,10 @@ async function handleAlipayCallback(request, env) {
     console.log('收到支付宝登录回调:', { authCode, state });
     
     if (!authCode) {
-      return Response.redirect(new URL('/assets/login.html?error=missing_auth_code', request.url).toString(), 302);
+      // 直接跳转到Flutter应用的错误页面，不再经过HTML登录页面
+      const redirectUrl = new URL('/index.html', request.url);
+      redirectUrl.hash = 'error=missing_auth_code&error_message=缺少授权码';
+      return Response.redirect(redirectUrl.toString(), 302);
     }
     
     // 验证state
@@ -399,7 +402,10 @@ async function handleAlipayCallback(request, env) {
       const storedState = await env.USERS_KV.get(`alipay_state:${state}`);
       if (!storedState) {
         console.error('无效的state参数:', state);
-        return Response.redirect(new URL('/assets/login.html?error=invalid_state', request.url).toString(), 302);
+        // 直接跳转到Flutter应用的错误页面，不再经过HTML登录页面
+        const redirectUrl = new URL('/index.html', request.url);
+        redirectUrl.hash = 'error=invalid_state&error_message=登录状态无效，请重新登录';
+        return Response.redirect(redirectUrl.toString(), 302);
       }
       // 删除已使用的state
       await env.USERS_KV.delete(`alipay_state:${state}`);
@@ -412,7 +418,10 @@ async function handleAlipayCallback(request, env) {
     // 检查用户信息是否完整
     if (!alipayUser || !alipayUser.user_id) {
       console.error('支付宝用户信息不完整:', alipayUser);
-      return Response.redirect(new URL('/assets/login.html?error=invalid_alipay_user', request.url).toString(), 302);
+      // 直接跳转到Flutter应用的错误页面
+      const redirectUrl = new URL('/index.html', request.url);
+      redirectUrl.hash = 'error=invalid_alipay_user&error_message=支付宝用户信息不完整';
+      return Response.redirect(redirectUrl.toString(), 302);
     }
     
     // 检查是否已有绑定账号
@@ -425,32 +434,28 @@ async function handleAlipayCallback(request, env) {
         const user = JSON.parse(userData);
         const token = await generateToken(user.username, env);
         
-        // 重定向到前端页面，带上token
-        const redirectUrl = new URL('/assets/login.html', request.url);
-        redirectUrl.searchParams.set('alipay_login_success', 'true');
-        redirectUrl.searchParams.set('token', token);
-        redirectUrl.searchParams.set('username', user.username);
-        redirectUrl.searchParams.set('login_method', 'alipay');
+        // 直接跳转到Flutter主应用，通过URL hash传递登录信息
+        const redirectUrl = new URL('/index.html', request.url);
+        redirectUrl.hash = `token=${token}&username=${user.username}&login_method=alipay`;
         
-        console.log('支付宝登录成功，重定向到:', redirectUrl.toString());
+        console.log('支付宝登录成功，直接跳转到Flutter主应用:', redirectUrl.toString());
         return Response.redirect(redirectUrl.toString(), 302);
       }
     }
     
-    // 新用户或未绑定，重定向到登录页面进行绑定或注册
-    const redirectUrl = new URL('/assets/login.html', request.url);
-    redirectUrl.searchParams.set('alipay_auth_code', authCode);
-    redirectUrl.searchParams.set('alipay_user_id', alipayUser.user_id);
-    redirectUrl.searchParams.set('alipay_nickname', alipayUser.nick_name || '');
-    redirectUrl.searchParams.set('alipay_avatar', alipayUser.avatar || '');
-    redirectUrl.searchParams.set('needs_binding', 'true');
+    // 新用户或未绑定，直接跳转到Flutter主应用进行绑定或注册
+    const redirectUrl = new URL('/index.html', request.url);
+    redirectUrl.hash = `alipay_auth_code=${authCode}&alipay_user_id=${alipayUser.user_id}&alipay_nickname=${encodeURIComponent(alipayUser.nick_name || '')}&alipay_avatar=${encodeURIComponent(alipayUser.avatar || '')}&needs_binding=true&login_method=alipay`;
     
-    console.log('新用户或未绑定，重定向到绑定页面:', redirectUrl.toString());
+    console.log('新用户或未绑定，直接跳转到Flutter主应用绑定页面:', redirectUrl.toString());
     return Response.redirect(redirectUrl.toString(), 302);
     
   } catch (error) {
     console.error('支付宝回调处理失败:', error);
-    return Response.redirect(new URL('/assets/login.html?error=callback_failed', request.url).toString(), 302);
+    // 直接跳转到Flutter应用的错误页面
+    const redirectUrl = new URL('/index.html', request.url);
+    redirectUrl.hash = `error=callback_failed&error_message=${encodeURIComponent(error.message || '支付宝登录处理失败')}`;
+    return Response.redirect(redirectUrl.toString(), 302);
   }
 }
 

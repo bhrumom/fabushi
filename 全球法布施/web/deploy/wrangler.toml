@@ -46,7 +46,7 @@ FLUTTER_WEB = "true"
 # 默认环境资源绑定
 [assets]
 binding = "ASSETS"
-directory = "."
+directory = "../build/web"
 exclude = ["node_modules/**", "**/.*/**", "**/*.log", "**/workerd"]
 
 # 生产环境配置
@@ -88,7 +88,7 @@ WORKER_URL = "https://fabushi-flutter-web-prod.bhrumom.workers.dev"
 
 [env.production.assets]
 binding = "ASSETS"
-directory = "."
+directory = "../build/web"
 exclude = ["node_modules/**", "**/.*/**", "**/*.log", "**/workerd"]
 
 # 开发环境配置
@@ -131,7 +131,7 @@ WORKER_URL = "https://fabushi-flutter-web-dev.bhrumom.workers.dev"
 
 [env.development.assets]
 binding = "ASSETS"
-directory = "."
+directory = "../build/web"
 exclude = ["node_modules/**", "**/.*/**", "**/*.log", "**/workerd"]
 
 [observability.logs]
