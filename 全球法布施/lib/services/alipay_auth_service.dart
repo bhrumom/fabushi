@@ -13,11 +13,18 @@ class AlipayAuthService {
   }
 
   /// 获取支付宝登录授权URL
-  Future<Map<String, dynamic>> getAlipayLoginUrl() async {
+  Future<Map<String, dynamic>> getAlipayLoginUrl({String? platform}) async {
     try {
       final url = await baseUrl;
+      
+      // 构建请求URL，添加平台参数
+      String requestUrl = '$url/api/auth/alipay/login-url';
+      if (platform != null) {
+        requestUrl += '?platform=$platform';
+      }
+      
       final response = await http.get(
-        Uri.parse('$url/api/auth/alipay/login-url'),
+        Uri.parse(requestUrl),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -30,6 +37,7 @@ class AlipayAuthService {
           'loginUrl': data['authUrl'], // 注意：前端期望的是loginUrl而不是authUrl
           'state': data['state'],
           'appId': data['appId'],
+          'platform': data['platform'],
         };
       } else {
         final data = jsonDecode(response.body);

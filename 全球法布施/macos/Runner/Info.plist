@@ -38,5 +38,26 @@
 	<string>该应用需要访问本地网络以进行文件传输</string>
 	<key>NSSystemAdministrationUsageDescription</key>
 	<string>该应用需要网络权限来进行全球文件传输</string>
+	<!-- 支付宝URL Scheme配置 -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>alipay</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>globaldharma</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>alipays</string>
+		<string>alipay</string>
+		<string>alipayqr</string>
+		<string>alipayshare</string>
+	</array>
 </dict>
 </plist>

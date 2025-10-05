@@ -5,8 +5,9 @@ import 'register_screen.dart';
 import 'forgot_password_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:html' as html;
 import 'dart:async';
+import 'dart:io' show Platform;
+import '../services/platform_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -27,16 +28,24 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isRegisterMode = false;
   String? _errorMessage;
   StreamSubscription? _urlSubscription;
+  final PlatformService _platformService = PlatformServiceFactory.create();
 
   @override
   void initState() {
     super.initState();
-    // 监听URL变化，用于处理支付宝登录回调（仅在Web平台）
+    // 监听URL变化，用于处理支付宝登录回调（Web平台和macOS平台）
     if (kIsWeb) {
-      _urlSubscription = html.window.onMessage.listen((event) {
+      _platformService.listenToMessages((event) {
         final data = event.data;
         if (data is Map && data.containsKey('alipay_auth_code')) {
           _handleAlipayCallback(data['alipay_auth_code']);
+        }
+      });
+    } else {
+      // macOS平台监听原生回调
+      _platformService.listenToMessages((url) {
+        if (url is String) {
+          _handleMacOSAlipayCallback(url);
         }
       });
     }
@@ -49,6 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _confirmPasswordController.dispose();
     _emailController.dispose();
     _urlSubscription?.cancel();
+    _platformService.dispose();
     super.dispose();
   }
 
@@ -76,11 +86,113 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // 处理macOS平台的支付宝回调
+  Future<void> _handleMacOSAlipayCallback(String url) async {
+    debugPrint('收到macOS支付宝回调: $url');
+    
+    try {
+      // 解析自定义scheme URL
+      Map<String, String> params = {};
+      
+      // 移除 scheme 部分
+      String urlWithoutScheme = url.replaceFirst('globaldharma://', '');
+      
+      // 直接解析查询参数（无论是否有?）
+      final queryParams = urlWithoutScheme.split('&');
+      for (final param in queryParams) {
+        if (param.contains('=')) {
+          final keyValue = param.split('=');
+          if (keyValue.length == 2) {
+            params[keyValue[0]] = Uri.decodeComponent(keyValue[1]);
+          }
+        }
+      }
+      
+      // 检查是否包含错误信息
+      if (params.containsKey('error')) {
+        final error = params['error']!;
+        final errorMessage = params['error_message'] ?? '支付宝登录失败';
+        debugPrint('macOS支付宝登录错误: $error - $errorMessage');
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('支付宝登录失败: $errorMessage'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      
+      // 检查是否包含支付宝授权码
+      if (params.containsKey('alipay_auth_code')) {
+        final authCode = params['alipay_auth_code']!;
+        debugPrint('提取到支付宝授权码: $authCode');
+        debugPrint('所有参数: $params'); // 添加调试信息
+        
+        // 检查是否直接包含token（已绑定用户）
+        if (params.containsKey('token')) {
+          final token = params['token']!;
+          final username = params['username']!;
+          final isNewUser = params['isNewUser'] == 'true';
+          
+          debugPrint('macOS支付宝登录成功，用户已绑定: $username');
+          
+          // 直接使用token登录
+          final authModel = Provider.of<AuthModel>(context, listen: false);
+          await authModel.loginWithToken(token, username);
+          
+          if (mounted) {
+            Navigator.of(context).pop(); // 返回主界面
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('支付宝登录成功！欢迎 $username'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else {
+          // 新用户或未绑定，调用支付宝登录处理
+          await _handleAlipayCallback(authCode);
+        }
+      } else {
+        debugPrint('URL中未找到支付宝授权码参数');
+        debugPrint('解析到的参数: $params');
+        debugPrint('原始URL: $url');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('支付宝登录回调参数错误，参数: ${params.keys.join(', ')}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('处理macOS支付宝回调失败: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('处理支付宝回调失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _handleAlipayLogin() async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
     
     try {
-      final result = await authModel.getAlipayLoginUrl();
+      // macOS平台需要特殊处理
+      String? platform;
+      if (!kIsWeb && Platform.isMacOS) {
+        platform = 'macos';
+      }
+      
+      final result = await authModel.getAlipayLoginUrl(platform: platform);
       
       if (result['success'] == true && result['loginUrl'] != null) {
         final loginUrl = result['loginUrl'] as String;
@@ -91,7 +203,7 @@ class _LoginScreenState extends State<LoginScreen> {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } else if (kIsWeb) {
           // 如果无法打开，在Web平台上使用window.open
-          html.window.open(loginUrl, '_self');
+          _platformService.openUrl(loginUrl, '_self');
         }
       } else {
         if (mounted) {
