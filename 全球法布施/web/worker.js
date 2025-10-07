@@ -1784,8 +1784,8 @@ async function handleCreateAlipayOrder(request, env) {
       sign_type: ALIPAY_CONFIG.APP_CONFIG.sign_type,
       timestamp: timestamp,
       version: ALIPAY_CONFIG.APP_CONFIG.version,
-      notify_url: 'https://ombhrum.com/api/alipay/notify',
-      return_url: 'https://ombhrum.com/membership.html',
+      notify_url: 'https://flutter.ombhrum.com/api/alipay/notify',
+      return_url: 'https://flutter.ombhrum.com/membership.html',
       biz_content: JSON.stringify(bizContent),
     };
 
@@ -1924,7 +1924,7 @@ async function handleCreateAlipayWebOrder(request, env) {
       subject: subject,
       product_code: 'FAST_INSTANT_TRADE_PAY', // 电脑网站支付使用不同的产品码
       timeout_express: ALIPAY_CONFIG.TIMEOUT_EXPRESS,
-      quit_url: 'https://ombhrum.com/membership.html', // 用户付款中途退出返回的商户页面地址
+      quit_url: 'https://flutter.ombhrum.com/membership.html', // 用户付款中途退出返回的商户页面地址
     };
 
     // 支付宝要求的时间戳格式：yyyy-MM-dd HH:mm:ss
@@ -1945,8 +1945,8 @@ async function handleCreateAlipayWebOrder(request, env) {
       sign_type: ALIPAY_CONFIG.APP_CONFIG.sign_type,
       timestamp: timestamp,
       version: ALIPAY_CONFIG.APP_CONFIG.version,
-      notify_url: 'https://ombhrum.com/api/alipay/notify',
-      return_url: 'https://ombhrum.com/membership.html',
+      notify_url: 'https://flutter.ombhrum.com/api/alipay/notify',
+      return_url: 'https://flutter.ombhrum.com/membership.html',
       biz_content: JSON.stringify(bizContent),
     };
 
