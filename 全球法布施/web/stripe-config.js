@@ -1,8 +1,8 @@
 // Stripe 配置和工具函数
 export const STRIPE_CONFIG = {
-  // 月度会员价格 (7元 = 700分)
-  MONTHLY_PRICE_CNY: 700, // 分为单位
-  MONTHLY_PRICE_USD: 100, // 1美元，用于测试
+  // 价格配置已移至Worker配置统一管理
+  // MONTHLY_PRICE_CNY: 700, // 7元 = 700分
+  // MONTHLY_PRICE_USD: 100, // 1美元，用于测试
   
   // 新用户免费试用天数
   FREE_TRIAL_DAYS: 3,
