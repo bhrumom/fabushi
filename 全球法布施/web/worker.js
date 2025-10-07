@@ -10,6 +10,31 @@ const ADMIN_PRICES = {
   'yearly': '0.01'
 };
 
+// Worker配置中的会员计划
+const WORKER_MEMBERSHIP_PLANS = {
+  'monthly': {
+    name: '月度会员',
+    duration: 30 * 24 * 60 * 60 * 1000, // 30天，毫秒
+    price: '21.00',
+    adminPrice: '0.01',
+    features: ['基础功能访问', '每日10次使用额度', '邮件支持']
+  },
+  'quarterly': {
+    name: '季度会员',
+    duration: 90 * 24 * 60 * 60 * 1000, // 90天，毫秒
+    price: '63.00',
+    adminPrice: '0.01',
+    features: ['基础功能访问', '每日30次使用额度', '邮件支持', '优先客服']
+  },
+  'yearly': {
+    name: '年度会员',
+    duration: 365 * 24 * 60 * 60 * 1000, // 365天，毫秒
+    price: '252.00',
+    adminPrice: '0.01',
+    features: ['基础功能访问', '每日100次使用额度', '邮件支持', '优先客服', '专属功能']
+  }
+};
+
 // 兑换码类型配置
 const REDEEM_CODE_TYPES = {
   'trial_7': {
@@ -1690,7 +1715,7 @@ async function handleCreateAlipayOrder(request, env) {
     }
 
     const { plan = 'monthly' } = await request.json();
-    const planDetails = ALIPAY_CONFIG.MEMBERSHIP_PRICES[plan];
+    const planDetails = WORKER_MEMBERSHIP_PLANS[plan];
     if (!planDetails) {
       return jsonResponse({ error: '无效的会员计划' }, 400);
     }
@@ -1705,9 +1730,9 @@ async function handleCreateAlipayOrder(request, env) {
     const isAdminUser = isAdmin(user.email);
 
     // 如果是管理员，使用管理员特殊价格
-    let finalAmount = planDetails.amount;
-    if (isAdminUser && ADMIN_PRICES[plan]) {
-      finalAmount = ADMIN_PRICES[plan];
+    let finalAmount = planDetails.price;
+    if (isAdminUser && planDetails.adminPrice) {
+      finalAmount = planDetails.adminPrice;
     }
 
     const alipayConfig = getAlipayEnvConfig(env);
@@ -1724,7 +1749,7 @@ async function handleCreateAlipayOrder(request, env) {
       userId: tokenData.username,
       plan: plan,
       amount: finalAmount,
-      originalAmount: planDetails.amount,
+      originalAmount: planDetails.price,
       isAdminOrder: isAdminUser,
       status: 'PENDING',
       createdAt: new Date().toISOString(),
@@ -1813,7 +1838,7 @@ async function handleCreateAlipayOrder(request, env) {
             orderId: outTradeNo,
             qrCode: precreateResponse.qr_code,
             amount: finalAmount,
-            originalAmount: planDetails.amount,
+            originalAmount: planDetails.price,
             isAdminOrder: isAdminUser,
             plan: plan,
           });
@@ -1851,7 +1876,7 @@ async function handleCreateAlipayWebOrder(request, env) {
     }
 
     const { plan = 'monthly' } = await request.json();
-    const planDetails = ALIPAY_CONFIG.MEMBERSHIP_PRICES[plan];
+    const planDetails = WORKER_MEMBERSHIP_PLANS[plan];
     if (!planDetails) {
       return jsonResponse({ error: '无效的会员计划' }, 400);
     }
@@ -1866,9 +1891,9 @@ async function handleCreateAlipayWebOrder(request, env) {
     const isAdminUser = isAdmin(user.email);
 
     // 如果是管理员，使用管理员特殊价格
-    let finalAmount = planDetails.amount;
-    if (isAdminUser && ADMIN_PRICES[plan]) {
-      finalAmount = ADMIN_PRICES[plan];
+    let finalAmount = planDetails.price;
+    if (isAdminUser && planDetails.adminPrice) {
+      finalAmount = planDetails.adminPrice;
     }
 
     const alipayConfig = getAlipayEnvConfig(env);
@@ -1885,7 +1910,7 @@ async function handleCreateAlipayWebOrder(request, env) {
       userId: tokenData.username,
       plan: plan,
       amount: finalAmount,
-      originalAmount: planDetails.amount,
+      originalAmount: planDetails.price,
       isAdminOrder: isAdminUser,
       status: 'PENDING',
       platform: 'web',
@@ -1940,7 +1965,7 @@ async function handleCreateAlipayWebOrder(request, env) {
       orderId: outTradeNo,
       paymentUrl: paymentUrl,
       amount: finalAmount,
-      originalAmount: planDetails.amount,
+      originalAmount: planDetails.price,
       isAdminOrder: isAdminUser,
       plan: plan,
     });
@@ -2027,7 +2052,7 @@ async function handleAlipayNotify(request, env) {
         return new Response('failure', { status: 404 });
       }
       const user = JSON.parse(userDataStr);
-      const planDetails = ALIPAY_CONFIG.MEMBERSHIP_PRICES[orderData.plan];
+      const planDetails = WORKER_MEMBERSHIP_PLANS[orderData.plan];
 
       const currentMembership = checkMembershipStatus(user);
 
@@ -2046,7 +2071,7 @@ async function handleAlipayNotify(request, env) {
         id: crypto.randomUUID(),
         orderId: outTradeNo,
         plan: orderData.plan,
-        amount: planDetails.amount,
+        amount: planDetails.price,
         currency: 'CNY',
         status: 'completed',
         paymentMethod: 'alipay',
