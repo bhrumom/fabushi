@@ -1785,7 +1785,7 @@ async function handleCreateAlipayOrder(request, env) {
       timestamp: timestamp,
       version: ALIPAY_CONFIG.APP_CONFIG.version,
       notify_url: 'https://flutter.ombhrum.com/api/alipay/notify',
-      return_url: 'https://flutter.ombhrum.com/membership.html',
+      return_url: 'https://flutter.ombhrum.com/#/membership',
       biz_content: JSON.stringify(bizContent),
     };
 
@@ -1924,7 +1924,7 @@ async function handleCreateAlipayWebOrder(request, env) {
       subject: subject,
       product_code: 'FAST_INSTANT_TRADE_PAY', // 电脑网站支付使用不同的产品码
       timeout_express: ALIPAY_CONFIG.TIMEOUT_EXPRESS,
-      quit_url: 'https://flutter.ombhrum.com/membership.html', // 用户付款中途退出返回的商户页面地址
+      quit_url: 'https://flutter.ombhrum.com/#/membership', // 用户付款中途退出返回的商户页面地址
     };
 
     // 支付宝要求的时间戳格式：yyyy-MM-dd HH:mm:ss
@@ -1946,7 +1946,7 @@ async function handleCreateAlipayWebOrder(request, env) {
       timestamp: timestamp,
       version: ALIPAY_CONFIG.APP_CONFIG.version,
       notify_url: 'https://flutter.ombhrum.com/api/alipay/notify',
-      return_url: 'https://flutter.ombhrum.com/membership.html',
+      return_url: 'https://flutter.ombhrum.com/#/membership',
       biz_content: JSON.stringify(bizContent),
     };
 
@@ -3408,6 +3408,24 @@ export default {
             const spaRequest = new Request(new URL('/index.html', request.url), request);
             response = await env.ASSETS.fetch(spaRequest);
         }
+      }
+
+      // 特殊处理 membership.html 路由 - 直接返回 index.html 以支持 Flutter Web 路由
+      if (pathname === '/membership.html') {
+        const indexRequest = new Request(new URL('/index.html', request.url), request);
+        response = await env.ASSETS.fetch(indexRequest);
+      }
+
+      // 特殊处理 hash 路由 - 直接返回 index.html 以支持 Flutter Web 路由
+      if (pathname === '/membership') {
+        const indexRequest = new Request(new URL('/index.html', request.url), request);
+        response = await env.ASSETS.fetch(indexRequest);
+      }
+
+      // 特殊处理 hash 路由 - 直接返回 index.html 以支持 Flutter Web 路由
+      if (pathname === '/#/membership') {
+        const indexRequest = new Request(new URL('/index.html', request.url), request);
+        response = await env.ASSETS.fetch(indexRequest);
       }
 
       // 为所有响应添加CORS头
