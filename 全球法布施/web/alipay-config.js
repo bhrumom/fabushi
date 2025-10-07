@@ -17,7 +17,7 @@ export const ALIPAY_CONFIG = {
     NOTIFY_URL: '/api/alipay/notify',
     
     // 授权回调地址 - 用户支付完成后跳转回应用的地址
-    RETURN_URL: '/membership.html',
+    RETURN_URL: '/#/membership',
     
     // 支付宝登录回调地址
     LOGIN_RETURN_URL: '/login.html',
