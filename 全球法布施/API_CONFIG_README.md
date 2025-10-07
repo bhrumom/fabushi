@@ -103,11 +103,11 @@ String? workingUrl = await apiService.findWorkingBackend();
    - 推荐使用
    - 稳定可靠
 
-2. **Cloudflare Worker (生产)** - `https://fabushi-flutter-web-prod.bhrumom.workers.dev`
+2. **Cloudflare Worker (生产)** - `https://flutter.ombhrum.com`
    - 全球CDN加速
    - 适合海外用户
 
-3. **Cloudflare Worker (开发)** - `https://fabushi-flutter-web-dev.bhrumom.workers.dev`
+3. **Cloudflare Worker (开发)** - `https://flutter.ombhrum.com`
    - 开发测试环境
    - 用于测试新功能
 
