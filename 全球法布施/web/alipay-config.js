@@ -26,24 +26,8 @@ export const ALIPAY_CONFIG = {
   // 当面付产品码
   PRODUCT_CODE: 'FACE_TO_FACE_PAYMENT',
   
-  // 会员价格配置
-  MEMBERSHIP_PRICES: {
-    monthly: {
-      amount: "29.99", // 29.99元/月
-      duration: 30 * 24 * 60 * 60 * 1000, // 30天
-      name: '月度会员'
-    },
-    quarterly: {
-      amount: "79.99", // 79.99元/季度
-      duration: 90 * 24 * 60 * 60 * 1000, // 90天
-      name: '季度会员'
-    },
-    yearly: {
-      amount: "299.99", // 299.99元/年
-      duration: 365 * 24 * 60 * 60 * 1000, // 365天
-      name: '年度会员'
-    }
-  },
+  // 会员价格配置已移至Worker配置统一管理
+  // MEMBERSHIP_PRICES: { ... }
   
   CURRENCY: 'CNY',
   
