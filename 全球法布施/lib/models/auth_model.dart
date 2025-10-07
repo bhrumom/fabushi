@@ -580,4 +580,17 @@ class AuthModel extends ChangeNotifier {// 服务实例
       return '即将到期';
     }
   }
+
+  // 获取会员剩余天数
+  int? getMembershipDaysRemaining() {
+    if (_currentUser?.membershipExpiry == null) return null;
+    
+    final expiry = _currentUser!.membershipExpiry!;
+    final now = DateTime.now();
+    final difference = expiry.difference(now);
+    
+    if (difference.isNegative) return -1; // 已过期
+    
+    return difference.inDays;
+  }
 }
