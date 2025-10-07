@@ -8,17 +8,24 @@ import '../services/membership_service.dart';
 import '../services/alipay_service.dart';
 // import '../widgets/membership_dialog.dart';
 import '../config/unified_config.dart';
-import 'package:url_launcher/url_launcher.dart';class MembershipScreen extends StatefulWidget {
+import 'package:url_launcher/url_launcher.dart';
+import '../models/user_model.dart';class MembershipScreen extends StatefulWidget {
   const MembershipScreen({Key? key}) : super(key: key);
 
   @override
   State<MembershipScreen> createState() => _MembershipScreenState();
 }
 
-class _MembershipScreenState extends State<MembershipScreen> {
+class _MembershipScreenState extends State<MembershipScreen> with SingleTickerProviderStateMixin {
   final MembershipService _membershipService = MembershipService();
   final AlipayService _alipayService = AlipayService();
   bool _isLoading = false;
+  
+  // 历史记录相关状态
+  bool _isLoadingHistory = false;
+  List<PurchaseRecord> _purchaseHistory = [];
+  List<RedeemRecord> _redeemHistory = [];
+  late TabController _tabController;
 
   Future<void> _purchaseMembership(String priceType) async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
@@ -432,6 +439,67 @@ class _MembershipScreenState extends State<MembershipScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _loadHistory();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  // 加载历史记录
+  Future<void> _loadHistory() async {
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    
+    if (!authModel.isLoggedIn || authModel.authToken == null) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingHistory = true;
+    });
+
+    try {
+      // 加载购买记录
+      final purchaseResult = await _membershipService.getPurchaseHistory(authModel.authToken!);
+      if (purchaseResult['success'] == true && purchaseResult['purchases'] != null) {
+        final purchases = purchaseResult['purchases'] as List;
+        setState(() {
+          _purchaseHistory = purchases.map((item) => PurchaseRecord.fromJson(item)).toList();
+        });
+      }
+
+      // 加载兑换记录
+      final redeemResult = await _membershipService.getRedeemHistory(authModel.authToken!);
+      if (redeemResult['success'] == true && redeemResult['redeems'] != null) {
+        final redeems = redeemResult['redeems'] as List;
+        setState(() {
+          _redeemHistory = redeems.map((item) => RedeemRecord.fromJson(item)).toList();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('加载历史记录失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingHistory = false;
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -569,13 +637,30 @@ class _MembershipScreenState extends State<MembershipScreen> {
                   ),
                   if (authModel.getMembershipExpiryText() != null) ...[
                     const SizedBox(height: 8),
-                    Text(
-                      authModel.getMembershipExpiryText()!,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Color(0xFF7f8c8d),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _getExpiryColor(authModel.getMembershipDaysRemaining()),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        authModel.getMembershipExpiryText()!,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    if (authModel.currentUser?.membershipExpiry != null)
+                      Text(
+                        '具体到期时间: ${_formatDateTime(authModel.currentUser!.membershipExpiry!)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF7f8c8d),
+                        ),
+                      ),
                   ],
                   if (!user.hasPremiumMembership) ...[
                     const SizedBox(height: 16),
@@ -754,6 +839,9 @@ class _MembershipScreenState extends State<MembershipScreen> {
           }).toList(),
 
           const SizedBox(height: 32),
+          
+          // 历史记录部分
+          _buildHistorySection(),
         ],
       ),
     );
@@ -771,5 +859,256 @@ class _MembershipScreenState extends State<MembershipScreen> {
     if (user.isPremiumMember) return Colors.amber;
     if (user.isTrialMember) return Colors.blue;
     return Colors.grey;
+  }
+
+  // 构建历史记录部分
+  Widget _buildHistorySection() {
+    return Container(
+      height: 400,
+      child: Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: const Text(
+                '历史记录',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2c3e50),
+                ),
+              ),
+            ),
+            if (_isLoadingHistory)
+              const Expanded(
+                child: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else
+              Expanded(
+                child: Column(
+                  children: [
+                    TabBar(
+                      controller: _tabController,
+                      labelColor: const Color(0xFF667eea),
+                      unselectedLabelColor: Colors.grey,
+                      indicatorColor: const Color(0xFF667eea),
+                      tabs: const [
+                        Tab(text: '购买记录'),
+                        Tab(text: '兑换记录'),
+                      ],
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _buildPurchaseHistoryList(),
+                          _buildRedeemHistoryList(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 构建购买记录列表
+  Widget _buildPurchaseHistoryList() {
+    if (_purchaseHistory.isEmpty) {
+      return const Center(
+        child: Text('暂无购买记录'),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _purchaseHistory.length,
+      itemBuilder: (context, index) {
+        final record = _purchaseHistory[index];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: ListTile(
+            leading: Icon(
+              _getPaymentMethodIcon(record.paymentMethod),
+              color: const Color(0xFF667eea),
+            ),
+            title: Text(
+              record.planDisplayName,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('订单号: ${record.orderId}'),
+                Text('购买时间: ${_formatDateTime(DateTime.parse(record.purchasedAt))}'),
+                Text('金额: ¥${record.amount}'),
+                Text('支付方式: ${_getPaymentMethodName(record.paymentMethod)}'),
+                if (record.status != null)
+                  Text(
+                    '状态: ${_getStatusText(record.status!)}',
+                    style: TextStyle(
+                      color: _getStatusColor(record.status!),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+              ],
+            ),
+            trailing: Icon(
+              _getStatusIcon(record.status),
+              color: _getStatusColor(record.status),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // 构建兑换记录列表
+  Widget _buildRedeemHistoryList() {
+    if (_redeemHistory.isEmpty) {
+      return const Center(
+        child: Text('暂无兑换记录'),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _redeemHistory.length,
+      itemBuilder: (context, index) {
+        final record = _redeemHistory[index];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: ListTile(
+            leading: const Icon(
+              Icons.card_giftcard,
+              color: Colors.green,
+            ),
+            title: Text(
+              record.name,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('兑换码: ${record.code}'),
+                Text('兑换时间: ${_formatDateTime(DateTime.parse(record.redeemedAt))}'),
+                Text('增加天数: ${record.days}天'),
+              ],
+            ),
+            trailing: const Icon(
+              Icons.check_circle,
+              color: Colors.green,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // 获取支付方式图标
+  IconData _getPaymentMethodIcon(String paymentMethod) {
+    switch (paymentMethod) {
+      case 'alipay':
+        return Icons.payment;
+      case 'stripe':
+        return Icons.credit_card;
+      case 'wechat':
+        return Icons.chat_bubble;
+      default:
+        return Icons.payment;
+    }
+  }
+
+  // 获取支付方式名称
+  String _getPaymentMethodName(String paymentMethod) {
+    switch (paymentMethod) {
+      case 'alipay':
+        return '支付宝';
+      case 'stripe':
+        return '信用卡';
+      case 'wechat':
+        return '微信支付';
+      default:
+        return '未知';
+    }
+  }
+
+  // 获取状态文本
+  String _getStatusText(String status) {
+    switch (status) {
+      case 'completed':
+        return '已完成';
+      case 'pending':
+        return '待支付';
+      case 'failed':
+        return '失败';
+      case 'cancelled':
+        return '已取消';
+      default:
+        return status;
+    }
+  }
+
+  // 获取状态颜色
+  Color _getStatusColor(String? status) {
+    switch (status) {
+      case 'completed':
+        return Colors.green;
+      case 'pending':
+        return Colors.orange;
+      case 'failed':
+        return Colors.red;
+      case 'cancelled':
+        return Colors.grey;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  // 获取状态图标
+  IconData _getStatusIcon(String? status) {
+    switch (status) {
+      case 'completed':
+        return Icons.check_circle;
+      case 'pending':
+        return Icons.pending;
+      case 'failed':
+        return Icons.error;
+      case 'cancelled':
+        return Icons.cancel;
+      default:
+        return Icons.help_outline;
+    }
+  }
+
+  // 获取到期时间颜色
+  Color _getExpiryColor(int? daysRemaining) {
+    if (daysRemaining == null) return Colors.grey;
+    if (daysRemaining < 0) return Colors.red;
+    if (daysRemaining <= 7) return Colors.orange;
+    if (daysRemaining <= 30) return Colors.yellow;
+    return Colors.green;
+  }
+
+  // 格式化日期时间
+  String _formatDateTime(DateTime dateTime) {
+    return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')} '
+           '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
   }
 }
