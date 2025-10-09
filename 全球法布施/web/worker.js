@@ -1946,7 +1946,7 @@ async function handleCreateAlipayWebOrder(request, env) {
       timestamp: timestamp,
       version: ALIPAY_CONFIG.APP_CONFIG.version,
       notify_url: 'https://flutter.ombhrum.com/api/alipay/notify',
-      return_url: 'https://flutter.ombhrum.com/#/membership',
+      return_url: 'https://flutter.ombhrum.com/payment-success.html',
       biz_content: JSON.stringify(bizContent),
     };
 
