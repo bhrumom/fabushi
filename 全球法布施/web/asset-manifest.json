@@ -1,5 +1,17 @@
 [
   {
+    "key": "assets/index.html",
+    "source": "static"
+  },
+  {
+    "key": "assets/login.html",
+    "source": "static"
+  },
+  {
+    "key": "assets/service-worker.js",
+    "source": "static"
+  },
+  {
     "key": "assets/乾隆大藏经txt版/大乘五大部外重译经/第0122部～金光明最胜王经十卷.txt",
     "source": "static"
   },

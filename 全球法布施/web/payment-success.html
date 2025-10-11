@@ -172,20 +172,41 @@
         }
         
         function closeWindow() {
-            // 尝试关闭窗口
+            // 通知父窗口支付成功
             if (window.opener) {
                 // 如果是通过window.open打开的窗口
+                try {
+                    window.opener.postMessage({
+                        action: 'paymentSuccess',
+                        message: '支付成功！会员已激活'
+                    }, '*');
+                } catch (e) {
+                    console.log('无法通知父窗口:', e);
+                }
                 window.close();
             } else if (window.parent && window.parent !== window) {
                 // 如果是在iframe中
-                window.parent.postMessage({ action: 'closePayment' }, '*');
+                window.parent.postMessage({
+                    action: 'paymentSuccess',
+                    message: '支付成功！会员已激活'
+                }, '*');
             } else {
-                // 尝试通过history.back返回
-                if (window.history.length > 1) {
-                    window.history.back();
-                } else {
-                    // 最后的选择：跳转到主页
-                    window.location.href = '/#/membership';
+                // 尝试通过localStorage通知同一域名的其他页面
+                try {
+                    localStorage.setItem('paymentSuccess', JSON.stringify({
+                        timestamp: Date.now(),
+                        message: '支付成功！会员已激活'
+                    }));
+                } catch (e) {
+                    console.log('无法使用localStorage:', e);
+                }
+                
+                // 尝试关闭整个标签页
+                try {
+                    window.open('', '_self', '');
+                    window.close();
+                } catch (e) {
+                    console.log('无法关闭标签页:', e);
                 }
             }
             

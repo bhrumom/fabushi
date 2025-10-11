@@ -252,6 +252,18 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('登录'),
+        backgroundColor: const Color(0xFF667eea),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+        ),
+      ),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -426,7 +438,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                                 elevation: 2,
                               ),
-                              icon: const Icon(Icons.payment), // 使用支付图标代替支付宝图标
+                              icon: const Icon(Icons.account_balance_wallet), // 使用钱包图标代替支付图标
                               label: const Text(
                                 '支付宝登录',
                                 style: TextStyle(
