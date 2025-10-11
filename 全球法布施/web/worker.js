@@ -1130,7 +1130,10 @@ async function handleGetUserInfo(request, env) {
 
     const user = JSON.parse(userData);
     
-    // 返回用户信息（包含微信绑定信息）
+    // 检查会员状态
+    const membershipStatus = checkMembershipStatus(user);
+    
+    // 返回用户信息（包含微信绑定信息和会员状态）
     return jsonResponse({
       username: user.username,
       email: user.email,
@@ -1139,7 +1142,10 @@ async function handleGetUserInfo(request, env) {
       wechatHeadimgurl: user.wechatHeadimgurl || null,
       wechatBoundAt: user.wechatBoundAt || null,
       createdAt: user.createdAt,
-      emailVerified: user.emailVerified
+      emailVerified: user.emailVerified,
+      membership: membershipStatus,
+      alipayUserId: user.alipayUserId || null,
+      alipayNickname: user.alipayNickname || null
     });
 
   } catch (error) {
