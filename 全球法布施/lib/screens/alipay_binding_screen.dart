@@ -145,13 +145,13 @@ class _AlipayBindingScreenState extends State<AlipayBindingScreen> {
                             _alipayData!['alipayAvatar'],
                             fit: BoxFit.cover,
                             errorBuilder: (context, error, stackTrace) => Container(
-                              color: const Color(0xFF1677FF),
-                              child: const Icon(
-                                Icons.payment,
-                                size: 48,
-                                color: Colors.white,
+                                color: const Color(0xFF1677FF),
+                                child: const Icon(
+                                  Icons.account_balance_wallet,
+                                  size: 48,
+                                  color: Colors.white,
+                                ),
                               ),
-                            ),
                           ),
                         ),
                       ),
@@ -164,7 +164,7 @@ class _AlipayBindingScreenState extends State<AlipayBindingScreen> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: const Icon(
-                          Icons.payment,
+                          Icons.account_balance_wallet,
                           size: 48,
                           color: Colors.white,
                         ),

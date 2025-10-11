@@ -47,7 +47,6 @@ FLUTTER_WEB = "true"
 [assets]
 binding = "ASSETS"
 directory = "../build/web"
-exclude = ["node_modules/**", "**/.*/**", "**/*.log", "**/workerd"]
 
 # 生产环境配置
 [env.production]
@@ -89,7 +88,6 @@ WORKER_URL = "https://flutter.ombhrum.com"
 [env.production.assets]
 binding = "ASSETS"
 directory = "../build/web"
-exclude = ["node_modules/**", "**/.*/**", "**/*.log", "**/workerd"]
 
 # 开发环境配置
 [env.development]
@@ -132,7 +130,6 @@ WORKER_URL = "https://flutter.ombhrum.com"
 [env.development.assets]
 binding = "ASSETS"
 directory = "../build/web"
-exclude = ["node_modules/**", "**/.*/**", "**/*.log", "**/workerd"]
 
 [observability.logs]
 enabled = true

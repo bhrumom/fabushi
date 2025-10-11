@@ -515,7 +515,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     
                     return ListTile(
                       leading: Icon(
-                        hasAlipayBinding ? Icons.payment : Icons.payment_outlined,
+                        hasAlipayBinding ? Icons.account_balance_wallet : Icons.account_balance_wallet_outlined,
                         color: hasAlipayBinding ? const Color(0xFF1677FF) : const Color(0xFF667eea),
                       ),
                       title: Text(hasAlipayBinding ? '解绑支付宝' : '绑定支付宝'),
