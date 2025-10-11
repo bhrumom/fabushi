@@ -560,7 +560,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 ),
                                 elevation: 2,
                               ),
-                              icon: const Icon(Icons.payment), // 使用支付图标代替支付宝图标
+                              icon: const Icon(Icons.account_balance_wallet), // 使用钱包图标代替支付图标
                               label: const Text(
                                 '支付宝注册',
                                 style: TextStyle(

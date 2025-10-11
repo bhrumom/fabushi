@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'dart:io' show Platform;
 import 'dart:async';
+import 'dart:convert';
+import 'dart:html' as html;
 import '../models/auth_model.dart';
 import '../services/membership_service.dart';
 import '../services/alipay_service.dart';
@@ -26,6 +28,147 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   List<PurchaseRecord> _purchaseHistory = [];
   List<RedeemRecord> _redeemHistory = [];
   late TabController _tabController;
+  
+  // Web端消息监听器
+  html.EventListener? _messageListener;
+  Timer? _localStorageCheckTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    
+    // 在Web平台上添加消息监听器
+    if (kIsWeb) {
+      _setupWebMessageListener();
+      _setupLocalStorageListener();
+    }
+    
+    // 加载历史记录
+    _loadHistory();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    
+    // 移除Web端消息监听器
+    if (kIsWeb && _messageListener != null) {
+      html.window.removeEventListener('message', _messageListener!);
+      _localStorageCheckTimer?.cancel();
+    }
+    
+    super.dispose();
+  }
+  
+  // 设置Web端消息监听器
+  void _setupWebMessageListener() {
+    _messageListener = (html.Event event) {
+      final html.MessageEvent messageEvent = event as html.MessageEvent;
+      if (messageEvent.data is Map && 
+          messageEvent.data['action'] == 'paymentSuccess') {
+        // 收到支付成功消息，刷新用户信息
+        _handlePaymentSuccess();
+      }
+    };
+    
+    html.window.addEventListener('message', _messageListener);
+  }
+  
+  // 设置localStorage监听器
+  void _setupLocalStorageListener() {
+    // 定期检查localStorage中的支付成功标记
+    _localStorageCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      try {
+        final paymentSuccessData = html.window.localStorage['paymentSuccess'];
+        if (paymentSuccessData != null) {
+          // 解析数据
+          try {
+            final data = jsonDecode(paymentSuccessData);
+            debugPrint('检测到支付成功标记: $data');
+          } catch (e) {
+            debugPrint('解析localStorage数据失败: $e');
+          }
+          
+          // 清除标记
+          html.window.localStorage.remove('paymentSuccess');
+          
+          // 处理支付成功
+          _handlePaymentSuccess();
+        }
+      } catch (e) {
+        debugPrint('检查localStorage失败: $e');
+      }
+    });
+  }
+  
+  // 处理支付成功
+  Future<void> _handlePaymentSuccess() async {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('支付成功！会员已激活'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      
+      // 刷新用户状态
+      final authModel = Provider.of<AuthModel>(context, listen: false);
+      await authModel.refreshUserInfo();
+      
+      // 刷新历史记录
+      _loadHistory();
+    }
+  }
+  
+  // 加载历史记录
+  Future<void> _loadHistory() async {
+    if (!mounted) return;
+    
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    if (!authModel.isLoggedIn || authModel.authToken == null) {
+      return;
+    }
+    
+    setState(() {
+      _isLoadingHistory = true;
+    });
+    
+    try {
+      // 加载购买记录
+      final purchaseResult = await _membershipService.getPurchaseHistory(authModel.authToken!);
+      if (purchaseResult['success'] == true && purchaseResult['purchases'] != null) {
+        final purchases = purchaseResult['purchases'] as List;
+        setState(() {
+          _purchaseHistory = purchases.map((item) => PurchaseRecord.fromJson(item)).toList();
+        });
+      }
+
+      // 加载兑换记录
+      final redeemResult = await _membershipService.getRedeemHistory(authModel.authToken!);
+      if (redeemResult['success'] == true && redeemResult['redeems'] != null) {
+        final redeems = redeemResult['redeems'] as List;
+        setState(() {
+          _redeemHistory = redeems.map((item) => RedeemRecord.fromJson(item)).toList();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('加载历史记录失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingHistory = false;
+        });
+      }
+    }
+  }
 
   Future<void> _purchaseMembership(String priceType) async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
@@ -149,7 +292,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
               onTap: () => Navigator.of(context).pop('stripe'),
             ),
             ListTile(
-              leading: const Icon(Icons.payment, color: Colors.green),
+              leading: const Icon(Icons.account_balance_wallet, color: Colors.green),
               title: const Text('支付宝'),
               onTap: () => Navigator.of(context).pop('alipay'),
             ),
@@ -245,10 +388,15 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       final uri = Uri.parse(paymentUrl);
       
       if (await canLaunchUrl(uri)) {
-        await launchUrl(
-          uri,
-          mode: LaunchMode.externalApplication,
-        );
+        // 在Web平台上使用window.open打开支付页面，使用同一标签页而不是新窗口
+        if (kIsWeb) {
+          html.window.open(paymentUrl, '_self');
+        } else {
+          await launchUrl(
+            uri,
+            mode: LaunchMode.externalApplication,
+          );
+        }
         
         // 启动定时器检查支付状态
         _startOrderStatusCheck(orderId);
@@ -325,10 +473,15 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       final uri = Uri.parse(paymentUrl);
       
       if (await canLaunchUrl(uri)) {
-        await launchUrl(
-          uri,
-          mode: LaunchMode.externalApplication,
-        );
+        // 在Web平台上使用window.open打开支付页面，使用同一标签页而不是新窗口
+        if (kIsWeb) {
+          html.window.open(paymentUrl, '_self');
+        } else {
+          await launchUrl(
+            uri,
+            mode: LaunchMode.externalApplication,
+          );
+        }
         
         // 启动定时器检查支付状态
         _startStripeOrderStatusCheck(sessionId);
@@ -435,67 +588,6 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       }
     } catch (e) {
       debugPrint('检查订单状态失败: $e');
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _loadHistory();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  // 加载历史记录
-  Future<void> _loadHistory() async {
-    final authModel = Provider.of<AuthModel>(context, listen: false);
-    
-    if (!authModel.isLoggedIn || authModel.authToken == null) {
-      return;
-    }
-
-    setState(() {
-      _isLoadingHistory = true;
-    });
-
-    try {
-      // 加载购买记录
-      final purchaseResult = await _membershipService.getPurchaseHistory(authModel.authToken!);
-      if (purchaseResult['success'] == true && purchaseResult['purchases'] != null) {
-        final purchases = purchaseResult['purchases'] as List;
-        setState(() {
-          _purchaseHistory = purchases.map((item) => PurchaseRecord.fromJson(item)).toList();
-        });
-      }
-
-      // 加载兑换记录
-      final redeemResult = await _membershipService.getRedeemHistory(authModel.authToken!);
-      if (redeemResult['success'] == true && redeemResult['redeems'] != null) {
-        final redeems = redeemResult['redeems'] as List;
-        setState(() {
-          _redeemHistory = redeems.map((item) => RedeemRecord.fromJson(item)).toList();
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('加载历史记录失败: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingHistory = false;
-        });
-      }
     }
   }
 
@@ -1025,13 +1117,13 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   IconData _getPaymentMethodIcon(String paymentMethod) {
     switch (paymentMethod) {
       case 'alipay':
-        return Icons.payment;
+        return Icons.account_balance_wallet;
       case 'stripe':
         return Icons.credit_card;
       case 'wechat':
         return Icons.chat_bubble;
       default:
-        return Icons.payment;
+        return Icons.account_balance_wallet;
     }
   }
 
