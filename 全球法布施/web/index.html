@@ -310,8 +310,14 @@
   
   <script>
     // 页面加载完成后的初始化
-    document.addEventListener('DOMContentLoaded', function() {
-      console.log('🌟 全球法布施Web应用初始化开始');
+    window.addEventListener('load', function(ev) {
+      // 初始化加载优化器
+      console.log('🚀 初始化完成');
+      
+      // 如果加载优化器已加载，初始化它
+      if (window.LoadingManager) {
+        window.LoadingManager.init();
+      }
     });
   </script>
 </body>

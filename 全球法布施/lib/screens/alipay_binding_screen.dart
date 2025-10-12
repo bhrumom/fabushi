@@ -42,10 +42,63 @@ class _AlipayBindingScreenState extends State<AlipayBindingScreen> {
             
             // Clean the URL hash
             html.window.history.replaceState(null, '', '/');
+            
+            // 获取到支付宝授权码后，自动执行绑定流程
+            _bindAlipayAccount();
           }
         }
       } catch (e) {
         debugPrint('Error checking URL params: $e');
+      }
+    }
+  }
+
+  Future<void> _bindAlipayAccount() async {
+    if (_alipayData == null || _alipayData!['alipayUserId'] == null) {
+      setState(() {
+        _error = '支付宝用户信息不完整，请重试';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final authModel = Provider.of<AuthModel>(context, listen: false);
+      
+      // 使用支付宝用户ID进行绑定，不需要邮箱和密码
+      final success = await authModel.bindAlipay(_alipayData!['alipayUserId']);
+      
+      if (success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('支付宝账号绑定成功！'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          
+          // 绑定成功后返回上一页
+          Navigator.of(context).pop();
+        }
+      } else {
+        setState(() {
+          _error = authModel.error ?? '绑定支付宝账号失败';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = '绑定支付宝账号时发生错误: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }

@@ -98,19 +98,27 @@ class AlipayAuthService {
   }
 
   /// 绑定支付宝账号到现有邮箱账户
-  Future<Map<String, dynamic>> bindAlipay(String alipayUserId, String email, String password) async {
+  Future<Map<String, dynamic>> bindAlipay(String alipayUserId, [String? email, String? password]) async {
     try {
       final url = await baseUrl;
+      
+      // 构建请求体，只包含必要的alipayUserId参数
+      final Map<String, String> requestBody = {'alipayUserId': alipayUserId};
+      
+      // 如果提供了邮箱和密码，则添加到请求体中
+      if (email != null && email.isNotEmpty) {
+        requestBody['email'] = email;
+      }
+      if (password != null && password.isNotEmpty) {
+        requestBody['password'] = password;
+      }
+      
       final response = await http.post(
         Uri.parse('$url/api/auth/alipay/bind'),
         headers: {
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({
-          'alipayUserId': alipayUserId,
-          'email': email,
-          'password': password,
-        }),
+        body: jsonEncode(requestBody),
       );
 
       if (response.statusCode == 200) {

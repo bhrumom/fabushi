@@ -209,106 +209,35 @@
     hideLoadingScreen: function() {
       const loadingContainer = document.getElementById('loading-container');
       const appContainer = document.getElementById('app-container');
-      const debugInfo = document.getElementById('debug-info');
       
       if (!loadingContainer || this.isHiding) return;
       
       this.isHiding = true;
       console.log('🎬 开始隐藏加载动画');
       
-      // 添加调试信息
-      const debugText = `
-        调试信息:
-        appContainer: ${appContainer ? '存在' : '不存在'}
-        appContainer.children.length: ${appContainer ? appContainer.children.length : 'N/A'}
-        document.querySelectorAll("canvas").length: ${document.querySelectorAll('canvas').length}
-        document.querySelector("flutter-view"): ${document.querySelector('flutter-view') ? '存在' : '不存在'}
-        document.querySelectorAll("[flt-renderer]").length: ${document.querySelectorAll('[flt-renderer]').length}
-        this.isFlutterLoaded: ${this.isFlutterLoaded}
-      `;
-      
-      console.log('🔍 调试信息:');
-      console.log('- appContainer:', appContainer);
-      console.log('- appContainer.children.length:', appContainer ? appContainer.children.length : 'N/A');
-      console.log('- document.querySelectorAll("canvas").length:', document.querySelectorAll('canvas').length);
-      console.log('- document.querySelector("flutter-view"):', document.querySelector('flutter-view'));
-      console.log('- document.querySelectorAll("[flt-renderer]").length:', document.querySelectorAll('[flt-renderer]').length);
-      console.log('- this.isFlutterLoaded:', this.isFlutterLoaded);
-      
-      // 将调试信息显示在页面上
-      if (debugInfo) {
-        debugInfo.innerHTML = debugText.replace(/\n/g, '<br>');
+      // 立即显示应用容器
+      if (appContainer) {
+        appContainer.classList.add('show');
+        console.log('✅ 应用容器已显示');
       }
       
-      // 确保Flutter应用已经完全初始化
-      // 检查Flutter应用是否已经准备好显示
-      const checkFlutterReady = () => {
-        // 多种方式检查Flutter应用是否已经渲染到DOM中
-        const flutterApp = document.querySelector('flutter-view');
-        const canvasElements = document.querySelectorAll('canvas');
-        const flutterElements = document.querySelectorAll('[flt-renderer]');
-        
-        // 检查app-container中是否有任何子元素
-        const appContainerChildren = appContainer ? appContainer.children.length : 0;
-        
-        // 检查是否有任何可能的Flutter相关元素
-        const hasContent = canvasElements.length > 0 || 
-                          (flutterApp && flutterApp.shadowRoot && flutterApp.shadowRoot.children.length > 0) ||
-                          flutterElements.length > 0 ||
-                          appContainerChildren > 0;
-        
-        // 如果已经触发了flutter-first-frame事件，也认为Flutter已准备好
-        const hasFlutterFrameEvent = this.isFlutterLoaded;
-        
-        const checkResultText = `
-          检查结果:
-          hasContent: ${hasContent}
-          hasFlutterFrameEvent: ${hasFlutterFrameEvent}
-        `;
-        
-        console.log('🔍 检查结果:');
-        console.log('- hasContent:', hasContent);
-        console.log('- hasFlutterFrameEvent:', hasFlutterFrameEvent);
-        
-        // 将检查结果显示在页面上
-        if (debugInfo) {
-          debugInfo.innerHTML = debugText.replace(/\n/g, '<br>') + '<br>' + checkResultText.replace(/\n/g, '<br>');
-        }
-        
-        if (hasContent || hasFlutterFrameEvent) {
-          console.log('✅ 检测到Flutter应用已渲染内容');
-          
-          // 首先显示应用容器（让Flutter内容可以渲染）
-          if (appContainer) {
-            appContainer.classList.add('show');
-            // 触发重排，确保过渡效果
-            appContainer.offsetHeight;
-          }
-          
-          // 然后淡出加载容器
-          if (loadingContainer) {
-            loadingContainer.classList.add('fade-out');
-          }
-          
-          // 动画完成后移除加载容器
-          setTimeout(() => {
-            if (loadingContainer) {
-              loadingContainer.style.display = 'none';
-            }
-            // 恢复默认背景色
-            document.body.style.background = '';
-            document.body.style.overflow = '';
-            console.log('🎉 加载动画隐藏完成');
-          }, 500);
-        } else {
-          // 如果Flutter应用还没有准备好，继续检查
-          console.log('⏳ Flutter应用尚未准备好，继续等待...');
-          setTimeout(checkFlutterReady, 100);
-        }
-      };
+      // 立即开始淡出加载容器
+      if (loadingContainer) {
+        loadingContainer.classList.add('fade-out');
+        console.log('✅ 加载容器开始淡出');
+      }
       
-      // 开始检查Flutter应用是否准备好
-      checkFlutterReady();
+      // 短暂延迟后完全隐藏加载容器
+      setTimeout(() => {
+        if (loadingContainer) {
+          loadingContainer.style.display = 'none';
+          console.log('✅ 加载容器已完全隐藏');
+        }
+        // 恢复默认背景色
+        document.body.style.background = '';
+        document.body.style.overflow = '';
+        console.log('🎉 加载动画隐藏完成');
+      }, 500);
     }
   };
 
