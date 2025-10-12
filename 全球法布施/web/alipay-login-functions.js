@@ -759,4 +759,4 @@ async function getUserInfoWithToken(accessToken, env) {
   }
 }
 
-export { generateAlipayLoginUrl, getAlipayUserInfo, handleAlipayLogin, handleAlipayBind, handleAlipayRegister, getAccessToken, getUserInfoWithToken, handleAlipayCallback, handleMacOSAlipayCallback };
+export { generateAlipayLoginUrl, getAlipayUserInfo, handleAlipayLogin, handleAlipayBind, handleAlipayRegister, handleAlipayUnbind, getAccessToken, getUserInfoWithToken, handleAlipayCallback, handleMacOSAlipayCallback };

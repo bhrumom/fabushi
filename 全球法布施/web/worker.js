@@ -1,7 +1,7 @@
 import { EmailMessage } from 'cloudflare:email';
 import { STRIPE_CONFIG, createStripeClient, checkMembershipStatus, calculateTrialEndDate } from './stripe-config.js';
 import { base64UrlEncode, base64UrlDecodeToArray, randomBytes, derivePbkdf2, createPasswordHash, verifyPassword, upgradePasswordIfNeeded, generateToken, verifyToken, jsonResponse } from './auth-utils.js';
-import { generateAlipayLoginUrl, handleAlipayLogin, handleAlipayBind, handleAlipayRegister, handleAlipayCallback, handleMacOSAlipayCallback } from './alipay-login-functions.js';
+import { generateAlipayLoginUrl, handleAlipayLogin, handleAlipayBind, handleAlipayRegister, handleAlipayCallback, handleMacOSAlipayCallback, handleAlipayUnbind } from './alipay-login-functions.js';
 // 管理员系统配置
 const ADMIN_EMAIL = '1315518325@qq.com';
 const ADMIN_PRICES = {
@@ -3021,6 +3021,9 @@ export default {
         }
         if (pathname === '/api/auth/alipay/macos-callback' && method === 'GET') {
           return await handleMacOSAlipayCallback(request, env);
+        }
+        if (pathname === '/api/auth/alipay/unbind' && method === 'POST') {
+          return await handleAlipayUnbind(request, env);
         }
         if (pathname === '/api/auth/user-info' && method === 'GET') {
           return await handleGetUserInfo(request, env);
