@@ -209,22 +209,73 @@
     hideLoadingScreen: function() {
       const loadingContainer = document.getElementById('loading-container');
       const appContainer = document.getElementById('app-container');
+      const debugInfo = document.getElementById('debug-info');
       
       if (!loadingContainer || this.isHiding) return;
       
       this.isHiding = true;
       console.log('🎬 开始隐藏加载动画');
       
+      // 添加调试信息
+      const debugText = `
+        调试信息:
+        appContainer: ${appContainer ? '存在' : '不存在'}
+        appContainer.children.length: ${appContainer ? appContainer.children.length : 'N/A'}
+        document.querySelectorAll("canvas").length: ${document.querySelectorAll('canvas').length}
+        document.querySelector("flutter-view"): ${document.querySelector('flutter-view') ? '存在' : '不存在'}
+        document.querySelectorAll("[flt-renderer]").length: ${document.querySelectorAll('[flt-renderer]').length}
+        this.isFlutterLoaded: ${this.isFlutterLoaded}
+      `;
+      
+      console.log('🔍 调试信息:');
+      console.log('- appContainer:', appContainer);
+      console.log('- appContainer.children.length:', appContainer ? appContainer.children.length : 'N/A');
+      console.log('- document.querySelectorAll("canvas").length:', document.querySelectorAll('canvas').length);
+      console.log('- document.querySelector("flutter-view"):', document.querySelector('flutter-view'));
+      console.log('- document.querySelectorAll("[flt-renderer]").length:', document.querySelectorAll('[flt-renderer]').length);
+      console.log('- this.isFlutterLoaded:', this.isFlutterLoaded);
+      
+      // 将调试信息显示在页面上
+      if (debugInfo) {
+        debugInfo.innerHTML = debugText.replace(/\n/g, '<br>');
+      }
+      
       // 确保Flutter应用已经完全初始化
       // 检查Flutter应用是否已经准备好显示
       const checkFlutterReady = () => {
-        // 检查Flutter应用是否已经渲染到DOM中
+        // 多种方式检查Flutter应用是否已经渲染到DOM中
         const flutterApp = document.querySelector('flutter-view');
         const canvasElements = document.querySelectorAll('canvas');
-        const hasContent = canvasElements.length > 0 || 
-                          (flutterApp && flutterApp.shadowRoot && flutterApp.shadowRoot.children.length > 0);
+        const flutterElements = document.querySelectorAll('[flt-renderer]');
         
-        if (hasContent) {
+        // 检查app-container中是否有任何子元素
+        const appContainerChildren = appContainer ? appContainer.children.length : 0;
+        
+        // 检查是否有任何可能的Flutter相关元素
+        const hasContent = canvasElements.length > 0 || 
+                          (flutterApp && flutterApp.shadowRoot && flutterApp.shadowRoot.children.length > 0) ||
+                          flutterElements.length > 0 ||
+                          appContainerChildren > 0;
+        
+        // 如果已经触发了flutter-first-frame事件，也认为Flutter已准备好
+        const hasFlutterFrameEvent = this.isFlutterLoaded;
+        
+        const checkResultText = `
+          检查结果:
+          hasContent: ${hasContent}
+          hasFlutterFrameEvent: ${hasFlutterFrameEvent}
+        `;
+        
+        console.log('🔍 检查结果:');
+        console.log('- hasContent:', hasContent);
+        console.log('- hasFlutterFrameEvent:', hasFlutterFrameEvent);
+        
+        // 将检查结果显示在页面上
+        if (debugInfo) {
+          debugInfo.innerHTML = debugText.replace(/\n/g, '<br>') + '<br>' + checkResultText.replace(/\n/g, '<br>');
+        }
+        
+        if (hasContent || hasFlutterFrameEvent) {
           console.log('✅ 检测到Flutter应用已渲染内容');
           
           // 首先显示应用容器（让Flutter内容可以渲染）
