@@ -11,7 +11,7 @@
     isFlutterLoaded: false,
     isPageLoaded: false,
     loadingStartTime: Date.now(),
-    maxLoadingTime: 15000, // 最大加载时间15秒
+    maxLoadingTime: 20000, // 最大加载时间20秒
     isHiding: false,
 
     init: function() {
@@ -78,42 +78,61 @@
     },
 
     startTimeoutProtection: function() {
-      // 超时保护 - 15秒后强制隐藏
+      // 超时保护 - 20秒后强制隐藏（增加超时时间）
       setTimeout(() => {
         if (!this.isFlutterLoaded) {
-          console.warn('⏰ 加载超时保护触发（15秒）');
+          console.warn('⏰ 加载超时保护触发（20秒）');
           this.updateLoadingText('加载超时，请检查网络连接');
+          
+          // 即使超时，也要确保应用容器可见
+          const appContainer = document.getElementById('app-container');
+          if (appContainer) {
+            appContainer.classList.add('show');
+          }
+          
           setTimeout(() => {
             this.hideLoadingScreen();
           }, 1000);
         }
-      }, this.maxLoadingTime);
+      }, 20000); // 增加到20秒
 
       // 智能渐进式隐藏策略
       setTimeout(() => {
         if (!this.isFlutterLoaded) {
-          console.log('🔄 智能渐进式显示触发（8秒）');
+          console.log('🔄 智能渐进式显示触发（10秒）');
           // 检查是否有可能正在加载
           const currentProgress = this.getCurrentProgress();
           if (currentProgress < 50) {
             // 如果进度很低，可能是网络问题，显示提示
             this.updateLoadingText('网络较慢，请耐心等待...');
+          } else {
+            this.updateLoadingText('正在初始化应用，请稍候...');
           }
         }
-      }, 8000);
+      }, 10000); // 增加到10秒
       
-      // 中期检查 - 4秒时
+      // 中期检查 - 5秒时
       setTimeout(() => {
         if (!this.isFlutterLoaded) {
-          console.log('📊 中期检查（4秒）');
+          console.log('📊 中期检查（5秒）');
           const currentProgress = this.getCurrentProgress();
           if (currentProgress < 20) {
             this.updateLoadingText('正在连接服务器...');
           } else if (currentProgress < 40) {
             this.updateLoadingText('正在加载资源...');
+          } else {
+            this.updateLoadingText('正在初始化引擎...');
           }
         }
-      }, 4000);
+      }, 5000); // 增加到5秒
+      
+      // 早期检查 - 2秒时
+      setTimeout(() => {
+        if (!this.isFlutterLoaded) {
+          console.log('📊 早期检查（2秒）');
+          this.updateLoadingText('正在下载应用文件...');
+        }
+      }, 2000);
     },
 
     getCurrentProgress: function() {
@@ -196,28 +215,49 @@
       this.isHiding = true;
       console.log('🎬 开始隐藏加载动画');
       
-      // 首先显示应用容器（让Flutter内容可以渲染）
-      if (appContainer) {
-        appContainer.classList.add('show');
-        // 触发重排，确保过渡效果
-        appContainer.offsetHeight;
-      }
-      
-      // 然后淡出加载容器
-      if (loadingContainer) {
-        loadingContainer.classList.add('fade-out');
-      }
-      
-      // 动画完成后移除加载容器
-      setTimeout(() => {
-        if (loadingContainer) {
-          loadingContainer.style.display = 'none';
+      // 确保Flutter应用已经完全初始化
+      // 检查Flutter应用是否已经准备好显示
+      const checkFlutterReady = () => {
+        // 检查Flutter应用是否已经渲染到DOM中
+        const flutterApp = document.querySelector('flutter-view');
+        const canvasElements = document.querySelectorAll('canvas');
+        const hasContent = canvasElements.length > 0 || 
+                          (flutterApp && flutterApp.shadowRoot && flutterApp.shadowRoot.children.length > 0);
+        
+        if (hasContent) {
+          console.log('✅ 检测到Flutter应用已渲染内容');
+          
+          // 首先显示应用容器（让Flutter内容可以渲染）
+          if (appContainer) {
+            appContainer.classList.add('show');
+            // 触发重排，确保过渡效果
+            appContainer.offsetHeight;
+          }
+          
+          // 然后淡出加载容器
+          if (loadingContainer) {
+            loadingContainer.classList.add('fade-out');
+          }
+          
+          // 动画完成后移除加载容器
+          setTimeout(() => {
+            if (loadingContainer) {
+              loadingContainer.style.display = 'none';
+            }
+            // 恢复默认背景色
+            document.body.style.background = '';
+            document.body.style.overflow = '';
+            console.log('🎉 加载动画隐藏完成');
+          }, 500);
+        } else {
+          // 如果Flutter应用还没有准备好，继续检查
+          console.log('⏳ Flutter应用尚未准备好，继续等待...');
+          setTimeout(checkFlutterReady, 100);
         }
-        // 恢复默认背景色
-        document.body.style.background = '';
-        document.body.style.overflow = '';
-        console.log('🎉 加载动画隐藏完成');
-      }, 500);
+      };
+      
+      // 开始检查Flutter应用是否准备好
+      checkFlutterReady();
     }
   };
 
