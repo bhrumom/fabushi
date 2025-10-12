@@ -327,20 +327,14 @@ class AuthModel extends ChangeNotifier {// 服务实例
     }
   }
 
-  Future<bool> bindAlipay(String authCode) async {
+  Future<bool> bindAlipay(String alipayUserId) async {
     if (_token == null) {
       _setError('请先登录');
       return false;
     }
 
     try {
-      // 从authCode中获取支付宝用户ID - 这里需要根据实际业务逻辑调整
-      final alipayUserId = authCode; // 临时处理，实际需要解析authCode获取alipayUserId
-      // 获取当前用户的邮箱和密码 - 这里需要从用户输入或缓存中获取
-      final email = _currentUser?.email ?? ''; // 临时处理
-      final password = ''; // 临时处理，实际需要用户输入或安全获取
-      
-      final result = await _alipayAuthService.bindAlipay(alipayUserId, email, password);
+      final result = await _alipayAuthService.bindAlipay(alipayUserId, '', '');
       
       if (result['success'] == true) {
         // 绑定成功后刷新用户信息

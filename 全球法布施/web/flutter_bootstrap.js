@@ -42,8 +42,19 @@ _flutter.loader.load({
   },
   onEntrypointLoaded: async function(engineInitializer) {
     console.log('🔧 Flutter入口点已加载，开始初始化引擎');
+    
+    // 确保应用容器存在
+    let appContainer = document.querySelector('#app-container');
+    if (!appContainer) {
+      appContainer = document.createElement('div');
+      appContainer.id = 'app-container';
+      appContainer.className = 'app-container';
+      document.body.appendChild(appContainer);
+      console.log('📦 创建了新的应用容器');
+    }
+    
     const appRunner = await engineInitializer.initializeEngine({
-      hostElement: document.querySelector('#app-container')
+      hostElement: appContainer
     });
     
     // 在运行应用之前，添加一个监听器来检测第一帧渲染
@@ -51,35 +62,32 @@ _flutter.loader.load({
     appRunner.runApp = function() {
       const result = originalRunApp();
       
-      // 监听Flutter应用的第一帧渲染
+      // 使用更可靠的方式检测Flutter应用是否已渲染
+      // 先尝试立即触发事件
       setTimeout(() => {
-        // 检查Flutter应用是否已经渲染
-        const flutterApp = document.querySelector('flutter-view');
-        const canvasElements = document.querySelectorAll('canvas');
-        const hasContent = canvasElements.length > 0 || 
-                          (flutterApp && flutterApp.shadowRoot && flutterApp.shadowRoot.children.length > 0);
+        console.log('🎯 触发flutter-first-frame事件（第一次尝试）');
+        window.dispatchEvent(new Event('flutter-first-frame'));
+      }, 500);
+      
+      // 如果第一次尝试失败，再次尝试
+      setTimeout(() => {
+        // 检查是否有Flutter相关元素
+        const hasFlutterElements = document.querySelector('flutter-view') || 
+                                 document.querySelector('canvas') || 
+                                 document.querySelector('[flt-renderer]') ||
+                                 document.querySelector('#app-container').children.length > 0;
         
-        if (hasContent) {
-          console.log('🎯 检测到Flutter应用已渲染内容，触发flutter-first-frame事件');
+        if (hasFlutterElements) {
+          console.log('🎯 检测到Flutter元素，触发flutter-first-frame事件（第二次尝试）');
           window.dispatchEvent(new Event('flutter-first-frame'));
-        } else {
-          // 如果还没有渲染内容，继续检查
-          const checkRender = () => {
-            const flutterApp = document.querySelector('flutter-view');
-            const canvasElements = document.querySelectorAll('canvas');
-            const hasContent = canvasElements.length > 0 || 
-                              (flutterApp && flutterApp.shadowRoot && flutterApp.shadowRoot.children.length > 0);
-            
-            if (hasContent) {
-              console.log('🎯 延迟检测到Flutter应用已渲染内容，触发flutter-first-frame事件');
-              window.dispatchEvent(new Event('flutter-first-frame'));
-            } else {
-              setTimeout(checkRender, 100);
-            }
-          };
-          checkRender();
         }
-      }, 100);
+      }, 2000);
+      
+      // 最后的保险措施，强制触发事件
+      setTimeout(() => {
+        console.log('🎯 强制触发flutter-first-frame事件（保险措施）');
+        window.dispatchEvent(new Event('flutter-first-frame'));
+      }, 5000);
       
       return result;
     };
