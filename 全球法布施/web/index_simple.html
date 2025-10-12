@@ -4,20 +4,182 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>全球法布施</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Noto Sans SC', sans-serif;
+      background-color: #f5f5f5;
+      overflow: hidden;
+    }
+    
+    /* 加载容器样式 */
+    .loading-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      transition: opacity 0.5s ease-out;
+    }
+    
+    .loading-container.fade-out {
+      opacity: 0;
+    }
+    
+    .loading-content {
+      text-align: center;
+      max-width: 300px;
+    }
+    
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid #e0e0e0;
+      border-top: 5px solid #2196F3;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .loading-text {
+      font-size: 24px;
+      font-weight: bold;
+      color: #333;
+      margin-bottom: 10px;
+    }
+    
+    .loading-subtext {
+      font-size: 16px;
+      color: #666;
+      margin-bottom: 20px;
+    }
+    
+    .loading-progress {
+      width: 100%;
+      height: 4px;
+      background-color: #e0e0e0;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    
+    .loading-progress-bar {
+      height: 100%;
+      background-color: #2196F3;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+    
+    /* 应用容器样式 */
+    .app-container {
+      width: 100%;
+      height: 100vh;
+      opacity: 0;
+      transition: opacity 0.5s ease-in;
+    }
+    
+    .app-container.show {
+      opacity: 1;
+    }
+    
+    /* 调试信息样式 */
+    .debug-info {
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      max-width: 300px;
+      z-index: 10000;
+    }
+  </style>
 </head>
 <body>
-  <div id="loading">Loading...</div>
+  <!-- 加载动画容器 -->
+  <div id="loading-container" class="loading-container">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">全球法布施</div>
+      <div class="loading-subtext">正在加载应用...</div>
+      <div class="loading-progress">
+        <div class="loading-progress-bar"></div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Flutter应用容器 -->
+  <div id="app-container" class="app-container"></div>
+  
+  <!-- 调试信息容器 -->
+  <div id="debug-info" class="debug-info"></div>
+  
   <script src="flutter.js" defer></script>
+  <script src="flutter-loading-optimizer.js"></script>
   <script>
     window.addEventListener('load', function(ev) {
+      // 初始化加载优化器
+      console.log('🚀 初始化完成');
+      
+      // 设置Flutter应用目标元素
+      const appContainer = document.getElementById('app-container');
+      
+      // 确保容器可见
+      appContainer.style.display = 'block';
+      appContainer.style.width = '100%';
+      appContainer.style.height = '100vh';
+      
       _flutter.loader.loadEntrypoint({
         serviceWorker: {
           serviceWorkerVersion: null,
         }
       }).then(function(engineInitializer) {
-        return engineInitializer.initializeEngine();
+        console.log('🔧 引擎初始化器已创建');
+        return engineInitializer.initializeEngine({
+          hostElement: appContainer
+        });
       }).then(function(appRunner) {
+        console.log('🚀 应用运行器已创建');
+        
+        // 立即触发flutter-first-frame事件，因为我们已经创建了应用运行器
+        window.dispatchEvent(new Event('flutter-first-frame'));
+        
         return appRunner.runApp();
+      }).then(function(app) {
+        console.log('✅ Flutter应用已启动');
+        
+        // 确保应用容器可见
+        if (appContainer) {
+          appContainer.classList.add('show');
+        }
+        
+        // 强制隐藏加载动画
+        setTimeout(() => {
+          const loadingContainer = document.getElementById('loading-container');
+          if (loadingContainer) {
+            loadingContainer.style.display = 'none';
+          }
+        }, 1000);
+      }).catch(function(error) {
+        console.error('❌ Flutter应用启动失败:', error);
+        
+        // 显示错误信息
+        const loadingSubtext = document.querySelector('.loading-subtext');
+        if (loadingSubtext) {
+          loadingSubtext.textContent = '应用启动失败，请刷新页面重试';
+        }
       });
     });
   </script>
