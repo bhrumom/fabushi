@@ -39,5 +39,51 @@ _flutter.buildConfig = {"engineRevision":"ddf47dd3ff96dbde6d9c614db0d7f019d7c7a2
 _flutter.loader.load({
   serviceWorkerSettings: {
     serviceWorkerVersion: "2041838162"
+  },
+  onEntrypointLoaded: async function(engineInitializer) {
+    console.log('🔧 Flutter入口点已加载，开始初始化引擎');
+    const appRunner = await engineInitializer.initializeEngine({
+      hostElement: document.querySelector('#app-container')
+    });
+    
+    // 在运行应用之前，添加一个监听器来检测第一帧渲染
+    const originalRunApp = appRunner.runApp.bind(appRunner);
+    appRunner.runApp = function() {
+      const result = originalRunApp();
+      
+      // 监听Flutter应用的第一帧渲染
+      setTimeout(() => {
+        // 检查Flutter应用是否已经渲染
+        const flutterApp = document.querySelector('flutter-view');
+        const canvasElements = document.querySelectorAll('canvas');
+        const hasContent = canvasElements.length > 0 || 
+                          (flutterApp && flutterApp.shadowRoot && flutterApp.shadowRoot.children.length > 0);
+        
+        if (hasContent) {
+          console.log('🎯 检测到Flutter应用已渲染内容，触发flutter-first-frame事件');
+          window.dispatchEvent(new Event('flutter-first-frame'));
+        } else {
+          // 如果还没有渲染内容，继续检查
+          const checkRender = () => {
+            const flutterApp = document.querySelector('flutter-view');
+            const canvasElements = document.querySelectorAll('canvas');
+            const hasContent = canvasElements.length > 0 || 
+                              (flutterApp && flutterApp.shadowRoot && flutterApp.shadowRoot.children.length > 0);
+            
+            if (hasContent) {
+              console.log('🎯 延迟检测到Flutter应用已渲染内容，触发flutter-first-frame事件');
+              window.dispatchEvent(new Event('flutter-first-frame'));
+            } else {
+              setTimeout(checkRender, 100);
+            }
+          };
+          checkRender();
+        }
+      }, 100);
+      
+      return result;
+    };
+    
+    await appRunner.runApp();
   }
 });
