@@ -4,10 +4,10 @@ import 'package:provider/provider.dart';
 import 'dart:io' show Platform;
 import 'dart:async';
 import 'dart:convert';
-import 'dart:html' as html;
 import '../models/auth_model.dart';
 import '../services/membership_service.dart';
 import '../services/alipay_service.dart';
+import '../services/html_platform_service.dart';
 // import '../widgets/membership_dialog.dart';
 import '../config/unified_config.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -30,13 +30,16 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   late TabController _tabController;
   
   // Web端消息监听器
-  html.EventListener? _messageListener;
+  HtmlPlatformService? _htmlPlatformService;
   Timer? _localStorageCheckTimer;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    
+    // 创建HTML平台服务
+    _htmlPlatformService = HtmlPlatformService();
     
     // 在Web平台上添加消息监听器
     if (kIsWeb) {
@@ -52,27 +55,21 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   void dispose() {
     _tabController.dispose();
     
-    // 移除Web端消息监听器
-    if (kIsWeb && _messageListener != null) {
-      html.window.removeEventListener('message', _messageListener!);
-      _localStorageCheckTimer?.cancel();
-    }
+    // 清理HTML平台服务
+    _htmlPlatformService?.dispose();
+    _localStorageCheckTimer?.cancel();
     
     super.dispose();
   }
   
   // 设置Web端消息监听器
   void _setupWebMessageListener() {
-    _messageListener = (html.Event event) {
-      final html.MessageEvent messageEvent = event as html.MessageEvent;
-      if (messageEvent.data is Map && 
-          messageEvent.data['action'] == 'paymentSuccess') {
+    _htmlPlatformService?.addMessageListener((data) {
+      if (data is Map && data['action'] == 'paymentSuccess') {
         // 收到支付成功消息，刷新用户信息
         _handlePaymentSuccess();
       }
-    };
-    
-    html.window.addEventListener('message', _messageListener);
+    });
   }
   
   // 设置localStorage监听器
@@ -80,7 +77,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
     // 定期检查localStorage中的支付成功标记
     _localStorageCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
       try {
-        final paymentSuccessData = html.window.localStorage['paymentSuccess'];
+        final paymentSuccessData = _htmlPlatformService?.getLocalStorageItem('paymentSuccess');
         if (paymentSuccessData != null) {
           // 解析数据
           try {
@@ -91,7 +88,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
           }
           
           // 清除标记
-          html.window.localStorage.remove('paymentSuccess');
+          _htmlPlatformService?.removeLocalStorageItem('paymentSuccess');
           
           // 处理支付成功
           _handlePaymentSuccess();
@@ -390,7 +387,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       if (await canLaunchUrl(uri)) {
         // 在Web平台上使用window.open打开支付页面，使用同一标签页而不是新窗口
         if (kIsWeb) {
-          html.window.open(paymentUrl, '_self');
+          _htmlPlatformService?.openWindow(paymentUrl, '_self');
         } else {
           await launchUrl(
             uri,
@@ -475,7 +472,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       if (await canLaunchUrl(uri)) {
         // 在Web平台上使用window.open打开支付页面，使用同一标签页而不是新窗口
         if (kIsWeb) {
-          html.window.open(paymentUrl, '_self');
+          _htmlPlatformService?.openWindow(paymentUrl, '_self');
         } else {
           await launchUrl(
             uri,
