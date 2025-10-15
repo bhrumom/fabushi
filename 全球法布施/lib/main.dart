@@ -6,7 +6,7 @@ import 'models/auth_model.dart';
 import 'models/country_sending_model.dart';
 import 'services/app_initializer.dart';
 import 'widgets/app_wrapper.dart';
-import 'screens/alipay_binding_screen.dart';
+
 
 void main() async {
   // 确保Flutter绑定初始化
@@ -78,9 +78,6 @@ class MyApp extends StatelessWidget {
           ),
         ),
         home: const AppWrapper(),
-        routes: {
-          '/alipay-binding': (context) => const AlipayBindingScreen(),
-        },
       ),
     );
   }

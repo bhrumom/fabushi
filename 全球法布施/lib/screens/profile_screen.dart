@@ -5,7 +5,7 @@ import '../models/user_model.dart';
 import '../services/membership_service.dart';
 import 'login_screen.dart';
 import 'membership_screen.dart';
-import 'alipay_binding_screen.dart';
+
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -76,65 +76,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _handleAlipayBinding(BuildContext context, bool isBound) async {
-    final authModel = Provider.of<AuthModel>(context, listen: false);
-    
-    if (isBound) {
-      // 解绑支付宝
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('确认解绑'),
-          content: const Text('您确定要解绑支付宝账号吗？'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('解绑'),
-            ),
-          ],
-        ),
-      );
 
-      if (confirmed == true) {
-        try {
-          final success = await authModel.unbindAlipay();
-          if (success && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('支付宝账号解绑成功'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('解绑失败: $e'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      }
-    } else {
-      // 绑定支付宝 - 跳转到专门的支付宝绑定页面
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const AlipayBindingScreen(),
-        ),
-      );
-    }
-  }
 
   Future<void> _handleRedeemCode() async {
     if (_redeemCodeController.text.trim().isEmpty) {
@@ -506,25 +448,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   },
                 ),
                 const Divider(height: 1),
-                Consumer<AuthModel>(
-                  builder: (context, authModel, child) {
-                    final user = authModel.currentUser;
-                    if (user == null) return const SizedBox.shrink();
-                    
-                    final hasAlipayBinding = user.hasAlipayBinding;
-                    
-                    return ListTile(
-                      leading: Icon(
-                        hasAlipayBinding ? Icons.account_balance_wallet : Icons.account_balance_wallet_outlined,
-                        color: hasAlipayBinding ? const Color(0xFF1677FF) : const Color(0xFF667eea),
-                      ),
-                      title: Text(hasAlipayBinding ? '解绑支付宝' : '绑定支付宝'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _handleAlipayBinding(context, hasAlipayBinding),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
+
                 ListTile(
                   leading: const Icon(Icons.logout, color: Colors.red),
                   title: const Text('登出'),

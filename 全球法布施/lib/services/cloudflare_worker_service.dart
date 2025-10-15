@@ -66,7 +66,7 @@ class CloudflareWorkerService {
           'token': data['token'],
           'username': data['username'],
           'isNewUser': data['isNewUser'] ?? false,
-          'needsBinding': data['needsBinding'] ?? false,
+          'needsRegistration': data['needsRegistration'] ?? false,
           'wechatUser': data['wechatUser'],
         };
       } else {

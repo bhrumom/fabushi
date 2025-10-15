@@ -92470,7 +92470,7 @@ try{p=window.location.href
 p.toString
 s=A.ch(p,0,null)
 if(s.gi1().length!==0){r=A.amY(s.gi1())
-if(J.O(r,"alipay_auth_code")!=null&&J.O(r,"needs_binding")==="true"){this.a0(new A.anI(this,r))
+if(J.O(r,"alipay_auth_code")!=null&&J.O(r,"needs_registration")==="true"){this.a0(new A.anI(this,r))
 p=window.history
 p.toString
 p.replaceState(new A.ayt([],[]).nT(null),"","/")}}}catch(o){q=A.V(o)
@@ -94336,9 +94336,9 @@ f=J.O(k,"username")
 e=J.O(k,"email")
 d=J.O(k,"isNewUser")
 if(d==null)d=!1
-c=J.O(k,"needsBinding")
+c=J.O(k,"needsRegistration")
 if(c==null)c=!1
-g=A.U(["success",!0,"token",h,"username",f,"email",e,"isNewUser",d,"needsBinding",c,"alipayUser",J.O(k,"alipayUser")],g,t.z)
+g=A.U(["success",!0,"token",h,"username",f,"email",e,"isNewUser",d,"needsRegistration",c,"alipayUser",J.O(k,"alipayUser")],g,t.z)
 q=g
 s=1
 break}else{h=l
@@ -95919,7 +95919,7 @@ if(a2!=null)a2.P(t.q).f.b3(A.cD(null,null,null,B.S,null,B.o,null,A.a5("\u767b\u5
 a0.MB("/")
 q=!1
 s=1
-break}if(J.O(k,"alipay_auth_code")!=null&&J.O(k,"needs_binding")==="true"){a2=J.O(k,"alipay_auth_code")
+break}if(J.O(k,"alipay_auth_code")!=null&&J.O(k,"needs_registration")==="true"){a2=J.O(k,"alipay_auth_code")
 a2.toString
 i=a2
 h=J.O(k,"alipay_user_id")

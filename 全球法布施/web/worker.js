@@ -1,7 +1,7 @@
 import { EmailMessage } from 'cloudflare:email';
 import { STRIPE_CONFIG, createStripeClient, checkMembershipStatus, calculateTrialEndDate } from './stripe-config.js';
 import { base64UrlEncode, base64UrlDecodeToArray, randomBytes, derivePbkdf2, createPasswordHash, verifyPassword, upgradePasswordIfNeeded, generateToken, verifyToken, jsonResponse } from './auth-utils.js';
-import { generateAlipayLoginUrl, handleAlipayLogin, handleAlipayBind, handleAlipayRegister, handleAlipayCallback, handleMacOSAlipayCallback, handleAlipayUnbind } from './alipay-login-functions.js';
+import { generateAlipayLoginUrl, handleAlipayLogin, registerAlipayUser, checkEmailAvailability, sendRegistrationCaptcha, handleAlipayCallback, handleMacOSAlipayCallback } from './alipay-login-functions.js';
 // 管理员系统配置
 const ADMIN_EMAIL = '1315518325@qq.com';
 const ADMIN_PRICES = {
@@ -903,11 +903,11 @@ async function handleWechatLogin(request, env) {
       }
     }
     
-    // 新用户或未绑定，返回用户信息供前端处理
+    // 新用户，返回用户信息供前端处理
     return jsonResponse({
       wechatUser,
       isNewUser: true,
-      needsBinding: true
+      needsRegistration: true
     });
     
   } catch (error) {
@@ -3010,21 +3010,25 @@ export default {
         if (pathname === '/api/auth/alipay/login' && method === 'POST') {
           return await handleAlipayLogin(request, env);
         }
-        if (pathname === '/api/auth/alipay/bind' && method === 'POST') {
-          return await handleAlipayBind(request, env);
-        }
+        // 支付宝注册相关API路由（原绑定功能改为注册功能）
         if (pathname === '/api/auth/alipay/register' && method === 'POST') {
-          return await handleAlipayRegister(request, env);
+          return await registerAlipayUser(request, env);
         }
+        if (pathname === '/api/auth/alipay/check-email' && method === 'POST') {
+          return await checkEmailAvailability(request, env);
+        }
+        if (pathname === '/api/auth/alipay/send-captcha' && method === 'POST') {
+          return await sendRegistrationCaptcha(request, env);
+        }
+        // 原有的注册路由已更新为新的注册功能
+        // 删除的绑定和解绑功能路由
         if (pathname === '/api/auth/alipay/callback' && method === 'GET') {
           return await handleAlipayCallback(request, env);
         }
         if (pathname === '/api/auth/alipay/macos-callback' && method === 'GET') {
           return await handleMacOSAlipayCallback(request, env);
         }
-        if (pathname === '/api/auth/alipay/unbind' && method === 'POST') {
-          return await handleAlipayUnbind(request, env);
-        }
+        // 删除的解绑功能路由
         if (pathname === '/api/auth/user-info' && method === 'GET') {
           return await handleGetUserInfo(request, env);
         }
@@ -3437,7 +3441,7 @@ export default {
         response = await env.ASSETS.fetch(indexRequest);
       }
 
-      // 为所有响应添加CORS头
+      // 为所有响应添加CORS头并设置缓存策略
       if (response) {
         // 正确处理HEAD请求，保留原始头部信息
         const newResponse = new Response(
@@ -3454,6 +3458,20 @@ export default {
         newResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
         newResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range');
         newResponse.headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Etag');
+
+        // 设置缓存策略：关键入口文件不缓存，带hash的静态资源长期缓存
+        const p = url.pathname;
+        const noCacheList = ['/', '/index.html', '/flutter_service_worker.js', '/main.dart.js'];
+        if (noCacheList.includes(p)) {
+          newResponse.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+          newResponse.headers.set('Pragma', 'no-cache');
+          newResponse.headers.set('Expires', '0');
+        } else if (/\.(?:js|css|png|jpg|jpeg|gif|svg|woff2?|json|wasm)$/i.test(p)) {
+          // 对于包含内容hash的资源，允许长期缓存
+          if (!newResponse.headers.has('Cache-Control')) {
+            newResponse.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+          }
+        }
 
         return newResponse;
       }

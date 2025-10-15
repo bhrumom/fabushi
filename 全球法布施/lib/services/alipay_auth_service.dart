@@ -78,8 +78,17 @@ class AlipayAuthService {
           'username': data['username'],
           'email': data['email'],
           'isNewUser': data['isNewUser'] ?? false,
-          'needsBinding': data['needsBinding'] ?? false,
+          'needsRegistration': data['needsRegistration'] ?? false,
           'alipayUser': data['alipayUser'],
+        };
+      } else if (response.statusCode == 202) {
+        // 新用户需要注册
+        final data = jsonDecode(response.body);
+        return {
+          'success': false,
+          'needsRegistration': true,
+          'alipayUser': data['alipayUser'],
+          'message': data['message'] ?? '新用户需要注册',
         };
       } else {
         final data = jsonDecode(response.body);
@@ -90,54 +99,6 @@ class AlipayAuthService {
       }
     } catch (e) {
       debugPrint('支付宝登录失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
-    }
-  }
-
-  /// 绑定支付宝账号到现有邮箱账户
-  Future<Map<String, dynamic>> bindAlipay(String alipayUserId, [String? email, String? password]) async {
-    try {
-      final url = await baseUrl;
-      
-      // 构建请求体，只包含必要的alipayUserId参数
-      final Map<String, String> requestBody = {'alipayUserId': alipayUserId};
-      
-      // 如果提供了邮箱和密码，则添加到请求体中
-      if (email != null && email.isNotEmpty) {
-        requestBody['email'] = email;
-      }
-      if (password != null && password.isNotEmpty) {
-        requestBody['password'] = password;
-      }
-      
-      final response = await http.post(
-        Uri.parse('$url/api/auth/alipay/bind'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(requestBody),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'token': data['token'],
-          'username': data['username'],
-          'message': data['message'],
-        };
-      } else {
-        final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '支付宝绑定失败',
-        };
-      }
-    } catch (e) {
-      debugPrint('支付宝绑定失败: $e');
       return {
         'success': false,
         'message': '网络连接失败',
@@ -188,40 +149,6 @@ class AlipayAuthService {
       }
     } catch (e) {
       debugPrint('支付宝注册失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
-    }
-  }
-
-  /// 解绑支付宝账号
-  Future<Map<String, dynamic>> unbindAlipay(String token) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/auth/alipay/unbind'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'message': data['message'],
-        };
-      } else {
-        final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '支付宝解绑失败',
-        };
-      }
-    } catch (e) {
-      debugPrint('支付宝解绑失败: $e');
       return {
         'success': false,
         'message': '网络连接失败',
