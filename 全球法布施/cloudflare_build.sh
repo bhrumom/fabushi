@@ -11,6 +11,40 @@ echo "===== Building Flutter Web App for Cloudflare Worker ====="
 echo "Building Flutter Web app..."
 flutter build web --release --base-href /
 
+# Replace flutter_service_worker.js with a self-unregistering SW to bust old caches
+echo "Injecting self-unregistering service worker to clear old caches..."
+cat > build/web/flutter_service_worker.js <<'EOF'
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch (e) {
+      // ignore
+    }
+    try {
+      await self.registration.unregister();
+    } catch (e) {
+      // ignore
+    }
+    try {
+      const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of allClients) {
+        client.navigate(client.url);
+      }
+    } catch (e) {
+      // ignore
+    }
+  })());
+});
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request));
+});
+EOF
+
 # Copy static assets to the build directory, skipping existing files
 echo "Copying static assets (skipping existing files)..."
 if [ -d "web/assets" ]; then

@@ -66,23 +66,29 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleAlipayCallback(String authCode) async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
     
-    final success = await authModel.alipayLogin(authCode);
-    
-    if (success && mounted) {
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('支付宝登录成功'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(authModel.error ?? '支付宝登录失败'),
-          backgroundColor: Colors.red,
-        ),
-      );
+    // 尝试支付宝登录，如果是新用户则自动注册
+    try {
+      final success = await authModel.alipayRegister('', '', authCode);
+      
+      if (success && mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('支付宝登录成功！'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('支付宝登录错误: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('支付宝登录失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -131,13 +137,13 @@ class _LoginScreenState extends State<LoginScreen> {
         debugPrint('提取到支付宝授权码: $authCode');
         debugPrint('所有参数: $params'); // 添加调试信息
         
-        // 检查是否直接包含token（已绑定用户）
+        // 检查是否直接包含token（已存在用户）
         if (params.containsKey('token')) {
           final token = params['token']!;
           final username = params['username']!;
           final isNewUser = params['isNewUser'] == 'true';
           
-          debugPrint('macOS支付宝登录成功，用户已绑定: $username');
+          debugPrint('macOS支付宝登录成功，用户已存在: $username');
           
           // 直接使用token登录
           final authModel = Provider.of<AuthModel>(context, listen: false);
@@ -153,7 +159,7 @@ class _LoginScreenState extends State<LoginScreen> {
             );
           }
         } else {
-          // 新用户或未绑定，调用支付宝登录处理
+          // 新用户，调用支付宝登录处理（会自动注册）
           await _handleAlipayCallback(authCode);
         }
       } else {
