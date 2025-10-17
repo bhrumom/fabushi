@@ -141,7 +141,6 @@ class _LoginScreenState extends State<LoginScreen> {
         if (params.containsKey('token')) {
           final token = params['token']!;
           final username = params['username']!;
-          final isNewUser = params['isNewUser'] == 'true';
           
           debugPrint('macOS支付宝登录成功，用户已存在: $username');
           
@@ -159,8 +158,40 @@ class _LoginScreenState extends State<LoginScreen> {
             );
           }
         } else {
-          // 新用户，调用支付宝登录处理（会自动注册）
-          await _handleAlipayCallback(authCode);
+          // 新用户，使用支付宝用户信息自动注册
+          final alipayUserId = params['alipay_user_id'] ?? '';
+          final alipayNickname = params['alipay_nickname'] ?? '支付宝用户';
+          final alipayAvatar = params['alipay_avatar'] ?? '';
+          
+          debugPrint('macOS支付宝新用户注册: $alipayNickname ($alipayUserId)');
+          
+          // 使用支付宝用户信息自动注册并登录
+          final authModel = Provider.of<AuthModel>(context, listen: false);
+          final success = await authModel.alipayRegister(
+            alipayNickname, // 使用支付宝昵称作为用户名
+            '$alipayUserId@alipay.user', // 生成邮箱
+            authCode,
+          );
+          
+          debugPrint('支付宝注册结果: success=$success, error=${authModel.error}');
+          
+          if (success && mounted) {
+            Navigator.of(context).pop(); // 返回主界面
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('支付宝登录成功！欢迎 $alipayNickname'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          } else if (mounted) {
+            // 注册失败，显示错误信息
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(authModel.error ?? '支付宝登录失败，请重试'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       } else {
         debugPrint('URL中未找到支付宝授权码参数');
