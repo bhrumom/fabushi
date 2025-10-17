@@ -59,6 +59,8 @@ class AlipayAuthService {
   Future<Map<String, dynamic>> alipayLogin(String authCode, String? state) async {
     try {
       final url = await baseUrl;
+      debugPrint('支付宝登录API调用: $url/api/auth/alipay/login, authCode: $authCode');
+      
       final response = await http.post(
         Uri.parse('$url/api/auth/alipay/login'),
         headers: {
@@ -69,6 +71,8 @@ class AlipayAuthService {
           'state': state,
         }),
       );
+
+      debugPrint('支付宝登录API响应: ${response.statusCode} - ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

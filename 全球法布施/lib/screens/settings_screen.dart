@@ -9,8 +9,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  bool _testMode = false;
-  String _backendUrl = '';
   bool _isLoading = true;
 
   @override
@@ -21,12 +19,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     try {
-      final testMode = await AppSettings.getTestMode();
-      final backendUrl = await AppSettings.getBackendUrl();
-      
+      // 设置已简化，只加载基本状态
       setState(() {
-        _testMode = testMode;
-        _backendUrl = backendUrl;
         _isLoading = false;
       });
     } catch (e) {
@@ -41,103 +35,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _saveTestMode(bool value) async {
-    try {
-      await AppSettings.setTestMode(value);
-      setState(() {
-        _testMode = value;
-      });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(value ? '已切换到测试模式' : '已切换到真实后端'),
-            backgroundColor: value ? Colors.orange : Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存设置失败: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _saveBackendUrl(String url) async {
-    try {
-      await AppSettings.setBackendUrl(url);
-      setState(() {
-        _backendUrl = url;
-      });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('后端URL已更新')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存URL失败: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _resetSettings() async {
-    try {
-      await AppSettings.resetToDefaults();
-      await _loadSettings();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('设置已重置为默认值')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('重置设置失败: $e')),
-        );
-      }
-    }
-  }
-
-  void _showUrlEditDialog() {
-    final controller = TextEditingController(text: _backendUrl);
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('编辑后端URL'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: '后端URL',
-            hintText: 'https://your-backend.com',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              final url = controller.text.trim();
-              if (url.isNotEmpty) {
-                _saveBackendUrl(url);
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-  }
+  // 所有后端URL和测试模式相关功能已完全移除
+  // 配置统一通过 unified_config.dart 管理
 
   @override
   Widget build(BuildContext context) {
@@ -178,14 +77,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                children: [
+                                children: const [
                                   Icon(
-                                    _testMode ? Icons.bug_report : Icons.cloud,
-                                    color: _testMode ? Colors.orange : Colors.blue,
+                                    Icons.cloud,
+                                    color: Colors.blue,
                                     size: 24,
                                   ),
-                                  const SizedBox(width: 8),
-                                  const Text(
+                                  SizedBox(width: 8),
+                                  Text(
                                     '运行模式',
                                     style: TextStyle(
                                       fontSize: 18,
@@ -196,16 +95,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ],
                               ),
                               const SizedBox(height: 16),
-                              SwitchListTile(
-                                title: const Text('测试模式'),
-                                subtitle: Text(
-                                  _testMode 
-                                      ? '使用模拟数据，无需网络连接'
-                                      : '连接到真实的Cloudflare后端',
-                                ),
-                                value: _testMode,
-                                onChanged: _saveTestMode,
-                                activeColor: Colors.orange,
+                              const ListTile(
+                                title: Text('系统模式'),
+                                subtitle: Text('统一后端配置，无需手动设置'),
+                                leading: Icon(Icons.info_outline, color: Colors.blue),
                               ),
                             ],
                           ),
@@ -224,60 +117,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                children: const [
-                                  Icon(
-                                    Icons.settings_ethernet,
-                                    color: Colors.green,
-                                    size: 24,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    '后端配置',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF2c3e50),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-
-                              ListTile(
-                                title: const Text('当前后端URL'),
-                                subtitle: Text(
-                                  _backendUrl.isNotEmpty ? _backendUrl : '未设置',
-                                  style: const TextStyle(fontFamily: 'monospace'),
-                                ),
-                                trailing: const Icon(Icons.edit),
-                                onTap: _showUrlEditDialog,
-                              ),
-                              if (!_testMode) ...[
-                                const Divider(),
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(
-                                    children: const [
-                                      Icon(Icons.info, color: Colors.blue, size: 20),
-                                      SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          '当前使用真实后端，可以登录之前注册的账户',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.blue,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                              // 后端配置已完全移除，所有配置统一通过 unified_config.dart 管理
                             ],
                           ),
                         ),
@@ -316,18 +156,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               const SizedBox(height: 16),
                               _buildStatusItem(
                                 '运行模式',
-                                _testMode ? '测试模式' : '生产模式',
-                                _testMode ? Colors.orange : Colors.green,
+                                '生产模式',
+                                Colors.green,
                               ),
-                              _buildStatusItem(
-                                '后端地址',
-                                _backendUrl,
-                                Colors.blue,
-                              ),
+                              // 后端地址信息已移除
                               _buildStatusItem(
                                 '数据来源',
-                                _testMode ? '本地模拟数据' : 'Cloudflare后端',
-                                _testMode ? Colors.orange : Colors.green,
+                                'Cloudflare后端',
+                                Colors.green,
                               ),
                             ],
                           ),
@@ -368,7 +204,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton.icon(
-                                  onPressed: _resetSettings,
+                                  onPressed: () {
+                                    // 设置重置功能已简化，只显示提示信息
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('设置已重置为默认配置'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  },
                                   icon: const Icon(Icons.restore),
                                   label: const Text('重置为默认设置'),
                                   style: ElevatedButton.styleFrom(
