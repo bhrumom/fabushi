@@ -4,14 +4,16 @@ import 'package:provider/provider.dart';
 import 'dart:io' show Platform;
 import 'dart:async';
 import 'dart:convert';
-import 'dart:html' as html;
 import '../models/auth_model.dart';
 import '../services/membership_service.dart';
 import '../services/alipay_service.dart';
 // import '../widgets/membership_dialog.dart';
 import '../config/unified_config.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../models/user_model.dart';class MembershipScreen extends StatefulWidget {
+import '../models/user_model.dart';
+
+// 条件导入 - Web平台使用dart:html，其他平台使用存根
+import '../platform_stub.dart' if (dart.library.html) 'dart:html' as html;class MembershipScreen extends StatefulWidget {
   const MembershipScreen({Key? key}) : super(key: key);
 
   @override
@@ -63,16 +65,17 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   
   // 设置Web端消息监听器
   void _setupWebMessageListener() {
-    _messageListener = (html.Event event) {
-      final html.MessageEvent messageEvent = event as html.MessageEvent;
-      if (messageEvent.data is Map && 
-          messageEvent.data['action'] == 'paymentSuccess') {
-        // 收到支付成功消息，刷新用户信息
-        _handlePaymentSuccess();
+    _messageListener = (event) {
+      if (event is html.MessageEvent) {
+        if (event.data is Map && 
+            event.data['action'] == 'paymentSuccess') {
+          // 收到支付成功消息，刷新用户信息
+          _handlePaymentSuccess();
+        }
       }
     };
     
-    html.window.addEventListener('message', _messageListener);
+    html.window.addEventListener('message', _messageListener!);
   }
   
   // 设置localStorage监听器
