@@ -239,6 +239,8 @@ class FileTransferModel extends ChangeNotifier {
   Future<List<int>?> _getFileFromWebStorage(String fileName) async {
     try {
       // 从Web平台的localStorage获取文件数据
+      if (!kIsWeb) return null; // 非Web平台直接返回null
+      
       final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
       final List<dynamic> savedFiles = json.decode(savedFilesStr);
       
