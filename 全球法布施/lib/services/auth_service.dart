@@ -114,7 +114,7 @@ class AuthService {
           print('使用登录API返回的完整用户信息');
           userInfo = UserModel.fromJson(data['user']);
         } else if (data.containsKey('username')) {
-          // 登录API只返回了基本信息（token + username），创建临时UserModel
+          // 登录API只返回了基本信息（token + username），先保存基本信息允许登录
           print('登录API返回基本信息，创建临时用户对象');
           final usernameFromApi = data['username'] as String;
           userInfo = UserModel(
@@ -127,19 +127,33 @@ class AuthService {
               isActive: false,
             ),
           );
-          // 后台异步刷新完整用户信息（不阻塞登录流程）
-          _fetchUserInfo().then((fullUserInfo) {
+          
+          // 立即保存基本信息
+          await _saveAuth(token, userInfo);
+          
+          // 后台异步刷新完整用户信息
+          print('开始后台异步刷新用户信息...');
+          _fetchUserInfo().then((fullUserInfo) async {
+            print('后台刷新成功，更新用户信息: ${fullUserInfo.membership.type}');
             _currentUser = fullUserInfo;
-            _saveAuth(token, fullUserInfo);
+            await _saveAuth(token, fullUserInfo);
           }).catchError((e) {
             print('后台刷新用户信息失败: $e');
           });
+          
+          // 返回基本信息，不等待刷新
+          return {
+            'success': true,
+            'token': token,
+            'user': userInfo.toJson(),
+          };
         } else {
           // 登录API没有返回任何用户信息，需要同步请求
           print('登录API未返回用户信息，同步请求用户详细信息');
           userInfo = await _fetchUserInfo();
         }
         
+        // 其他情况：保存并返回
         await _saveAuth(token, userInfo);
         
         return {
