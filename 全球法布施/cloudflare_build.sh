@@ -70,6 +70,23 @@ if [ -f "web/service-worker.js" ]; then
     cp web/service-worker.js build/web/
 fi
 
+# Copy Alipay related files
+echo "Copying Alipay related files..."
+for file in alipay-config.js alipay-login-functions.js alipay-utils.js auth-utils.js; do
+    if [ -f "web/$file" ]; then
+        cp "web/$file" build/web/
+        echo "  ✓ Copied $file"
+    else
+        echo "  ⚠ Warning: web/$file not found"
+    fi
+done
+
+# Copy flutter-loading-optimizer.js
+if [ -f "web/flutter-loading-optimizer.js" ]; then
+    cp web/flutter-loading-optimizer.js build/web/
+    echo "  ✓ Copied flutter-loading-optimizer.js"
+fi
+
 echo "===== Build complete ====="
 echo "Build output is in: build/web"
 echo "Ready for 'wrangler deploy'."

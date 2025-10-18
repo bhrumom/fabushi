@@ -546,30 +546,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // 支付宝注册按钮
-                        Consumer<AuthModel>(
-                          builder: (context, authModel, child) {
-                            return ElevatedButton.icon(
-                              onPressed: authModel.isLoading ? null : _handleAlipayRegister,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF1677FF), // 支付宝蓝色
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                elevation: 2,
-                              ),
-                              icon: const Icon(Icons.account_balance_wallet), // 使用钱包图标代替支付图标
-                              label: const Text(
-                                '支付宝注册',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            );
+                        // 支付宝注册按钮 - 简化版本
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            print('支付宝注册按钮被点击');
+                            _handleAlipayRegister();
                           },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1677FF),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 2,
+                          ),
+                          icon: const Icon(Icons.account_balance_wallet),
+                          label: const Text(
+                            '支付宝注册',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 16),
 
