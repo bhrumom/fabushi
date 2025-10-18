@@ -1,5 +1,53 @@
 [
   {
+    "key": "assets/AssetManifest.bin",
+    "source": "static"
+  },
+  {
+    "key": "assets/AssetManifest.bin.json",
+    "source": "static"
+  },
+  {
+    "key": "assets/AssetManifest.json",
+    "source": "static"
+  },
+  {
+    "key": "assets/FontManifest.json",
+    "source": "static"
+  },
+  {
+    "key": "assets/NOTICES",
+    "source": "static"
+  },
+  {
+    "key": "assets/assets/data/asset-manifest.json",
+    "source": "static"
+  },
+  {
+    "key": "assets/assets/data/r2-files-list.json",
+    "source": "static"
+  },
+  {
+    "key": "assets/fonts/MaterialIcons-Regular.otf",
+    "source": "static"
+  },
+  {
+    "key": "assets/fonts/NotoSansSC-Bold.otf",
+    "source": "static"
+  },
+  {
+    "key": "assets/fonts/NotoSansSC-Regular.otf",
+    "source": "static"
+  },
+  {
+    "key": "assets/fonts/NotoSerifSC-Bold.otf",
+    "source": "static"
+  },
+  {
+    "key": "assets/fonts/NotoSerifSC-Regular.otf",
+    "source": "static"
+  },
+  {
     "key": "assets/index.html",
     "source": "static"
   },
@@ -8,7 +56,19 @@
     "source": "static"
   },
   {
+    "key": "assets/packages/cupertino_icons/assets/CupertinoIcons.ttf",
+    "source": "static"
+  },
+  {
+    "key": "assets/packages/flutter_map/lib/assets/flutter_map_logo.png",
+    "source": "static"
+  },
+  {
     "key": "assets/service-worker.js",
+    "source": "static"
+  },
+  {
+    "key": "assets/shaders/ink_sparkle.frag",
     "source": "static"
   },
   {

@@ -51,6 +51,10 @@ directory = "/Users/gloriachan/Documents/全球发送/全球法布施/build/web"
 # 生产环境配置
 [env.production]
 name = "fabushi-flutter-web-prod"
+routes = [
+  { pattern = "flutter.ombhrum.com/*", zone_name = "ombhrum.com" }
+]
+workers_dev = false
 
 [[env.production.kv_namespaces]]
 binding = "USERS_KV"

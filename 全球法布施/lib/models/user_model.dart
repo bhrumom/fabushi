@@ -106,9 +106,6 @@ class UserModel {
   // 检查是否绑定了微信
   bool get hasWechatBinding => wechatOpenid != null;
   
-  // 检查是否绑定了支付宝
-  bool get hasAlipayBinding => alipayUserId != null;
-  
   // 获取显示名称
   String get displayName {
     if (wechatNickname != null && wechatNickname!.isNotEmpty) {
