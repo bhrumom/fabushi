@@ -77,12 +77,16 @@ function generateRedeemCode() {
 // Cloudflare Worker 认证系统 - 带邮箱验证码、忘记密码和Stripe支付功能
 // 简化版本 - 无需外部依赖
 
+// 应用版本号（每次部署自动更新）
+const APP_VERSION = Date.now().toString();
+
 // CORS 头配置
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range',
-  'Content-Type': 'application/json'
+  'Content-Type': 'application/json',
+  'X-App-Version': APP_VERSION
 };
 
 function htmlResponse(html, status = 200) {
@@ -3453,11 +3457,12 @@ export default {
           }
         );
 
-        // 添加CORS头部
+        // 添加CORS头部和版本号
         newResponse.headers.set('Access-Control-Allow-Origin', '*');
         newResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
         newResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range');
-        newResponse.headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Etag');
+        newResponse.headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Etag, X-App-Version');
+        newResponse.headers.set('X-App-Version', APP_VERSION);
 
         // 设置缓存策略：关键入口文件不缓存，带hash的静态资源长期缓存
         const p = url.pathname;
