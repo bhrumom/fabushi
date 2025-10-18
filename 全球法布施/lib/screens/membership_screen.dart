@@ -4,7 +4,8 @@ import 'package:provider/provider.dart';
 import 'dart:io' show Platform;
 import 'dart:async';
 import 'dart:convert';
-import 'dart:html' as html;
+// 仅在Web平台上导入dart:html
+import 'package:universal_html/html.dart' as html;
 import '../models/auth_model.dart';
 import '../services/membership_service.dart';
 import '../services/alipay_service.dart';
@@ -29,8 +30,8 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   List<RedeemRecord> _redeemHistory = [];
   late TabController _tabController;
   
-  // Web端消息监听器
-  html.EventListener? _messageListener;
+  // Web端消息监听器（仅在Web平台上使用）
+  dynamic _messageListener; // 使用dynamic类型避免编译错误
   Timer? _localStorageCheckTimer;
 
   @override
@@ -52,54 +53,69 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   void dispose() {
     _tabController.dispose();
     
-    // 移除Web端消息监听器
+    // 移除Web端消息监听器（仅在Web平台上执行）
     if (kIsWeb && _messageListener != null) {
-      html.window.removeEventListener('message', _messageListener!);
-      _localStorageCheckTimer?.cancel();
+      try {
+        html.window.removeEventListener('message', _messageListener);
+      } catch (e) {
+        debugPrint('移除Web消息监听器失败: $e');
+      }
     }
+    _localStorageCheckTimer?.cancel();
     
     super.dispose();
   }
   
-  // 设置Web端消息监听器
+  // 设置Web端消息监听器（仅在Web平台上执行）
   void _setupWebMessageListener() {
-    _messageListener = (html.Event event) {
-      final html.MessageEvent messageEvent = event as html.MessageEvent;
-      if (messageEvent.data is Map && 
-          messageEvent.data['action'] == 'paymentSuccess') {
-        // 收到支付成功消息，刷新用户信息
-        _handlePaymentSuccess();
+    if (kIsWeb) {
+      try {
+        _messageListener = (dynamic event) {
+          // 使用dynamic类型和运行时类型检查
+          if (event != null && event is html.Event) {
+            final messageEvent = event as html.MessageEvent;
+            if (messageEvent.data is Map && 
+                messageEvent.data['action'] == 'paymentSuccess') {
+              // 收到支付成功消息，刷新用户信息
+              _handlePaymentSuccess();
+            }
+          }
+        };
+        
+        html.window.addEventListener('message', _messageListener);
+      } catch (e) {
+        debugPrint('设置Web消息监听器失败: $e');
       }
-    };
-    
-    html.window.addEventListener('message', _messageListener);
+    }
   }
   
-  // 设置localStorage监听器
+  // 设置localStorage监听器（仅在Web平台上执行）
   void _setupLocalStorageListener() {
-    // 定期检查localStorage中的支付成功标记
-    _localStorageCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-      try {
-        final paymentSuccessData = html.window.localStorage['paymentSuccess'];
-        if (paymentSuccessData != null) {
-          // 解析数据
-          try {
-            final data = jsonDecode(paymentSuccessData);
-            debugPrint('检测到支付成功标记: $data');
-          } catch (e) {
-            debugPrint('解析localStorage数据失败: $e');
+    if (kIsWeb) {
+      // 定期检查localStorage中的支付成功标记
+      _localStorageCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+        try {
+          final paymentSuccessData = html.window.localStorage['paymentSuccess'];
+          if (paymentSuccessData != null) {
+            // 解析数据
+            try {
+              final data = jsonDecode(paymentSuccessData);
+              debugPrint('检测到支付成功标记: $data');
+            } catch (e) {
+              debugPrint('解析localStorage数据失败: $e');
+            }
+            
+            // 清除标记
+            html.window.localStorage.remove('paymentSuccess');
+            
+            // 处理支付成功
+            _handlePaymentSuccess();
           }
-          
-          // 清除标记
-          html.window.localStorage.remove('paymentSuccess');
-          
-          // 处理支付成功
-          _handlePaymentSuccess();
+        } catch (e) {
+          debugPrint('检查localStorage失败: $e');
         }
-      } catch (e) {
-        debugPrint('检查localStorage失败: $e');
-      }
-    });
+      });
+    }
   }
   
   // 处理支付成功
