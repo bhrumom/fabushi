@@ -43,4 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+# Flutter Web编译产物 - 不应该在web/目录
 web/main.dart.js
+web/main.dart.js.map
+web/*.part.js
+web/flutter_bootstrap.js
