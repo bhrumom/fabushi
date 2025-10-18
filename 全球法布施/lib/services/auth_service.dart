@@ -104,8 +104,42 @@ class AuthService {
         final data = jsonDecode(response.body);
         final token = data['token'] as String;
         
-        // 获取用户详细信息
-        final userInfo = await _fetchUserInfoWithToken(token);
+        // 先设置token，以便后续请求可以使用
+        _currentToken = token;
+        
+        // 优先使用登录API返回的用户信息（如果有的话）
+        UserModel userInfo;
+        if (data.containsKey('user') && data['user'] != null) {
+          // 登录API返回了完整用户信息，直接使用
+          print('使用登录API返回的完整用户信息');
+          userInfo = UserModel.fromJson(data['user']);
+        } else if (data.containsKey('username')) {
+          // 登录API只返回了基本信息（token + username），创建临时UserModel
+          print('登录API返回基本信息，创建临时用户对象');
+          final usernameFromApi = data['username'] as String;
+          userInfo = UserModel(
+            username: usernameFromApi,
+            email: usernameFromApi.contains('@') ? usernameFromApi : '',
+            emailVerified: false,
+            createdAt: DateTime.now().toIso8601String(),
+            membership: MembershipInfo(
+              type: 'expired',
+              isActive: false,
+            ),
+          );
+          // 后台异步刷新完整用户信息（不阻塞登录流程）
+          _fetchUserInfo().then((fullUserInfo) {
+            _currentUser = fullUserInfo;
+            _saveAuth(token, fullUserInfo);
+          }).catchError((e) {
+            print('后台刷新用户信息失败: $e');
+          });
+        } else {
+          // 登录API没有返回任何用户信息，需要同步请求
+          print('登录API未返回用户信息，同步请求用户详细信息');
+          userInfo = await _fetchUserInfo();
+        }
+        
         await _saveAuth(token, userInfo);
         
         return {
@@ -344,29 +378,18 @@ class AuthService {
     if (_currentToken == null) {
       throw Exception('未登录');
     }
-    return await _fetchUserInfoWithToken(_currentToken!);
-  }
-  
-  // 使用指定token获取用户信息
-  Future<UserModel> _fetchUserInfoWithToken(String token) async {
+    
     try {
-      // 临时设置token以便使用HttpService
-      final oldToken = _currentToken;
-      _currentToken = token;
-      
       final response = await HttpService.get(
         UnifiedConfig.userInfoUrl,
         useAuth: true,
       );
       
-      // 恢复原token
-      _currentToken = oldToken;
-      
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return UserModel.fromJson(data);
       } else {
-        throw Exception('获取用户信息失败');
+        throw Exception('获取用户信息失败: HTTP ${response.statusCode}');
       }
     } catch (e) {
       print('获取用户信息失败: $e');
