@@ -157,6 +157,10 @@ class AuthModel extends ChangeNotifier {// 服务实例
         
         _setLoading(false);
         notifyListeners();
+        
+        // 后台异步刷新完整用户信息（包括会员信息）
+        refreshUserInfo();
+        
         return true;
       } else {
         _setError(result['error'] ?? '登录失败');
