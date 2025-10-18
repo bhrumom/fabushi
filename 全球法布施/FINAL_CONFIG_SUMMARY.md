@@ -11,7 +11,7 @@
 
 ### Web平台（部署在Cloudflare Worker上）
 ```
-当前后端URL: https://fabushi-flutter-web-prod.bhrumom.workers.dev
+当前后端URL: https://flutter.ombhrum.com
 Web平台策略: 直接调用Cloudflare Worker
 ```
 
@@ -29,10 +29,10 @@ Web平台策略: 直接调用Cloudflare Worker
 === 统一配置信息 ===
 当前环境: 生产环境
 平台: Web
-当前后端URL: https://fabushi-flutter-web-prod.bhrumom.workers.dev
+当前后端URL: https://flutter.ombhrum.com
 Web平台策略: 直接调用Cloudflare Worker
 主要后端: https://ombhrum.com
-Cloudflare生产: https://fabushi-flutter-web-prod.bhrumom.workers.dev
+Cloudflare生产: https://flutter.ombhrum.com
 Cloudflare开发: https://fabushi-flutter-web-dev.bhrumom.workers.dev
 启用日志: true
 最大重试次数: 3
@@ -107,7 +107,7 @@ static void printCurrentConfig() {
 
 ### 地址选择逻辑
 1. **Web平台**：
-   - 生产环境 → `https://fabushi-flutter-web-prod.bhrumom.workers.dev`
+   - 生产环境 → `https://flutter.ombhrum.com`
    - 开发环境 → `https://fabushi-flutter-web-dev.bhrumom.workers.dev`
    - 备用地址 → `https://ombhrum.com`
 
@@ -124,7 +124,7 @@ static void printCurrentConfig() {
 ## 📝 后续建议
 
 1. **部署Cloudflare Worker**：
-   - 确保 `https://fabushi-flutter-web-prod.bhrumom.workers.dev` 可访问
+   - 确保 `https://flutter.ombhrum.com` 可访问
    - 配置正确的API端点
 
 2. **测试其他平台**：

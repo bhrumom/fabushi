@@ -2,6 +2,7 @@
 
 import { generateToken, verifyToken, jsonResponse, verifyPassword, createPasswordHash } from './auth-utils.js';
 import { importPrivateKey, importPublicKey, generateSign, verifySign } from './alipay-utils.js';
+import { calculateTrialEndDate } from './stripe-config.js';
 
 // 生成支付宝登录URL
 async function generateAlipayLoginUrl(env, platform) {
@@ -97,7 +98,8 @@ async function getAlipayUserInfo(authCode, env) {
     const privateKey = env.ALIPAY_PRIVATE_KEY;
     const alipayPublicKey = env.ALIPAY_PUBLIC_KEY;
     
-    console.log('支付宝配置检查:', {
+    console.log('获取支付宝用户信息开始:', { 
+      authCode: authCode ? authCode.substring(0, 10) + '...' : 'null',
       hasAppId: !!appId,
       hasPrivateKey: !!privateKey,
       hasAlipayPublicKey: !!alipayPublicKey,
@@ -105,30 +107,86 @@ async function getAlipayUserInfo(authCode, env) {
     });
   
   try {
-    console.log('获取支付宝用户信息，授权码:', authCode);
+    // 检查授权码是否有效
+    if (!authCode || authCode.length < 10) {
+      console.error('授权码无效: 授权码为空或太短');
+      return {
+        error: true,
+        code: 'CODE_INVALID',
+        message: '支付宝授权失败: 授权码无效或格式错误',
+        details: { authCode: authCode ? 'invalid_format' : 'missing' }
+      };
+    }
     
     // 检查必要的支付宝配置
     if (!appId || !privateKey || !alipayPublicKey) {
       console.warn('支付宝配置不完整，使用模拟数据');
-      // 模拟用户信息（实际应该调用支付宝API）
+      console.warn('缺少的配置:', {
+        appId: !appId,
+        privateKey: !privateKey,
+        alipayPublicKey: !alipayPublicKey
+      });
+      
+      // 模拟用户信息（仅用于开发测试）
       const mockUserInfo = {
-        user_id: 'mock_alipay_user_' + Date.now(), // 使用当前时间戳生成唯一的模拟用户ID
+        user_id: 'mock_alipay_user_' + Date.now(),
         nick_name: '支付宝用户',
         avatar: 'https://tfsimg.alipay.com/images/partner/T1kFldXk0rXXXXXXXX',
         province: '浙江省',
         city: '杭州市',
-        gender: 'M'
+        gender: 'M',
+        isMock: true // 标记为模拟数据
       };
       return mockUserInfo;
     }
     
     // 第一步：使用auth_code换取access_token和user_id
     console.log('开始调用支付宝API获取access_token...');
+    
+    // 检查授权码是否已使用过（防止重复调用）
+    if (env.USERS_KV) {
+      const usedAuthCode = await env.USERS_KV.get(`used_auth_code:${authCode}`);
+      if (usedAuthCode) {
+        console.error('授权码已被使用:', authCode);
+        return {
+          error: true,
+          code: 'CODE_REUSED',
+          message: '支付宝授权失败: 授权码已被使用，请重新登录',
+          details: { reason: 'auth_code_already_used' }
+        };
+      }
+    }
+    
     const tokenResult = await getAccessToken(authCode, env);
     
     if (!tokenResult || tokenResult.code !== '10000') {
       console.error('获取access_token失败:', tokenResult);
-      throw new Error('支付宝授权失败: ' + (tokenResult?.msg || tokenResult?.sub_msg || '未知错误'));
+      // 不再抛出异常，而是返回错误信息
+      const errorMsg = tokenResult?.msg || tokenResult?.sub_msg || '未知错误';
+      
+      // 检查是否是授权码无效错误
+      if (tokenResult?.sub_code === 'isv.code-invalid' || 
+          tokenResult?.sub_msg?.includes('授权码code无效')) {
+        return {
+          error: true,
+          code: 'CODE_INVALID',
+          message: '支付宝授权失败: 授权码已过期或无效，请重新尝试',
+          details: tokenResult
+        };
+      }
+      
+      return {
+        error: true,
+        code: tokenResult?.code || 'UNKNOWN_ERROR',
+        message: '支付宝授权失败: ' + errorMsg,
+        details: tokenResult
+      };
+    }
+    
+    // 成功获取token后，标记授权码为已使用
+    if (env.USERS_KV) {
+      await env.USERS_KV.put(`used_auth_code:${authCode}`, '1', { expirationTtl: 3600 }); // 1小时内不能重复使用
+      console.log('授权码已标记为已使用:', authCode);
     }
     
     const { access_token, user_id } = tokenResult;
@@ -142,13 +200,19 @@ async function getAlipayUserInfo(authCode, env) {
       console.error('获取用户信息失败:', userInfoResult);
       // 如果获取用户信息失败，但至少返回了基本的user_id信息
       return {
-      user_id: user_id,
-      nick_name: userInfoResult?.nick_name || '支付宝用户',
-      avatar: userInfoResult?.avatar || '',
-      province: userInfoResult?.province || '',
-      city: userInfoResult?.city || '',
-      gender: userInfoResult?.gender || 'M'
-    };
+        user_id: user_id,
+        nick_name: userInfoResult?.nick_name || '支付宝用户',
+        avatar: userInfoResult?.avatar || '',
+        province: userInfoResult?.province || '',
+        city: userInfoResult?.city || '',
+        gender: userInfoResult?.gender || 'M',
+        partial: true, // 标记这是部分信息
+        error: userInfoResult?.code !== '10000' ? {
+          code: userInfoResult?.code,
+          message: userInfoResult?.msg || userInfoResult?.sub_msg,
+          details: userInfoResult
+        } : null
+      };
     }
     
     const userInfo = userInfoResult;
@@ -191,6 +255,24 @@ async function handleAlipayLogin(request, env) {
     // 获取支付宝用户信息
     const alipayUser = await getAlipayUserInfo(auth_code, env);
     
+    // 检查是否是授权码无效错误
+    if (alipayUser.error) {
+      if (alipayUser.code === 'CODE_INVALID' || 
+          alipayUser.sub_code === 'isv.code-invalid' ||
+          (typeof alipayUser.error === 'string' && alipayUser.error.includes('授权码已过期或无效')) ||
+          (typeof alipayUser.error === 'object' && alipayUser.error.message && typeof alipayUser.error.message === 'string' && alipayUser.error.message.includes('授权码已过期或无效'))) {
+        return jsonResponse({ 
+          error: '支付宝授权失败: 授权码已过期或无效，请重新尝试',
+          code: 'CODE_INVALID',
+          sub_code: alipayUser.sub_code,
+          sub_msg: alipayUser.sub_msg
+        }, 400);
+      }
+      const errorMessage = typeof alipayUser.error === 'string' ? alipayUser.error : 
+                          (typeof alipayUser.error === 'object' && alipayUser.error.message ? alipayUser.error.message : '支付宝登录失败');
+      return jsonResponse({ error: errorMessage }, 500);
+    }
+    
     // 检查是否已有注册账号
     const existingUser = await env.USERS_KV.get(`alipay_binding:${alipayUser.user_id}`);
     
@@ -227,11 +309,74 @@ async function handleAlipayLogin(request, env) {
   }
 }
 
-// 注册新用户（原绑定功能改为注册功能）
+// 注册新用户（支持一键注册）
 async function registerAlipayUser(request, env) {
   try {
-    const { username, email, password, captcha, alipayUserId, alipayOpenId, alipayNickname, alipayAvatar } = await request.json();
+    const { username, email, password, captcha, alipayUserId, alipayOpenId, alipayNickname, alipayAvatar, oneClick } = await request.json();
     
+    // 一键注册模式：自动生成用户名和邮箱
+    if (oneClick === true) {
+      // 检查支付宝是否已注册
+      const existingAlipay = await env.USERS_KV.get(`alipay_binding:${alipayUserId}`);
+      if (existingAlipay) {
+        return jsonResponse({ error: '该支付宝账号已注册其他用户' }, 400);
+      }
+      
+      // 生成默认用户名（基于支付宝昵称或用户ID）
+      const baseUsername = alipayNickname || '支付宝用户';
+      let autoUsername = baseUsername;
+      let counter = 1;
+      
+      // 确保用户名唯一
+      while (await env.USERS_KV.get(`user:${autoUsername}`)) {
+        autoUsername = `${baseUsername}_${counter}`;
+        counter++;
+      }
+      
+      // 生成默认邮箱
+      const autoEmail = `${alipayUserId}@alipay.user`;
+      
+      // 创建新用户
+      const creds = await createPasswordHash('alipay_default_password'); // 默认密码
+      
+      const userData = {
+        username: autoUsername,
+        email: autoEmail,
+        password: creds.passwordHash,
+        alipayUserId: alipayUserId,
+        alipayOpenId: alipayOpenId,
+        alipayNickname: alipayNickname,
+        alipayAvatar: alipayAvatar,
+        alipayBoundAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        emailVerified: true, // 支付宝用户默认已验证
+        membershipType: 'trial', // 默认试用会员
+        membershipExpiresAt: calculateTrialEndDate().toISOString()
+      };
+      
+      // 保存用户信息
+      await env.USERS_KV.put(`user:${autoUsername}`, JSON.stringify(userData));
+      await env.USERS_KV.put(`email_to_username:${autoEmail}`, autoUsername);
+      
+      // 建立支付宝到用户的映射
+      await env.USERS_KV.put(`alipay_binding:${alipayUserId}`, autoUsername);
+      await env.USERS_KV.put(`user_alipay:${autoUsername}`, alipayUserId);
+      
+      // 生成JWT token
+      const token = await generateToken(autoUsername, env);
+      
+      return jsonResponse({
+        success: true,
+        message: '一键注册成功',
+        token: token,
+        username: userData.username,
+        email: userData.email,
+        isOneClick: true
+      });
+    }
+    
+    // 传统注册模式：需要完整信息
     // 验证邮箱格式
     const normalizedEmail = email.toLowerCase().trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -267,14 +412,12 @@ async function registerAlipayUser(request, env) {
     }
     
     // 创建新用户
-    const userId = generateUserId();
-    const hashedPassword = await hashPassword(password);
+    const creds = await createPasswordHash(password);
     
     const userData = {
-      id: userId,
       username: username.trim(),
       email: normalizedEmail,
-      password: hashedPassword,
+      password: creds.passwordHash,
       alipayUserId: alipayUserId,
       alipayOpenId: alipayOpenId,
       alipayNickname: alipayNickname,
@@ -425,12 +568,23 @@ async function handleMacOSAlipayCallback(request, env) {
     const authCode = url.searchParams.get('auth_code');
     const state = url.searchParams.get('state');
     
-    console.log('收到macOS应用支付宝登录回调:', { authCode, state });
+    console.log('收到macOS应用支付宝登录回调:', { 
+      authCode: authCode ? authCode.substring(0, 10) + '...' : 'null', 
+      state: state || 'null',
+      fullUrl: request.url 
+    });
     
     if (!authCode) {
       // macOS应用回调失败，重定向到应用并传递错误信息
       const redirectUrl = `globaldharma://error=missing_auth_code&error_message=${encodeURIComponent('缺少授权码')}`;
       console.error('macOS支付宝回调缺少授权码，重定向到应用:', redirectUrl);
+      return Response.redirect(redirectUrl, 302);
+    }
+    
+    // 验证授权码格式
+    if (authCode.length < 10) {
+      console.error('macOS支付宝回调授权码格式无效:', authCode);
+      const redirectUrl = `globaldharma://error=invalid_auth_code&error_message=${encodeURIComponent('授权码格式无效')}`;
       return Response.redirect(redirectUrl, 302);
     }
     
@@ -458,7 +612,29 @@ async function handleMacOSAlipayCallback(request, env) {
     }
     
     // 获取支付宝用户信息
-    const alipayUser = await getAlipayUserInfo(authCode, env);
+    const alipayUserResult = await getAlipayUserInfo(authCode, env);
+    
+    // 检查是否返回了错误
+    if (alipayUserResult.error) {
+      console.error('获取支付宝用户信息失败:', alipayUserResult);
+      
+      // 如果是授权码相关问题，重定向到应用并传递错误信息
+      if (alipayUserResult.code === 'CODE_INVALID' || alipayUserResult.code === 'CODE_REUSED') {
+        const errorMessage = alipayUserResult.message || '支付宝授权失败';
+        const redirectUrl = `globaldharma://error=auth_failed&error_message=${encodeURIComponent(errorMessage)}&error_code=${alipayUserResult.code}`;
+        console.log('macOS支付宝授权失败，重定向到应用:', redirectUrl);
+        return Response.redirect(redirectUrl, 302);
+      }
+      
+      return jsonResponse({ 
+        error: '支付宝登录失败', 
+        details: alipayUserResult.message,
+        code: alipayUserResult.code,
+        fullError: alipayUserResult.details
+      }, 500);
+    }
+    
+    const alipayUser = alipayUserResult;
     console.log('macOS应用获取到的支付宝用户信息:', alipayUser);
     
     // 检查用户信息是否完整
@@ -510,12 +686,24 @@ async function handleAlipayCallback(request, env) {
     const authCode = url.searchParams.get('auth_code');
     const state = url.searchParams.get('state');
     
-    console.log('收到支付宝登录回调:', { authCode, state });
+    console.log('收到支付宝登录回调:', { 
+      authCode: authCode ? authCode.substring(0, 10) + '...' : 'null', 
+      state: state || 'null',
+      fullUrl: request.url 
+    });
     
     if (!authCode) {
       // 直接跳转到Flutter应用的错误页面，不再经过HTML登录页面
       const redirectUrl = new URL('/index.html', request.url);
       redirectUrl.hash = 'error=missing_auth_code&error_message=缺少授权码';
+      return Response.redirect(redirectUrl.toString(), 302);
+    }
+    
+    // 验证授权码格式
+    if (authCode.length < 10) {
+      console.error('支付宝回调授权码格式无效:', authCode);
+      const redirectUrl = new URL('/index.html', request.url);
+      redirectUrl.hash = 'error=invalid_auth_code&error_message=授权码格式无效';
       return Response.redirect(redirectUrl.toString(), 302);
     }
     
@@ -587,6 +775,33 @@ async function getAccessToken(authCode, env) {
   try {
     const appId = env.ALIPAY_APP_ID;
     const privateKey = env.ALIPAY_PRIVATE_KEY;
+    
+    console.log('开始获取access_token，授权码:', authCode ? authCode.substring(0, 10) + '...' : 'null');
+    
+    // 验证授权码格式
+    if (!authCode || authCode.length < 10) {
+      console.error('授权码格式无效:', { authCode: authCode ? 'invalid_length' : 'missing' });
+      return {
+        code: 'CODE_INVALID',
+        msg: '授权码无效',
+        sub_code: 'isv.code-invalid',
+        sub_msg: '授权码格式错误或已过期'
+      };
+    }
+    
+    // 检查支付宝配置
+    if (!appId || !privateKey) {
+      console.error('支付宝配置缺失:', { 
+        hasAppId: !!appId, 
+        hasPrivateKey: !!privateKey 
+      });
+      return {
+        code: 'CONFIG_ERROR',
+        msg: '支付宝配置不完整',
+        sub_code: 'missing_config',
+        sub_msg: '缺少必要的支付宝API配置'
+      };
+    }
     
     // 构建请求参数
     const timestamp = new Date().toLocaleString('zh-CN', { 
@@ -669,8 +884,25 @@ async function getAccessToken(authCode, env) {
           sub_msg: JSON.stringify(tokenResponse)
         };
       }
+    } else if (result.error_response) {
+      // 处理支付宝API错误响应
+      const errorResponse = result.error_response;
+      console.error('支付宝API错误响应:', errorResponse);
+      return {
+        code: errorResponse.code || 'API_ERROR',
+        msg: errorResponse.msg || '支付宝API返回错误',
+        sub_code: errorResponse.sub_code || 'unknown',
+        sub_msg: errorResponse.sub_msg || JSON.stringify(errorResponse)
+      };
     } else {
-      throw new Error('支付宝API响应格式错误');
+      // 完全没有预期的响应格式，记录完整响应并返回错误
+      console.error('支付宝API响应格式不正确，完整响应:', JSON.stringify(result));
+      return {
+        code: 'INVALID_RESPONSE',
+        msg: '支付宝API响应格式不正确',
+        sub_code: 'invalid_format',
+        sub_msg: `响应缺少alipay_system_oauth_token_response字段，完整响应: ${JSON.stringify(result)}`
+      };
     }
     
   } catch (error) {
@@ -756,8 +988,25 @@ async function getUserInfoWithToken(accessToken, env) {
           sub_msg: userInfoResponse.sub_msg
         };
       }
+    } else if (result.error_response) {
+      // 处理支付宝API错误响应
+      const errorResponse = result.error_response;
+      console.error('支付宝用户信息API错误响应:', errorResponse);
+      return {
+        code: errorResponse.code || 'API_ERROR',
+        msg: errorResponse.msg || '支付宝用户信息API返回错误',
+        sub_code: errorResponse.sub_code || 'unknown',
+        sub_msg: errorResponse.sub_msg || JSON.stringify(errorResponse)
+      };
     } else {
-      throw new Error('支付宝API响应格式错误');
+      // 完全没有预期的响应格式，记录完整响应并返回错误
+      console.error('支付宝用户信息API响应格式不正确，完整响应:', JSON.stringify(result));
+      return {
+        code: 'INVALID_RESPONSE',
+        msg: '支付宝用户信息API响应格式不正确',
+        sub_code: 'invalid_format',
+        sub_msg: `响应缺少alipay_user_info_share_response字段，完整响应: ${JSON.stringify(result)}`
+      };
     }
     
   } catch (error) {

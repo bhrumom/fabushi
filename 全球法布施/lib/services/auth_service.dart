@@ -70,6 +70,8 @@ class AuthService {
 
   // 从外部直接设置认证信息（例如，从Web URL hash登录时）
   Future<void> setAuth(String token, UserModel user) async {
+    _currentToken = token;
+    _currentUser = user;
     await _saveAuth(token, user);
   }
   
@@ -304,22 +306,34 @@ class AuthService {
   
   // 验证当前token是否有效
   Future<bool> verifyToken() async {
-    if (_currentToken == null) return false;
+    print('🔑 verifyToken: 开始验证');
+    print('🔑 _currentToken: ${_currentToken?.substring(0, 20)}...');
+    
+    if (_currentToken == null) {
+      print('❌ verifyToken: _currentToken 为空');
+      return false;
+    }
     
     try {
+      print('🌐 请求 URL: ${UnifiedConfig.verifyUrl}');
       final response = await HttpService.get(
         UnifiedConfig.verifyUrl,
         useAuth: true,
       );
       
+      print('📥 响应状态码: ${response.statusCode}');
+      print('📥 响应内容: ${response.body}');
+      
       if (response.statusCode == 200) {
+        print('✅ token 验证成功');
         return true;
       } else {
+        print('❌ token 验证失败，执行登出');
         await logout();
         return false;
       }
     } catch (e) {
-      print('验证token失败: $e');
+      print('❌ 验证token失败: $e');
       await logout();
       return false;
     }
@@ -336,13 +350,17 @@ class AuthService {
   // 使用指定token获取用户信息
   Future<UserModel> _fetchUserInfoWithToken(String token) async {
     try {
-      final response = await http.get(
-        Uri.parse(UnifiedConfig.userInfoUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      ).timeout(UnifiedConfig.requestTimeout);
+      // 临时设置token以便使用HttpService
+      final oldToken = _currentToken;
+      _currentToken = token;
+      
+      final response = await HttpService.get(
+        UnifiedConfig.userInfoUrl,
+        useAuth: true,
+      );
+      
+      // 恢复原token
+      _currentToken = oldToken;
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

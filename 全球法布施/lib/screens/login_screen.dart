@@ -63,12 +63,21 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
 
-  Future<void> _handleAlipayCallback(String authCode) async {
+  Future<void> _handleAlipayCallback(Map<String, dynamic> params) async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
     
-    // 尝试支付宝登录，如果是新用户则自动注册
+    // 尝试支付宝一键注册（如果是新用户）或登录（如果是已存在用户）
     try {
-      final success = await authModel.alipayRegister('', '', authCode);
+      final alipayUserId = params['alipay_user_id'] as String?;
+      final alipayNickname = params['alipay_nickname'] as String?;
+      final alipayAvatar = params['alipay_avatar'] as String?;
+      final authCode = params['alipay_auth_code'] as String?;
+      
+      final success = await authModel.alipayOneClickRegister(
+        alipayUserId ?? authCode ?? '',
+        alipayNickname,
+        alipayAvatar,
+      );
       
       if (success && mounted) {
         Navigator.of(context).pop();
@@ -134,60 +143,83 @@ class _LoginScreenState extends State<LoginScreen> {
       // 检查是否包含支付宝授权码
       if (params.containsKey('alipay_auth_code')) {
         final authCode = params['alipay_auth_code']!;
-        debugPrint('提取到支付宝授权码: $authCode');
-        debugPrint('所有参数: $params'); // 添加调试信息
+        final alipayUserId = params['alipay_user_id'];
+        final alipayNickname = params['alipay_nickname'];
+        final alipayAvatar = params['alipay_avatar'];
+        final isNewUser = params['isNewUser'] == 'true';
+        final token = params['token'];
+        final username = params['username'];
         
-        // 检查是否直接包含token（已存在用户）
-        if (params.containsKey('token')) {
-          final token = params['token']!;
-          final username = params['username']!;
-          
-          debugPrint('macOS支付宝登录成功，用户已存在: $username');
-          
-          // 直接使用token登录
-          final authModel = Provider.of<AuthModel>(context, listen: false);
-          await authModel.loginWithToken(token, username);
-          
-          if (mounted) {
-            Navigator.of(context).pop(); // 返回主界面
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('支付宝登录成功！欢迎 $username'),
-                backgroundColor: Colors.green,
-              ),
-            );
+        debugPrint('提取到支付宝授权码: $authCode');
+        debugPrint('所有参数: $params');
+        
+        final authModel = Provider.of<AuthModel>(context, listen: false);
+        bool success = false;
+        
+        // 如果是已注册用户且有token，直接使用token登录
+        if (!isNewUser && token != null && username != null) {
+          debugPrint('用户已注册，使用token直接登录');
+          try {
+            await authModel.loginWithToken(token, username);
+            success = true;
+          } catch (e) {
+            debugPrint('使用token登录失败: $e');
+            success = false;
           }
         } else {
-          // 新用户，使用支付宝用户信息自动注册
-          final alipayUserId = params['alipay_user_id'] ?? '';
-          final alipayNickname = params['alipay_nickname'] ?? '支付宝用户';
-          final alipayAvatar = params['alipay_avatar'] ?? '';
-          
-          debugPrint('macOS支付宝新用户注册: $alipayNickname ($alipayUserId)');
-          
-          // 使用支付宝用户信息自动注册并登录
-          final authModel = Provider.of<AuthModel>(context, listen: false);
-          final success = await authModel.alipayRegister(
-            alipayNickname, // 使用支付宝昵称作为用户名
-            '$alipayUserId@alipay.user', // 生成邮箱
-            authCode,
+          // 新用户，使用一键注册
+          debugPrint('新用户，调用一键注册');
+          success = await authModel.alipayOneClickRegister(
+            alipayUserId ?? authCode,
+            alipayNickname,
+            alipayAvatar,
           );
-          
-          debugPrint('支付宝注册结果: success=$success, error=${authModel.error}');
-          
-          if (success && mounted) {
-            Navigator.of(context).pop(); // 返回主界面
+        }
+        
+        debugPrint('支付宝一键注册结果: success=$success, error=${authModel.error}');
+        
+        if (success && mounted) {
+          Navigator.of(context).pop(); // 返回主界面
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('支付宝登录成功！欢迎 ${authModel.currentUser?.username}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else if (mounted) {
+          // 检查是否是授权码无效错误
+          final error = authModel.error ?? '';
+          if (error.contains('授权码code无效') || error.contains('isv.code-invalid') || 
+              error.contains('授权码已过期') || error.contains('授权码已被使用')) {
+            // 授权码无效，提示用户重新尝试
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('支付宝登录成功！欢迎 $alipayNickname'),
-                backgroundColor: Colors.green,
+                content: Text('授权码已过期或已被使用，请重新点击支付宝登录'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 3),
+                action: SnackBarAction(
+                  label: '重新登录',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    _handleAlipayOneClickRegister();
+                  },
+                ),
               ),
             );
-          } else if (mounted) {
-            // 注册失败，显示错误信息
+          } else if (error.contains('配置错误') || error.contains('CONFIG_ERROR')) {
+            // 配置错误，提示联系技术支持
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(authModel.error ?? '支付宝登录失败，请重试'),
+                content: Text('支付宝服务配置错误，请联系技术支持'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          } else {
+            // 其他错误，显示错误信息
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(error),
                 backgroundColor: Colors.red,
               ),
             );
@@ -257,6 +289,51 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('支付宝登录出错: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleAlipayOneClickRegister() async {
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    
+    try {
+      // macOS平台需要特殊处理
+      String? platform;
+      if (!kIsWeb && Platform.isMacOS) {
+        platform = 'macos';
+      }
+      
+      final result = await authModel.getAlipayLoginUrl(platform: platform);
+      
+      if (result['success'] == true && result['loginUrl'] != null) {
+        final loginUrl = result['loginUrl'] as String;
+        
+        // 直接跳转到支付宝登录页面，不再经过HTML登录页面
+        final uri = Uri.parse(loginUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else if (kIsWeb) {
+          // 如果无法打开，在Web平台上使用window.open
+          _platformService.openUrl(loginUrl, '_self');
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['error'] ?? '获取支付宝登录链接失败'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('支付宝一键注册出错: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -478,6 +555,32 @@ class _LoginScreenState extends State<LoginScreen> {
                               icon: const Icon(Icons.account_balance_wallet), // 使用钱包图标代替支付图标
                               label: const Text(
                                 '支付宝登录',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+
+                        // 支付宝一键注册按钮
+                        Consumer<AuthModel>(
+                          builder: (context, authModel, child) {
+                            return OutlinedButton.icon(
+                              onPressed: authModel.isLoading ? null : _handleAlipayOneClickRegister,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF1677FF), // 支付宝蓝色
+                                side: const BorderSide(color: Color(0xFF1677FF)),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(Icons.account_balance_wallet), // 使用钱包图标
+                              label: const Text(
+                                '支付宝一键注册',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,

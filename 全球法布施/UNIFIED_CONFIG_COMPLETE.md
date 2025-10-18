@@ -57,7 +57,7 @@
 平台: Web
 当前后端URL: https://ombhrum.com
 主要后端: https://ombhrum.com
-Cloudflare生产: https://fabushi-flutter-web-prod.bhrumom.workers.dev
+Cloudflare生产: https://flutter.ombhrum.com
 Cloudflare开发: https://fabushi-flutter-web-dev.bhrumom.workers.dev
 本地开发: http://localhost:8787
 启用日志: true
@@ -70,9 +70,9 @@ Cloudflare开发: https://fabushi-flutter-web-dev.bhrumom.workers.dev
 
 ### 之前的问题
 ```
-重试 POST https://fabushi-flutter-web-prod.bhrumom.workers.dev/api/auth/login (第 1 次)
-重试 POST https://fabushi-flutter-web-prod.bhrumom.workers.dev/api/auth/login (第 2 次)
-HTTP POST https://fabushi-flutter-web-prod.bhrumom.workers.dev/api/auth/login 失败
+重试 POST https://flutter.ombhrum.com/api/auth/login (第 1 次)
+重试 POST https://flutter.ombhrum.com/api/auth/login (第 2 次)
+HTTP POST https://flutter.ombhrum.com/api/auth/login 失败
 ```
 
 ### 现在的解决方案
@@ -111,7 +111,7 @@ await UnifiedConfig.switchToEnvironment(ApiEnvironment.production);
 ## 📋 配置优先级
 
 1. **主要后端**: `https://ombhrum.com` (首选)
-2. **Cloudflare生产**: `https://fabushi-flutter-web-prod.bhrumom.workers.dev`
+2. **Cloudflare生产**: `https://flutter.ombhrum.com`
 3. **Cloudflare开发**: `https://fabushi-flutter-web-dev.bhrumom.workers.dev`
 4. **本地开发**: `http://localhost:8787`
 
