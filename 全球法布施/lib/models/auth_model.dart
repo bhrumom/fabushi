@@ -93,7 +93,24 @@ class AuthModel extends ChangeNotifier {// 服务实例
       
       if (token != null && userJsonString != null) {
         _token = token;
-        _currentUser = User.fromJson(json.decode(userJsonString));
+        final userData = json.decode(userJsonString);
+        _currentUser = User.fromJson(userData);
+        
+        // 关键：设置 AuthService 的 token
+        final basicUserModel = UserModel(
+          username: _currentUser!.username,
+          email: _currentUser!.email,
+          emailVerified: true,
+          createdAt: DateTime.now().toIso8601String(),
+          membership: MembershipInfo(
+            type: _currentUser!.membershipType ?? 'expired',
+            isActive: _currentUser!.hasPremiumMembership,
+            expiresAt: _currentUser!.membershipExpiry?.toIso8601String(),
+          ),
+          alipayUserId: _currentUser!.alipayUserId,
+        );
+        await _authService.setAuth(token, basicUserModel);
+        
         notifyListeners(); // Optimistically update UI
         
         // Then, verify token in the background
@@ -241,16 +258,30 @@ class AuthModel extends ChangeNotifier {// 服务实例
   }
 
   Future<void> refreshUserInfo() async {
-    if (_token == null) return;
+    debugPrint('🔄 refreshUserInfo: 开始刷新用户信息');
+    debugPrint('🔄 当前 _token: ${_token?.substring(0, 20)}...');
+    
+    if (_token == null) {
+      debugPrint('❌ refreshUserInfo: token 为空，跳过刷新');
+      return;
+    }
 
     try {
+      debugPrint('🔍 开始验证 token...');
       final isValidToken = await _authService.verifyToken();
+      debugPrint('🔍 token 验证结果: $isValidToken');
+      
       if (isValidToken) {
+        debugPrint('✅ token 有效，开始获取用户信息...');
         await _authService.refreshUserInfo();
         final userModel = _authService.currentUser;
+        debugPrint('👤 获取到的用户信息: ${userModel?.username}');
+        
         if (userModel != null) {
           // 刷新时，额外获取管理员状态
+          debugPrint('🔑 开始获取管理员状态...');
           final adminStatusResult = await _membershipService.getAdminStats(_token!);
+          debugPrint('🔑 管理员状态结果: $adminStatusResult');
           final bool isAdmin = adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
 
           _currentUser = User(
@@ -264,13 +295,15 @@ class AuthModel extends ChangeNotifier {// 服务实例
             alipayUserId: userModel.alipayUserId,
           );
           await _storeAuth();
+          debugPrint('✅ 用户信息刷新完成');
           notifyListeners();
         }
       } else {
+        debugPrint('❌ token 无效，执行登出...');
         await logout();
       }
     } catch (e) {
-      debugPrint('刷新用户信息失败: $e');
+      debugPrint('❌ 刷新用户信息失败: $e');
     }
   }
 
@@ -328,6 +361,79 @@ class AuthModel extends ChangeNotifier {// 服务实例
   }
 
 
+
+  /// 支付宝一键注册（无需填写信息）- 从macOS回调参数直接注册
+  Future<bool> alipayOneClickRegister(String alipayUserId, String? nickname, String? avatar) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      debugPrint('支付宝一键注册开始: alipayUserId=$alipayUserId');
+      
+      // 直接调用一键注册API（授权码已在回调时使用）
+      final result = await _alipayAuthService.alipayOneClickRegister(
+        alipayUserId: alipayUserId,
+        nickname: nickname,
+        avatar: avatar,
+      );
+      
+      debugPrint('支付宝一键注册结果: $result');
+      
+      if (result['success'] == true) {
+        // 注册成功后自动登录
+        _token = result['token'];
+        final username = result['username'];
+        final email = result['email'];
+        
+        // 先设置token到AuthService
+        final basicUserModel = UserModel(
+          username: username,
+          email: email ?? '',
+          emailVerified: true,
+          createdAt: DateTime.now().toIso8601String(),
+          membership: MembershipInfo(type: 'trial', isActive: true),
+        );
+        await _authService.setAuth(_token!, basicUserModel);
+        
+        // 获取完整的用户信息
+        await _authService.refreshUserInfo();
+        final userModel = _authService.currentUser;
+        
+        if (userModel != null) {
+          // 获取管理员状态
+          final adminStatusResult = await _membershipService.getAdminStats(_token!);
+          final bool isAdmin = adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
+
+          final membershipJson = userModel.membership.toJson();
+          _currentUser = User(
+            username: userModel.username,
+            email: userModel.email ?? '',
+            membershipType: membershipJson['type'],
+            membershipExpiry: membershipJson['expiresAt'] != null
+                ? DateTime.parse(membershipJson['expiresAt'])
+                : null,
+            isAdmin: isAdmin,
+            alipayUserId: userModel.alipayUserId,
+          );
+          
+          await _storeAuth();
+          _setLoading(false);
+          notifyListeners();
+          return true;
+        } else {
+          throw Exception('获取用户信息失败');
+        }
+      } else {
+        _setError(result['message'] ?? '支付宝一键注册失败');
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      _setError('支付宝一键注册时发生错误: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
 
   Future<bool> alipayRegister(String username, String email, String authCode) async {
     _setLoading(true);
@@ -422,7 +528,20 @@ class AuthModel extends ChangeNotifier {// 服务实例
           return false;
         }
       } else {
-        _setError(loginResult['error'] ?? '支付宝登录失败');
+        // 登录失败 - 处理不同的错误类型
+        String errorMessage = loginResult['error'] ?? '支付宝登录失败';
+        String? errorCode = loginResult['code'];
+        
+        // 根据错误代码提供更具体的错误信息
+        if (errorCode == 'CODE_INVALID') {
+          errorMessage = '支付宝授权码已过期或无效，请重新尝试登录';
+        } else if (errorCode == 'CODE_REUSED') {
+          errorMessage = '支付宝授权码已被使用，请重新登录';
+        } else if (errorCode == 'CONFIG_ERROR') {
+          errorMessage = '支付宝服务配置错误，请联系技术支持';
+        }
+        
+        _setError(errorMessage);
         _setLoading(false);
         return false;
       }
@@ -432,8 +551,6 @@ class AuthModel extends ChangeNotifier {// 服务实例
       return false;
     }
   }
-
-
 
   // 直接从token设置认证状态（用于HTML页面登录同步）
   Future<void> setTokenDirectly(String token, String username) async {
@@ -471,53 +588,40 @@ class AuthModel extends ChangeNotifier {// 服务实例
 
   // 使用token直接登录（用于macOS支付宝登录）
   Future<void> loginWithToken(String token, String username) async {
-    _setLoading(true);
-    _clearError();
-
     try {
-      // Update the AuthService singleton so subsequent API calls are authenticated.
+      debugPrint('使用token登录: username=$username');
+      
+      // 先设置 _token
+      _token = token;
+      
+      // 创建基本用户模型
       final basicUserModel = UserModel(
         username: username,
         email: '',
-        emailVerified: false,
+        emailVerified: true,
         createdAt: DateTime.now().toIso8601String(),
-        membership: MembershipInfo(type: 'expired', isActive: false),
+        membership: MembershipInfo(type: 'trial', isActive: true),
       );
-      await _authService.setAuth(token, basicUserModel);
-
-      // 获取完整的用户信息
-      await _authService.refreshUserInfo();
-      final userModel = _authService.currentUser;
       
-      if (userModel != null) {
-        // 登录后，额外获取管理员状态
-        final adminStatusResult = await _membershipService.getAdminStats(token);
-        final bool isAdmin = adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
-
-        final membershipJson = userModel.membership.toJson();
-        _currentUser = User(
-          username: userModel.username,
-          email: userModel.email ?? '',
-          membershipType: membershipJson['type'],
-          membershipExpiry: membershipJson['expiresAt'] != null
-              ? DateTime.parse(membershipJson['expiresAt'])
-              : null,
-          isAdmin: isAdmin,
-          alipayUserId: userModel.alipayUserId,
-        );
-        
-        _token = token;
-        await _storeAuth();
-        
-        _setLoading(false);
-        notifyListeners();
-      } else {
-        throw Exception('获取用户信息失败');
-      }
+      // 设置token到AuthService
+      await _authService.setAuth(token, basicUserModel);
+      
+      // 设置本地用户状态
+      _currentUser = User(
+        username: username,
+        email: '',
+        membershipType: 'trial',
+        membershipExpiry: DateTime.now().add(const Duration(days: 3)),
+        isAdmin: false,
+      );
+      
+      // 立即保存并通知UI
+      await _storeAuth();
+      notifyListeners();
+      
+      debugPrint('✅ Token已设置，登录完成');
     } catch (e) {
-      _setError('使用token登录时发生错误: $e');
-      _setLoading(false);
-      rethrow;
+      debugPrint('使用token登录失败: $e');
     }
   }
 

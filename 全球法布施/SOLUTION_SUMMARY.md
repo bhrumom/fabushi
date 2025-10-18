@@ -4,7 +4,7 @@
 
 用户反馈："所有平台统一使用这个配置部署后地址，总是出现登录出错，就是后端api不对，统一管理起来"
 
-从错误日志可以看出，应用尝试连接到 `https://fabushi-flutter-web-prod.bhrumom.workers.dev/api/auth/login` 但连接失败，导致登录功能无法正常工作。
+从错误日志可以看出，应用尝试连接到 `https://flutter.ombhrum.com/api/auth/login` 但连接失败，导致登录功能无法正常工作。
 
 ## 解决方案
 
@@ -19,7 +19,7 @@
 
 2. **智能后端地址选择**
    - 主要后端：`https://ombhrum.com` (推荐)
-   - Cloudflare Worker 生产：`https://fabushi-flutter-web-prod.bhrumom.workers.dev`
+   - Cloudflare Worker 生产：`https://flutter.ombhrum.com`
    - Cloudflare Worker 开发：`https://fabushi-flutter-web-dev.bhrumom.workers.dev`
    - 本地开发：`http://localhost:8787`
 
@@ -48,7 +48,7 @@
 平台: Web
 当前后端URL: https://ombhrum.com
 主要后端: https://ombhrum.com
-Cloudflare生产: https://fabushi-flutter-web-prod.bhrumom.workers.dev
+Cloudflare生产: https://flutter.ombhrum.com
 Cloudflare开发: https://fabushi-flutter-web-dev.bhrumom.workers.dev
 本地开发: http://localhost:8787
 启用日志: true

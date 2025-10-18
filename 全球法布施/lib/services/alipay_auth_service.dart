@@ -67,7 +67,7 @@ class AlipayAuthService {
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
-          'authCode': authCode,
+          'auth_code': authCode,
           'state': state,
         }),
       );
@@ -153,6 +153,53 @@ class AlipayAuthService {
       }
     } catch (e) {
       debugPrint('支付宝注册失败: $e');
+      return {
+        'success': false,
+        'message': '网络连接失败',
+      };
+    }
+  }
+
+  /// 支付宝一键注册（自动生成用户名和邮箱）
+  Future<Map<String, dynamic>> alipayOneClickRegister({
+    required String alipayUserId,
+    String? nickname,
+    String? avatar,
+  }) async {
+    try {
+      final url = await baseUrl;
+      final response = await http.post(
+        Uri.parse('$url/api/auth/alipay/register'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'alipayUserId': alipayUserId,
+          'alipayNickname': nickname,
+          'alipayAvatar': avatar,
+          'oneClick': true,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        return {
+          'success': true,
+          'token': data['token'],
+          'username': data['username'],
+          'email': data['email'],
+          'message': data['message'] ?? '一键注册成功',
+          'isOneClick': data['isOneClick'] ?? true,
+        };
+      } else {
+        final data = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': data['error'] ?? '支付宝一键注册失败',
+        };
+      }
+    } catch (e) {
+      debugPrint('支付宝一键注册失败: $e');
       return {
         'success': false,
         'message': '网络连接失败',

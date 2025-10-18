@@ -90,7 +90,7 @@ Uses Provider pattern with multiple models:
 ### Backend Integration
 - **Primary Backend**: `https://ombhrum.com`
 - **Cloudflare Workers**: 
-  - Production: `https://fabushi-flutter-web-prod.bhrumom.workers.dev`
+  - Production: `https://flutter.ombhrum.com`
   - Development: `https://fabushi-flutter-web-dev.bhrumom.workers.dev`
 - **Features**: JWT authentication, Stripe payments, email verification, membership system
 

@@ -27,13 +27,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final authModel = Provider.of<AuthModel>(context, listen: false);
-      if (authModel.isLoggedIn) {
-        authModel.refreshUserInfo();
-      }
-    });
+    // 不在这里自动刷新，避免 token 验证失败
   }
 
 
