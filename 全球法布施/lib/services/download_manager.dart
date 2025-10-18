@@ -277,6 +277,11 @@ class DownloadManager {
   /// Web平台下载
   Future<void> _downloadForWeb(DownloadTask task) async {
     try {
+      // 确保只在Web平台执行
+      if (!kIsWeb) {
+        throw Exception('Web下载方法只能在Web平台使用');
+      }
+      
       // 使用流式请求来支持进度更新和取消
       final request = http.Request('GET', Uri.parse(task.url));
       final response = await http.Client().send(request);
@@ -354,6 +359,8 @@ class DownloadManager {
   /// 获取已下载文件（Web平台）
   Future<Uint8List?> getDownloadedFile(String fileName) async {
     try {
+      if (!kIsWeb) return null; // 非Web平台直接返回null
+      
       final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
       final List<dynamic> savedFiles = json.decode(savedFilesStr);
       

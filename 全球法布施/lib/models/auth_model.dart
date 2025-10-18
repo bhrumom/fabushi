@@ -61,7 +61,7 @@ class User {
     return membershipType == 'paid' && hasPremiumMembership;
   }
 
-  bool get hasAlipayBinding => alipayUserId != null;
+
 }
 
 class AuthModel extends ChangeNotifier {// 服务实例
@@ -327,47 +327,102 @@ class AuthModel extends ChangeNotifier {// 服务实例
     }
   }
 
-  Future<bool> bindAlipay(String alipayUserId) async {
-    if (_token == null) {
-      _setError('请先登录');
-      return false;
-    }
 
-    try {
-      final result = await _alipayAuthService.bindAlipay(alipayUserId, '', '');
-      
-      if (result['success'] == true) {
-        // 绑定成功后刷新用户信息
-        await refreshUserInfo();
-        return true;
-      } else {
-        _setError(result['error'] ?? '绑定支付宝失败');
-        return false;
-      }
-    } catch (e) {
-      _setError('绑定支付宝时发生错误: $e');
-      return false;
-    }
-  }
 
   Future<bool> alipayRegister(String username, String email, String authCode) async {
     _setLoading(true);
     _clearError();
 
     try {
-      final result = await _alipayAuthService.alipayRegister(
-        alipayUserId: authCode, // 临时处理，实际需要解析authCode获取alipayUserId
-        username: username,
-        password: '', // 临时处理，实际需要用户输入或安全获取
-        email: email,
-      );
+      debugPrint('支付宝注册开始: username=$username, email=$email, authCode=$authCode');
       
-      if (result['success'] == true) {
-        // 注册成功后自动登录
+      // 首先尝试使用授权码直接登录（可能后端已经自动创建了用户）
+      final loginResult = await _alipayAuthService.alipayLogin(authCode, null);
+      
+      debugPrint('支付宝登录结果: $loginResult');
+      
+      if (loginResult['success'] == true) {
+        // 如果登录成功，直接使用返回的用户信息
+        _token = loginResult['token'];
+        final userJson = loginResult['user'];
+        
+        // 获取管理员状态
+        final adminStatusResult = await _membershipService.getAdminStats(_token!);
+        final bool isAdmin = adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
+
+        final membershipJson = userJson['membership'] ?? {};
+        _currentUser = User(
+          username: userJson['username'] ?? '',
+          email: userJson['email'] ?? '',
+          membershipType: membershipJson['type'],
+          membershipExpiry: membershipJson['expiresAt'] != null
+              ? DateTime.parse(membershipJson['expiresAt'])
+              : null,
+          isAdmin: isAdmin,
+          alipayUserId: userJson['alipayUserId'],
+        );
+        
+        await _storeAuth();
         _setLoading(false);
-        return await alipayLogin(authCode);
+        notifyListeners();
+        return true;
+      } else if (loginResult['needsRegistration'] == true) {
+        // 如果是新用户需要注册，使用支付宝用户信息自动注册
+        final alipayUser = loginResult['alipayUser'];
+        
+        debugPrint('需要注册新用户，支付宝用户信息: $alipayUser');
+        
+        // 生成默认的用户名和邮箱（如果未提供）
+        final autoUsername = username.isNotEmpty ? username : 
+                           (alipayUser?['nick_name'] ?? '支付宝用户_${DateTime.now().millisecondsSinceEpoch}');
+        final autoEmail = email.isNotEmpty ? email : 
+                         '${alipayUser?['user_id'] ?? authCode}@alipay.user';
+        
+        debugPrint('支付宝新用户自动注册: username=$autoUsername, email=$autoEmail');
+        
+        final result = await _alipayAuthService.alipayRegister(
+          alipayUserId: alipayUser?['user_id'] ?? authCode,
+          username: autoUsername,
+          password: '', // 支付宝用户不需要密码
+          email: autoEmail,
+          nickname: alipayUser?['nick_name'],
+          avatar: alipayUser?['avatar'],
+        );
+        
+        debugPrint('支付宝注册结果: $result');
+        
+        if (result['success'] == true) {
+          // 注册成功后自动登录
+          _token = result['token'];
+          final userJson = result['user'];
+          
+          // 获取管理员状态
+          final adminStatusResult = await _membershipService.getAdminStats(_token!);
+          final bool isAdmin = adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
+
+          final membershipJson = userJson['membership'] ?? {};
+          _currentUser = User(
+            username: userJson['username'] ?? '',
+            email: userJson['email'] ?? '',
+            membershipType: membershipJson['type'],
+            membershipExpiry: membershipJson['expiresAt'] != null
+                ? DateTime.parse(membershipJson['expiresAt'])
+                : null,
+            isAdmin: isAdmin,
+            alipayUserId: userJson['alipayUserId'],
+          );
+          
+          await _storeAuth();
+          _setLoading(false);
+          notifyListeners();
+          return true;
+        } else {
+          _setError(result['error'] ?? '支付宝注册失败');
+          _setLoading(false);
+          return false;
+        }
       } else {
-        _setError(result['error'] ?? '支付宝注册失败');
+        _setError(loginResult['error'] ?? '支付宝登录失败');
         _setLoading(false);
         return false;
       }
@@ -378,28 +433,7 @@ class AuthModel extends ChangeNotifier {// 服务实例
     }
   }
 
-  Future<bool> unbindAlipay() async {
-    if (_token == null) {
-      _setError('请先登录');
-      return false;
-    }
 
-    try {
-      final result = await _alipayAuthService.unbindAlipay(_token!);
-      
-      if (result['success'] == true) {
-        // 解绑成功后刷新用户信息
-        await refreshUserInfo();
-        return true;
-      } else {
-        _setError(result['error'] ?? '解绑支付宝失败');
-        return false;
-      }
-    } catch (e) {
-      _setError('解绑支付宝时发生错误: $e');
-      return false;
-    }
-  }
 
   // 直接从token设置认证状态（用于HTML页面登录同步）
   Future<void> setTokenDirectly(String token, String username) async {

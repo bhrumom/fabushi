@@ -254,7 +254,7 @@
                 alipay_user_id: params.get('alipay_user_id'),
                 alipay_nickname: params.get('alipay_nickname'),
                 alipay_avatar: params.get('alipay_avatar'),
-                needs_binding: params.get('needs_binding')
+                needs_registration: params.get('needs_registration')
             };
         }
 
@@ -279,98 +279,123 @@
             window.location.href = '/index.html';
         }
 
-        // 显示绑定表单
-        function showBindingForm(alipayData) {
+        // 显示注册表单
+        function showRegistrationForm(alipayData) {
             const formContainer = document.getElementById('login-form-container');
             formContainer.innerHTML = `
-                <h3 style="margin-bottom: 20px; color: #333;">绑定账号</h3>
-                <div style="display: flex; align-items: center; margin-bottom: 20px; padding: 15px; background: #f5f5f5; border-radius: 8px;">
-                    <img src="${alipayData.alipay_avatar}" alt="头像" style="width: 50px; height: 50px; border-radius: 50%; margin-right: 15px;">
-                    <div style="text-align: left;">
-                        <div style="font-weight: 500; color: #333;">${alipayData.alipay_nickname}</div>
-                        <div style="font-size: 12px; color: #999;">支付宝用户ID: ${alipayData.alipay_user_id}</div>
-                    </div>
+                <h3 style="margin-bottom: 20px; color: #333;">创建新账号</h3>
+                <div style="margin-bottom: 20px; padding: 15px; background: #e6f7ff; border-radius: 8px; border-left: 4px solid #1890ff;">
+                    <p style="color: #666; margin-bottom: 0;">请填写以下信息完成账号创建</p>
                 </div>
-                <form class="login-form" id="bindingForm">
+                <form class="login-form" id="registrationForm">
                     <div class="form-group">
-                        <label for="bindEmail">邮箱</label>
-                        <input type="email" id="bindEmail" name="email" required placeholder="请输入邮箱">
+                        <label for="reg-username">用户名</label>
+                        <input type="text" id="reg-username" name="username" required placeholder="请输入用户名">
                     </div>
                     <div class="form-group">
-                        <label for="bindPassword">密码</label>
-                        <input type="password" id="bindPassword" name="password" required placeholder="请输入密码">
+                        <label for="reg-email">邮箱</label>
+                        <input type="email" id="reg-email" name="email" required placeholder="请输入邮箱">
                     </div>
-                    <button type="submit" class="login-btn">绑定并登录</button>
+                    <div class="form-group">
+                        <label for="reg-password">密码</label>
+                        <input type="password" id="reg-password" name="password" required placeholder="请输入密码（至少6位）">
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-confirm-password">确认密码</label>
+                        <input type="password" id="reg-confirm-password" name="confirmPassword" required placeholder="请再次输入密码">
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-captcha">验证码</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="reg-captcha" name="captcha" required placeholder="请输入验证码" style="flex: 1;">
+                            <button type="button" id="send-captcha-btn" class="captcha-btn" onclick="sendRegistrationCaptcha()">发送验证码</button>
+                        </div>
+                    </div>
+                    <button type="submit" class="login-btn">创建账号</button>
+                    <button type="button" class="skip-btn" onclick="handleSkipRegistration()">跳过注册</button>
                 </form>
                 <div style="text-align: center; margin-top: 15px;">
-                    <p style="color: #666; font-size: 14px; margin-bottom: 10px;">还没有账号？</p>
-                    <button type="button" class="alipay-login" onclick="showRegisterForm()" style="margin-bottom: 10px;">
-                        注册新账号
-                    </button>
-                    <button type="button" class="alipay-login" onclick="handleSkipBinding()" style="background-color: #f5f5f5; color: #666;">
-                        跳过绑定，以后再说
-                    </button>
+                    <a href="#" onclick="showLoginForm()" style="color: #1890ff;">已有账号？立即登录</a>
                 </div>
             `;
 
-            document.getElementById('bindingForm').addEventListener('submit', async (e) => {
+            // 绑定表单提交事件
+            document.getElementById('registrationForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
-                await handleBinding(alipayData);
+                await handleRegistration(alipayData);
             });
         }
 
-        // 处理绑定
-        async function handleBinding(alipayData) {
-            const email = document.getElementById('bindEmail').value;
-            const password = document.getElementById('bindPassword').value;
+        // 处理注册
+        async function handleRegistration(alipayData) {
+            const username = document.getElementById('regUsername').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const confirmPassword = document.getElementById('regConfirmPassword').value;
+
+            // 验证密码匹配
+            if (password !== confirmPassword) {
+                showMessage('两次输入的密码不一致', 'error');
+                return;
+            }
 
             showLoading();
 
             try {
-                const response = await fetch('/api/auth/alipay/bind', {
+                // 先发送验证码
+                const sendCodeResponse = await fetch('/api/auth/send-verification-code', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email })
+                });
+
+                if (!sendCodeResponse.ok) {
+                    showMessage('发送验证码失败', 'error');
+                    return;
+                }
+
+                // 显示验证码输入框
+                const verificationCode = prompt('验证码已发送到您的邮箱，请输入验证码：');
+                if (!verificationCode) {
+                    showMessage('请输入验证码', 'error');
+                    return;
+                }
+
+                const response = await fetch('/api/auth/alipay/register', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
                         alipayUserId: alipayData.alipay_user_id,
-                        email: email,
+                        username: username,
                         password: password,
+                        email: email,
                         nickname: alipayData.alipay_nickname,
-                        avatar: alipayData.alipay_avatar
+                        avatar: alipayData.alipay_avatar,
+                        verificationCode: verificationCode
                     })
                 });
 
                 const result = await response.json();
 
                 if (response.ok && result.token) {
-                    // 绑定成功，保存token并跳转
-                    // 使用与Flutter应用相同的键名存储token
+                    // 注册成功，保存token并跳转
                     localStorage.setItem('auth_token', result.token);
                     localStorage.setItem('username', result.username);
-                    showMessage('绑定成功！', 'success');
+                    showMessage('注册成功！', 'success');
                     setTimeout(() => {
-                        // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
                         window.location.href = `/index.html#token=${result.token}&username=${result.username}`;
                     }, 1500);
                 } else {
-                    // 绑定失败，显示具体错误信息
-                    let errorMsg = '绑定失败';
+                    let errorMsg = '注册失败';
                     if (result.error) {
                         errorMsg = result.error;
                     } else if (result.message) {
                         errorMsg = result.message;
                     }
-                    
-                    // 根据错误类型给出建议
-                    if (errorMsg.includes('邮箱未注册')) {
-                        errorMsg += '，请先注册账号或使用已有账号登录';
-                    } else if (errorMsg.includes('密码错误')) {
-                        errorMsg += '，请检查密码是否正确';
-                    } else if (errorMsg.includes('已绑定')) {
-                        errorMsg += '，请使用其他账号登录';
-                    }
-                    
                     showMessage(errorMsg, 'error');
                 }
             } catch (error) {
@@ -386,38 +411,43 @@
         }
         
         // 显示注册表单
-        function showRegisterForm() {
+        function showRegistrationForm() {
             const loginContainer = document.querySelector('.login-container');
             loginContainer.innerHTML = `
                 <div class="logo">法</div>
                 <h1>全球法布施</h1>
-                <p class="subtitle">注册新账号</p>
+                <p class="subtitle">创建新账号</p>
                 <div id="message-container"></div>
                 <div class="login-form">
-                    <form id="register-form">
+                    <form id="registrationForm">
                         <div class="form-group">
-                            <label for="register-username">用户名</label>
-                            <input type="text" id="register-username" name="username" required placeholder="请输入用户名">
+                            <label for="reg-username">用户名</label>
+                            <input type="text" id="reg-username" name="username" required placeholder="请输入用户名">
                         </div>
                         <div class="form-group">
-                            <label for="register-email">邮箱</label>
-                            <input type="email" id="register-email" name="email" required placeholder="请输入邮箱">
+                            <label for="reg-email">邮箱</label>
+                            <input type="email" id="reg-email" name="email" required placeholder="请输入邮箱">
                         </div>
                         <div class="form-group">
-                            <label for="register-password">密码</label>
-                            <input type="password" id="register-password" name="password" required placeholder="请输入密码（至少6位）" minlength="6">
+                            <label for="reg-password">密码</label>
+                            <input type="password" id="reg-password" name="password" required placeholder="请输入密码（至少6位）" minlength="6">
                         </div>
                         <div class="form-group">
-                            <label for="register-confirm-password">确认密码</label>
-                            <input type="password" id="register-confirm-password" name="confirmPassword" required placeholder="请再次输入密码">
+                            <label for="reg-confirm-password">确认密码</label>
+                            <input type="password" id="reg-confirm-password" name="confirmPassword" required placeholder="请再次输入密码">
                         </div>
-                        <button type="submit" class="login-btn">注册</button>
+                        <div class="form-group">
+                            <label for="reg-captcha">验证码</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" id="reg-captcha" name="captcha" required placeholder="请输入验证码" style="flex: 1;">
+                                <button type="button" id="send-captcha-btn" class="captcha-btn" onclick="sendRegistrationCaptcha()">发送验证码</button>
+                            </div>
+                        </div>
+                        <button type="submit" class="login-btn">创建账号</button>
+                        <button type="button" class="skip-btn" onclick="handleSkipRegistration()">跳过注册</button>
                     </form>
                     <div style="text-align: center; margin-top: 15px;">
-                        <p style="color: #666; font-size: 14px; margin-bottom: 10px;">已有账号？</p>
-                        <button type="button" class="alipay-login" onclick="showLoginForm()" style="background-color: #f5f5f5; color: #666;">
-                            返回登录
-                        </button>
+                        <a href="#" onclick="showLoginForm()" style="color: #1890ff;">已有账号？立即登录</a>
                     </div>
                 </div>
                 <div class="footer">
@@ -425,50 +455,97 @@
                 </div>
             `;
             
-            // 如果有支付宝用户信息，自动填充邮箱
-            if (window.alipayUserInfo && window.alipayUserInfo.email) {
-                document.getElementById('register-email').value = window.alipayUserInfo.email;
+            // 绑定表单提交事件
+            document.getElementById('registrationForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await handleRegistration();
+            });
+        }
+
+        // 跳过注册（暂时跳过，后续可以重新注册）
+        function handleSkipRegistration() {
+            // 用户选择跳过注册，直接返回登录页面
+            showLoginForm();
+        }
+
+        // 发送注册验证码
+        async function sendRegistrationCaptcha() {
+            const email = document.getElementById('reg-email').value;
+            if (!email) {
+                showMessage('请先输入邮箱地址', 'error');
+                return;
             }
 
-            // 绑定注册表单提交事件
-            document.getElementById('register-form').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                
-                const username = document.getElementById('register-username').value;
-                const email = document.getElementById('register-email').value;
-                const password = document.getElementById('register-password').value;
-                const confirmPassword = document.getElementById('register-confirm-password').value;
-                
-                // 验证密码匹配
-                if (password !== confirmPassword) {
-                    showMessage('两次输入的密码不一致', 'error');
-                    return;
-                }
-                
-                showLoading();
-                
-                try {
-                    // 先发送验证码
-                const sendCodeResponse = await fetch('/api/auth/send-verification-code', {
+            const btn = document.getElementById('send-captcha-btn');
+            btn.disabled = true;
+            btn.textContent = '发送中...';
+
+            try {
+                const response = await fetch('/api/send-captcha', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({ email })
                 });
-                
-                if (!sendCodeResponse.ok) {
-                    showMessage('发送验证码失败', 'error');
-                    return;
+
+                if (response.ok) {
+                    showMessage('验证码已发送到您的邮箱', 'success');
+                    startCaptchaCountdown();
+                } else {
+                    const data = await response.json();
+                    showMessage(data.message || '发送失败，请稍后重试', 'error');
+                    btn.disabled = false;
+                    btn.textContent = '发送验证码';
                 }
+            } catch (error) {
+                console.error('发送验证码错误:', error);
+                showMessage('网络错误，请稍后重试', 'error');
+                btn.disabled = false;
+                btn.textContent = '发送验证码';
+            }
+        }
+
+        // 验证码倒计时
+        function startCaptchaCountdown() {
+            const btn = document.getElementById('send-captcha-btn');
+            let countdown = 60;
+            btn.disabled = true;
+            
+            const timer = setInterval(() => {
+                btn.textContent = `${countdown}秒后重试`;
+                countdown--;
                 
-                // 显示验证码输入框
-                const verificationCode = prompt('验证码已发送到您的邮箱，请输入验证码：');
-                if (!verificationCode) {
-                    showMessage('请输入验证码', 'error');
-                    return;
+                if (countdown < 0) {
+                    clearInterval(timer);
+                    btn.textContent = '发送验证码';
+                    btn.disabled = false;
                 }
-                
+            }, 1000);
+        }
+
+        // 处理注册
+        async function handleRegistration() {
+            const username = document.getElementById('reg-username').value;
+            const email = document.getElementById('reg-email').value;
+            const password = document.getElementById('reg-password').value;
+            const confirmPassword = document.getElementById('reg-confirm-password').value;
+            const captcha = document.getElementById('reg-captcha').value;
+            
+            // 验证密码匹配
+            if (password !== confirmPassword) {
+                showMessage('两次输入的密码不一致', 'error');
+                return;
+            }
+            
+            if (!captcha) {
+                showMessage('请输入验证码', 'error');
+                return;
+            }
+            
+            showLoading();
+            
+            try {
                 const response = await fetch('/api/auth/register', {
                     method: 'POST',
                     headers: {
@@ -478,104 +555,74 @@
                         username,
                         email,
                         password,
-                        verificationCode
+                        captcha
                     })
                 });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    // 注册成功后自动登录
+                    // 使用与Flutter应用相同的键名存储token
+                    localStorage.setItem('auth_token', result.token);
+                    localStorage.setItem('username', result.username);
                     
-                    const result = await response.json();
+                    // 注册成功，直接跳转
+                    showMessage('注册成功！正在跳转...', 'success');
                     
-                    if (response.ok) {
-                        // 注册成功后自动登录
-                        // 使用与Flutter应用相同的键名存储token
-                        localStorage.setItem('auth_token', result.token);
-                        localStorage.setItem('username', result.username);
-                        
-                        // 如果有支付宝用户信息，尝试绑定
-                        if (window.alipayUserInfo) {
-                            try {
-                                const bindResponse = await fetch('/api/auth/alipay/bind', {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json',
-                                        'Authorization': `Bearer ${result.token}`
-                                    },
-                                    body: JSON.stringify({
-                                        alipay_user_id: window.alipayUserInfo.user_id,
-                                        alipay_open_id: window.alipayUserInfo.open_id
-                                    })
-                                });
-                                
-                                const bindResult = await bindResponse.json();
-                                if (bindResponse.ok) {
-                                    showMessage('注册成功！支付宝账号已绑定，正在跳转...', 'success');
-                                } else {
-                                    showMessage('注册成功！但支付宝绑定失败：' + (bindResult.message || '未知错误') + '，正在跳转...', 'warning');
-                                }
-                            } catch (bindError) {
-                                console.error('支付宝绑定失败:', bindError);
-                                showMessage('注册成功！但支付宝绑定失败，正在跳转...', 'warning');
-                            }
-                        } else {
-                            showMessage('注册成功！正在跳转...', 'success');
-                        }
-                        
-                        setTimeout(() => {
-                            // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
-                            window.location.href = `/index.html#token=${result.token}&username=${result.username}`;
-                        }, 2000);
-                    } else {
-                        showMessage(result.message || '注册失败', 'error');
-                    }
-                } catch (error) {
-                    showMessage('网络错误，请重试', 'error');
-                } finally {
-                    hideLoading();
+                    setTimeout(() => {
+                        // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
+                        window.location.href = `/index.html#token=${result.token}&username=${result.username}`;
+                    }, 2000);
+                } else {
+                    showMessage(result.message || '注册失败', 'error');
                 }
-            });
+            } catch (error) {
+                showMessage('网络错误，请重试', 'error');
+            } finally {
+                hideLoading();
+            }
         }
 
-        // 处理跳过绑定
-        function handleSkipBinding() {
-            showMessage('您可以选择使用传统方式登录，或关闭页面后重新使用支付宝登录', 'info');
-            // 显示传统登录表单，让用户选择其他登录方式
-            const formContainer = document.getElementById('login-form-container');
-            formContainer.innerHTML = `
-                <h3 style="margin-bottom: 20px; color: #333;">选择登录方式</h3>
-                <div style="margin-bottom: 20px; padding: 15px; background: #f5f5f5; border-radius: 8px;">
-                    <p style="color: #666; margin-bottom: 15px;">您可以选择以下方式继续：</p>
-                    <button type="button" class="alipay-login" onclick="location.reload()" style="margin-bottom: 10px; width: 100%;">
-                        重新使用支付宝登录
-                    </button>
-                    <button type="button" class="alipay-login" onclick="handleGuestAccess()" style="margin-bottom: 10px; width: 100%; background: #52c41a;">
-                        游客模式体验
-                    </button>
-                    <button type="button" class="alipay-login" onclick="showRegisterForm()" style="margin-bottom: 10px; width: 100%; background: #fa8c16;">
-                        注册新账号
-                    </button>
-                </div>
-                <form class="login-form" id="loginForm">
-                    <div class="form-group">
-                        <label for="email">邮箱</label>
-                        <input type="email" id="email" name="email" required placeholder="请输入邮箱">
-                    </div>
-                    <div class="form-group">
-                        <label for="password">密码</label>
-                        <input type="password" id="password" name="password" required placeholder="请输入密码">
-                    </div>
-                    <button type="submit" class="login-btn">登录</button>
-                </form>
-                <div style="text-align: center; margin-top: 15px;">
-                    <a href="/register.html" style="color: #1890ff;">还没有账号？立即注册</a>
-                </div>
-            `;
+        // 显示加载状态
+        function showLoading() {
+            document.getElementById('loading-container').classList.remove('hidden');
+            document.getElementById('login-form-container').classList.add('hidden');
+        }
 
-            // 重新绑定传统登录表单事件
-            document.getElementById('loginForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const email = document.getElementById('email').value;
-                const password = document.getElementById('password').value;
-                await handleTraditionalLogin(email, password);
-            });
+        // 隐藏加载状态
+        function hideLoading() {
+            document.getElementById('loading-container').classList.add('hidden');
+            document.getElementById('login-form-container').classList.remove('hidden');
+        }
+
+        // 处理传统登录
+        async function handleTraditionalLogin(email, password) {
+            try {
+                showMessage('正在登录...', 'info');
+                
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showMessage('登录成功！正在跳转...', 'success');
+                    setTimeout(() => {
+                        window.location.href = data.redirectUrl || '/dashboard.html';
+                    }, 1500);
+                } else {
+                    showMessage(data.message || '登录失败，请检查邮箱和密码', 'error');
+                }
+            } catch (error) {
+                console.error('登录错误:', error);
+                showMessage('网络错误，请稍后重试', 'error');
+            }
         }
 
         // 处理游客模式访问
@@ -596,55 +643,6 @@
                 // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
                 window.location.href = `/index.html#token=${guestToken}&username=${guestUsername}`;
             }, 1500);
-        }
-
-        // 显示加载状态
-        function showLoading() {
-            document.getElementById('loading-container').classList.remove('hidden');
-            document.getElementById('login-form-container').classList.add('hidden');
-        }
-
-        // 隐藏加载状态
-        function hideLoading() {
-            document.getElementById('loading-container').classList.add('hidden');
-            document.getElementById('login-form-container').classList.remove('hidden');
-        }
-
-        // 处理传统登录
-        async function handleTraditionalLogin(email, password) {
-            showLoading();
-
-            try {
-                const response = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        email: email,
-                        password: password
-                    })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    // 使用与Flutter应用相同的键名存储token
-                    localStorage.setItem('auth_token', result.token);
-                    localStorage.setItem('username', result.username);
-                    showMessage('登录成功！', 'success');
-                    setTimeout(() => {
-                        // 将token通过URL hash传递给Flutter应用，确保Flutter能正确识别登录状态
-                        window.location.href = `/index.html#token=${result.token}&username=${result.username}`;
-                    }, 1500);
-                } else {
-                    showMessage(result.message || '登录失败', 'error');
-                }
-            } catch (error) {
-                showMessage('网络错误，请重试', 'error');
-            } finally {
-                hideLoading();
-            }
         }
 
         // 处理支付宝登录（在应用内完成，不跳转到外部页面）
@@ -768,11 +766,11 @@
                         return;
                     }
                     
-                    // 检查是否有绑定需求
-                    const needsBinding = urlParams.get('needs_binding');
-                    if (needsBinding === 'true') {
+                    // 检查是否有注册需求
+                    const needsRegistration = urlParams.get('needs_registration');
+                    if (needsRegistration === 'true') {
                         clearInterval(pollInterval);
-                        handleAlipayCallback(); // 处理绑定逻辑
+                        showRegistrationForm(); // 处理注册逻辑
                         return;
                     }
                     
