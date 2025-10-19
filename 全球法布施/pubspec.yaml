@@ -54,6 +54,7 @@ flutter:
     - assets/images/
     - assets/data/
     - assets/built_in/
+    - assets/earth_texture.jpg
     # IP data excluded from web build
     # - assets/ip_data/
   fonts:

@@ -11,16 +11,11 @@ import 'widgets/app_wrapper.dart';
 import 'screens/login_screen.dart';
 
 
-void main() async {
-  // 确保Flutter绑定初始化
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // 初始化应用
-  try {
-    await AppInitializer.initialize();
-  } catch (e) {
-    debugPrint('应用初始化失败，但继续启动: $e');
-  }
+  // 异步初始化，不阻塞启动
+  AppInitializer.initialize().catchError((e) => debugPrint('初始化失败: $e'));
   
   runApp(const MyApp());
 }
