@@ -70,6 +70,29 @@ class FileTransferModel extends ChangeNotifier {
   int get globalSentCount => _globalSentCount;
   double get globalDataSentMB => _globalDataSentMB;
   
+  // 新增属性用于首页
+  PlatformFile? get selectedFile => _selectedFiles.isNotEmpty ? _selectedFiles.first : null;
+  double _progress = 0.0;
+  double get progress => _progress;
+  
+  void startTransfer() {
+    _isTransferring = true;
+    _progress = 0.0;
+    notifyListeners();
+  }
+  
+  void updateProgressValue(double value) {
+    _progress = value;
+    notifyListeners();
+  }
+  
+  void completeTransfer() {
+    _isTransferring = false;
+    _progress = 0.0;
+    _globalSentCount++;
+    notifyListeners();
+  }
+  
   /// 设置全球发送启用状态
   void setGlobalSendEnabled(bool enabled) {
     _isGlobalSendEnabled = enabled;

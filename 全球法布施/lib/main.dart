@@ -4,8 +4,11 @@ import 'models/file_transfer_model.dart';
 import 'models/settings_model.dart';
 import 'models/auth_model.dart';
 import 'models/country_sending_model.dart';
+import 'models/practice_model.dart';
+import 'models/leaderboard_model.dart';
 import 'services/app_initializer.dart';
 import 'widgets/app_wrapper.dart';
+import 'screens/login_screen.dart';
 
 
 void main() async {
@@ -41,9 +44,18 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (context) => CountrySendingModel(),
         ),
+        ChangeNotifierProvider(
+          create: (context) => PracticeModel(),
+        ),
+        ChangeNotifierProvider(
+          create: (context) => LeaderboardModel(),
+        ),
       ],
       child: MaterialApp(
         title: '全球法布施',
+        routes: {
+          '/login': (context) => const LoginScreen(),
+        },
         theme: ThemeData(
           primarySwatch: Colors.blue,
           visualDensity: VisualDensity.adaptivePlatformDensity,

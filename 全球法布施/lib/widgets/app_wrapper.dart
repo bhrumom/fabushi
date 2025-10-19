@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
 import '../services/app_initializer.dart';
 import '../screens/home_screen.dart';
+import '../screens/main_navigation_screen.dart';
 import '../services/platform_service.dart';
 
 class AppWrapper extends StatefulWidget {
@@ -214,7 +215,6 @@ class _AppWrapperState extends State<AppWrapper> {
     }
 
     // Initialization is complete, show the main screen.
-    // HomeScreen will listen to AuthModel and show the correct state (logged in/out).
-    return const HomeScreen();
+    return const MainNavigationScreen();
   }
 }
