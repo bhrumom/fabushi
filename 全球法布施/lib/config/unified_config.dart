@@ -180,7 +180,7 @@ class UnifiedConfig {
   static const String testModeStorageKey = 'test_mode';
   
   // ===== 调试和日志配置 =====
-  static const bool enableApiLogging = true;
+  static const bool enableApiLogging = false;
   static const bool debugMode = bool.fromEnvironment('DEBUG', defaultValue: false);
   
   // ===== 错误消息配置 =====

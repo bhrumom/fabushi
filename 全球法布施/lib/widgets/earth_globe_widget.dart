@@ -12,6 +12,7 @@ class EarthGlobeWidget extends StatefulWidget {
 class EarthGlobeWidgetState extends State<EarthGlobeWidget> {
   late FlutterEarthGlobeController _controller;
   final List<String> _pointIds = [];
+  bool _isDisposed = false;
 
   @override
   void initState() {
@@ -20,28 +21,37 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> {
       rotationSpeed: 0.05,
       isRotating: true,
       isBackgroundFollowingSphereRotation: true,
-      surface: Image.network(
-        'https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg',
-      ).image,
+      surface: Image.asset('assets/earth_texture.jpg').image,
     );
   }
 
   void addTransferBeam(double fromLat, double fromLng, double toLat, double toLng) {
-    setState(() {
-      final id = 'point_${DateTime.now().millisecondsSinceEpoch}';
-      _pointIds.add(id);
-    });
+    if (!_isDisposed && mounted) {
+      setState(() {
+        final id = 'point_${DateTime.now().millisecondsSinceEpoch}';
+        _pointIds.add(id);
+      });
+    }
   }
 
   void clearBeams() {
-    setState(() {
-      _pointIds.clear();
-    });
+    if (!_isDisposed && mounted) {
+      setState(() {
+        _pointIds.clear();
+      });
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    if (!_isDisposed) {
+      _isDisposed = true;
+      try {
+        _controller.dispose();
+      } catch (e) {
+        // 忽略重复dispose错误
+      }
+    }
     super.dispose();
   }
 
