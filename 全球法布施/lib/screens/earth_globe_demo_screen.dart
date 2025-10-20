@@ -251,7 +251,7 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
 
     _globeKey.currentState?.clearBeams();
 
-    const originLat = 39.9042; // 北京
+    const originLat = 39.9042;
     const originLng = 116.4074;
 
     for (var i = 0; i < _worldCities.length; i++) {
@@ -262,13 +262,12 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
         _sentCount = i + 1;
       });
 
-      _globeKey.currentState?.addTransferBeam(
+      await _globeKey.currentState?.addTransferBeam(
         originLat, originLng,
         city['lat'], city['lng'],
         color: city['color'],
+        duration: const Duration(seconds: 2),
       );
-
-      await Future.delayed(const Duration(milliseconds: 250));
     }
 
     setState(() {
@@ -308,13 +307,12 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
         _sentCount = i + 1;
       });
 
-      _globeKey.currentState?.addTransferBeam(
+      await _globeKey.currentState?.addTransferBeam(
         originLat, originLng,
         city['lat'], city['lng'],
         color: city['color'],
+        duration: const Duration(seconds: 2),
       );
-
-      await Future.delayed(const Duration(milliseconds: 300));
     }
 
     setState(() {
