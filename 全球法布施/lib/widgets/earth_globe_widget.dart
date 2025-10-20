@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_earth_globe/flutter_earth_globe.dart';
 import 'package:flutter_earth_globe/flutter_earth_globe_controller.dart';
+import 'package:flutter_earth_globe/globe_coordinates.dart';
+import 'package:flutter_earth_globe/point.dart';
+import 'package:flutter_earth_globe/point_connection.dart';
+import 'package:flutter_earth_globe/point_connection_style.dart';
 
 class EarthGlobeWidget extends StatefulWidget {
   const EarthGlobeWidget({super.key});
@@ -11,7 +15,6 @@ class EarthGlobeWidget extends StatefulWidget {
 
 class EarthGlobeWidgetState extends State<EarthGlobeWidget> {
   late FlutterEarthGlobeController _controller;
-  final List<String> _pointIds = [];
   bool _isDisposed = false;
 
   @override
@@ -21,24 +24,51 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> {
       rotationSpeed: 0.05,
       isRotating: true,
       isBackgroundFollowingSphereRotation: true,
-      surface: Image.asset('assets/earth_texture.jpg').image,
     );
+    _controller.loadSurface(Image.asset('assets/earth_texture.jpg').image);
   }
 
-  void addTransferBeam(double fromLat, double fromLng, double toLat, double toLng) {
+  void addTransferBeam(double fromLat, double fromLng, double toLat, double toLng, {Color? color}) {
     if (!_isDisposed && mounted) {
-      setState(() {
-        final id = 'point_${DateTime.now().millisecondsSinceEpoch}';
-        _pointIds.add(id);
-      });
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      
+      _controller.addPoint(Point(
+        id: 'from_$timestamp',
+        coordinates: GlobeCoordinates(fromLat, fromLng),
+        style: PointStyle(color: color ?? Colors.cyan, size: 4),
+      ));
+      
+      _controller.addPoint(Point(
+        id: 'to_$timestamp',
+        coordinates: GlobeCoordinates(toLat, toLng),
+        style: PointStyle(color: color ?? Colors.orange, size: 4),
+      ));
+      
+      _controller.addPointConnection(
+        PointConnection(
+          start: GlobeCoordinates(fromLat, fromLng),
+          end: GlobeCoordinates(toLat, toLng),
+          id: 'conn_$timestamp',
+          style: PointConnectionStyle(
+            color: color ?? Colors.cyan,
+            lineWidth: 2.0,
+          ),
+        ),
+        animateDraw: true,
+        animateDrawDuration: const Duration(seconds: 2),
+      );
     }
   }
 
   void clearBeams() {
     if (!_isDisposed && mounted) {
-      setState(() {
-        _pointIds.clear();
-      });
+      // 清除所有点和连接
+      for (var point in List.from(_controller.points)) {
+        _controller.removePoint(point.id);
+      }
+      for (var conn in List.from(_controller.connections)) {
+        _controller.removePointConnection(conn.id);
+      }
     }
   }
 
