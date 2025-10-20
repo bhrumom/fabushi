@@ -3,8 +3,6 @@ import 'package:flutter_earth_globe/flutter_earth_globe.dart';
 import 'package:flutter_earth_globe/flutter_earth_globe_controller.dart';
 import 'package:flutter_earth_globe/globe_coordinates.dart';
 import 'package:flutter_earth_globe/point.dart';
-import 'package:flutter_earth_globe/point_connection.dart';
-import 'package:flutter_earth_globe/point_connection_style.dart';
 
 class EarthGlobeWidget extends StatefulWidget {
   const EarthGlobeWidget({super.key});
@@ -29,49 +27,38 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
     _controller.loadSurface(Image.asset('assets/earth_texture.jpg').image);
   }
 
-  void addTransferBeam(double fromLat, double fromLng, double toLat, double toLng, {Color? color}) {
+  Future<void> addTransferBeam(double fromLat, double fromLng, double toLat, double toLng, {Color? color, Duration? duration}) async {
     if (!_isDisposed && mounted) {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final beamId = 'beam_$timestamp';
+      final transferDuration = duration ?? const Duration(seconds: 2);
       
-      // 添加起点和终点标记
+      // 添加起点标记
       _controller.addPoint(Point(
         id: 'from_$timestamp',
         coordinates: GlobeCoordinates(fromLat, fromLng),
         style: PointStyle(color: color ?? Colors.cyan, size: 5),
       ));
       
+      // 添加终点标记
       _controller.addPoint(Point(
         id: 'to_$timestamp',
         coordinates: GlobeCoordinates(toLat, toLng),
         style: PointStyle(color: color ?? Colors.orange, size: 5),
       ));
       
-      // 使用虚线样式模拟光线运动
-      _controller.addPointConnection(
-        PointConnection(
-          start: GlobeCoordinates(fromLat, fromLng),
-          end: GlobeCoordinates(toLat, toLng),
-          id: 'conn_$timestamp',
-          style: PointConnectionStyle(
-            type: PointConnectionType.dotted,
-            color: (color ?? Colors.cyan).withAlpha(204),
-            dotSize: 3,
-            spacing: 15,
-          ),
-        ),
-        animateDraw: true,
-        animateDrawDuration: const Duration(milliseconds: 1500),
-      );
+      // 流星动画
+      await _animateMovingLight(fromLat, fromLng, toLat, toLng, beamId, color ?? Colors.cyan, transferDuration);
       
-      // 添加移动的光点效果
-      _animateMovingLight(fromLat, fromLng, toLat, toLng, beamId, color ?? Colors.cyan);
+      // 流星到达后清除轨迹
+      _controller.removePoint('from_$timestamp');
+      _controller.removePoint('to_$timestamp');
     }
   }
 
-  void _animateMovingLight(double fromLat, double fromLng, double toLat, double toLng, String beamId, Color color) async {
+  Future<void> _animateMovingLight(double fromLat, double fromLng, double toLat, double toLng, String beamId, Color color, Duration duration) async {
     const steps = 30;
-    const stepDelay = Duration(milliseconds: 50);
+    final stepDelay = Duration(milliseconds: duration.inMilliseconds ~/ steps);
     const tailLength = 5;
     
     for (int i = 0; i <= steps; i++) {
@@ -131,6 +118,19 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
       });
       
       await Future.delayed(stepDelay);
+    }
+    
+    // 清理所有残留点
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!_isDisposed && mounted) {
+      for (int i = 0; i <= steps; i++) {
+        try {
+          _controller.removePoint('${beamId}_head_$i');
+          for (int j = 1; j <= tailLength; j++) {
+            _controller.removePoint('${beamId}_tail_${i}_$j');
+          }
+        } catch (_) {}
+      }
     }
   }
 

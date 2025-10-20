@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/file_transfer_model.dart';
 import '../widgets/earth_globe_widget.dart';
-import '../screens/asset_screen.dart';
 
 class GlobeHomeScreen extends StatefulWidget {
   const GlobeHomeScreen({super.key});
@@ -172,7 +171,6 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
   void _startSending(FileTransferModel model) async {
     _globeKey.currentState?.clearBeams();
     
-    // 全球主要城市坐标和颜色
     final destinations = [
       {'name': '旧金山', 'lat': 37.7749, 'lng': -122.4194, 'color': Colors.cyan},
       {'name': '伦敦', 'lat': 51.5074, 'lng': -0.1278, 'color': Colors.blue},
@@ -186,18 +184,15 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
       {'name': '新加坡', 'lat': 1.3521, 'lng': 103.8198, 'color': Colors.lime},
     ];
     
-    // 起点：北京
     const originLat = 39.9042;
     const originLng = 116.4074;
     
-    // 依次添加传输光束
+    // 开始真实的全球发送
+    final transferFuture = model.startGlobalTransfer();
+    
+    // 同时显示流星动画，每个城市发送时间与实际一致
     for (var i = 0; i < destinations.length; i++) {
       final dest = destinations[i];
-      _globeKey.currentState?.addTransferBeam(
-        originLat, originLng,
-        dest['lat'] as double, dest['lng'] as double,
-        color: dest['color'] as Color,
-      );
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -209,11 +204,17 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
         );
       }
       
-      await Future.delayed(const Duration(milliseconds: 300));
+      // 流星动画时间 = 实际发送时间
+      await _globeKey.currentState?.addTransferBeam(
+        originLat, originLng,
+        dest['lat'] as double, dest['lng'] as double,
+        color: dest['color'] as Color,
+        duration: const Duration(seconds: 2),
+      );
     }
     
-    // 开始真实的全球发送
-    await model.startGlobalTransfer();
+    // 等待实际发送完成
+    await transferFuture;
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
