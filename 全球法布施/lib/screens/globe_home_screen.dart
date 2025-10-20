@@ -128,50 +128,35 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
   }
 
   void _selectFile(BuildContext context) async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => AssetScreen()),
-    );
-    
-    if (result != null && mounted) {
-      // 文件已在AssetScreen中选择
-    }
+    final model = Provider.of<FileTransferModel>(context, listen: false);
+    await model.selectBuiltInAssets(context);
   }
 
   void _startSending(FileTransferModel model) async {
-    // 清除之前的光束
     _globeKey.currentState?.clearBeams();
     
-    // 模拟发送过程
-    model.startTransfer();
-    
-    // 添加传输光束到多个国家
+    // 添加传输光束动画
     final destinations = [
-      {'lat': 37.7749, 'lng': -122.4194}, // 美国旧金山
-      {'lat': 51.5074, 'lng': -0.1278},   // 英国伦敦
-      {'lat': 35.6762, 'lng': 139.6503},  // 日本东京
-      {'lat': -33.8688, 'lng': 151.2093}, // 澳大利亚悉尼
-      {'lat': 28.6139, 'lng': 77.2090},   // 印度新德里
-      {'lat': -23.5505, 'lng': -46.6333}, // 巴西圣保罗
+      {'lat': 37.7749, 'lng': -122.4194},
+      {'lat': 51.5074, 'lng': -0.1278},
+      {'lat': 35.6762, 'lng': 139.6503},
+      {'lat': -33.8688, 'lng': 151.2093},
+      {'lat': 28.6139, 'lng': 77.2090},
+      {'lat': -23.5505, 'lng': -46.6333},
     ];
     
     for (var dest in destinations) {
       _globeKey.currentState?.addTransferBeam(
-        39.9042, 116.4074, // 从北京发送
+        39.9042, 116.4074,
         dest['lat']!, dest['lng']!,
       );
       await Future.delayed(const Duration(milliseconds: 200));
     }
     
-    for (int i = 0; i <= 100; i++) {
-      await Future.delayed(const Duration(milliseconds: 50));
-      if (mounted) {
-        model.updateProgressValue(i / 100);
-      }
-    }
+    // 开始真实的全球发送
+    await model.startGlobalTransfer();
     
     if (mounted) {
-      model.completeTransfer();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('经文已成功发送到全球！'),
