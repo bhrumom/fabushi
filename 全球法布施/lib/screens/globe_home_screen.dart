@@ -30,10 +30,47 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
             child: _buildStatusBar(),
           ),
           Positioned(
+            top: 20,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  '🌍 全球法布施 - 实时传输轨迹',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
             bottom: 100,
             left: 20,
             right: 20,
             child: _buildControlPanel(context),
+          ),
+          Positioned(
+            bottom: 20,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: TextButton.icon(
+                onPressed: () => _globeKey.currentState?.clearBeams(),
+                icon: const Icon(Icons.clear_all, color: Colors.white70),
+                label: const Text(
+                  '清除轨迹',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -135,22 +172,44 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
   void _startSending(FileTransferModel model) async {
     _globeKey.currentState?.clearBeams();
     
-    // 添加传输光束动画
+    // 全球主要城市坐标和颜色
     final destinations = [
-      {'lat': 37.7749, 'lng': -122.4194},
-      {'lat': 51.5074, 'lng': -0.1278},
-      {'lat': 35.6762, 'lng': 139.6503},
-      {'lat': -33.8688, 'lng': 151.2093},
-      {'lat': 28.6139, 'lng': 77.2090},
-      {'lat': -23.5505, 'lng': -46.6333},
+      {'name': '旧金山', 'lat': 37.7749, 'lng': -122.4194, 'color': Colors.cyan},
+      {'name': '伦敦', 'lat': 51.5074, 'lng': -0.1278, 'color': Colors.blue},
+      {'name': '东京', 'lat': 35.6762, 'lng': 139.6503, 'color': Colors.purple},
+      {'name': '悉尼', 'lat': -33.8688, 'lng': 151.2093, 'color': Colors.green},
+      {'name': '新德里', 'lat': 28.6139, 'lng': 77.2090, 'color': Colors.orange},
+      {'name': '圣保罗', 'lat': -23.5505, 'lng': -46.6333, 'color': Colors.pink},
+      {'name': '纽约', 'lat': 40.7128, 'lng': -74.0060, 'color': Colors.teal},
+      {'name': '巴黎', 'lat': 48.8566, 'lng': 2.3522, 'color': Colors.indigo},
+      {'name': '首尔', 'lat': 37.5665, 'lng': 126.9780, 'color': Colors.amber},
+      {'name': '新加坡', 'lat': 1.3521, 'lng': 103.8198, 'color': Colors.lime},
     ];
     
-    for (var dest in destinations) {
+    // 起点：北京
+    const originLat = 39.9042;
+    const originLng = 116.4074;
+    
+    // 依次添加传输光束
+    for (var i = 0; i < destinations.length; i++) {
+      final dest = destinations[i];
       _globeKey.currentState?.addTransferBeam(
-        39.9042, 116.4074,
-        dest['lat']!, dest['lng']!,
+        originLat, originLng,
+        dest['lat'] as double, dest['lng'] as double,
+        color: dest['color'] as Color,
       );
-      await Future.delayed(const Duration(milliseconds: 200));
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('正在发送到 ${dest['name']}...'),
+            duration: const Duration(milliseconds: 500),
+            backgroundColor: Colors.black87,
+          ),
+        );
+      }
+      
+      await Future.delayed(const Duration(milliseconds: 300));
     }
     
     // 开始真实的全球发送
@@ -159,8 +218,9 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('经文已成功发送到全球！'),
+          content: Text('✨ 经文已成功发送到全球 10 个国家！'),
           backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
         ),
       );
     }
