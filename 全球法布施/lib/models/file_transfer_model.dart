@@ -161,11 +161,11 @@ class FileTransferModel extends ChangeNotifier {
     try {
       // 初始化已下载素材服务
       await _downloadedAssetsService.initialize();
-      
+
       // 分离已下载和未下载的素材
       final List<String> needDownloadAssets = [];
       final List<String> alreadyDownloadedAssets = [];
-      
+
       for (String assetPath in assetPaths) {
         if (_downloadedAssetsService.isAssetDownloaded(assetPath)) {
           alreadyDownloadedAssets.add(assetPath);
@@ -173,7 +173,7 @@ class FileTransferModel extends ChangeNotifier {
           needDownloadAssets.add(assetPath);
         }
       }
-      
+
       // 显示智能提示
       String message = '';
       if (alreadyDownloadedAssets.isNotEmpty && needDownloadAssets.isNotEmpty) {
@@ -183,23 +183,23 @@ class FileTransferModel extends ChangeNotifier {
       } else if (needDownloadAssets.isNotEmpty) {
         message = '开始下载 ${needDownloadAssets.length} 个素材';
       }
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
-      
+
       // 处理已下载的素材（直接复用）
       if (alreadyDownloadedAssets.isNotEmpty) {
         await _reuseDownloadedAssets(context, alreadyDownloadedAssets);
       }
-      
+
       // 下载未下载的素材
       if (needDownloadAssets.isNotEmpty) {
         for (String assetPath in needDownloadAssets) {
           await _downloadSingleAsset(context, assetPath);
         }
       }
-      
+
       // 下载完成提示
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('所有素材处理完成')),
