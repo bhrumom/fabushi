@@ -19,14 +19,34 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('全球排行榜')),
+      appBar: AppBar(
+        title: const Text('全球排行榜'),
+        actions: [
+          Consumer<LeaderboardModel>(
+            builder: (context, model, _) {
+              if (model.lastUpdateTime != null) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 16),
+                    child: Text(
+                      _formatUpdateTime(model.lastUpdateTime!),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
+      ),
       body: Consumer<LeaderboardModel>(
         builder: (context, model, _) {
-          if (model.isLoading) {
+          if (model.isLoading && model.entries.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (model.error != null) {
+          if (model.error != null && model.entries.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -36,7 +56,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   Text(model.error!, textAlign: TextAlign.center),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () => model.fetchLeaderboard(),
+                    onPressed: () => model.fetchLeaderboard(forceRefresh: true),
                     child: const Text('重试'),
                   ),
                 ],
@@ -49,20 +69,46 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           }
 
           return RefreshIndicator(
-            onRefresh: () => model.fetchLeaderboard(),
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: model.entries.length,
-              itemBuilder: (context, index) {
-                final entry = model.entries[index];
-                return Card(
-                  child: ListTile(
-                    leading: _buildRankBadge(entry.rank),
-                    title: Text(entry.username),
-                    trailing: Text(_formatBytes(entry.totalBytes)),
+            onRefresh: () => model.fetchLeaderboard(forceRefresh: true),
+            child: Stack(
+              children: [
+                ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: model.entries.length,
+                  itemBuilder: (context, index) {
+                    final entry = model.entries[index];
+                    return Card(
+                      child: ListTile(
+                        leading: _buildRankBadge(entry.rank),
+                        title: Text(entry.username),
+                        trailing: Text(_formatBytes(entry.totalBytes)),
+                      ),
+                    );
+                  },
+                ),
+                if (model.isLoading)
+                  const Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: LinearProgressIndicator(),
                   ),
-                );
-              },
+                if (model.error != null)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      color: Colors.red.shade100,
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                        model.error!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.red.shade900),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           );
         },
@@ -88,5 +134,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+  
+  String _formatUpdateTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+    
+    if (diff.inMinutes < 1) return '刚刚更新';
+    if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
+    if (diff.inDays < 1) return '${diff.inHours}小时前';
+    return '${diff.inDays}天前';
   }
 }
