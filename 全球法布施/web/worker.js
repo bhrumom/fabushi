@@ -1633,6 +1633,103 @@ async function handleDeleteRedeemCode(request, env) {
   }
 }
 
+// 获取排行榜（带缓存优化）
+async function handleGetLeaderboard(request, env) {
+  try {
+    // 尝试从缓存获取
+    const cached = await env.USERS_KV.get('leaderboard:cache');
+    if (cached) {
+      const { data, timestamp } = JSON.parse(cached);
+      // 缓存5分钟
+      if (Date.now() - timestamp < 5 * 60 * 1000) {
+        return jsonResponse({ leaderboard: data, cached: true });
+      }
+    }
+
+    // 重新计算排行榜
+    const users = await env.USERS_KV.list({ prefix: 'user:' });
+    const leaderboard = [];
+
+    for (const key of users.keys) {
+      const userData = await env.USERS_KV.get(key.name);
+      if (!userData) continue;
+
+      const user = JSON.parse(userData);
+      const totalBytes = user.totalTransferredBytes || 0;
+
+      if (totalBytes > 0) {
+        leaderboard.push({
+          username: user.username,
+          totalBytes: totalBytes
+        });
+      }
+    }
+
+    leaderboard.sort((a, b) => b.totalBytes - a.totalBytes);
+    
+    // 只返回前100名
+    const rankedLeaderboard = leaderboard.slice(0, 100).map((entry, index) => ({
+      ...entry,
+      rank: index + 1
+    }));
+
+    // 缓存结果
+    await env.USERS_KV.put('leaderboard:cache', JSON.stringify({
+      data: rankedLeaderboard,
+      timestamp: Date.now()
+    }), { expirationTtl: 600 }); // 10分钟过期
+
+    return jsonResponse({ leaderboard: rankedLeaderboard });
+  } catch (error) {
+    console.error('获取排行榜失败:', error);
+    return jsonResponse({ error: '获取排行榜失败' }, 500);
+  }
+}
+
+// 更新用户传输数据
+async function handleUpdateTransferData(request, env) {
+  try {
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return jsonResponse({ error: '未提供认证信息' }, 401);
+    }
+
+    const token = authHeader.substring(7);
+    const tokenData = await verifyToken(token, env);
+    if (!tokenData) {
+      return jsonResponse({ error: '认证失败' }, 401);
+    }
+
+    const { bytes } = await request.json();
+    if (!bytes || bytes <= 0) {
+      return jsonResponse({ error: '无效的字节数' }, 400);
+    }
+
+    const userData = await env.USERS_KV.get(`user:${tokenData.username}`);
+    if (!userData) {
+      return jsonResponse({ error: '用户不存在' }, 404);
+    }
+
+    const user = JSON.parse(userData);
+    user.totalTransferredBytes = (user.totalTransferredBytes || 0) + bytes;
+    user.lastTransferAt = new Date().toISOString();
+
+    await env.USERS_KV.put(`user:${tokenData.username}`, JSON.stringify(user));
+    
+    // 清除排行榜缓存
+    await env.USERS_KV.delete('leaderboard:cache');
+
+    return jsonResponse({ 
+      message: '传输数据已更新',
+      totalBytes: user.totalTransferredBytes,
+      rank: null // 需要重新查询排行榜获取
+    });
+  } catch (error) {
+    console.error('更新传输数据失败:', error);
+    return jsonResponse({ error: '更新传输数据失败' }, 500);
+  }
+}
+
 // 获取管理员价格
 async function handleGetAdminPrice(request, env) {
   try {
@@ -3074,6 +3171,14 @@ export default {
         if (pathname === '/api/stripe/webhook' && method === 'POST') {
           return await handleStripeWebhook(request, env);
         }
+      }
+
+      // 排行榜API
+      if (pathname === '/api/leaderboard' && method === 'GET') {
+        return await handleGetLeaderboard(request, env);
+      }
+      if (pathname === '/api/leaderboard/update' && method === 'POST') {
+        return await handleUpdateTransferData(request, env);
       }
 
       // 管理员系统API路由

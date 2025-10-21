@@ -39,6 +39,7 @@ class RealGlobalSendService {
     required this.onStopped,
     required this.onLog,
     this.onTransferBeam,
+    this.onCountrySent,
     double? userLatitude,
     double? userLongitude,
   }) {
@@ -70,6 +71,9 @@ class RealGlobalSendService {
     return globalCountryServers;
   }
 
+  // 每次成功发送的回调
+  final Function(int)? onCountrySent;
+
   Future<void> startSending({
     required List<PlatformFile> files,
     required bool isLoop,
@@ -88,13 +92,16 @@ class RealGlobalSendService {
         for (final file in files) {
           if (!_isRunning) break;
           
-          await _sendFileToAllCountries(file);
+          final countriesSent = await _sendFileToAllCountries(file);
           
           _sentCount++;
-          _dataSentInMB += file.size / (1024 * 1024);
+          final fileSizeMB = file.size / (1024 * 1024);
+          _dataSentInMB += fileSizeMB * countriesSent;
           
           onProgress(_sentCount);
           onDataSent(_dataSentInMB);
+          
+          onLog('📊 文件 ${file.name}: ${fileSizeMB.toStringAsFixed(2)} MB × $countriesSent 国 = ${(fileSizeMB * countriesSent).toStringAsFixed(2)} MB');
         }
       } while (isLoop && _isRunning);
       
@@ -104,7 +111,7 @@ class RealGlobalSendService {
     }
   }
 
-  Future<void> _sendFileToAllCountries(PlatformFile file) async {
+  Future<int> _sendFileToAllCountries(PlatformFile file) async {
     onLog('📤 发送文件到全球: ${file.name}');
     
     final countryCodes = globalCountryServers.keys.toList();
@@ -142,7 +149,13 @@ class RealGlobalSendService {
           await _sendToServer(file, serverUrl, countryCode, countryName);
           successCount++;
           countrySuccess = true;
-          break; // 成功发送到一个服务器就跳过该国家的其他服务器
+          
+          // 每次成功发送后回调（用于本地保存）
+          if (onCountrySent != null) {
+            onCountrySent!(file.size);
+          }
+          
+          break;
         } catch (e) {
           onLog('⚠️ 发送到 $serverUrl 失败: $e');
           // 如果是认证错误，尝试下一个服务器
@@ -166,6 +179,7 @@ class RealGlobalSendService {
     }
     
     onLog('✅ 文件 ${file.name} 发送完成 - 成功: $successCount, 失败: $failCount');
+    return successCount; // 返回成功发送的国家数
   }
 
   Future<void> _sendToServer(
