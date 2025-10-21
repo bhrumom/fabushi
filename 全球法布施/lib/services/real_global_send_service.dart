@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'global_server_config_loader.dart';
 import 'global_country_servers.dart';
+import 'country_coordinates_service.dart';
+import 'dart:math' as math;
 
 /// 真实的全球发送服务
 /// 直接发送到249个国家的服务器地址，不使用代理
@@ -13,6 +15,7 @@ class RealGlobalSendService {
   final ValueChanged<double> onDataSent;
   final VoidCallback onStopped;
   final void Function(String) onLog;
+  final Function(double, double, double, double)? onTransferBeam;
 
   bool _isRunning = false;
   int _sentCount = 0;
@@ -23,12 +26,24 @@ class RealGlobalSendService {
   // 全球249个国家的服务器配置（将动态加载）
   Map<String, List<String>> globalCountryServers = {};
 
+  final CountryCoordinatesService _coordService = CountryCoordinatesService();
+  final math.Random _random = math.Random();
+
+  // 用户位置（固定起点）
+  double? _userLatitude;
+  double? _userLongitude;
+
   RealGlobalSendService({
     required this.onProgress,
     required this.onDataSent,
     required this.onStopped,
     required this.onLog,
+    this.onTransferBeam,
+    double? userLatitude,
+    double? userLongitude,
   }) {
+    _userLatitude = userLatitude;
+    _userLongitude = userLongitude;
     _totalCountries = globalCountryServers.length;
   }
 
@@ -39,6 +54,10 @@ class RealGlobalSendService {
       globalCountryServers = GLOBAL_COUNTRY_SERVERS;
       _totalCountries = globalCountryServers.length;
       onLog('✅ 成功加载全球服务器配置，共$_totalCountries个国家');
+      
+      await _coordService.initialize();
+      onLog('✅ 国家坐标服务初始化完成');
+      
       return true;
     } catch (e) {
       onLog('⚠️ 加载配置失败: $e');
@@ -100,6 +119,21 @@ class RealGlobalSendService {
       final servers = globalCountryServers[countryCode]!;
       
       onLog('🌍 发送到 $countryName ($countryCode) - 使用 ${servers.length} 个服务器');
+      
+      // 触发3D地球轨迹动画
+      final toCountry = _coordService.getByCountryCode(countryCode);
+      if (toCountry != null && onTransferBeam != null) {
+        // 使用用户IP定位的位置作为固定起点
+        if (_userLatitude != null && _userLongitude != null) {
+          onTransferBeam!(_userLatitude!, _userLongitude!, toCountry.latitude, toCountry.longitude);
+        } else {
+          // 如果没有用户位置，使用中国北京作为默认起点
+          final china = _coordService.getByCountryCode('CN');
+          if (china != null) {
+            onTransferBeam!(china.latitude, china.longitude, toCountry.latitude, toCountry.longitude);
+          }
+        }
+      }
       
       // 为每个国家尝试多个服务器
       bool countrySuccess = false;

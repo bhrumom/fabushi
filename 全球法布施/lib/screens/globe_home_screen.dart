@@ -14,6 +14,25 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setupTransferBeamCallback();
+    });
+  }
+
+  void _setupTransferBeamCallback() {
+    final model = Provider.of<FileTransferModel>(context, listen: false);
+    model.setTransferBeamCallback((fromLat, fromLng, toLat, toLng) {
+      _globeKey.currentState?.addTransferBeam(
+        fromLat, fromLng, toLat, toLng,
+        color: Colors.cyan,
+        duration: const Duration(seconds: 2),
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
@@ -171,57 +190,25 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
   void _startSending(FileTransferModel model) async {
     _globeKey.currentState?.clearBeams();
     
-    final destinations = [
-      {'name': '旧金山', 'lat': 37.7749, 'lng': -122.4194, 'color': Colors.cyan},
-      {'name': '伦敦', 'lat': 51.5074, 'lng': -0.1278, 'color': Colors.blue},
-      {'name': '东京', 'lat': 35.6762, 'lng': 139.6503, 'color': Colors.purple},
-      {'name': '悉尼', 'lat': -33.8688, 'lng': 151.2093, 'color': Colors.green},
-      {'name': '新德里', 'lat': 28.6139, 'lng': 77.2090, 'color': Colors.orange},
-      {'name': '圣保罗', 'lat': -23.5505, 'lng': -46.6333, 'color': Colors.pink},
-      {'name': '纽约', 'lat': 40.7128, 'lng': -74.0060, 'color': Colors.teal},
-      {'name': '巴黎', 'lat': 48.8566, 'lng': 2.3522, 'color': Colors.indigo},
-      {'name': '首尔', 'lat': 37.5665, 'lng': 126.9780, 'color': Colors.amber},
-      {'name': '新加坡', 'lat': 1.3521, 'lng': 103.8198, 'color': Colors.lime},
-    ];
-    
-    const originLat = 39.9042;
-    const originLng = 116.4074;
-    
-    // 开始真实的全球发送
-    final transferFuture = model.startGlobalTransfer();
-    
-    // 同时显示流星动画，每个城市发送时间与实际一致
-    for (var i = 0; i < destinations.length; i++) {
-      final dest = destinations[i];
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('正在发送到 ${dest['name']}...'),
-            duration: const Duration(milliseconds: 500),
-            backgroundColor: Colors.black87,
-          ),
-        );
-      }
-      
-      // 流星动画时间 = 实际发送时间
-      await _globeKey.currentState?.addTransferBeam(
-        originLat, originLng,
-        dest['lat'] as double, dest['lng'] as double,
-        color: dest['color'] as Color,
-        duration: const Duration(seconds: 2),
-      );
-    }
-    
-    // 等待实际发送完成
-    await transferFuture;
-    
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✨ 经文已成功发送到全球 10 个国家！'),
+          content: Text('🌍 开始向全球发送经文...'),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.black87,
+        ),
+      );
+    }
+    
+    // 开始真实的全球发送，轨迹动画将自动触发
+    await model.startGlobalTransfer();
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✨ 经文已成功发送到全球 ${model.globalSentCount} 个国家！'),
           backgroundColor: Colors.green,
-          duration: Duration(seconds: 3),
+          duration: const Duration(seconds: 3),
         ),
       );
     }
