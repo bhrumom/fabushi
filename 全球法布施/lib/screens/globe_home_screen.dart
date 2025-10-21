@@ -12,6 +12,7 @@ class GlobeHomeScreen extends StatefulWidget {
 
 class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
+  bool _showControlPanel = true;
 
   @override
   void initState() {
@@ -69,12 +70,13 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
               ),
             ),
           ),
-          Positioned(
-            bottom: 100,
-            left: 20,
-            right: 20,
-            child: _buildControlPanel(context),
-          ),
+          if (_showControlPanel)
+            Positioned(
+              bottom: 100,
+              left: 20,
+              right: 20,
+              child: _buildControlPanel(context),
+            ),
           Positioned(
             bottom: 20,
             left: 0,
@@ -188,6 +190,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
   }
 
   void _startSending(FileTransferModel model) async {
+    setState(() => _showControlPanel = false);
     _globeKey.currentState?.clearBeams();
     
     if (mounted) {
@@ -211,6 +214,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
           duration: const Duration(seconds: 3),
         ),
       );
+      setState(() => _showControlPanel = true);
     }
   }
 }
