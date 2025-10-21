@@ -13,6 +13,7 @@ import '../config/unified_config.dart';
 import '../services/downloaded_assets_service.dart';
 import '../services/download_manager.dart';
 import '../services/real_global_send_service.dart';
+import '../services/ip_location_service.dart';
 import '../widgets/download_progress_widget.dart';
 
 // Web平台特定的导入
@@ -49,11 +50,14 @@ class FileTransferModel extends ChangeNotifier {
   
   // 真实的全球发送服务
   RealGlobalSendService? _realGlobalSendService;
-  
+
   // 已下载素材服务
   final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
   final DownloadManager _downloadManager = DownloadManager();
   Map<String, String> _assetToTaskMap = {};
+
+  // IP位置服务
+  final IPLocationService _ipLocationService = IPLocationService();
   
   // 用于跟踪widget是否被dispose
   bool _isDisposed = false;
@@ -522,6 +526,13 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
   
+  // 地球轨迹回调
+  Function(double, double, double, double)? _onTransferBeam;
+
+  void setTransferBeamCallback(Function(double, double, double, double)? callback) {
+    _onTransferBeam = callback;
+  }
+
   /// 开始全球传输 - 使用真实的全球发送服务
   Future<void> startGlobalTransfer() async {
     if (_isTransferring || _selectedFiles.isEmpty) return;
@@ -574,6 +585,21 @@ class FileTransferModel extends ChangeNotifier {
   
   /// 初始化真实的全球发送服务
   Future<void> _initializeRealGlobalSendService() async {
+    // 获取用户IP位置
+    double? userLat;
+    double? userLng;
+
+    try {
+      final userLocation = await _ipLocationService.getCurrentLocation();
+      if (userLocation != null) {
+        userLat = userLocation.latitude;
+        userLng = userLocation.longitude;
+        debugPrint('📍 传输服务使用用户位置: ${userLocation.country}, ${userLocation.city}');
+      }
+    } catch (e) {
+      debugPrint('⚠️ 获取用户位置失败: $e，将使用默认位置');
+    }
+
     _realGlobalSendService = RealGlobalSendService(
       onProgress: (count) {
         updateProgress(count);
@@ -587,8 +613,11 @@ class FileTransferModel extends ChangeNotifier {
       onLog: (message) {
         debugPrint('🌍 全球发送: $message');
       },
+      onTransferBeam: _onTransferBeam,
+      userLatitude: userLat,
+      userLongitude: userLng,
     );
-    
+
     await _realGlobalSendService?.initialize();
     debugPrint('📋 真实全球发送服务初始化完成');
   }
