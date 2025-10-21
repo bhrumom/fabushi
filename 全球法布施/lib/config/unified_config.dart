@@ -156,6 +156,13 @@ class UnifiedConfig {
   // 全球发送API
   static String get globalSendUrl => '$currentBackendUrl/send-global';
   
+  // 排行榜API
+  static String get leaderboardUrl => '$currentBackendUrl/api/leaderboard';
+  static String get updateTransferDataUrl => '$currentBackendUrl/api/leaderboard/update';
+  
+  // 地球纹理（大文件从R2加载）
+  static String get earthTextureUrl => '$currentBackendUrl/r2?file=globe_assets/image/mixed/Earth_DiffuseMap_2.jpg';
+  
   // ===== 请求配置 =====
   
   // 请求头配置

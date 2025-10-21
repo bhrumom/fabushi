@@ -26,19 +26,44 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: model.entries.length,
-            itemBuilder: (context, index) {
-              final entry = model.entries[index];
-              return Card(
-                child: ListTile(
-                  leading: _buildRankBadge(entry.rank),
-                  title: Text(entry.username),
-                  trailing: Text(_formatBytes(entry.totalBytes)),
-                ),
-              );
-            },
+          if (model.error != null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(model.error!, textAlign: TextAlign.center),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => model.fetchLeaderboard(),
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          if (model.entries.isEmpty) {
+            return const Center(child: Text('暂无排行榜数据'));
+          }
+
+          return RefreshIndicator(
+            onRefresh: () => model.fetchLeaderboard(),
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: model.entries.length,
+              itemBuilder: (context, index) {
+                final entry = model.entries[index];
+                return Card(
+                  child: ListTile(
+                    leading: _buildRankBadge(entry.rank),
+                    title: Text(entry.username),
+                    trailing: Text(_formatBytes(entry.totalBytes)),
+                  ),
+                );
+              },
+            ),
           );
         },
       ),

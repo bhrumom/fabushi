@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../services/leaderboard_service.dart';
 
 class LeaderboardEntry {
   final String username;
@@ -21,24 +22,27 @@ class LeaderboardEntry {
 }
 
 class LeaderboardModel extends ChangeNotifier {
+  final LeaderboardService _service = LeaderboardService();
   List<LeaderboardEntry> _entries = [];
   bool _isLoading = false;
+  String? _error;
   
   List<LeaderboardEntry> get entries => _entries;
   bool get isLoading => _isLoading;
+  String? get error => _error;
   
   Future<void> fetchLeaderboard() async {
     _isLoading = true;
+    _error = null;
     notifyListeners();
     
-    // TODO: 从API获取排行榜数据
-    await Future.delayed(const Duration(seconds: 1));
-    
-    _entries = List.generate(10, (i) => LeaderboardEntry(
-      username: '用户${i + 1}',
-      totalBytes: (10 - i) * 1024 * 1024 * 100,
-      rank: i + 1,
-    ));
+    try {
+      final data = await _service.fetchLeaderboard();
+      _entries = data.map((json) => LeaderboardEntry.fromJson(json)).toList();
+    } catch (e) {
+      _error = '获取排行榜失败: $e';
+      _entries = [];
+    }
     
     _isLoading = false;
     notifyListeners();

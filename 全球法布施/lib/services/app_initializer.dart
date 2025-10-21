@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../config/unified_config.dart';
 import 'unified_api_service.dart';
 import 'app_settings.dart';
+import '../models/file_transfer_model.dart';
 
 class AppInitializer {
   static bool _isInitialized = false;
@@ -21,6 +22,9 @@ class AppInitializer {
       
       // 2. 异步加载设置（不阻塞启动）
       _ensureDefaultSettings().catchError((e) => debugPrint('设置加载失败: $e'));
+      
+      // 3. 重试上传未完成的传输数据
+      _retryPendingUploads().catchError((e) => debugPrint('重试上传失败: $e'));
       
       _isInitialized = true;
       
@@ -48,6 +52,17 @@ class AppInitializer {
   static Future<void> reinitialize() async {
     _isInitialized = false;
     await initialize();
+  }
+  
+  // 重试上传未完成的传输数据
+  static Future<void> _retryPendingUploads() async {
+    try {
+      // 注意：这里需要一个静态方法，不依赖Provider
+      final model = FileTransferModel();
+      await model.retryPendingUploads();
+    } catch (e) {
+      debugPrint('重试上传失败: $e');
+    }
   }
   
   // 检查是否已初始化

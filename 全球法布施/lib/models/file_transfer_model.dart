@@ -14,7 +14,9 @@ import '../services/downloaded_assets_service.dart';
 import '../services/download_manager.dart';
 import '../services/real_global_send_service.dart';
 import '../services/ip_location_service.dart';
+import '../services/leaderboard_service.dart';
 import '../widgets/download_progress_widget.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Web平台特定的导入
 import 'package:universal_html/html.dart' as html;
@@ -556,6 +558,10 @@ class FileTransferModel extends ChangeNotifier {
       
       _status = TransferStatus.completed;
       
+      // 传输完成，尝试上传本地累积的数据
+      await _uploadPendingData();
+      debugPrint('✅ 传输完成，数据已上传');
+      
     } catch (e) {
       debugPrint('❌ 传输失败: $e');
       _status = TransferStatus.error;
@@ -585,7 +591,6 @@ class FileTransferModel extends ChangeNotifier {
   
   /// 初始化真实的全球发送服务
   Future<void> _initializeRealGlobalSendService() async {
-    // 获取用户IP位置
     double? userLat;
     double? userLng;
 
@@ -614,6 +619,10 @@ class FileTransferModel extends ChangeNotifier {
         debugPrint('🌍 全球发送: $message');
       },
       onTransferBeam: _onTransferBeam,
+      onCountrySent: (bytes) async {
+        // 每次成功发送到一个国家后，立即保存到本地
+        await _saveToLocal(bytes);
+      },
       userLatitude: userLat,
       userLongitude: userLng,
     );
@@ -632,6 +641,51 @@ class FileTransferModel extends ChangeNotifier {
   void updateDataSent(double dataMB) {
     _globalDataSentMB = dataMB;
     notifyListeners();
+  }
+  
+  /// 上传本地累积的数据
+  Future<void> _uploadPendingData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = prefs.getInt('pending_transfer_bytes') ?? 0;
+      
+      if (pending > 0) {
+        await LeaderboardService().updateTransferData(pending);
+        await prefs.remove('pending_transfer_bytes');
+        debugPrint('✅ 成功上传 ${(pending / 1024 / 1024).toStringAsFixed(2)} MB');
+      }
+    } catch (e) {
+      debugPrint('上传失败: $e，数据已保存到本地待重试');
+    }
+  }
+  
+  /// 保存到本地
+  Future<void> _saveToLocal(int bytes) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pending = prefs.getInt('pending_transfer_bytes') ?? 0;
+    await prefs.setInt('pending_transfer_bytes', pending + bytes);
+  }
+  
+  /// 清除本地缓存
+  Future<void> _clearLocal() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('pending_transfer_bytes');
+  }
+  
+  /// 重试上传本地缓存的数据
+  Future<void> retryPendingUploads() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = prefs.getInt('pending_transfer_bytes');
+      
+      if (pending != null && pending > 0) {
+        await LeaderboardService().updateTransferData(pending);
+        await prefs.remove('pending_transfer_bytes');
+        debugPrint('✅ 成功上传缓存的传输数据: $pending bytes');
+      }
+    } catch (e) {
+      debugPrint('重试上传失败: $e');
+    }
   }
   
   /// 更新传输状态
