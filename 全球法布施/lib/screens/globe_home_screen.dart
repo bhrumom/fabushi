@@ -12,7 +12,6 @@ class GlobeHomeScreen extends StatefulWidget {
 
 class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
-  bool _showControlPanel = true;
   String _currentTransfer = '';
 
   @override
@@ -94,13 +93,17 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
                 ),
               ),
             ),
-          if (_showControlPanel)
-            Positioned(
-              bottom: 100,
-              left: 20,
-              right: 20,
-              child: _buildControlPanel(context),
-            ),
+          Consumer<FileTransferModel>(
+            builder: (context, model, _) {
+              if (model.isTransferring) return const SizedBox.shrink();
+              return Positioned(
+                bottom: 100,
+                left: 20,
+                right: 20,
+                child: _buildControlPanel(context),
+              );
+            },
+          ),
           Positioned(
             bottom: 20,
             left: 0,
@@ -214,7 +217,6 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
   }
 
   void _startSending(FileTransferModel model) async {
-    setState(() => _showControlPanel = false);
     _globeKey.currentState?.clearBeams();
     
     if (mounted) {
@@ -238,7 +240,6 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
           duration: const Duration(seconds: 3),
         ),
       );
-      setState(() => _showControlPanel = true);
     }
   }
 }

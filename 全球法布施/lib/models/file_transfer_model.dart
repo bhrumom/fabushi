@@ -46,6 +46,22 @@ class FileTransferModel extends ChangeNotifier {
   bool _isTransferring = false;
   TransferStatus _status = TransferStatus.idle;
   
+  // 构造函数中加载持久化状态
+  FileTransferModel() {
+    _initializeModel();
+  }
+  
+  Future<void> _initializeModel() async {
+    await _loadPersistedState();
+    // 应用启动时总是清除传输状态
+    if (_isTransferring) {
+      _isTransferring = false;
+      await _persistTransferState();
+      debugPrint('🔄 应用启动，清除传输状态');
+      notifyListeners();
+    }
+  }
+  
   // 统计数据
   int _globalSentCount = 0;
   double _globalDataSentMB = 0.0;
@@ -547,6 +563,7 @@ class FileTransferModel extends ChangeNotifier {
     
     _isTransferring = true;
     _status = TransferStatus.transferring;
+    await _persistTransferState();
     notifyListeners();
     
     try {
@@ -561,8 +578,6 @@ class FileTransferModel extends ChangeNotifier {
         isLoop: _isLooping,
       );
       
-      _status = TransferStatus.completed;
-      
       // 传输完成，尝试上传本地累积的数据
       await _uploadPendingData();
       debugPrint('✅ 传输完成，数据已上传');
@@ -571,6 +586,7 @@ class FileTransferModel extends ChangeNotifier {
       debugPrint('❌ 传输失败: $e');
       _status = TransferStatus.error;
       _isTransferring = false;
+      await _persistTransferState();
       notifyListeners();
     }
   }
@@ -590,7 +606,16 @@ class FileTransferModel extends ChangeNotifier {
     // 停止真实的全球发送服务
     _realGlobalSendService?.stopSending();
     
+    _persistTransferState();
     debugPrint('🛑 传输已停止');
+    notifyListeners();
+  }
+  
+  /// 内部方法：传输完成时调用（不是用户主动停止）
+  void _onTransferCompleted() {
+    _isTransferring = false;
+    _status = TransferStatus.completed;
+    _persistTransferState();
     notifyListeners();
   }
   
@@ -618,7 +643,7 @@ class FileTransferModel extends ChangeNotifier {
         updateDataSent(dataMB);
       },
       onStopped: () {
-        stopTransfer();
+        _onTransferCompleted();
       },
       onLog: (message) {
         debugPrint('🌍 全球发送: $message');
@@ -667,12 +692,14 @@ class FileTransferModel extends ChangeNotifier {
   /// 更新传输进度
   void updateProgress(int count) {
     _globalSentCount = count;
+    _persistTransferState();
     notifyListeners();
   }
   
   /// 更新已发送数据量
   void updateDataSent(double dataMB) {
     _globalDataSentMB = dataMB;
+    _persistTransferState();
     notifyListeners();
   }
   
@@ -757,6 +784,7 @@ class FileTransferModel extends ChangeNotifier {
     );
     if (index != -1) {
       _countryStatuses[index] = _countryStatuses[index].copyWith(status: status);
+      _persistCountryStatuses();
       notifyListeners();
     }
   }
@@ -764,6 +792,7 @@ class FileTransferModel extends ChangeNotifier {
   /// 更新日志
   void updateLog(String log) {
     _currentLog = log;
+    _persistTransferState();
     notifyListeners();
   }
   
@@ -771,6 +800,79 @@ class FileTransferModel extends ChangeNotifier {
   int getSuccessCount() {
     return _countryStatuses.where((status) => status.status == SendStatus.success).length;
   }
+  
+  /// 加载持久化状态
+  Future<void> _loadPersistedState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      _isTransferring = prefs.getBool('is_transferring') ?? false;
+      _globalSentCount = prefs.getInt('global_sent_count') ?? 0;
+      _globalDataSentMB = prefs.getDouble('global_data_sent_mb') ?? 0.0;
+      _currentLog = prefs.getString('current_log') ?? '';
+      
+      // 加载国家状态
+      final statusesJson = prefs.getString('country_statuses');
+      if (statusesJson != null) {
+        final List<dynamic> decoded = json.decode(statusesJson);
+        _countryStatuses = decoded.map((item) => CountrySendStatus(
+          countryCode: item['countryCode'],
+          countryName: item['countryName'],
+          status: SendStatus.values[item['status']],
+          serverCount: item['serverCount'],
+        )).toList();
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      debugPrint('加载持久化状态失败: $e');
+    }
+  }
+  
+  /// 持久化传输状态
+  Future<void> _persistTransferState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('is_transferring', _isTransferring);
+      await prefs.setInt('global_sent_count', _globalSentCount);
+      await prefs.setDouble('global_data_sent_mb', _globalDataSentMB);
+      await prefs.setString('current_log', _currentLog);
+    } catch (e) {
+      debugPrint('持久化传输状态失败: $e');
+    }
+  }
+  
+  /// 持久化国家状态
+  Future<void> _persistCountryStatuses() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = json.encode(_countryStatuses.map((status) => {
+        'countryCode': status.countryCode,
+        'countryName': status.countryName,
+        'status': status.status.index,
+        'serverCount': status.serverCount,
+      }).toList());
+      await prefs.setString('country_statuses', encoded);
+    } catch (e) {
+      debugPrint('持久化国家状态失败: $e');
+    }
+  }
+  
+  /// 清除持久化状态
+  Future<void> clearPersistedState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('is_transferring');
+      await prefs.remove('global_sent_count');
+      await prefs.remove('global_data_sent_mb');
+      await prefs.remove('current_log');
+      await prefs.remove('country_statuses');
+    } catch (e) {
+      debugPrint('清除持久化状态失败: $e');
+    }
+  }
+  
+
   
   @override
   void dispose() {
