@@ -14,7 +14,7 @@ class EarthGlobeWidget extends StatefulWidget {
   State<EarthGlobeWidget> createState() => EarthGlobeWidgetState();
 }
 
-class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerProviderStateMixin {
+class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late FlutterEarthGlobeController _controller;
   bool _isDisposed = false;
   final Map<String, AnimationController> _beamAnimations = {};
@@ -416,7 +416,11 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
   }
 
   @override
+  bool get wantKeepAlive => true;
+  
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // 必须调用以保持状态
     return FlutterEarthGlobe(
       controller: _controller,
       radius: 150,

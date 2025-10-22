@@ -11,14 +11,17 @@ class GlobeHomeScreen extends StatefulWidget {
 }
 
 class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
+  static EarthGlobeWidgetState? _globeState; // 静态引用，保持在页面切换时不丢失
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
   String _currentTransfer = '';
+  final List<Map<String, double>> _pendingBeams = []; // 缓存待播放的轨迹
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      debugPrint('🎬 initState postFrameCallback');
       _setupTransferBeamCallback();
     });
   }
@@ -47,27 +50,73 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
   }
 
   void _setupTransferBeamCallback() {
+    // 更新静态引用
+    if (_globeKey.currentState != null) {
+      _globeState = _globeKey.currentState;
+      debugPrint('🔗 更新 Globe 静态引用');
+    }
+    
     final model = Provider.of<FileTransferModel>(context, listen: false);
     model.setTransferBeamCallback((fromLat, fromLng, toLat, toLng) {
-      debugPrint('📡 轨迹回调触发: globeState=${_globeKey.currentState != null}');
-      // 移除 mounted 检查，因为 AutomaticKeepAliveClientMixin 保持页面活跃
-      // 即使页面不可见，widget 仍然存在，可以接收回调
-      if (_globeKey.currentState != null) {
-        debugPrint('✅ 添加轨迹: ($fromLat, $fromLng) -> ($toLat, $toLng)');
+      // 优先使用静态引用
+      final state = _globeState ?? _globeKey.currentState;
+      debugPrint('📡 轨迹回调触发: staticState=${_globeState != null}, keyState=${_globeKey.currentState != null}');
+      
+      if (state != null) {
+        debugPrint('✅ 直接添加轨迹: ($fromLat, $fromLng) -> ($toLat, $toLng)');
         try {
-          _globeKey.currentState!.addTransferBeam(
+          state.addTransferBeam(
             fromLat, fromLng, toLat, toLng,
             color: Colors.cyan,
-            duration: const Duration(seconds: 2),
+            duration: const Duration(seconds: 5), // 增加到 5 秒，更容易看到
           );
         } catch (e) {
           debugPrint('❌ 添加轨迹失败: $e');
         }
       } else {
-        debugPrint('❌ 无法添加轨迹: globeState 为 null');
+        debugPrint('💾 缓存轨迹数据，等待页面可见');
+        _pendingBeams.add({
+          'fromLat': fromLat,
+          'fromLng': fromLng,
+          'toLat': toLat,
+          'toLng': toLng,
+        });
+        if (_pendingBeams.length > 50) {
+          _pendingBeams.removeAt(0);
+        }
       }
     });
+    
+    _playPendingBeams();
     debugPrint('🔧 轨迹回调已设置');
+  }
+  
+  void _playPendingBeams() {
+    if (_pendingBeams.isEmpty) return;
+    
+    final state = _globeState ?? _globeKey.currentState;
+    if (state == null) {
+      debugPrint('⏳ Globe 还未准备好，稍后重试');
+      Future.delayed(const Duration(milliseconds: 500), _playPendingBeams);
+      return;
+    }
+    
+    debugPrint('🎬 播放 ${_pendingBeams.length} 条缓存轨迹');
+    for (final beam in _pendingBeams) {
+      try {
+        state.addTransferBeam(
+          beam['fromLat']!,
+          beam['fromLng']!,
+          beam['toLat']!,
+          beam['toLng']!,
+          color: Colors.cyan,
+          duration: const Duration(seconds: 5), // 增加到 5 秒
+        );
+      } catch (e) {
+        debugPrint('❌ 播放缓存轨迹失败: $e');
+      }
+    }
+    _pendingBeams.clear();
   }
 
   @override
@@ -79,9 +128,8 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
     
     // 每次 build 时重新设置回调，确保切换页面后回调仍然有效
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _setupTransferBeamCallback();
-      }
+      debugPrint('🔄 页面 build 完成，准备设置回调');
+      _setupTransferBeamCallback();
     });
     
     return Scaffold(
@@ -89,7 +137,19 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
         children: [
           Container(
             color: const Color(0xFF0a0a0a),
-            child: EarthGlobeWidget(key: _globeKey),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                debugPrint('🎭 Globe 渲染区域: ${constraints.maxWidth}x${constraints.maxHeight}');
+                // 渲染后立即保存引用
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_globeKey.currentState != null && _globeState == null) {
+                    _globeState = _globeKey.currentState;
+                    debugPrint('💾 首次保存 Globe 静态引用');
+                  }
+                });
+                return EarthGlobeWidget(key: _globeKey);
+              },
+            ),
           ),
           Positioned(
             top: 60,
