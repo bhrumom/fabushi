@@ -130,16 +130,21 @@ class RealGlobalSendService {
       // 触发3D地球轨迹动画
       final toCountry = _coordService.getByCountryCode(countryCode);
       if (toCountry != null && onTransferBeam != null) {
+        debugPrint('🚀 准备触发轨迹回调: $countryName');
         // 使用用户IP定位的位置作为固定起点
         if (_userLatitude != null && _userLongitude != null) {
+          debugPrint('📍 使用用户位置: ($_userLatitude, $_userLongitude) -> (${toCountry.latitude}, ${toCountry.longitude})');
           onTransferBeam!(_userLatitude!, _userLongitude!, toCountry.latitude, toCountry.longitude);
         } else {
           // 如果没有用户位置，使用中国北京作为默认起点
           final china = _coordService.getByCountryCode('CN');
           if (china != null) {
+            debugPrint('🇨🇳 使用默认位置: (${china.latitude}, ${china.longitude}) -> (${toCountry.latitude}, ${toCountry.longitude})');
             onTransferBeam!(china.latitude, china.longitude, toCountry.latitude, toCountry.longitude);
           }
         }
+      } else {
+        debugPrint('⚠️ 无法触发轨迹: toCountry=${toCountry != null}, callback=${onTransferBeam != null}');
       }
       
       // 为每个国家尝试多个服务器
