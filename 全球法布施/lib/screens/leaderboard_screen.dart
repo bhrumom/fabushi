@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../models/leaderboard_model.dart';
 
@@ -10,11 +11,6 @@ class LeaderboardScreen extends StatefulWidget {
 }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(() => context.read<LeaderboardModel>().fetchLeaderboard());
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +23,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               if (model.lastUpdateTime != null) {
                 return Center(
                   child: Padding(
-                    padding: const EdgeInsets.only(right: 16),
+                    padding: const EdgeInsets.only(right: 8),
                     child: Text(
                       _formatUpdateTime(model.lastUpdateTime!),
                       style: const TextStyle(fontSize: 12),
@@ -38,6 +34,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               return const SizedBox.shrink();
             },
           ),
+          if (defaultTargetPlatform == TargetPlatform.macOS ||
+              defaultTargetPlatform == TargetPlatform.windows ||
+              defaultTargetPlatform == TargetPlatform.linux)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () => context.read<LeaderboardModel>().fetchLeaderboard(forceRefresh: true),
+              tooltip: '刷新',
+            ),
         ],
       ),
       body: Consumer<LeaderboardModel>(
