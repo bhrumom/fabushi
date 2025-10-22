@@ -36,6 +36,7 @@ class LeaderboardModel extends ChangeNotifier {
   String? _error;
   DateTime? _lastUpdateTime;
   DateTime? _lastRefreshTime;
+  bool _hasLoadedCache = false;
   
   List<LeaderboardEntry> get entries => _entries;
   bool get isLoading => _isLoading;
@@ -43,8 +44,17 @@ class LeaderboardModel extends ChangeNotifier {
   DateTime? get lastUpdateTime => _lastUpdateTime;
   
   Future<void> fetchLeaderboard({bool forceRefresh = false}) async {
-    // 检查刷新限制（1分钟）
-    if (!forceRefresh && _lastRefreshTime != null) {
+    // 首次加载缓存
+    if (!_hasLoadedCache) {
+      await _loadCache();
+      _hasLoadedCache = true;
+      if (_entries.isNotEmpty) {
+        notifyListeners();
+      }
+    }
+    
+    // 检查刷新限制（1分钟）- 即使强制刷新也要检查
+    if (_lastRefreshTime != null) {
       final diff = DateTime.now().difference(_lastRefreshTime!);
       if (diff.inSeconds < 60) {
         _error = '刷新过于频繁，请${60 - diff.inSeconds}秒后再试';
@@ -58,14 +68,6 @@ class LeaderboardModel extends ChangeNotifier {
       final diff = DateTime.now().difference(_lastUpdateTime!);
       if (diff.inDays < 1) {
         return; // 使用缓存
-      }
-    }
-    
-    // 尝试加载本地缓存
-    if (_entries.isEmpty) {
-      await _loadCache();
-      if (_entries.isNotEmpty) {
-        notifyListeners();
       }
     }
     
