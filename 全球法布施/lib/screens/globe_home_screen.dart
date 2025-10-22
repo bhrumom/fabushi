@@ -10,7 +10,7 @@ class GlobeHomeScreen extends StatefulWidget {
   State<GlobeHomeScreen> createState() => _GlobeHomeScreenState();
 }
 
-class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
+class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAliveClientMixin {
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
   String _currentTransfer = '';
 
@@ -20,6 +20,13 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _setupTransferBeamCallback();
     });
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 每次页面重新显示时重新设置回调
+    _setupTransferBeamCallback();
   }
 
   void _setupTransferBeamCallback() {
@@ -34,7 +41,11 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
   }
 
   @override
+  bool get wantKeepAlive => true;
+  
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // 必须调用以保持状态
     return Scaffold(
       body: Stack(
         children: [
