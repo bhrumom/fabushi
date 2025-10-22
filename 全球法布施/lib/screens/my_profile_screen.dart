@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
 import '../models/practice_model.dart';
+import 'login_screen.dart';
 
 class MyProfileScreen extends StatelessWidget {
   const MyProfileScreen({super.key});
@@ -23,7 +24,10 @@ class MyProfileScreen extends StatelessWidget {
                   const Text('请先登录', style: TextStyle(fontSize: 18)),
                   const SizedBox(height: 20),
                   ElevatedButton(
-                    onPressed: () => Navigator.pushNamed(context, '/login'),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    ),
                     child: const Text('立即登录'),
                   ),
                 ],
