@@ -10,33 +10,52 @@ class GlobeHomeScreen extends StatefulWidget {
   State<GlobeHomeScreen> createState() => _GlobeHomeScreenState();
 }
 
-class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAliveClientMixin {
+class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
   String _currentTransfer = '';
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _setupTransferBeamCallback();
     });
   }
   
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 每次页面重新显示时重新设置回调
-    _setupTransferBeamCallback();
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // 应用恢复时重新设置回调
+      _setupTransferBeamCallback();
+    }
+  }
+  
+  @override
+  void didUpdateWidget(GlobeHomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 页面更新时重新设置回调
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setupTransferBeamCallback();
+    });
+  }
+  
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   void _setupTransferBeamCallback() {
     final model = Provider.of<FileTransferModel>(context, listen: false);
     model.setTransferBeamCallback((fromLat, fromLng, toLat, toLng) {
-      _globeKey.currentState?.addTransferBeam(
-        fromLat, fromLng, toLat, toLng,
-        color: Colors.cyan,
-        duration: const Duration(seconds: 2),
-      );
+      if (mounted && _globeKey.currentState != null) {
+        _globeKey.currentState!.addTransferBeam(
+          fromLat, fromLng, toLat, toLng,
+          color: Colors.cyan,
+          duration: const Duration(seconds: 2),
+        );
+      }
     });
   }
 
@@ -46,6 +65,14 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
   @override
   Widget build(BuildContext context) {
     super.build(context); // 必须调用以保持状态
+    
+    // 每次 build 时重新设置回调，确保切换页面后回调仍然有效
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _setupTransferBeamCallback();
+      }
+    });
+    
     return Scaffold(
       body: Stack(
         children: [
