@@ -49,14 +49,25 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
   void _setupTransferBeamCallback() {
     final model = Provider.of<FileTransferModel>(context, listen: false);
     model.setTransferBeamCallback((fromLat, fromLng, toLat, toLng) {
-      if (mounted && _globeKey.currentState != null) {
-        _globeKey.currentState!.addTransferBeam(
-          fromLat, fromLng, toLat, toLng,
-          color: Colors.cyan,
-          duration: const Duration(seconds: 2),
-        );
+      debugPrint('📡 轨迹回调触发: globeState=${_globeKey.currentState != null}');
+      // 移除 mounted 检查，因为 AutomaticKeepAliveClientMixin 保持页面活跃
+      // 即使页面不可见，widget 仍然存在，可以接收回调
+      if (_globeKey.currentState != null) {
+        debugPrint('✅ 添加轨迹: ($fromLat, $fromLng) -> ($toLat, $toLng)');
+        try {
+          _globeKey.currentState!.addTransferBeam(
+            fromLat, fromLng, toLat, toLng,
+            color: Colors.cyan,
+            duration: const Duration(seconds: 2),
+          );
+        } catch (e) {
+          debugPrint('❌ 添加轨迹失败: $e');
+        }
+      } else {
+        debugPrint('❌ 无法添加轨迹: globeState 为 null');
       }
     });
+    debugPrint('🔧 轨迹回调已设置');
   }
 
   @override
