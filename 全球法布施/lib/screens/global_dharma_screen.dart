@@ -21,7 +21,8 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final model = context.read<FileTransferModel>();
-      if (model.countryStatuses.isEmpty) {
+      // 只在国家状态为空且未在传输时初始化
+      if (model.countryStatuses.isEmpty && !model.isTransferring) {
         model.initializeCountryStatuses(GLOBAL_COUNTRY_SERVERS, COUNTRY_NAMES);
       }
     });
@@ -63,9 +64,10 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
       return;
     }
 
-    // 只在用户主动点击开始时重置状态
-    for (int i = 0; i < model.countryStatuses.length; i++) {
-      model.updateCountryStatus(model.countryStatuses[i].countryName, SendStatus.pending);
+    // 只在用户主动点击开始且当前未在传输时重置状态
+    if (!model.isTransferring) {
+      // 重新初始化国家状态
+      model.initializeCountryStatuses(GLOBAL_COUNTRY_SERVERS, COUNTRY_NAMES);
     }
     
     await model.startGlobalTransfer();
