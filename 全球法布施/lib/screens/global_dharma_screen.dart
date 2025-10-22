@@ -16,103 +16,42 @@ class GlobalDharmaScreen extends StatefulWidget {
 }
 
 class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
-  late RealGlobalSendService _globalSendService;
-  List<CountrySendStatus> _countryStatuses = [];
-  bool _isSending = false;
-  String _currentLog = '';
-  int _totalSent = 0;
-  double _totalDataSent = 0.0;
-  StreamSubscription? _logSubscription;
-
   @override
   void initState() {
     super.initState();
-    _initializeCountryStatuses();
-    _initializeGlobalSendService();
-  }
-
-  void _initializeCountryStatuses() {
-    // 初始化所有国家的状态
-    _countryStatuses = GLOBAL_COUNTRY_SERVERS.keys.map((countryCode) {
-      final countryName = COUNTRY_NAMES[countryCode] ?? countryCode;
-      return CountrySendStatus(
-        countryCode: countryCode,
-        countryName: countryName,
-        status: SendStatus.pending,
-        serverCount: GLOBAL_COUNTRY_SERVERS[countryCode]?.length ?? 0,
-      );
-    }).toList();
-  }
-
-  void _initializeGlobalSendService() {
-    _globalSendService = RealGlobalSendService(
-      onProgress: (count) {
-        setState(() {
-          _totalSent = count;
-        });
-      },
-      onDataSent: (dataMB) {
-        setState(() {
-          _totalDataSent = dataMB;
-        });
-      },
-      onStopped: () {
-        setState(() {
-          _isSending = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('全球法布施已完成')),
-        );
-      },
-      onLog: (message) {
-        setState(() {
-          _currentLog = message;
-        });
-        _parseLogAndUpdateStatus(message);
-      },
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final model = context.read<FileTransferModel>();
+      if (model.countryStatuses.isEmpty) {
+        model.initializeCountryStatuses(GLOBAL_COUNTRY_SERVERS, COUNTRY_NAMES);
+      }
+    });
   }
 
   void _parseLogAndUpdateStatus(String logMessage) {
-    // 解析日志消息并更新国家状态
+    final model = context.read<FileTransferModel>();
+    
     if (logMessage.contains('发送到') && logMessage.contains('成功')) {
-      // 提取国家名称
       final regex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*成功');
       final match = regex.firstMatch(logMessage);
       if (match != null) {
         final countryName = match.group(1)?.trim();
-        _updateCountryStatus(countryName, SendStatus.success);
+        model.updateCountryStatus(countryName, SendStatus.success);
       }
     } else if (logMessage.contains('发送到') && logMessage.contains('失败')) {
-      // 提取国家名称
       final regex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*失败');
       final match = regex.firstMatch(logMessage);
       if (match != null) {
         final countryName = match.group(1)?.trim();
-        _updateCountryStatus(countryName, SendStatus.failed);
+        model.updateCountryStatus(countryName, SendStatus.failed);
       }
     } else if (logMessage.contains('正在发送到')) {
-      // 提取国家名称
       final regex = RegExp(r'正在发送到\s+([^()]+)\s+\([^()]+\)');
       final match = regex.firstMatch(logMessage);
       if (match != null) {
         final countryName = match.group(1)?.trim();
-        _updateCountryStatus(countryName, SendStatus.sending);
+        model.updateCountryStatus(countryName, SendStatus.sending);
       }
     }
-  }
-
-  void _updateCountryStatus(String? countryName, SendStatus status) {
-    if (countryName == null) return;
-    
-    setState(() {
-      final index = _countryStatuses.indexWhere(
-        (status) => status.countryName == countryName
-      );
-      if (index != -1) {
-        _countryStatuses[index] = _countryStatuses[index].copyWith(status: status);
-      }
-    });
   }
 
   Future<void> _startGlobalDharma() async {
@@ -124,33 +63,21 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
       return;
     }
 
-    await _globalSendService.initialize();
+    // 只在用户主动点击开始时重置状态
+    for (int i = 0; i < model.countryStatuses.length; i++) {
+      model.updateCountryStatus(model.countryStatuses[i].countryName, SendStatus.pending);
+    }
     
-    setState(() {
-      _isSending = true;
-      // 重置所有国家状态为发送中
-      for (int i = 0; i < _countryStatuses.length; i++) {
-        _countryStatuses[i] = _countryStatuses[i].copyWith(status: SendStatus.sending);
-      }
-    });
-
-    _globalSendService.startSending(
-      files: model.selectedFiles,
-      isLoop: model.isLooping,
-    );
+    await model.startGlobalTransfer();
   }
 
   void _stopGlobalDharma() {
-    _globalSendService.stopSending();
-    setState(() {
-      _isSending = false;
-    });
+    final model = context.read<FileTransferModel>();
+    model.stopTransfer();
   }
 
   @override
   void dispose() {
-    _logSubscription?.cancel();
-    _globalSendService.stopSending();
     super.dispose();
   }
 
@@ -164,7 +91,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
         backgroundColor: const Color(0xFF667eea),
         foregroundColor: Colors.white,
         actions: [
-          if (_isSending)
+          if (model.isTransferring)
             IconButton(
               icon: const Icon(Icons.stop),
               onPressed: _stopGlobalDharma,
@@ -184,7 +111,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
           _buildStatsCard(model),
           
           // 当前日志
-          if (_currentLog.isNotEmpty)
+          if (model.currentLog.isNotEmpty)
             Container(
               padding: const EdgeInsets.all(16),
               color: Colors.grey[100],
@@ -194,7 +121,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      _currentLog,
+                      model.currentLog,
                       style: const TextStyle(fontSize: 14),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -206,15 +133,15 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
 
           // 国家列表
           Expanded(
-            child: _buildCountryList(),
+            child: _buildCountryList(model),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isSending ? _stopGlobalDharma : _startGlobalDharma,
-        icon: Icon(_isSending ? Icons.stop : Icons.play_arrow),
-        label: Text(_isSending ? '停止发送' : '开始法布施'),
-        backgroundColor: _isSending ? Colors.red : const Color(0xFF667eea),
+        onPressed: model.isTransferring ? _stopGlobalDharma : _startGlobalDharma,
+        icon: Icon(model.isTransferring ? Icons.stop : Icons.play_arrow),
+        label: Text(model.isTransferring ? '停止发送' : '开始法布施'),
+        backgroundColor: model.isTransferring ? Colors.red : const Color(0xFF667eea),
         foregroundColor: Colors.white,
       ),
     );
@@ -244,7 +171,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const Icon(Icons.public, color: Colors.green),
                 const SizedBox(width: 8),
                 Text(
-                  '目标国家: ${_countryStatuses.length} 个',
+                  '目标国家: ${model.countryStatuses.length} 个',
                   style: const TextStyle(fontSize: 16),
                 ),
               ],
@@ -255,7 +182,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const Icon(Icons.send, color: Colors.orange),
                 const SizedBox(width: 8),
                 Text(
-                  '已发送: $_totalSent 个文件',
+                  '已发送: ${model.globalSentCount} 个文件',
                   style: const TextStyle(fontSize: 16),
                 ),
               ],
@@ -266,7 +193,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const Icon(Icons.data_usage, color: Colors.purple),
                 const SizedBox(width: 8),
                 Text(
-                  '数据量: ${_totalDataSent.toStringAsFixed(2)} MB',
+                  '数据量: ${model.globalDataSentMB.toStringAsFixed(2)} MB',
                   style: const TextStyle(fontSize: 16),
                 ),
               ],
@@ -290,7 +217,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
     );
   }
 
-  Widget _buildCountryList() {
+  Widget _buildCountryList(FileTransferModel model) {
     return Column(
       children: [
         Container(
@@ -300,7 +227,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
               const Icon(Icons.list, color: Colors.blue),
               const SizedBox(width: 8),
               Text(
-                '国家发送状态 (${_getSuccessCount()}/${_countryStatuses.length})',
+                '国家发送状态 (${model.getSuccessCount()}/${model.countryStatuses.length})',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ],
@@ -308,9 +235,9 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
         ),
         Expanded(
           child: ListView.builder(
-            itemCount: _countryStatuses.length,
+            itemCount: model.countryStatuses.length,
             itemBuilder: (context, index) {
-              final status = _countryStatuses[index];
+              final status = model.countryStatuses[index];
               return _buildCountryStatusItem(status);
             },
           ),
@@ -358,46 +285,5 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
       case SendStatus.pending:
         return const Text('等待中', style: TextStyle(color: Colors.grey));
     }
-  }
-
-  int _getSuccessCount() {
-    return _countryStatuses.where((status) => status.status == SendStatus.success).length;
-  }
-}
-
-/// 国家发送状态枚举
-enum SendStatus {
-  pending,    // 等待中
-  sending,    // 发送中
-  success,    // 成功
-  failed,     // 失败
-}
-
-/// 国家发送状态数据类
-class CountrySendStatus {
-  final String countryCode;
-  final String countryName;
-  final SendStatus status;
-  final int serverCount;
-
-  CountrySendStatus({
-    required this.countryCode,
-    required this.countryName,
-    required this.status,
-    required this.serverCount,
-  });
-
-  CountrySendStatus copyWith({
-    String? countryCode,
-    String? countryName,
-    SendStatus? status,
-    int? serverCount,
-  }) {
-    return CountrySendStatus(
-      countryCode: countryCode ?? this.countryCode,
-      countryName: countryName ?? this.countryName,
-      status: status ?? this.status,
-      serverCount: serverCount ?? this.serverCount,
-    );
   }
 }

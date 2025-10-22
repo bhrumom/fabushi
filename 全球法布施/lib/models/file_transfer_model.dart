@@ -52,6 +52,10 @@ class FileTransferModel extends ChangeNotifier {
   
   // 真实的全球发送服务
   RealGlobalSendService? _realGlobalSendService;
+  
+  // 国家发送状态（持久化）
+  List<CountrySendStatus> _countryStatuses = [];
+  String _currentLog = '';
 
   // 已下载素材服务
   final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
@@ -75,6 +79,8 @@ class FileTransferModel extends ChangeNotifier {
   bool get hasFiles => _selectedFiles.isNotEmpty;
   int get globalSentCount => _globalSentCount;
   double get globalDataSentMB => _globalDataSentMB;
+  List<CountrySendStatus> get countryStatuses => _countryStatuses;
+  String get currentLog => _currentLog;
   
   // 新增属性用于首页
   PlatformFile? get selectedFile => _selectedFiles.isNotEmpty ? _selectedFiles.first : null;
@@ -541,7 +547,6 @@ class FileTransferModel extends ChangeNotifier {
     
     _isTransferring = true;
     _status = TransferStatus.transferring;
-    _resetStats();
     notifyListeners();
     
     try {
@@ -617,6 +622,8 @@ class FileTransferModel extends ChangeNotifier {
       },
       onLog: (message) {
         debugPrint('🌍 全球发送: $message');
+        updateLog(message);
+        _parseLogAndUpdateCountryStatus(message);
       },
       onTransferBeam: _onTransferBeam,
       onCountrySent: (bytes) async {
@@ -629,6 +636,32 @@ class FileTransferModel extends ChangeNotifier {
 
     await _realGlobalSendService?.initialize();
     debugPrint('📋 真实全球发送服务初始化完成');
+  }
+  
+  /// 解析日志并更新国家状态
+  void _parseLogAndUpdateCountryStatus(String logMessage) {
+    if (logMessage.contains('发送到') && logMessage.contains('成功')) {
+      final regex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*成功');
+      final match = regex.firstMatch(logMessage);
+      if (match != null) {
+        final countryName = match.group(1)?.trim();
+        updateCountryStatus(countryName, SendStatus.success);
+      }
+    } else if (logMessage.contains('发送到') && logMessage.contains('失败')) {
+      final regex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*失败');
+      final match = regex.firstMatch(logMessage);
+      if (match != null) {
+        final countryName = match.group(1)?.trim();
+        updateCountryStatus(countryName, SendStatus.failed);
+      }
+    } else if (logMessage.contains('正在发送到')) {
+      final regex = RegExp(r'正在发送到\s+([^()]+)\s+\([^()]+\)');
+      final match = regex.firstMatch(logMessage);
+      if (match != null) {
+        final countryName = match.group(1)?.trim();
+        updateCountryStatus(countryName, SendStatus.sending);
+      }
+    }
   }
   
   /// 更新传输进度
@@ -698,6 +731,45 @@ class FileTransferModel extends ChangeNotifier {
   void _resetStats() {
     _globalSentCount = 0;
     _globalDataSentMB = 0.0;
+    _currentLog = '';
+  }
+  
+  /// 初始化国家状态
+  void initializeCountryStatuses(Map<String, List<String>> countryServers, Map<String, String> countryNames) {
+    _countryStatuses = countryServers.keys.map((countryCode) {
+      final countryName = countryNames[countryCode] ?? countryCode;
+      return CountrySendStatus(
+        countryCode: countryCode,
+        countryName: countryName,
+        status: SendStatus.pending,
+        serverCount: countryServers[countryCode]?.length ?? 0,
+      );
+    }).toList();
+    notifyListeners();
+  }
+  
+  /// 更新国家状态
+  void updateCountryStatus(String? countryName, SendStatus status) {
+    if (countryName == null) return;
+    
+    final index = _countryStatuses.indexWhere(
+      (status) => status.countryName == countryName
+    );
+    if (index != -1) {
+      _countryStatuses[index] = _countryStatuses[index].copyWith(status: status);
+      notifyListeners();
+    }
+  }
+  
+  /// 更新日志
+  void updateLog(String log) {
+    _currentLog = log;
+    notifyListeners();
+  }
+  
+  /// 获取成功发送的国家数量
+  int getSuccessCount() {
+    return _countryStatuses.where((status) => status.status == SendStatus.success).length;
   }
   
   @override
@@ -706,5 +778,42 @@ class FileTransferModel extends ChangeNotifier {
     _realGlobalSendService?.stopSending();
     stopTransfer();
     super.dispose();
+  }
+}
+
+/// 国家发送状态枚举
+enum SendStatus {
+  pending,    // 等待中
+  sending,    // 发送中
+  success,    // 成功
+  failed,     // 失败
+}
+
+/// 国家发送状态数据类
+class CountrySendStatus {
+  final String countryCode;
+  final String countryName;
+  final SendStatus status;
+  final int serverCount;
+
+  CountrySendStatus({
+    required this.countryCode,
+    required this.countryName,
+    required this.status,
+    required this.serverCount,
+  });
+
+  CountrySendStatus copyWith({
+    String? countryCode,
+    String? countryName,
+    SendStatus? status,
+    int? serverCount,
+  }) {
+    return CountrySendStatus(
+      countryCode: countryCode ?? this.countryCode,
+      countryName: countryName ?? this.countryName,
+      status: status ?? this.status,
+      serverCount: serverCount ?? this.serverCount,
+    );
   }
 }
