@@ -13,6 +13,7 @@ class GlobeHomeScreen extends StatefulWidget {
 class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
   bool _showControlPanel = true;
+  String _currentTransfer = '';
 
   @override
   void initState() {
@@ -70,6 +71,29 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> {
               ),
             ),
           ),
+          if (_currentTransfer.isNotEmpty)
+            Positioned(
+              top: 80,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.cyan.withOpacity(0.8),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    _currentTransfer,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (_showControlPanel)
             Positioned(
               bottom: 100,

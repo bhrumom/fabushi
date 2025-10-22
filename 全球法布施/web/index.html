@@ -44,6 +44,15 @@
   <script type="module" src="auth-utils.js" defer></script>
   <script type="module" src="alipay-utils.js" defer></script>
   <script type="module" src="alipay-login-functions.js" defer></script>
-  <script src="flutter_bootstrap.js"></script>
+  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    window.addEventListener('load', function(ev) {
+      _flutter.loader.load({
+        config: {
+          renderer: "html",  // 使用HTML渲染器，加快加载速度
+        }
+      });
+    });
+  </script>
 </body>
 </html>
