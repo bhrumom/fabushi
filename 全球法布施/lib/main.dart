@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'models/file_transfer_model.dart';
 import 'models/settings_model.dart';
@@ -13,6 +14,11 @@ import 'screens/login_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Web平台使用HTML渲染器
+  if (kIsWeb) {
+    debugPrint('使用HTML渲染器加快网页加载速度');
+  }
   
   // 异步初始化，不阻塞启动
   AppInitializer.initialize().catchError((e) => debugPrint('初始化失败: $e'));

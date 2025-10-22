@@ -135,17 +135,19 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
         to.longitude,
         color: color,
         duration: duration,
+        fromLabel: from.countryName,
+        toLabel: to.countryName,
       );
     }
   }
 
-  Future<void> addTransferBeam(double fromLat, double fromLng, double toLat, double toLng, {Color? color, Duration? duration}) async {
+  Future<void> addTransferBeam(double fromLat, double fromLng, double toLat, double toLng, {Color? color, Duration? duration, String? fromLabel, String? toLabel}) async {
     if (!_isDisposed && mounted) {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final beamId = 'beam_$timestamp';
       final transferDuration = duration ?? const Duration(seconds: 2);
 
-      // 添加起点标记（中国北京 - 更大更亮）
+      // 添加起点标记
       _controller.addPoint(Point(
         id: 'from_$timestamp',
         coordinates: GlobeCoordinates(fromLat, fromLng),
@@ -153,9 +155,10 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
           color: Colors.red.shade400,
           size: 8,
         ),
+        label: fromLabel,
       ));
 
-      // 添加终点标记（目标国家）
+      // 添加终点标记
       _controller.addPoint(Point(
         id: 'to_$timestamp',
         coordinates: GlobeCoordinates(toLat, toLng),
@@ -163,6 +166,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
           color: Colors.green.shade400,
           size: 6,
         ),
+        label: toLabel,
       ));
 
       // 添加起点的脉冲效果
@@ -181,21 +185,22 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
   }
 
   Future<void> _animateMovingLight(double fromLat, double fromLng, double toLat, double toLng, String beamId, Color color, Duration duration) async {
-    const steps = 40;
+    const steps = 80;
     final stepDelay = Duration(milliseconds: duration.inMilliseconds ~/ steps);
-    const tailLength = 8;
+    const tailLength = 20;
 
-    // 计算弧线路径的中间控制点
+    // 计算优美的弧线路径控制点
     final midLat = (fromLat + toLat) / 2;
     final midLng = (fromLng + toLng) / 2;
 
-    // 计算距离以确定弧线高度
+    // 平衡的弧线高度（立体感 + 连续性）
     final distance = _calculateDistance(fromLat, fromLng, toLat, toLng);
-    final arcHeight = math.min(distance * 0.3, 30); // 弧线高度，最大30度
+    final arcHeight = math.min(distance * 0.4, 40); // 平衡高度
 
     // 计算垂直向上的偏移
-    final arcLat = midLat + arcHeight * math.cos(math.atan2(toLat - fromLat, toLng - fromLng));
-    final arcLng = midLng + arcHeight * math.sin(math.atan2(toLat - fromLat, toLng - fromLng));
+    final angle = math.atan2(toLat - fromLat, toLng - fromLng);
+    final arcLat = midLat + arcHeight * math.cos(angle + math.pi / 2);
+    final arcLng = midLng + arcHeight * math.sin(angle + math.pi / 2);
 
     for (int i = 0; i <= steps; i++) {
       if (_isDisposed || !mounted) break;
@@ -206,8 +211,30 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
       final lat = _quadraticBezier(fromLat, arcLat, toLat, t);
       final lng = _quadraticBezier(fromLng, arcLng, toLng, t);
 
-      // 添加流星头部（最亮）
+      // 添加流星头部（白色核心 + 彩色光晕）
       final headId = '${beamId}_head_$i';
+      
+      // 最外层光晕（大范围辉光）
+      _controller.addPoint(Point(
+        id: '${headId}_glow_outer',
+        coordinates: GlobeCoordinates(lat, lng),
+        style: PointStyle(
+          color: color.withOpacity(0.3),
+          size: 20,
+        ),
+      ));
+      
+      // 中层彩色光晕
+      _controller.addPoint(Point(
+        id: '${headId}_glow',
+        coordinates: GlobeCoordinates(lat, lng),
+        style: PointStyle(
+          color: color.withOpacity(0.7),
+          size: 14,
+        ),
+      ));
+      
+      // 核心白色亮点
       _controller.addPoint(Point(
         id: headId,
         coordinates: GlobeCoordinates(lat, lng),
@@ -225,19 +252,19 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
         final tailLat = _quadraticBezier(fromLat, arcLat, toLat, tailT);
         final tailLng = _quadraticBezier(fromLng, arcLng, toLng, tailT);
         final tailId = '${beamId}_tail_${i}_$j';
-        final alpha = (255 * (1 - j / tailLength)).toInt();
+        final opacity = (1 - j / tailLength);
 
         _controller.addPoint(Point(
           id: tailId,
           coordinates: GlobeCoordinates(tailLat, tailLng),
           style: PointStyle(
-            color: color.withAlpha(alpha),
-            size: (12 - j * 1.0).clamp(3, 12),
+            color: color.withOpacity(opacity * 0.8),
+            size: (14 - j * 0.6).clamp(4, 14),
           ),
         ));
 
         // 移除拖尾点
-        Future.delayed(const Duration(milliseconds: 150), () {
+        Future.delayed(const Duration(milliseconds: 100), () {
           if (!_isDisposed && mounted) {
             try {
               _controller.removePoint(tailId);
@@ -246,14 +273,16 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
         });
       }
 
-      // 移除头部点
-      Future.delayed(const Duration(milliseconds: 250), () {
+      // 移除头部点（包括所有光晕）
+      Future.delayed(const Duration(milliseconds: 150), () {
         if (!_isDisposed && mounted) {
           try {
             _controller.removePoint(headId);
+            _controller.removePoint('${headId}_glow');
+            _controller.removePoint('${headId}_glow_outer');
           } catch (_) {}
-          }
-        });
+        }
+      });
 
       await Future.delayed(stepDelay);
     }
@@ -289,9 +318,18 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
     return degrees * math.pi / 180;
   }
 
-  // 二次贝塞尔曲线插值
+  // 二次贝塞尔曲线插值（优化版）
   double _quadraticBezier(double p0, double p1, double p2, double t) {
-    return (1 - t) * (1 - t) * p0 + 2 * (1 - t) * t * p1 + t * t * p2;
+    final u = 1 - t;
+    return u * u * p0 + 2 * u * t * p1 + t * t * p2;
+  }
+
+  // 三次贝塞尔曲线插值（更平滑）
+  double _cubicBezier(double p0, double p1, double p2, double p3, double t) {
+    final u = 1 - t;
+    final tt = t * t;
+    final uu = u * u;
+    return uu * u * p0 + 3 * uu * t * p1 + 3 * u * tt * p2 + tt * t * p3;
   }
 
   // 创建脉冲效果
