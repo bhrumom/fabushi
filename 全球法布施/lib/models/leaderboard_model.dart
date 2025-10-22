@@ -53,21 +53,28 @@ class LeaderboardModel extends ChangeNotifier {
       }
     }
     
-    // 检查刷新限制（1分钟）- 即使强制刷新也要检查
+    // 检查缓存（1天）
+    if (!forceRefresh && _lastUpdateTime != null && _entries.isNotEmpty) {
+      final diff = DateTime.now().difference(_lastUpdateTime!);
+      if (diff.inDays < 1) {
+        return; // 使用缓存，不需要刷新
+      }
+    }
+    
+    // 检查刷新限制（1分钟）- 只在真正需要网络请求时才检查
     if (_lastRefreshTime != null) {
       final diff = DateTime.now().difference(_lastRefreshTime!);
       if (diff.inSeconds < 60) {
         _error = '刷新过于频繁，请${60 - diff.inSeconds}秒后再试';
         notifyListeners();
+        // 3秒后自动清除错误消息
+        Future.delayed(const Duration(seconds: 3), () {
+          if (_error?.contains('刷新过于频繁') == true) {
+            _error = null;
+            notifyListeners();
+          }
+        });
         return;
-      }
-    }
-    
-    // 检查缓存（1天）
-    if (!forceRefresh && _lastUpdateTime != null && _entries.isNotEmpty) {
-      final diff = DateTime.now().difference(_lastUpdateTime!);
-      if (diff.inDays < 1) {
-        return; // 使用缓存
       }
     }
     
