@@ -196,11 +196,6 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('佛像模型'),
-        backgroundColor: Colors.amber[700],
-        elevation: 0,
-      ),
       body: GestureDetector(
         onPanStart: (details) {
           _isUserDragging = true;
