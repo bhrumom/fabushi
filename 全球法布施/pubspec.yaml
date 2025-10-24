@@ -51,6 +51,7 @@ dependencies:
   three_js_helpers: ^0.2.3
   three_js_core_loaders: ^0.2.1
   three_js_advanced_loaders: ^0.2.4
+  window_manager: ^0.3.7
 
 dev_dependencies:
   flutter_test:
