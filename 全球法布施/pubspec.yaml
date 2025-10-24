@@ -44,13 +44,13 @@ dependencies:
   firebase_core: ^3.8.1
   firebase_auth: ^5.3.3
   google_sign_in: ^6.2.2
-  three_js: ^0.1.7
-  three_js_core: any
-  three_js_math: any
-  three_js_objects: any
-  three_js_helpers: any
-  three_js_core_loaders: any
-  three_js_advanced_loaders: any
+  three_js: ^0.2.5
+  three_js_core: ^0.2.5
+  three_js_math: ^0.2.4
+  three_js_objects: ^0.2.1
+  three_js_helpers: ^0.2.3
+  three_js_core_loaders: ^0.2.1
+  three_js_advanced_loaders: ^0.2.4
 
 dev_dependencies:
   flutter_test:
