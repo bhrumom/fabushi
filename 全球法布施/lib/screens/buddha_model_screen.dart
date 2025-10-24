@@ -21,9 +21,24 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
       onSetupComplete: () => setState(() {}),
       setup: _setup,
       windowResizeUpdate: (size) {
-        debugPrint('Window resized to: ${size.width}x${size.height}');
+        _updateCameraAspect();
       },
     );
+  }
+
+  void _updateCameraAspect() {
+    try {
+      if (threeJs.camera is three.PerspectiveCamera) {
+        final camera = threeJs.camera as three.PerspectiveCamera;
+        final newAspect = threeJs.width / threeJs.height;
+        if ((camera.aspect - newAspect).abs() > 0.001) {
+          camera.aspect = newAspect;
+          camera.updateProjectionMatrix();
+        }
+      }
+    } catch (e) {
+      // Camera not initialized yet
+    }
   }
 
   Future<void> _setup() async {
