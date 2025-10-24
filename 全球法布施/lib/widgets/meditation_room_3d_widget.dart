@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'meditation_room_painter.dart';
 import 'sutra_dialog.dart';
+import 'buddha_3d_widget.dart';
 
 class MeditationRoom3DWidget extends StatefulWidget {
   const MeditationRoom3DWidget({Key? key}) : super(key: key);
@@ -22,6 +24,14 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
   double _cameraAngleX = 0.3;
   double _cameraAngleY = 0.0;
   double _cameraDistance = 8.0;
+  
+
+  
+  // 供香和供灯状态
+  bool _isIncenseOffering = false;
+  bool _isLampOffering = false;
+  int _incenseCount = 0;
+  int _lampCount = 0;
 
   @override
   void initState() {
@@ -35,6 +45,33 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
       vsync: this,
       duration: const Duration(seconds: 30),
     )..repeat();
+    
+
+  }
+
+  
+  void _offerIncense() {
+    setState(() {
+      _isIncenseOffering = true;
+      _incenseCount++;
+    });
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() => _isIncenseOffering = false);
+      }
+    });
+  }
+  
+  void _offerLamp() {
+    setState(() {
+      _isLampOffering = true;
+      _lampCount++;
+    });
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() => _isLampOffering = false);
+      }
+    });
   }
 
 
@@ -68,6 +105,65 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
     super.dispose();
   }
 
+  Widget _buildOfferingButton({
+    required IconData icon,
+    required String label,
+    required int count,
+    required bool isActive,
+    required VoidCallback onTap,
+    required Color color,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        decoration: BoxDecoration(
+          color: isActive 
+            ? color.withOpacity(0.9)
+            : Colors.brown[800]!.withOpacity(0.8),
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(
+            color: isActive ? color : Colors.amber,
+            width: 2,
+          ),
+          boxShadow: isActive ? [
+            BoxShadow(
+              color: color.withOpacity(0.6),
+              blurRadius: 20,
+              spreadRadius: 5,
+            ),
+          ] : [],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white, size: 32),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            if (count > 0) ...[
+              const SizedBox(height: 4),
+              Text(
+                '已供养 $count 次',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.8),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -84,6 +180,14 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
       ),
       child: Stack(
         children: [
+          if (kIsWeb)
+            Center(
+              child: SizedBox(
+                width: 400,
+                height: 500,
+                child: Buddha3DWidget(),
+              ),
+            ),
           GestureDetector(
             onTapUp: (details) {
               final size = MediaQuery.of(context).size;
@@ -106,6 +210,8 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
                       cameraDistance: _cameraDistance,
                       glowValue: _glowController.value,
                       rotationValue: _rotationController.value,
+                      isIncenseOffering: _isIncenseOffering,
+                      isLampOffering: _isLampOffering,
                     ),
                   ),
                 );
@@ -144,6 +250,34 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
                   );
                 },
               ),
+            ),
+          ),
+          // 供养按钮
+          Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildOfferingButton(
+                  icon: Icons.spa,
+                  label: '供香',
+                  count: _incenseCount,
+                  isActive: _isIncenseOffering,
+                  onTap: _offerIncense,
+                  color: Colors.grey[600]!,
+                ),
+                const SizedBox(width: 40),
+                _buildOfferingButton(
+                  icon: Icons.lightbulb,
+                  label: '供灯',
+                  count: _lampCount,
+                  isActive: _isLampOffering,
+                  onTap: _offerLamp,
+                  color: Colors.orange[700]!,
+                ),
+              ],
             ),
           ),
         ],

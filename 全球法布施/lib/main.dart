@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'models/file_transfer_model.dart';
 import 'models/settings_model.dart';
 import 'models/auth_model.dart';
@@ -12,8 +14,18 @@ import 'widgets/app_wrapper.dart';
 import 'screens/login_screen.dart';
 
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 尝试初始化Firebase，如果失败则继续运行
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    debugPrint('✅ Firebase初始化成功');
+  } catch (e) {
+    debugPrint('⚠️ Firebase初始化失败（可选功能）: $e');
+  }
   
   // Web平台使用HTML渲染器
   if (kIsWeb) {

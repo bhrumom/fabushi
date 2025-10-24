@@ -59,5 +59,31 @@
 		<string>alipayqr</string>
 		<string>alipayshare</string>
 	</array>
+	<!-- Google Sign-In Configuration -->
+	<key>GIDClientID</key>
+	<string>700291601159-c64bhqmod4d4flb8g01c5hki2e0cu0o2.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>google</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.700291601159-c64bhqmod4d4flb8g01c5hki2e0cu0o2</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>alipay</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>globaldharma</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
