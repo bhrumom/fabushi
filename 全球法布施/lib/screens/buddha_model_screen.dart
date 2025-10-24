@@ -3,6 +3,7 @@ import 'package:three_js_core/three_js_core.dart' as three;
 import 'package:three_js_math/three_js_math.dart' as tmath;
 import 'package:three_js_advanced_loaders/three_js_advanced_loaders.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 class BuddhaModelScreen extends StatefulWidget {
   const BuddhaModelScreen({super.key});
@@ -13,6 +14,9 @@ class BuddhaModelScreen extends StatefulWidget {
 
 class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
   late three.ThreeJS threeJs;
+  double _rotationY = 0.0;
+  double _cameraDistance = 250.0;
+  bool _needsUpdate = false;
 
   @override
   void initState() {
@@ -44,6 +48,15 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
     }
   }
 
+  void _updateCameraPosition() {
+    if (threeJs.camera == null) return;
+    final x = _cameraDistance * math.sin(_rotationY);
+    final y = 0.0;
+    final z = _cameraDistance * math.cos(_rotationY);
+    threeJs.camera.position.setValues(x, y, z);
+    threeJs.camera.lookAt(tmath.Vector3(0, 0, 0));
+  }
+
   Future<void> _setup() async {
     // 创建场景
     threeJs.scene = three.Scene();
@@ -52,8 +65,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
     
     // 设置相机 - 使用较小的FOV以减少透视变形
     threeJs.camera = three.PerspectiveCamera(50, threeJs.width / threeJs.height, 0.1, 2000);
-    threeJs.camera.position.setValues(0, 0, 250);
-    threeJs.camera.lookAt(tmath.Vector3(0, 0, 0));
+    _updateCameraPosition();
     
     // 环境光 - 提高亮度
     final ambientLight = three.AmbientLight(0xFFE4B5, 2.5);
@@ -154,8 +166,14 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
         backgroundColor: Colors.amber[700],
         elevation: 0,
       ),
-      body: SizedBox.expand(
-        child: threeJs.build(),
+      body: GestureDetector(
+        onPanUpdate: (details) {
+          _rotationY += details.delta.dx * 0.01;
+          _updateCameraPosition();
+        },
+        child: SizedBox.expand(
+          child: threeJs.build(),
+        ),
       ),
     );
   }
