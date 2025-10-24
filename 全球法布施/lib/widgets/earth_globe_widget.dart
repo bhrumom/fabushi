@@ -49,6 +49,8 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
     try {
       final location = await _ipLocationService.getCurrentLocation();
 
+      if (!mounted) return;
+
       if (location != null) {
         setState(() {
           _userLatitude = location.latitude;
@@ -71,7 +73,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
       } else {
         // IP定位失败，使用中国北京作为默认位置
         final china = _coordService.getByCountryCode('CN');
-        if (china != null) {
+        if (china != null && mounted) {
           setState(() {
             _userLatitude = china.latitude;
             _userLongitude = china.longitude;
@@ -93,9 +95,10 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
       }
     } catch (e) {
       print('初始化用户位置失败: $e');
+      if (!mounted) return;
       // 使用中国北京作为默认位置
       final china = _coordService.getByCountryCode('CN');
-      if (china != null) {
+      if (china != null && mounted) {
         setState(() {
           _userLatitude = china.latitude;
           _userLongitude = china.longitude;
