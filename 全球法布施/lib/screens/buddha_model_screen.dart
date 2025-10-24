@@ -16,18 +16,31 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
   late three.ThreeJS threeJs;
   double _rotationY = 0.0;
   double _cameraDistance = 250.0;
-  bool _needsUpdate = false;
+  Timer? _autoRotateTimer;
+  bool _isUserDragging = false;
 
   @override
   void initState() {
     super.initState();
     threeJs = three.ThreeJS(
-      onSetupComplete: () => setState(() {}),
+      onSetupComplete: () {
+        setState(() {});
+        _startAutoRotate();
+      },
       setup: _setup,
       windowResizeUpdate: (size) {
         _updateCameraAspect();
       },
     );
+  }
+
+  void _startAutoRotate() {
+    _autoRotateTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      if (!_isUserDragging) {
+        _rotationY -= 0.005;
+        _updateCameraPosition();
+      }
+    });
   }
 
   void _updateCameraAspect() {
@@ -60,8 +73,11 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
   Future<void> _setup() async {
     // 创建场景
     threeJs.scene = three.Scene();
-    // 寺庙背景色 - 庄严的金红渐变
-    threeJs.scene.background = tmath.Color.fromHex32(0x8B4513);
+    // 星空背景
+    threeJs.scene.background = tmath.Color.fromHex32(0x000428);
+    
+    // 添加星星
+    _addStars();
     
     // 设置相机 - 使用较小的FOV以减少透视变形
     threeJs.camera = three.PerspectiveCamera(50, threeJs.width / threeJs.height, 0.1, 2000);
@@ -92,6 +108,24 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
     
     // 加载模型
     await _loadModel();
+  }
+
+  void _addStars() {
+    final geometry = three.BufferGeometry();
+    final vertices = <double>[];
+    final random = math.Random();
+    
+    for (int i = 0; i < 1000; i++) {
+      final x = (random.nextDouble() - 0.5) * 2000;
+      final y = (random.nextDouble() - 0.5) * 2000;
+      final z = (random.nextDouble() - 0.5) * 2000;
+      vertices.addAll([x, y, z]);
+    }
+    
+    geometry.setAttributeFromString('position', tmath.Float32BufferAttribute.fromList(vertices, 3));
+    final material = three.PointsMaterial.fromMap({'color': 0xFFFFFF, 'size': 2});
+    final stars = three.Points(geometry, material);
+    threeJs.scene.add(stars);
   }
 
   Future<void> _loadModel() async {
@@ -154,6 +188,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
 
   @override
   void dispose() {
+    _autoRotateTimer?.cancel();
     threeJs.dispose();
     super.dispose();
   }
@@ -167,9 +202,15 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
         elevation: 0,
       ),
       body: GestureDetector(
+        onPanStart: (details) {
+          _isUserDragging = true;
+        },
         onPanUpdate: (details) {
           _rotationY += details.delta.dx * 0.01;
           _updateCameraPosition();
+        },
+        onPanEnd: (details) {
+          _isUserDragging = false;
         },
         child: SizedBox.expand(
           child: threeJs.build(),
