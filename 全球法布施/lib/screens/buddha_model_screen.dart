@@ -18,6 +18,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
   double _cameraDistance = 250.0;
   Timer? _autoRotateTimer;
   bool _isUserDragging = false;
+  double? _lastPointerX;
 
   @override
   void initState() {
@@ -196,16 +197,26 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: GestureDetector(
-        onPanStart: (details) {
+      body: Listener(
+        onPointerDown: (event) {
           _isUserDragging = true;
+          _lastPointerX = event.position.dx;
         },
-        onPanUpdate: (details) {
-          _rotationY += details.delta.dx * 0.01;
-          _updateCameraPosition();
+        onPointerMove: (event) {
+          if (_isUserDragging && _lastPointerX != null) {
+            final delta = event.position.dx - _lastPointerX!;
+            _rotationY += delta * 0.01;
+            _updateCameraPosition();
+            _lastPointerX = event.position.dx;
+          }
         },
-        onPanEnd: (details) {
+        onPointerUp: (event) {
           _isUserDragging = false;
+          _lastPointerX = null;
+        },
+        onPointerCancel: (event) {
+          _isUserDragging = false;
+          _lastPointerX = null;
         },
         child: SizedBox.expand(
           child: threeJs.build(),
