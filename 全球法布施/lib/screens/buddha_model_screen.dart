@@ -12,35 +12,63 @@ class BuddhaModelScreen extends StatefulWidget {
 }
 
 class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
-  late three.ThreeJS threeJs;
+  three.ThreeJS? threeJs;
+  three.Object3D? loadedModel;
+  Timer? _resizeTimer;
+  Size? _currentSize;
 
   @override
   void initState() {
     super.initState();
+    _initThreeJS();
+  }
+
+  void _initThreeJS() {
     threeJs = three.ThreeJS(
-      onSetupComplete: () => setState(() {}),
+      onSetupComplete: () {
+        if (mounted) setState(() {});
+      },
       setup: _setup,
     );
   }
 
+  void _handleResize(Size newSize) {
+    if (_currentSize == newSize) return;
+    _currentSize = newSize;
+    
+    _resizeTimer?.cancel();
+    _resizeTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        setState(() {
+          try {
+            threeJs?.dispose();
+          } catch (e) {}
+          _initThreeJS();
+        });
+      }
+    });
+  }
+
   Future<void> _setup() async {
+    if (threeJs == null) return;
+    
     // 创建场景（必须先创建）
-    threeJs.scene = three.Scene();
-    threeJs.scene.background = tmath.Color.fromHex32(0x3E2723);
+    threeJs!.scene = three.Scene();
+    threeJs!.scene.background = tmath.Color.fromHex32(0x3E2723);
     
     // 设置相机
-    threeJs.camera = three.PerspectiveCamera(75, threeJs.width / threeJs.height, 0.1, 2000);
-    threeJs.camera.position.setValues(0, 50, 200);
-    threeJs.camera.lookAt(threeJs.scene.position);
+    threeJs!.camera = three.PerspectiveCamera(75, threeJs!.width / threeJs!.height, 0.1, 2000);
+    threeJs!.camera.position.setValues(0, 0, 200);
+    threeJs!.camera.lookAt(tmath.Vector3(0, 0, 0));
     
     // 添加强环境光
     final ambientLight = three.AmbientLight(0xffffff, 1.5);
-    threeJs.scene.add(ambientLight);
+    threeJs!.scene.add(ambientLight);
     
     // 添加方向光
     final directionalLight = three.DirectionalLight(0xffffff, 2.0);
     directionalLight.position.setValues(100, 100, 100);
-    threeJs.scene.add(directionalLight);
+    threeJs!.scene.add(directionalLight);
     
     // 加载模型
     await _loadModel();
@@ -48,53 +76,28 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
 
   Future<void> _loadModel() async {
     try {
-      debugPrint('开始加载模型...');
       final loader = GLTFLoader();
       final gltf = await loader.fromAsset('assets/models/佛像模型.glb');
       
-      debugPrint('模型加载完成: ${gltf != null}');
-      
       if (gltf != null && gltf.scene != null) {
         final scene = gltf.scene!;
+        threeJs!.scene.add(scene);
         
-        threeJs.scene.add(scene);
+        // 计算整个场景的边界框
+        double minX = double.infinity, minY = double.infinity, minZ = double.infinity;
+        double maxX = double.negativeInfinity, maxY = double.negativeInfinity, maxZ = double.negativeInfinity;
         
-        // 计算模型边界框
         scene.traverse((child) {
           if (child is three.Mesh) {
             child.geometry?.computeBoundingBox();
             final bbox = child.geometry?.boundingBox;
             if (bbox != null) {
-              final min = bbox.min;
-              final max = bbox.max;
-              debugPrint('模型边界: min(${min.x}, ${min.y}, ${min.z}) max(${max.x}, ${max.y}, ${max.z})');
-              
-              // 计算中心和大小
-              final centerX = (min.x + max.x) / 2;
-              final centerY = (min.y + max.y) / 2;
-              final centerZ = (min.z + max.z) / 2;
-              final sizeX = max.x - min.x;
-              final sizeY = max.y - min.y;
-              final sizeZ = max.z - min.z;
-              final maxSize = [sizeX, sizeY, sizeZ].reduce((a, b) => a > b ? a : b);
-              
-              debugPrint('模型中心: ($centerX, $centerY, $centerZ)');
-              debugPrint('模型大小: ($sizeX, $sizeY, $sizeZ), 最大: $maxSize');
-              
-              // 先缩放再居中（重要！）
-              final targetSize = 80.0;
-              final scale = targetSize / maxSize;
-              scene.scale.setValues(scale, scale, scale);
-              
-              // 缩放后再居中
-              scene.position.setValues(-centerX * scale, -centerY * scale, -centerZ * scale);
-              
-              debugPrint('应用缩放: $scale, 居中位置: (${-centerX * scale}, ${-centerY * scale}, ${-centerZ * scale})');
-              
-              // 调整相机
-              threeJs.camera.position.setValues(0, 0, 200);
-              threeJs.camera.lookAt(threeJs.scene.position);
-              debugPrint('相机位置: (0, 0, 200)');
+              minX = minX < bbox.min.x ? minX : bbox.min.x;
+              minY = minY < bbox.min.y ? minY : bbox.min.y;
+              minZ = minZ < bbox.min.z ? minZ : bbox.min.z;
+              maxX = maxX > bbox.max.x ? maxX : bbox.max.x;
+              maxY = maxY > bbox.max.y ? maxY : bbox.max.y;
+              maxZ = maxZ > bbox.max.z ? maxZ : bbox.max.z;
             }
             
             // 设置材质
@@ -108,9 +111,20 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
           }
         });
         
-        setState(() {}); // 强制刷新UI
-      } else {
-        debugPrint('模型或场景为空');
+        // 计算整体中心和大小
+        final centerX = (minX + maxX) / 2;
+        final centerY = (minY + maxY) / 2;
+        final centerZ = (minZ + maxZ) / 2;
+        final sizeX = maxX - minX;
+        final sizeY = maxY - minY;
+        final sizeZ = maxZ - minZ;
+        final maxSize = [sizeX, sizeY, sizeZ].reduce((a, b) => a > b ? a : b);
+        
+        // 缩放并居中
+        final targetSize = 80.0;
+        final scale = targetSize / maxSize;
+        scene.scale.setValues(scale, scale, scale);
+        scene.position.setValues(-centerX * scale, -centerY * scale, -centerZ * scale);
       }
     } catch (e, stackTrace) {
       debugPrint('加载模型失败: $e');
@@ -120,8 +134,9 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
 
   @override
   void dispose() {
+    _resizeTimer?.cancel();
     try {
-      threeJs.dispose();
+      threeJs?.dispose();
     } catch (e) {
       debugPrint('Dispose error: $e');
     }
@@ -136,7 +151,22 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
         backgroundColor: Colors.amber[700],
         elevation: 0,
       ),
-      body: threeJs.build(),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final newSize = Size(constraints.maxWidth, constraints.maxHeight);
+          _handleResize(newSize);
+          
+          if (threeJs == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          
+          return SizedBox(
+            width: constraints.maxWidth,
+            height: constraints.maxHeight,
+            child: threeJs!.build(),
+          );
+        },
+      ),
     );
   }
 }
