@@ -14,20 +14,23 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
+  
+  // 保持所有页面实例，避免重建
+  final List<Widget> _screens = const [
+    GlobeHomeScreen(),
+    LeaderboardScreen(),
+    PracticeScreen(),
+    MeditationRoomScreen(),
+    MyProfileScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    // 定义屏幕列表，顺序必须与底部导航栏一致
-    final screens = [
-      const GlobeHomeScreen(),      // 0: 首页
-      const LeaderboardScreen(),    // 1: 排行榜
-      const PracticeScreen(),       // 2: 修习
-      const MeditationRoomScreen(), // 3: 禅室
-      const MyProfileScreen(),      // 4: 我的
-    ];
-
     return Scaffold(
-      body: screens[_currentIndex],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
@@ -37,11 +40,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         selectedItemColor: Colors.amber[800],
         unselectedItemColor: Colors.grey,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.public), label: '首页'),              // 0
-          BottomNavigationBarItem(icon: Icon(Icons.leaderboard), label: '排行榜'),    // 1
-          BottomNavigationBarItem(icon: Icon(Icons.self_improvement), label: '修习'), // 2
-          BottomNavigationBarItem(icon: Icon(Icons.temple_buddhist), label: '禅室'),   // 3
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: '我的'),            // 4
+          BottomNavigationBarItem(icon: Icon(Icons.public), label: '首页'),
+          BottomNavigationBarItem(icon: Icon(Icons.leaderboard), label: '排行榜'),
+          BottomNavigationBarItem(icon: Icon(Icons.self_improvement), label: '修习'),
+          BottomNavigationBarItem(icon: Icon(Icons.temple_buddhist), label: '禅室'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: '我的'),
         ],
       ),
     );
