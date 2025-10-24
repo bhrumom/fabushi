@@ -12,63 +12,38 @@ class BuddhaModelScreen extends StatefulWidget {
 }
 
 class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
-  three.ThreeJS? threeJs;
-  three.Object3D? loadedModel;
-  Timer? _resizeTimer;
-  Size? _currentSize;
+  late three.ThreeJS threeJs;
 
   @override
   void initState() {
     super.initState();
-    _initThreeJS();
-  }
-
-  void _initThreeJS() {
     threeJs = three.ThreeJS(
-      onSetupComplete: () {
-        if (mounted) setState(() {});
-      },
+      onSetupComplete: () => setState(() {}),
       setup: _setup,
+      windowResizeUpdate: (size) {
+        debugPrint('Window resized to: ${size.width}x${size.height}');
+      },
     );
   }
 
-  void _handleResize(Size newSize) {
-    if (_currentSize == newSize) return;
-    _currentSize = newSize;
-    
-    _resizeTimer?.cancel();
-    _resizeTimer = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        setState(() {
-          try {
-            threeJs?.dispose();
-          } catch (e) {}
-          _initThreeJS();
-        });
-      }
-    });
-  }
-
   Future<void> _setup() async {
-    if (threeJs == null) return;
-    
-    // 创建场景（必须先创建）
-    threeJs!.scene = three.Scene();
-    threeJs!.scene.background = tmath.Color.fromHex32(0x3E2723);
+    // 创建场景
+    threeJs.scene = three.Scene();
+    threeJs.scene.background = tmath.Color.fromHex32(0x3E2723);
     
     // 设置相机
-    threeJs!.camera = three.PerspectiveCamera(75, threeJs!.width / threeJs!.height, 0.1, 2000);
-    threeJs!.camera.position.setValues(0, 0, 200);
-    threeJs!.camera.lookAt(tmath.Vector3(0, 0, 0));
+    threeJs.camera = three.PerspectiveCamera(75, threeJs.width / threeJs.height, 0.1, 2000);
+    threeJs.camera.position.setValues(0, 0, 200);
+    threeJs.camera.lookAt(tmath.Vector3(0, 0, 0));
     
-    // 添加强环境光
+    // 添加环境光
     final ambientLight = three.AmbientLight(0xffffff, 1.5);
-    threeJs!.scene.add(ambientLight);
+    threeJs.scene.add(ambientLight);
     
     // 添加方向光
     final directionalLight = three.DirectionalLight(0xffffff, 2.0);
     directionalLight.position.setValues(100, 100, 100);
-    threeJs!.scene.add(directionalLight);
+    threeJs.scene.add(directionalLight);
     
     // 加载模型
     await _loadModel();
@@ -79,9 +54,9 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
       final loader = GLTFLoader();
       final gltf = await loader.fromAsset('assets/models/佛像模型.glb');
       
-      if (gltf != null && gltf.scene != null) {
-        final scene = gltf.scene!;
-        threeJs!.scene.add(scene);
+      if (gltf?.scene != null) {
+        final scene = gltf!.scene!;
+        threeJs.scene.add(scene);
         
         // 计算整个场景的边界框
         double minX = double.infinity, minY = double.infinity, minZ = double.infinity;
@@ -121,7 +96,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
         final maxSize = [sizeX, sizeY, sizeZ].reduce((a, b) => a > b ? a : b);
         
         // 缩放并居中
-        final targetSize = 80.0;
+        const targetSize = 80.0;
         final scale = targetSize / maxSize;
         scene.scale.setValues(scale, scale, scale);
         scene.position.setValues(-centerX * scale, -centerY * scale, -centerZ * scale);
@@ -134,12 +109,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
 
   @override
   void dispose() {
-    _resizeTimer?.cancel();
-    try {
-      threeJs?.dispose();
-    } catch (e) {
-      debugPrint('Dispose error: $e');
-    }
+    threeJs.dispose();
     super.dispose();
   }
 
@@ -151,21 +121,8 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
         backgroundColor: Colors.amber[700],
         elevation: 0,
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final newSize = Size(constraints.maxWidth, constraints.maxHeight);
-          _handleResize(newSize);
-          
-          if (threeJs == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          
-          return SizedBox(
-            width: constraints.maxWidth,
-            height: constraints.maxHeight,
-            child: threeJs!.build(),
-          );
-        },
+      body: SizedBox.expand(
+        child: threeJs.build(),
       ),
     );
   }
