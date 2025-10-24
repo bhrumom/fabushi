@@ -33,6 +33,9 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
         final newAspect = threeJs.width / threeJs.height;
         if ((camera.aspect - newAspect).abs() > 0.001) {
           camera.aspect = newAspect;
+          // 调整相机距离以保持视觉大小不变
+          final baseFov = 50.0;
+          camera.fov = baseFov;
           camera.updateProjectionMatrix();
         }
       }
@@ -44,21 +47,36 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
   Future<void> _setup() async {
     // 创建场景
     threeJs.scene = three.Scene();
-    threeJs.scene.background = tmath.Color.fromHex32(0x3E2723);
+    // 寺庙背景色 - 庄严的金红渐变
+    threeJs.scene.background = tmath.Color.fromHex32(0x8B4513);
     
-    // 设置相机
-    threeJs.camera = three.PerspectiveCamera(75, threeJs.width / threeJs.height, 0.1, 2000);
-    threeJs.camera.position.setValues(0, 0, 200);
+    // 设置相机 - 使用较小的FOV以减少透视变形
+    threeJs.camera = three.PerspectiveCamera(50, threeJs.width / threeJs.height, 0.1, 2000);
+    threeJs.camera.position.setValues(0, 0, 250);
     threeJs.camera.lookAt(tmath.Vector3(0, 0, 0));
     
-    // 添加环境光
-    final ambientLight = three.AmbientLight(0xffffff, 1.5);
+    // 环境光 - 提高亮度
+    final ambientLight = three.AmbientLight(0xFFE4B5, 2.5);
     threeJs.scene.add(ambientLight);
     
-    // 添加方向光
-    final directionalLight = three.DirectionalLight(0xffffff, 2.0);
-    directionalLight.position.setValues(100, 100, 100);
-    threeJs.scene.add(directionalLight);
+    // 主光源 - 从上方照射
+    final mainLight = three.DirectionalLight(0xFFFFDD, 3.5);
+    mainLight.position.setValues(0, 200, 150);
+    threeJs.scene.add(mainLight);
+    
+    // 补光 - 从前方
+    final frontLight = three.DirectionalLight(0xFFFFFF, 2.0);
+    frontLight.position.setValues(0, 50, 200);
+    threeJs.scene.add(frontLight);
+    
+    // 侧光 - 增强立体感
+    final sideLight1 = three.DirectionalLight(0xFFD700, 1.5);
+    sideLight1.position.setValues(150, 100, 100);
+    threeJs.scene.add(sideLight1);
+    
+    final sideLight2 = three.DirectionalLight(0xFFD700, 1.5);
+    sideLight2.position.setValues(-150, 100, 100);
+    threeJs.scene.add(sideLight2);
     
     // 加载模型
     await _loadModel();
@@ -90,14 +108,14 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
               maxZ = maxZ > bbox.max.z ? maxZ : bbox.max.z;
             }
             
-            // 设置材质
-            final newMaterial = three.MeshStandardMaterial.fromMap({
+            // 黄金材质
+            final goldMaterial = three.MeshStandardMaterial.fromMap({
               'color': 0xFFD700,
               'metalness': 0.9,
-              'roughness': 0.1,
+              'roughness': 0.2,
               'side': tmath.DoubleSide,
             });
-            child.material = newMaterial;
+            child.material = goldMaterial;
           }
         });
         
@@ -110,11 +128,11 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
         final sizeZ = maxZ - minZ;
         final maxSize = [sizeX, sizeY, sizeZ].reduce((a, b) => a > b ? a : b);
         
-        // 缩放并居中
-        const targetSize = 80.0;
+        // 缩放并居中，放大佛像并上移留出供品空间
+        const targetSize = 150.0;
         final scale = targetSize / maxSize;
         scene.scale.setValues(scale, scale, scale);
-        scene.position.setValues(-centerX * scale, -centerY * scale, -centerZ * scale);
+        scene.position.setValues(-centerX * scale, -centerY * scale + 30, -centerZ * scale);
       }
     } catch (e, stackTrace) {
       debugPrint('加载模型失败: $e');

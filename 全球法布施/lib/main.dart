@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:window_manager/window_manager.dart';
+import 'dart:io';
 import 'firebase_options.dart';
 import 'models/file_transfer_model.dart';
 import 'models/settings_model.dart';
@@ -16,6 +18,14 @@ import 'screens/login_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 桌面平台设置窗口固定最大化
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+    await windowManager.ensureInitialized();
+    await windowManager.setMaximizable(false);
+    await windowManager.setResizable(false);
+    await windowManager.maximize();
+  }
   
   // 尝试初始化Firebase，如果失败则继续运行
   try {
