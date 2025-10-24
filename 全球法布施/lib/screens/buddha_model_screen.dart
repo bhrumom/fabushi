@@ -12,7 +12,7 @@ class BuddhaModelScreen extends StatefulWidget {
   State<BuddhaModelScreen> createState() => _BuddhaModelScreenState();
 }
 
-class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
+class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeepAliveClientMixin {
   late three.ThreeJS threeJs;
   double _rotationY = 0.0;
   double _cameraDistance = 250.0;
@@ -188,6 +188,9 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
   }
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   void dispose() {
     _autoRotateTimer?.cancel();
     threeJs.dispose();
@@ -196,6 +199,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Scaffold(
       body: Listener(
         onPointerDown: (event) {
