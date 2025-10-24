@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
+import 'firebase_login_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:async';
@@ -588,6 +589,34 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             );
                           },
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Firebase登录按钮
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const FirebaseLoginScreen(),
+                              ),
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFFF6B35),
+                            side: const BorderSide(color: Color(0xFFFF6B35)),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(Icons.cloud),
+                          label: const Text(
+                            'Firebase 登录',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 16),
 
