@@ -14,14 +14,33 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
+  bool _isGlobeReady = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    // 立即加载，由 GlobeHomeScreen 内部控制延迟
+    _isGlobeReady = true;
+  }
   
   // 保持所有页面实例，避免重建
-  final List<Widget> _screens = const [
-    GlobeHomeScreen(),
-    LeaderboardScreen(),
-    PracticeScreen(),
-    MeditationRoomScreen(),
-    MyProfileScreen(),
+  List<Widget> get _screens => [
+    _isGlobeReady 
+        ? const GlobeHomeScreen() 
+        : const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('正在加载地球组件...'),
+              ],
+            ),
+          ),
+    const LeaderboardScreen(),
+    const PracticeScreen(),
+    const MeditationRoomScreen(),
+    const MyProfileScreen(),
   ];
 
   @override

@@ -15,22 +15,37 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
   String _currentTransfer = '';
   final List<Map<String, double>> _pendingBeams = []; // 缓存待播放的轨迹
+  bool _isGlobeLoaded = false; // 地球组件是否已加载
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint('🎬 initState postFrameCallback');
-      _setupTransferBeamCallback();
+    _loadGlobe();
+  }
+  
+  void _loadGlobe() {
+    // 延迟加载地球组件，先显示背景
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        setState(() => _isGlobeLoaded = true);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          debugPrint('🎬 地球组件加载完成');
+          _setupTransferBeamCallback();
+        });
+      }
     });
   }
   
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // 应用恢复时重新设置回调
-      _setupTransferBeamCallback();
+      // 应用恢复时重新加载
+      if (!_isGlobeLoaded) {
+        _loadGlobe();
+      } else {
+        _setupTransferBeamCallback();
+      }
     }
   }
   
@@ -137,19 +152,32 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
         children: [
           Container(
             color: const Color(0xFF0a0a0a),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                debugPrint('🎭 Globe 渲染区域: ${constraints.maxWidth}x${constraints.maxHeight}');
-                // 渲染后立即保存引用
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_globeKey.currentState != null && _globeState == null) {
-                    _globeState = _globeKey.currentState;
-                    debugPrint('💾 首次保存 Globe 静态引用');
-                  }
-                });
-                return EarthGlobeWidget(key: _globeKey);
-              },
-            ),
+            child: _isGlobeLoaded
+                ? LayoutBuilder(
+                    builder: (context, constraints) {
+                      debugPrint('🎭 Globe 渲染区域: ${constraints.maxWidth}x${constraints.maxHeight}');
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (_globeKey.currentState != null && _globeState == null) {
+                          _globeState = _globeKey.currentState;
+                          debugPrint('💾 首次保存 Globe 静态引用');
+                        }
+                      });
+                      return EarthGlobeWidget(key: _globeKey);
+                    },
+                  )
+                : const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(color: Colors.cyan),
+                        SizedBox(height: 16),
+                        Text(
+                          '🌍 正在加载地球组件...',
+                          style: TextStyle(color: Colors.white70, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  ),
           ),
           Positioned(
             top: 60,

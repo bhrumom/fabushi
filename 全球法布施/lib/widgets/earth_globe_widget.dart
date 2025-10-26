@@ -36,8 +36,21 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
       isRotating: true,
       isBackgroundFollowingSphereRotation: true,
     );
-    _controller.loadSurface(Image.asset('assets/earth_texture.jpg').image);
+    // 延迟加载纹理，避免初始化时崩溃
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadTextureSafely();
+    });
     _initializeServices();
+  }
+
+  Future<void> _loadTextureSafely() async {
+    try {
+      if (!_isDisposed && mounted) {
+        _controller.loadSurface(Image.asset('assets/earth_texture.jpg').image);
+      }
+    } catch (e) {
+      debugPrint('⚠️ 加载地球纹理失败: $e');
+    }
   }
 
   Future<void> _initializeServices() async {
@@ -424,9 +437,32 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
   @override
   Widget build(BuildContext context) {
     super.build(context); // 必须调用以保持状态
-    return FlutterEarthGlobe(
-      controller: _controller,
-      radius: 150,
+    
+    // 添加错误边界
+    return Builder(
+      builder: (context) {
+        try {
+          return FlutterEarthGlobe(
+            controller: _controller,
+            radius: 150,
+          );
+        } catch (e) {
+          debugPrint('❌ FlutterEarthGlobe 渲染失败: $e');
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.public_off, color: Colors.white54, size: 64),
+                const SizedBox(height: 16),
+                Text(
+                  '地球组件暂时不可用',
+                  style: const TextStyle(color: Colors.white70, fontSize: 16),
+                ),
+              ],
+            ),
+          );
+        }
+      },
     );
   }
 }
