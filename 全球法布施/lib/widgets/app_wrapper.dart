@@ -164,24 +164,15 @@ class _AppWrapperState extends State<AppWrapper> {
   @override
   Widget build(BuildContext context) {
     if (!_isInitialized) {
-      return Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF667eea), Color(0xFF764ba2)],
-            ),
-          ),
-          child: const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CircularProgressIndicator(color: Colors.white),
-                SizedBox(height: 16),
-                Text('正在初始化应用...', style: TextStyle(color: Colors.white)),
-              ],
-            ),
+      return const Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('正在初始化应用...'),
+            ],
           ),
         ),
       );

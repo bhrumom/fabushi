@@ -9,8 +9,9 @@ import 'profile_screen.dart';
 import '../widgets/enhanced_transfer_stats.dart';
 import '../widgets/transfer_mode_selector.dart';
 import 'global_dharma_screen.dart';
-
 import 'asset_screen.dart';
+import '../widgets/common_widgets.dart';
+import '../config/app_theme.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -39,15 +40,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // By using watch here, the entire build method will re-run when auth state changes.
     final authModel = context.watch<AuthModel>();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('🙏 全球法布施'),
-        centerTitle: true,
-        backgroundColor: const Color(0xFF667eea),
-        foregroundColor: Colors.white,
         actions: [
           // 用户头像/登录按钮
           if (authModel.isLoggedIn)
@@ -137,10 +134,9 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // 全球法布施功能入口
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
+                AppCard(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
@@ -158,18 +154,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         Row(
                           children: [
                             Expanded(
-                              child: ElevatedButton.icon(
+                              child: PrimaryButton(
+                                text: '选择文件',
+                                icon: Icons.file_upload,
                                 onPressed: () => context.read<FileTransferModel>().selectFiles(),
-                                icon: const Icon(Icons.file_upload),
-                                label: const Text('选择文件'),
                               ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
-                              child: ElevatedButton.icon(
+                              child: SecondaryButton(
+                                text: '内置素材',
+                                icon: Icons.image,
                                 onPressed: () => context.read<FileTransferModel>().selectBuiltInAssets(context),
-                                icon: const Icon(Icons.image),
-                                label: const Text('内置素材'),
                               ),
                             ),
                           ],
@@ -243,30 +239,24 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 24),
                         Consumer<FileTransferModel>(
                           builder: (context, model, child) {
-                            return ElevatedButton.icon(
-                              onPressed: model.hasFiles ? () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => const GlobalDharmaScreen(),
-                                  ),
-                                );
-                              } : null,
-                              icon: const Icon(Icons.public, color: Colors.white),
-                              label: const Text('开始全球法布施', style: TextStyle(fontSize: 18)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF667eea),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
+                            return SizedBox(
+                              width: double.infinity,
+                              child: PrimaryButton(
+                                text: '开始全球法布施',
+                                icon: Icons.public,
+                                onPressed: model.hasFiles ? () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const GlobalDharmaScreen(),
+                                    ),
+                                  );
+                                } : null,
                               ),
                             );
                           },
                         ),
                       ],
-                    ),
                   ),
                 ),
                 const SizedBox(height: 16),

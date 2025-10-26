@@ -5,6 +5,8 @@ import '../models/user_model.dart';
 import '../services/membership_service.dart';
 import 'login_screen.dart';
 import 'membership_screen.dart';
+import '../widgets/common_widgets.dart';
+import '../config/app_theme.dart';
 
 
 class ProfileScreen extends StatefulWidget {
@@ -137,21 +139,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('个人中心'),
-        backgroundColor: const Color(0xFF667eea),
-        foregroundColor: Colors.white,
-        elevation: 0,
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF667eea),
-              Color(0xFF764ba2),
-            ],
-          ),
-        ),
+      body: GradientBackground(
         child: SafeArea(
           child: Consumer<AuthModel>(
             builder: (context, authModel, child) {
@@ -205,7 +194,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
-                ElevatedButton(
+                PrimaryButton(
+                  text: '立即登录',
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -213,24 +203,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     );
                   },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF667eea),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
-                      vertical: 16,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    '立即登录',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
                 ),
               ],
             ),
@@ -296,22 +268,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 16),
                   
                   // 会员状态
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _getMembershipColor(user),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      authModel.getMembershipStatusText(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                  MembershipBadge(
+                    text: authModel.getMembershipStatusText(),
+                    color: _getMembershipColor(user),
                   ),
                   
                   // 会员到期时间
@@ -368,20 +327,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      ElevatedButton(
+                      PrimaryButton(
+                        text: '兑换',
                         onPressed: _handleRedeemCode,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF667eea),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 16,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text('兑换'),
                       ),
                     ],
                   ),
