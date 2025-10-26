@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/file_transfer_model.dart';
 import '../widgets/earth_globe_widget.dart';
+import 'leaderboard_screen.dart';
 
 class GlobeHomeScreen extends StatefulWidget {
   const GlobeHomeScreen({super.key});
@@ -205,6 +206,23 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
                   ),
                 ),
               ),
+            ),
+          ),
+          Positioned(
+            top: 20,
+            right: 20,
+            child: IconButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LeaderboardScreen()),
+                );
+              },
+              icon: const Icon(Icons.leaderboard, color: Colors.white),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black.withOpacity(0.7),
+              ),
+              tooltip: '排行榜',
             ),
           ),
           if (_currentTransfer.isNotEmpty)
