@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // 主色调
-  static const Color primaryColor = Color(0xFF667eea);
-  static const Color secondaryColor = Color(0xFF764ba2);
-  static const Color accentColor = Color(0xFFFF6B35);
+  // 主色调 - 深紫色主题（庄重优雅，适合佛教应用）
+  static const Color primaryColor = Color(0xFF673AB7); // 深紫色
+  static const Color secondaryColor = Color(0xFF512DA8); // 深紫
+  static const Color accentColor = Color(0xFFFFB300); // 金色（佛教常用）
   static const Color alipayBlue = Color(0xFF1677FF);
+  
+  // 辅助色
+  static const Color surfaceLight = Color(0xFFF3E5F5); // 浅紫背景
+  static const Color onPrimaryLight = Colors.white;
   
   // 渐变色
   static const LinearGradient primaryGradient = LinearGradient(

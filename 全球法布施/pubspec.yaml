@@ -52,6 +52,7 @@ dependencies:
   three_js_core_loaders: ^0.2.1
   three_js_advanced_loaders: ^0.2.4
   window_manager: ^0.3.7
+  flex_color_scheme: ^8.0.2
 
 dev_dependencies:
   flutter_test:

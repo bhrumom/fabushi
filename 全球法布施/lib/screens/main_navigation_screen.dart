@@ -56,6 +56,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         },
         backgroundColor: Colors.white,
         elevation: 8,
+        height: 60,
         destinations: const [
           NavigationDestination(icon: Icon(Icons.public), label: '首页'),
           NavigationDestination(icon: Icon(Icons.leaderboard), label: '排行榜'),
