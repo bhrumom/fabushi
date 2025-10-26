@@ -37,7 +37,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               ],
             ),
           ),
-    const LeaderboardScreen(),
     const MeditationRoomScreen(),
     const MyProfileScreen(),
   ];
@@ -59,7 +58,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         height: 60,
         destinations: const [
           NavigationDestination(icon: Icon(Icons.public), label: '首页'),
-          NavigationDestination(icon: Icon(Icons.leaderboard), label: '排行榜'),
           NavigationDestination(icon: Icon(Icons.temple_buddhist), label: '禅室'),
           NavigationDestination(icon: Icon(Icons.person), label: '我的'),
         ],
