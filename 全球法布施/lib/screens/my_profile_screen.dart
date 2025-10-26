@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
-import '../models/practice_model.dart';
 import 'login_screen.dart';
 
 class MyProfileScreen extends StatelessWidget {
@@ -11,8 +10,8 @@ class MyProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('我的')),
-      body: Consumer2<AuthModel, PracticeModel>(
-        builder: (context, authModel, practiceModel, _) {
+      body: Consumer<AuthModel>(
+        builder: (context, authModel, _) {
           final user = authModel.currentUser;
           if (user == null) {
             return Center(
@@ -41,8 +40,6 @@ class MyProfileScreen extends StatelessWidget {
               _buildUserCard(user),
               const SizedBox(height: 16),
               _buildMembershipCard(user),
-              const SizedBox(height: 16),
-              _buildStatsCard(practiceModel),
               const SizedBox(height: 16),
               _buildActionButtons(context, authModel),
             ],
@@ -90,24 +87,6 @@ class MyProfileScreen extends StatelessWidget {
             _buildInfoRow('会员类型', user.membershipType ?? '普通用户'),
             if (user.membershipExpiry != null)
               _buildInfoRow('到期时间', '${user.membershipExpiry!.year}-${user.membershipExpiry!.month}-${user.membershipExpiry!.day}'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatsCard(PracticeModel practiceModel) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('修习统计', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            _buildInfoRow('修习时长', '${practiceModel.totalDuration.inMinutes} 分钟'),
-            _buildInfoRow('修习次数', '${practiceModel.totalCount}'),
-            _buildInfoRow('全球布施流量', '0 MB'), // TODO: 从实际数据获取
           ],
         ),
       ),
