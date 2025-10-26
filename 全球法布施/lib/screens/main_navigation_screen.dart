@@ -3,6 +3,7 @@ import 'globe_home_screen.dart';
 import 'leaderboard_screen.dart';
 import 'meditation_room_screen.dart';
 import 'my_profile_screen.dart';
+import '../config/app_theme.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -48,19 +49,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         index: _currentIndex,
         children: _screens,
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) {
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (index) {
           setState(() => _currentIndex = index);
         },
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.amber[800],
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.public), label: '首页'),
-          BottomNavigationBarItem(icon: Icon(Icons.leaderboard), label: '排行榜'),
-          BottomNavigationBarItem(icon: Icon(Icons.temple_buddhist), label: '禅室'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: '我的'),
+        backgroundColor: Colors.white,
+        elevation: 8,
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.public), label: '首页'),
+          NavigationDestination(icon: Icon(Icons.leaderboard), label: '排行榜'),
+          NavigationDestination(icon: Icon(Icons.temple_buddhist), label: '禅室'),
+          NavigationDestination(icon: Icon(Icons.person), label: '我的'),
         ],
       ),
     );

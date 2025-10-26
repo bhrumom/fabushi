@@ -9,6 +9,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:async';
 import 'dart:io' show Platform;
 import '../services/platform_service.dart';
+import '../widgets/common_widgets.dart';
+import '../config/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -369,64 +371,73 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('登录'),
-        backgroundColor: const Color(0xFF667eea),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
-        ),
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF667eea),
-              Color(0xFF764ba2),
-            ],
-          ),
-        ),
+      body: GradientBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
-              child: Card(
-                elevation: 8,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(32.0),
-                  child: Form(
+              child: Hero(
+                tag: 'login_card',
+                child: Material(
+                  elevation: 12,
+                  shadowColor: AppTheme.primaryColor.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(24),
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 500),
+                    padding: const EdgeInsets.all(40.0),
+                    child: Form(
                     key: _formKey,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         // 标题
-                        const Text(
-                          '🙏 全球法布施',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF2c3e50),
-                          ),
-                          textAlign: TextAlign.center,
+                        Column(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                gradient: AppTheme.primaryGradient,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppTheme.primaryColor.withOpacity(0.3),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.auto_awesome,
+                                size: 40,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            const Text(
+                              '🙏 全球法布施',
+                              style: TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF2c3e50),
+                                letterSpacing: 1,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '登录您的账户',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey[600],
+                                letterSpacing: 0.5,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '登录您的账户',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Color(0xFF7f8c8d),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 40),
 
                         // 用户名输入框
                         TextFormField(
@@ -505,35 +516,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         // 登录按钮
                         Consumer<AuthModel>(
                           builder: (context, authModel, child) {
-                            return ElevatedButton(
-                              onPressed: authModel.isLoading ? null : _handleLogin,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF667eea),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                elevation: 2,
+                            return SizedBox(
+                              width: double.infinity,
+                              child: PrimaryButton(
+                                text: '登录',
+                                onPressed: _handleLogin,
+                                isLoading: authModel.isLoading,
                               ),
-                              child: authModel.isLoading
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
-                                        ),
-                                      ),
-                                    )
-                                  : const Text(
-                                      '登录',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
                             );
                           },
                         ),
@@ -542,24 +531,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         // 支付宝登录按钮
                         Consumer<AuthModel>(
                           builder: (context, authModel, child) {
-                            return ElevatedButton.icon(
-                              onPressed: authModel.isLoading ? null : _handleAlipayLogin,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF1677FF), // 支付宝蓝色
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                elevation: 2,
-                              ),
-                              icon: const Icon(Icons.account_balance_wallet), // 使用钱包图标代替支付图标
-                              label: const Text(
-                                '支付宝登录',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            return SizedBox(
+                              width: double.infinity,
+                              child: AlipayButton(
+                                text: '支付宝登录',
+                                onPressed: authModel.isLoading ? null : _handleAlipayLogin,
                               ),
                             );
                           },
@@ -569,23 +545,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         // 支付宝一键注册按钮
                         Consumer<AuthModel>(
                           builder: (context, authModel, child) {
-                            return OutlinedButton.icon(
-                              onPressed: authModel.isLoading ? null : _handleAlipayOneClickRegister,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF1677FF), // 支付宝蓝色
-                                side: const BorderSide(color: Color(0xFF1677FF)),
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: const Icon(Icons.account_balance_wallet), // 使用钱包图标
-                              label: const Text(
-                                '支付宝一键注册',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            return SizedBox(
+                              width: double.infinity,
+                              child: AlipayButton(
+                                text: '支付宝一键注册',
+                                onPressed: authModel.isLoading ? null : _handleAlipayOneClickRegister,
+                                outlined: true,
                               ),
                             );
                           },
@@ -593,29 +558,18 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 12),
 
                         // Firebase登录按钮
-                        OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const FirebaseLoginScreen(),
-                              ),
-                            );
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFFFF6B35),
-                            side: const BorderSide(color: Color(0xFFFF6B35)),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.cloud),
-                          label: const Text(
-                            'Firebase 登录',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        SizedBox(
+                          width: double.infinity,
+                          child: SecondaryButton(
+                            text: 'Firebase 登录',
+                            icon: Icons.cloud,
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const FirebaseLoginScreen(),
+                                ),
+                              );
+                            },
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -637,28 +591,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 24),
 
                         // 注册按钮
-                        OutlinedButton(
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const RegisterScreen(),
-                              ),
-                            );
-                          },
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            side: const BorderSide(color: Color(0xFF667eea)),
-                          ),
-                          child: const Text(
-                            '创建新账户',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF667eea),
-                            ),
+                        SizedBox(
+                          width: double.infinity,
+                          child: SecondaryButton(
+                            text: '创建新账户',
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const RegisterScreen(),
+                                ),
+                              );
+                            },
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -677,6 +620,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ],
+                      ),
                     ),
                   ),
                 ),
