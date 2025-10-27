@@ -5,30 +5,43 @@ import 'package:global_dharma_sharing/features/video_feed/presentation/view/widg
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_text_content.dart';
 import 'package:video_player/video_player.dart';
 
-class VideoFeedViewItem extends StatelessWidget {
+class VideoFeedViewItem extends StatefulWidget {
   const VideoFeedViewItem({required this.videoItem, required this.controller, super.key});
 
   final VideoEntity videoItem;
   final VideoPlayerController? controller;
 
   @override
+  State<VideoFeedViewItem> createState() => _VideoFeedViewItemState();
+}
+
+class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
+  String? _currentParagraph;
+
+  @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        videoItem.contentType == ContentType.text
-            ? VideoFeedViewTextContent(textContent: videoItem.textContent ?? '')
-            : VideoFeedViewOptimizedVideoPlayer(controller: controller, videoId: videoItem.id),
+        widget.videoItem.contentType == ContentType.text
+            ? VideoFeedViewTextContent(
+                textContent: widget.videoItem.textContent ?? '',
+                onCurrentParagraphChanged: (paragraph) {
+                  setState(() => _currentParagraph = paragraph);
+                },
+              )
+            : VideoFeedViewOptimizedVideoPlayer(controller: widget.controller, videoId: widget.videoItem.id),
         VideoFeedViewOverlaySection(
-          profileImageUrl: videoItem.profileImageUrl,
-          username: videoItem.username,
-          description: videoItem.description,
+          profileImageUrl: widget.videoItem.profileImageUrl,
+          username: widget.videoItem.username,
+          description: widget.videoItem.description,
           isBookmarked: false,
           isLiked: false,
-          likeCount: videoItem.likeCount,
-          commentCount: videoItem.commentCount,
-          shareCount: videoItem.shareCount,
-          contentType: videoItem.contentType,
-          textContent: videoItem.textContent,
+          likeCount: widget.videoItem.likeCount,
+          commentCount: widget.videoItem.commentCount,
+          shareCount: widget.videoItem.shareCount,
+          contentType: widget.videoItem.contentType,
+          textContent: widget.videoItem.textContent,
+          currentParagraph: _currentParagraph,
         ),
       ],
     );

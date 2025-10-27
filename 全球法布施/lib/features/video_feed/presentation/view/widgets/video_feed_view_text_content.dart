@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 class VideoFeedViewTextContent extends StatefulWidget {
   const VideoFeedViewTextContent({
     required this.textContent,
+    this.onCurrentParagraphChanged,
     super.key,
   });
 
   final String textContent;
+  final ValueChanged<String>? onCurrentParagraphChanged;
 
   @override
   State<VideoFeedViewTextContent> createState() => _VideoFeedViewTextContentState();
@@ -137,7 +139,11 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
           controller: _pageController,
           itemCount: _paragraphIndices.length,
           scrollDirection: Axis.horizontal,
-          onPageChanged: (index) => setState(() => _currentIndex = index),
+          onPageChanged: (index) {
+            setState(() => _currentIndex = index);
+            final paragraph = _getParagraphAt(index);
+            widget.onCurrentParagraphChanged?.call(paragraph);
+          },
           itemBuilder: (context, index) {
             final paragraph = _getParagraphAt(index);
           return MouseRegion(
