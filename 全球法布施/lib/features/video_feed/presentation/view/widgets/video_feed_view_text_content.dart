@@ -40,20 +40,30 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
   List<String> _splitIntoParagraphs(String text) {
     if (text.isEmpty) return [''];
     
-    // 先尝试按双换行符分段
-    var paragraphs = text.split('\n\n').where((p) => p.trim().isNotEmpty).toList();
+    final sentences = text.split(RegExp(r'(?<=[。！？])'));
+    final List<String> result = [];
+    String current = '';
     
-    // 如果分段少于2个，尝试按单换行符分段
-    if (paragraphs.length < 2) {
-      paragraphs = text.split('\n').where((p) => p.trim().isNotEmpty).toList();
+    for (final sentence in sentences) {
+      final trimmed = sentence.trim();
+      if (trimmed.isEmpty) continue;
+      
+      if (trimmed.length > 21) {
+        if (current.isNotEmpty) result.add(current);
+        result.add(trimmed);
+        current = '';
+      } else if (current.isEmpty) {
+        current = trimmed;
+      } else if ((current + trimmed).length <= 21) {
+        current += trimmed;
+      } else {
+        result.add(current);
+        current = trimmed;
+      }
     }
     
-    // 如果还是只有1段且内容很长，按句号分段
-    if (paragraphs.length == 1 && text.length > 200) {
-      paragraphs = text.split(RegExp(r'[。！？]')).where((p) => p.trim().isNotEmpty).map((p) => p.trim()).toList();
-    }
-    
-    return paragraphs.isEmpty ? [''] : paragraphs;
+    if (current.isNotEmpty) result.add(current);
+    return result.isEmpty ? [''] : result;
   }
 
   @override
