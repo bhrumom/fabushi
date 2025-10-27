@@ -40,14 +40,12 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
         ));
       },
       (videos) {
-        // Count actual video content (not text)
-        final videoCount = videos.where((v) => v.contentType != ContentType.text).length;
-        final hasMoreVideos = videoCount >= 2;
+        // 总是有更多内容（文本可以无限加载）
         emit(state.copyWith(
           isLoading: false,
           isSuccess: true,
           videos: videos,
-          hasMoreVideos: hasMoreVideos,
+          hasMoreVideos: true,
           currentIndex: 0,
           errorMessage: '',
         ));
@@ -75,15 +73,12 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
         ));
       },
       (moreVideos) {
-        // Count actual video content (not text)
-        final videoCount = moreVideos.where((v) => v.contentType != ContentType.text).length;
-        final hasMoreVideos = videoCount >= 2;
         final updatedVideos = [...state.videos, ...moreVideos];
-
+        // 总是有更多内容（文本可以无限加载）
         emit(state.copyWith(
           videos: updatedVideos,
           isPaginating: false,
-          hasMoreVideos: hasMoreVideos,
+          hasMoreVideos: true,
           errorMessage: '',
         ));
 
