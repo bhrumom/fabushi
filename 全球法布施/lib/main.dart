@@ -14,6 +14,7 @@ import 'models/leaderboard_model.dart';
 import 'services/app_initializer.dart';
 import 'widgets/app_wrapper.dart';
 import 'screens/login_screen.dart';
+import 'core/video_feed_di/video_feed_injector.dart';
 
 
 void main() async {
@@ -44,6 +45,9 @@ void main() async {
   
   // 异步初始化，不阻塞启动
   AppInitializer.initialize().catchError((e) => debugPrint('初始化失败: $e'));
+  
+  // 初始化 Video Feed 依赖
+  setupVideoFeedDependencies();
   
   runApp(const MyApp());
 }

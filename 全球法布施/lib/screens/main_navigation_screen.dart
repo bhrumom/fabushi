@@ -3,6 +3,7 @@ import 'globe_home_screen.dart';
 import 'leaderboard_screen.dart';
 import 'meditation_room_screen.dart';
 import 'my_profile_screen.dart';
+import 'video_feed_screen.dart';
 import '../config/app_theme.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -37,6 +38,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               ],
             ),
           ),
+    const VideoFeedScreen(),
     const MeditationRoomScreen(),
     const MyProfileScreen(),
   ];
@@ -58,6 +60,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         height: 60,
         destinations: const [
           NavigationDestination(icon: Icon(Icons.public), label: '首页'),
+          NavigationDestination(icon: Icon(Icons.video_library), label: '法流'),
           NavigationDestination(icon: Icon(Icons.temple_buddhist), label: '禅室'),
           NavigationDestination(icon: Icon(Icons.person), label: '我的'),
         ],
