@@ -40,15 +40,17 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
   List<String> _splitIntoParagraphs(String text) {
     if (text.isEmpty) return [''];
     
-    // 先按换行符分割
     var lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
     final List<String> result = [];
+    final headerPattern = RegExp(r'(第\d+部|卷[上中下]|卷第|论卷|经卷|品第)');
     
     for (final line in lines) {
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
       
-      // 尝试按句号分割
+      // 跳过书名、卷名等标题行
+      if (headerPattern.hasMatch(trimmed)) continue;
+      
       final sentences = trimmed.split(RegExp(r'(?<=[。！？])'));
       if (sentences.length > 1) {
         String current = '';
@@ -71,7 +73,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
         }
         if (current.isNotEmpty) result.add(current);
       } else {
-        // 没有句号，直接添加整行
         result.add(trimmed);
       }
     }
