@@ -136,6 +136,8 @@ class CloudflareTextService {
               }
             }
             final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
+            // 清理反编译器水印
+            content = _cleanDecompilerWatermark(content);
             print('Loaded cloud text: $fileName');
             return {
               'title': fileName,
@@ -149,6 +151,25 @@ class CloudflareTextService {
       print('Cloud text fetch failed: $e');
     }
     return null;
+  }
+  
+  /// 清理反编译器水印
+  static String _cleanDecompilerWatermark(String content) {
+    // 移除CHM反编译器水印
+    final watermarkPattern = RegExp(
+      r'This file is decompiled by an unregistered version of ChmDecompiler\..*?http://\s*www\.etextwizard\.com/',
+      multiLine: true,
+      dotAll: true,
+    );
+    content = content.replaceAll(watermarkPattern, '');
+    
+    // 移除常见的变体
+    content = content.replaceAll(
+      RegExp(r'This file is decompiled.*?etextwizard\.com/', multiLine: true, dotAll: true),
+      '',
+    );
+    
+    return content.trim();
   }
   
   /// 获取所有文本列表
