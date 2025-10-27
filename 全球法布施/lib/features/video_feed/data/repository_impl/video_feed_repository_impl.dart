@@ -72,12 +72,11 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
         );
       }
 
-      // 如果没有视频，返回纯文本信息流
-      if (videos.isEmpty) {
-        print('No videos found, loading text content...');
-        try {
-          // 获取多个文本内容
-          for (int i = 0; i < 5; i++) {
+      // 总是加载文本内容（无论是否有视频）
+      print('Loading text content...');
+      try {
+        final textCount = videos.isEmpty ? 3 : 2;
+        for (int i = 0; i < textCount; i++) {
             final textData = await _textService.getRandomTextContent();
             if (textData != null) {
               print('Loaded text content: ${textData['title']}');
@@ -97,36 +96,10 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
               await Future.delayed(const Duration(milliseconds: 10));
             }
           }
-          print('Total text content loaded: ${videos.length}');
-        } catch (e) {
-          print('Error loading text content: $e');
-          return Left('Failed to load text content: $e');
         }
-      } else {
-        // 有视频时，混合文本内容（每3个视频插入1个文本）
-        if (_textContentIndex % 3 == 0) {
-          try {
-            final textData = await _textService.getRandomTextContent();
-            if (textData != null) {
-              final textEntity = VideoEntity(
-                id: 'text_${DateTime.now().millisecondsSinceEpoch}',
-                username: textData['title'] ?? '佛法文本',
-                description: '点击头像阅读全文',
-                videoUrl: '',
-                profileImageUrl: '',
-                likeCount: 0,
-                commentCount: 0,
-                shareCount: 0,
-                timestamp: DateTime.now(),
-                contentType: ContentType.text,
-                textContent: textData['content'],
-              );
-              videos.insert(videos.length ~/ 2, textEntity);
-            }
-          } catch (e) {
-            print('Error adding text content: $e');
-          }
-        }
+        print('Total text content loaded: ${videos.length}');
+      } catch (e) {
+        print('Error loading text content: $e');
       }
       _textContentIndex++;
 
