@@ -120,20 +120,14 @@ class CloudflareTextService {
           ).timeout(const Duration(seconds: 10));
           
           if (contentResponse.statusCode == 200) {
-            // 文件是GBK编码，使用gbk_codec解码
+            // 文件是GBK编码，直接使用GBK解码
             String content;
             try {
-              // 先尝试UTF-8
-              content = utf8.decode(contentResponse.bodyBytes);
+              content = gbk_bytes.decode(contentResponse.bodyBytes);
+              print('Successfully decoded GBK content: ${content.length} chars');
             } catch (e) {
-              // UTF-8失败，使用GBK解码
-              try {
-                content = gbk_bytes.decode(contentResponse.bodyBytes);
-                print('Successfully decoded GBK content');
-              } catch (e2) {
-                print('GBK decoding failed: $e2, using fallback');
-                content = utf8.decode(contentResponse.bodyBytes, allowMalformed: true);
-              }
+              print('GBK decoding failed: $e, trying UTF-8');
+              content = utf8.decode(contentResponse.bodyBytes, allowMalformed: true);
             }
             final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
             // 清理反编译器水印

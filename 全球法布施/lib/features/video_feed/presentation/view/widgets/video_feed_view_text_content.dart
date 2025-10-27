@@ -19,45 +19,23 @@ class VideoFeedViewTextContent extends StatefulWidget {
 class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
   int _currentPosition = 0;
   final Map<int, String> _cache = {};
-  int _totalPages = 0;
   int _currentPage = 1;
+  late String _text;
 
   @override
   void initState() {
     super.initState();
     if (widget.textContent.isNotEmpty) {
-      _currentPosition = Random().nextInt(widget.textContent.length ~/ 2);
-      _calculateTotalPages();
-      _calculateCurrentPage();
+      _text = widget.textContent;
+      _currentPosition = 0;
+      _currentPage = 1;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
       });
     }
   }
 
-  void _calculateTotalPages() {
-    int pos = 0;
-    int count = 0;
-    while (pos < widget.textContent.length) {
-      final result = _getNextParagraph(pos);
-      if (result == null) break;
-      count++;
-      pos = result.$2;
-    }
-    _totalPages = count;
-  }
 
-  void _calculateCurrentPage() {
-    int pos = 0;
-    int page = 1;
-    while (pos < _currentPosition) {
-      final result = _getNextParagraph(pos);
-      if (result == null) break;
-      page++;
-      pos = result.$2;
-    }
-    _currentPage = page;
-  }
 
   @override
   void dispose() {
@@ -65,41 +43,38 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
   }
 
   (String, int)? _getNextParagraph(int startPos) {
-    final text = widget.textContent;
-    if (startPos >= text.length) return null;
+    if (startPos >= _text.length) return null;
     
     int pos = startPos;
-    while (pos < text.length && (text[pos] == '\n' || text[pos] == ' ')) {
+    while (pos < _text.length && (_text[pos] == '\n' || _text[pos] == ' ')) {
       pos++;
     }
     
-    if (pos >= text.length) return null;
+    if (pos >= _text.length) return null;
     
     String buffer = '';
-    int bufferStart = pos;
     
-    while (pos < text.length) {
-      final sentenceEnd = RegExp(r'[。！？]').firstMatch(text.substring(pos));
+    while (pos < _text.length) {
+      final sentenceEnd = RegExp(r'[。！？]').firstMatch(_text.substring(pos));
       
       if (sentenceEnd == null) {
-        // 没有找到标点，读取剩余内容
-        final remaining = text.substring(pos).trim();
+        final remaining = _text.substring(pos).trim();
         if (remaining.isEmpty || _isMetadataLine(remaining)) {
-          return buffer.isNotEmpty ? (buffer, text.length) : null;
+          return buffer.isNotEmpty ? (buffer, _text.length) : null;
         }
         
         if (buffer.isEmpty) {
-          return (remaining, text.length);
+          return (remaining, _text.length);
         }
         
         if ((buffer + remaining).length <= 21) {
-          return (buffer + remaining, text.length);
+          return (buffer + remaining, _text.length);
         }
         return (buffer, pos);
       }
       
       final sentenceEndPos = pos + sentenceEnd.end;
-      final sentence = text.substring(pos, sentenceEndPos).trim();
+      final sentence = _text.substring(pos, sentenceEndPos).trim();
       
       if (sentence.isEmpty || _isMetadataLine(sentence)) {
         pos = sentenceEndPos;
@@ -115,7 +90,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
       
       if (buffer.isEmpty) {
         buffer = sentence;
-        bufferStart = pos;
         pos = sentenceEndPos;
       } else if ((buffer + sentence).length <= 21) {
         buffer += sentence;
@@ -142,7 +116,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     if (RegExp(r'^上一部：|下一部：').hasMatch(line)) return true;
     
     // 5. 经名标题：以“佛说”开头且以“经”结尾且很短（<25字）
-    if (line.length < 25 && line.startsWith('佛说') && line.endsWith('经')) return true;
+    if (line.length < 20 && line.startsWith('佛说') && line.endsWith('经') && !line.contains('。')) return true;
     
     return false;
   }
@@ -153,9 +127,13 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     }
     
     final result = _getNextParagraph(_currentPosition);
-    if (result == null) return '';
+    if (result == null) {
+      print('⚠️ No paragraph at position $_currentPosition');
+      return '';
+    }
     
     final paragraph = result.$1;
+    print('📄 Paragraph at $_currentPosition: ${paragraph.substring(0, paragraph.length > 20 ? 20 : paragraph.length)}...');
     _cache[_currentPosition] = paragraph;
     if (_cache.length > 5) {
       _cache.remove(_cache.keys.first);
@@ -233,7 +211,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    '$_currentPage / $_totalPages',
+                    '第 $_currentPage 页',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.5),
                       fontSize: 14,
