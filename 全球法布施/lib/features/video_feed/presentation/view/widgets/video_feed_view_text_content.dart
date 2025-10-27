@@ -43,7 +43,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
   List<int> _buildParagraphIndices(String text) {
     if (text.isEmpty) return [0];
     
-    final headerPattern = RegExp(r'(第\d+部|卷[上中下]|卷第|论卷|经卷|品第|造|译|撰|述|集|注|疏|释|[一二三四五六七八九十百千]+卷$)');
     final List<int> indices = [];
     final List<String> sentences = [];
     
@@ -52,11 +51,8 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
       
-      // 跳过标题、译者、经卷行
-      if (headerPattern.hasMatch(trimmed) || 
-          trimmed.contains('菩萨') && (trimmed.contains('造') || trimmed.contains('译')) ||
-          trimmed.contains('上一部：') || trimmed.contains('下一部：') ||
-          trimmed.startsWith('佛说') && trimmed.contains('经')) continue;
+      // 跳过逻辑：只跳过明确的元数据行
+      if (_isMetadataLine(trimmed)) continue;
       
       // 检查是否有标点符号
       if (RegExp(r'[。！？]').hasMatch(trimmed)) {
@@ -113,6 +109,25 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     }
     
     return indices.isEmpty ? [0] : indices;
+  }
+
+  bool _isMetadataLine(String line) {
+    // 1. 部号标题：第XXXX部～...
+    if (RegExp(r'^第\d{4}部～').hasMatch(line)) return true;
+    
+    // 2. 卷数信息：单独一行且包含“卷”且很短（<15字）
+    if (line.length < 15 && RegExp(r'(卷[上中下第]|[一二三四五六七八九十百千]+卷$)').hasMatch(line)) return true;
+    
+    // 3. 译者作者信息：单独一行且包含“造”“译”“撰”“述”且很短（<30字）
+    if (line.length < 30 && RegExp(r'[菩萨法师大师尊者].*[造译撰述集注疏释]$').hasMatch(line)) return true;
+    
+    // 4. 导航链接：上一部/下一部
+    if (RegExp(r'^上一部：|下一部：').hasMatch(line)) return true;
+    
+    // 5. 经名标题：以“佛说”开头且以“经”结尾且很短（<25字）
+    if (line.length < 25 && line.startsWith('佛说') && line.endsWith('经')) return true;
+    
+    return false;
   }
 
   String _getParagraphAt(int index) {
