@@ -19,7 +19,7 @@ class VideoFeedViewTextContent extends StatefulWidget {
 class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
   int _currentPosition = 0;
   final Map<int, String> _cache = {};
-  int _currentPage = 1;
+  static int _currentPage = 1;
   late String _text;
 
   @override
@@ -27,15 +27,27 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     super.initState();
     if (widget.textContent.isNotEmpty) {
       _text = widget.textContent;
-      _currentPosition = 0;
-      _currentPage = 1;
+      _currentPosition = Random().nextInt(max(_text.length - 100, 1));
       WidgetsBinding.instance.addPostFrameCallback((_) {
         widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
       });
     }
   }
 
-
+  @override
+  void didUpdateWidget(VideoFeedViewTextContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.textContent != oldWidget.textContent) {
+      _text = widget.textContent;
+      _cache.clear();
+      final randomPos = Random().nextInt(max(_text.length - 100, 1));
+      _currentPosition = randomPos;
+      _currentPage = Random().nextInt(9999) + 1;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -46,6 +58,16 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     if (startPos >= _text.length) return null;
     
     int pos = startPos;
+    
+    // 如果不是从0开始，先找到下一个句子结束标点后的位置
+    if (pos > 0) {
+      final nextEnd = RegExp(r'[。！？]').firstMatch(_text.substring(pos));
+      if (nextEnd != null) {
+        pos = pos + nextEnd.end;
+      }
+    }
+    
+    // 跳过空白字符
     while (pos < _text.length && (_text[pos] == '\n' || _text[pos] == ' ')) {
       pos++;
     }
@@ -211,26 +233,13 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SelectableText(
-                    paragraph,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      height: 1.6,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    '第 $_currentPage 页',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
+              child: SelectableText(
+                paragraph,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  height: 1.6,
+                ),
               ),
             ),
           ),
