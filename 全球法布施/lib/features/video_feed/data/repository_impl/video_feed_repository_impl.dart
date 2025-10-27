@@ -83,8 +83,8 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
               print('Loaded text content: ${textData['title']}');
               videos.add(VideoEntity(
                 id: 'text_${DateTime.now().millisecondsSinceEpoch}_$i',
-                username: '法布施',
-                description: textData['title'] ?? '佛法文本',
+                username: textData['title'] ?? '佛法文本',
+                description: '点击头像阅读全文',
                 videoUrl: '',
                 profileImageUrl: 'https://via.placeholder.com/100',
                 likeCount: 0,
@@ -110,8 +110,8 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
             if (textData != null) {
               final textEntity = VideoEntity(
                 id: 'text_${DateTime.now().millisecondsSinceEpoch}',
-                username: '法布施',
-                description: textData['title'] ?? '佛法文本',
+                username: textData['title'] ?? '佛法文本',
+                description: '点击头像阅读全文',
                 videoUrl: '',
                 profileImageUrl: 'https://via.placeholder.com/100',
                 likeCount: 0,
