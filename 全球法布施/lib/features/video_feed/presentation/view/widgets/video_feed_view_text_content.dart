@@ -20,6 +20,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
   int _currentPosition = 0;
   final Map<int, String> _cache = {};
   int _totalPages = 0;
+  int _currentPage = 1;
 
   @override
   void initState() {
@@ -27,6 +28,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     if (widget.textContent.isNotEmpty) {
       _currentPosition = Random().nextInt(widget.textContent.length ~/ 2);
       _calculateTotalPages();
+      _calculateCurrentPage();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
       });
@@ -43,6 +45,18 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
       pos = result.$2;
     }
     _totalPages = count;
+  }
+
+  void _calculateCurrentPage() {
+    int pos = 0;
+    int page = 1;
+    while (pos < _currentPosition) {
+      final result = _getNextParagraph(pos);
+      if (result == null) break;
+      page++;
+      pos = result.$2;
+    }
+    _currentPage = page;
   }
 
   @override
@@ -66,7 +80,23 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     
     while (pos < text.length) {
       final sentenceEnd = RegExp(r'[。！？]').firstMatch(text.substring(pos));
-      if (sentenceEnd == null) break;
+      
+      if (sentenceEnd == null) {
+        // 没有找到标点，读取剩余内容
+        final remaining = text.substring(pos).trim();
+        if (remaining.isEmpty || _isMetadataLine(remaining)) {
+          return buffer.isNotEmpty ? (buffer, text.length) : null;
+        }
+        
+        if (buffer.isEmpty) {
+          return (remaining, text.length);
+        }
+        
+        if ((buffer + remaining).length <= 21) {
+          return (buffer + remaining, text.length);
+        }
+        return (buffer, pos);
+      }
       
       final sentenceEndPos = pos + sentenceEnd.end;
       final sentence = text.substring(pos, sentenceEndPos).trim();
@@ -139,6 +169,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     if (result != null) {
       setState(() {
         _currentPosition = result.$2;
+        _currentPage++;
       });
       widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
     }
@@ -158,6 +189,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     if (lastPos != _currentPosition) {
       setState(() {
         _currentPosition = lastPos;
+        _currentPage--;
       });
       widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
     }
@@ -201,7 +233,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    '位置: $_currentPosition',
+                    '$_currentPage / $_totalPages',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.5),
                       fontSize: 14,
