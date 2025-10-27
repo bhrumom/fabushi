@@ -77,24 +77,23 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
       try {
         final textCount = videos.isEmpty ? 3 : 2;
         for (int i = 0; i < textCount; i++) {
-            final textData = await _textService.getRandomTextContent();
-            if (textData != null) {
-              print('Loaded text content: ${textData['title']}');
-              videos.add(VideoEntity(
-                id: 'text_${DateTime.now().millisecondsSinceEpoch}_$i',
-                username: textData['title'] ?? '佛法文本',
-                description: '点击头像阅读全文',
-                videoUrl: '',
-                profileImageUrl: '',
-                likeCount: 0,
-                commentCount: 0,
-                shareCount: 0,
-                timestamp: DateTime.now(),
-                contentType: ContentType.text,
-                textContent: textData['content'],
-              ));
-              await Future.delayed(const Duration(milliseconds: 10));
-            }
+          final textData = await _textService.getRandomTextContent();
+          if (textData != null) {
+            print('Loaded text content: ${textData['title']}');
+            videos.add(VideoEntity(
+              id: 'text_${DateTime.now().millisecondsSinceEpoch}_$i',
+              username: textData['title'] ?? '佛法文本',
+              description: '点击头像阅读全文',
+              videoUrl: '',
+              profileImageUrl: '',
+              likeCount: 0,
+              commentCount: 0,
+              shareCount: 0,
+              timestamp: DateTime.now(),
+              contentType: ContentType.text,
+              textContent: textData['content'],
+            ));
+            await Future.delayed(const Duration(milliseconds: 10));
           }
         }
         print('Total text content loaded: ${videos.length}');
