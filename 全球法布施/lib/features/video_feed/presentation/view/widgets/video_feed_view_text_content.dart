@@ -73,41 +73,43 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     }
     
     // 构建索引：合并句子直到超过21字，或单句超过21字则独立
-    int currentPos = 0;
+    int searchPos = 0;
     String buffer = '';
+    int bufferStartPos = 0;
     
     for (final sentence in sentences) {
-      // 查找句子在原文中的位置
-      final pos = text.indexOf(sentence, currentPos);
+      final pos = text.indexOf(sentence, searchPos);
       if (pos == -1) continue;
       
       if (sentence.length > 21) {
-        // 单句超过21字，先保存buffer，再独立保存该句
+        // 单句超过21字
         if (buffer.isNotEmpty) {
-          indices.add(text.indexOf(buffer, currentPos));
+          indices.add(bufferStartPos);
           buffer = '';
         }
         indices.add(pos);
-        currentPos = pos + sentence.length;
+        searchPos = pos + sentence.length;
       } else if (buffer.isEmpty) {
-        // buffer为空，开始新的片段
+        // 开始新片段
         buffer = sentence;
-        currentPos = pos;
+        bufferStartPos = pos;
+        searchPos = pos + sentence.length;
       } else if ((buffer + sentence).length <= 21) {
-        // 可以合并
+        // 合并
         buffer += sentence;
+        searchPos = pos + sentence.length;
       } else {
-        // 合并后超过21字，保存当前buffer，开始新片段
-        indices.add(text.indexOf(buffer, currentPos - buffer.length));
+        // 保存buffer，开始新片段
+        indices.add(bufferStartPos);
         buffer = sentence;
-        currentPos = pos;
+        bufferStartPos = pos;
+        searchPos = pos + sentence.length;
       }
     }
     
-    // 保存最后的buffer
+    // 保存最后buffer
     if (buffer.isNotEmpty) {
-      final pos = text.indexOf(buffer, currentPos - buffer.length);
-      if (pos != -1) indices.add(pos);
+      indices.add(bufferStartPos);
     }
     
     return indices.isEmpty ? [0] : indices;
