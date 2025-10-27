@@ -29,7 +29,8 @@ class VideoFeedViewInteractionButtons extends StatelessWidget {
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
-        spacing: context.h(20),
+        mainAxisSize: MainAxisSize.min,
+        spacing: context.h(12),
         children: [
           VideoFeedViewInteractionButton(
             icon: isLiked ? Icons.favorite : Icons.favorite_border,
