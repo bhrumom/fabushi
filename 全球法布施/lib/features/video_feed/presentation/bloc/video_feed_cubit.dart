@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
+import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_entity.dart';
 import 'package:global_dharma_sharing/features/video_feed/domain/usecases/fetch_more_videos_usecase.dart';
 import 'package:global_dharma_sharing/features/video_feed/domain/usecases/fetch_videos_usecase.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_state.dart';
@@ -39,7 +40,9 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
         ));
       },
       (videos) {
-        final hasMoreVideos = videos.length == 2;
+        // Count actual video content (not text)
+        final videoCount = videos.where((v) => v.contentType != ContentType.text).length;
+        final hasMoreVideos = videoCount >= 2;
         emit(state.copyWith(
           isLoading: false,
           isSuccess: true,
@@ -72,7 +75,9 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
         ));
       },
       (moreVideos) {
-        final hasMoreVideos = moreVideos.length == 2;
+        // Count actual video content (not text)
+        final videoCount = moreVideos.where((v) => v.contentType != ContentType.text).length;
+        final hasMoreVideos = videoCount >= 2;
         final updatedVideos = [...state.videos, ...moreVideos];
 
         emit(state.copyWith(
@@ -109,8 +114,9 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
     final videosToPreload = state.videos
         .skip(currentIndex + 1)
         .take(2)
+        .where((v) => v.contentType != ContentType.text) // Skip text content
         .map((v) => v.videoUrl)
-        .where((url) => !_preloadedFiles.containsKey(url));
+        .where((url) => url.isNotEmpty && !_preloadedFiles.containsKey(url));
 
     for (final videoUrl in videosToPreload) {
       if (!_preloadQueue.contains(videoUrl)) {

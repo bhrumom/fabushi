@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+enum ContentType { video, text }
+
 class VideoEntity extends Equatable {
   const VideoEntity({
     required this.id,
@@ -11,6 +13,8 @@ class VideoEntity extends Equatable {
     required this.commentCount,
     required this.shareCount,
     required this.timestamp,
+    this.contentType = ContentType.video,
+    this.textContent,
   });
 
   final String id;
@@ -22,6 +26,8 @@ class VideoEntity extends Equatable {
   final int commentCount;
   final int shareCount;
   final DateTime timestamp;
+  final ContentType contentType;
+  final String? textContent;
 
   @override
   List<Object?> get props => [
@@ -34,5 +40,7 @@ class VideoEntity extends Equatable {
         commentCount,
         shareCount,
         timestamp,
+        contentType,
+        textContent,
       ];
 }

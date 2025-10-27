@@ -4,6 +4,7 @@ import 'package:global_dharma_sharing/features/video_feed/domain/repositories/vi
 import 'package:global_dharma_sharing/features/video_feed/domain/usecases/fetch_more_videos_usecase.dart';
 import 'package:global_dharma_sharing/features/video_feed/domain/usecases/fetch_videos_usecase.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_cubit.dart';
+import 'package:global_dharma_sharing/services/cloudflare_text_service.dart';
 import 'package:get_it/get_it.dart';
 
 final videoFeedGetIt = GetIt.instance;
@@ -14,10 +15,16 @@ void setupVideoFeedDependencies() {
     () => FirebaseFirestore.instance,
   );
 
+  // Services
+  videoFeedGetIt.registerLazySingleton<CloudflareTextService>(
+    () => CloudflareTextService(),
+  );
+
   // Repositories
   videoFeedGetIt.registerLazySingleton<VideoFeedRepository>(
     () => VideoFeedRepositoryImpl(
       firestore: videoFeedGetIt<FirebaseFirestore>(),
+      textService: videoFeedGetIt<CloudflareTextService>(),
     ),
   );
 
