@@ -15,15 +15,16 @@ class VideoFeedViewTextContent extends StatefulWidget {
 }
 
 class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
-  late List<String> _paragraphs;
+  late List<int> _paragraphIndices;
   late int _currentIndex;
   final PageController _pageController = PageController();
+  final Map<int, String> _cachedParagraphs = {};
 
   @override
   void initState() {
     super.initState();
-    _paragraphs = _splitIntoParagraphs(widget.textContent);
-    _currentIndex = _paragraphs.isEmpty ? 0 : Random().nextInt(_paragraphs.length);
+    _paragraphIndices = _buildParagraphIndices(widget.textContent);
+    _currentIndex = _paragraphIndices.isEmpty ? 0 : Random().nextInt(_paragraphIndices.length);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_pageController.hasClients) {
         _pageController.jumpToPage(_currentIndex);
@@ -37,55 +38,89 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     super.dispose();
   }
 
-  List<String> _splitIntoParagraphs(String text) {
-    if (text.isEmpty) return [''];
+  List<int> _buildParagraphIndices(String text) {
+    if (text.isEmpty) return [0];
     
-    var lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
-    final List<String> result = [];
+    final lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
+    final List<int> indices = [];
     final headerPattern = RegExp(r'(第\d+部|卷[上中下]|卷第|论卷|经卷|品第|造|译|撰|述|集|注|疏|释|[一二三四五六七八九十百千]+卷$)');
     
+    int charIndex = 0;
     for (final line in lines) {
       final trimmed = line.trim();
-      if (trimmed.isEmpty) continue;
+      if (trimmed.isEmpty) {
+        charIndex += line.length + 1;
+        continue;
+      }
       
-      // 跳过书名、卷名、作者译者、导航链接等标题行
       if (headerPattern.hasMatch(trimmed) || 
           trimmed.contains('菩萨') && (trimmed.contains('造') || trimmed.contains('译')) ||
           trimmed.contains('上一部：') || trimmed.contains('下一部：') ||
-          trimmed.startsWith('佛说') && trimmed.contains('经')) continue;
+          trimmed.startsWith('佛说') && trimmed.contains('经')) {
+        charIndex += line.length + 1;
+        continue;
+      }
       
       final sentences = trimmed.split(RegExp(r'(?<=[。！？])'));
       if (sentences.length > 1) {
+        int sentenceStart = charIndex;
         String current = '';
         for (final sentence in sentences) {
           final s = sentence.trim();
           if (s.isEmpty) continue;
           
           if (s.length > 21) {
-            if (current.isNotEmpty) result.add(current);
-            result.add(s);
+            if (current.isNotEmpty) indices.add(sentenceStart);
+            indices.add(sentenceStart);
+            sentenceStart += s.length;
             current = '';
           } else if (current.isEmpty) {
             current = s;
           } else if ((current + s).length <= 21) {
             current += s;
           } else {
-            result.add(current);
+            indices.add(sentenceStart);
+            sentenceStart += current.length;
             current = s;
           }
         }
-        if (current.isNotEmpty) result.add(current);
+        if (current.isNotEmpty) indices.add(sentenceStart);
       } else {
-        result.add(trimmed);
+        indices.add(charIndex);
+      }
+      charIndex += line.length + 1;
+    }
+    
+    return indices.isEmpty ? [0] : indices;
+  }
+
+  String _getParagraphAt(int index) {
+    if (_cachedParagraphs.containsKey(index)) {
+      return _cachedParagraphs[index]!;
+    }
+    
+    final text = widget.textContent;
+    if (text.isEmpty || index >= _paragraphIndices.length) return '';
+    
+    final startIdx = _paragraphIndices[index];
+    final endIdx = index + 1 < _paragraphIndices.length ? _paragraphIndices[index + 1] : text.length;
+    
+    final paragraph = text.substring(startIdx, endIdx.clamp(0, text.length)).trim();
+    _cachedParagraphs[index] = paragraph;
+    
+    if (_cachedParagraphs.length > 10) {
+      final keysToRemove = _cachedParagraphs.keys.where((k) => (k - index).abs() > 5).toList();
+      for (final key in keysToRemove) {
+        _cachedParagraphs.remove(key);
       }
     }
     
-    return result.isEmpty ? [''] : result;
+    return paragraph;
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_paragraphs.isEmpty) {
+    if (_paragraphIndices.isEmpty) {
       return Container(color: Colors.black);
     }
 
@@ -100,10 +135,11 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
         ),
         child: PageView.builder(
           controller: _pageController,
-          itemCount: _paragraphs.length,
+          itemCount: _paragraphIndices.length,
           scrollDirection: Axis.horizontal,
           onPageChanged: (index) => setState(() => _currentIndex = index),
           itemBuilder: (context, index) {
+            final paragraph = _getParagraphAt(index);
           return MouseRegion(
             cursor: SystemMouseCursors.click,
             child: GestureDetector(
@@ -118,7 +154,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
                     );
                   }
                 } else {
-                  if (_currentIndex < _paragraphs.length - 1) {
+                  if (_currentIndex < _paragraphIndices.length - 1) {
                     _pageController.nextPage(
                       duration: const Duration(milliseconds: 300),
                       curve: Curves.easeInOut,
@@ -131,7 +167,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
                 if (details.globalPosition.dx < width / 2) {
                   _pageController.jumpToPage(0);
                 } else {
-                  _pageController.jumpToPage(_paragraphs.length - 1);
+                  _pageController.jumpToPage(_paragraphIndices.length - 1);
                 }
               },
             child: Center(
@@ -141,7 +177,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     SelectableText(
-                      _paragraphs[index],
+                      paragraph,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -150,7 +186,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      '${index + 1} / ${_paragraphs.length}',
+                      '${index + 1} / ${_paragraphIndices.length}',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.5),
                         fontSize: 14,
