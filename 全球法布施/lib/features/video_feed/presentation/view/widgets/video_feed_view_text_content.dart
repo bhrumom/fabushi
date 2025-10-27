@@ -43,54 +43,65 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
   List<int> _buildParagraphIndices(String text) {
     if (text.isEmpty) return [0];
     
-    final lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
-    final List<int> indices = [];
     final headerPattern = RegExp(r'(第\d+部|卷[上中下]|卷第|论卷|经卷|品第|造|译|撰|述|集|注|疏|释|[一二三四五六七八九十百千]+卷$)');
+    final List<int> indices = [];
+    final List<String> sentences = [];
     
-    int charIndex = 0;
-    for (final line in lines) {
+    // 提取所有有效句子
+    for (final line in text.split('\n')) {
       final trimmed = line.trim();
-      if (trimmed.isEmpty) {
-        charIndex += line.length + 1;
-        continue;
-      }
+      if (trimmed.isEmpty) continue;
       
+      // 跳过标题、译者、经卷行
       if (headerPattern.hasMatch(trimmed) || 
           trimmed.contains('菩萨') && (trimmed.contains('造') || trimmed.contains('译')) ||
           trimmed.contains('上一部：') || trimmed.contains('下一部：') ||
-          trimmed.startsWith('佛说') && trimmed.contains('经')) {
-        charIndex += line.length + 1;
-        continue;
-      }
+          trimmed.startsWith('佛说') && trimmed.contains('经')) continue;
       
-      final sentences = trimmed.split(RegExp(r'(?<=[。！？])'));
-      if (sentences.length > 1) {
-        int sentenceStart = charIndex;
-        String current = '';
-        for (final sentence in sentences) {
-          final s = sentence.trim();
-          if (s.isEmpty) continue;
-          
-          if (s.length > 21) {
-            if (current.isNotEmpty) indices.add(sentenceStart);
-            indices.add(sentenceStart);
-            sentenceStart += s.length;
-            current = '';
-          } else if (current.isEmpty) {
-            current = s;
-          } else if ((current + s).length <= 21) {
-            current += s;
-          } else {
-            indices.add(sentenceStart);
-            sentenceStart += current.length;
-            current = s;
-          }
-        }
-        if (current.isNotEmpty) indices.add(sentenceStart);
-      } else {
-        indices.add(charIndex);
+      // 按句号、感叹号、问号切分句子
+      final parts = trimmed.split(RegExp(r'(?<=[。！？])'));
+      for (final part in parts) {
+        final s = part.trim();
+        if (s.isNotEmpty) sentences.add(s);
       }
-      charIndex += line.length + 1;
+    }
+    
+    // 构建索引：合并句子直到超过21字，或单句超过21字则独立
+    int currentPos = 0;
+    String buffer = '';
+    
+    for (final sentence in sentences) {
+      // 查找句子在原文中的位置
+      final pos = text.indexOf(sentence, currentPos);
+      if (pos == -1) continue;
+      
+      if (sentence.length > 21) {
+        // 单句超过21字，先保存buffer，再独立保存该句
+        if (buffer.isNotEmpty) {
+          indices.add(text.indexOf(buffer, currentPos));
+          buffer = '';
+        }
+        indices.add(pos);
+        currentPos = pos + sentence.length;
+      } else if (buffer.isEmpty) {
+        // buffer为空，开始新的片段
+        buffer = sentence;
+        currentPos = pos;
+      } else if ((buffer + sentence).length <= 21) {
+        // 可以合并
+        buffer += sentence;
+      } else {
+        // 合并后超过21字，保存当前buffer，开始新片段
+        indices.add(text.indexOf(buffer, currentPos - buffer.length));
+        buffer = sentence;
+        currentPos = pos;
+      }
+    }
+    
+    // 保存最后的buffer
+    if (buffer.isNotEmpty) {
+      final pos = text.indexOf(buffer, currentPos - buffer.length);
+      if (pos != -1) indices.add(pos);
     }
     
     return indices.isEmpty ? [0] : indices;
@@ -105,11 +116,21 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     if (text.isEmpty || index >= _paragraphIndices.length) return '';
     
     final startIdx = _paragraphIndices[index];
-    final endIdx = index + 1 < _paragraphIndices.length ? _paragraphIndices[index + 1] : text.length;
+    String paragraph;
     
-    final paragraph = text.substring(startIdx, endIdx.clamp(0, text.length)).trim();
+    if (index + 1 < _paragraphIndices.length) {
+      final endIdx = _paragraphIndices[index + 1];
+      paragraph = text.substring(startIdx, endIdx).trim();
+    } else {
+      // 最后一个片段，找到下一个句号结束
+      final remaining = text.substring(startIdx);
+      final match = RegExp(r'[^。！？]*[。！？]').firstMatch(remaining);
+      paragraph = match != null ? match.group(0)!.trim() : remaining.trim();
+    }
+    
     _cachedParagraphs[index] = paragraph;
     
+    // 智能缓存管理
     if (_cachedParagraphs.length > 10) {
       final keysToRemove = _cachedParagraphs.keys.where((k) => (k - index).abs() > 5).toList();
       for (final key in keysToRemove) {
