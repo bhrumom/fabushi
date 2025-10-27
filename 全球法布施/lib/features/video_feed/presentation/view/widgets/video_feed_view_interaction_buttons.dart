@@ -27,32 +27,46 @@ class VideoFeedViewInteractionButtons extends StatelessWidget {
         bottom: context.h(16),
         right: context.w(12),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          VideoFeedViewInteractionButton(
-            icon: isLiked ? Icons.favorite : Icons.favorite_border,
-            count: likeCount,
-            color: isLiked ? red : white,
-          ),
-          SizedBox(height: context.h(8)),
-          VideoFeedViewInteractionButton(
-            icon: LucideIcons.messageCircle,
-            count: commentCount,
-          ),
-          SizedBox(height: context.h(8)),
-          VideoFeedViewInteractionButton(
-            icon: LucideIcons.send,
-            count: shareCount,
-          ),
-          SizedBox(height: context.h(8)),
-          Icon(
-            isBookmarked ? Icons.bookmark : Icons.bookmark_border,
-            color: white,
-            size: context.sq(36),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // 计算可用高度和每个按钮的大小
+          final availableHeight = constraints.maxHeight - context.h(16);
+          final buttonHeight = context.sq(60); // 估算每个按钮高度
+          final iconHeight = context.sq(36);
+          final totalContentHeight = (buttonHeight * 3) + iconHeight;
+          
+          // 智能计算间距
+          final spacing = (availableHeight - totalContentHeight) / 4;
+          final safeSpacing = spacing.clamp(0.0, context.h(12));
+          
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              VideoFeedViewInteractionButton(
+                icon: isLiked ? Icons.favorite : Icons.favorite_border,
+                count: likeCount,
+                color: isLiked ? red : white,
+              ),
+              SizedBox(height: safeSpacing),
+              VideoFeedViewInteractionButton(
+                icon: LucideIcons.messageCircle,
+                count: commentCount,
+              ),
+              SizedBox(height: safeSpacing),
+              VideoFeedViewInteractionButton(
+                icon: LucideIcons.send,
+                count: shareCount,
+              ),
+              SizedBox(height: safeSpacing),
+              Icon(
+                isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+                color: white,
+                size: context.sq(36),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
