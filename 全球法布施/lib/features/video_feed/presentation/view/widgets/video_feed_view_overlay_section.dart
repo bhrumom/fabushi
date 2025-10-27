@@ -15,6 +15,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
     required this.shareCount,
     this.contentType = ContentType.video,
     this.textContent,
+    this.currentParagraph,
     super.key,
   });
 
@@ -28,6 +29,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
   final int shareCount;
   final ContentType contentType;
   final String? textContent;
+  final String? currentParagraph;
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +45,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
               description: description,
               contentType: contentType,
               textContent: textContent,
+              currentParagraph: currentParagraph,
             ),
           ),
           VideoFeedViewInteractionButtons(

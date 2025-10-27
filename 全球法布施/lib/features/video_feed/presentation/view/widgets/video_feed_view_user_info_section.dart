@@ -11,6 +11,7 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
     required this.description,
     this.contentType = ContentType.video,
     this.textContent,
+    this.currentParagraph,
     super.key,
   });
 
@@ -19,6 +20,7 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
   final String description;
   final ContentType contentType;
   final String? textContent;
+  final String? currentParagraph;
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +36,7 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
             username: username,
             contentType: contentType,
             textContent: textContent,
+            currentParagraph: currentParagraph,
           ),
           VideoFeedViewDescriptionText(text: description),
         ],

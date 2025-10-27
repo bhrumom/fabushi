@@ -11,6 +11,7 @@ class VideoFeedViewUserHeader extends StatelessWidget {
     required this.username,
     this.contentType = ContentType.video,
     this.textContent,
+    this.currentParagraph,
     super.key,
   });
 
@@ -18,6 +19,7 @@ class VideoFeedViewUserHeader extends StatelessWidget {
   final String username;
   final ContentType contentType;
   final String? textContent;
+  final String? currentParagraph;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +34,7 @@ class VideoFeedViewUserHeader extends StatelessWidget {
                       builder: (context) => VideoFeedViewFullTextReader(
                         bookTitle: username,
                         fullText: textContent!,
+                        currentParagraph: currentParagraph,
                       ),
                     ),
                   )
