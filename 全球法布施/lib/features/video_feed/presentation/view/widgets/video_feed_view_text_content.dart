@@ -55,20 +55,31 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     String buffer = '';
     
     while (pos < _text.length) {
-      final sentenceEnd = RegExp(r'[。！？]').firstMatch(_text.substring(pos));
+      final lineEnd = _text.indexOf('\n', pos);
+      final hasLineBreak = lineEnd != -1;
+      final lineEndPos = hasLineBreak ? lineEnd : _text.length;
+      final currentLine = _text.substring(pos, lineEndPos).trim();
       
-      if (sentenceEnd == null) {
-        final remaining = _text.substring(pos).trim();
-        if (remaining.isEmpty || _isMetadataLine(remaining)) {
-          return buffer.isNotEmpty ? (buffer, _text.length) : null;
+      if (currentLine.isNotEmpty && _isMetadataLine(currentLine)) {
+        pos = hasLineBreak ? lineEnd + 1 : _text.length;
+        continue;
+      }
+      
+      final sentenceEnd = RegExp(r'[。！？]').firstMatch(_text.substring(pos));
+      final sentenceEndInLine = sentenceEnd != null && (pos + sentenceEnd.end) <= lineEndPos;
+      
+      if (!sentenceEndInLine) {
+        if (currentLine.isEmpty) {
+          pos = hasLineBreak ? lineEnd + 1 : _text.length;
+          continue;
         }
         
         if (buffer.isEmpty) {
-          return (remaining, _text.length);
+          return (currentLine, hasLineBreak ? lineEnd + 1 : _text.length);
         }
         
-        if ((buffer + remaining).length <= 21) {
-          return (buffer + remaining, _text.length);
+        if ((buffer + currentLine).length <= 21) {
+          return (buffer + currentLine, hasLineBreak ? lineEnd + 1 : _text.length);
         }
         return (buffer, pos);
       }
@@ -76,7 +87,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
       final sentenceEndPos = pos + sentenceEnd.end;
       final sentence = _text.substring(pos, sentenceEndPos).trim();
       
-      if (sentence.isEmpty || _isMetadataLine(sentence)) {
+      if (sentence.isEmpty) {
         pos = sentenceEndPos;
         continue;
       }
@@ -110,7 +121,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     if (line.length < 15 && RegExp(r'(卷[上中下第]|[一二三四五六七八九十百千]+卷$)').hasMatch(line)) return true;
     
     // 3. 译者作者信息：单独一行且包含“造”“译”“撰”“述”且很短（<30字）
-    if (line.length < 30 && RegExp(r'[菩萨法师大师尊者].*[造译撰述集注疏释]$').hasMatch(line)) return true;
+    if (line.length < 30 && 
+        !RegExp(r'^(夫|如是我闻|尔时|佛告|世尊|一时)').hasMatch(line) &&
+        RegExp(r'[菩萨法师大师尊者].*[造译撰述集注疏释]$').hasMatch(line)) return true;
     
     // 4. 导航链接：上一部/下一部
     if (RegExp(r'^上一部：|下一部：').hasMatch(line)) return true;
