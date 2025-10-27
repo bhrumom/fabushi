@@ -32,10 +32,6 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
 
   @override
   Future<Either<String, List<VideoEntity>>> fetchMoreVideos() async {
-    if (_lastDocument == null) {
-      return const Right([]);
-    }
-
     try {
       return await _fetchVideosHelper(startAfterDocument: _lastDocument);
     } on FirebaseException catch (e) {
