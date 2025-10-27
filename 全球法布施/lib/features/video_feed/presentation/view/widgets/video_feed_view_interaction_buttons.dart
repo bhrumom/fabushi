@@ -30,21 +30,23 @@ class VideoFeedViewInteractionButtons extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
-        spacing: context.h(12),
         children: [
           VideoFeedViewInteractionButton(
             icon: isLiked ? Icons.favorite : Icons.favorite_border,
             count: likeCount,
             color: isLiked ? red : white,
           ),
+          SizedBox(height: context.h(8)),
           VideoFeedViewInteractionButton(
             icon: LucideIcons.messageCircle,
             count: commentCount,
           ),
+          SizedBox(height: context.h(8)),
           VideoFeedViewInteractionButton(
             icon: LucideIcons.send,
             count: shareCount,
           ),
+          SizedBox(height: context.h(8)),
           Icon(
             isBookmarked ? Icons.bookmark : Icons.bookmark_border,
             color: white,
