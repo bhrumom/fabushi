@@ -45,12 +45,15 @@ class VideoFeedViewUserHeader extends StatelessWidget {
                 : null,
           ),
         ),
-        Text(
-          username,
-          style: TextStyle(
-            color: white,
-            fontWeight: FontWeight.bold,
-            fontSize: context.fontSize(18),
+        Flexible(
+          child: Text(
+            username,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: white,
+              fontWeight: FontWeight.bold,
+              fontSize: context.fontSize(18),
+            ),
           ),
         ),
         const VideoFeedViewFollowButton(),
