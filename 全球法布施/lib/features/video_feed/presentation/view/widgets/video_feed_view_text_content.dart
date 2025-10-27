@@ -42,14 +42,14 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     
     var lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
     final List<String> result = [];
-    final headerPattern = RegExp(r'(第\d+部|卷[上中下]|卷第|论卷|经卷|品第)');
+    final headerPattern = RegExp(r'(第\d+部|卷[上中下]|卷第|论卷|经卷|品第|造|译|撰|述|集|注|疏|释)');
     
     for (final line in lines) {
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
       
-      // 跳过书名、卷名等标题行
-      if (headerPattern.hasMatch(trimmed)) continue;
+      // 跳过书名、卷名、作者译者等标题行
+      if (headerPattern.hasMatch(trimmed) || trimmed.contains('菩萨') && (trimmed.contains('造') || trimmed.contains('译'))) continue;
       
       final sentences = trimmed.split(RegExp(r'(?<=[。！？])'));
       if (sentences.length > 1) {
