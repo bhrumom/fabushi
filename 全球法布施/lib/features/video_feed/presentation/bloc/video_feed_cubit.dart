@@ -59,46 +59,53 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
   }
 
   Future<void> loadMoreVideos() async {
-    if (state.isPaginating || !state.hasMoreVideos) return;
+    if (state.isPaginating || !state.hasMoreVideos) {
+      debugPrint('跳过加载: isPaginating=${state.isPaginating}, hasMoreVideos=${state.hasMoreVideos}');
+      return;
+    }
 
+    debugPrint('开始加载更多内容...');
     emit(state.copyWith(isPaginating: true, errorMessage: ''));
 
     final result = await _fetchMoreVideosUseCase();
 
     result.fold(
       (error) {
+        debugPrint('加载失败: $error');
         emit(state.copyWith(
           isPaginating: false,
           errorMessage: error,
         ));
       },
       (moreVideos) {
+        debugPrint('加载成功: ${moreVideos.length} 个内容');
         final updatedVideos = [...state.videos, ...moreVideos];
-        // 总是有更多内容（文本可以无限加载）
         emit(state.copyWith(
           videos: updatedVideos,
           isPaginating: false,
           hasMoreVideos: true,
           errorMessage: '',
         ));
-
-        // Preload new videos after loading more
         preloadNextVideos();
       },
     );
   }
 
   Future<void> onPageChanged(int newIndex) async {
+    debugPrint('页面变化: $newIndex / ${state.videos.length}');
     emit(state.copyWith(currentIndex: newIndex));
 
-    // Start preloading next videos
     await preloadNextVideos();
 
     // Smart pagination trigger
     if (!_isPreloadingMore && state.hasMoreVideos && newIndex >= state.videos.length - 2) {
+      debugPrint('触发分页加载');
       _isPreloadingMore = true;
-      await loadMoreVideos();
-      _isPreloadingMore = false;
+      try {
+        await loadMoreVideos();
+      } finally {
+        _isPreloadingMore = false;
+      }
     }
   }
 
