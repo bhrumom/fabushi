@@ -93,7 +93,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
+                  SelectableText(
                     _paragraphs[index],
                     style: const TextStyle(
                       color: Colors.white,

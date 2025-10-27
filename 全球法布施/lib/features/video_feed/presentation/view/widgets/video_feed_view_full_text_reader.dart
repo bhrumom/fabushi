@@ -21,7 +21,7 @@ class VideoFeedViewFullTextReader extends StatelessWidget {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
-        child: Text(
+        child: SelectableText(
           fullText,
           style: const TextStyle(
             color: Colors.white,
