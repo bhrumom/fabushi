@@ -62,7 +62,7 @@ class VideoFeedScreen extends StatelessWidget {
               );
             }
             
-            if (state.videos.isEmpty) {
+            if (state.videos.isEmpty && !state.isLoading) {
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
@@ -72,19 +72,14 @@ class VideoFeedScreen extends StatelessWidget {
                       const Icon(Icons.video_library_outlined, color: Colors.white54, size: 80),
                       const SizedBox(height: 24),
                       const Text(
-                        '暂无视频',
+                        '暂无内容',
                         style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        '请在 Firebase Firestore 中添加视频数据',
+                        '正在加载法布施内容...',
                         style: TextStyle(color: Colors.white70, fontSize: 16),
                         textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        '集合名称: videos',
-                        style: TextStyle(color: Colors.white54, fontSize: 14),
                       ),
                       const SizedBox(height: 24),
                       ElevatedButton.icon(

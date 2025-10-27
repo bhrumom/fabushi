@@ -103,8 +103,11 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
     if (_videos.isEmpty || index >= _videos.length) return;
 
     final video = _videos[index];
-    await _getOrCreateController(video);
-    await _playController(video.id);
+    // Only initialize controller for video content
+    if (video.contentType != ContentType.text) {
+      await _getOrCreateController(video);
+      await _playController(video.id);
+    }
 
     if (mounted) setState(() {});
   }
@@ -123,6 +126,11 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
 
   /// Get or create a controller for a video
   Future<VideoPlayerController?> _getOrCreateController(VideoEntity video) async {
+    // Skip controller creation for text content
+    if (video.contentType == ContentType.text) {
+      return null;
+    }
+
     // Return the existing controller if available
     if (_controllerCache.containsKey(video.id)) {
       _touchController(video.id);

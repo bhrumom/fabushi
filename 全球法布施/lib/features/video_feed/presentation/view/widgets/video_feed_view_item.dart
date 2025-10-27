@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_entity.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_optimized_video_player.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_overlay_section.dart';
+import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_text_content.dart';
 import 'package:video_player/video_player.dart';
 
 class VideoFeedViewItem extends StatelessWidget {
@@ -14,7 +15,9 @@ class VideoFeedViewItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        VideoFeedViewOptimizedVideoPlayer(controller: controller, videoId: videoItem.id),
+        videoItem.contentType == ContentType.text
+            ? VideoFeedViewTextContent(textContent: videoItem.textContent ?? '')
+            : VideoFeedViewOptimizedVideoPlayer(controller: controller, videoId: videoItem.id),
         VideoFeedViewOverlaySection(
           profileImageUrl: videoItem.profileImageUrl,
           username: videoItem.username,

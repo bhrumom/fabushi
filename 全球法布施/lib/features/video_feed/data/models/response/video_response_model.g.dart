@@ -17,6 +17,8 @@ VideoResponseModel _$VideoResponseModelFromJson(Map<String, dynamic> json) =>
       commentCount: (json['commentCount'] as num).toInt(),
       shareCount: (json['shareCount'] as num).toInt(),
       timestamp: VideoResponseModel._timestampFromJson(json['timestamp']),
+      contentType: json['contentType'] as String?,
+      textContent: json['textContent'] as String?,
     );
 
 Map<String, dynamic> _$VideoResponseModelToJson(VideoResponseModel instance) =>
@@ -30,4 +32,6 @@ Map<String, dynamic> _$VideoResponseModelToJson(VideoResponseModel instance) =>
       'commentCount': instance.commentCount,
       'shareCount': instance.shareCount,
       'timestamp': VideoResponseModel._timestampToJson(instance.timestamp),
+      'contentType': instance.contentType,
+      'textContent': instance.textContent,
     };

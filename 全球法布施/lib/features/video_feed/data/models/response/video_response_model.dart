@@ -16,6 +16,8 @@ class VideoResponseModel {
     required this.commentCount,
     required this.shareCount,
     required this.timestamp,
+    this.contentType,
+    this.textContent,
   });
 
   final String id;
@@ -28,6 +30,8 @@ class VideoResponseModel {
   final int shareCount;
   @JsonKey(fromJson: _timestampFromJson, toJson: _timestampToJson)
   final Timestamp timestamp;
+  final String? contentType;
+  final String? textContent;
 
   /// Factory constructor from JSON
   factory VideoResponseModel.fromJson(Map<String, dynamic> json) =>
@@ -50,6 +54,8 @@ class VideoResponseModel {
       commentCount: _safeInt(data['commentCount']),
       shareCount: _safeInt(data['shareCount']),
       timestamp: data['timestamp'] is Timestamp ? data['timestamp'] as Timestamp : Timestamp.now(),
+      contentType: data['contentType'] is String ? data['contentType'] as String : null,
+      textContent: data['textContent'] is String ? data['textContent'] as String : null,
     );
   }
 
@@ -65,6 +71,8 @@ class VideoResponseModel {
       commentCount: commentCount,
       shareCount: shareCount,
       timestamp: timestamp.toDate(),
+      contentType: contentType == 'text' ? ContentType.text : ContentType.video,
+      textContent: textContent,
     );
   }
 
