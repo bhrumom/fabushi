@@ -64,25 +64,17 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
 
     return Container(
       color: Colors.black,
-      child: Listener(
-        onPointerSignal: (event) {
-          if (event is PointerScrollEvent) {
-            if (event.scrollDelta.dx > 0 && _currentIndex < _paragraphs.length - 1) {
-              _pageController.nextPage(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-              );
-            } else if (event.scrollDelta.dx < 0 && _currentIndex > 0) {
-              _pageController.previousPage(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-              );
-            }
-          }
-        },
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: {
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+          },
+        ),
         child: PageView.builder(
           controller: _pageController,
           itemCount: _paragraphs.length,
+          scrollDirection: Axis.horizontal,
           onPageChanged: (index) => setState(() => _currentIndex = index),
           itemBuilder: (context, index) {
           return Center(
