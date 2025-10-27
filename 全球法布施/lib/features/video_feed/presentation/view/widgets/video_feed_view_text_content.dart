@@ -48,8 +48,10 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
       
-      // 跳过书名、卷名、作者译者等标题行
-      if (headerPattern.hasMatch(trimmed) || trimmed.contains('菩萨') && (trimmed.contains('造') || trimmed.contains('译'))) continue;
+      // 跳过书名、卷名、作者译者、导航链接等标题行
+      if (headerPattern.hasMatch(trimmed) || 
+          trimmed.contains('菩萨') && (trimmed.contains('造') || trimmed.contains('译')) ||
+          trimmed.contains('上一部：') || trimmed.contains('下一部：')) continue;
       
       final sentences = trimmed.split(RegExp(r'(?<=[。！？])'));
       if (sentences.length > 1) {
