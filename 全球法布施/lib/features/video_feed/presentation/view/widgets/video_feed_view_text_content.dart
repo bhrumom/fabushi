@@ -87,29 +87,57 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
           scrollDirection: Axis.horizontal,
           onPageChanged: (index) => setState(() => _currentIndex = index),
           itemBuilder: (context, index) {
-          return Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SelectableText(
-                    _paragraphs[index],
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      height: 1.6,
+          return GestureDetector(
+            onTapUp: (details) {
+              final width = MediaQuery.of(context).size.width;
+              if (details.globalPosition.dx < width / 2) {
+                if (_currentIndex > 0) {
+                  _pageController.previousPage(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                  );
+                }
+              } else {
+                if (_currentIndex < _paragraphs.length - 1) {
+                  _pageController.nextPage(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                  );
+                }
+              }
+            },
+            onDoubleTapDown: (details) {
+              final width = MediaQuery.of(context).size.width;
+              if (details.globalPosition.dx < width / 2) {
+                _pageController.jumpToPage(0);
+              } else {
+                _pageController.jumpToPage(_paragraphs.length - 1);
+              }
+            },
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SelectableText(
+                      _paragraphs[index],
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        height: 1.6,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    '${index + 1} / ${_paragraphs.length}',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
-                      fontSize: 14,
+                    const SizedBox(height: 24),
+                    Text(
+                      '${index + 1} / ${_paragraphs.length}',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.5),
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
