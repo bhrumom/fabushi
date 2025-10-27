@@ -40,29 +40,42 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
   List<String> _splitIntoParagraphs(String text) {
     if (text.isEmpty) return [''];
     
-    final sentences = text.split(RegExp(r'(?<=[。！？])'));
+    // 先按换行符分割
+    var lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
     final List<String> result = [];
-    String current = '';
     
-    for (final sentence in sentences) {
-      final trimmed = sentence.trim();
+    for (final line in lines) {
+      final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
       
-      if (trimmed.length > 21) {
+      // 尝试按句号分割
+      final sentences = trimmed.split(RegExp(r'(?<=[。！？])'));
+      if (sentences.length > 1) {
+        String current = '';
+        for (final sentence in sentences) {
+          final s = sentence.trim();
+          if (s.isEmpty) continue;
+          
+          if (s.length > 21) {
+            if (current.isNotEmpty) result.add(current);
+            result.add(s);
+            current = '';
+          } else if (current.isEmpty) {
+            current = s;
+          } else if ((current + s).length <= 21) {
+            current += s;
+          } else {
+            result.add(current);
+            current = s;
+          }
+        }
         if (current.isNotEmpty) result.add(current);
-        result.add(trimmed);
-        current = '';
-      } else if (current.isEmpty) {
-        current = trimmed;
-      } else if ((current + trimmed).length <= 21) {
-        current += trimmed;
       } else {
-        result.add(current);
-        current = trimmed;
+        // 没有句号，直接添加整行
+        result.add(trimmed);
       }
     }
     
-    if (current.isNotEmpty) result.add(current);
     return result.isEmpty ? [''] : result;
   }
 
