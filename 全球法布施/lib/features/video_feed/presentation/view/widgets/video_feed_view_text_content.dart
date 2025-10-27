@@ -63,11 +63,27 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
 
     return Container(
       color: Colors.black,
-      child: PageView.builder(
-        controller: _pageController,
-        itemCount: _paragraphs.length,
-        onPageChanged: (index) => setState(() => _currentIndex = index),
-        itemBuilder: (context, index) {
+      child: Listener(
+        onPointerSignal: (event) {
+          if (event is PointerScrollEvent) {
+            if (event.scrollDelta.dx > 0 && _currentIndex < _paragraphs.length - 1) {
+              _pageController.nextPage(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              );
+            } else if (event.scrollDelta.dx < 0 && _currentIndex > 0) {
+              _pageController.previousPage(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              );
+            }
+          }
+        },
+        child: PageView.builder(
+          controller: _pageController,
+          itemCount: _paragraphs.length,
+          onPageChanged: (index) => setState(() => _currentIndex = index),
+          itemBuilder: (context, index) {
           return Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
@@ -94,7 +110,8 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
               ),
             ),
           );
-        },
+          },
+        ),
       ),
     );
   }
