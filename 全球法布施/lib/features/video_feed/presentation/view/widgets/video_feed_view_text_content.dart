@@ -17,98 +17,85 @@ class VideoFeedViewTextContent extends StatefulWidget {
 }
 
 class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
-  late List<int> _paragraphIndices;
-  late int _currentIndex;
-  final PageController _pageController = PageController();
-  final Map<int, String> _cachedParagraphs = {};
+  int _currentPosition = 0;
+  final Map<int, String> _cache = {};
+  int _totalPages = 0;
 
   @override
   void initState() {
     super.initState();
-    _paragraphIndices = _buildParagraphIndices(widget.textContent);
-    _currentIndex = _paragraphIndices.isEmpty ? 0 : Random().nextInt(_paragraphIndices.length);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_pageController.hasClients) {
-        _pageController.jumpToPage(_currentIndex);
-      }
-    });
+    if (widget.textContent.isNotEmpty) {
+      _currentPosition = Random().nextInt(widget.textContent.length ~/ 2);
+      _calculateTotalPages();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
+      });
+    }
+  }
+
+  void _calculateTotalPages() {
+    int pos = 0;
+    int count = 0;
+    while (pos < widget.textContent.length) {
+      final result = _getNextParagraph(pos);
+      if (result == null) break;
+      count++;
+      pos = result.$2;
+    }
+    _totalPages = count;
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
     super.dispose();
   }
 
-  List<int> _buildParagraphIndices(String text) {
-    if (text.isEmpty) return [0];
+  (String, int)? _getNextParagraph(int startPos) {
+    final text = widget.textContent;
+    if (startPos >= text.length) return null;
     
-    final List<int> indices = [];
-    final List<String> sentences = [];
-    
-    // 提取所有有效句子
-    for (final line in text.split('\n')) {
-      final trimmed = line.trim();
-      if (trimmed.isEmpty) continue;
-      
-      // 跳过逻辑：只跳过明确的元数据行
-      if (_isMetadataLine(trimmed)) continue;
-      
-      // 检查是否有标点符号
-      if (RegExp(r'[。！？]').hasMatch(trimmed)) {
-        // 按句号、感叹号、问号切分句子
-        final parts = trimmed.split(RegExp(r'(?<=[。！？])'));
-        for (final part in parts) {
-          final s = part.trim();
-          if (s.isNotEmpty) sentences.add(s);
-        }
-      } else {
-        // 没有标点，整行作为一个片段
-        sentences.add(trimmed);
-      }
+    int pos = startPos;
+    while (pos < text.length && (text[pos] == '\n' || text[pos] == ' ')) {
+      pos++;
     }
     
-    // 构建索引：合并句子直到超过21字，或单句超过21字则独立
-    int searchPos = 0;
-    String buffer = '';
-    int bufferStartPos = 0;
+    if (pos >= text.length) return null;
     
-    for (final sentence in sentences) {
-      final pos = text.indexOf(sentence, searchPos);
-      if (pos == -1) continue;
+    String buffer = '';
+    int bufferStart = pos;
+    
+    while (pos < text.length) {
+      final sentenceEnd = RegExp(r'[。！？]').firstMatch(text.substring(pos));
+      if (sentenceEnd == null) break;
+      
+      final sentenceEndPos = pos + sentenceEnd.end;
+      final sentence = text.substring(pos, sentenceEndPos).trim();
+      
+      if (sentence.isEmpty || _isMetadataLine(sentence)) {
+        pos = sentenceEndPos;
+        continue;
+      }
       
       if (sentence.length > 21) {
-        // 单句超过21字
-        if (buffer.isNotEmpty) {
-          indices.add(bufferStartPos);
-          buffer = '';
+        if (buffer.isEmpty) {
+          return (sentence, sentenceEndPos);
         }
-        indices.add(pos);
-        searchPos = pos + sentence.length;
-      } else if (buffer.isEmpty) {
-        // 开始新片段
+        return (buffer, pos);
+      }
+      
+      if (buffer.isEmpty) {
         buffer = sentence;
-        bufferStartPos = pos;
-        searchPos = pos + sentence.length;
+        bufferStart = pos;
+        pos = sentenceEndPos;
       } else if ((buffer + sentence).length <= 21) {
-        // 合并
         buffer += sentence;
-        searchPos = pos + sentence.length;
+        pos = sentenceEndPos;
       } else {
-        // 保存buffer，开始新片段
-        indices.add(bufferStartPos);
-        buffer = sentence;
-        bufferStartPos = pos;
-        searchPos = pos + sentence.length;
+        return (buffer, pos);
       }
     }
     
-    // 保存最后buffer
-    if (buffer.isNotEmpty) {
-      indices.add(bufferStartPos);
-    }
-    
-    return indices.isEmpty ? [0] : indices;
+    return buffer.isNotEmpty ? (buffer, pos) : null;
   }
 
   bool _isMetadataLine(String line) {
@@ -130,125 +117,100 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     return false;
   }
 
-  String _getParagraphAt(int index) {
-    if (_cachedParagraphs.containsKey(index)) {
-      return _cachedParagraphs[index]!;
+  String _getCurrentParagraph() {
+    if (_cache.containsKey(_currentPosition)) {
+      return _cache[_currentPosition]!;
     }
     
-    final text = widget.textContent;
-    if (text.isEmpty || index >= _paragraphIndices.length) return '';
+    final result = _getNextParagraph(_currentPosition);
+    if (result == null) return '';
     
-    final startIdx = _paragraphIndices[index];
-    String paragraph;
-    
-    if (index + 1 < _paragraphIndices.length) {
-      final endIdx = _paragraphIndices[index + 1];
-      paragraph = text.substring(startIdx, endIdx).trim();
-    } else {
-      // 最后一个片段，找到下一个句号结束
-      final remaining = text.substring(startIdx);
-      final match = RegExp(r'[^。！？]*[。！？]').firstMatch(remaining);
-      paragraph = match != null ? match.group(0)!.trim() : remaining.trim();
-    }
-    
-    _cachedParagraphs[index] = paragraph;
-    
-    // 智能缓存管理
-    if (_cachedParagraphs.length > 10) {
-      final keysToRemove = _cachedParagraphs.keys.where((k) => (k - index).abs() > 5).toList();
-      for (final key in keysToRemove) {
-        _cachedParagraphs.remove(key);
-      }
+    final paragraph = result.$1;
+    _cache[_currentPosition] = paragraph;
+    if (_cache.length > 5) {
+      _cache.remove(_cache.keys.first);
     }
     
     return paragraph;
   }
 
+  void _goNext() {
+    final result = _getNextParagraph(_currentPosition);
+    if (result != null) {
+      setState(() {
+        _currentPosition = result.$2;
+      });
+      widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
+    }
+  }
+
+  void _goPrevious() {
+    int pos = 0;
+    int lastPos = 0;
+    
+    while (pos < _currentPosition) {
+      final result = _getNextParagraph(pos);
+      if (result == null || result.$2 >= _currentPosition) break;
+      lastPos = pos;
+      pos = result.$2;
+    }
+    
+    if (lastPos != _currentPosition) {
+      setState(() {
+        _currentPosition = lastPos;
+      });
+      widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_paragraphIndices.isEmpty) {
+    if (widget.textContent.isEmpty) {
       return Container(color: Colors.black);
     }
 
+    final paragraph = _getCurrentParagraph();
+
     return Container(
       color: Colors.black,
-      child: ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(
-          dragDevices: {
-            PointerDeviceKind.touch,
-            PointerDeviceKind.mouse,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (details) {
+            final width = MediaQuery.of(context).size.width;
+            if (details.globalPosition.dx < width / 2) {
+              _goPrevious();
+            } else {
+              _goNext();
+            }
           },
-        ),
-        child: PageView.builder(
-          controller: _pageController,
-          itemCount: _paragraphIndices.length,
-          scrollDirection: Axis.horizontal,
-          onPageChanged: (index) {
-            setState(() => _currentIndex = index);
-            final paragraph = _getParagraphAt(index);
-            widget.onCurrentParagraphChanged?.call(paragraph);
-          },
-          itemBuilder: (context, index) {
-            final paragraph = _getParagraphAt(index);
-          return MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: (details) {
-                final width = MediaQuery.of(context).size.width;
-                if (details.globalPosition.dx < width / 2) {
-                  if (_currentIndex > 0) {
-                    _pageController.previousPage(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                    );
-                  }
-                } else {
-                  if (_currentIndex < _paragraphIndices.length - 1) {
-                    _pageController.nextPage(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                    );
-                  }
-                }
-              },
-              onDoubleTapDown: (details) {
-                final width = MediaQuery.of(context).size.width;
-                if (details.globalPosition.dx < width / 2) {
-                  _pageController.jumpToPage(0);
-                } else {
-                  _pageController.jumpToPage(_paragraphIndices.length - 1);
-                }
-              },
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    SelectableText(
-                      paragraph,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        height: 1.6,
-                      ),
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SelectableText(
+                    paragraph,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      height: 1.6,
                     ),
-                    const SizedBox(height: 24),
-                    Text(
-                      '${index + 1} / ${_paragraphIndices.length}',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
-                        fontSize: 14,
-                      ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    '位置: $_currentPosition',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.5),
+                      fontSize: 14,
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                ],
               ),
             ),
-          );
-          },
+          ),
         ),
       ),
     );
