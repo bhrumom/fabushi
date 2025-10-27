@@ -27,6 +27,8 @@ class VideoFeedViewItem extends StatelessWidget {
           likeCount: videoItem.likeCount,
           commentCount: videoItem.commentCount,
           shareCount: videoItem.shareCount,
+          contentType: videoItem.contentType,
+          textContent: videoItem.textContent,
         ),
       ],
     );

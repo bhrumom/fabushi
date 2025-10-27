@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_entity.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_interaction_buttons.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_user_info_section.dart';
 
@@ -12,6 +13,8 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
     required this.likeCount,
     required this.commentCount,
     required this.shareCount,
+    this.contentType = ContentType.video,
+    this.textContent,
     super.key,
   });
 
@@ -23,6 +26,8 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
   final int likeCount;
   final int commentCount;
   final int shareCount;
+  final ContentType contentType;
+  final String? textContent;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +36,13 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          VideoFeedViewUserInfoSection(profileImageUrl: profileImageUrl, username: username, description: description),
+          VideoFeedViewUserInfoSection(
+            profileImageUrl: profileImageUrl,
+            username: username,
+            description: description,
+            contentType: contentType,
+            textContent: textContent,
+          ),
           VideoFeedViewInteractionButtons(
             isLiked: isLiked,
             isBookmarked: isBookmarked,
