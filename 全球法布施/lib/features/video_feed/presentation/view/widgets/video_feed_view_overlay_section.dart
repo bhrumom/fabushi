@@ -36,12 +36,14 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          VideoFeedViewUserInfoSection(
-            profileImageUrl: profileImageUrl,
-            username: username,
-            description: description,
-            contentType: contentType,
-            textContent: textContent,
+          Flexible(
+            child: VideoFeedViewUserInfoSection(
+              profileImageUrl: profileImageUrl,
+              username: username,
+              description: description,
+              contentType: contentType,
+              textContent: textContent,
+            ),
           ),
           VideoFeedViewInteractionButtons(
             isLiked: isLiked,
