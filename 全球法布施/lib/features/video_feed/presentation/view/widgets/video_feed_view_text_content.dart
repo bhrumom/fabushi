@@ -58,11 +58,17 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
           trimmed.contains('上一部：') || trimmed.contains('下一部：') ||
           trimmed.startsWith('佛说') && trimmed.contains('经')) continue;
       
-      // 按句号、感叹号、问号切分句子
-      final parts = trimmed.split(RegExp(r'(?<=[。！？])'));
-      for (final part in parts) {
-        final s = part.trim();
-        if (s.isNotEmpty) sentences.add(s);
+      // 检查是否有标点符号
+      if (RegExp(r'[。！？]').hasMatch(trimmed)) {
+        // 按句号、感叹号、问号切分句子
+        final parts = trimmed.split(RegExp(r'(?<=[。！？])'));
+        for (final part in parts) {
+          final s = part.trim();
+          if (s.isNotEmpty) sentences.add(s);
+        }
+      } else {
+        // 没有标点，整行作为一个片段
+        sentences.add(trimmed);
       }
     }
     
