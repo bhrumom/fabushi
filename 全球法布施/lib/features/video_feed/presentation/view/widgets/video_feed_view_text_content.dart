@@ -29,7 +29,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
       _text = widget.textContent;
       _currentPosition = Random().nextInt(max(_text.length - 100, 1));
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
+        if (mounted) {
+          widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
+        }
       });
     }
   }
@@ -44,7 +46,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
       _currentPosition = randomPos;
       _currentPage = Random().nextInt(9999) + 1;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
+        if (mounted) {
+          widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
+        }
       });
     }
   }
