@@ -9,6 +9,7 @@ class CloudflareTextService {
   static final _random = Random();
   static const String baseUrl = 'https://flutter.ombhrum.com';
   static List<Map<String, dynamic>>? _cachedManifest;
+  static final Set<String> _failedFiles = {};
   
   // 硬编码的佛经文本内容
   static final List<Map<String, String>> _sampleTexts = [
@@ -100,9 +101,11 @@ class CloudflareTextService {
         print('Loaded local manifest with ${_cachedManifest!.length} items');
       }
       
-      // 筛选txt文件
+      // 筛选txt文件，排除已失败的文件
       final txtFiles = _cachedManifest!
-          .where((item) => item['key']?.toString().endsWith('.txt') == true)
+          .where((item) => 
+              item['key']?.toString().endsWith('.txt') == true &&
+              !_failedFiles.contains(item['key'].toString()))
           .map((item) => item['key'].toString())
           .toList();
       
@@ -115,10 +118,10 @@ class CloudflareTextService {
       final selectedFile = txtFiles[_random.nextInt(txtFiles.length)];
       print('Selected file from local manifest: $selectedFile');
       
-      // 从Cloudflare下载内容
+      // 从Cloudflare下载内容（减少超时时间）
       final contentResponse = await http.get(
         Uri.parse('$baseUrl/$selectedFile'),
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 3));
       
       if (contentResponse.statusCode == 200) {
         // 文件是GBK编码
@@ -142,6 +145,7 @@ class CloudflareTextService {
         };
       }
       print('Failed to download file: ${contentResponse.statusCode}');
+      _failedFiles.add(selectedFile);
       return null;
     } catch (e) {
       print('Error loading from local manifest: $e');
