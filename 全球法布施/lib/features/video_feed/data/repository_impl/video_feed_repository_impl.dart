@@ -16,6 +16,7 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
   final CloudflareTextService _textService;
   DocumentSnapshot? _lastDocument;
   int _textContentIndex = 0;
+  static const bool _enableVideoFeed = false;
 
   @override
   Future<Either<String, List<VideoEntity>>> fetchVideos() async {
@@ -45,56 +46,60 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
     DocumentSnapshot? startAfterDocument,
   }) async {
     try {
-      Query query = _firestore
-          .collection('videos')
-          .orderBy('timestamp', descending: false)
-          .orderBy(FieldPath.documentId, descending: false)
-          .limit(2);
-
-      if (startAfterDocument != null) {
-        query = query.startAfterDocument(startAfterDocument);
-      }
-
-      final snapshot = await query.get();
       final videos = <VideoEntity>[];
 
-      // 添加视频内容
-      if (snapshot.docs.isNotEmpty) {
-        _lastDocument = snapshot.docs.last;
-        videos.addAll(
-          snapshot.docs
-              .map((doc) => VideoResponseModel.fromFirestore(doc).toEntity())
-              .toList(),
-        );
+      // 仅在启用时查询视频
+      if (_enableVideoFeed) {
+        Query query = _firestore
+            .collection('videos')
+            .orderBy('timestamp', descending: false)
+            .orderBy(FieldPath.documentId, descending: false)
+            .limit(2);
+
+        if (startAfterDocument != null) {
+          query = query.startAfterDocument(startAfterDocument);
+        }
+
+        final snapshot = await query.get();
+        if (snapshot.docs.isNotEmpty) {
+          _lastDocument = snapshot.docs.last;
+          videos.addAll(
+            snapshot.docs
+                .map((doc) => VideoResponseModel.fromFirestore(doc).toEntity())
+                .toList(),
+          );
+        }
       }
 
-      // 总是加载文本内容（无论是否有视频）
-      print('Loading text content...');
-      try {
-        final textCount = videos.isEmpty ? 3 : 2;
-        for (int i = 0; i < textCount; i++) {
-          final textData = await _textService.getRandomTextContent();
-          if (textData != null) {
-            print('Loaded text content: ${textData['title']}');
-            videos.add(VideoEntity(
-              id: 'text_${DateTime.now().millisecondsSinceEpoch}_$i',
-              username: textData['title'] ?? '佛法文本',
-              description: '点击头像阅读全文',
-              videoUrl: '',
-              profileImageUrl: '',
-              likeCount: 0,
-              commentCount: 0,
-              shareCount: 0,
-              timestamp: DateTime.now(),
-              contentType: ContentType.text,
-              textContent: textData['content'],
-            ));
-            await Future.delayed(const Duration(milliseconds: 10));
-          }
+      // 并行加载文本内容
+      final textCount = 3;
+      final textFutures = List.generate(
+        textCount,
+        (i) => _textService.getRandomTextContent(),
+      );
+      
+      final textResults = await Future.wait(
+        textFutures,
+        eagerError: false,
+      );
+      
+      for (var i = 0; i < textResults.length; i++) {
+        final textData = textResults[i];
+        if (textData != null) {
+          videos.add(VideoEntity(
+            id: 'text_${DateTime.now().millisecondsSinceEpoch}_$i',
+            username: textData['title'] ?? '佛法文本',
+            description: '点击头像阅读全文',
+            videoUrl: '',
+            profileImageUrl: '',
+            likeCount: 0,
+            commentCount: 0,
+            shareCount: 0,
+            timestamp: DateTime.now(),
+            contentType: ContentType.text,
+            textContent: textData['content'],
+          ));
         }
-        print('Total text content loaded: ${videos.length}');
-      } catch (e) {
-        print('Error loading text content: $e');
       }
       _textContentIndex++;
 

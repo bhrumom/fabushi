@@ -3,10 +3,12 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:gbk_codec/gbk_codec.dart';
 import 'package:global_dharma_sharing/config/unified_config.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 class CloudflareTextService {
   static final _random = Random();
   static const String baseUrl = 'https://flutter.ombhrum.com';
+  static List<Map<String, dynamic>>? _cachedManifest;
   
   // 硬编码的佛经文本内容
   static final List<Map<String, String>> _sampleTexts = [
@@ -80,71 +82,71 @@ class CloudflareTextService {
   /// 获取随机文本内容（用于信息流）
   Future<Map<String, dynamic>?> getRandomTextContent() async {
     try {
-      // 尝试从云端获取
-      final cloudText = await _getCloudTextContent();
-      if (cloudText != null) {
-        return cloudText;
-      }
-      
-      // 云端失败，使用本地内容
-      final selectedText = _sampleTexts[_random.nextInt(_sampleTexts.length)];
-      print('Using local text: ${selectedText['title']}');
-      return selectedText;
+      return await _getCloudTextFromLocalManifest();
     } catch (e) {
-      print('Error getting random text content: $e');
-      // 出错时返回本地内容
-      return _sampleTexts[_random.nextInt(_sampleTexts.length)];
+      print('Failed to load cloud text: $e');
+      return null;
     }
   }
   
-  /// 从云端获取文本内容
-  Future<Map<String, dynamic>?> _getCloudTextContent() async {
+  /// 从本地manifest读取文件列表，然后从云端下载内容
+  Future<Map<String, dynamic>?> _getCloudTextFromLocalManifest() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/asset-manifest.json'),
+      // 加载本地manifest
+      if (_cachedManifest == null) {
+        final manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
+        final List<dynamic> manifestData = json.decode(manifestString);
+        _cachedManifest = manifestData.cast<Map<String, dynamic>>();
+        print('Loaded local manifest with ${_cachedManifest!.length} items');
+      }
+      
+      // 筛选txt文件
+      final txtFiles = _cachedManifest!
+          .where((item) => item['key']?.toString().endsWith('.txt') == true)
+          .map((item) => item['key'].toString())
+          .toList();
+      
+      if (txtFiles.isEmpty) {
+        print('No txt files found in manifest');
+        return null;
+      }
+      
+      // 随机选择一个文件
+      final selectedFile = txtFiles[_random.nextInt(txtFiles.length)];
+      print('Selected file from local manifest: $selectedFile');
+      
+      // 从Cloudflare下载内容
+      final contentResponse = await http.get(
+        Uri.parse('$baseUrl/$selectedFile'),
       ).timeout(const Duration(seconds: 5));
       
-      if (response.statusCode == 200 && response.body.isNotEmpty) {
-        final List<dynamic> manifest = json.decode(response.body);
-        final txtFiles = manifest
-            .where((item) => item['key']?.toString().endsWith('.txt') == true)
-            .map((item) => item['key'].toString())
-            .toList();
-        
-        if (txtFiles.isNotEmpty) {
-          txtFiles.shuffle();
-          final selectedFile = txtFiles.first;
-          
-          final contentResponse = await http.get(
-            Uri.parse('$baseUrl/$selectedFile'),
-          ).timeout(const Duration(seconds: 10));
-          
-          if (contentResponse.statusCode == 200) {
-            // 文件是GBK编码，直接使用GBK解码
-            String content;
-            try {
-              content = gbk_bytes.decode(contentResponse.bodyBytes);
-              print('Successfully decoded GBK content: ${content.length} chars');
-            } catch (e) {
-              print('GBK decoding failed: $e, trying UTF-8');
-              content = utf8.decode(contentResponse.bodyBytes, allowMalformed: true);
-            }
-            final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
-            // 清理反编译器水印
-            content = _cleanDecompilerWatermark(content);
-            print('Loaded cloud text: $fileName');
-            return {
-              'title': fileName,
-              'content': content,
-              'filePath': selectedFile,
-            };
-          }
+      if (contentResponse.statusCode == 200) {
+        // 文件是GBK编码
+        String content;
+        try {
+          content = gbk_bytes.decode(contentResponse.bodyBytes);
+          print('Successfully decoded GBK content: ${content.length} chars');
+        } catch (e) {
+          print('GBK decoding failed: $e, trying UTF-8');
+          content = utf8.decode(contentResponse.bodyBytes, allowMalformed: true);
         }
+        
+        final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
+        content = _cleanDecompilerWatermark(content);
+        print('Loaded cloud text from local manifest: $fileName');
+        
+        return {
+          'title': fileName,
+          'content': content,
+          'filePath': selectedFile,
+        };
       }
+      print('Failed to download file: ${contentResponse.statusCode}');
+      return null;
     } catch (e) {
-      print('Cloud text fetch failed: $e');
+      print('Error loading from local manifest: $e');
+      return null;
     }
-    return null;
   }
   
   /// 清理反编译器水印

@@ -26,7 +26,9 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
             ? VideoFeedViewTextContent(
                 textContent: widget.videoItem.textContent ?? '',
                 onCurrentParagraphChanged: (paragraph) {
-                  setState(() => _currentParagraph = paragraph);
+                  if (mounted) {
+                    setState(() => _currentParagraph = paragraph);
+                  }
                 },
               )
             : VideoFeedViewOptimizedVideoPlayer(controller: widget.controller, videoId: widget.videoItem.id),
