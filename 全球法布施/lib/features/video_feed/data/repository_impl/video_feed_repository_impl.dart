@@ -80,50 +80,35 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
         }
       }
 
-      // 并行加载文本内容（减少数量以提升性能）
+      // 串行加载文本内容
       final textCount = 2;
       print('开始加载 $textCount 个文本内容...');
       
       int successCount = 0;
       int attempts = 0;
-      const maxAttempts = 6; // 最多尝试6次
+      const maxAttempts = 6;
       
       while (successCount < textCount && attempts < maxAttempts) {
-        final batchSize = textCount - successCount;
-        final textFutures = List.generate(
-          batchSize,
-          (i) => _textService.getRandomTextContent(),
-        );
+        final textData = await _textService.getRandomTextContent();
         
-        final textResults = await Future.wait(
-          textFutures,
-          eagerError: false,
-        );
-        
-        for (var i = 0; i < textResults.length; i++) {
-          final textData = textResults[i];
-          if (textData != null) {
-            videos.add(VideoEntity(
-              id: 'text_${DateTime.now().millisecondsSinceEpoch}_${successCount}_$i',
-              username: textData['title'] ?? '佛法文本',
-              description: '点击头像阅读全文',
-              videoUrl: '',
-              profileImageUrl: '',
-              likeCount: 0,
-              commentCount: 0,
-              shareCount: 0,
-              timestamp: DateTime.now(),
-              contentType: ContentType.text,
-              textContent: textData['content'],
-            ));
-            successCount++;
-          }
+        if (textData != null) {
+          videos.add(VideoEntity(
+            id: 'text_${DateTime.now().millisecondsSinceEpoch}_$successCount',
+            username: textData['title'] ?? '佛法文本',
+            description: '点击头像阅读全文',
+            videoUrl: '',
+            profileImageUrl: '',
+            likeCount: 0,
+            commentCount: 0,
+            shareCount: 0,
+            timestamp: DateTime.now(),
+            contentType: ContentType.text,
+            textContent: textData['content'],
+          ));
+          successCount++;
         }
         
         attempts++;
-        if (successCount < textCount && attempts < maxAttempts) {
-          print('重试加载，当前成功: $successCount/$textCount');
-        }
       }
       
       if (successCount == 0) {
