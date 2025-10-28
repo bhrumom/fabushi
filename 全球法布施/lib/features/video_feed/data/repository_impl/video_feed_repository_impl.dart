@@ -73,6 +73,7 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
 
       // 并行加载文本内容
       final textCount = 3;
+      print('开始加载 $textCount 个文本内容...');
       final textFutures = List.generate(
         textCount,
         (i) => _textService.getRandomTextContent(),
@@ -83,6 +84,7 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
         eagerError: false,
       );
       
+      int successCount = 0;
       for (var i = 0; i < textResults.length; i++) {
         final textData = textResults[i];
         if (textData != null) {
@@ -99,8 +101,10 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
             contentType: ContentType.text,
             textContent: textData['content'],
           ));
+          successCount++;
         }
       }
+      print('成功加载 $successCount 个文本内容，总计 ${videos.length} 个项目');
       _textContentIndex++;
 
       return Right(videos);

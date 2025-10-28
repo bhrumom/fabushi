@@ -40,11 +40,13 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
   void didUpdateWidget(VideoFeedViewTextContent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.textContent != oldWidget.textContent) {
-      _text = widget.textContent;
-      _cache.clear();
-      final randomPos = Random().nextInt(max(_text.length - 100, 1));
-      _currentPosition = randomPos;
-      _currentPage = Random().nextInt(9999) + 1;
+      setState(() {
+        _text = widget.textContent;
+        _cache.clear();
+        final randomPos = Random().nextInt(max(_text.length - 100, 1));
+        _currentPosition = randomPos;
+        _currentPage = Random().nextInt(9999) + 1;
+      });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
@@ -65,14 +67,14 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     
     // 如果不是从0开始，先找到下一个句子结束标点后的位置
     if (pos > 0) {
-      final nextEnd = RegExp(r'[。！？]').firstMatch(_text.substring(pos));
+      final nextEnd = RegExp(r'[。！？；：、，]').firstMatch(_text.substring(pos));
       if (nextEnd != null) {
         pos = pos + nextEnd.end;
       }
     }
     
-    // 跳过空白字符
-    while (pos < _text.length && (_text[pos] == '\n' || _text[pos] == ' ')) {
+    // 跳过空白字符和标点符号
+    while (pos < _text.length && RegExp(r'[\s""''「」『』（）()、，,]').hasMatch(_text[pos])) {
       pos++;
     }
     
@@ -91,7 +93,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
         continue;
       }
       
-      final sentenceEnd = RegExp(r'[。！？]').firstMatch(_text.substring(pos));
+      final sentenceEnd = RegExp(r'[。！？；：、，][""''」』）)]*').firstMatch(_text.substring(pos));
       final sentenceEndInLine = sentenceEnd != null && (pos + sentenceEnd.end) <= lineEndPos;
       
       if (!sentenceEndInLine) {
@@ -111,9 +113,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
       }
       
       final sentenceEndPos = pos + sentenceEnd.end;
-      final sentence = _text.substring(pos, sentenceEndPos).trim();
+      final sentence = _text.substring(pos, sentenceEndPos).trim().replaceAll(RegExp(r'^[""''「」『』（）(),、，\s]+'), '');
       
-      if (sentence.isEmpty) {
+      if (sentence.isEmpty || sentence.length < 2) {
         pos = sentenceEndPos;
         continue;
       }
@@ -183,7 +185,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
 
   void _goNext() {
     final result = _getNextParagraph(_currentPosition);
-    if (result != null) {
+    if (result != null && result.$2 < _text.length) {
       setState(() {
         _currentPosition = result.$2;
         _currentPage++;
