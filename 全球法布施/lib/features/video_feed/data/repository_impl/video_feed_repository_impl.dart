@@ -17,6 +17,7 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
   DocumentSnapshot? _lastDocument;
   int _textContentIndex = 0;
   static const bool _enableVideoFeed = false;
+  bool _isLoading = false;
 
   @override
   Future<Either<String, List<VideoEntity>>> fetchVideos() async {
@@ -33,12 +34,20 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
 
   @override
   Future<Either<String, List<VideoEntity>>> fetchMoreVideos() async {
+    if (_isLoading) {
+      print('已有加载任务进行中，跳过本次请求');
+      return const Right([]);
+    }
     try {
-      return await _fetchVideosHelper(startAfterDocument: _lastDocument);
+      _isLoading = true;
+      final result = await _fetchVideosHelper(startAfterDocument: _lastDocument);
+      return result;
     } on FirebaseException catch (e) {
       return Left('Failed to fetch more videos: ${e.message ?? 'Unknown error'}');
     } catch (e) {
       return const Left('An unexpected error occurred while fetching more videos');
+    } finally {
+      _isLoading = false;
     }
   }
 
@@ -71,40 +80,57 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
         }
       }
 
-      // 并行加载文本内容
-      final textCount = 3;
+      // 并行加载文本内容（减少数量以提升性能）
+      final textCount = 2;
       print('开始加载 $textCount 个文本内容...');
-      final textFutures = List.generate(
-        textCount,
-        (i) => _textService.getRandomTextContent(),
-      );
-      
-      final textResults = await Future.wait(
-        textFutures,
-        eagerError: false,
-      );
       
       int successCount = 0;
-      for (var i = 0; i < textResults.length; i++) {
-        final textData = textResults[i];
-        if (textData != null) {
-          videos.add(VideoEntity(
-            id: 'text_${DateTime.now().millisecondsSinceEpoch}_$i',
-            username: textData['title'] ?? '佛法文本',
-            description: '点击头像阅读全文',
-            videoUrl: '',
-            profileImageUrl: '',
-            likeCount: 0,
-            commentCount: 0,
-            shareCount: 0,
-            timestamp: DateTime.now(),
-            contentType: ContentType.text,
-            textContent: textData['content'],
-          ));
-          successCount++;
+      int attempts = 0;
+      const maxAttempts = 6; // 最多尝试6次
+      
+      while (successCount < textCount && attempts < maxAttempts) {
+        final batchSize = textCount - successCount;
+        final textFutures = List.generate(
+          batchSize,
+          (i) => _textService.getRandomTextContent(),
+        );
+        
+        final textResults = await Future.wait(
+          textFutures,
+          eagerError: false,
+        );
+        
+        for (var i = 0; i < textResults.length; i++) {
+          final textData = textResults[i];
+          if (textData != null) {
+            videos.add(VideoEntity(
+              id: 'text_${DateTime.now().millisecondsSinceEpoch}_${successCount}_$i',
+              username: textData['title'] ?? '佛法文本',
+              description: '点击头像阅读全文',
+              videoUrl: '',
+              profileImageUrl: '',
+              likeCount: 0,
+              commentCount: 0,
+              shareCount: 0,
+              timestamp: DateTime.now(),
+              contentType: ContentType.text,
+              textContent: textData['content'],
+            ));
+            successCount++;
+          }
+        }
+        
+        attempts++;
+        if (successCount < textCount && attempts < maxAttempts) {
+          print('重试加载，当前成功: $successCount/$textCount');
         }
       }
-      print('成功加载 $successCount 个文本内容，总计 ${videos.length} 个项目');
+      
+      if (successCount == 0) {
+        print('⚠️ 未能加载任何文本内容');
+      } else {
+        print('成功加载 $successCount 个文本内容，总计 ${videos.length} 个项目');
+      }
       _textContentIndex++;
 
       return Right(videos);
