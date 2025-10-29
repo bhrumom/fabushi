@@ -85,20 +85,21 @@ class CloudflareTextService {
   /// 获取随机文本内容（用于信息流）
   Future<Map<String, dynamic>?> getRandomTextContent() async {
     try {
-      // 初始化预加载队列
+      // 启动后台预加载
       if (_preloadQueue.isEmpty && !_isPreloading) {
-        await _fillPreloadQueue();
+        _fillPreloadQueue();
       }
       
       // 从队列获取
       if (_preloadQueue.isNotEmpty) {
         final content = _preloadQueue.removeAt(0);
-        // 异步补充队列
         _refillQueue();
         return content;
       }
       
-      return null;
+      // 队列为空，立即加载一个
+      print('队列为空，立即加载...');
+      return await _getCloudTextFromLocalManifest();
     } catch (e) {
       print('Failed to load cloud text: $e');
       return null;
@@ -124,27 +125,32 @@ class CloudflareTextService {
     }
   }
   
-  /// 填充预加载队列
+  /// 填充预加载队列（异步后台加载）
   Future<void> _fillPreloadQueue() async {
     if (_isPreloading) return;
     _isPreloading = true;
     
-    print('开始预加载 $_queueSize 个文本...');
-    int loaded = 0;
-    int attempts = 0;
-    const maxAttempts = _queueSize * 3;
+    print('开始后台预加载 $_queueSize 个文本...');
     
-    while (loaded < _queueSize && attempts < maxAttempts) {
-      final content = await _getCloudTextFromLocalManifest();
-      if (content != null) {
-        _preloadQueue.add(content);
-        loaded++;
+    // 异步后台加载，不阻塞
+    Future.microtask(() async {
+      int loaded = 0;
+      int attempts = 0;
+      const maxAttempts = _queueSize * 3;
+      
+      while (loaded < _queueSize && attempts < maxAttempts) {
+        final content = await _getCloudTextFromLocalManifest();
+        if (content != null) {
+          _preloadQueue.add(content);
+          loaded++;
+          print('预加载进度: $loaded/$_queueSize');
+        }
+        attempts++;
       }
-      attempts++;
-    }
-    
-    print('预加载完成: ${_preloadQueue.length} 个文本');
-    _isPreloading = false;
+      
+      print('预加载完成: ${_preloadQueue.length} 个文本');
+      _isPreloading = false;
+    });
   }
   
   /// 从本地manifest读取文件列表，然后从云端下载内容
