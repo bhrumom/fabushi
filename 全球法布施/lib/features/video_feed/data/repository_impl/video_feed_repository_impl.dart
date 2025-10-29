@@ -80,22 +80,15 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
         }
       }
 
-      // 串行加载文本内容
+      // 从预加载队列获取文本内容
       final textCount = 2;
-      print('开始加载 $textCount 个文本内容...');
       
-      int successCount = 0;
-      int attempts = 0;
-      int consecutiveFailures = 0;
-      const maxAttempts = 5;
-      const maxConsecutiveFailures = 3;
-      
-      while (successCount < textCount && attempts < maxAttempts && consecutiveFailures < maxConsecutiveFailures) {
+      for (int i = 0; i < textCount; i++) {
         final textData = await _textService.getRandomTextContent();
         
         if (textData != null) {
           videos.add(VideoEntity(
-            id: 'text_${DateTime.now().millisecondsSinceEpoch}_$successCount',
+            id: 'text_${DateTime.now().millisecondsSinceEpoch}_$i',
             username: textData['title'] ?? '佛法文本',
             description: '点击头像阅读全文',
             videoUrl: '',
@@ -107,20 +100,10 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
             contentType: ContentType.text,
             textContent: textData['content'],
           ));
-          successCount++;
-          consecutiveFailures = 0;
-        } else {
-          consecutiveFailures++;
         }
-        
-        attempts++;
       }
       
-      if (successCount == 0) {
-        print('⚠️ 未能加载任何文本内容');
-      } else {
-        print('成功加载 $successCount 个文本内容，总计 ${videos.length} 个项目');
-      }
+      print('加载成功: ${videos.length} 个内容');
       _textContentIndex++;
 
       return Right(videos);
