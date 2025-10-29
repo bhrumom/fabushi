@@ -9,7 +9,9 @@ class CloudflareTextService {
   static final _random = Random();
   static const String baseUrl = 'https://flutter.ombhrum.com';
   static List<Map<String, dynamic>>? _cachedManifest;
-  static final Set<String> _failedFiles = {};
+  static final List<Map<String, dynamic>> _preloadQueue = [];
+  static bool _isPreloading = false;
+  static const int _queueSize = 21;
   
   // 硬编码的佛经文本内容
   static final List<Map<String, String>> _sampleTexts = [
@@ -83,11 +85,66 @@ class CloudflareTextService {
   /// 获取随机文本内容（用于信息流）
   Future<Map<String, dynamic>?> getRandomTextContent() async {
     try {
-      return await _getCloudTextFromLocalManifest();
+      // 初始化预加载队列
+      if (_preloadQueue.isEmpty && !_isPreloading) {
+        await _fillPreloadQueue();
+      }
+      
+      // 从队列获取
+      if (_preloadQueue.isNotEmpty) {
+        final content = _preloadQueue.removeAt(0);
+        // 异步补充队列
+        _refillQueue();
+        return content;
+      }
+      
+      return null;
     } catch (e) {
       print('Failed to load cloud text: $e');
       return null;
     }
+  }
+  
+  /// 异步补充队列
+  void _refillQueue() {
+    if (_isPreloading || _preloadQueue.length >= _queueSize) return;
+    
+    _isPreloading = true;
+    _loadOneToQueue().then((_) {
+      _isPreloading = false;
+    });
+  }
+  
+  /// 加载一个文本到队列
+  Future<void> _loadOneToQueue() async {
+    final content = await _getCloudTextFromLocalManifest();
+    if (content != null) {
+      _preloadQueue.add(content);
+      print('预加载队列: ${_preloadQueue.length}/$_queueSize');
+    }
+  }
+  
+  /// 填充预加载队列
+  Future<void> _fillPreloadQueue() async {
+    if (_isPreloading) return;
+    _isPreloading = true;
+    
+    print('开始预加载 $_queueSize 个文本...');
+    int loaded = 0;
+    int attempts = 0;
+    const maxAttempts = _queueSize * 3;
+    
+    while (loaded < _queueSize && attempts < maxAttempts) {
+      final content = await _getCloudTextFromLocalManifest();
+      if (content != null) {
+        _preloadQueue.add(content);
+        loaded++;
+      }
+      attempts++;
+    }
+    
+    print('预加载完成: ${_preloadQueue.length} 个文本');
+    _isPreloading = false;
   }
   
   /// 从本地manifest读取文件列表，然后从云端下载内容
@@ -101,11 +158,9 @@ class CloudflareTextService {
         print('Loaded local manifest with ${_cachedManifest!.length} items');
       }
       
-      // 筛选txt文件，排除已失败的文件
+      // 筛选txt文件
       final txtFiles = _cachedManifest!
-          .where((item) => 
-              item['key']?.toString().endsWith('.txt') == true &&
-              !_failedFiles.contains(item['key'].toString()))
+          .where((item) => item['key']?.toString().endsWith('.txt') == true)
           .map((item) => item['key'].toString())
           .toList();
       
@@ -144,9 +199,8 @@ class CloudflareTextService {
           'filePath': selectedFile,
         };
       }
-      // 404等错误立即记录并返回
+      // 404等错误立即返回
       print('Failed to download file: ${contentResponse.statusCode}');
-      _failedFiles.add(selectedFile);
       return null;
     } catch (e) {
       print('Error loading from local manifest: $e');
