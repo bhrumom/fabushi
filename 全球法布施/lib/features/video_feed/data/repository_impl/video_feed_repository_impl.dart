@@ -86,9 +86,11 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
       
       int successCount = 0;
       int attempts = 0;
-      const maxAttempts = 6;
+      int consecutiveFailures = 0;
+      const maxAttempts = 5;
+      const maxConsecutiveFailures = 3;
       
-      while (successCount < textCount && attempts < maxAttempts) {
+      while (successCount < textCount && attempts < maxAttempts && consecutiveFailures < maxConsecutiveFailures) {
         final textData = await _textService.getRandomTextContent();
         
         if (textData != null) {
@@ -106,6 +108,9 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
             textContent: textData['content'],
           ));
           successCount++;
+          consecutiveFailures = 0;
+        } else {
+          consecutiveFailures++;
         }
         
         attempts++;

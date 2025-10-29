@@ -118,10 +118,10 @@ class CloudflareTextService {
       final selectedFile = txtFiles[_random.nextInt(txtFiles.length)];
       print('Selected file from local manifest: $selectedFile');
       
-      // 从Cloudflare下载内容（减少超时时间）
+      // 从Cloudflare下载内容
       final contentResponse = await http.get(
         Uri.parse('$baseUrl/$selectedFile'),
-      ).timeout(const Duration(seconds: 3));
+      ).timeout(const Duration(seconds: 2));
       
       if (contentResponse.statusCode == 200) {
         // 文件是GBK编码
@@ -144,6 +144,7 @@ class CloudflareTextService {
           'filePath': selectedFile,
         };
       }
+      // 404等错误立即记录并返回
       print('Failed to download file: ${contentResponse.statusCode}');
       _failedFiles.add(selectedFile);
       return null;
