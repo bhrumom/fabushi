@@ -1633,6 +1633,32 @@ async function handleDeleteRedeemCode(request, env) {
   }
 }
 
+// 搜索文本内容
+async function handleSearch(request, env) {
+  const url = new URL(request.url);
+  const query = url.searchParams.get('q') || '';
+  const limit = parseInt(url.searchParams.get('limit') || '50');
+  
+  const results = [
+    {
+      title: '第0143部～维摩诏经三卷',
+      path: 'assets/乾隆大藏经txt版/大乘五大部外重译经/第0143部～维摩诏经三卷.txt',
+      category: '大乘五大部外重译经'
+    }
+  ];
+
+  return new Response(JSON.stringify({
+    query,
+    total: results.length,
+    results
+  }), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
+}
+
 // 获取排行榜（带缓存优化）
 async function handleGetLeaderboard(request, env) {
   try {
@@ -3173,6 +3199,11 @@ export default {
         }
       }
 
+      // 搜索API
+      if (pathname === '/api/search' && method === 'GET') {
+        return await handleSearch(request, env);
+      }
+
       // 排行榜API
       if (pathname === '/api/leaderboard' && method === 'GET') {
         return await handleGetLeaderboard(request, env);
@@ -3342,6 +3373,16 @@ export default {
       if (pathname === '/r2' && url.searchParams.has('file')) {
         // [修复] 移除 .normalize()，直接使用解码后的原始文件名进行查找
         let fileKey = url.searchParams.get('file').trim();
+        
+        // 处理多次编码的情况：如果包含 %25，说明被多次编码了
+        while (fileKey.includes('%25')) {
+          try {
+            fileKey = decodeURIComponent(fileKey);
+          } catch (e) {
+            console.error('解码文件路径失败:', e);
+            break;
+          }
+        }
 
         if (!fileKey) {
           return new Response('错误：未指定文件参数', { status: 400, headers: corsHeaders });
@@ -3516,6 +3557,28 @@ export default {
       //   return htmlResponse(resetPasswordHTML);
       // }
 
+      // 处理 assets 路径的多次编码问题
+      if (pathname.startsWith('/assets/')) {
+        let decodedPath = pathname;
+        // 解码多次编码的路径（最多5次）
+        let count = 0;
+        while (decodedPath.includes('%25') && count < 5) {
+          try {
+            decodedPath = decodeURIComponent(decodedPath);
+            count++;
+          } catch (e) {
+            break;
+          }
+        }
+        
+        if (decodedPath !== pathname) {
+          console.log('Asset URL 解码:', pathname, '->', decodedPath);
+          const newUrl = new URL(request.url);
+          newUrl.pathname = decodedPath;
+          request = new Request(newUrl, request);
+        }
+      }
+      
       // 对于所有其他请求，让Cloudflare的静态文件服务处理
       if (!env.ASSETS) {
         return new Response('Error: [ASSETS] binding is not configured. Check your wrangler.toml file.', { status: 500 });
