@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import '../models/file_transfer_model.dart';
 import '../services/real_global_send_service.dart';
 import '../config/country_servers.dart';
+import 'search_screen.dart';
 
 /// 全球法布施详细界面
 /// 显示国家列表和实时发送状态
@@ -93,6 +94,14 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
         backgroundColor: const Color(0xFF667eea),
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SearchScreen()),
+            ),
+            tooltip: '搜索经文',
+          ),
           if (model.isTransferring)
             IconButton(
               icon: const Icon(Icons.stop),

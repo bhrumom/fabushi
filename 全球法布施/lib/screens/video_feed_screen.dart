@@ -4,6 +4,7 @@ import 'package:global_dharma_sharing/core/video_feed_di/video_feed_injector.dar
 import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_cubit.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_state.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/video_feed_view.dart';
+import 'search_screen.dart';
 
 class VideoFeedScreen extends StatelessWidget {
   const VideoFeedScreen({super.key});
@@ -16,6 +17,15 @@ class VideoFeedScreen extends StatelessWidget {
         backgroundColor: Colors.black,
         title: const Text('法流', style: TextStyle(color: Colors.white)),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search, color: Colors.white),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SearchScreen()),
+            ),
+          ),
+        ],
       ),
       body: BlocProvider(
         create: (context) => videoFeedGetIt<VideoFeedCubit>(),

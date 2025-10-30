@@ -40,6 +40,19 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+  
+  <!-- sql.js for drift -->
+  <script>
+    // Configure sql.js BEFORE loading the library
+    window.initSqlJs = window.initSqlJs || function(config) {
+      config = config || {};
+      config.locateFile = config.locateFile || function(file) {
+        return 'https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/' + file;
+      };
+      return window._initSqlJs(config);
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js" onload="window._initSqlJs = window.initSqlJs; window.initSqlJs = function(config) { config = config || {}; config.locateFile = function(file) { return 'https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/' + file; }; return window._initSqlJs(config); };"></script>
 
   <style>
     body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#fff}
@@ -59,7 +72,7 @@
     window.addEventListener('load', function(ev) {
       _flutter.loader.load({
         config: {
-          renderer: "html",  // 使用HTML渲染器，加快加载速度
+          renderer: "canvaskit",
         }
       });
     });

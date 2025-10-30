@@ -25,18 +25,25 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
     super.initState();
     threeJs = three.ThreeJS(
       onSetupComplete: () {
-        setState(() {});
         _startAutoRotate();
+        if (mounted) setState(() {});
       },
       setup: _setup,
       windowResizeUpdate: (size) {
-        _updateCameraAspect();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _updateCameraAspect();
+        });
       },
     );
   }
 
   void _startAutoRotate() {
+    _autoRotateTimer?.cancel();
     _autoRotateTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       if (!_isUserDragging) {
         _rotationY -= 0.005;
         _updateCameraPosition();
@@ -45,25 +52,20 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
   }
 
   void _updateCameraAspect() {
-    try {
-      if (threeJs.camera is three.PerspectiveCamera) {
-        final camera = threeJs.camera as three.PerspectiveCamera;
-        final newAspect = threeJs.width / threeJs.height;
-        if ((camera.aspect - newAspect).abs() > 0.001) {
-          camera.aspect = newAspect;
-          // 调整相机距离以保持视觉大小不变
-          final baseFov = 50.0;
-          camera.fov = baseFov;
-          camera.updateProjectionMatrix();
-        }
+    if (!mounted) return;
+    if (threeJs.camera is three.PerspectiveCamera) {
+      final camera = threeJs.camera as three.PerspectiveCamera;
+      final newAspect = threeJs.width / threeJs.height;
+      if ((camera.aspect - newAspect).abs() > 0.001) {
+        camera.aspect = newAspect;
+        camera.fov = 50.0;
+        camera.updateProjectionMatrix();
       }
-    } catch (e) {
-      // Camera not initialized yet
     }
   }
 
   void _updateCameraPosition() {
-    if (threeJs.camera == null) return;
+    if (!mounted || threeJs.camera == null) return;
     final x = _cameraDistance * math.sin(_rotationY);
     final y = 0.0;
     final z = _cameraDistance * math.cos(_rotationY);
@@ -193,6 +195,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
   @override
   void dispose() {
     _autoRotateTimer?.cancel();
+    _autoRotateTimer = null;
     threeJs.dispose();
     super.dispose();
   }
