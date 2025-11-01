@@ -32,6 +32,12 @@ binding = "R2_BUCKET"
 bucket_name = "bushi"
 preview_bucket_name = "bushi"
 
+# D1数据库配置
+[[d1_databases]]
+binding = "DB"
+database_name = "fabushi-db"
+database_id = "7b6318f0-fbc2-42f9-9887-85f878ae76d0"
+
 # Email Workers配置
 [[send_email]]
 name = "EMAIL"
@@ -76,6 +82,11 @@ id = "59c5263942b4436191e6dffbaacc5957"
 binding = "R2_BUCKET"
 bucket_name = "bushi"
 
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "fabushi-db"
+database_id = "7b6318f0-fbc2-42f9-9887-85f878ae76d0"
+
 [[env.production.send_email]]
 name = "EMAIL"
 destination_address = "131551832@qq.com"
@@ -116,6 +127,11 @@ id = "59c5263942b4436191e6dffbaacc5957"
 [[env.development.r2_buckets]]
 binding = "R2_BUCKET"
 bucket_name = "bushi-dev"
+
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "search_database_dev"
+database_id = "YOUR_DEV_DATABASE_ID"
 
 [[env.development.send_email]]
 name = "EMAIL"
