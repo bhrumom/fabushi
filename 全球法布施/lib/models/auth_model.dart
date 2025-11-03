@@ -111,18 +111,17 @@ class AuthModel extends ChangeNotifier {// 服务实例
         );
         await _authService.setAuth(token, basicUserModel);
         
-        notifyListeners(); // Optimistically update UI
+        notifyListeners(); // 立即更新UI显示登录状态
         
-        // Then, verify token in the background
-        final isValid = await _authService.verifyToken();
-        if (!isValid) {
-          await logout(); // This will notify listeners again
-        }
+        // 后台异步刷新用户信息（不阻塞UI）
+        refreshUserInfo();
       }
     } catch (e) {
       debugPrint('加载存储的认证信息失败: $e');
-      // If loading fails, ensure we are logged out.
-      await logout();
+      // 加载失败时清除状态
+      _currentUser = null;
+      _token = null;
+      notifyListeners();
     }
   }
 
@@ -262,52 +261,31 @@ class AuthModel extends ChangeNotifier {// 服务实例
   }
 
   Future<void> refreshUserInfo() async {
-    debugPrint('🔄 refreshUserInfo: 开始刷新用户信息');
-    debugPrint('🔄 当前 _token: ${_token?.substring(0, 20)}...');
-    
-    if (_token == null) {
-      debugPrint('❌ refreshUserInfo: token 为空，跳过刷新');
-      return;
-    }
+    if (_token == null) return;
 
     try {
-      debugPrint('🔍 开始验证 token...');
-      final isValidToken = await _authService.verifyToken();
-      debugPrint('🔍 token 验证结果: $isValidToken');
+      await _authService.refreshUserInfo();
+      final userModel = _authService.currentUser;
       
-      if (isValidToken) {
-        debugPrint('✅ token 有效，开始获取用户信息...');
-        await _authService.refreshUserInfo();
-        final userModel = _authService.currentUser;
-        debugPrint('👤 获取到的用户信息: ${userModel?.username}');
-        
-        if (userModel != null) {
-          // 刷新时，额外获取管理员状态
-          debugPrint('🔑 开始获取管理员状态...');
-          final adminStatusResult = await _membershipService.getAdminStats(_token!);
-          debugPrint('🔑 管理员状态结果: $adminStatusResult');
-          final bool isAdmin = adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
+      if (userModel != null) {
+        final adminStatusResult = await _membershipService.getAdminStats(_token!);
+        final bool isAdmin = adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
 
-          _currentUser = User(
-            username: userModel.username,
-            email: userModel.email ?? '',
-            membershipType: userModel.membership.type,
-            membershipExpiry: userModel.membership.expiresAt != null
-                ? DateTime.parse(userModel.membership.expiresAt!)
-                : null,
-            isAdmin: isAdmin,
-            alipayUserId: userModel.alipayUserId,
-          );
-          await _storeAuth();
-          debugPrint('✅ 用户信息刷新完成');
-          notifyListeners();
-        }
-      } else {
-        debugPrint('❌ token 无效，执行登出...');
-        await logout();
+        _currentUser = User(
+          username: userModel.username,
+          email: userModel.email ?? '',
+          membershipType: userModel.membership.type,
+          membershipExpiry: userModel.membership.expiresAt != null
+              ? DateTime.parse(userModel.membership.expiresAt!)
+              : null,
+          isAdmin: isAdmin,
+          alipayUserId: userModel.alipayUserId,
+        );
+        await _storeAuth();
+        notifyListeners();
       }
     } catch (e) {
-      debugPrint('❌ 刷新用户信息失败: $e');
+      debugPrint('刷新用户信息失败: $e');
     }
   }
 
