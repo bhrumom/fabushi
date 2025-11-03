@@ -12,46 +12,76 @@ class $TextContentsTable extends TextContents
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
-      'id', aliasedName, false,
-      hasAutoIncrement: true,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
   static const VerificationMeta _titleMeta = const VerificationMeta('title');
   @override
   late final GeneratedColumn<String> title = GeneratedColumn<String>(
-      'title', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _contentMeta =
-      const VerificationMeta('content');
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _contentMeta = const VerificationMeta(
+    'content',
+  );
   @override
   late final GeneratedColumn<String> content = GeneratedColumn<String>(
-      'content', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _filePathMeta =
-      const VerificationMeta('filePath');
+    'content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _filePathMeta = const VerificationMeta(
+    'filePath',
+  );
   @override
   late final GeneratedColumn<String> filePath = GeneratedColumn<String>(
-      'file_path', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _categoryMeta =
-      const VerificationMeta('category');
+    'file_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _categoryMeta = const VerificationMeta(
+    'category',
+  );
   @override
   late final GeneratedColumn<String> category = GeneratedColumn<String>(
-      'category', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
+    'category',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, title, content, filePath, category];
+  List<GeneratedColumn> get $columns => [
+    id,
+    title,
+    content,
+    filePath,
+    category,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
   static const String $name = 'text_contents';
   @override
-  VerificationContext validateIntegrity(Insertable<TextContent> instance,
-      {bool isInserting = false}) {
+  VerificationContext validateIntegrity(
+    Insertable<TextContent> instance, {
+    bool isInserting = false,
+  }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
@@ -59,25 +89,33 @@ class $TextContentsTable extends TextContents
     }
     if (data.containsKey('title')) {
       context.handle(
-          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
     } else if (isInserting) {
       context.missing(_titleMeta);
     }
     if (data.containsKey('content')) {
-      context.handle(_contentMeta,
-          content.isAcceptableOrUnknown(data['content']!, _contentMeta));
+      context.handle(
+        _contentMeta,
+        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
+      );
     } else if (isInserting) {
       context.missing(_contentMeta);
     }
     if (data.containsKey('file_path')) {
-      context.handle(_filePathMeta,
-          filePath.isAcceptableOrUnknown(data['file_path']!, _filePathMeta));
+      context.handle(
+        _filePathMeta,
+        filePath.isAcceptableOrUnknown(data['file_path']!, _filePathMeta),
+      );
     } else if (isInserting) {
       context.missing(_filePathMeta);
     }
     if (data.containsKey('category')) {
-      context.handle(_categoryMeta,
-          category.isAcceptableOrUnknown(data['category']!, _categoryMeta));
+      context.handle(
+        _categoryMeta,
+        category.isAcceptableOrUnknown(data['category']!, _categoryMeta),
+      );
     } else if (isInserting) {
       context.missing(_categoryMeta);
     }
@@ -90,16 +128,26 @@ class $TextContentsTable extends TextContents
   TextContent map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return TextContent(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      title: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
-      content: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}content'])!,
-      filePath: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}file_path'])!,
-      category: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}category'])!,
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      content: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content'],
+      )!,
+      filePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_path'],
+      )!,
+      category: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}category'],
+      )!,
     );
   }
 
@@ -115,12 +163,13 @@ class TextContent extends DataClass implements Insertable<TextContent> {
   final String content;
   final String filePath;
   final String category;
-  const TextContent(
-      {required this.id,
-      required this.title,
-      required this.content,
-      required this.filePath,
-      required this.category});
+  const TextContent({
+    required this.id,
+    required this.title,
+    required this.content,
+    required this.filePath,
+    required this.category,
+  });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -142,8 +191,10 @@ class TextContent extends DataClass implements Insertable<TextContent> {
     );
   }
 
-  factory TextContent.fromJson(Map<String, dynamic> json,
-      {ValueSerializer? serializer}) {
+  factory TextContent.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return TextContent(
       id: serializer.fromJson<int>(json['id']),
@@ -165,19 +216,19 @@ class TextContent extends DataClass implements Insertable<TextContent> {
     };
   }
 
-  TextContent copyWith(
-          {int? id,
-          String? title,
-          String? content,
-          String? filePath,
-          String? category}) =>
-      TextContent(
-        id: id ?? this.id,
-        title: title ?? this.title,
-        content: content ?? this.content,
-        filePath: filePath ?? this.filePath,
-        category: category ?? this.category,
-      );
+  TextContent copyWith({
+    int? id,
+    String? title,
+    String? content,
+    String? filePath,
+    String? category,
+  }) => TextContent(
+    id: id ?? this.id,
+    title: title ?? this.title,
+    content: content ?? this.content,
+    filePath: filePath ?? this.filePath,
+    category: category ?? this.category,
+  );
   TextContent copyWithCompanion(TextContentsCompanion data) {
     return TextContent(
       id: data.id.present ? data.id.value : this.id,
@@ -232,10 +283,10 @@ class TextContentsCompanion extends UpdateCompanion<TextContent> {
     required String content,
     required String filePath,
     required String category,
-  })  : title = Value(title),
-        content = Value(content),
-        filePath = Value(filePath),
-        category = Value(category);
+  }) : title = Value(title),
+       content = Value(content),
+       filePath = Value(filePath),
+       category = Value(category);
   static Insertable<TextContent> custom({
     Expression<int>? id,
     Expression<String>? title,
@@ -252,12 +303,13 @@ class TextContentsCompanion extends UpdateCompanion<TextContent> {
     });
   }
 
-  TextContentsCompanion copyWith(
-      {Value<int>? id,
-      Value<String>? title,
-      Value<String>? content,
-      Value<String>? filePath,
-      Value<String>? category}) {
+  TextContentsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? title,
+    Value<String>? content,
+    Value<String>? filePath,
+    Value<String>? category,
+  }) {
     return TextContentsCompanion(
       id: id ?? this.id,
       title: title ?? this.title,
@@ -312,22 +364,22 @@ abstract class _$SearchDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [textContents];
 }
 
-typedef $$TextContentsTableCreateCompanionBuilder = TextContentsCompanion
-    Function({
-  Value<int> id,
-  required String title,
-  required String content,
-  required String filePath,
-  required String category,
-});
-typedef $$TextContentsTableUpdateCompanionBuilder = TextContentsCompanion
-    Function({
-  Value<int> id,
-  Value<String> title,
-  Value<String> content,
-  Value<String> filePath,
-  Value<String> category,
-});
+typedef $$TextContentsTableCreateCompanionBuilder =
+    TextContentsCompanion Function({
+      Value<int> id,
+      required String title,
+      required String content,
+      required String filePath,
+      required String category,
+    });
+typedef $$TextContentsTableUpdateCompanionBuilder =
+    TextContentsCompanion Function({
+      Value<int> id,
+      Value<String> title,
+      Value<String> content,
+      Value<String> filePath,
+      Value<String> category,
+    });
 
 class $$TextContentsTableFilterComposer
     extends Composer<_$SearchDatabase, $TextContentsTable> {
@@ -339,19 +391,29 @@ class $$TextContentsTableFilterComposer
     super.$removeJoinBuilderFromRootComposer,
   });
   ColumnFilters<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
 
   ColumnFilters<String> get title => $composableBuilder(
-      column: $table.title, builder: (column) => ColumnFilters(column));
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
 
   ColumnFilters<String> get content => $composableBuilder(
-      column: $table.content, builder: (column) => ColumnFilters(column));
+    column: $table.content,
+    builder: (column) => ColumnFilters(column),
+  );
 
   ColumnFilters<String> get filePath => $composableBuilder(
-      column: $table.filePath, builder: (column) => ColumnFilters(column));
+    column: $table.filePath,
+    builder: (column) => ColumnFilters(column),
+  );
 
   ColumnFilters<String> get category => $composableBuilder(
-      column: $table.category, builder: (column) => ColumnFilters(column));
+    column: $table.category,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$TextContentsTableOrderingComposer
@@ -364,19 +426,29 @@ class $$TextContentsTableOrderingComposer
     super.$removeJoinBuilderFromRootComposer,
   });
   ColumnOrderings<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
 
   ColumnOrderings<String> get title => $composableBuilder(
-      column: $table.title, builder: (column) => ColumnOrderings(column));
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
 
   ColumnOrderings<String> get content => $composableBuilder(
-      column: $table.content, builder: (column) => ColumnOrderings(column));
+    column: $table.content,
+    builder: (column) => ColumnOrderings(column),
+  );
 
   ColumnOrderings<String> get filePath => $composableBuilder(
-      column: $table.filePath, builder: (column) => ColumnOrderings(column));
+    column: $table.filePath,
+    builder: (column) => ColumnOrderings(column),
+  );
 
   ColumnOrderings<String> get category => $composableBuilder(
-      column: $table.category, builder: (column) => ColumnOrderings(column));
+    column: $table.category,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TextContentsTableAnnotationComposer
@@ -404,23 +476,27 @@ class $$TextContentsTableAnnotationComposer
       $composableBuilder(column: $table.category, builder: (column) => column);
 }
 
-class $$TextContentsTableTableManager extends RootTableManager<
-    _$SearchDatabase,
-    $TextContentsTable,
-    TextContent,
-    $$TextContentsTableFilterComposer,
-    $$TextContentsTableOrderingComposer,
-    $$TextContentsTableAnnotationComposer,
-    $$TextContentsTableCreateCompanionBuilder,
-    $$TextContentsTableUpdateCompanionBuilder,
-    (
-      TextContent,
-      BaseReferences<_$SearchDatabase, $TextContentsTable, TextContent>
-    ),
-    TextContent,
-    PrefetchHooks Function()> {
+class $$TextContentsTableTableManager
+    extends
+        RootTableManager<
+          _$SearchDatabase,
+          $TextContentsTable,
+          TextContent,
+          $$TextContentsTableFilterComposer,
+          $$TextContentsTableOrderingComposer,
+          $$TextContentsTableAnnotationComposer,
+          $$TextContentsTableCreateCompanionBuilder,
+          $$TextContentsTableUpdateCompanionBuilder,
+          (
+            TextContent,
+            BaseReferences<_$SearchDatabase, $TextContentsTable, TextContent>,
+          ),
+          TextContent,
+          PrefetchHooks Function()
+        > {
   $$TextContentsTableTableManager(_$SearchDatabase db, $TextContentsTable table)
-      : super(TableManagerState(
+    : super(
+        TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
@@ -429,56 +505,59 @@ class $$TextContentsTableTableManager extends RootTableManager<
               $$TextContentsTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
               $$TextContentsTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            Value<String> title = const Value.absent(),
-            Value<String> content = const Value.absent(),
-            Value<String> filePath = const Value.absent(),
-            Value<String> category = const Value.absent(),
-          }) =>
-              TextContentsCompanion(
-            id: id,
-            title: title,
-            content: content,
-            filePath: filePath,
-            category: category,
-          ),
-          createCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            required String title,
-            required String content,
-            required String filePath,
-            required String category,
-          }) =>
-              TextContentsCompanion.insert(
-            id: id,
-            title: title,
-            content: content,
-            filePath: filePath,
-            category: category,
-          ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String> content = const Value.absent(),
+                Value<String> filePath = const Value.absent(),
+                Value<String> category = const Value.absent(),
+              }) => TextContentsCompanion(
+                id: id,
+                title: title,
+                content: content,
+                filePath: filePath,
+                category: category,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String title,
+                required String content,
+                required String filePath,
+                required String category,
+              }) => TextContentsCompanion.insert(
+                id: id,
+                title: title,
+                content: content,
+                filePath: filePath,
+                category: category,
+              ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: null,
-        ));
+        ),
+      );
 }
 
-typedef $$TextContentsTableProcessedTableManager = ProcessedTableManager<
-    _$SearchDatabase,
-    $TextContentsTable,
-    TextContent,
-    $$TextContentsTableFilterComposer,
-    $$TextContentsTableOrderingComposer,
-    $$TextContentsTableAnnotationComposer,
-    $$TextContentsTableCreateCompanionBuilder,
-    $$TextContentsTableUpdateCompanionBuilder,
-    (
+typedef $$TextContentsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$SearchDatabase,
+      $TextContentsTable,
       TextContent,
-      BaseReferences<_$SearchDatabase, $TextContentsTable, TextContent>
-    ),
-    TextContent,
-    PrefetchHooks Function()>;
+      $$TextContentsTableFilterComposer,
+      $$TextContentsTableOrderingComposer,
+      $$TextContentsTableAnnotationComposer,
+      $$TextContentsTableCreateCompanionBuilder,
+      $$TextContentsTableUpdateCompanionBuilder,
+      (
+        TextContent,
+        BaseReferences<_$SearchDatabase, $TextContentsTable, TextContent>,
+      ),
+      TextContent,
+      PrefetchHooks Function()
+    >;
 
 class $SearchDatabaseManager {
   final _$SearchDatabase _db;

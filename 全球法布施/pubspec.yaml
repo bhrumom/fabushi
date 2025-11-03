@@ -4,20 +4,20 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.8.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
-  file_picker: ^8.0.0+1
+  file_picker: ^10.3.3
   path_provider: ^2.0.15
-  permission_handler: ^11.0.1
+  permission_handler: ^12.0.1
   provider: ^6.0.5
   shelf: ^1.4.1
   shelf_static: ^1.1.2
-  network_info_plus: ^5.0.3
-  flutter_local_notifications: ^17.0.0
+  network_info_plus: ^7.0.0
+  flutter_local_notifications: ^19.5.0
   path: ^1.8.3
   latlong2: ^0.9.1
   flutter_map: ^8.2.1
@@ -27,9 +27,9 @@ dependencies:
   archive: ^4.0.7
   csv: ^6.0.0
   dio: ^5.4.1
-  connectivity_plus: ^6.0.3
+  connectivity_plus: ^7.0.0
   http: ^1.2.0
-  js: ^0.6.7
+  js: ^0.7.2
   flutter_localizations:
     sdk: flutter
   intl: any
@@ -39,12 +39,12 @@ dependencies:
   flutter_earth_globe: ^1.0.7
   universal_html: ^2.2.4
   url_launcher: ^6.1.11
-  tobias: ^3.3.0
+  tobias: ^5.3.0
   webview_flutter: ^4.4.2
   flutter_inappwebview: ^6.0.0
-  firebase_core: ^3.8.1
-  firebase_auth: ^5.3.3
-  google_sign_in: ^6.2.2
+  firebase_core: ^4.2.0
+  firebase_auth: ^6.1.1
+  google_sign_in: ^7.2.0
   three_js: ^0.2.5
   three_js_core: ^0.2.5
   three_js_math: ^0.2.4
@@ -52,29 +52,29 @@ dependencies:
   three_js_helpers: ^0.2.3
   three_js_core_loaders: ^0.2.1
   three_js_advanced_loaders: ^0.2.4
-  window_manager: ^0.3.7
+  window_manager: ^0.5.1
   flex_color_scheme: ^8.0.2
   get_it: ^8.0.3
   flutter_bloc: ^9.1.0
   equatable: ^2.0.7
   fpdart: ^1.1.0
   json_annotation: ^4.9.0
-  cloud_firestore: ^5.6.6
+  cloud_firestore: ^6.0.3
   video_player: ^2.9.5
   flutter_cache_manager: ^3.4.1
   preload_page_view: ^0.2.0
-  lucide_icons_flutter: ^1.0.0
+  lucide_icons_flutter: ^3.1.5
   gbk_codec: ^0.4.0
-  drift: ^2.20.3
-  sqlite3_flutter_libs: ^0.5.24
+  drift: ^2.29.0
+  sqlite3_flutter_libs: ^0.5.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^6.0.0
   build_runner: ^2.4.13
   json_serializable: ^6.8.0
-  drift_dev: ^2.20.3
+  drift_dev: ^2.29.0
 
 flutter:
   uses-material-design: true

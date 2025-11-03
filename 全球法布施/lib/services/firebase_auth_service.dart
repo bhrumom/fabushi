@@ -1,11 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 class FirebaseAuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   User? get currentUser => _auth.currentUser;
   Stream<User?> get authStateChanges => _auth.authStateChanges();
@@ -41,24 +39,9 @@ class FirebaseAuthService {
     }
   }
 
-  // Google登录
+  // Google登录 (暂时禁用)
   Future<Map<String, dynamic>> signInWithGoogle() async {
-    try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return {'success': false, 'error': '登录已取消'};
-
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      final userCredential = await _auth.signInWithCredential(credential);
-      await _saveUserLocally(userCredential.user);
-      return {'success': true, 'user': userCredential.user};
-    } catch (e) {
-      return {'success': false, 'error': '登录失败: $e'};
-    }
+    return {'success': false, 'error': 'Google登录暂不可用'};
   }
 
   // 发送邮箱验证
@@ -78,7 +61,6 @@ class FirebaseAuthService {
 
   // 登出
   Future<void> signOut() async {
-    await _googleSignIn.signOut();
     await _auth.signOut();
     await _clearUserLocally();
   }

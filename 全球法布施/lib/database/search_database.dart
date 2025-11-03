@@ -1,5 +1,8 @@
 import 'package:drift/drift.dart';
-import 'package:drift/web.dart';
+import 'package:drift/native.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+import 'dart:io';
 
 part 'search_database.g.dart';
 
@@ -18,8 +21,12 @@ class SearchDatabase extends _$SearchDatabase {
   @override
   int get schemaVersion => 1;
   
-  static QueryExecutor _openConnection() {
-    return WebDatabase('search_db');
+  static LazyDatabase _openConnection() {
+    return LazyDatabase(() async {
+      final dbFolder = await getApplicationDocumentsDirectory();
+      final file = File(p.join(dbFolder.path, 'search_db.sqlite'));
+      return NativeDatabase(file);
+    });
   }
 
   Future<List<TextContent>> searchTexts(String query) async {
