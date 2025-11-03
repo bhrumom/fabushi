@@ -352,40 +352,7 @@ class AuthService {
     }
   }
   
-  // 验证当前token是否有效
-  Future<bool> verifyToken() async {
-    print('🔑 verifyToken: 开始验证');
-    print('🔑 _currentToken: ${_currentToken?.substring(0, 20)}...');
-    
-    if (_currentToken == null) {
-      print('❌ verifyToken: _currentToken 为空');
-      return false;
-    }
-    
-    try {
-      print('🌐 请求 URL: ${UnifiedConfig.verifyUrl}');
-      final response = await HttpService.get(
-        UnifiedConfig.verifyUrl,
-        useAuth: true,
-      );
-      
-      print('📥 响应状态码: ${response.statusCode}');
-      print('📥 响应内容: ${response.body}');
-      
-      if (response.statusCode == 200) {
-        print('✅ token 验证成功');
-        return true;
-      } else {
-        print('❌ token 验证失败，执行登出');
-        await logout();
-        return false;
-      }
-    } catch (e) {
-      print('❌ 验证token失败: $e');
-      await logout();
-      return false;
-    }
-  }
+
   
   // 获取用户信息
   Future<UserModel> _fetchUserInfo() async {
@@ -394,14 +361,26 @@ class AuthService {
     }
     
     try {
+      // 优先使用 /api/admin/check-status 获取完整用户信息
       final response = await HttpService.get(
-        UnifiedConfig.userInfoUrl,
+        UnifiedConfig.adminCheckStatusUrl,
         useAuth: true,
       );
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return UserModel.fromJson(data);
+        // 构建完整的用户信息
+        return UserModel(
+          username: data['username'] ?? '',
+          email: data['email'] ?? '',
+          emailVerified: true,
+          createdAt: DateTime.now().toIso8601String(),
+          membership: MembershipInfo(
+            type: data['membershipType'] ?? 'expired',
+            isActive: data['membershipType'] != null && data['membershipType'] != 'expired',
+            expiresAt: data['membershipExpiresAt'],
+          ),
+        );
       } else {
         throw Exception('获取用户信息失败: HTTP ${response.statusCode}');
       }
@@ -413,6 +392,9 @@ class AuthService {
   
   // 刷新用户信息
   Future<void> refreshUserInfo() async {
+    print('🔄 refreshUserInfo: 开始刷新用户信息');
+    print('🔄 当前 _token: ${_currentToken?.substring(0, 20)}...');
+    
     if (_currentToken != null) {
       try {
         final userInfo = await _fetchUserInfo();
@@ -421,9 +403,13 @@ class AuthService {
         // 更新本地存储
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_userInfoKey, jsonEncode(userInfo.toJson()));
+        
+        print('✅ refreshUserInfo: 刷新成功');
       } catch (e) {
-        print('刷新用户信息失败: $e');
+        print('❌ refreshUserInfo: 刷新失败: $e');
       }
+    } else {
+      print('⚠️ refreshUserInfo: token为空，跳过刷新');
     }
   }
   
