@@ -139,18 +139,28 @@ export class DatabaseService {
 
   // 排行榜
   async getLeaderboard(limit) {
-    const result = await this.db.prepare(`
-      SELECT username, total_transferred_bytes as totalBytes
-      FROM users 
-      WHERE total_transferred_bytes > 0
-      ORDER BY total_transferred_bytes DESC
-      LIMIT ?
-    `).bind(limit).all();
-    
-    return result.results.map((entry, index) => ({
-      ...entry,
-      rank: index + 1
-    }));
+    try {
+      const result = await this.db.prepare(`
+        SELECT username, COALESCE(total_transferred_bytes, 0) as totalBytes
+        FROM users 
+        WHERE COALESCE(total_transferred_bytes, 0) > 0
+        ORDER BY total_transferred_bytes DESC
+        LIMIT ?
+      `).bind(limit).all();
+      
+      if (!result || !result.results) {
+        return [];
+      }
+      
+      return result.results.map((entry, index) => ({
+        username: entry.username || 'Unknown',
+        totalBytes: entry.totalBytes || 0,
+        rank: index + 1
+      }));
+    } catch (error) {
+      console.error('获取排行榜失败:', error);
+      return [];
+    }
   }
 
   async updateTransferData(username, bytes) {

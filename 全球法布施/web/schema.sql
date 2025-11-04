@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TEXT
 );
 
+-- 注意: total_transferred_bytes 和 last_transfer_at 字段用于排行榜功能
+-- 迁移日期: 2025-11-04
+
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_users_wechat_openid ON users(wechat_openid);

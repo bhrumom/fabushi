@@ -16,13 +16,24 @@ class LeaderboardService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return List<Map<String, dynamic>>.from(data['leaderboard'] ?? []);
+        // 即使后端返回错误，也尝试获取leaderboard字段
+        if (data['leaderboard'] != null) {
+          return List<Map<String, dynamic>>.from(data['leaderboard']);
+        }
+        // 如果有错误信息，记录但返回空数组
+        if (data['error'] != null) {
+          print('后端返回错误: ${data['error']} - ${data['message'] ?? ""}');
+          return [];
+        }
+        return [];
       } else {
-        throw Exception('获取排行榜失败: HTTP ${response.statusCode}');
+        print('获取排行榜失败: HTTP ${response.statusCode}');
+        print('响应内容: ${response.body}');
+        return []; // 返回空数组而不是抛出异常
       }
     } catch (e) {
       print('获取排行榜失败: $e');
-      rethrow;
+      return []; // 返回空数组而不是抛出异常
     }
   }
 
