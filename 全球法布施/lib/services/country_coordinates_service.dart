@@ -67,6 +67,18 @@ class CountryCoordinatesService {
     return _coordinates.where((c) => c.countryCode == code).firstOrNull;
   }
 
+  CountryCoordinate? getByCoordinates(double lat, double lng, {double tolerance = 5.0}) {
+    // 查找最接近给定坐标的国家（容差范围内）
+    for (var coord in _coordinates) {
+      final latDiff = (coord.latitude - lat).abs();
+      final lngDiff = (coord.longitude - lng).abs();
+      if (latDiff < tolerance && lngDiff < tolerance) {
+        return coord;
+      }
+    }
+    return null;
+  }
+
   List<CountryCoordinate> getByContinent(String continent) {
     return _coordinates.where((c) => c.continentName == continent).toList();
   }

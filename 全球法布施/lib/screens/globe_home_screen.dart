@@ -15,7 +15,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
   static EarthGlobeWidgetState? _globeState; // 静态引用，保持在页面切换时不丢失
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
   String _currentTransfer = '';
-  final List<Map<String, double>> _pendingBeams = []; // 缓存待播放的轨迹
+  final List<Map<String, dynamic>> _pendingBeams = []; // 缓存待播放的轨迹（包含标签）
   bool _isGlobeLoaded = false; // 地球组件是否已加载
 
   @override
@@ -73,18 +73,21 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
     }
     
     final model = Provider.of<FileTransferModel>(context, listen: false);
-    model.setTransferBeamCallback((fromLat, fromLng, toLat, toLng) {
+    model.setTransferBeamCallback((fromLat, fromLng, toLat, toLng, {String? fromLabel, String? toLabel}) {
       // 优先使用静态引用
       final state = _globeState ?? _globeKey.currentState;
       debugPrint('📡 轨迹回调触发: staticState=${_globeState != null}, keyState=${_globeKey.currentState != null}');
+      debugPrint('🏷️ 国家标签: $fromLabel -> $toLabel');
       
       if (state != null) {
-        debugPrint('✅ 直接添加轨迹: ($fromLat, $fromLng) -> ($toLat, $toLng)');
+        debugPrint('✅ 直接添加轨迹: $fromLabel ($fromLat, $fromLng) -> $toLabel ($toLat, $toLng)');
         try {
           state.addTransferBeam(
             fromLat, fromLng, toLat, toLng,
             color: Colors.cyan,
-            duration: const Duration(seconds: 5), // 增加到 5 秒，更容易看到
+            duration: const Duration(seconds: 5),
+            fromLabel: fromLabel,
+            toLabel: toLabel,
           );
         } catch (e) {
           debugPrint('❌ 添加轨迹失败: $e');
@@ -96,6 +99,8 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
           'fromLng': fromLng,
           'toLat': toLat,
           'toLng': toLng,
+          'fromLabel': fromLabel,
+          'toLabel': toLabel,
         });
         if (_pendingBeams.length > 50) {
           _pendingBeams.removeAt(0);
@@ -121,12 +126,14 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
     for (final beam in _pendingBeams) {
       try {
         state.addTransferBeam(
-          beam['fromLat']!,
-          beam['fromLng']!,
-          beam['toLat']!,
-          beam['toLng']!,
+          beam['fromLat'] as double,
+          beam['fromLng'] as double,
+          beam['toLat'] as double,
+          beam['toLng'] as double,
           color: Colors.cyan,
-          duration: const Duration(seconds: 5), // 增加到 5 秒
+          duration: const Duration(seconds: 5),
+          fromLabel: beam['fromLabel'] as String?,
+          toLabel: beam['toLabel'] as String?,
         );
       } catch (e) {
         debugPrint('❌ 播放缓存轨迹失败: $e');

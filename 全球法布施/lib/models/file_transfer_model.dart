@@ -550,10 +550,10 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
   
-  // 地球轨迹回调
-  Function(double, double, double, double)? _onTransferBeam;
+  // 地球轨迹回调（支持国家名称标签）
+  Function(double, double, double, double, {String? fromLabel, String? toLabel})? _onTransferBeam;
 
-  void setTransferBeamCallback(Function(double, double, double, double)? callback) {
+  void setTransferBeamCallback(Function(double, double, double, double, {String? fromLabel, String? toLabel})? callback) {
     _onTransferBeam = callback;
   }
 

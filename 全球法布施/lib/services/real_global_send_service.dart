@@ -15,7 +15,7 @@ class RealGlobalSendService {
   final ValueChanged<double> onDataSent;
   final VoidCallback onStopped;
   final void Function(String) onLog;
-  final Function(double, double, double, double)? onTransferBeam;
+  final Function(double, double, double, double, {String? fromLabel, String? toLabel})? onTransferBeam;
 
   bool _isRunning = false;
   int _sentCount = 0;
@@ -127,20 +127,36 @@ class RealGlobalSendService {
       
       onLog('🌍 发送到 $countryName ($countryCode) - 使用 ${servers.length} 个服务器');
       
-      // 触发3D地球轨迹动画
+      // 触发3D地球轨迹动画（带国家名称标签）
       final toCountry = _coordService.getByCountryCode(countryCode);
       if (toCountry != null && onTransferBeam != null) {
         debugPrint('🚀 准备触发轨迹回调: $countryName');
         // 使用用户IP定位的位置作为固定起点
         if (_userLatitude != null && _userLongitude != null) {
-          debugPrint('📍 使用用户位置: ($_userLatitude, $_userLongitude) -> (${toCountry.latitude}, ${toCountry.longitude})');
-          onTransferBeam!(_userLatitude!, _userLongitude!, toCountry.latitude, toCountry.longitude);
+          final fromCountry = _coordService.getByCoordinates(_userLatitude!, _userLongitude!);
+          final fromLabel = fromCountry?.countryName ?? '起点';
+          debugPrint('📍 使用用户位置: $fromLabel ($_userLatitude, $_userLongitude) -> $countryName (${toCountry.latitude}, ${toCountry.longitude})');
+          onTransferBeam!(
+            _userLatitude!, 
+            _userLongitude!, 
+            toCountry.latitude, 
+            toCountry.longitude,
+            fromLabel: fromLabel,
+            toLabel: countryName,
+          );
         } else {
           // 如果没有用户位置，使用中国北京作为默认起点
           final china = _coordService.getByCountryCode('CN');
           if (china != null) {
-            debugPrint('🇨🇳 使用默认位置: (${china.latitude}, ${china.longitude}) -> (${toCountry.latitude}, ${toCountry.longitude})');
-            onTransferBeam!(china.latitude, china.longitude, toCountry.latitude, toCountry.longitude);
+            debugPrint('🇨🇳 使用默认位置: 中国 (${china.latitude}, ${china.longitude}) -> $countryName (${toCountry.latitude}, ${toCountry.longitude})');
+            onTransferBeam!(
+              china.latitude, 
+              china.longitude, 
+              toCountry.latitude, 
+              toCountry.longitude,
+              fromLabel: '中国',
+              toLabel: countryName,
+            );
           }
         }
       } else {

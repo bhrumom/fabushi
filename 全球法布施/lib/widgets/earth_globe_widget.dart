@@ -80,6 +80,16 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
             color: Colors.blue.shade400,
             size: 12,
           ),
+          label: location.country,
+          isLabelVisible: true,
+          labelTextStyle: const TextStyle(
+            color: Colors.cyan,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            shadows: [
+              Shadow(color: Colors.black, blurRadius: 6),
+            ],
+          ),
         ));
 
         print('用户位置已设置: ${location.country}, ${location.city}');
@@ -100,6 +110,16 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
             style: PointStyle(
               color: Colors.red.shade400,
               size: 12,
+            ),
+            label: '中国',
+            isLabelVisible: true,
+            labelTextStyle: const TextStyle(
+              color: Colors.cyan,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              shadows: [
+                Shadow(color: Colors.black, blurRadius: 6),
+              ],
             ),
           ));
 
@@ -163,7 +183,17 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
       final beamId = 'beam_$timestamp';
       final transferDuration = duration ?? const Duration(seconds: 2);
 
-      // 添加起点标记
+      // 获取国家名称（如果没有提供）
+      if (fromLabel == null) {
+        final fromCountry = _coordService.getByCoordinates(fromLat, fromLng);
+        fromLabel = fromCountry?.countryName;
+      }
+      if (toLabel == null) {
+        final toCountry = _coordService.getByCoordinates(toLat, toLng);
+        toLabel = toCountry?.countryName;
+      }
+
+      // 添加起点标记（带国家名称）
       _controller.addPoint(Point(
         id: 'from_$timestamp',
         coordinates: GlobeCoordinates(fromLat, fromLng),
@@ -172,9 +202,18 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
           size: 8,
         ),
         label: fromLabel,
+        isLabelVisible: true,
+        labelTextStyle: const TextStyle(
+          color: Colors.white,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          shadows: [
+            Shadow(color: Colors.black, blurRadius: 6),
+          ],
+        ),
       ));
 
-      // 添加终点标记
+      // 添加终点标记（带国家名称）
       _controller.addPoint(Point(
         id: 'to_$timestamp',
         coordinates: GlobeCoordinates(toLat, toLng),
@@ -183,6 +222,15 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
           size: 6,
         ),
         label: toLabel,
+        isLabelVisible: true,
+        labelTextStyle: const TextStyle(
+          color: Colors.white,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          shadows: [
+            Shadow(color: Colors.black, blurRadius: 6),
+          ],
+        ),
       ));
 
       // 添加起点的脉冲效果
