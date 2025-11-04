@@ -3,22 +3,42 @@ import { verifyToken } from '../../auth-utils.js';
 
 // 获取排行榜
 export async function handleGetLeaderboard(request, env, db) {
-  const cached = await env.USERS_KV.get('leaderboard:cache');
-  if (cached) {
-    const { data, timestamp } = JSON.parse(cached);
-    if (Date.now() - timestamp < 5 * 60 * 1000) {
-      return jsonResponse({ leaderboard: data, cached: true });
+  try {
+    // 尝试从缓存获取
+    try {
+      const cached = await env.USERS_KV.get('leaderboard:cache');
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < 5 * 60 * 1000) {
+          return jsonResponse({ leaderboard: data, cached: true });
+        }
+      }
+    } catch (cacheError) {
+      console.error('缓存读取失败:', cacheError);
     }
+
+    // 从数据库获取
+    const leaderboard = await db.getLeaderboard(100);
+    
+    // 尝试缓存结果
+    try {
+      await env.USERS_KV.put('leaderboard:cache', JSON.stringify({
+        data: leaderboard,
+        timestamp: Date.now()
+      }), { expirationTtl: 600 });
+    } catch (cacheError) {
+      console.error('缓存写入失败:', cacheError);
+    }
+
+    return jsonResponse({ leaderboard: leaderboard || [] });
+  } catch (error) {
+    console.error('获取排行榜失败:', error);
+    return jsonResponse({ 
+      error: '获取排行榜失败',
+      message: error.message,
+      leaderboard: [] 
+    }, 200); // 返回200但带有错误信息和空数组
   }
-
-  const leaderboard = await db.getLeaderboard(100);
-  
-  await env.USERS_KV.put('leaderboard:cache', JSON.stringify({
-    data: leaderboard,
-    timestamp: Date.now()
-  }), { expirationTtl: 600 });
-
-  return jsonResponse({ leaderboard });
 }
 
 // 更新传输数据
