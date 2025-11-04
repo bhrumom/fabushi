@@ -65,8 +65,6 @@ dependencies:
   preload_page_view: ^0.2.0
   lucide_icons_flutter: ^3.1.5
   gbk_codec: ^0.4.0
-  drift: ^2.29.0
-  sqlite3_flutter_libs: ^0.5.0
 
 dev_dependencies:
   flutter_test:
@@ -74,7 +72,6 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   build_runner: ^2.4.13
   json_serializable: ^6.8.0
-  drift_dev: ^2.29.0
 
 flutter:
   uses-material-design: true
@@ -82,9 +79,9 @@ flutter:
     - assets/images/
     - assets/data/
     - assets/built_in/
-    - assets/models/
     - assets/earth_texture.jpg
-    # IP data excluded from web build
+    # Large files excluded from web build
+    # - assets/models/
     # - assets/ip_data/
   fonts:
     - family: NotoSansSC
