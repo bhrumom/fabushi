@@ -47,15 +47,25 @@ class VideoResponseModel {
     return VideoResponseModel(
       id: doc.id,
       username: data['username'] is String ? data['username'] as String : '',
-      description: data['description'] is String ? data['description'] as String : '',
+      description: data['description'] is String
+          ? data['description'] as String
+          : '',
       videoUrl: data['videoUrl'] is String ? data['videoUrl'] as String : '',
-      profileImageUrl: data['profileImageUrl'] is String ? data['profileImageUrl'] as String : '',
+      profileImageUrl: data['profileImageUrl'] is String
+          ? data['profileImageUrl'] as String
+          : '',
       likeCount: _safeInt(data['likeCount']),
       commentCount: _safeInt(data['commentCount']),
       shareCount: _safeInt(data['shareCount']),
-      timestamp: data['timestamp'] is Timestamp ? data['timestamp'] as Timestamp : Timestamp.now(),
-      contentType: data['contentType'] is String ? data['contentType'] as String : null,
-      textContent: data['textContent'] is String ? data['textContent'] as String : null,
+      timestamp: data['timestamp'] is Timestamp
+          ? data['timestamp'] as Timestamp
+          : Timestamp.now(),
+      contentType: data['contentType'] is String
+          ? data['contentType'] as String
+          : null,
+      textContent: data['textContent'] is String
+          ? data['textContent'] as String
+          : null,
     );
   }
 

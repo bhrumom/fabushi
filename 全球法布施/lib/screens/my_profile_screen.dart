@@ -18,14 +18,20 @@ class MyProfileScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.person_outline, size: 80, color: Colors.grey),
+                  const Icon(
+                    Icons.person_outline,
+                    size: 80,
+                    color: Colors.grey,
+                  ),
                   const SizedBox(height: 20),
                   const Text('请先登录', style: TextStyle(fontSize: 18)),
                   const SizedBox(height: 20),
                   ElevatedButton(
                     onPressed: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                      MaterialPageRoute(
+                        builder: (context) => const LoginScreen(),
+                      ),
                     ),
                     child: const Text('立即登录'),
                   ),
@@ -64,7 +70,13 @@ class MyProfileScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(user.username, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  Text(
+                    user.username,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   Text(user.email, style: const TextStyle(color: Colors.grey)),
                 ],
               ),
@@ -82,11 +94,17 @@ class MyProfileScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('会员信息', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              '会员信息',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 12),
             _buildInfoRow('会员类型', user.membershipType ?? '普通用户'),
             if (user.membershipExpiry != null)
-              _buildInfoRow('到期时间', '${user.membershipExpiry!.year}-${user.membershipExpiry!.month}-${user.membershipExpiry!.day}'),
+              _buildInfoRow(
+                '到期时间',
+                '${user.membershipExpiry!.year}-${user.membershipExpiry!.month}-${user.membershipExpiry!.day}',
+              ),
           ],
         ),
       ),

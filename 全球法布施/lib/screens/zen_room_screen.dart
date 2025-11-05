@@ -23,9 +23,9 @@ class _ZenRoomScreenState extends State<ZenRoomScreen> {
     try {
       setState(() => _loadingStatus = '加载 3D 场景...');
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       final result = js.context.callMethod('initZenRoom3D');
-      
+
       if (result == true) {
         setState(() {
           _isLoading = false;
@@ -65,21 +65,16 @@ class _ZenRoomScreenState extends State<ZenRoomScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const CircularProgressIndicator(
-                    color: Color(0xFFFFD700),
-                  ),
+                  const CircularProgressIndicator(color: Color(0xFFFFD700)),
                   const SizedBox(height: 20),
                   Text(
                     _loadingStatus,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                    ),
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
                   ),
                 ],
               ),
             ),
-          
+
           if (!_isLoading)
             Positioned(
               bottom: 20,
@@ -103,19 +98,13 @@ class _ZenRoomScreenState extends State<ZenRoomScreen> {
                       const SizedBox(height: 12),
                       const Text(
                         '愿此功德回向法界众生，同证菩提',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                        ),
+                        style: TextStyle(color: Colors.white70, fontSize: 14),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 12),
                       const Text(
                         '💡 提示：拖动旋转视角，滚轮缩放',
-                        style: TextStyle(
-                          color: Colors.white54,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
                       ),
                     ],
                   ),

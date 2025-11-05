@@ -14,9 +14,9 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
   VideoFeedCubit({
     required FetchVideosUseCase fetchVideosUseCase,
     required FetchMoreVideosUseCase fetchMoreVideosUseCase,
-  })  : _fetchVideosUseCase = fetchVideosUseCase,
-        _fetchMoreVideosUseCase = fetchMoreVideosUseCase,
-        super(VideoFeedState.initial()) {
+  }) : _fetchVideosUseCase = fetchVideosUseCase,
+       _fetchMoreVideosUseCase = fetchMoreVideosUseCase,
+       super(VideoFeedState.initial()) {
     loadVideos();
   }
 
@@ -33,22 +33,26 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
 
     result.fold(
       (error) {
-        emit(state.copyWith(
-          isLoading: false,
-          isSuccess: false,
-          errorMessage: error,
-        ));
+        emit(
+          state.copyWith(
+            isLoading: false,
+            isSuccess: false,
+            errorMessage: error,
+          ),
+        );
       },
       (videos) {
         // 总是有更多内容（文本可以无限加载）
-        emit(state.copyWith(
-          isLoading: false,
-          isSuccess: true,
-          videos: videos,
-          hasMoreVideos: true,
-          currentIndex: 0,
-          errorMessage: '',
-        ));
+        emit(
+          state.copyWith(
+            isLoading: false,
+            isSuccess: true,
+            videos: videos,
+            hasMoreVideos: true,
+            currentIndex: 0,
+            errorMessage: '',
+          ),
+        );
 
         // Start preloading next videos after initial load
         if (videos.isNotEmpty) {
@@ -60,7 +64,9 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
 
   Future<void> loadMoreVideos() async {
     if (state.isPaginating || !state.hasMoreVideos) {
-      debugPrint('跳过加载: isPaginating=${state.isPaginating}, hasMoreVideos=${state.hasMoreVideos}');
+      debugPrint(
+        '跳过加载: isPaginating=${state.isPaginating}, hasMoreVideos=${state.hasMoreVideos}',
+      );
       return;
     }
 
@@ -72,20 +78,19 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
     result.fold(
       (error) {
         debugPrint('加载失败: $error');
-        emit(state.copyWith(
-          isPaginating: false,
-          errorMessage: error,
-        ));
+        emit(state.copyWith(isPaginating: false, errorMessage: error));
       },
       (moreVideos) {
         debugPrint('加载成功: ${moreVideos.length} 个内容');
         final updatedVideos = [...state.videos, ...moreVideos];
-        emit(state.copyWith(
-          videos: updatedVideos,
-          isPaginating: false,
-          hasMoreVideos: true,
-          errorMessage: '',
-        ));
+        emit(
+          state.copyWith(
+            videos: updatedVideos,
+            isPaginating: false,
+            hasMoreVideos: true,
+            errorMessage: '',
+          ),
+        );
         preloadNextVideos();
       },
     );
@@ -98,7 +103,9 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
     await preloadNextVideos();
 
     // Smart pagination trigger
-    if (!_isPreloadingMore && state.hasMoreVideos && newIndex >= state.videos.length - 2) {
+    if (!_isPreloadingMore &&
+        state.hasMoreVideos &&
+        newIndex >= state.videos.length - 2) {
       debugPrint('触发分页加载');
       _isPreloadingMore = true;
       try {
@@ -133,7 +140,8 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
       final file = await getCachedVideoFile(videoUrl);
       _preloadedFiles[videoUrl] = file;
 
-      final currentPreloaded = Set<String>.from(state.preloadedVideoUrls)..add(videoUrl);
+      final currentPreloaded = Set<String>.from(state.preloadedVideoUrls)
+        ..add(videoUrl);
       emit(state.copyWith(preloadedVideoUrls: currentPreloaded));
     } catch (e) {
       debugPrint('Error preloading video: $e');

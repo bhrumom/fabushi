@@ -12,7 +12,8 @@ class BuddhaModelScreen extends StatefulWidget {
   State<BuddhaModelScreen> createState() => _BuddhaModelScreenState();
 }
 
-class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeepAliveClientMixin {
+class _BuddhaModelScreenState extends State<BuddhaModelScreen>
+    with AutomaticKeepAliveClientMixin {
   late three.ThreeJS threeJs;
   double _rotationY = 0.0;
   double _cameraDistance = 250.0;
@@ -39,7 +40,9 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
 
   void _startAutoRotate() {
     _autoRotateTimer?.cancel();
-    _autoRotateTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _autoRotateTimer = Timer.periodic(const Duration(milliseconds: 16), (
+      timer,
+    ) {
       if (!mounted) {
         timer.cancel();
         return;
@@ -78,37 +81,42 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
     threeJs.scene = three.Scene();
     // 星空背景
     threeJs.scene.background = tmath.Color.fromHex32(0x000428);
-    
+
     // 添加星星
     _addStars();
-    
+
     // 设置相机 - 使用较小的FOV以减少透视变形
-    threeJs.camera = three.PerspectiveCamera(50, threeJs.width / threeJs.height, 0.1, 2000);
+    threeJs.camera = three.PerspectiveCamera(
+      50,
+      threeJs.width / threeJs.height,
+      0.1,
+      2000,
+    );
     _updateCameraPosition();
-    
+
     // 环境光 - 提高亮度
     final ambientLight = three.AmbientLight(0xFFE4B5, 2.5);
     threeJs.scene.add(ambientLight);
-    
+
     // 主光源 - 从上方照射
     final mainLight = three.DirectionalLight(0xFFFFDD, 3.5);
     mainLight.position.setValues(0, 200, 150);
     threeJs.scene.add(mainLight);
-    
+
     // 补光 - 从前方
     final frontLight = three.DirectionalLight(0xFFFFFF, 2.0);
     frontLight.position.setValues(0, 50, 200);
     threeJs.scene.add(frontLight);
-    
+
     // 侧光 - 增强立体感
     final sideLight1 = three.DirectionalLight(0xFFD700, 1.5);
     sideLight1.position.setValues(150, 100, 100);
     threeJs.scene.add(sideLight1);
-    
+
     final sideLight2 = three.DirectionalLight(0xFFD700, 1.5);
     sideLight2.position.setValues(-150, 100, 100);
     threeJs.scene.add(sideLight2);
-    
+
     // 加载模型
     await _loadModel();
   }
@@ -117,16 +125,22 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
     final geometry = three.BufferGeometry();
     final vertices = <double>[];
     final random = math.Random();
-    
+
     for (int i = 0; i < 1000; i++) {
       final x = (random.nextDouble() - 0.5) * 2000;
       final y = (random.nextDouble() - 0.5) * 2000;
       final z = (random.nextDouble() - 0.5) * 2000;
       vertices.addAll([x, y, z]);
     }
-    
-    geometry.setAttributeFromString('position', tmath.Float32BufferAttribute.fromList(vertices, 3));
-    final material = three.PointsMaterial.fromMap({'color': 0xFFFFFF, 'size': 2});
+
+    geometry.setAttributeFromString(
+      'position',
+      tmath.Float32BufferAttribute.fromList(vertices, 3),
+    );
+    final material = three.PointsMaterial.fromMap({
+      'color': 0xFFFFFF,
+      'size': 2,
+    });
     final stars = three.Points(geometry, material);
     threeJs.scene.add(stars);
   }
@@ -135,15 +149,19 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
     try {
       final loader = GLTFLoader();
       final gltf = await loader.fromAsset('assets/models/佛像模型.glb');
-      
+
       if (gltf?.scene != null) {
         final scene = gltf!.scene!;
         threeJs.scene.add(scene);
-        
+
         // 计算整个场景的边界框
-        double minX = double.infinity, minY = double.infinity, minZ = double.infinity;
-        double maxX = double.negativeInfinity, maxY = double.negativeInfinity, maxZ = double.negativeInfinity;
-        
+        double minX = double.infinity,
+            minY = double.infinity,
+            minZ = double.infinity;
+        double maxX = double.negativeInfinity,
+            maxY = double.negativeInfinity,
+            maxZ = double.negativeInfinity;
+
         scene.traverse((child) {
           if (child is three.Mesh) {
             child.geometry?.computeBoundingBox();
@@ -156,7 +174,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
               maxY = maxY > bbox.max.y ? maxY : bbox.max.y;
               maxZ = maxZ > bbox.max.z ? maxZ : bbox.max.z;
             }
-            
+
             // 黄金材质
             final goldMaterial = three.MeshStandardMaterial.fromMap({
               'color': 0xFFD700,
@@ -167,7 +185,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
             child.material = goldMaterial;
           }
         });
-        
+
         // 计算整体中心和大小
         final centerX = (minX + maxX) / 2;
         final centerY = (minY + maxY) / 2;
@@ -176,12 +194,16 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
         final sizeY = maxY - minY;
         final sizeZ = maxZ - minZ;
         final maxSize = [sizeX, sizeY, sizeZ].reduce((a, b) => a > b ? a : b);
-        
+
         // 缩放并居中，放大佛像并上移留出供品空间
         const targetSize = 150.0;
         final scale = targetSize / maxSize;
         scene.scale.setValues(scale, scale, scale);
-        scene.position.setValues(-centerX * scale, -centerY * scale + 30, -centerZ * scale);
+        scene.position.setValues(
+          -centerX * scale,
+          -centerY * scale + 30,
+          -centerZ * scale,
+        );
       }
     } catch (e, stackTrace) {
       debugPrint('加载模型失败: $e');
@@ -225,9 +247,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
           _isUserDragging = false;
           _lastPointerX = null;
         },
-        child: SizedBox.expand(
-          child: threeJs.build(),
-        ),
+        child: SizedBox.expand(child: threeJs.build()),
       ),
     );
   }

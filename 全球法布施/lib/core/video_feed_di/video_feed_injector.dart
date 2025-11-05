@@ -30,9 +30,7 @@ void setupVideoFeedDependencies() {
 
   // UseCases
   videoFeedGetIt.registerLazySingleton<FetchVideosUseCase>(
-    () => FetchVideosUseCase(
-      repository: videoFeedGetIt<VideoFeedRepository>(),
-    ),
+    () => FetchVideosUseCase(repository: videoFeedGetIt<VideoFeedRepository>()),
   );
 
   videoFeedGetIt.registerLazySingleton<FetchMoreVideosUseCase>(

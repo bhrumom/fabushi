@@ -11,7 +11,8 @@ class GlobeHomeScreen extends StatefulWidget {
   State<GlobeHomeScreen> createState() => _GlobeHomeScreenState();
 }
 
-class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
+class _GlobeHomeScreenState extends State<GlobeHomeScreen>
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   static EarthGlobeWidgetState? _globeState; // 静态引用，保持在页面切换时不丢失
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
   String _currentTransfer = '';
@@ -24,7 +25,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
     WidgetsBinding.instance.addObserver(this);
     _loadGlobe();
   }
-  
+
   void _loadGlobe() {
     // 延迟加载地球组件，先显示背景
     Future.delayed(const Duration(milliseconds: 500), () {
@@ -37,7 +38,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
       }
     });
   }
-  
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -49,7 +50,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
       }
     }
   }
-  
+
   @override
   void didUpdateWidget(GlobeHomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -58,7 +59,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
       _setupTransferBeamCallback();
     });
   }
-  
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -71,19 +72,33 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
       _globeState = _globeKey.currentState;
       debugPrint('🔗 更新 Globe 静态引用');
     }
-    
+
     final model = Provider.of<FileTransferModel>(context, listen: false);
-    model.setTransferBeamCallback((fromLat, fromLng, toLat, toLng, {String? fromLabel, String? toLabel}) {
+    model.setTransferBeamCallback((
+      fromLat,
+      fromLng,
+      toLat,
+      toLng, {
+      String? fromLabel,
+      String? toLabel,
+    }) {
       // 优先使用静态引用
       final state = _globeState ?? _globeKey.currentState;
-      debugPrint('📡 轨迹回调触发: staticState=${_globeState != null}, keyState=${_globeKey.currentState != null}');
+      debugPrint(
+        '📡 轨迹回调触发: staticState=${_globeState != null}, keyState=${_globeKey.currentState != null}',
+      );
       debugPrint('🏷️ 国家标签: $fromLabel -> $toLabel');
-      
+
       if (state != null) {
-        debugPrint('✅ 直接添加轨迹: $fromLabel ($fromLat, $fromLng) -> $toLabel ($toLat, $toLng)');
+        debugPrint(
+          '✅ 直接添加轨迹: $fromLabel ($fromLat, $fromLng) -> $toLabel ($toLat, $toLng)',
+        );
         try {
           state.addTransferBeam(
-            fromLat, fromLng, toLat, toLng,
+            fromLat,
+            fromLng,
+            toLat,
+            toLng,
             color: Colors.cyan,
             duration: const Duration(seconds: 5),
             fromLabel: fromLabel,
@@ -107,21 +122,21 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
         }
       }
     });
-    
+
     _playPendingBeams();
     debugPrint('🔧 轨迹回调已设置');
   }
-  
+
   void _playPendingBeams() {
     if (_pendingBeams.isEmpty) return;
-    
+
     final state = _globeState ?? _globeKey.currentState;
     if (state == null) {
       debugPrint('⏳ Globe 还未准备好，稍后重试');
       Future.delayed(const Duration(milliseconds: 500), _playPendingBeams);
       return;
     }
-    
+
     debugPrint('🎬 播放 ${_pendingBeams.length} 条缓存轨迹');
     for (final beam in _pendingBeams) {
       try {
@@ -144,17 +159,17 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
 
   @override
   bool get wantKeepAlive => true;
-  
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // 必须调用以保持状态
-    
+
     // 每次 build 时重新设置回调，确保切换页面后回调仍然有效
     WidgetsBinding.instance.addPostFrameCallback((_) {
       debugPrint('🔄 页面 build 完成，准备设置回调');
       _setupTransferBeamCallback();
     });
-    
+
     return Scaffold(
       body: Stack(
         children: [
@@ -163,9 +178,12 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
             child: _isGlobeLoaded
                 ? LayoutBuilder(
                     builder: (context, constraints) {
-                      debugPrint('🎭 Globe 渲染区域: ${constraints.maxWidth}x${constraints.maxHeight}');
+                      debugPrint(
+                        '🎭 Globe 渲染区域: ${constraints.maxWidth}x${constraints.maxHeight}',
+                      );
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (_globeKey.currentState != null && _globeState == null) {
+                        if (_globeKey.currentState != null &&
+                            _globeState == null) {
                           _globeState = _globeKey.currentState;
                           debugPrint('💾 首次保存 Globe 静态引用');
                         }
@@ -187,19 +205,17 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
                     ),
                   ),
           ),
-          Positioned(
-            top: 60,
-            left: 20,
-            right: 20,
-            child: _buildStatusBar(),
-          ),
+          Positioned(top: 60, left: 20, right: 20, child: _buildStatusBar()),
           Positioned(
             top: 20,
             left: 0,
             right: 0,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black.withOpacity(0.7),
                   borderRadius: BorderRadius.circular(20),
@@ -222,7 +238,9 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const LeaderboardScreen()),
+                  MaterialPageRoute(
+                    builder: (context) => const LeaderboardScreen(),
+                  ),
                 );
               },
               icon: const Icon(Icons.leaderboard, color: Colors.white),
@@ -239,7 +257,10 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
               right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.cyan.withOpacity(0.8),
                     borderRadius: BorderRadius.circular(16),
@@ -290,7 +311,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
     return Consumer<FileTransferModel>(
       builder: (context, model, _) {
         if (!model.isTransferring) return const SizedBox.shrink();
-        
+
         return Card(
           color: Colors.black.withOpacity(0.7),
           child: Padding(
@@ -332,7 +353,10 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
               children: [
                 Text(
                   model.selectedFile?.name ?? '未选择经文',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
@@ -352,7 +376,8 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
                     const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed: model.selectedFile != null && !model.isTransferring
+                        onPressed:
+                            model.selectedFile != null && !model.isTransferring
                             ? () => _startSending(model)
                             : null,
                         icon: const Icon(Icons.send),
@@ -380,7 +405,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
 
   void _startSending(FileTransferModel model) async {
     _globeKey.currentState?.clearBeams();
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -390,10 +415,10 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen> with AutomaticKeepAli
         ),
       );
     }
-    
+
     // 开始真实的全球发送，轨迹动画将自动触发
     await model.startGlobalTransfer();
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

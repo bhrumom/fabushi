@@ -23,10 +23,7 @@ class VideoFeedViewInteractionButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: context.h(16),
-        right: context.w(12),
-      ),
+      padding: EdgeInsets.only(bottom: context.h(16), right: context.w(12)),
       child: LayoutBuilder(
         builder: (context, constraints) {
           // 计算可用高度和每个按钮的大小
@@ -34,11 +31,11 @@ class VideoFeedViewInteractionButtons extends StatelessWidget {
           final buttonHeight = context.sq(60); // 估算每个按钮高度
           final iconHeight = context.sq(36);
           final totalContentHeight = (buttonHeight * 3) + iconHeight;
-          
+
           // 智能计算间距
           final spacing = (availableHeight - totalContentHeight) / 4;
           final safeSpacing = spacing.clamp(0.0, context.h(12));
-          
+
           return Column(
             mainAxisAlignment: MainAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,

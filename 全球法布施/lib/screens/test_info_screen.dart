@@ -8,7 +8,7 @@ class TestInfoScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final testAccounts = MockAuthService.getTestAccounts();
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('测试信息'),
@@ -20,10 +20,7 @@ class TestInfoScreen extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF667eea),
-              Color(0xFF764ba2),
-            ],
+            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
           ),
         ),
         child: SafeArea(
@@ -45,11 +42,7 @@ class TestInfoScreen extends StatelessWidget {
                       children: [
                         Row(
                           children: const [
-                            Icon(
-                              Icons.info,
-                              color: Colors.blue,
-                              size: 24,
-                            ),
+                            Icon(Icons.info, color: Colors.blue, size: 24),
                             SizedBox(width: 8),
                             Text(
                               '测试模式',
@@ -85,7 +78,7 @@ class TestInfoScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                
+
                 ...testAccounts.map((account) {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
@@ -112,9 +105,12 @@ class TestInfoScreen extends StatelessWidget {
                                 ),
                                 IconButton(
                                   onPressed: () {
-                                    Clipboard.setData(ClipboardData(
-                                      text: '邮箱: ${account['email']}\n密码: ${account['password']}',
-                                    ));
+                                    Clipboard.setData(
+                                      ClipboardData(
+                                        text:
+                                            '邮箱: ${account['email']}\n密码: ${account['password']}',
+                                      ),
+                                    );
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
                                         content: Text('账户信息已复制到剪贴板'),
@@ -188,11 +184,7 @@ class TestInfoScreen extends StatelessWidget {
                       children: [
                         Row(
                           children: const [
-                            Icon(
-                              Icons.security,
-                              color: Colors.green,
-                              size: 24,
-                            ),
+                            Icon(Icons.security, color: Colors.green, size: 24),
                             SizedBox(width: 8),
                             Text(
                               '验证码信息',

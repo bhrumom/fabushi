@@ -109,9 +109,7 @@ class _SearchExampleState extends State<SearchExample> {
               onSubmitted: (_) => _performSearch(),
             ),
           ),
-          Expanded(
-            child: _buildResultsList(),
-          ),
+          Expanded(child: _buildResultsList()),
         ],
       ),
     );
@@ -129,10 +127,7 @@ class _SearchExampleState extends State<SearchExample> {
           children: [
             Icon(Icons.search, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
-            Text(
-              '输入关键词搜索经文',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
+            Text('输入关键词搜索经文', style: TextStyle(color: Colors.grey[600])),
           ],
         ),
       );
@@ -155,10 +150,7 @@ class _SearchExampleState extends State<SearchExample> {
                 const SizedBox(height: 4),
                 Text(
                   item.category,
-                  style: TextStyle(
-                    color: Colors.blue[700],
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.blue[700], fontSize: 12),
                 ),
                 if (item.preview != null) ...[
                   const SizedBox(height: 8),

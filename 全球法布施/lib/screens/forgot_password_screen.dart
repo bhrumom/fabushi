@@ -28,14 +28,16 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final authModel = Provider.of<AuthModel>(context, listen: false);
-    
-    final success = await authModel.forgotPassword(_emailController.text.trim());
+
+    final success = await authModel.forgotPassword(
+      _emailController.text.trim(),
+    );
 
     if (success && mounted) {
       setState(() {
         _emailSent = true;
       });
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('重置邮件已发送，请检查您的邮箱'),
@@ -66,10 +68,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF667eea),
-              Color(0xFF764ba2),
-            ],
+            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
           ),
         ),
         child: SafeArea(
@@ -101,11 +100,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 图标
-          const Icon(
-            Icons.lock_reset,
-            size: 64,
-            color: Color(0xFF667eea),
-          ),
+          const Icon(Icons.lock_reset, size: 64, color: Color(0xFF667eea)),
           const SizedBox(height: 24),
 
           // 标题
@@ -121,10 +116,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           const SizedBox(height: 8),
           const Text(
             '输入您的邮箱地址，我们将发送重置密码的链接',
-            style: TextStyle(
-              fontSize: 14,
-              color: Color(0xFF7f8c8d),
-            ),
+            style: TextStyle(fontSize: 14, color: Color(0xFF7f8c8d)),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 32),
@@ -197,10 +189,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                '记起密码了？',
-                style: TextStyle(color: Colors.grey[600]),
-              ),
+              Text('记起密码了？', style: TextStyle(color: Colors.grey[600])),
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pop();
@@ -226,11 +215,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // 成功图标
-        const Icon(
-          Icons.mark_email_read,
-          size: 64,
-          color: Colors.green,
-        ),
+        const Icon(Icons.mark_email_read, size: 64, color: Colors.green),
         const SizedBox(height: 24),
 
         // 成功标题
@@ -298,10 +283,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
           child: const Text(
             '返回登录',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
       ],

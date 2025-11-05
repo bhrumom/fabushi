@@ -59,7 +59,8 @@ class _AppWrapperState extends State<AppWrapper> {
       if (mounted) {
         setState(() {
           _initError = e.toString();
-          _isInitialized = true; // Mark as initialized to show the error screen.
+          _isInitialized =
+              true; // Mark as initialized to show the error screen.
         });
       }
     }
@@ -72,12 +73,12 @@ class _AppWrapperState extends State<AppWrapper> {
         final uri = Uri.parse(currentUrl);
         if (uri.fragment.isNotEmpty) {
           final params = Uri.splitQueryString(uri.fragment);
-          
+
           // 处理错误情况
           if (params['error'] != null) {
             final error = params['error'];
             final errorMessage = params['error_message'] ?? '发生未知错误';
-            
+
             // 显示错误信息
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -88,19 +89,20 @@ class _AppWrapperState extends State<AppWrapper> {
                 ),
               );
             }
-            
+
             // Clean the URL hash.
             _platformService.replaceHistoryState('/');
             return false; // 不认为登录成功
           }
-          
+
           // 处理支付宝绑定情况
-          if (params['alipay_auth_code'] != null && params['needs_binding'] == 'true') {
+          if (params['alipay_auth_code'] != null &&
+              params['needs_binding'] == 'true') {
             final authCode = params['alipay_auth_code']!;
             final userId = params['alipay_user_id'];
             final nickname = params['alipay_nickname'] ?? '';
             final avatar = params['alipay_avatar'] ?? '';
-            
+
             // 导航到支付宝绑定页面
             if (mounted) {
               Navigator.of(context).pushNamed(
@@ -113,12 +115,12 @@ class _AppWrapperState extends State<AppWrapper> {
                 },
               );
             }
-            
+
             // Clean the URL hash.
             _platformService.replaceHistoryState('/');
             return false; // 不自动登录，等待用户绑定
           }
-          
+
           // 处理直接登录情况 - 支持支付宝登录和其他登录方式
           final token = params['token'];
           final username = params['username'];
@@ -129,13 +131,13 @@ class _AppWrapperState extends State<AppWrapper> {
 
             // Clean the URL hash.
             _platformService.replaceHistoryState('/');
-            
+
             // 显示成功消息
             String welcomeMessage = '登录成功！欢迎 $username';
             if (loginMethod == 'alipay') {
               welcomeMessage = '支付宝登录成功！欢迎 $username';
             }
-            
+
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -144,7 +146,7 @@ class _AppWrapperState extends State<AppWrapper> {
                 ),
               );
             }
-            
+
             return true; // Signal that login was handled.
           }
         }
@@ -196,8 +198,14 @@ class _AppWrapperState extends State<AppWrapper> {
                 children: [
                   const Icon(Icons.error, color: Colors.white, size: 48),
                   const SizedBox(height: 16),
-                  const Text('应用初始化失败', 
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const Text(
+                    '应用初始化失败',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     '发生了一个错误: \n$_initError',

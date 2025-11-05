@@ -31,7 +31,7 @@ Future<http.StreamedResponse> sendMultipartRequestWithProgress(
   final newRequest = http.StreamedRequest(request.method, request.url)
     ..contentLength = request.contentLength
     ..headers.addAll(request.headers);
-  
+
   // Manually pipe the stream to the request's sink to handle type mismatch
   broadcastStream.listen(
     newRequest.sink.add,
@@ -43,15 +43,18 @@ Future<http.StreamedResponse> sendMultipartRequestWithProgress(
     cancelOnError: true,
   );
 
-  client.send(newRequest).then((response) {
-    if (!completer.isCompleted) {
-      completer.complete(response);
-    }
-  }).catchError((error, stackTrace) {
-    if (!completer.isCompleted) {
-      completer.completeError(error, stackTrace);
-    }
-  });
+  client
+      .send(newRequest)
+      .then((response) {
+        if (!completer.isCompleted) {
+          completer.complete(response);
+        }
+      })
+      .catchError((error, stackTrace) {
+        if (!completer.isCompleted) {
+          completer.completeError(error, stackTrace);
+        }
+      });
 
   // Cancel the progress subscription when the response is received or an error occurs
   completer.future.whenComplete(() => subscription.cancel());

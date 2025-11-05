@@ -6,9 +6,9 @@ import 'network_monitor_service_base.dart';
 // 简化的网络监控服务，兼容所有平台
 class NetworkMonitorService extends DefaultNetworkMonitorService {
   static NetworkMonitorService? _instance;
-  
+
   NetworkMonitorService._() : super();
-  
+
   static NetworkMonitorService get instance {
     _instance ??= NetworkMonitorService._();
     return _instance!;
@@ -50,8 +50,8 @@ class NetworkMonitorService extends DefaultNetworkMonitorService {
   String getConnectionType() {
     if (kIsWeb) {
       return 'web';
-    } else if (defaultTargetPlatform == TargetPlatform.iOS || 
-               defaultTargetPlatform == TargetPlatform.android) {
+    } else if (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.android) {
       return 'mobile';
     } else {
       return 'desktop';

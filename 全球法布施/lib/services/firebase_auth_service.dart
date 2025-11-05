@@ -9,7 +9,11 @@ class FirebaseAuthService {
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
   // 邮箱密码注册
-  Future<Map<String, dynamic>> registerWithEmail(String email, String password, String username) async {
+  Future<Map<String, dynamic>> registerWithEmail(
+    String email,
+    String password,
+    String username,
+  ) async {
     try {
       final credential = await _auth.createUserWithEmailAndPassword(
         email: email,
@@ -18,7 +22,7 @@ class FirebaseAuthService {
       await credential.user?.updateDisplayName(username);
       await credential.user?.sendEmailVerification();
       await _saveUserLocally(credential.user);
-      
+
       return {'success': true, 'user': credential.user};
     } on FirebaseAuthException catch (e) {
       return {'success': false, 'error': _getErrorMessage(e.code)};
@@ -26,7 +30,10 @@ class FirebaseAuthService {
   }
 
   // 邮箱密码登录
-  Future<Map<String, dynamic>> signInWithEmail(String email, String password) async {
+  Future<Map<String, dynamic>> signInWithEmail(
+    String email,
+    String password,
+  ) async {
     try {
       final credential = await _auth.signInWithEmailAndPassword(
         email: email,
@@ -68,7 +75,7 @@ class FirebaseAuthService {
   // 本地保存用户信息
   Future<void> _saveUserLocally(User? user) async {
     if (user == null) return;
-    
+
     final prefs = await SharedPreferences.getInstance();
     final userData = {
       'uid': user.uid,
@@ -87,12 +94,18 @@ class FirebaseAuthService {
 
   String _getErrorMessage(String code) {
     switch (code) {
-      case 'email-already-in-use': return '邮箱已被使用';
-      case 'invalid-email': return '邮箱格式无效';
-      case 'weak-password': return '密码强度不足';
-      case 'user-not-found': return '用户不存在';
-      case 'wrong-password': return '密码错误';
-      default: return '操作失败';
+      case 'email-already-in-use':
+        return '邮箱已被使用';
+      case 'invalid-email':
+        return '邮箱格式无效';
+      case 'weak-password':
+        return '密码强度不足';
+      case 'user-not-found':
+        return '用户不存在';
+      case 'wrong-password':
+        return '密码错误';
+      default:
+        return '操作失败';
     }
   }
 }

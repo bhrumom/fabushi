@@ -15,7 +15,7 @@ class UserModel {
   final String? alipayAvatar;
   final String? alipayBoundAt;
   final MembershipInfo membership;
-  
+
   UserModel({
     required this.username,
     this.email,
@@ -31,7 +31,7 @@ class UserModel {
     this.alipayBoundAt,
     required this.membership,
   });
-  
+
   // 从JSON创建用户对象
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
@@ -50,7 +50,7 @@ class UserModel {
       membership: MembershipInfo.fromJson(json['membership'] ?? {}),
     );
   }
-  
+
   // 转换为JSON
   Map<String, dynamic> toJson() {
     return {
@@ -69,7 +69,7 @@ class UserModel {
       'membership': membership.toJson(),
     };
   }
-  
+
   // 复制并修改部分字段
   UserModel copyWith({
     String? username,
@@ -102,10 +102,10 @@ class UserModel {
       membership: membership ?? this.membership,
     );
   }
-  
+
   // 检查是否绑定了微信
   bool get hasWechatBinding => wechatOpenid != null;
-  
+
   // 获取显示名称
   String get displayName {
     if (wechatNickname != null && wechatNickname!.isNotEmpty) {
@@ -116,7 +116,7 @@ class UserModel {
     }
     return username;
   }
-  
+
   // 获取头像URL
   String? get avatarUrl {
     if (wechatHeadimgurl != null && wechatHeadimgurl!.isNotEmpty) {
@@ -127,18 +127,18 @@ class UserModel {
     }
     return null;
   }
-  
+
   @override
   String toString() {
     return 'UserModel(username: $username, email: $email, membership: ${membership.type})';
   }
-  
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     return other is UserModel && other.username == username;
   }
-  
+
   @override
   int get hashCode => username.hashCode;
 }
@@ -151,7 +151,7 @@ class MembershipInfo {
   final int? daysRemaining;
   final String? subscriptionId;
   final String? paymentMethod;
-  
+
   MembershipInfo({
     required this.type,
     required this.isActive,
@@ -160,7 +160,7 @@ class MembershipInfo {
     this.subscriptionId,
     this.paymentMethod,
   });
-  
+
   factory MembershipInfo.fromJson(Map<String, dynamic> json) {
     return MembershipInfo(
       type: json['type'] as String? ?? 'expired',
@@ -171,7 +171,7 @@ class MembershipInfo {
       paymentMethod: json['paymentMethod'] as String?,
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       'type': type,
@@ -182,7 +182,7 @@ class MembershipInfo {
       'paymentMethod': paymentMethod,
     };
   }
-  
+
   // 获取会员类型显示名称
   String get displayName {
     switch (type) {
@@ -196,7 +196,7 @@ class MembershipInfo {
         return '未知';
     }
   }
-  
+
   // 获取会员状态颜色
   String get statusColor {
     if (isActive) {
@@ -205,16 +205,16 @@ class MembershipInfo {
       return '#F44336'; // 红色过期
     }
   }
-  
+
   // 检查是否为试用会员
   bool get isTrial => type == 'trial' && isActive;
-  
+
   // 检查是否为付费会员
   bool get isPaid => type == 'paid' && isActive;
-  
+
   // 检查是否已过期
   bool get isExpired => !isActive || type == 'expired';
-  
+
   @override
   String toString() {
     return 'MembershipInfo(type: $type, isActive: $isActive, expiresAt: $expiresAt)';
@@ -233,7 +233,7 @@ class PurchaseRecord {
   final String purchasedAt;
   final String validFrom;
   final String validTo;
-  
+
   PurchaseRecord({
     required this.id,
     required this.orderId,
@@ -246,7 +246,7 @@ class PurchaseRecord {
     required this.validFrom,
     required this.validTo,
   });
-  
+
   factory PurchaseRecord.fromJson(Map<String, dynamic> json) {
     return PurchaseRecord(
       id: json['id'] as String,
@@ -261,7 +261,7 @@ class PurchaseRecord {
       validTo: json['validTo'] as String,
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -276,7 +276,7 @@ class PurchaseRecord {
       'validTo': validTo,
     };
   }
-  
+
   // 获取计划显示名称
   String get planDisplayName {
     switch (plan) {
@@ -290,7 +290,7 @@ class PurchaseRecord {
         return plan;
     }
   }
-  
+
   // 获取支付方式显示名称
   String get paymentMethodDisplayName {
     switch (paymentMethod) {
@@ -304,7 +304,7 @@ class PurchaseRecord {
         return paymentMethod;
     }
   }
-  
+
   // 获取状态显示名称
   String get statusDisplayName {
     switch (status) {
@@ -333,7 +333,7 @@ class RedeemRecord {
   final String validFrom;
   final String validTo;
   final String? previousExpiryDate;
-  
+
   RedeemRecord({
     required this.id,
     required this.code,
@@ -345,7 +345,7 @@ class RedeemRecord {
     required this.validTo,
     this.previousExpiryDate,
   });
-  
+
   factory RedeemRecord.fromJson(Map<String, dynamic> json) {
     return RedeemRecord(
       id: json['id'] as String,
@@ -359,7 +359,7 @@ class RedeemRecord {
       previousExpiryDate: json['previousExpiryDate'] as String?,
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -387,7 +387,7 @@ class RedeemCode {
   final bool used;
   final String? usedBy;
   final String? usedAt;
-  
+
   RedeemCode({
     required this.code,
     required this.type,
@@ -400,7 +400,7 @@ class RedeemCode {
     this.usedBy,
     this.usedAt,
   });
-  
+
   factory RedeemCode.fromJson(Map<String, dynamic> json) {
     return RedeemCode(
       code: json['code'] as String,
@@ -415,7 +415,7 @@ class RedeemCode {
       usedAt: json['usedAt'] as String?,
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       'code': code,
@@ -430,10 +430,10 @@ class RedeemCode {
       'usedAt': usedAt,
     };
   }
-  
+
   // 获取状态显示名称
   String get statusDisplayName => used ? '已使用' : '未使用';
-  
+
   // 获取类型显示名称
   String get typeDisplayName {
     switch (type) {

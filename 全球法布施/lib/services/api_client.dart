@@ -9,9 +9,9 @@ import 'worker_config.dart';
 class ApiClient {
   static ApiClient? _instance;
   static ApiClient get instance => _instance ??= ApiClient._();
-  
+
   ApiClient._();
-  
+
   // 公共构造函数，用于直接实例化
   factory ApiClient() => instance;
 
@@ -31,7 +31,7 @@ class ApiClient {
     try {
       final url = await baseUrl;
       var uri = Uri.parse('$url$endpoint');
-      
+
       if (queryParams != null && queryParams.isNotEmpty) {
         uri = uri.replace(queryParameters: queryParams);
       }
@@ -46,9 +46,9 @@ class ApiClient {
       }
 
       debugPrint('🌐 GET: $uri');
-      
+
       final response = await http.get(uri, headers: requestHeaders);
-      
+
       return _handleResponse(response);
     } catch (e) {
       debugPrint('❌ GET 请求失败: $e');
@@ -84,13 +84,13 @@ class ApiClient {
       if (body != null) {
         debugPrint('📤 Body: ${jsonEncode(body)}');
       }
-      
+
       final response = await http.post(
         uri,
         headers: requestHeaders,
         body: body != null ? jsonEncode(body) : null,
       );
-      
+
       return _handleResponse(response);
     } catch (e) {
       debugPrint('❌ POST 请求失败: $e');
@@ -123,13 +123,13 @@ class ApiClient {
       }
 
       debugPrint('🌐 PUT: $uri');
-      
+
       final response = await http.put(
         uri,
         headers: requestHeaders,
         body: body != null ? jsonEncode(body) : null,
       );
-      
+
       return _handleResponse(response);
     } catch (e) {
       debugPrint('❌ PUT 请求失败: $e');
@@ -162,13 +162,13 @@ class ApiClient {
       }
 
       debugPrint('🌐 DELETE: $uri');
-      
+
       final response = await http.delete(
         uri,
         headers: requestHeaders,
         body: body != null ? jsonEncode(body) : null,
       );
-      
+
       return _handleResponse(response);
     } catch (e) {
       debugPrint('❌ DELETE 请求失败: $e');
@@ -184,11 +184,11 @@ class ApiClient {
   Map<String, dynamic> _handleResponse(http.Response response) {
     debugPrint('📥 Response: ${response.statusCode} ${response.reasonPhrase}');
     debugPrint('📄 原始响应体: ${response.body}');
-    
+
     try {
       final data = jsonDecode(response.body);
       debugPrint('📊 解析后数据: $data');
-      
+
       if (response.statusCode >= 200 && response.statusCode < 300) {
         // 确保数据不为空
         if (data == null) {
@@ -199,14 +199,10 @@ class ApiClient {
             'details': response.body,
           };
         }
-        
+
         // 如果数据是 Map，直接合并；否则包装在 data 字段中
         if (data is Map<String, dynamic>) {
-          return {
-            'success': true,
-            'statusCode': response.statusCode,
-            ...data,
-          };
+          return {'success': true, 'statusCode': response.statusCode, ...data};
         } else {
           return {
             'success': true,
@@ -218,18 +214,20 @@ class ApiClient {
         return {
           'success': false,
           'statusCode': response.statusCode,
-          'error': data is Map ? (data['error'] ?? data['message'] ?? '请求失败') : '请求失败',
+          'error': data is Map
+              ? (data['error'] ?? data['message'] ?? '请求失败')
+              : '请求失败',
           'details': data,
         };
       }
     } catch (e) {
       debugPrint('❌ 解析响应失败: $e');
       debugPrint('📄 原始响应: ${response.body}');
-      
+
       return {
         'success': false,
         'statusCode': response.statusCode,
-        'error': response.statusCode >= 500 
+        'error': response.statusCode >= 500
             ? WorkerConfig.getErrorMessage('SERVER_ERROR')
             : '响应格式错误',
         'details': response.body,
@@ -239,10 +237,10 @@ class ApiClient {
 
   // 认证相关快捷方法
   Future<Map<String, dynamic>> login(String username, String password) {
-    return post(WorkerConfig.getEndpoint('login'), body: {
-      'username': username,
-      'password': password,
-    });
+    return post(
+      WorkerConfig.getEndpoint('login'),
+      body: {'username': username, 'password': password},
+    );
   }
 
   Future<Map<String, dynamic>> register(
@@ -251,19 +249,25 @@ class ApiClient {
     String password,
     String verificationCode,
   ) {
-    return post(WorkerConfig.getEndpoint('register'), body: {
-      'username': username,
-      'email': email,
-      'password': password,
-      'verificationCode': verificationCode,
-    });
+    return post(
+      WorkerConfig.getEndpoint('register'),
+      body: {
+        'username': username,
+        'email': email,
+        'password': password,
+        'verificationCode': verificationCode,
+      },
+    );
   }
 
-  Future<Map<String, dynamic>> sendVerificationCode(String email, {String type = 'register'}) {
-    return post(WorkerConfig.getEndpoint('sendVerificationCode'), body: {
-      'email': email,
-      'type': type,
-    });
+  Future<Map<String, dynamic>> sendVerificationCode(
+    String email, {
+    String type = 'register',
+  }) {
+    return post(
+      WorkerConfig.getEndpoint('sendVerificationCode'),
+      body: {'email': email, 'type': type},
+    );
   }
 
   Future<Map<String, dynamic>> verifyToken(String token) {
@@ -279,9 +283,10 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> useRedeemCode(String token, String code) {
-    return post(WorkerConfig.getEndpoint('adminUseRedeemCode'), 
-      body: {'code': code}, 
-      token: token
+    return post(
+      WorkerConfig.getEndpoint('adminUseRedeemCode'),
+      body: {'code': code},
+      token: token,
     );
   }
 }

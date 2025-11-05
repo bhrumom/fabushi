@@ -65,40 +65,33 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-
   Future<void> _handleAlipayCallback(Map<String, dynamic> params) async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
-    
+
     // 尝试支付宝一键注册（如果是新用户）或登录（如果是已存在用户）
     try {
       final alipayUserId = params['alipay_user_id'] as String?;
       final alipayNickname = params['alipay_nickname'] as String?;
       final alipayAvatar = params['alipay_avatar'] as String?;
       final authCode = params['alipay_auth_code'] as String?;
-      
+
       final success = await authModel.alipayOneClickRegister(
         alipayUserId ?? authCode ?? '',
         alipayNickname,
         alipayAvatar,
       );
-      
+
       if (success && mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('支付宝登录成功！'),
-            backgroundColor: Colors.green,
-          ),
+          SnackBar(content: Text('支付宝登录成功！'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
       debugPrint('支付宝登录错误: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('支付宝登录失败: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('支付宝登录失败: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -107,14 +100,14 @@ class _LoginScreenState extends State<LoginScreen> {
   // 处理macOS平台的支付宝回调
   Future<void> _handleMacOSAlipayCallback(String url) async {
     debugPrint('收到macOS支付宝回调: $url');
-    
+
     try {
       // 解析自定义scheme URL
       Map<String, String> params = {};
-      
+
       // 移除 scheme 部分
       String urlWithoutScheme = url.replaceFirst('globaldharma://', '');
-      
+
       // 直接解析查询参数（无论是否有?）
       final queryParams = urlWithoutScheme.split('&');
       for (final param in queryParams) {
@@ -125,13 +118,13 @@ class _LoginScreenState extends State<LoginScreen> {
           }
         }
       }
-      
+
       // 检查是否包含错误信息
       if (params.containsKey('error')) {
         final error = params['error']!;
         final errorMessage = params['error_message'] ?? '支付宝登录失败';
         debugPrint('macOS支付宝登录错误: $error - $errorMessage');
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -142,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
         return;
       }
-      
+
       // 检查是否包含支付宝授权码
       if (params.containsKey('alipay_auth_code')) {
         final authCode = params['alipay_auth_code']!;
@@ -152,13 +145,13 @@ class _LoginScreenState extends State<LoginScreen> {
         final isNewUser = params['isNewUser'] == 'true';
         final token = params['token'];
         final username = params['username'];
-        
+
         debugPrint('提取到支付宝授权码: $authCode');
         debugPrint('所有参数: $params');
-        
+
         final authModel = Provider.of<AuthModel>(context, listen: false);
         bool success = false;
-        
+
         // 如果是已注册用户且有token，直接使用token登录
         if (!isNewUser && token != null && username != null) {
           debugPrint('用户已注册，使用token直接登录');
@@ -178,9 +171,9 @@ class _LoginScreenState extends State<LoginScreen> {
             alipayAvatar,
           );
         }
-        
+
         debugPrint('支付宝一键注册结果: success=$success, error=${authModel.error}');
-        
+
         if (success && mounted) {
           Navigator.of(context).pop(); // 返回主界面
           ScaffoldMessenger.of(context).showSnackBar(
@@ -192,8 +185,10 @@ class _LoginScreenState extends State<LoginScreen> {
         } else if (mounted) {
           // 检查是否是授权码无效错误
           final error = authModel.error ?? '';
-          if (error.contains('授权码code无效') || error.contains('isv.code-invalid') || 
-              error.contains('授权码已过期') || error.contains('授权码已被使用')) {
+          if (error.contains('授权码code无效') ||
+              error.contains('isv.code-invalid') ||
+              error.contains('授权码已过期') ||
+              error.contains('授权码已被使用')) {
             // 授权码无效，提示用户重新尝试
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -221,10 +216,7 @@ class _LoginScreenState extends State<LoginScreen> {
           } else {
             // 其他错误，显示错误信息
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(error),
-                backgroundColor: Colors.red,
-              ),
+              SnackBar(content: Text(error), backgroundColor: Colors.red),
             );
           }
         }
@@ -245,10 +237,7 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrint('处理macOS支付宝回调失败: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('处理支付宝回调失败: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('处理支付宝回调失败: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -256,19 +245,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleAlipayLogin() async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
-    
+
     try {
       // macOS平台需要特殊处理
       String? platform;
       if (!kIsWeb && Platform.isMacOS) {
         platform = 'macos';
       }
-      
+
       final result = await authModel.getAlipayLoginUrl(platform: platform);
-      
+
       if (result['success'] == true && result['loginUrl'] != null) {
         final loginUrl = result['loginUrl'] as String;
-        
+
         // 直接跳转到支付宝登录页面，不再经过HTML登录页面
         final uri = Uri.parse(loginUrl);
         if (await canLaunchUrl(uri)) {
@@ -290,10 +279,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('支付宝登录出错: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('支付宝登录出错: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -301,19 +287,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleAlipayOneClickRegister() async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
-    
+
     try {
       // macOS平台需要特殊处理
       String? platform;
       if (!kIsWeb && Platform.isMacOS) {
         platform = 'macos';
       }
-      
+
       final result = await authModel.getAlipayLoginUrl(platform: platform);
-      
+
       if (result['success'] == true && result['loginUrl'] != null) {
         final loginUrl = result['loginUrl'] as String;
-        
+
         // 直接跳转到支付宝登录页面，不再经过HTML登录页面
         final uri = Uri.parse(loginUrl);
         if (await canLaunchUrl(uri)) {
@@ -335,10 +321,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('支付宝一键注册出错: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('支付宝一键注册出错: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -348,7 +331,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final authModel = Provider.of<AuthModel>(context, listen: false);
-    
+
     final success = await authModel.login(
       _usernameController.text.trim(),
       _passwordController.text,
@@ -369,9 +352,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('登录'),
-      ),
+      appBar: AppBar(title: const Text('登录')),
       body: GradientBackground(
         child: SafeArea(
           child: Center(
@@ -387,239 +368,250 @@ class _LoginScreenState extends State<LoginScreen> {
                     constraints: const BoxConstraints(maxWidth: 500),
                     padding: const EdgeInsets.all(40.0),
                     child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // 标题
-                        Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                gradient: AppTheme.primaryGradient,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppTheme.primaryColor.withOpacity(0.3),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
+                      key: _formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // 标题
+                          Column(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: AppTheme.primaryGradient,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppTheme.primaryColor.withOpacity(
+                                        0.3,
+                                      ),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 8),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.auto_awesome,
+                                  size: 40,
+                                  color: Colors.white,
+                                ),
                               ),
-                              child: const Icon(
-                                Icons.auto_awesome,
-                                size: 40,
-                                color: Colors.white,
+                              const SizedBox(height: 20),
+                              const Text(
+                                '🙏 全球法布施',
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF2c3e50),
+                                  letterSpacing: 1,
+                                ),
+                                textAlign: TextAlign.center,
                               ),
-                            ),
-                            const SizedBox(height: 20),
-                            const Text(
-                              '🙏 全球法布施',
-                              style: TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF2c3e50),
-                                letterSpacing: 1,
+                              const SizedBox(height: 8),
+                              Text(
+                                '登录您的账户',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[600],
+                                  letterSpacing: 0.5,
+                                ),
+                                textAlign: TextAlign.center,
                               ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              '登录您的账户',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey[600],
-                                letterSpacing: 0.5,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 40),
-
-                        // 用户名输入框
-                        TextFormField(
-                          controller: _usernameController,
-                          decoration: InputDecoration(
-                            labelText: '用户名或邮箱',
-                            prefixIcon: const Icon(Icons.person),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.grey[50],
+                            ],
                           ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return '请输入用户名或邮箱';
-                            }
-                            return null;
-                          },
-                          textInputAction: TextInputAction.next,
-                        ),
-                        const SizedBox(height: 16),
+                          const SizedBox(height: 40),
 
-                        // 密码输入框
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: _obscurePassword,
-                          decoration: InputDecoration(
-                            labelText: '密码',
-                            prefixIcon: const Icon(Icons.lock),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility
-                                    : Icons.visibility_off,
+                          // 用户名输入框
+                          TextFormField(
+                            controller: _usernameController,
+                            decoration: InputDecoration(
+                              labelText: '用户名或邮箱',
+                              prefixIcon: const Icon(Icons.person),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
+                              filled: true,
+                              fillColor: Colors.grey[50],
+                            ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return '请输入用户名或邮箱';
+                              }
+                              return null;
+                            },
+                            textInputAction: TextInputAction.next,
+                          ),
+                          const SizedBox(height: 16),
+
+                          // 密码输入框
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            decoration: InputDecoration(
+                              labelText: '密码',
+                              prefixIcon: const Icon(Icons.lock),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _obscurePassword = !_obscurePassword;
+                                  });
+                                },
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey[50],
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return '请输入密码';
+                              }
+                              return null;
+                            },
+                            textInputAction: TextInputAction.done,
+                            onFieldSubmitted: (_) => _handleLogin(),
+                          ),
+                          const SizedBox(height: 8),
+
+                          // 忘记密码链接
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
                               onPressed: () {
-                                setState(() {
-                                  _obscurePassword = !_obscurePassword;
-                                });
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const ForgotPasswordScreen(),
+                                  ),
+                                );
+                              },
+                              child: const Text('忘记密码？'),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+
+                          // 登录按钮
+                          Consumer<AuthModel>(
+                            builder: (context, authModel, child) {
+                              return SizedBox(
+                                width: double.infinity,
+                                child: PrimaryButton(
+                                  text: '登录',
+                                  onPressed: _handleLogin,
+                                  isLoading: authModel.isLoading,
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 24),
+
+                          // 支付宝登录按钮
+                          Consumer<AuthModel>(
+                            builder: (context, authModel, child) {
+                              return SizedBox(
+                                width: double.infinity,
+                                child: AlipayButton(
+                                  text: '支付宝登录',
+                                  onPressed: authModel.isLoading
+                                      ? null
+                                      : _handleAlipayLogin,
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          // 支付宝一键注册按钮
+                          Consumer<AuthModel>(
+                            builder: (context, authModel, child) {
+                              return SizedBox(
+                                width: double.infinity,
+                                child: AlipayButton(
+                                  text: '支付宝一键注册',
+                                  onPressed: authModel.isLoading
+                                      ? null
+                                      : _handleAlipayOneClickRegister,
+                                  outlined: true,
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Firebase登录按钮
+                          SizedBox(
+                            width: double.infinity,
+                            child: SecondaryButton(
+                              text: 'Firebase 登录',
+                              icon: Icons.cloud,
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const FirebaseLoginScreen(),
+                                  ),
+                                );
                               },
                             ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.grey[50],
                           ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return '请输入密码';
-                            }
-                            return null;
-                          },
-                          textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _handleLogin(),
-                        ),
-                        const SizedBox(height: 8),
+                          const SizedBox(height: 16),
 
-                        // 忘记密码链接
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => const ForgotPasswordScreen(),
+                          // 分割线
+                          Row(
+                            children: [
+                              Expanded(child: Divider(color: Colors.grey[300])),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
                                 ),
-                              );
-                            },
-                            child: const Text('忘记密码？'),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        // 登录按钮
-                        Consumer<AuthModel>(
-                          builder: (context, authModel, child) {
-                            return SizedBox(
-                              width: double.infinity,
-                              child: PrimaryButton(
-                                text: '登录',
-                                onPressed: _handleLogin,
-                                isLoading: authModel.isLoading,
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 24),
-
-                        // 支付宝登录按钮
-                        Consumer<AuthModel>(
-                          builder: (context, authModel, child) {
-                            return SizedBox(
-                              width: double.infinity,
-                              child: AlipayButton(
-                                text: '支付宝登录',
-                                onPressed: authModel.isLoading ? null : _handleAlipayLogin,
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 12),
-
-                        // 支付宝一键注册按钮
-                        Consumer<AuthModel>(
-                          builder: (context, authModel, child) {
-                            return SizedBox(
-                              width: double.infinity,
-                              child: AlipayButton(
-                                text: '支付宝一键注册',
-                                onPressed: authModel.isLoading ? null : _handleAlipayOneClickRegister,
-                                outlined: true,
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Firebase登录按钮
-                        SizedBox(
-                          width: double.infinity,
-                          child: SecondaryButton(
-                            text: 'Firebase 登录',
-                            icon: Icons.cloud,
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => const FirebaseLoginScreen(),
+                                child: Text(
+                                  '或',
+                                  style: TextStyle(color: Colors.grey[600]),
                                 ),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // 分割线
-                        Row(
-                          children: [
-                            Expanded(child: Divider(color: Colors.grey[300])),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                '或',
-                                style: TextStyle(color: Colors.grey[600]),
                               ),
-                            ),
-                            Expanded(child: Divider(color: Colors.grey[300])),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-
-                        // 注册按钮
-                        SizedBox(
-                          width: double.infinity,
-                          child: SecondaryButton(
-                            text: '创建新账户',
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => const RegisterScreen(),
-                                ),
-                              );
-                            },
+                              Expanded(child: Divider(color: Colors.grey[300])),
+                            ],
                           ),
-                        ),
-                        const SizedBox(height: 16),
+                          const SizedBox(height: 24),
 
-                        // 游客模式按钮
-                        TextButton(
-                          onPressed: () {
-                            Navigator.of(context).pop(); // 返回主界面，以游客身份使用
-                          },
-                          child: Text(
-                            '以游客身份继续',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
+                          // 注册按钮
+                          SizedBox(
+                            width: double.infinity,
+                            child: SecondaryButton(
+                              text: '创建新账户',
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const RegisterScreen(),
+                                  ),
+                                );
+                              },
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 16),
+
+                          // 游客模式按钮
+                          TextButton(
+                            onPressed: () {
+                              Navigator.of(context).pop(); // 返回主界面，以游客身份使用
+                            },
+                            child: Text(
+                              '以游客身份继续',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

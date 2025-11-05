@@ -49,10 +49,13 @@ class NetworkDiagnostics {
             await InternetAddress.lookup('8.8.8.8');
             stopwatch.stop();
             latency = stopwatch.elapsedMilliseconds;
-            
-            if (latency! < 100) score += 30;
-            else if (latency! < 300) score += 20;
-            else score += 10;
+
+            if (latency! < 100)
+              score += 30;
+            else if (latency! < 300)
+              score += 20;
+            else
+              score += 10;
           } catch (e) {
             debugPrint('延迟测试失败: $e');
           }

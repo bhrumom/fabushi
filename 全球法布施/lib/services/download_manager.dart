@@ -9,13 +9,7 @@ import 'package:universal_html/html.dart' as html;
 import 'package:flutter/material.dart';
 
 /// 下载任务状态枚举
-enum DownloadStatus {
-  pending,
-  downloading,
-  paused,
-  completed,
-  failed,
-}
+enum DownloadStatus { pending, downloading, paused, completed, failed }
 
 /// 下载任务模型
 class DownloadTask {
@@ -77,7 +71,11 @@ class DownloadManager {
   Map<String, DownloadTask> get tasks => Map.unmodifiable(_tasks);
 
   /// 创建下载任务
-  Future<String> createTask(String url, String fileName, String assetPath) async {
+  Future<String> createTask(
+    String url,
+    String fileName,
+    String assetPath,
+  ) async {
     final taskId = DateTime.now().millisecondsSinceEpoch.toString();
     final task = DownloadTask(
       id: taskId,
@@ -162,15 +160,15 @@ class DownloadManager {
     if (task == null) return;
 
     debugPrint('取消下载任务: $taskId, 当前状态: ${task.status}');
-    
+
     // 先暂停下载（这会取消流订阅和关闭响应）
     await pauseDownload(taskId);
-    
+
     // 更新任务状态为已取消
     task.status = DownloadStatus.paused; // 使用paused状态表示已取消
     task.error = '下载已取消';
     _notifyTaskUpdate(task);
-    
+
     // 延迟后移除任务，确保取消信号被处理
     Future.delayed(Duration(milliseconds: 100), () {
       _tasks.remove(taskId);
@@ -241,8 +239,11 @@ class DownloadManager {
 
           // 更新进度（限制更新频率）
           final now = DateTime.now().millisecondsSinceEpoch;
-          if (now - lastProgressUpdate > 100) { // 每100ms更新一次
-            task.progress = task.totalBytes > 0 ? task.downloadedBytes / task.totalBytes : 0.0;
+          if (now - lastProgressUpdate > 100) {
+            // 每100ms更新一次
+            task.progress = task.totalBytes > 0
+                ? task.downloadedBytes / task.totalBytes
+                : 0.0;
             _notifyTaskUpdate(task);
             lastProgressUpdate = now;
           }
@@ -255,11 +256,11 @@ class DownloadManager {
         },
         onDone: () async {
           await sink.close();
-          
+
           if (task.status == DownloadStatus.downloading) {
             // 下载完成，重命名文件
             await tempFile.rename(finalFilePath);
-            
+
             task.status = DownloadStatus.completed;
             task.progress = 1.0;
             _notifyTaskUpdate(task);
@@ -281,36 +282,39 @@ class DownloadManager {
       if (!kIsWeb) {
         throw Exception('Web下载方法只能在Web平台使用');
       }
-      
+
       // 使用流式请求来支持进度更新和取消
       final request = http.Request('GET', Uri.parse(task.url));
       final response = await http.Client().send(request);
-      
+
       if (response.statusCode != 200) {
         throw Exception('下载失败: ${response.statusCode}');
       }
 
       // 获取文件总大小
       task.totalBytes = response.contentLength ?? 0;
-      
+
       // 监听下载进度
       final chunks = <int>[];
       int lastProgressUpdate = DateTime.now().millisecondsSinceEpoch;
-      
+
       await for (final chunk in response.stream) {
         // 检查任务是否被取消
         if (task.status != DownloadStatus.downloading) {
           debugPrint('Web下载被取消，停止接收数据');
           return;
         }
-        
+
         chunks.addAll(chunk);
         task.downloadedBytes += chunk.length;
-        
+
         // 更新进度（限制更新频率）
         final now = DateTime.now().millisecondsSinceEpoch;
-        if (now - lastProgressUpdate > 100) { // 每100ms更新一次
-          task.progress = task.totalBytes > 0 ? task.downloadedBytes / task.totalBytes : 0.0;
+        if (now - lastProgressUpdate > 100) {
+          // 每100ms更新一次
+          task.progress = task.totalBytes > 0
+              ? task.downloadedBytes / task.totalBytes
+              : 0.0;
           _notifyTaskUpdate(task);
           lastProgressUpdate = now;
         }
@@ -320,7 +324,7 @@ class DownloadManager {
       final fileData = base64.encode(Uint8List.fromList(chunks));
       final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
       final List<dynamic> savedFiles = json.decode(savedFilesStr);
-      
+
       // 添加或更新文件信息
       final fileInfo = {
         'name': task.fileName,
@@ -328,11 +332,11 @@ class DownloadManager {
         'path': task.assetPath,
         'timestamp': DateTime.now().toIso8601String(),
       };
-      
+
       // 移除已存在的相同文件
       savedFiles.removeWhere((f) => f['name'] == task.fileName);
       savedFiles.add(fileInfo);
-      
+
       // 保存文件信息和数据
       html.window.localStorage['saved_files'] = json.encode(savedFiles);
       html.window.localStorage['file_${task.fileName}'] = fileData;
@@ -342,7 +346,7 @@ class DownloadManager {
       task.totalBytes = chunks.length;
       task.downloadedBytes = chunks.length;
       _notifyTaskUpdate(task);
-      
+
       debugPrint('Web下载完成: ${task.fileName}, 大小: ${chunks.length} bytes');
     } catch (e) {
       // 只有在任务未被取消的情况下才标记为失败
@@ -360,20 +364,20 @@ class DownloadManager {
   Future<Uint8List?> getDownloadedFile(String fileName) async {
     try {
       if (!kIsWeb) return null; // 非Web平台直接返回null
-      
+
       final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
       final List<dynamic> savedFiles = json.decode(savedFilesStr);
-      
+
       final fileInfo = savedFiles.firstWhere(
         (f) => f['name'] == fileName,
         orElse: () => null,
       );
-      
+
       if (fileInfo == null) return null;
-      
+
       final fileDataStr = html.window.localStorage['file_$fileName'];
       if (fileDataStr == null) return null;
-      
+
       return base64.decode(fileDataStr);
     } catch (e) {
       return null;
@@ -396,13 +400,11 @@ class DownloadManager {
     return task.downloadedBytes / elapsedSeconds;
   }
 
-  
-
   /// 获取剩余时间（秒）
   int getRemainingTime(String taskId) {
     final task = _tasks[taskId];
     if (task == null || task.totalBytes == 0) return 0;
-    
+
     final downloadSpeed = getDownloadSpeed(taskId);
     if (downloadSpeed == 0) return 0;
 
@@ -434,21 +436,21 @@ class DownloadManager {
   /// 释放资源
   void dispose() {
     if (_isDisposed) return;
-    
+
     debugPrint('DownloadManager: 开始释放资源');
     _isDisposed = true;
-    
+
     // 先取消所有活跃的订阅
     _activeSubscriptions.forEach((_, subscription) => subscription.cancel());
     _activeSubscriptions.clear();
     _activeResponses.clear();
-    
+
     // 最后关闭StreamController
     if (!_taskStreamController.isClosed) {
       _taskStreamController.close();
       debugPrint('DownloadManager: StreamController已关闭');
     }
-    
+
     debugPrint('DownloadManager: 资源释放完成');
   }
 }

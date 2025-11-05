@@ -3,16 +3,23 @@ import 'package:global_dharma_sharing/core/design_system/colors.dart';
 import 'package:video_player/video_player.dart';
 
 class VideoFeedViewOptimizedVideoPlayer extends StatefulWidget {
-  const VideoFeedViewOptimizedVideoPlayer({required this.controller, required this.videoId, super.key});
+  const VideoFeedViewOptimizedVideoPlayer({
+    required this.controller,
+    required this.videoId,
+    super.key,
+  });
 
   final VideoPlayerController? controller;
   final String videoId;
 
   @override
-  State<VideoFeedViewOptimizedVideoPlayer> createState() => _VideoFeedViewOptimizedVideoPlayerState();
+  State<VideoFeedViewOptimizedVideoPlayer> createState() =>
+      _VideoFeedViewOptimizedVideoPlayerState();
 }
 
-class _VideoFeedViewOptimizedVideoPlayerState extends State<VideoFeedViewOptimizedVideoPlayer> with SingleTickerProviderStateMixin {
+class _VideoFeedViewOptimizedVideoPlayerState
+    extends State<VideoFeedViewOptimizedVideoPlayer>
+    with SingleTickerProviderStateMixin {
   late AnimationController _loadingController;
   bool _isBuffering = false;
   VideoPlayerController? _oldController;
@@ -23,7 +30,10 @@ class _VideoFeedViewOptimizedVideoPlayerState extends State<VideoFeedViewOptimiz
   @override
   void initState() {
     super.initState();
-    _loadingController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat();
+    _loadingController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
     _oldController = widget.controller;
     _currentVideoId = widget.videoId;
     _addControllerListener();
@@ -52,7 +62,8 @@ class _VideoFeedViewOptimizedVideoPlayerState extends State<VideoFeedViewOptimiz
       _addControllerListener();
 
       // Schedule the setState for the next frame to avoid build errors
-      final bool shouldUpdateBuffering = widget.controller?.value.isBuffering ?? false;
+      final bool shouldUpdateBuffering =
+          widget.controller?.value.isBuffering ?? false;
       if (mounted && _isBuffering != shouldUpdateBuffering) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
@@ -99,7 +110,8 @@ class _VideoFeedViewOptimizedVideoPlayerState extends State<VideoFeedViewOptimiz
     // 3. Video duration is known and valid
     bool shouldShowBuffering = isBuffering;
     if ((isPlaying && controller.value.position > Duration.zero) ||
-        (controller.value.position > Duration.zero && controller.value.duration.inMilliseconds > 0)) {
+        (controller.value.position > Duration.zero &&
+            controller.value.duration.inMilliseconds > 0)) {
       shouldShowBuffering = false;
     }
 
@@ -171,7 +183,11 @@ class _VideoFeedViewOptimizedVideoPlayerState extends State<VideoFeedViewOptimiz
             width: controller.value.size.width,
             height: controller.value.size.height,
             child: Stack(
-              children: [VideoPlayer(controller), if (_isBuffering) const Center(child: CircularProgressIndicator())],
+              children: [
+                VideoPlayer(controller),
+                if (_isBuffering)
+                  const Center(child: CircularProgressIndicator()),
+              ],
             ),
           ),
         ),

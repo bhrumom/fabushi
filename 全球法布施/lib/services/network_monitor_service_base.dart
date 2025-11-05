@@ -23,8 +23,8 @@ class NetworkStats {
   @override
   String toString() {
     return 'NetworkStats(upload: ${uploadSpeed.toStringAsFixed(1)} KB/s, '
-           'download: ${downloadSpeed.toStringAsFixed(1)} KB/s, '
-           'latency: ${latency}ms, type: $connectionType, online: $isOnline)';
+        'download: ${downloadSpeed.toStringAsFixed(1)} KB/s, '
+        'latency: ${latency}ms, type: $connectionType, online: $isOnline)';
   }
 }
 
@@ -32,7 +32,7 @@ abstract class NetworkMonitorService {
   Stream<NetworkStats> get networkStatsStream;
   NetworkStats get currentStats;
   bool get isOnline;
-  
+
   Future<void> startMonitoring();
   Future<void> stopMonitoring();
   Future<double> measureLatency();
@@ -42,9 +42,10 @@ abstract class NetworkMonitorService {
 
 // 默认实现（用于非Web平台）
 class DefaultNetworkMonitorService implements NetworkMonitorService {
-  final StreamController<NetworkStats> _statsController = StreamController<NetworkStats>.broadcast();
+  final StreamController<NetworkStats> _statsController =
+      StreamController<NetworkStats>.broadcast();
   Timer? _monitoringTimer;
-  
+
   NetworkStats _currentStats = NetworkStats(
     uploadSpeed: 0,
     downloadSpeed: 0,
@@ -71,17 +72,18 @@ class DefaultNetworkMonitorService implements NetworkMonitorService {
       try {
         final latency = await measureLatency();
         final downloadSpeed = await measureDownloadSpeed();
-        
+
         _currentStats = NetworkStats(
           uploadSpeed: 0, // 简化实现
           downloadSpeed: downloadSpeed,
           totalUploaded: _currentStats.totalUploaded,
-          totalDownloaded: _currentStats.totalDownloaded + (downloadSpeed * 5 / 1024), // 估算
+          totalDownloaded:
+              _currentStats.totalDownloaded + (downloadSpeed * 5 / 1024), // 估算
           latency: latency.round(),
           connectionType: 'mobile/wifi',
           isOnline: latency > 0,
         );
-        
+
         _statsController.add(_currentStats);
       } catch (e) {
         debugPrint('Network monitoring error: $e');

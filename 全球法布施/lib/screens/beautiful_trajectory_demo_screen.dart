@@ -7,10 +7,12 @@ class BeautifulTrajectoryDemoScreen extends StatefulWidget {
   const BeautifulTrajectoryDemoScreen({super.key});
 
   @override
-  State<BeautifulTrajectoryDemoScreen> createState() => _BeautifulTrajectoryDemoScreenState();
+  State<BeautifulTrajectoryDemoScreen> createState() =>
+      _BeautifulTrajectoryDemoScreenState();
 }
 
-class _BeautifulTrajectoryDemoScreenState extends State<BeautifulTrajectoryDemoScreen> {
+class _BeautifulTrajectoryDemoScreenState
+    extends State<BeautifulTrajectoryDemoScreen> {
   final GlobalKey<EnhancedEarthGlobeWidgetState> _globeKey = GlobalKey();
   final CountryCoordinatesService _coordService = CountryCoordinatesService();
   bool _isAutoPlaying = false;
@@ -82,9 +84,7 @@ class _BeautifulTrajectoryDemoScreenState extends State<BeautifulTrajectoryDemoS
       body: Stack(
         children: [
           // 3D地球
-          Center(
-            child: EnhancedEarthGlobeWidget(key: _globeKey),
-          ),
+          Center(child: EnhancedEarthGlobeWidget(key: _globeKey)),
 
           // 控制面板
           Positioned(

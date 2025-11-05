@@ -8,7 +8,6 @@ import 'membership_screen.dart';
 import '../widgets/common_widgets.dart';
 import '../config/app_theme.dart';
 
-
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
 
@@ -31,8 +30,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     // 不在这里自动刷新，避免 token 验证失败
   }
-
-
 
   Future<void> _handleLogout() async {
     final confirmed = await showDialog<bool>(
@@ -60,39 +57,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (confirmed == true && mounted) {
       final authModel = Provider.of<AuthModel>(context, listen: false);
       await authModel.logout();
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('已成功登出'),
-            backgroundColor: Colors.green,
-          ),
+          const SnackBar(content: Text('已成功登出'), backgroundColor: Colors.green),
         );
       }
     }
   }
 
-
-
   Future<void> _handleRedeemCode() async {
     if (_redeemCodeController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('请输入兑换码'),
-          backgroundColor: Colors.orange,
-        ),
+        const SnackBar(content: Text('请输入兑换码'), backgroundColor: Colors.orange),
       );
       return;
     }
 
     final authModel = Provider.of<AuthModel>(context, listen: false);
-    
+
     if (!authModel.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('请先登录'),
-          backgroundColor: Colors.orange,
-        ),
+        const SnackBar(content: Text('请先登录'), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -110,7 +96,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        
+
         // 刷新用户信息
         await authModel.refreshUserInfo();
         _redeemCodeController.clear();
@@ -125,10 +111,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('兑换时发生错误: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('兑换时发生错误: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -137,9 +120,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('个人中心'),
-      ),
+      appBar: AppBar(title: const Text('个人中心')),
       body: GradientBackground(
         child: SafeArea(
           child: Consumer<AuthModel>(
@@ -147,7 +128,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (!authModel.isLoggedIn) {
                 return _buildLoginPrompt();
               }
-              
+
               return _buildProfileView(authModel);
             },
           ),
@@ -187,10 +168,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 16),
                 const Text(
                   '登录后可以享受更多功能，包括会员服务、数据同步等',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF7f8c8d),
-                  ),
+                  style: TextStyle(fontSize: 14, color: Color(0xFF7f8c8d)),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
@@ -214,7 +192,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildProfileView(AuthModel authModel) {
     final user = authModel.currentUser!;
-    
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -234,7 +212,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     radius: 40,
                     backgroundColor: const Color(0xFF667eea),
                     child: Text(
-                      user.username.isNotEmpty 
+                      user.username.isNotEmpty
                           ? user.username[0].toUpperCase()
                           : '?',
                       style: const TextStyle(
@@ -245,7 +223,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // 用户名
                   Text(
                     user.username,
@@ -256,7 +234,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  
+
                   // 邮箱
                   Text(
                     user.email,
@@ -266,13 +244,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // 会员状态
                   MembershipBadge(
                     text: authModel.getMembershipStatusText(),
                     color: _getMembershipColor(user),
                   ),
-                  
+
                   // 会员到期时间
                   if (authModel.getMembershipExpiryText() != null) ...[
                     const SizedBox(height: 8),
@@ -327,10 +305,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      PrimaryButton(
-                        text: '兑换',
-                        onPressed: _handleRedeemCode,
-                      ),
+                      PrimaryButton(text: '兑换', onPressed: _handleRedeemCode),
                     ],
                   ),
                 ],
@@ -363,7 +338,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.card_membership, color: Color(0xFF667eea)),
+                  leading: const Icon(
+                    Icons.card_membership,
+                    color: Color(0xFF667eea),
+                  ),
                   title: const Text('会员中心'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {

@@ -46,11 +46,14 @@ class TextSearchService {
   // 本地索引（用于离线搜索）
   Future<void> indexAssets() async {
     if (_isIndexed) return;
-    
+
     final manifestContent = await rootBundle.loadString('AssetManifest.json');
-    
-    final entries = manifestContent.split('"').where((s) => s.contains('assets/built_in/')).toList();
-    
+
+    final entries = manifestContent
+        .split('"')
+        .where((s) => s.contains('assets/built_in/'))
+        .toList();
+
     for (final path in entries) {
       if (path.endsWith('.txt')) {
         try {
@@ -58,31 +61,36 @@ class TextSearchService {
           final title = path.split('/').last.replaceAll('.txt', '');
           final parts = path.split('/');
           final category = parts.length > 2 ? parts[2] : '其他';
-          
-          _items.add(TextItem(
-            title: title,
-            content: content,
-            filePath: path,
-            category: category,
-          ));
+
+          _items.add(
+            TextItem(
+              title: title,
+              content: content,
+              filePath: path,
+              category: category,
+            ),
+          );
         } catch (e) {
           // Skip files that can't be loaded
         }
       }
     }
-    
+
     _isIndexed = true;
   }
 
   // 本地搜索
   List<TextItem> searchLocal(String query) {
     if (query.isEmpty) return [];
-    
+
     final lowerQuery = query.toLowerCase();
-    return _items.where((item) =>
-      item.title.toLowerCase().contains(lowerQuery) ||
-      item.content.toLowerCase().contains(lowerQuery)
-    ).toList();
+    return _items
+        .where(
+          (item) =>
+              item.title.toLowerCase().contains(lowerQuery) ||
+              item.content.toLowerCase().contains(lowerQuery),
+        )
+        .toList();
   }
 
   // 远程搜索（使用worker的drift数据库）
@@ -91,7 +99,9 @@ class TextSearchService {
 
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/search?q=${Uri.encodeComponent(query)}&limit=$limit'),
+        Uri.parse(
+          '$baseUrl/api/search?q=${Uri.encodeComponent(query)}&limit=$limit',
+        ),
       );
 
       if (response.statusCode == 200) {

@@ -7,10 +7,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:universal_html/html.dart' as html;
 
 /// 已下载素材管理服务
-/// 
+///
 /// 负责跟踪和管理已下载的素材，避免重复下载
 class DownloadedAssetsService {
-  static final DownloadedAssetsService _instance = DownloadedAssetsService._internal();
+  static final DownloadedAssetsService _instance =
+      DownloadedAssetsService._internal();
   factory DownloadedAssetsService() => _instance;
   DownloadedAssetsService._internal();
 
@@ -39,7 +40,8 @@ class DownloadedAssetsService {
   /// Web平台：从localStorage加载已下载素材
   Future<void> _loadDownloadedAssetsFromWeb() async {
     try {
-      final savedFilesStr = html.window.localStorage['downloaded_assets'] ?? '[]';
+      final savedFilesStr =
+          html.window.localStorage['downloaded_assets'] ?? '[]';
       final List<dynamic> savedAssets = json.decode(savedFilesStr);
       _downloadedAssets = savedAssets.map((asset) => asset.toString()).toSet();
     } catch (e) {
@@ -64,7 +66,9 @@ class DownloadedAssetsService {
       if (await assetsFile.exists()) {
         final content = await assetsFile.readAsString();
         final List<dynamic> savedAssets = json.decode(content);
-        _downloadedAssets = savedAssets.map((asset) => asset.toString()).toSet();
+        _downloadedAssets = savedAssets
+            .map((asset) => asset.toString())
+            .toSet();
       }
     } catch (e) {
       debugPrint('本地平台加载已下载素材失败: $e');

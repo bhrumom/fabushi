@@ -38,15 +38,12 @@ class VideoFeedScreen extends StatelessWidget {
                   children: [
                     CircularProgressIndicator(color: Colors.white),
                     SizedBox(height: 16),
-                    Text(
-                      '正在加载视频...',
-                      style: TextStyle(color: Colors.white70),
-                    ),
+                    Text('正在加载视频...', style: TextStyle(color: Colors.white70)),
                   ],
                 ),
               );
             }
-            
+
             if (state.errorMessage.isNotEmpty) {
               return Center(
                 child: Padding(
@@ -54,11 +51,18 @@ class VideoFeedScreen extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 64),
+                      const Icon(
+                        Icons.error_outline,
+                        color: Colors.red,
+                        size: 64,
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         '加载失败',
-                        style: const TextStyle(color: Colors.white, fontSize: 20),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -71,7 +75,7 @@ class VideoFeedScreen extends StatelessWidget {
                 ),
               );
             }
-            
+
             if (state.videos.isEmpty && !state.isLoading) {
               return Center(
                 child: Padding(
@@ -79,11 +83,19 @@ class VideoFeedScreen extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.video_library_outlined, color: Colors.white54, size: 80),
+                      const Icon(
+                        Icons.video_library_outlined,
+                        color: Colors.white54,
+                        size: 80,
+                      ),
                       const SizedBox(height: 24),
                       const Text(
                         '暂无内容',
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       const Text(
@@ -93,7 +105,8 @@ class VideoFeedScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 24),
                       ElevatedButton.icon(
-                        onPressed: () => context.read<VideoFeedCubit>().loadVideos(),
+                        onPressed: () =>
+                            context.read<VideoFeedCubit>().loadVideos(),
                         icon: const Icon(Icons.refresh),
                         label: const Text('重新加载'),
                         style: ElevatedButton.styleFrom(
@@ -106,7 +119,7 @@ class VideoFeedScreen extends StatelessWidget {
                 ),
               );
             }
-            
+
             return const VideoFeedView();
           },
         ),

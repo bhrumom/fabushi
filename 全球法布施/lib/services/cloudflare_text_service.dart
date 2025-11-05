@@ -12,7 +12,7 @@ class CloudflareTextService {
   static final List<Map<String, dynamic>> _preloadQueue = [];
   static bool _isPreloading = false;
   static const int _queueSize = 21;
-  
+
   // 硬编码的佛经文本内容
   static final List<Map<String, String>> _sampleTexts = [
     {
@@ -27,15 +27,17 @@ class CloudflareTextService {
 
 三世诸佛，依般若波罗蜜多故，得阿耨多罗三藐三菩提。故知般若波罗蜜多，是大神咒，是大明咒，是无上咒，是无等等咒，能除一切苦，真实不虚。
 
-故说般若波罗蜜多咒，即说咒曰：揭谛揭谛，波罗揭谛，波罗僧揭谛，菩提萨婆诃。'''
+故说般若波罗蜜多咒，即说咒曰：揭谛揭谛，波罗揭谛，波罗僧揭谛，菩提萨婆诃。''',
     },
     {
       'title': '大悲咒',
-      'content': '''南无喝啰怛那哆啰夜耶。南无阿唎耶。婆卢羯帝烁钵啰耶。菩提萨埵婆耶。摩诃萨埵婆耶。摩诃迦卢尼迦耶。唵。萨皤啰罚曳。数怛那怛写。南无悉吉栗埵伊蒙阿唎耶。婆卢吉帝室佛啰愣驮婆。南无那啰谨墀。醯利摩诃皤哆沙咩。萨婆阿他豆输朋。阿逝孕。萨婆萨哆那摩婆萨哆那摩婆伽。摩罚特豆。怛侄他。唵阿婆卢醯。卢迦帝。迦罗帝。夷醯唎。摩诃菩提萨埵。萨婆萨婆。摩啰摩啰。摩醯摩醯唎驮孕。俱卢俱卢羯蒙。度卢度卢罚阇耶帝。摩诃罚阇耶帝。陀啰陀啰。地唎尼。室佛啰耶。遮啰遮啰。摩么罚摩啰。穆帝隶。伊醯伊醯。室那室那。阿啰参佛啰舍利。罚沙罚参。佛啰舍耶。呼嚧呼嚧摩啰。呼嚧呼嚧醯利。娑啰娑啰。悉唎悉唎。苏嚧苏嚧。菩提夜菩提夜。菩驮夜菩驮夜。弥帝唎夜。那啰谨墀。地利瑟尼那。波夜摩那。娑婆诃。悉陀夜。娑婆诃。摩诃悉陀夜。娑婆诃。悉陀喻艺。室皤啰耶。娑婆诃。那啰谨墀。娑婆诃。摩啰那啰。娑婆诃。悉啰僧阿穆佉耶。娑婆诃。娑婆摩诃阿悉陀夜。娑婆诃。者吉啰阿悉陀夜。娑婆诃。波陀摩羯悉陀夜。娑婆诃。那啰谨墀皤伽啰耶。娑婆诃。摩婆利胜羯啰夜。娑婆诃。南无喝啰怛那哆啰夜耶。南无阿唎耶。婆嚧吉帝。烁皤啰夜。娑婆诃。唵悉殿都。漫多啰。跋陀耶。娑婆诃。'''
+      'content':
+          '''南无喝啰怛那哆啰夜耶。南无阿唎耶。婆卢羯帝烁钵啰耶。菩提萨埵婆耶。摩诃萨埵婆耶。摩诃迦卢尼迦耶。唵。萨皤啰罚曳。数怛那怛写。南无悉吉栗埵伊蒙阿唎耶。婆卢吉帝室佛啰愣驮婆。南无那啰谨墀。醯利摩诃皤哆沙咩。萨婆阿他豆输朋。阿逝孕。萨婆萨哆那摩婆萨哆那摩婆伽。摩罚特豆。怛侄他。唵阿婆卢醯。卢迦帝。迦罗帝。夷醯唎。摩诃菩提萨埵。萨婆萨婆。摩啰摩啰。摩醯摩醯唎驮孕。俱卢俱卢羯蒙。度卢度卢罚阇耶帝。摩诃罚阇耶帝。陀啰陀啰。地唎尼。室佛啰耶。遮啰遮啰。摩么罚摩啰。穆帝隶。伊醯伊醯。室那室那。阿啰参佛啰舍利。罚沙罚参。佛啰舍耶。呼嚧呼嚧摩啰。呼嚧呼嚧醯利。娑啰娑啰。悉唎悉唎。苏嚧苏嚧。菩提夜菩提夜。菩驮夜菩驮夜。弥帝唎夜。那啰谨墀。地利瑟尼那。波夜摩那。娑婆诃。悉陀夜。娑婆诃。摩诃悉陀夜。娑婆诃。悉陀喻艺。室皤啰耶。娑婆诃。那啰谨墀。娑婆诃。摩啰那啰。娑婆诃。悉啰僧阿穆佉耶。娑婆诃。娑婆摩诃阿悉陀夜。娑婆诃。者吉啰阿悉陀夜。娑婆诃。波陀摩羯悉陀夜。娑婆诃。那啰谨墀皤伽啰耶。娑婆诃。摩婆利胜羯啰夜。娑婆诃。南无喝啰怛那哆啰夜耶。南无阿唎耶。婆嚧吉帝。烁皤啰夜。娑婆诃。唵悉殿都。漫多啰。跋陀耶。娑婆诃。''',
     },
     {
       'title': '金刚经',
-      'content': '''如是我闻。一时，佛在舍卫国祇树给孤独园，与大比丘众千二百五十人俱。尔时，世尊食时，著衣持钵，入舍卫大城乞食。于其城中，次第乞已，还至本处。饭食讫，收衣钵，洗足已，敷座而坐。
+      'content':
+          '''如是我闻。一时，佛在舍卫国祇树给孤独园，与大比丘众千二百五十人俱。尔时，世尊食时，著衣持钵，入舍卫大城乞食。于其城中，次第乞已，还至本处。饭食讫，收衣钵，洗足已，敷座而坐。
 
 时，长老须菩提在大众中即从座起，偏袒右肩，右膝著地，合掌恭敬而白佛言：「希有！世尊！如来善护念诸菩萨，善付嘱诸菩萨。世尊！善男子、善女人，发阿耨多罗三藐三菩提心，应云何住，云何降伏其心？」
 
@@ -43,7 +45,7 @@ class CloudflareTextService {
 
 「唯然。世尊！愿乐欲闻。」
 
-佛告须菩提：「诸菩萨摩诃萨应如是降伏其心！所有一切众生之类：若卵生、若胎生、若湿生、若化生；若有色、若无色；若有想、若无想、若非有想非无想，我皆令入无余涅槃而灭度之。如是灭度无量无数无边众生，实无众生得灭度者。何以故？须菩提！若菩萨有我相、人相、众生相、寿者相，即非菩萨。」'''
+佛告须菩提：「诸菩萨摩诃萨应如是降伏其心！所有一切众生之类：若卵生、若胎生、若湿生、若化生；若有色、若无色；若有想、若无想、若非有想非无想，我皆令入无余涅槃而灭度之。如是灭度无量无数无边众生，实无众生得灭度者。何以故？须菩提！若菩萨有我相、人相、众生相、寿者相，即非菩萨。」''',
     },
     {
       'title': '六字真言',
@@ -59,11 +61,12 @@ class CloudflareTextService {
 
 吽：表示金刚部心，是祈愿成就的意思，必须依靠佛的力量，才能循序渐进、勤勉修行、普渡众生、成就一切，最后达到佛的境界。
 
-诵持此咒，能除一切痛苦，能破除一切邪恶，能治一切疾病，能成就一切善法，能消除一切灾难。'''
+诵持此咒，能除一切痛苦，能破除一切邪恶，能治一切疾病，能成就一切善法，能消除一切灾难。''',
     },
     {
       'title': '普贤菩萨行愿品',
-      'content': '''尔时，普贤菩萨摩诃萨，称赞如来胜功德已，告诸菩萨及善财言：「善男子！如来功德，假使十方一切诸佛，经不可说不可说佛刹极微尘数劫，相续演说，不可穷尽！若欲成就此功德门，应修十种广大行愿。何等为十？
+      'content':
+          '''尔时，普贤菩萨摩诃萨，称赞如来胜功德已，告诸菩萨及善财言：「善男子！如来功德，假使十方一切诸佛，经不可说不可说佛刹极微尘数劫，相续演说，不可穷尽！若欲成就此功德门，应修十种广大行愿。何等为十？
 
 一者、礼敬诸佛。
 二者、称赞如来。
@@ -78,7 +81,7 @@ class CloudflareTextService {
 
 善财白言：「大圣！云何礼敬乃至回向？」
 
-普贤菩萨告善财言：「善男子！言礼敬诸佛者，所有尽法界、虚空界，十方三世一切佛刹，极微尘数诸佛世尊，我以普贤行愿力故，深心信解，如对目前，悉以清净身语意业，常修礼敬。一一佛所，皆现不可说不可说佛刹极微尘数身。一一身，遍礼不可说不可说佛刹极微尘数佛。虚空界尽，我礼乃尽，以虚空界不可尽故，我此礼敬无有穷尽。如是乃至众生界尽，众生业尽，众生烦恼尽，我礼乃尽。而众生界乃至烦恼无有尽故，我此礼敬无有穷尽。念念相续，无有间断，身语意业，无有疲厌。」'''
+普贤菩萨告善财言：「善男子！言礼敬诸佛者，所有尽法界、虚空界，十方三世一切佛刹，极微尘数诸佛世尊，我以普贤行愿力故，深心信解，如对目前，悉以清净身语意业，常修礼敬。一一佛所，皆现不可说不可说佛刹极微尘数身。一一身，遍礼不可说不可说佛刹极微尘数佛。虚空界尽，我礼乃尽，以虚空界不可尽故，我此礼敬无有穷尽。如是乃至众生界尽，众生业尽，众生烦恼尽，我礼乃尽。而众生界乃至烦恼无有尽故，我此礼敬无有穷尽。念念相续，无有间断，身语意业，无有疲厌。」''',
     },
   ];
 
@@ -89,14 +92,14 @@ class CloudflareTextService {
       if (_preloadQueue.isEmpty && !_isPreloading) {
         _fillPreloadQueue();
       }
-      
+
       // 从队列获取
       if (_preloadQueue.isNotEmpty) {
         final content = _preloadQueue.removeAt(0);
         _refillQueue();
         return content;
       }
-      
+
       // 队列为空，立即加载一个
       print('队列为空，立即加载...');
       return await _getCloudTextFromLocalManifest();
@@ -105,17 +108,17 @@ class CloudflareTextService {
       return null;
     }
   }
-  
+
   /// 异步补充队列
   void _refillQueue() {
     if (_isPreloading || _preloadQueue.length >= _queueSize) return;
-    
+
     _isPreloading = true;
     _loadOneToQueue().then((_) {
       _isPreloading = false;
     });
   }
-  
+
   /// 加载一个文本到队列
   Future<void> _loadOneToQueue() async {
     final content = await _getCloudTextFromLocalManifest();
@@ -124,20 +127,20 @@ class CloudflareTextService {
       print('预加载队列: ${_preloadQueue.length}/$_queueSize');
     }
   }
-  
+
   /// 填充预加载队列（异步后台加载）
   Future<void> _fillPreloadQueue() async {
     if (_isPreloading) return;
     _isPreloading = true;
-    
+
     print('开始后台预加载 $_queueSize 个文本...');
-    
+
     // 异步后台加载，不阻塞
     Future.microtask(() async {
       int loaded = 0;
       int attempts = 0;
       const maxAttempts = _queueSize * 3;
-      
+
       while (loaded < _queueSize && attempts < maxAttempts) {
         final content = await _getCloudTextFromLocalManifest();
         if (content != null) {
@@ -147,43 +150,45 @@ class CloudflareTextService {
         }
         attempts++;
       }
-      
+
       print('预加载完成: ${_preloadQueue.length} 个文本');
       _isPreloading = false;
     });
   }
-  
+
   /// 从本地manifest读取文件列表，然后从云端下载内容
   Future<Map<String, dynamic>?> _getCloudTextFromLocalManifest() async {
     try {
       // 加载本地manifest
       if (_cachedManifest == null) {
-        final manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
+        final manifestString = await rootBundle.loadString(
+          'assets/data/asset-manifest.json',
+        );
         final List<dynamic> manifestData = json.decode(manifestString);
         _cachedManifest = manifestData.cast<Map<String, dynamic>>();
         print('Loaded local manifest with ${_cachedManifest!.length} items');
       }
-      
+
       // 筛选txt文件
       final txtFiles = _cachedManifest!
           .where((item) => item['key']?.toString().endsWith('.txt') == true)
           .map((item) => item['key'].toString())
           .toList();
-      
+
       if (txtFiles.isEmpty) {
         print('No txt files found in manifest');
         return null;
       }
-      
+
       // 随机选择一个文件
       final selectedFile = txtFiles[_random.nextInt(txtFiles.length)];
       print('Selected file from local manifest: $selectedFile');
-      
+
       // 从Cloudflare下载内容
-      final contentResponse = await http.get(
-        Uri.parse('$baseUrl/$selectedFile'),
-      ).timeout(const Duration(seconds: 2));
-      
+      final contentResponse = await http
+          .get(Uri.parse('$baseUrl/$selectedFile'))
+          .timeout(const Duration(seconds: 2));
+
       if (contentResponse.statusCode == 200) {
         // 文件是GBK编码
         String content;
@@ -192,13 +197,16 @@ class CloudflareTextService {
           print('Successfully decoded GBK content: ${content.length} chars');
         } catch (e) {
           print('GBK decoding failed: $e, trying UTF-8');
-          content = utf8.decode(contentResponse.bodyBytes, allowMalformed: true);
+          content = utf8.decode(
+            contentResponse.bodyBytes,
+            allowMalformed: true,
+          );
         }
-        
+
         final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
         content = _cleanDecompilerWatermark(content);
         print('Loaded cloud text from local manifest: $fileName');
-        
+
         return {
           'title': fileName,
           'content': content,
@@ -213,7 +221,7 @@ class CloudflareTextService {
       return null;
     }
   }
-  
+
   /// 清理反编译器水印
   static String _cleanDecompilerWatermark(String content) {
     // 移除CHM反编译器水印
@@ -223,16 +231,20 @@ class CloudflareTextService {
       dotAll: true,
     );
     content = content.replaceAll(watermarkPattern, '');
-    
+
     // 移除常见的变体
     content = content.replaceAll(
-      RegExp(r'This file is decompiled.*?etextwizard\.com/', multiLine: true, dotAll: true),
+      RegExp(
+        r'This file is decompiled.*?etextwizard\.com/',
+        multiLine: true,
+        dotAll: true,
+      ),
       '',
     );
-    
+
     return content.trim();
   }
-  
+
   /// 获取所有文本列表
   Future<List<Map<String, String>>> getAllTexts() async {
     return _sampleTexts;

@@ -10,7 +10,8 @@ class SutraDialog extends StatefulWidget {
   State<SutraDialog> createState() => _SutraDialogState();
 }
 
-class _SutraDialogState extends State<SutraDialog> with SingleTickerProviderStateMixin {
+class _SutraDialogState extends State<SutraDialog>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
@@ -22,17 +23,14 @@ class _SutraDialogState extends State<SutraDialog> with SingleTickerProviderStat
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    
+
     _scaleAnimation = CurvedAnimation(
       parent: _controller,
       curve: Curves.easeOutBack,
     );
-    
-    _fadeAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeIn,
-    );
-    
+
+    _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+
     _controller.forward();
   }
 
@@ -68,10 +66,7 @@ class _SutraDialogState extends State<SutraDialog> with SingleTickerProviderStat
                 ],
               ),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: const Color(0xFFB8860B),
-                width: 3,
-              ),
+              border: Border.all(color: const Color(0xFFB8860B), width: 3),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.3),
@@ -129,7 +124,7 @@ class _SutraDialogState extends State<SutraDialog> with SingleTickerProviderStat
                     ],
                   ),
                 ),
-                
+
                 // 装饰线
                 Container(
                   height: 3,
@@ -143,7 +138,7 @@ class _SutraDialogState extends State<SutraDialog> with SingleTickerProviderStat
                     ),
                   ),
                 ),
-                
+
                 // 经文内容
                 Expanded(
                   child: Container(
@@ -167,7 +162,10 @@ class _SutraDialogState extends State<SutraDialog> with SingleTickerProviderStat
                               ),
                             ),
                             child: Text(
-                              SutraLibrary.getSutraByTitle(widget.title)?.category ?? '',
+                              SutraLibrary.getSutraByTitle(
+                                    widget.title,
+                                  )?.category ??
+                                  '',
                               style: const TextStyle(
                                 fontSize: 14,
                                 color: Color(0xFF8B4513),
@@ -176,7 +174,7 @@ class _SutraDialogState extends State<SutraDialog> with SingleTickerProviderStat
                             ),
                           ),
                           const SizedBox(height: 20),
-                          
+
                           // 经文正文
                           Text(
                             _getSutraContent(),
@@ -188,9 +186,9 @@ class _SutraDialogState extends State<SutraDialog> with SingleTickerProviderStat
                               fontWeight: FontWeight.w500,
                             ),
                           ),
-                          
+
                           const SizedBox(height: 30),
-                          
+
                           // 底部装饰
                           Center(
                             child: Container(
@@ -217,7 +215,7 @@ class _SutraDialogState extends State<SutraDialog> with SingleTickerProviderStat
                     ),
                   ),
                 ),
-                
+
                 // 底部按钮栏
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -235,9 +233,9 @@ class _SutraDialogState extends State<SutraDialog> with SingleTickerProviderStat
                         icon: Icons.bookmark_add,
                         label: '收藏',
                         onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('已收藏')),
-                          );
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(const SnackBar(content: Text('已收藏')));
                         },
                       ),
                       _buildActionButton(
@@ -282,9 +280,7 @@ class _SutraDialogState extends State<SutraDialog> with SingleTickerProviderStat
         backgroundColor: const Color(0xFFDAA520),
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         elevation: 3,
       ),
     );

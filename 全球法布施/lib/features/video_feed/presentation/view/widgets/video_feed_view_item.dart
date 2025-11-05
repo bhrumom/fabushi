@@ -6,7 +6,11 @@ import 'package:global_dharma_sharing/features/video_feed/presentation/view/widg
 import 'package:video_player/video_player.dart';
 
 class VideoFeedViewItem extends StatefulWidget {
-  const VideoFeedViewItem({required this.videoItem, required this.controller, super.key});
+  const VideoFeedViewItem({
+    required this.videoItem,
+    required this.controller,
+    super.key,
+  });
 
   final VideoEntity videoItem;
   final VideoPlayerController? controller;
@@ -31,7 +35,10 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
                   }
                 },
               )
-            : VideoFeedViewOptimizedVideoPlayer(controller: widget.controller, videoId: widget.videoItem.id),
+            : VideoFeedViewOptimizedVideoPlayer(
+                controller: widget.controller,
+                videoId: widget.videoItem.id,
+              ),
         VideoFeedViewOverlaySection(
           profileImageUrl: widget.videoItem.profileImageUrl,
           username: widget.videoItem.username,

@@ -13,7 +13,7 @@ class PlatformSupport {
     if (defaultTargetPlatform == TargetPlatform.macOS) return true;
     return false;
   }
-  
+
   // 检查通知是否支持当前平台
   static bool get isNotificationSupported {
     if (kIsWeb) return false;
@@ -22,7 +22,7 @@ class PlatformSupport {
     if (defaultTargetPlatform == TargetPlatform.macOS) return true;
     return false;
   }
-  
+
   // 检查WiFi功能是否支持当前平台
   static bool get isWifiSupported {
     if (kIsWeb) return false;

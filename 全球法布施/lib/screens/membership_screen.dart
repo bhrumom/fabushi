@@ -12,24 +12,27 @@ import '../services/alipay_service.dart';
 // import '../widgets/membership_dialog.dart';
 import '../config/unified_config.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../models/user_model.dart';class MembershipScreen extends StatefulWidget {
+import '../models/user_model.dart';
+
+class MembershipScreen extends StatefulWidget {
   const MembershipScreen({Key? key}) : super(key: key);
 
   @override
   State<MembershipScreen> createState() => _MembershipScreenState();
 }
 
-class _MembershipScreenState extends State<MembershipScreen> with SingleTickerProviderStateMixin {
+class _MembershipScreenState extends State<MembershipScreen>
+    with SingleTickerProviderStateMixin {
   final MembershipService _membershipService = MembershipService();
   final AlipayService _alipayService = AlipayService();
   bool _isLoading = false;
-  
+
   // 历史记录相关状态
   bool _isLoadingHistory = false;
   List<PurchaseRecord> _purchaseHistory = [];
   List<RedeemRecord> _redeemHistory = [];
   late TabController _tabController;
-  
+
   // Web端消息监听器（仅在Web平台上使用）
   dynamic _messageListener; // 使用dynamic类型避免编译错误
   Timer? _localStorageCheckTimer;
@@ -38,13 +41,13 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    
+
     // 在Web平台上添加消息监听器
     if (kIsWeb) {
       _setupWebMessageListener();
       _setupLocalStorageListener();
     }
-    
+
     // 加载历史记录
     _loadHistory();
   }
@@ -52,7 +55,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   @override
   void dispose() {
     _tabController.dispose();
-    
+
     // 移除Web端消息监听器（仅在Web平台上执行）
     if (kIsWeb && _messageListener != null) {
       try {
@@ -62,10 +65,10 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       }
     }
     _localStorageCheckTimer?.cancel();
-    
+
     super.dispose();
   }
-  
+
   // 设置Web端消息监听器（仅在Web平台上执行）
   void _setupWebMessageListener() {
     if (kIsWeb) {
@@ -74,26 +77,28 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
           // 使用dynamic类型和运行时类型检查
           if (event != null && event is html.Event) {
             final messageEvent = event as html.MessageEvent;
-            if (messageEvent.data is Map && 
+            if (messageEvent.data is Map &&
                 messageEvent.data['action'] == 'paymentSuccess') {
               // 收到支付成功消息，刷新用户信息
               _handlePaymentSuccess();
             }
           }
         };
-        
+
         html.window.addEventListener('message', _messageListener);
       } catch (e) {
         debugPrint('设置Web消息监听器失败: $e');
       }
     }
   }
-  
+
   // 设置localStorage监听器（仅在Web平台上执行）
   void _setupLocalStorageListener() {
     if (kIsWeb) {
       // 定期检查localStorage中的支付成功标记
-      _localStorageCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      _localStorageCheckTimer = Timer.periodic(const Duration(seconds: 2), (
+        timer,
+      ) {
         try {
           final paymentSuccessData = html.window.localStorage['paymentSuccess'];
           if (paymentSuccessData != null) {
@@ -104,10 +109,10 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
             } catch (e) {
               debugPrint('解析localStorage数据失败: $e');
             }
-            
+
             // 清除标记
             html.window.localStorage.remove('paymentSuccess');
-            
+
             // 处理支付成功
             _handlePaymentSuccess();
           }
@@ -117,7 +122,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       });
     }
   }
-  
+
   // 处理支付成功
   Future<void> _handlePaymentSuccess() async {
     if (mounted) {
@@ -127,54 +132,60 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
           backgroundColor: Colors.green,
         ),
       );
-      
+
       // 刷新用户状态
       final authModel = Provider.of<AuthModel>(context, listen: false);
       await authModel.refreshUserInfo();
-      
+
       // 刷新历史记录
       _loadHistory();
     }
   }
-  
+
   // 加载历史记录
   Future<void> _loadHistory() async {
     if (!mounted) return;
-    
+
     final authModel = Provider.of<AuthModel>(context, listen: false);
     if (!authModel.isLoggedIn || authModel.authToken == null) {
       return;
     }
-    
+
     setState(() {
       _isLoadingHistory = true;
     });
-    
+
     try {
       // 加载购买记录
-      final purchaseResult = await _membershipService.getPurchaseHistory(authModel.authToken!);
-      if (purchaseResult['success'] == true && purchaseResult['purchases'] != null) {
+      final purchaseResult = await _membershipService.getPurchaseHistory(
+        authModel.authToken!,
+      );
+      if (purchaseResult['success'] == true &&
+          purchaseResult['purchases'] != null) {
         final purchases = purchaseResult['purchases'] as List;
         setState(() {
-          _purchaseHistory = purchases.map((item) => PurchaseRecord.fromJson(item)).toList();
+          _purchaseHistory = purchases
+              .map((item) => PurchaseRecord.fromJson(item))
+              .toList();
         });
       }
 
       // 加载兑换记录
-      final redeemResult = await _membershipService.getRedeemHistory(authModel.authToken!);
+      final redeemResult = await _membershipService.getRedeemHistory(
+        authModel.authToken!,
+      );
       if (redeemResult['success'] == true && redeemResult['redeems'] != null) {
         final redeems = redeemResult['redeems'] as List;
         setState(() {
-          _redeemHistory = redeems.map((item) => RedeemRecord.fromJson(item)).toList();
+          _redeemHistory = redeems
+              .map((item) => RedeemRecord.fromJson(item))
+              .toList();
         });
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('加载历史记录失败: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('加载历史记录失败: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -188,13 +199,10 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
 
   Future<void> _purchaseMembership(String priceType) async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
-    
+
     if (!authModel.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('请先登录'),
-          backgroundColor: Colors.orange,
-        ),
+        const SnackBar(content: Text('请先登录'), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -206,7 +214,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
     try {
       // 根据平台选择合适的支付方式
       final paymentMethod = await _getPaymentMethodForPlatform();
-      
+
       if (paymentMethod == null) {
         setState(() {
           _isLoading = false;
@@ -215,13 +223,13 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       }
 
       Map<String, dynamic> result;
-      
+
       if (paymentMethod == 'stripe') {
         result = await _membershipService.createPaymentSession(
           authModel.authToken!,
           priceType,
         );
-        
+
         if (result['success'] == true) {
           // Stripe支付成功，跳转到支付页面
           final paymentUrl = result['paymentUrl'];
@@ -244,7 +252,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
             authModel.authToken!,
             priceType,
           );
-          
+
           if (result['success'] == true) {
             // 跳转到支付宝电脑网站支付页面
             final paymentUrl = result['paymentUrl'];
@@ -258,7 +266,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
             authModel.authToken!,
             priceType,
           );
-          
+
           if (result['success'] == true) {
             // 调用支付宝APP支付
             await _processAlipayAppPayment(result, authModel.authToken!);
@@ -279,10 +287,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('购买时发生错误: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('购买时发生错误: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -308,7 +313,10 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
               onTap: () => Navigator.of(context).pop('stripe'),
             ),
             ListTile(
-              leading: const Icon(Icons.account_balance_wallet, color: Colors.green),
+              leading: const Icon(
+                Icons.account_balance_wallet,
+                color: Colors.green,
+              ),
               title: const Text('支付宝'),
               onTap: () => Navigator.of(context).pop('alipay'),
             ),
@@ -330,7 +338,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
     if (kIsWeb || _isDesktopPlatform()) {
       return 'alipay';
     }
-    
+
     // 手机端检查是否安装了支付宝，如果安装了默认使用支付宝，否则显示选择对话框
     try {
       final alipayInitResult = await _alipayService.initAlipay();
@@ -340,7 +348,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
     } catch (e) {
       debugPrint('检查支付宝安装状态失败: $e');
     }
-    
+
     // 如果支付宝不可用，显示支付方式选择对话框
     return await _showPaymentMethodDialog();
   }
@@ -348,7 +356,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   /// 检测是否为桌面平台
   bool _isDesktopPlatform() {
     if (kIsWeb) return false;
-    
+
     try {
       return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
     } catch (e) {
@@ -358,11 +366,14 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   }
 
   /// 处理支付宝APP支付
-  Future<void> _processAlipayAppPayment(Map<String, dynamic> orderResult, String token) async {
+  Future<void> _processAlipayAppPayment(
+    Map<String, dynamic> orderResult,
+    String token,
+  ) async {
     try {
       final orderId = orderResult['orderId'];
       final orderString = orderResult['orderString'];
-      
+
       if (orderString == null || orderString.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -375,7 +386,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
 
       // 发起支付宝APP支付
       final payResult = await _alipayService.payWithAlipay(orderString);
-      
+
       if (payResult['success'] == true) {
         // 支付成功，检查订单状态
         await _checkOrderStatus(orderId, token);
@@ -390,30 +401,27 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('支付宝支付异常: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('支付宝支付异常: $e'), backgroundColor: Colors.red),
       );
     }
   }
 
   /// 启动支付宝Web支付
-  Future<void> _launchAlipayWebPayment(String paymentUrl, String orderId) async {
+  Future<void> _launchAlipayWebPayment(
+    String paymentUrl,
+    String orderId,
+  ) async {
     try {
       final uri = Uri.parse(paymentUrl);
-      
+
       if (await canLaunchUrl(uri)) {
         // 在Web平台上使用window.open打开支付页面，使用同一标签页而不是新窗口
         if (kIsWeb) {
           html.window.open(paymentUrl, '_self');
         } else {
-          await launchUrl(
-            uri,
-            mode: LaunchMode.externalApplication,
-          );
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
         }
-        
+
         // 启动定时器检查支付状态
         _startOrderStatusCheck(orderId);
       } else {
@@ -426,10 +434,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('启动支付宝支付失败: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('启动支付宝支付失败: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -439,10 +444,10 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
     const checkInterval = Duration(seconds: 3);
     const maxChecks = 20; // 最多检查60秒
     int checkCount = 0;
-    
+
     final timer = Timer.periodic(checkInterval, (timer) async {
       checkCount++;
-      
+
       if (checkCount >= maxChecks) {
         timer.cancel();
         if (mounted) {
@@ -455,15 +460,14 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
         }
         return;
       }
-      
+
       try {
         final authModel = Provider.of<AuthModel>(context, listen: false);
-        final orderStatus = await
-        _membershipService.queryAlipayOrderStatus(
+        final orderStatus = await _membershipService.queryAlipayOrderStatus(
           authModel.authToken!,
           orderId,
         );
-        
+
         if (orderStatus['status'] == 'PAID') {
           timer.cancel();
           if (mounted) {
@@ -487,18 +491,15 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   Future<void> _launchStripePayment(String paymentUrl, String sessionId) async {
     try {
       final uri = Uri.parse(paymentUrl);
-      
+
       if (await canLaunchUrl(uri)) {
         // 在Web平台上使用window.open打开支付页面，使用同一标签页而不是新窗口
         if (kIsWeb) {
           html.window.open(paymentUrl, '_self');
         } else {
-          await launchUrl(
-            uri,
-            mode: LaunchMode.externalApplication,
-          );
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
         }
-        
+
         // 启动定时器检查支付状态
         _startStripeOrderStatusCheck(sessionId);
       } else {
@@ -524,10 +525,10 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
     const checkInterval = Duration(seconds: 3);
     const maxChecks = 20; // 最多检查60秒
     int checkCount = 0;
-    
+
     final timer = Timer.periodic(checkInterval, (timer) async {
       checkCount++;
-      
+
       if (checkCount >= maxChecks) {
         timer.cancel();
         if (mounted) {
@@ -540,14 +541,14 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
         }
         return;
       }
-      
+
       try {
         final authModel = Provider.of<AuthModel>(context, listen: false);
         final orderStatus = await _membershipService.queryStripeSessionStatus(
           authModel.authToken!,
           sessionId,
         );
-        
+
         if (orderStatus['status'] == 'complete') {
           timer.cancel();
           if (mounted) {
@@ -572,12 +573,15 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
     try {
       const maxRetries = 10;
       const retryDelay = Duration(seconds: 2);
-      
+
       for (int i = 0; i < maxRetries; i++) {
         await Future.delayed(retryDelay);
-        
-        final orderStatus = await _membershipService.queryAlipayOrderStatus(token, orderId);
-        
+
+        final orderStatus = await _membershipService.queryAlipayOrderStatus(
+          token,
+          orderId,
+        );
+
         if (orderStatus['status'] == 'PAID') {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -593,7 +597,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
           return;
         }
       }
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -621,10 +625,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF667eea),
-              Color(0xFF764ba2),
-            ],
+            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
           ),
         ),
         child: SafeArea(
@@ -633,7 +634,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
               if (!authModel.isLoggedIn) {
                 return _buildLoginPrompt();
               }
-              
+
               return _buildMembershipView(authModel);
             },
           ),
@@ -673,10 +674,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
                 const SizedBox(height: 16),
                 const Text(
                   '登录后可以购买会员，享受更多高级功能',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF7f8c8d),
-                  ),
+                  style: TextStyle(fontSize: 14, color: Color(0xFF7f8c8d)),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
@@ -697,10 +695,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
                   ),
                   child: const Text(
                     '返回登录',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -714,7 +709,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   Widget _buildMembershipView(AuthModel authModel) {
     final user = authModel.currentUser!;
     final membershipPrices = _membershipService.getMembershipPrices();
-    
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -746,9 +741,14 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
                   if (authModel.getMembershipExpiryText() != null) ...[
                     const SizedBox(height: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
-                        color: _getExpiryColor(authModel.getMembershipDaysRemaining()),
+                        color: _getExpiryColor(
+                          authModel.getMembershipDaysRemaining(),
+                        ),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
@@ -802,14 +802,14 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
             final priceType = entry.key;
             final priceInfo = entry.value;
             final isRecommended = priceType == 'yearly';
-            
+
             return Container(
               margin: const EdgeInsets.only(bottom: 16),
               child: Card(
                 elevation: isRecommended ? 8 : 4,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: isRecommended 
+                  side: isRecommended
                       ? const BorderSide(color: Color(0xFF667eea), width: 2)
                       : BorderSide.none,
                 ),
@@ -904,15 +904,17 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: _isLoading 
-                                  ? null 
+                              onPressed: _isLoading
+                                  ? null
                                   : () => _purchaseMembership(priceType),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: isRecommended 
+                                backgroundColor: isRecommended
                                     ? const Color(0xFF667eea)
                                     : Colors.grey[600],
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
@@ -923,9 +925,10 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
                                       width: 20,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
-                                        ),
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
                                       ),
                                     )
                                   : Text(
@@ -947,7 +950,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
           }).toList(),
 
           const SizedBox(height: 32),
-          
+
           // 历史记录部分
           _buildHistorySection(),
         ],
@@ -975,9 +978,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       height: 400,
       child: Card(
         elevation: 4,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Column(
           children: [
             Container(
@@ -999,11 +1000,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
               ),
             ),
             if (_isLoadingHistory)
-              const Expanded(
-                child: Center(
-                  child: CircularProgressIndicator(),
-                ),
-              )
+              const Expanded(child: Center(child: CircularProgressIndicator()))
             else
               Expanded(
                 child: Column(
@@ -1039,9 +1036,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   // 构建购买记录列表
   Widget _buildPurchaseHistoryList() {
     if (_purchaseHistory.isEmpty) {
-      return const Center(
-        child: Text('暂无购买记录'),
-      );
+      return const Center(child: Text('暂无购买记录'));
     }
 
     return ListView.builder(
@@ -1064,7 +1059,9 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('订单号: ${record.orderId}'),
-                Text('购买时间: ${_formatDateTime(DateTime.parse(record.purchasedAt))}'),
+                Text(
+                  '购买时间: ${_formatDateTime(DateTime.parse(record.purchasedAt))}',
+                ),
                 Text('金额: ¥${record.amount}'),
                 Text('支付方式: ${_getPaymentMethodName(record.paymentMethod)}'),
                 if (record.status != null)
@@ -1090,9 +1087,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   // 构建兑换记录列表
   Widget _buildRedeemHistoryList() {
     if (_redeemHistory.isEmpty) {
-      return const Center(
-        child: Text('暂无兑换记录'),
-      );
+      return const Center(child: Text('暂无兑换记录'));
     }
 
     return ListView.builder(
@@ -1103,10 +1098,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           child: ListTile(
-            leading: const Icon(
-              Icons.card_giftcard,
-              color: Colors.green,
-            ),
+            leading: const Icon(Icons.card_giftcard, color: Colors.green),
             title: Text(
               record.name,
               style: const TextStyle(fontWeight: FontWeight.bold),
@@ -1115,14 +1107,13 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('兑换码: ${record.code}'),
-                Text('兑换时间: ${_formatDateTime(DateTime.parse(record.redeemedAt))}'),
+                Text(
+                  '兑换时间: ${_formatDateTime(DateTime.parse(record.redeemedAt))}',
+                ),
                 Text('增加天数: ${record.days}天'),
               ],
             ),
-            trailing: const Icon(
-              Icons.check_circle,
-              color: Colors.green,
-            ),
+            trailing: const Icon(Icons.check_circle, color: Colors.green),
           ),
         );
       },
@@ -1217,6 +1208,6 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   // 格式化日期时间
   String _formatDateTime(DateTime dateTime) {
     return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')} '
-           '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+        '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
   }
 }

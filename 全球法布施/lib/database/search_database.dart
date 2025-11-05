@@ -20,7 +20,7 @@ class SearchDatabase extends _$SearchDatabase {
 
   @override
   int get schemaVersion => 1;
-  
+
   static LazyDatabase _openConnection() {
     return LazyDatabase(() async {
       final dbFolder = await getApplicationDocumentsDirectory();
@@ -31,13 +31,11 @@ class SearchDatabase extends _$SearchDatabase {
 
   Future<List<TextContent>> searchTexts(String query) async {
     return (select(textContents)
-          ..where((t) => 
-              t.title.like('%$query%') | 
-              t.content.like('%$query%')))
+          ..where((t) => t.title.like('%$query%') | t.content.like('%$query%')))
         .get();
   }
 
-  Future<int> insertText(TextContentsCompanion entry) => 
+  Future<int> insertText(TextContentsCompanion entry) =>
       into(textContents).insert(entry);
 
   Future<void> clearAll() => delete(textContents).go();
