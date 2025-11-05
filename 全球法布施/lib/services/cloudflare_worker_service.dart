@@ -17,9 +17,7 @@ class CloudflareWorkerService {
       final url = await baseUrl;
       final response = await http.get(
         Uri.parse('$url/api/auth/wechat/login-url'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: {'Content-Type': 'application/json'},
       );
 
       if (response.statusCode == 200) {
@@ -31,17 +29,11 @@ class CloudflareWorkerService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '获取微信登录URL失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '获取微信登录URL失败'};
       }
     } catch (e) {
       debugPrint('获取微信登录URL失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
@@ -50,13 +42,8 @@ class CloudflareWorkerService {
       final url = await baseUrl;
       final response = await http.post(
         Uri.parse('$url/api/auth/wechat/login'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'code': code,
-          'state': state,
-        }),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'code': code, 'state': state}),
       );
 
       if (response.statusCode == 200) {
@@ -71,28 +58,24 @@ class CloudflareWorkerService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '微信登录失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '微信登录失败'};
       }
     } catch (e) {
       debugPrint('微信登录失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
-  Future<Map<String, dynamic>> bindWechat(String openid, String email, String password) async {
+  Future<Map<String, dynamic>> bindWechat(
+    String openid,
+    String email,
+    String password,
+  ) async {
     try {
       final url = await baseUrl;
       final response = await http.post(
         Uri.parse('$url/api/auth/wechat/bind'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'openid': openid,
           'email': email,
@@ -110,17 +93,11 @@ class CloudflareWorkerService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '微信绑定失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '微信绑定失败'};
       }
     } catch (e) {
       debugPrint('微信绑定失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
@@ -136,9 +113,7 @@ class CloudflareWorkerService {
       final url = await baseUrl;
       final response = await http.post(
         Uri.parse('$url/api/auth/wechat/register'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'openid': openid,
           'username': username,
@@ -159,17 +134,11 @@ class CloudflareWorkerService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '微信注册失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '微信注册失败'};
       }
     } catch (e) {
       debugPrint('微信注册失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
@@ -186,23 +155,14 @@ class CloudflareWorkerService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'message': data['message'],
-        };
+        return {'success': true, 'message': data['message']};
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '微信解绑失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '微信解绑失败'};
       }
     } catch (e) {
       debugPrint('微信解绑失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
@@ -220,28 +180,23 @@ class CloudflareWorkerService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'user': data,
-        };
+        return {'success': true, 'user': data};
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '获取用户信息失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '获取用户信息失败'};
       }
     } catch (e) {
       debugPrint('获取用户信息失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
   // 绑定邮箱
-  Future<Map<String, dynamic>> bindEmail(String token, String email, String verificationCode) async {
+  Future<Map<String, dynamic>> bindEmail(
+    String token,
+    String email,
+    String verificationCode,
+  ) async {
     try {
       final url = await baseUrl;
       final response = await http.post(
@@ -265,17 +220,11 @@ class CloudflareWorkerService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '绑定邮箱失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '绑定邮箱失败'};
       }
     } catch (e) {
       debugPrint('绑定邮箱失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
@@ -300,17 +249,11 @@ class CloudflareWorkerService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '获取购买记录失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '获取购买记录失败'};
       }
     } catch (e) {
       debugPrint('获取购买记录失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
@@ -335,22 +278,19 @@ class CloudflareWorkerService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '获取兑换记录失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '获取兑换记录失败'};
       }
     } catch (e) {
       debugPrint('获取兑换记录失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
   // 删除兑换码（管理员功能）
-  Future<Map<String, dynamic>> deleteRedeemCode(String token, String code) async {
+  Future<Map<String, dynamic>> deleteRedeemCode(
+    String token,
+    String code,
+  ) async {
     try {
       final url = await baseUrl;
       final response = await http.delete(
@@ -359,30 +299,19 @@ class CloudflareWorkerService {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({
-          'code': code,
-        }),
+        body: jsonEncode({'code': code}),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'message': data['message'],
-        };
+        return {'success': true, 'message': data['message']};
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '删除兑换码失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '删除兑换码失败'};
       }
     } catch (e) {
       debugPrint('删除兑换码失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
@@ -396,9 +325,7 @@ class CloudflareWorkerService {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({
-          'plan': plan,
-        }),
+        body: jsonEncode({'plan': plan}),
       );
 
       if (response.statusCode == 200) {
@@ -413,17 +340,11 @@ class CloudflareWorkerService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '获取价格失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '获取价格失败'};
       }
     } catch (e) {
       debugPrint('获取价格失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
@@ -441,23 +362,14 @@ class CloudflareWorkerService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'message': data['message'],
-        };
+        return {'success': true, 'message': data['message']};
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '取消订阅失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '取消订阅失败'};
       }
     } catch (e) {
       debugPrint('取消订阅失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 }

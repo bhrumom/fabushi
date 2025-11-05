@@ -2,24 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 
 /// 传输控制面板
-/// 
+///
 /// 提供文件选择和传输控制功能的组件。
 class TransferControlPanel extends StatelessWidget {
   /// 选择文件的回调
   final VoidCallback onPickFiles;
-  
+
   /// 发送文件的回调
   final VoidCallback onSendFiles;
-  
+
   /// 已选择的文件列表
   final List<PlatformFile> selectedFiles;
-  
+
   /// 是否正在发送
   final bool isSending;
-  
+
   /// 是否禁用发送按钮
   final bool disableSend;
-  
+
   /// 构造函数
   const TransferControlPanel({
     Key? key,
@@ -29,7 +29,7 @@ class TransferControlPanel extends StatelessWidget {
     this.isSending = false,
     this.disableSend = false,
   }) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -38,10 +38,7 @@ class TransferControlPanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '传输控制',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            Text('传输控制', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16.0),
             Row(
               children: [
@@ -67,13 +64,15 @@ class TransferControlPanel extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: selectedFiles
-                      .map((file) => Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Text(
-                              '${file.name} (${_formatFileSize(file.size)})',
-                              style: const TextStyle(fontSize: 12.0),
-                            ),
-                          ))
+                      .map(
+                        (file) => Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Text(
+                            '${file.name} (${_formatFileSize(file.size)})',
+                            style: const TextStyle(fontSize: 12.0),
+                          ),
+                        ),
+                      )
                       .toList(),
                 ),
               ),
@@ -105,7 +104,7 @@ class TransferControlPanel extends StatelessWidget {
       ),
     );
   }
-  
+
   /// 格式化文件大小
   String _formatFileSize(int bytes) {
     if (bytes < 1024) {

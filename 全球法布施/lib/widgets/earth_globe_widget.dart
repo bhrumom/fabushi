@@ -14,7 +14,8 @@ class EarthGlobeWidget extends StatefulWidget {
   State<EarthGlobeWidget> createState() => EarthGlobeWidgetState();
 }
 
-class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+class EarthGlobeWidgetState extends State<EarthGlobeWidget>
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late FlutterEarthGlobeController _controller;
   bool _isDisposed = false;
   final Map<String, AnimationController> _beamAnimations = {};
@@ -73,24 +74,21 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
         });
 
         // 添加用户当前位置标记
-        _controller.addPoint(Point(
-          id: 'user_location',
-          coordinates: GlobeCoordinates(_userLatitude!, _userLongitude!),
-          style: PointStyle(
-            color: Colors.blue.shade400,
-            size: 12,
+        _controller.addPoint(
+          Point(
+            id: 'user_location',
+            coordinates: GlobeCoordinates(_userLatitude!, _userLongitude!),
+            style: PointStyle(color: Colors.blue.shade400, size: 12),
+            label: location.country,
+            isLabelVisible: true,
+            labelTextStyle: const TextStyle(
+              color: Colors.cyan,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              shadows: [Shadow(color: Colors.black, blurRadius: 6)],
+            ),
           ),
-          label: location.country,
-          isLabelVisible: true,
-          labelTextStyle: const TextStyle(
-            color: Colors.cyan,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            shadows: [
-              Shadow(color: Colors.black, blurRadius: 6),
-            ],
-          ),
-        ));
+        );
 
         print('用户位置已设置: ${location.country}, ${location.city}');
       } else {
@@ -104,24 +102,21 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
             _isLocationInitialized = true;
           });
 
-          _controller.addPoint(Point(
-            id: 'user_location',
-            coordinates: GlobeCoordinates(_userLatitude!, _userLongitude!),
-            style: PointStyle(
-              color: Colors.red.shade400,
-              size: 12,
+          _controller.addPoint(
+            Point(
+              id: 'user_location',
+              coordinates: GlobeCoordinates(_userLatitude!, _userLongitude!),
+              style: PointStyle(color: Colors.red.shade400, size: 12),
+              label: '中国',
+              isLabelVisible: true,
+              labelTextStyle: const TextStyle(
+                color: Colors.cyan,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                shadows: [Shadow(color: Colors.black, blurRadius: 6)],
+              ),
             ),
-            label: '中国',
-            isLabelVisible: true,
-            labelTextStyle: const TextStyle(
-              color: Colors.cyan,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              shadows: [
-                Shadow(color: Colors.black, blurRadius: 6),
-              ],
-            ),
-          ));
+          );
 
           print('使用默认位置: 中国北京');
         }
@@ -159,7 +154,12 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
     );
   }
 
-  void addTransferBeamByCountryCode(String fromCode, String toCode, {Color? color, Duration? duration}) {
+  void addTransferBeamByCountryCode(
+    String fromCode,
+    String toCode, {
+    Color? color,
+    Duration? duration,
+  }) {
     final from = _coordService.getByCountryCode(fromCode);
     final to = _coordService.getByCountryCode(toCode);
 
@@ -177,7 +177,16 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
     }
   }
 
-  Future<void> addTransferBeam(double fromLat, double fromLng, double toLat, double toLng, {Color? color, Duration? duration, String? fromLabel, String? toLabel}) async {
+  Future<void> addTransferBeam(
+    double fromLat,
+    double fromLng,
+    double toLat,
+    double toLng, {
+    Color? color,
+    Duration? duration,
+    String? fromLabel,
+    String? toLabel,
+  }) async {
     if (!_isDisposed && mounted) {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final beamId = 'beam_$timestamp';
@@ -194,53 +203,65 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
       }
 
       // 添加起点标记（带国家名称）
-      _controller.addPoint(Point(
-        id: 'from_$timestamp',
-        coordinates: GlobeCoordinates(fromLat, fromLng),
-        style: PointStyle(
-          color: Colors.red.shade400,
-          size: 8,
+      _controller.addPoint(
+        Point(
+          id: 'from_$timestamp',
+          coordinates: GlobeCoordinates(fromLat, fromLng),
+          style: PointStyle(color: Colors.red.shade400, size: 8),
+          label: fromLabel,
+          isLabelVisible: true,
+          labelTextStyle: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(color: Colors.black, blurRadius: 6)],
+          ),
         ),
-        label: fromLabel,
-        isLabelVisible: true,
-        labelTextStyle: const TextStyle(
-          color: Colors.white,
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(color: Colors.black, blurRadius: 6),
-          ],
-        ),
-      ));
+      );
 
       // 添加终点标记（带国家名称）
-      _controller.addPoint(Point(
-        id: 'to_$timestamp',
-        coordinates: GlobeCoordinates(toLat, toLng),
-        style: PointStyle(
-          color: Colors.green.shade400,
-          size: 6,
+      _controller.addPoint(
+        Point(
+          id: 'to_$timestamp',
+          coordinates: GlobeCoordinates(toLat, toLng),
+          style: PointStyle(color: Colors.green.shade400, size: 6),
+          label: toLabel,
+          isLabelVisible: true,
+          labelTextStyle: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(color: Colors.black, blurRadius: 6)],
+          ),
         ),
-        label: toLabel,
-        isLabelVisible: true,
-        labelTextStyle: const TextStyle(
-          color: Colors.white,
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(color: Colors.black, blurRadius: 6),
-          ],
-        ),
-      ));
+      );
 
       // 添加起点的脉冲效果
-      await _createPulseEffect(fromLat, fromLng, 'from_pulse_$timestamp', Colors.red.shade400);
+      await _createPulseEffect(
+        fromLat,
+        fromLng,
+        'from_pulse_$timestamp',
+        Colors.red.shade400,
+      );
 
       // 流星动画
-      await _animateMovingLight(fromLat, fromLng, toLat, toLng, beamId, color ?? Colors.cyan, transferDuration);
+      await _animateMovingLight(
+        fromLat,
+        fromLng,
+        toLat,
+        toLng,
+        beamId,
+        color ?? Colors.cyan,
+        transferDuration,
+      );
 
       // 添加终点的脉冲效果
-      await _createPulseEffect(toLat, toLng, 'to_pulse_$timestamp', Colors.green.shade400);
+      await _createPulseEffect(
+        toLat,
+        toLng,
+        'to_pulse_$timestamp',
+        Colors.green.shade400,
+      );
 
       // 清除轨迹
       _controller.removePoint('from_$timestamp');
@@ -248,7 +269,15 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
     }
   }
 
-  Future<void> _animateMovingLight(double fromLat, double fromLng, double toLat, double toLng, String beamId, Color color, Duration duration) async {
+  Future<void> _animateMovingLight(
+    double fromLat,
+    double fromLng,
+    double toLat,
+    double toLng,
+    String beamId,
+    Color color,
+    Duration duration,
+  ) async {
     const steps = 80;
     final stepDelay = Duration(milliseconds: duration.inMilliseconds ~/ steps);
     const tailLength = 20;
@@ -277,36 +306,33 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
 
       // 添加流星头部（白色核心 + 彩色光晕）
       final headId = '${beamId}_head_$i';
-      
+
       // 最外层光晕（大范围辉光）
-      _controller.addPoint(Point(
-        id: '${headId}_glow_outer',
-        coordinates: GlobeCoordinates(lat, lng),
-        style: PointStyle(
-          color: color.withOpacity(0.3),
-          size: 20,
+      _controller.addPoint(
+        Point(
+          id: '${headId}_glow_outer',
+          coordinates: GlobeCoordinates(lat, lng),
+          style: PointStyle(color: color.withOpacity(0.3), size: 20),
         ),
-      ));
-      
+      );
+
       // 中层彩色光晕
-      _controller.addPoint(Point(
-        id: '${headId}_glow',
-        coordinates: GlobeCoordinates(lat, lng),
-        style: PointStyle(
-          color: color.withOpacity(0.7),
-          size: 14,
+      _controller.addPoint(
+        Point(
+          id: '${headId}_glow',
+          coordinates: GlobeCoordinates(lat, lng),
+          style: PointStyle(color: color.withOpacity(0.7), size: 14),
         ),
-      ));
-      
+      );
+
       // 核心白色亮点
-      _controller.addPoint(Point(
-        id: headId,
-        coordinates: GlobeCoordinates(lat, lng),
-        style: PointStyle(
-          color: Colors.white,
-          size: 10,
+      _controller.addPoint(
+        Point(
+          id: headId,
+          coordinates: GlobeCoordinates(lat, lng),
+          style: PointStyle(color: Colors.white, size: 10),
         ),
-      ));
+      );
 
       // 添加流星拖尾（渐变）
       for (int j = 1; j <= tailLength; j++) {
@@ -318,14 +344,16 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
         final tailId = '${beamId}_tail_${i}_$j';
         final opacity = (1 - j / tailLength);
 
-        _controller.addPoint(Point(
-          id: tailId,
-          coordinates: GlobeCoordinates(tailLat, tailLng),
-          style: PointStyle(
-            color: color.withOpacity(opacity * 0.8),
-            size: (14 - j * 0.6).clamp(4, 14),
+        _controller.addPoint(
+          Point(
+            id: tailId,
+            coordinates: GlobeCoordinates(tailLat, tailLng),
+            style: PointStyle(
+              color: color.withOpacity(opacity * 0.8),
+              size: (14 - j * 0.6).clamp(4, 14),
+            ),
           ),
-        ));
+        );
 
         // 移除拖尾点
         Future.delayed(const Duration(milliseconds: 100), () {
@@ -366,13 +394,21 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
   }
 
   // 计算两点间的大圆距离
-  double _calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+  double _calculateDistance(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+  ) {
     const R = 6371; // 地球半径（公里）
     final dLat = _toRadians(lat2 - lat1);
     final dLng = _toRadians(lng2 - lng1);
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_toRadians(lat1)) * math.cos(_toRadians(lat2)) *
-        math.sin(dLng / 2) * math.sin(dLng / 2);
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_toRadians(lat1)) *
+            math.cos(_toRadians(lat2)) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
     final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
     return R * c;
   }
@@ -397,7 +433,12 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
   }
 
   // 创建脉冲效果
-  Future<void> _createPulseEffect(double lat, double lng, String pulseId, Color color) async {
+  Future<void> _createPulseEffect(
+    double lat,
+    double lng,
+    String pulseId,
+    Color color,
+  ) async {
     const pulseSteps = 6;
     final pulseDelay = const Duration(milliseconds: 100);
 
@@ -407,14 +448,16 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
       final size = 15 + i * 3;
       final alpha = 255 - (i * 40);
 
-      _controller.addPoint(Point(
-        id: '${pulseId}_$i',
-        coordinates: GlobeCoordinates(lat, lng),
-        style: PointStyle(
-          color: color.withAlpha(alpha.clamp(50, 255)),
-          size: size.toDouble(),
+      _controller.addPoint(
+        Point(
+          id: '${pulseId}_$i',
+          coordinates: GlobeCoordinates(lat, lng),
+          style: PointStyle(
+            color: color.withAlpha(alpha.clamp(50, 255)),
+            size: size.toDouble(),
+          ),
         ),
-      ));
+      );
 
       // 逐步移除脉冲环
       Future.delayed(pulseDelay * 2, () {
@@ -481,19 +524,16 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget> with SingleTickerPro
 
   @override
   bool get wantKeepAlive => true;
-  
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // 必须调用以保持状态
-    
+
     // 添加错误边界
     return Builder(
       builder: (context) {
         try {
-          return FlutterEarthGlobe(
-            controller: _controller,
-            radius: 150,
-          );
+          return FlutterEarthGlobe(controller: _controller, radius: 150);
         } catch (e) {
           debugPrint('❌ FlutterEarthGlobe 渲染失败: $e');
           return Center(

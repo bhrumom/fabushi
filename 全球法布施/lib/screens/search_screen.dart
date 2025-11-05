@@ -14,9 +14,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('全文搜索')),
-      body: Center(
-        child: Text('Web版本暂不支持搜索功能'),
-      ),
+      body: Center(child: Text('Web版本暂不支持搜索功能')),
     );
   }
 

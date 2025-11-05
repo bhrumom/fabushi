@@ -28,9 +28,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载设置失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('加载设置失败: $e')));
       }
     }
   }
@@ -51,15 +51,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF667eea),
-              Color(0xFF764ba2),
-            ],
+            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
           ),
         ),
         child: SafeArea(
           child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: Colors.white))
+              ? const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                )
               : SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
@@ -98,7 +97,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               const ListTile(
                                 title: Text('系统模式'),
                                 subtitle: Text('统一后端配置，无需手动设置'),
-                                leading: Icon(Icons.info_outline, color: Colors.blue),
+                                leading: Icon(
+                                  Icons.info_outline,
+                                  color: Colors.blue,
+                                ),
                               ),
                             ],
                           ),
@@ -154,11 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ],
                               ),
                               const SizedBox(height: 16),
-                              _buildStatusItem(
-                                '运行模式',
-                                '生产模式',
-                                Colors.green,
-                              ),
+                              _buildStatusItem('运行模式', '生产模式', Colors.green),
                               // 后端地址信息已移除
                               _buildStatusItem(
                                 '数据来源',
@@ -218,7 +216,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.red,
                                     foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -246,10 +246,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             width: 80,
             child: Text(
               label,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Color(0xFF7f8c8d),
-              ),
+              style: const TextStyle(fontSize: 14, color: Color(0xFF7f8c8d)),
             ),
           ),
           const SizedBox(width: 8),

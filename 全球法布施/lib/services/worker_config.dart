@@ -13,33 +13,33 @@ class WorkerConfig {
     'resetPassword': '/api/auth/reset-password',
     'userInfo': '/api/auth/user-info',
     'bindEmail': '/api/auth/bind-email',
-    
+
     // 微信登录相关
     'wechatLoginUrl': '/api/auth/wechat/login-url',
     'wechatLogin': '/api/auth/wechat/login',
     'wechatBind': '/api/auth/wechat/bind',
     'wechatRegister': '/api/auth/wechat/register',
     'wechatUnbind': '/api/auth/wechat/unbind',
-    
+
     // 支付宝登录相关
     'alipayLoginUrl': '/api/auth/alipay/login-url',
     'alipayLogin': '/api/auth/alipay/login',
     'alipayBind': '/api/auth/alipay/bind',
     'alipayRegister': '/api/auth/alipay/register',
     'alipayUnbind': '/api/auth/alipay/unbind',
-    
+
     // Stripe 支付相关
     'membershipStatus': '/api/stripe/membership-status',
     'createSubscription': '/api/stripe/create-subscription',
     'cancelSubscription': '/api/stripe/cancel-subscription',
     'stripeWebhook': '/api/stripe/webhook',
-    
+
     // 支付宝相关
     'alipayCreateOrder': '/api/alipay/create-order',
     'alipayQueryOrder': '/api/alipay/query-order',
     'alipayNotify': '/api/alipay/notify',
     'alipayMembershipStatus': '/api/alipay/check-membership',
-    
+
     // 管理员相关
     'adminCheckStatus': '/api/admin/check-status',
     'adminCreateRedeemCode': '/api/admin/create-redeem-code',
@@ -58,61 +58,30 @@ class WorkerConfig {
       'duration': 30,
       'price': '21.00',
       'adminPrice': '0.01',
-      'features': [
-        '基础功能访问',
-        '每日10次使用额度',
-        '邮件支持',
-      ],
+      'features': ['基础功能访问', '每日10次使用额度', '邮件支持'],
     },
     'quarterly': {
       'name': '季度会员',
       'duration': 90,
       'price': '63.00',
       'adminPrice': '0.01',
-      'features': [
-        '基础功能访问',
-        '每日30次使用额度',
-        '邮件支持',
-        '优先客服',
-      ],
+      'features': ['基础功能访问', '每日30次使用额度', '邮件支持', '优先客服'],
     },
     'yearly': {
       'name': '年度会员',
       'duration': 365,
       'price': '252.00',
       'adminPrice': '0.01',
-      'features': [
-        '基础功能访问',
-        '每日100次使用额度',
-        '邮件支持',
-        '优先客服',
-        '专属功能',
-      ],
+      'features': ['基础功能访问', '每日100次使用额度', '邮件支持', '优先客服', '专属功能'],
     },
   };
 
   // 兑换码类型配置
   static const Map<String, Map<String, dynamic>> redeemCodeTypes = {
-    'trial_7': {
-      'name': '7天试用',
-      'days': 7,
-      'type': 'trial',
-    },
-    'monthly': {
-      'name': '月度会员',
-      'days': 30,
-      'type': 'premium',
-    },
-    'quarterly': {
-      'name': '季度会员',
-      'days': 90,
-      'type': 'premium',
-    },
-    'yearly': {
-      'name': '年度会员',
-      'days': 365,
-      'type': 'premium',
-    },
+    'trial_7': {'name': '7天试用', 'days': 7, 'type': 'trial'},
+    'monthly': {'name': '月度会员', 'days': 30, 'type': 'premium'},
+    'quarterly': {'name': '季度会员', 'days': 90, 'type': 'premium'},
+    'yearly': {'name': '年度会员', 'days': 365, 'type': 'premium'},
   };
 
   // 错误消息映射
@@ -157,10 +126,7 @@ class WorkerConfig {
 
   // 验证密码强度
   static Map<String, dynamic> validatePassword(String password) {
-    final result = {
-      'isValid': true,
-      'errors': <String>[],
-    };
+    final result = {'isValid': true, 'errors': <String>[]};
 
     if (password.length < 8) {
       result['isValid'] = false;

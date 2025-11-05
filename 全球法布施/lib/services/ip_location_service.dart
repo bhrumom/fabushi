@@ -62,16 +62,22 @@ class IPLocationService {
 
     try {
       // 使用免费的IP定位服务
-      final response = await http.get(
-        Uri.parse('http://ip-api.com/json/?fields=status,message,country,countryCode,region,city,lat,lon,query'),
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse(
+              'http://ip-api.com/json/?fields=status,message,country,countryCode,region,city,lat,lon,query',
+            ),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['status'] == 'success') {
           _cachedLocation = IPLocation.fromJson(data);
           _lastFetchTime = DateTime.now();
-          print('IP定位成功: ${_cachedLocation!.country}, ${_cachedLocation!.city}');
+          print(
+            'IP定位成功: ${_cachedLocation!.country}, ${_cachedLocation!.city}',
+          );
           return _cachedLocation;
         } else {
           print('IP定位失败: ${data['message']}');
@@ -90,9 +96,9 @@ class IPLocationService {
   // 备用的IP定位服务
   Future<IPLocation?> getCurrentLocationBackup() async {
     try {
-      final response = await http.get(
-        Uri.parse('https://ipinfo.io/json?token='),
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(Uri.parse('https://ipinfo.io/json?token='))
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);

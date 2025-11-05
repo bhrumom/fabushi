@@ -9,8 +9,8 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
   VideoFeedRepositoryImpl({
     required FirebaseFirestore firestore,
     required CloudflareTextService textService,
-  })  : _firestore = firestore,
-        _textService = textService;
+  }) : _firestore = firestore,
+       _textService = textService;
 
   final FirebaseFirestore _firestore;
   final CloudflareTextService _textService;
@@ -40,12 +40,18 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
     }
     try {
       _isLoading = true;
-      final result = await _fetchVideosHelper(startAfterDocument: _lastDocument);
+      final result = await _fetchVideosHelper(
+        startAfterDocument: _lastDocument,
+      );
       return result;
     } on FirebaseException catch (e) {
-      return Left('Failed to fetch more videos: ${e.message ?? 'Unknown error'}');
+      return Left(
+        'Failed to fetch more videos: ${e.message ?? 'Unknown error'}',
+      );
     } catch (e) {
-      return const Left('An unexpected error occurred while fetching more videos');
+      return const Left(
+        'An unexpected error occurred while fetching more videos',
+      );
     } finally {
       _isLoading = false;
     }
@@ -82,27 +88,29 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
 
       // 从预加载队列获取文本内容
       final textCount = 2;
-      
+
       for (int i = 0; i < textCount; i++) {
         final textData = await _textService.getRandomTextContent();
-        
+
         if (textData != null) {
-          videos.add(VideoEntity(
-            id: 'text_${DateTime.now().millisecondsSinceEpoch}_$i',
-            username: textData['title'] ?? '佛法文本',
-            description: '点击头像阅读全文',
-            videoUrl: '',
-            profileImageUrl: '',
-            likeCount: 0,
-            commentCount: 0,
-            shareCount: 0,
-            timestamp: DateTime.now(),
-            contentType: ContentType.text,
-            textContent: textData['content'],
-          ));
+          videos.add(
+            VideoEntity(
+              id: 'text_${DateTime.now().millisecondsSinceEpoch}_$i',
+              username: textData['title'] ?? '佛法文本',
+              description: '点击头像阅读全文',
+              videoUrl: '',
+              profileImageUrl: '',
+              likeCount: 0,
+              commentCount: 0,
+              shareCount: 0,
+              timestamp: DateTime.now(),
+              contentType: ContentType.text,
+              textContent: textData['content'],
+            ),
+          );
         }
       }
-      
+
       print('加载成功: ${videos.length} 个内容');
       _textContentIndex++;
 

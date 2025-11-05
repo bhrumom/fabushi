@@ -12,10 +12,11 @@ class EnhancedEarthGlobeWidget extends StatefulWidget {
   const EnhancedEarthGlobeWidget({super.key});
 
   @override
-  State<EnhancedEarthGlobeWidget> createState() => EnhancedEarthGlobeWidgetState();
+  State<EnhancedEarthGlobeWidget> createState() =>
+      EnhancedEarthGlobeWidgetState();
 }
 
-class EnhancedEarthGlobeWidgetState extends State<EnhancedEarthGlobeWidget> 
+class EnhancedEarthGlobeWidgetState extends State<EnhancedEarthGlobeWidget>
     with SingleTickerProviderStateMixin {
   late FlutterEarthGlobeController _controller;
   final CountryCoordinatesService _coordService = CountryCoordinatesService();
@@ -52,7 +53,10 @@ class EnhancedEarthGlobeWidgetState extends State<EnhancedEarthGlobeWidget>
     final start = GlobeMathUtils.latLngToVector3(fromLat, fromLng);
     final end = GlobeMathUtils.latLngToVector3(toLat, toLng);
     final control = GlobeMathUtils.calculateArcControlPoint(
-      fromLat, fromLng, toLat, toLng,
+      fromLat,
+      fromLng,
+      toLat,
+      toLng,
       heightFactor: 0.4,
     );
 
@@ -61,26 +65,40 @@ class EnhancedEarthGlobeWidgetState extends State<EnhancedEarthGlobeWidget>
 
     // 执行流星动画
     await _animateBeautifulMeteor(
-      start, control, end,
-      beamColor, animDuration, timestamp,
+      start,
+      control,
+      end,
+      beamColor,
+      animDuration,
+      timestamp,
     );
 
     // 清理标记
     _cleanupMarkers(timestamp);
   }
 
-  void _addEndpointMarkers(double fromLat, double fromLng, double toLat, double toLng, int timestamp) {
-    _controller.addPoint(Point(
-      id: 'from_$timestamp',
-      coordinates: GlobeCoordinates(fromLat, fromLng),
-      style: PointStyle(color: Colors.red.shade400, size: 8),
-    ));
+  void _addEndpointMarkers(
+    double fromLat,
+    double fromLng,
+    double toLat,
+    double toLng,
+    int timestamp,
+  ) {
+    _controller.addPoint(
+      Point(
+        id: 'from_$timestamp',
+        coordinates: GlobeCoordinates(fromLat, fromLng),
+        style: PointStyle(color: Colors.red.shade400, size: 8),
+      ),
+    );
 
-    _controller.addPoint(Point(
-      id: 'to_$timestamp',
-      coordinates: GlobeCoordinates(toLat, toLng),
-      style: PointStyle(color: Colors.green.shade400, size: 6),
-    ));
+    _controller.addPoint(
+      Point(
+        id: 'to_$timestamp',
+        coordinates: GlobeCoordinates(toLat, toLng),
+        style: PointStyle(color: Colors.green.shade400, size: 6),
+      ),
+    );
   }
 
   Future<void> _animateBeautifulMeteor(
@@ -103,31 +121,40 @@ class EnhancedEarthGlobeWidgetState extends State<EnhancedEarthGlobeWidget>
       final coords = _vector3ToGlobeCoords(pos);
 
       // 彗星头部（白色核心）
-      _controller.addPoint(Point(
-        id: 'head_${timestamp}_$i',
-        coordinates: coords,
-        style: PointStyle(color: Colors.white, size: 12),
-      ));
+      _controller.addPoint(
+        Point(
+          id: 'head_${timestamp}_$i',
+          coordinates: coords,
+          style: PointStyle(color: Colors.white, size: 12),
+        ),
+      );
 
       // 彗星拖尾（渐变效果）
       for (int j = 1; j <= tailLength; j++) {
         if (i - j < 0) continue;
 
         final tailT = (i - j) / steps;
-        final tailPos = GlobeMathUtils.quadraticBezier(start, control, end, tailT);
+        final tailPos = GlobeMathUtils.quadraticBezier(
+          start,
+          control,
+          end,
+          tailT,
+        );
         final tailCoords = _vector3ToGlobeCoords(tailPos);
-        
+
         final opacity = (1 - j / tailLength);
         final size = 10 - (j * 0.5);
 
-        _controller.addPoint(Point(
-          id: 'tail_${timestamp}_${i}_$j',
-          coordinates: tailCoords,
-          style: PointStyle(
-            color: color.withOpacity(opacity),
-            size: size.clamp(3, 10),
+        _controller.addPoint(
+          Point(
+            id: 'tail_${timestamp}_${i}_$j',
+            coordinates: tailCoords,
+            style: PointStyle(
+              color: color.withOpacity(opacity),
+              size: size.clamp(3, 10),
+            ),
           ),
-        ));
+        );
 
         // 延迟清理拖尾
         Future.delayed(Duration(milliseconds: 200), () {
@@ -201,9 +228,6 @@ class EnhancedEarthGlobeWidgetState extends State<EnhancedEarthGlobeWidget>
 
   @override
   Widget build(BuildContext context) {
-    return FlutterEarthGlobe(
-      controller: _controller,
-      radius: 150,
-    );
+    return FlutterEarthGlobe(controller: _controller, radius: 150);
   }
 }

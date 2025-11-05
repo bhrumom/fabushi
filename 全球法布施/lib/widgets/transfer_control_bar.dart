@@ -5,17 +5,14 @@ import '../models/file_transfer_model.dart';
 class TransferControlBar extends StatelessWidget {
   final VoidCallback onPauseResume;
   final VoidCallback onCancel;
-  
-  TransferControlBar({
-    required this.onPauseResume,
-    required this.onCancel,
-  });
-  
+
+  TransferControlBar({required this.onPauseResume, required this.onCancel});
+
   @override
   Widget build(BuildContext context) {
     final model = Provider.of<FileTransferModel>(context);
     final status = model.status;
-    
+
     return Container(
       height: 60,
       decoration: BoxDecoration(
@@ -33,15 +30,20 @@ class TransferControlBar extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           // 暂停/继续按钮
-          if (status == TransferStatus.transferring || status == TransferStatus.paused)
+          if (status == TransferStatus.transferring ||
+              status == TransferStatus.paused)
             _buildControlButton(
               context: context,
-              icon: status == TransferStatus.transferring ? Icons.pause : Icons.play_arrow,
+              icon: status == TransferStatus.transferring
+                  ? Icons.pause
+                  : Icons.play_arrow,
               label: status == TransferStatus.transferring ? '暂停' : '继续',
-              color: status == TransferStatus.transferring ? Colors.orange : Colors.green,
+              color: status == TransferStatus.transferring
+                  ? Colors.orange
+                  : Colors.green,
               onPressed: onPauseResume,
             ),
-          
+
           // 取消按钮
           if (status != TransferStatus.completed)
             _buildControlButton(
@@ -51,7 +53,7 @@ class TransferControlBar extends StatelessWidget {
               color: Colors.red,
               onPressed: onCancel,
             ),
-          
+
           // 完成按钮
           if (status == TransferStatus.completed)
             _buildControlButton(
@@ -67,7 +69,7 @@ class TransferControlBar extends StatelessWidget {
       ),
     );
   }
-  
+
   // 构建控制按钮
   Widget _buildControlButton({
     required BuildContext context,
@@ -77,17 +79,10 @@ class TransferControlBar extends StatelessWidget {
     required VoidCallback onPressed,
   }) {
     return TextButton.icon(
-      icon: Icon(
-        icon,
-        color: color,
-        size: 24,
-      ),
+      icon: Icon(icon, color: color, size: 24),
       label: Text(
         label,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.bold,
-        ),
+        style: TextStyle(color: color, fontWeight: FontWeight.bold),
       ),
       onPressed: onPressed,
       style: TextButton.styleFrom(

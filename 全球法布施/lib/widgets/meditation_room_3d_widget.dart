@@ -13,20 +13,25 @@ class MeditationRoom3DWidget extends StatefulWidget {
   State<MeditationRoom3DWidget> createState() => _MeditationRoom3DWidgetState();
 }
 
-class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with TickerProviderStateMixin {
+class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget>
+    with TickerProviderStateMixin {
   final List<String> _bookTitles = [
-    '金刚经', '心经', '法华经', '华严经',
-    '楞严经', '圆觉经', '维摩诘经', '地藏经'
+    '金刚经',
+    '心经',
+    '法华经',
+    '华严经',
+    '楞严经',
+    '圆觉经',
+    '维摩诘经',
+    '地藏经',
   ];
-  
+
   late AnimationController _glowController;
   late AnimationController _rotationController;
   double _cameraAngleX = 0.3;
   double _cameraAngleY = 0.0;
   double _cameraDistance = 8.0;
-  
 
-  
   // 供香和供灯状态
   bool _isIncenseOffering = false;
   bool _isLampOffering = false;
@@ -40,16 +45,13 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
-    
+
     _rotationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 30),
     )..repeat();
-    
-
   }
 
-  
   void _offerIncense() {
     setState(() {
       _isIncenseOffering = true;
@@ -61,7 +63,7 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
       }
     });
   }
-  
+
   void _offerLamp() {
     setState(() {
       _isLampOffering = true;
@@ -73,8 +75,6 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
       }
     });
   }
-
-
 
   void _onSceneTap(Offset position, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
@@ -119,21 +119,20 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
         duration: const Duration(milliseconds: 300),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         decoration: BoxDecoration(
-          color: isActive 
-            ? color.withOpacity(0.9)
-            : Colors.brown[800]!.withOpacity(0.8),
+          color: isActive
+              ? color.withOpacity(0.9)
+              : Colors.brown[800]!.withOpacity(0.8),
           borderRadius: BorderRadius.circular(30),
-          border: Border.all(
-            color: isActive ? color : Colors.amber,
-            width: 2,
-          ),
-          boxShadow: isActive ? [
-            BoxShadow(
-              color: color.withOpacity(0.6),
-              blurRadius: 20,
-              spreadRadius: 5,
-            ),
-          ] : [],
+          border: Border.all(color: isActive ? color : Colors.amber, width: 2),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: color.withOpacity(0.6),
+                    blurRadius: 20,
+                    spreadRadius: 5,
+                  ),
+                ]
+              : [],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -171,22 +170,14 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            Colors.brown[900]!,
-            Colors.brown[700]!,
-            Colors.brown[500]!,
-          ],
+          colors: [Colors.brown[900]!, Colors.brown[700]!, Colors.brown[500]!],
         ),
       ),
       child: Stack(
         children: [
           if (kIsWeb)
             Center(
-              child: SizedBox(
-                width: 400,
-                height: 500,
-                child: Buddha3DWidget(),
-              ),
+              child: SizedBox(width: 400, height: 500, child: Buddha3DWidget()),
             ),
           GestureDetector(
             onTapUp: (details) {
@@ -196,11 +187,17 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
             onPanUpdate: (details) {
               setState(() {
                 _cameraAngleY += details.delta.dx * 0.01;
-                _cameraAngleX = (_cameraAngleX - details.delta.dy * 0.01).clamp(-1.5, 1.5);
+                _cameraAngleX = (_cameraAngleX - details.delta.dy * 0.01).clamp(
+                  -1.5,
+                  1.5,
+                );
               });
             },
             child: AnimatedBuilder(
-              animation: Listenable.merge([_glowController, _rotationController]),
+              animation: Listenable.merge([
+                _glowController,
+                _rotationController,
+              ]),
               builder: (context, child) {
                 return SizedBox.expand(
                   child: CustomPaint(
@@ -227,12 +224,19 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
                 animation: _glowController,
                 builder: (context, child) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.3 + _glowController.value * 0.2),
+                      color: Colors.black.withOpacity(
+                        0.3 + _glowController.value * 0.2,
+                      ),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: Colors.amber.withOpacity(0.5 + _glowController.value * 0.5),
+                        color: Colors.amber.withOpacity(
+                          0.5 + _glowController.value * 0.5,
+                        ),
                         width: 2,
                       ),
                     ),
@@ -242,9 +246,7 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget> with Ti
                         color: Colors.white,
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        shadows: [
-                          Shadow(color: Colors.amber, blurRadius: 10),
-                        ],
+                        shadows: [Shadow(color: Colors.amber, blurRadius: 10)],
                       ),
                     ),
                   );

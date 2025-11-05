@@ -26,20 +26,28 @@ class FileSelectionCard extends StatelessWidget {
                 Text('已选文件', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 10),
                 SizedBox(
-                  height: 150, // Provide a fixed height or use other constraints
+                  height:
+                      150, // Provide a fixed height or use other constraints
                   child: model.hasFiles
                       ? ListView.builder(
                           itemCount: model.selectedFiles.length,
                           itemBuilder: (context, index) {
                             final file = model.selectedFiles[index];
                             return ListTile(
-                              leading: Icon(_getIconForFileType(
-                                  model.getFileType(file.name))),
+                              leading: Icon(
+                                _getIconForFileType(
+                                  model.getFileType(file.name),
+                                ),
+                              ),
                               title: Text(file.name),
-                              subtitle:
-                                  Text(model.getFileSizeString(file.size)),
+                              subtitle: Text(
+                                model.getFileSizeString(file.size),
+                              ),
                               trailing: IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.red),
+                                icon: const Icon(
+                                  Icons.delete,
+                                  color: Colors.red,
+                                ),
                                 onPressed: () => model.removeFile(file),
                               ),
                             );
@@ -83,8 +91,10 @@ class FileSelectionCard extends StatelessWidget {
                     if (model.hasFiles)
                       TextButton.icon(
                         icon: const Icon(Icons.clear_all, color: Colors.red),
-                        label: const Text('清空',
-                            style: TextStyle(color: Colors.red)),
+                        label: const Text(
+                          '清空',
+                          style: TextStyle(color: Colors.red),
+                        ),
                         onPressed: () => model.clearFiles(),
                       ),
                   ],

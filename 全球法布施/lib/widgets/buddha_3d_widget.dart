@@ -7,9 +7,7 @@ class Buddha3DWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (kIsWeb) {
-      return Center(
-        child: Text('3D佛像仅在Web平台可用'),
-      );
+      return Center(child: Text('3D佛像仅在Web平台可用'));
     } else {
       return Center(
         child: Column(

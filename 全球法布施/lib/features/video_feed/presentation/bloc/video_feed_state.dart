@@ -24,15 +24,15 @@ class VideoFeedState extends Equatable {
 
   @override
   List<Object?> get props => [
-        isLoading,
-        isSuccess,
-        isPaginating,
-        hasMoreVideos,
-        errorMessage,
-        videos,
-        currentIndex,
-        preloadedVideoUrls,
-      ];
+    isLoading,
+    isSuccess,
+    isPaginating,
+    hasMoreVideos,
+    errorMessage,
+    videos,
+    currentIndex,
+    preloadedVideoUrls,
+  ];
 
   VideoFeedState copyWith({
     bool? isLoading,

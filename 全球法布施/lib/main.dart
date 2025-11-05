@@ -16,10 +16,9 @@ import 'widgets/app_wrapper.dart';
 import 'screens/login_screen.dart';
 import 'core/video_feed_di/video_feed_injector.dart';
 
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // 桌面平台设置窗口固定最大化
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     await windowManager.ensureInitialized();
@@ -27,7 +26,7 @@ void main() async {
     await windowManager.setResizable(false);
     await windowManager.maximize();
   }
-  
+
   // 尝试初始化Firebase，如果失败则继续运行
   try {
     await Firebase.initializeApp(
@@ -37,18 +36,18 @@ void main() async {
   } catch (e) {
     debugPrint('⚠️ Firebase初始化失败（可选功能）: $e');
   }
-  
+
   // Web平台使用HTML渲染器
   if (kIsWeb) {
     debugPrint('使用HTML渲染器加快网页加载速度');
   }
-  
+
   // 异步初始化，不阻塞启动
   AppInitializer.initialize().catchError((e) => debugPrint('初始化失败: $e'));
-  
+
   // 初始化 Video Feed 依赖
   setupVideoFeedDependencies();
-  
+
   runApp(const MyApp());
 }
 
@@ -59,28 +58,16 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (context) => AuthModel(),
-        ),
-        ChangeNotifierProvider(
-          create: (context) => FileTransferModel(),
-        ),
-        ChangeNotifierProvider(
-          create: (context) => SettingsModel(),
-        ),
-        ChangeNotifierProvider(
-          create: (context) => CountrySendingModel(),
-        ),
-        ChangeNotifierProvider(
-          create: (context) => LeaderboardModel(),
-        ),
+        ChangeNotifierProvider(create: (context) => AuthModel()),
+        ChangeNotifierProvider(create: (context) => FileTransferModel()),
+        ChangeNotifierProvider(create: (context) => SettingsModel()),
+        ChangeNotifierProvider(create: (context) => CountrySendingModel()),
+        ChangeNotifierProvider(create: (context) => LeaderboardModel()),
       ],
       child: MaterialApp(
         title: '全球法布施',
         debugShowCheckedModeBanner: false,
-        routes: {
-          '/login': (context) => const LoginScreen(),
-        },
+        routes: {'/login': (context) => const LoginScreen()},
         theme: FlexThemeData.light(
           scheme: FlexScheme.deepPurple,
           surfaceMode: FlexSurfaceMode.levelSurfacesLowScaffold,

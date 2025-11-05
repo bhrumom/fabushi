@@ -56,7 +56,10 @@ class Globe3DWidgetState extends State<Globe3DWidget> {
             const SizedBox(height: 10),
             Text(
               '请使用 flutter run -d chrome 在浏览器中查看完整3D效果',
-              style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.7),
+                fontSize: 14,
+              ),
               textAlign: TextAlign.center,
             ),
           ],

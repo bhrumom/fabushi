@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/file_transfer_model.dart';
 
 /// 传输模式选择器
-/// 
+///
 /// 允许用户选择不同的传输模式，如全球发送和WiFi广播
 class TransferModeSelector extends StatelessWidget {
   const TransferModeSelector({Key? key}) : super(key: key);
@@ -18,10 +18,7 @@ class TransferModeSelector extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '法布施设置',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
+                Text('法布施设置', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 16.0),
                 _buildLoopingSwitch(
                   context,
@@ -62,7 +59,9 @@ class TransferModeSelector extends StatelessWidget {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeColor: isHighlighted ? Theme.of(context).colorScheme.primary : null,
+        activeColor: isHighlighted
+            ? Theme.of(context).colorScheme.primary
+            : null,
       ),
     );
   }

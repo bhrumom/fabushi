@@ -17,7 +17,8 @@ class _BasicTrajectoryExampleState extends State<BasicTrajectoryExample> {
 
   void _sendBeam() {
     _globeKey.currentState?.addTransferBeamByCountryCode(
-      'CN', 'US',
+      'CN',
+      'US',
       color: Colors.cyan,
       duration: const Duration(seconds: 2),
     );
@@ -48,7 +49,8 @@ class EnhancedTrajectoryExample extends StatefulWidget {
   const EnhancedTrajectoryExample({super.key});
 
   @override
-  State<EnhancedTrajectoryExample> createState() => _EnhancedTrajectoryExampleState();
+  State<EnhancedTrajectoryExample> createState() =>
+      _EnhancedTrajectoryExampleState();
 }
 
 class _EnhancedTrajectoryExampleState extends State<EnhancedTrajectoryExample> {
@@ -93,16 +95,17 @@ class _FileTransferExampleState extends State<FileTransferExample> {
     setState(() => _isTransferring = true);
 
     final countries = ['US', 'GB', 'JP', 'DE', 'FR'];
-    
+
     for (var country in countries) {
       if (!mounted) break;
-      
+
       _globeKey.currentState?.addTransferBeamByCountryCode(
-        'CN', country,
+        'CN',
+        country,
         color: Colors.green,
         duration: const Duration(seconds: 2),
       );
-      
+
       await Future.delayed(const Duration(milliseconds: 500));
     }
 

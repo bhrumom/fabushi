@@ -40,10 +40,7 @@ class _FirebaseLoginScreenState extends State<FirebaseLoginScreen> {
             else
               Column(
                 children: [
-                  ElevatedButton(
-                    onPressed: _signIn,
-                    child: const Text('登录'),
-                  ),
+                  ElevatedButton(onPressed: _signIn, child: const Text('登录')),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: _signInWithGoogle,
@@ -70,9 +67,9 @@ class _FirebaseLoginScreenState extends State<FirebaseLoginScreen> {
       if (result['success']) {
         Navigator.pop(context);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['error'])),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result['error'])));
       }
     }
   }
@@ -86,9 +83,9 @@ class _FirebaseLoginScreenState extends State<FirebaseLoginScreen> {
       if (result['success']) {
         Navigator.pop(context);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['error'])),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result['error'])));
       }
     }
   }

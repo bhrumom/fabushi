@@ -11,22 +11,22 @@ void main() {
     testWidgets('应用启动测试', (WidgetTester tester) async {
       // 构建应用
       await tester.pumpWidget(const MyApp());
-      
+
       // 验证主界面元素
       expect(find.text('全球法布施'), findsOneWidget);
       expect(find.byType(AppBar), findsOneWidget);
-      
+
       // 验证底部导航栏
       expect(find.byType(BottomNavigationBar), findsOneWidget);
     });
 
     testWidgets('登录界面测试', (WidgetTester tester) async {
       await tester.pumpWidget(const MyApp());
-      
+
       // 点击登录按钮
       await tester.tap(find.text('登录'));
       await tester.pumpAndSettle();
-      
+
       // 验证登录界面元素
       expect(find.text('用户登录'), findsOneWidget);
       expect(find.byType(TextFormField), findsNWidgets(2)); // 用户名和密码字段
@@ -36,13 +36,13 @@ void main() {
 
     testWidgets('注册界面测试', (WidgetTester tester) async {
       await tester.pumpWidget(const MyApp());
-      
+
       // 导航到注册界面
       await tester.tap(find.text('登录'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('注册账户'));
       await tester.pumpAndSettle();
-      
+
       // 验证注册界面元素
       expect(find.text('用户注册'), findsOneWidget);
       expect(find.byType(TextFormField), findsNWidgets(4)); // 用户名、邮箱、密码、验证码
@@ -52,11 +52,11 @@ void main() {
 
     testWidgets('个人中心界面测试', (WidgetTester tester) async {
       await tester.pumpWidget(const MyApp());
-      
+
       // 点击个人中心
       await tester.tap(find.byIcon(Icons.person));
       await tester.pumpAndSettle();
-      
+
       // 验证个人中心界面元素
       expect(find.text('个人中心'), findsOneWidget);
       expect(find.text('会员中心'), findsOneWidget);
@@ -66,13 +66,13 @@ void main() {
 
     testWidgets('会员中心界面测试', (WidgetTester tester) async {
       await tester.pumpWidget(const MyApp());
-      
+
       // 导航到会员中心
       await tester.tap(find.byIcon(Icons.person));
       await tester.pumpAndSettle();
       await tester.tap(find.text('会员中心'));
       await tester.pumpAndSettle();
-      
+
       // 验证会员中心界面元素
       expect(find.text('会员中心'), findsOneWidget);
       expect(find.text('请先登录'), findsOneWidget); // 未登录状态
@@ -81,15 +81,15 @@ void main() {
     group('表单验证测试', () {
       testWidgets('登录表单验证', (WidgetTester tester) async {
         await tester.pumpWidget(const MyApp());
-        
+
         // 导航到登录界面
         await tester.tap(find.text('登录'));
         await tester.pumpAndSettle();
-        
+
         // 尝试空表单提交
         await tester.tap(find.text('登录').last);
         await tester.pumpAndSettle();
-        
+
         // 验证错误提示
         expect(find.text('请输入用户名或邮箱'), findsOneWidget);
         expect(find.text('请输入密码'), findsOneWidget);
@@ -97,17 +97,17 @@ void main() {
 
       testWidgets('注册表单验证', (WidgetTester tester) async {
         await tester.pumpWidget(const MyApp());
-        
+
         // 导航到注册界面
         await tester.tap(find.text('登录'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('注册账户'));
         await tester.pumpAndSettle();
-        
+
         // 尝试空表单提交
         await tester.tap(find.text('注册'));
         await tester.pumpAndSettle();
-        
+
         // 验证错误提示
         expect(find.text('请输入用户名'), findsOneWidget);
         expect(find.text('请输入邮箱'), findsOneWidget);
@@ -118,12 +118,12 @@ void main() {
     group('状态管理测试', () {
       testWidgets('AuthModel状态测试', (WidgetTester tester) async {
         final authModel = AuthModel();
-        
+
         // 测试初始状态
         expect(authModel.isLoggedIn, false);
         expect(authModel.currentUser, null);
         expect(authModel.isLoading, false);
-        
+
         // 测试加载状态
         // 注意：这里需要模拟网络请求，实际测试中应该使用mock
       });
@@ -133,7 +133,7 @@ void main() {
   group('服务层测试', () {
     group('AuthService测试', () {
       late AuthService authService;
-      
+
       setUp(() {
         authService = AuthService();
       });
@@ -144,7 +144,7 @@ void main() {
           'username': 'test@example.com',
           'password': 'password123',
         };
-        
+
         expect(loginData.containsKey('username'), true);
         expect(loginData.containsKey('password'), true);
       });
@@ -157,7 +157,7 @@ void main() {
           'password': 'password123',
           'verificationCode': '123456',
         };
-        
+
         expect(registerData.containsKey('username'), true);
         expect(registerData.containsKey('email'), true);
         expect(registerData.containsKey('password'), true);
@@ -167,18 +167,18 @@ void main() {
 
     group('MembershipService测试', () {
       late MembershipService membershipService;
-      
+
       setUp(() {
         membershipService = MembershipService();
       });
 
       test('会员价格信息测试', () {
         final prices = membershipService.getMembershipPrices();
-        
+
         expect(prices.containsKey('monthly'), true);
         expect(prices.containsKey('quarterly'), true);
         expect(prices.containsKey('yearly'), true);
-        
+
         // 验证价格信息结构
         final monthlyPrice = prices['monthly']!;
         expect(monthlyPrice.containsKey('name'), true);
@@ -189,7 +189,7 @@ void main() {
 
       test('试用会员信息测试', () {
         final trialInfo = membershipService.getTrialMembership();
-        
+
         expect(trialInfo.containsKey('name'), true);
         expect(trialInfo.containsKey('price'), true);
         expect(trialInfo.containsKey('duration'), true);
@@ -209,9 +209,9 @@ void main() {
           'membershipExpiry': '2024-12-31T23:59:59.000Z',
           'isAdmin': false,
         };
-        
+
         final user = User.fromJson(json);
-        
+
         expect(user.username, 'testuser');
         expect(user.email, 'test@example.com');
         expect(user.membershipType, 'premium');
@@ -227,9 +227,9 @@ void main() {
           membershipExpiry: DateTime(2024, 12, 31),
           isAdmin: false,
         );
-        
+
         final json = user.toJson();
-        
+
         expect(json['username'], 'testuser');
         expect(json['email'], 'test@example.com');
         expect(json['membershipType'], 'premium');
@@ -245,10 +245,10 @@ void main() {
           membershipType: 'premium',
           membershipExpiry: DateTime.now().add(const Duration(days: 30)),
         );
-        
+
         expect(premiumUser.hasPremiumMembership, true);
         expect(premiumUser.isPremiumMember, true);
-        
+
         // 测试过期会员
         final expiredUser = User(
           username: 'expired',
@@ -256,10 +256,10 @@ void main() {
           membershipType: 'premium',
           membershipExpiry: DateTime.now().subtract(const Duration(days: 1)),
         );
-        
+
         expect(expiredUser.hasPremiumMembership, false);
         expect(expiredUser.isPremiumMember, false);
-        
+
         // 测试试用会员
         final trialUser = User(
           username: 'trial',
@@ -267,7 +267,7 @@ void main() {
           membershipType: 'trial',
           membershipExpiry: DateTime.now().add(const Duration(days: 7)),
         );
-        
+
         expect(trialUser.isTrialMember, true);
         expect(trialUser.hasPremiumMembership, true);
       });
@@ -300,11 +300,8 @@ class MockAuthService extends AuthService {
         },
       };
     }
-    
-    return {
-      'success': false,
-      'message': '用户名或密码错误',
-    };
+
+    return {'success': false, 'message': '用户名或密码错误'};
   }
 
   @override
@@ -316,16 +313,10 @@ class MockAuthService extends AuthService {
   ) async {
     // 模拟注册成功
     if (verificationCode == '123456') {
-      return {
-        'success': true,
-        'message': '注册成功',
-      };
+      return {'success': true, 'message': '注册成功'};
     }
-    
-    return {
-      'success': false,
-      'message': '验证码错误',
-    };
+
+    return {'success': false, 'message': '验证码错误'};
   }
 
   @override
@@ -334,21 +325,14 @@ class MockAuthService extends AuthService {
     String type = 'register',
   }) async {
     // 模拟发送验证码成功
-    return {
-      'success': true,
-      'message': '验证码已发送',
-    };
+    return {'success': true, 'message': '验证码已发送'};
   }
 }
 
 // 测试用的Widget包装器
 Widget createTestApp(Widget child) {
   return MultiProvider(
-    providers: [
-      ChangeNotifierProvider(create: (context) => AuthModel()),
-    ],
-    child: MaterialApp(
-      home: child,
-    ),
+    providers: [ChangeNotifierProvider(create: (context) => AuthModel())],
+    child: MaterialApp(home: child),
   );
 }

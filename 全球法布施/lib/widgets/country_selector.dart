@@ -35,12 +35,12 @@ class CountrySelector extends StatefulWidget {
 class _CountrySelectorState extends State<CountrySelector> {
   String _selectedCountry = 'ALL'; // 默认选择所有国家
   List<String> _countryList = [];
-  
+
   @override
   void initState() {
     super.initState();
     _loadCountries();
-    
+
     // 添加延迟重新加载，以防国家列表在初始化后才可用
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted && _countryList.isEmpty) {
@@ -49,31 +49,33 @@ class _CountrySelectorState extends State<CountrySelector> {
       }
     });
   }
-  
+
   Future<void> _loadCountries() async {
     // 获取国家列表
     final countryList = await _fetchCountryList();
-    
+
     if (mounted) {
       setState(() {
         _countryList = countryList;
-        
+
         // 如果之前没有选择国家或选择的国家不在列表中，设置为第一个国家
-        if (_countryList.isNotEmpty && (!_countryList.contains(_selectedCountry) || _selectedCountry == 'ALL')) {
+        if (_countryList.isNotEmpty &&
+            (!_countryList.contains(_selectedCountry) ||
+                _selectedCountry == 'ALL')) {
           _selectedCountry = _countryList[0];
         }
       });
-      
+
       // 通知父组件国家列表已加载
       widget.onCountryListLoaded(_countryList);
-      
+
       // 如果有国家被选中，通知父组件
       if (_countryList.isNotEmpty) {
         widget.onCountrySelected(_selectedCountry);
       }
     }
   }
-  
+
   Future<List<String>> _fetchCountryList() async {
     try {
       // 从Provider获取FileTransferModel，然后获取国家列表
@@ -96,7 +98,7 @@ class _CountrySelectorState extends State<CountrySelector> {
   @override
   Widget build(BuildContext context) {
     final settings = Provider.of<SettingsModel>(context);
-    
+
     return Material(
       color: Colors.white,
       shape: RoundedRectangleBorder(
@@ -124,14 +126,14 @@ class _CountrySelectorState extends State<CountrySelector> {
                 setState(() {
                   _selectedCountry = newValue;
                 });
-                
+
                 // 更新设置中的选中国家
                 if (newValue == 'ALL') {
                   settings.clearSelectedCountries();
                 } else {
                   settings.setSelectedCountries([newValue]);
                 }
-                
+
                 // 通知父组件国家已更改
                 widget.onCountrySelected(_selectedCountry);
               }

@@ -20,7 +20,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _verificationCodeController = TextEditingController();
-  
+
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _codeSent = false;
@@ -54,7 +54,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _handleAlipayRegisterCallback(String authCode) async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
-    
+
     // 显示对话框让用户输入用户名和邮箱
     final result = await showDialog<Map<String, String>>(
       context: context,
@@ -108,7 +108,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         result['email'] ?? '',
         authCode,
       );
-      
+
       if (success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -131,13 +131,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _handleAlipayRegister() async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
-    
+
     try {
       final result = await authModel.getAlipayLoginUrl();
-      
+
       if (result['success'] == true && result['loginUrl'] != null) {
         final loginUrl = result['loginUrl'] as String;
-        
+
         // 在Web平台上打开支付宝登录页面
         if (await canLaunch(loginUrl)) {
           await launch(loginUrl);
@@ -158,10 +158,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('支付宝注册出错: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('支付宝注册出错: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -199,7 +196,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _codeSent = true;
         _countdown = 60;
       });
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('验证码已发送到您的邮箱'),
@@ -248,7 +245,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     final authModel = Provider.of<AuthModel>(context, listen: false);
-    
+
     final success = await authModel.register(
       _usernameController.text.trim(),
       _emailController.text.trim(),
@@ -289,10 +286,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF667eea),
-              Color(0xFF764ba2),
-            ],
+            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
           ),
         ),
         child: SafeArea(
@@ -413,11 +407,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             Expanded(
                               flex: 1,
                               child: ElevatedButton(
-                                onPressed: _countdown > 0 ? null : _sendVerificationCode,
+                                onPressed: _countdown > 0
+                                    ? null
+                                    : _sendVerificationCode,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF667eea),
                                   foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -485,7 +483,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ),
                               onPressed: () {
                                 setState(() {
-                                  _obscureConfirmPassword = !_obscureConfirmPassword;
+                                  _obscureConfirmPassword =
+                                      !_obscureConfirmPassword;
                                 });
                               },
                             ),
@@ -513,11 +512,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         Consumer<AuthModel>(
                           builder: (context, authModel, child) {
                             return ElevatedButton(
-                              onPressed: authModel.isLoading ? null : _handleRegister,
+                              onPressed: authModel.isLoading
+                                  ? null
+                                  : _handleRegister,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF667eea),
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
@@ -529,9 +532,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       width: 20,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
-                                        ),
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
                                       ),
                                     )
                                   : const Text(

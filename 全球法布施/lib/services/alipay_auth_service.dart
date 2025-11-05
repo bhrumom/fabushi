@@ -6,7 +6,6 @@ import 'app_settings.dart';
 /// 支付宝认证服务
 /// 处理支付宝登录授权相关功能
 class AlipayAuthService {
-  
   // 获取后端URL
   Future<String> get baseUrl async {
     return await AppSettings.getBackendUrl();
@@ -16,18 +15,16 @@ class AlipayAuthService {
   Future<Map<String, dynamic>> getAlipayLoginUrl({String? platform}) async {
     try {
       final url = await baseUrl;
-      
+
       // 构建请求URL，添加平台参数
       String requestUrl = '$url/api/auth/alipay/login-url';
       if (platform != null) {
         requestUrl += '?platform=$platform';
       }
-      
+
       final response = await http.get(
         Uri.parse(requestUrl),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: {'Content-Type': 'application/json'},
       );
 
       if (response.statusCode == 200) {
@@ -41,35 +38,27 @@ class AlipayAuthService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '获取支付宝登录URL失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '获取支付宝登录URL失败'};
       }
     } catch (e) {
       debugPrint('获取支付宝登录URL失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
   /// 支付宝登录回调处理
-  Future<Map<String, dynamic>> alipayLogin(String authCode, String? state) async {
+  Future<Map<String, dynamic>> alipayLogin(
+    String authCode,
+    String? state,
+  ) async {
     try {
       final url = await baseUrl;
       debugPrint('支付宝登录API调用: $url/api/auth/alipay/login, authCode: $authCode');
-      
+
       final response = await http.post(
         Uri.parse('$url/api/auth/alipay/login'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'auth_code': authCode,
-          'state': state,
-        }),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'auth_code': authCode, 'state': state}),
       );
 
       debugPrint('支付宝登录API响应: ${response.statusCode} - ${response.body}');
@@ -96,17 +85,11 @@ class AlipayAuthService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '支付宝登录失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '支付宝登录失败'};
       }
     } catch (e) {
       debugPrint('支付宝登录失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
@@ -123,9 +106,7 @@ class AlipayAuthService {
       final url = await baseUrl;
       final response = await http.post(
         Uri.parse('$url/api/auth/alipay/register'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'alipayUserId': alipayUserId,
           'username': username,
@@ -146,17 +127,11 @@ class AlipayAuthService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '支付宝注册失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '支付宝注册失败'};
       }
     } catch (e) {
       debugPrint('支付宝注册失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 
@@ -170,9 +145,7 @@ class AlipayAuthService {
       final url = await baseUrl;
       final response = await http.post(
         Uri.parse('$url/api/auth/alipay/register'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'alipayUserId': alipayUserId,
           'alipayNickname': nickname,
@@ -193,17 +166,11 @@ class AlipayAuthService {
         };
       } else {
         final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['error'] ?? '支付宝一键注册失败',
-        };
+        return {'success': false, 'message': data['error'] ?? '支付宝一键注册失败'};
       }
     } catch (e) {
       debugPrint('支付宝一键注册失败: $e');
-      return {
-        'success': false,
-        'message': '网络连接失败',
-      };
+      return {'success': false, 'message': '网络连接失败'};
     }
   }
 }

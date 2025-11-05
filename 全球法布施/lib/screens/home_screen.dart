@@ -13,7 +13,6 @@ import 'asset_screen.dart';
 import '../widgets/common_widgets.dart';
 import '../config/app_theme.dart';
 
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
@@ -22,7 +21,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-
   IconData _getIconForFileType(String fileType) {
     switch (fileType) {
       case '图片':
@@ -65,20 +63,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               onSelected: (value) {
-                    switch (value) {
-                      case 'profile':
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ProfileScreen(),
-                          ),
-                        );
-                        break;
-                      case 'logout':
-                        authModel.logout();
-                        break;
-                    }
-                  },
+                switch (value) {
+                  case 'profile':
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ProfileScreen(),
+                      ),
+                    );
+                    break;
+                  case 'logout':
+                    authModel.logout();
+                    break;
+                }
+              },
               itemBuilder: (context) => [
                 PopupMenuItem(
                   value: 'profile',
@@ -108,9 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const LoginScreen(),
-                  ),
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
                 );
               },
               tooltip: '登录',
@@ -137,126 +133,175 @@ class _HomeScreenState extends State<HomeScreen> {
                 AppCard(
                   padding: const EdgeInsets.all(20),
                   child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          '全球法布施',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '将佛法宝藏传播到世界每一个角落，利益一切有情众生。此功能提供高级选项，允许您选择素材、调整并发数并监控实时进度。',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: PrimaryButton(
-                                text: '选择文件',
-                                icon: Icons.file_upload,
-                                onPressed: () => context.read<FileTransferModel>().selectFiles(),
-                              ),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        '全球法布施',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '将佛法宝藏传播到世界每一个角落，利益一切有情众生。此功能提供高级选项，允许您选择素材、调整并发数并监控实时进度。',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: PrimaryButton(
+                              text: '选择文件',
+                              icon: Icons.file_upload,
+                              onPressed: () => context
+                                  .read<FileTransferModel>()
+                                  .selectFiles(),
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: SecondaryButton(
-                                text: '内置素材',
-                                icon: Icons.image,
-                                onPressed: () => context.read<FileTransferModel>().selectBuiltInAssets(context),
-                              ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: SecondaryButton(
+                              text: '内置素材',
+                              icon: Icons.image,
+                              onPressed: () => context
+                                  .read<FileTransferModel>()
+                                  .selectBuiltInAssets(context),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        // 已选文件框
-                        Consumer<FileTransferModel>(
-                          builder: (context, model, child) {
-                            return Card(
-                              elevation: 1,
-                              margin: EdgeInsets.zero,
-                              child: Padding(
-                                padding: const EdgeInsets.all(12.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('已选文件', style: Theme.of(context).textTheme.titleMedium),
-                                    const SizedBox(height: 8),
-                                    SizedBox(
-                                      height: 120,
-                                      child: model.hasFiles
-                                          ? ListView.builder(
-                                              itemCount: model.selectedFiles.length,
-                                              itemBuilder: (context, index) {
-                                                final file = model.selectedFiles[index];
-                                                return ListTile(
-                                                  dense: true,
-                                                  leading: Icon(_getIconForFileType(model.getFileType(file.name)), size: 20),
-                                                  title: Text(file.name, style: const TextStyle(fontSize: 14)),
-                                                  subtitle: Text(model.getFileSizeString(file.size), style: const TextStyle(fontSize: 12)),
-                                                  trailing: IconButton(
-                                                    icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                                                    onPressed: () => model.removeFile(file),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      // 已选文件框
+                      Consumer<FileTransferModel>(
+                        builder: (context, model, child) {
+                          return Card(
+                            elevation: 1,
+                            margin: EdgeInsets.zero,
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '已选文件',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    height: 120,
+                                    child: model.hasFiles
+                                        ? ListView.builder(
+                                            itemCount:
+                                                model.selectedFiles.length,
+                                            itemBuilder: (context, index) {
+                                              final file =
+                                                  model.selectedFiles[index];
+                                              return ListTile(
+                                                dense: true,
+                                                leading: Icon(
+                                                  _getIconForFileType(
+                                                    model.getFileType(
+                                                      file.name,
+                                                    ),
                                                   ),
-                                                );
-                                              },
-                                            )
-                                          : Container(
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey[200],
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              child: const Center(
-                                                child: Text(
-                                                  '请选择要发送的文件',
-                                                  style: TextStyle(
-                                                    color: Colors.black54,
-                                                    fontWeight: FontWeight.bold,
+                                                  size: 20,
+                                                ),
+                                                title: Text(
+                                                  file.name,
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
                                                   ),
+                                                ),
+                                                subtitle: Text(
+                                                  model.getFileSizeString(
+                                                    file.size,
+                                                  ),
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                                trailing: IconButton(
+                                                  icon: const Icon(
+                                                    Icons.delete,
+                                                    color: Colors.red,
+                                                    size: 18,
+                                                  ),
+                                                  onPressed: () =>
+                                                      model.removeFile(file),
+                                                ),
+                                              );
+                                            },
+                                          )
+                                        : Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[200],
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: const Center(
+                                              child: Text(
+                                                '请选择要发送的文件',
+                                                style: TextStyle(
+                                                  color: Colors.black54,
+                                                  fontWeight: FontWeight.bold,
                                                 ),
                                               ),
                                             ),
-                                    ),
-                                    if (model.hasFiles) ...[
-                                      const SizedBox(height: 8),
-                                      Align(
-                                        alignment: Alignment.centerRight,
-                                        child: TextButton.icon(
-                                          icon: const Icon(Icons.clear_all, color: Colors.red, size: 16),
-                                          label: const Text('清空', style: TextStyle(color: Colors.red, fontSize: 12)),
-                                          onPressed: () => model.clearFiles(),
+                                          ),
+                                  ),
+                                  if (model.hasFiles) ...[
+                                    const SizedBox(height: 8),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton.icon(
+                                        icon: const Icon(
+                                          Icons.clear_all,
+                                          color: Colors.red,
+                                          size: 16,
                                         ),
+                                        label: const Text(
+                                          '清空',
+                                          style: TextStyle(
+                                            color: Colors.red,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        onPressed: () => model.clearFiles(),
                                       ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 24),
-                        Consumer<FileTransferModel>(
-                          builder: (context, model, child) {
-                            return SizedBox(
-                              width: double.infinity,
-                              child: PrimaryButton(
-                                text: '开始全球法布施',
-                                icon: Icons.public,
-                                onPressed: model.hasFiles ? () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => const GlobalDharmaScreen(),
                                     ),
-                                  );
-                                } : null,
+                                  ],
+                                ],
                               ),
-                            );
-                          },
-                        ),
-                      ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      Consumer<FileTransferModel>(
+                        builder: (context, model, child) {
+                          return SizedBox(
+                            width: double.infinity,
+                            child: PrimaryButton(
+                              text: '开始全球法布施',
+                              icon: Icons.public,
+                              onPressed: model.hasFiles
+                                  ? () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              const GlobalDharmaScreen(),
+                                        ),
+                                      );
+                                    }
+                                  : null,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 16),

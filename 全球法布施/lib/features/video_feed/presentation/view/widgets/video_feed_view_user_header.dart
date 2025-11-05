@@ -29,20 +29,22 @@ class VideoFeedViewUserHeader extends StatelessWidget {
         GestureDetector(
           onTap: contentType == ContentType.text && textContent != null
               ? () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => VideoFeedViewFullTextReader(
-                        bookTitle: username,
-                        fullText: textContent!,
-                        currentParagraph: currentParagraph,
-                      ),
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => VideoFeedViewFullTextReader(
+                      bookTitle: username,
+                      fullText: textContent!,
+                      currentParagraph: currentParagraph,
                     ),
-                  )
+                  ),
+                )
               : null,
           child: CircleAvatar(
             radius: context.sq(20),
             backgroundColor: white.withOpacity(0.2),
-            backgroundImage: profileImageUrl.isNotEmpty ? NetworkImage(profileImageUrl) : null,
+            backgroundImage: profileImageUrl.isNotEmpty
+                ? NetworkImage(profileImageUrl)
+                : null,
             child: profileImageUrl.isEmpty
                 ? Icon(Icons.menu_book, color: white, size: context.sq(20))
                 : null,

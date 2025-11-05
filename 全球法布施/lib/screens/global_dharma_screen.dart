@@ -31,7 +31,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
 
   void _parseLogAndUpdateStatus(String logMessage) {
     final model = context.read<FileTransferModel>();
-    
+
     if (logMessage.contains('发送到') && logMessage.contains('成功')) {
       final regex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*成功');
       final match = regex.firstMatch(logMessage);
@@ -59,9 +59,9 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
   Future<void> _startGlobalDharma() async {
     final model = context.read<FileTransferModel>();
     if (!model.hasFiles) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先选择要发送的文件')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先选择要发送的文件')));
       return;
     }
 
@@ -70,7 +70,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
       // 重新初始化国家状态
       model.initializeCountryStatuses(GLOBAL_COUNTRY_SERVERS, COUNTRY_NAMES);
     }
-    
+
     await model.startGlobalTransfer();
   }
 
@@ -87,7 +87,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
   @override
   Widget build(BuildContext context) {
     final model = context.watch<FileTransferModel>();
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('🌍 全球法布施'),
@@ -120,7 +120,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
         children: [
           // 统计信息卡片
           _buildStatsCard(model),
-          
+
           // 当前日志
           if (model.currentLog.isNotEmpty)
             Container(
@@ -143,16 +143,18 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
             ),
 
           // 国家列表
-          Expanded(
-            child: _buildCountryList(model),
-          ),
+          Expanded(child: _buildCountryList(model)),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: model.isTransferring ? _stopGlobalDharma : _startGlobalDharma,
+        onPressed: model.isTransferring
+            ? _stopGlobalDharma
+            : _startGlobalDharma,
         icon: Icon(model.isTransferring ? Icons.stop : Icons.play_arrow),
         label: Text(model.isTransferring ? '停止发送' : '开始法布施'),
-        backgroundColor: model.isTransferring ? Colors.red : const Color(0xFF667eea),
+        backgroundColor: model.isTransferring
+            ? Colors.red
+            : const Color(0xFF667eea),
         foregroundColor: Colors.white,
       ),
     );
@@ -172,7 +174,10 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const SizedBox(width: 8),
                 Text(
                   '已选文件: ${model.selectedFiles.length} 个',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
@@ -215,10 +220,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 children: [
                   const Icon(Icons.loop, color: Colors.blue),
                   const SizedBox(width: 8),
-                  const Text(
-                    '循环模式: 开启',
-                    style: TextStyle(fontSize: 16),
-                  ),
+                  const Text('循环模式: 开启', style: TextStyle(fontSize: 16)),
                 ],
               ),
             ],
@@ -239,7 +241,10 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
               const SizedBox(width: 8),
               Text(
                 '国家发送状态 (${model.getSuccessCount()}/${model.countryStatuses.length})',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),

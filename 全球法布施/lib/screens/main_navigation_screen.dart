@@ -16,18 +16,18 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
   bool _isGlobeReady = false;
-  
+
   @override
   void initState() {
     super.initState();
     // 立即加载，由 GlobeHomeScreen 内部控制延迟
     _isGlobeReady = true;
   }
-  
+
   // 保持所有页面实例，避免重建
   List<Widget> get _screens => [
-    _isGlobeReady 
-        ? const GlobeHomeScreen() 
+    _isGlobeReady
+        ? const GlobeHomeScreen()
         : const Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -46,10 +46,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
+      body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {

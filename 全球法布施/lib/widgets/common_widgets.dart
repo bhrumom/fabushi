@@ -4,15 +4,12 @@ import '../config/app_theme.dart';
 /// 渐变背景容器
 class GradientBackground extends StatelessWidget {
   final Widget child;
-  
+
   const GradientBackground({Key? key, required this.child}) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: AppTheme.gradientBackground,
-      child: child,
-    );
+    return Container(decoration: AppTheme.gradientBackground, child: child);
   }
 }
 
@@ -22,7 +19,7 @@ class AppCard extends StatefulWidget {
   final EdgeInsetsGeometry? padding;
   final EdgeInsetsGeometry? margin;
   final bool elevated;
-  
+
   const AppCard({
     Key? key,
     required this.child,
@@ -30,7 +27,7 @@ class AppCard extends StatefulWidget {
     this.margin,
     this.elevated = false,
   }) : super(key: key);
-  
+
   @override
   State<AppCard> createState() => _AppCardState();
 }
@@ -38,7 +35,7 @@ class AppCard extends StatefulWidget {
 class _AppCardState extends State<AppCard> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _elevationAnimation;
-  
+
   @override
   void initState() {
     super.initState();
@@ -51,13 +48,13 @@ class _AppCardState extends State<AppCard> with SingleTickerProviderStateMixin {
       end: widget.elevated ? 12.0 : 8.0,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
   }
-  
+
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
@@ -84,7 +81,7 @@ class PrimaryButton extends StatefulWidget {
   final VoidCallback? onPressed;
   final IconData? icon;
   final bool isLoading;
-  
+
   const PrimaryButton({
     Key? key,
     required this.text,
@@ -92,15 +89,16 @@ class PrimaryButton extends StatefulWidget {
     this.icon,
     this.isLoading = false,
   }) : super(key: key);
-  
+
   @override
   State<PrimaryButton> createState() => _PrimaryButtonState();
 }
 
-class _PrimaryButtonState extends State<PrimaryButton> with SingleTickerProviderStateMixin {
+class _PrimaryButtonState extends State<PrimaryButton>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
-  
+
   @override
   void initState() {
     super.initState();
@@ -108,63 +106,64 @@ class _PrimaryButtonState extends State<PrimaryButton> with SingleTickerProvider
       duration: const Duration(milliseconds: 100),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.95,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
-  
+
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return ScaleTransition(
       scale: _scaleAnimation,
       child: widget.icon != null
-        ? FilledButton.icon(
-            onPressed: widget.isLoading ? null : widget.onPressed,
-            icon: widget.isLoading 
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              : Icon(widget.icon),
-            label: Text(widget.text),
-            onHover: (hovering) {
-              if (hovering) {
-                _controller.forward();
-              } else {
-                _controller.reverse();
-              }
-            },
-          )
-        : FilledButton(
-            onPressed: widget.isLoading ? null : widget.onPressed,
-            onHover: (hovering) {
-              if (hovering) {
-                _controller.forward();
-              } else {
-                _controller.reverse();
-              }
-            },
-            child: widget.isLoading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              : Text(widget.text),
-          ),
+          ? FilledButton.icon(
+              onPressed: widget.isLoading ? null : widget.onPressed,
+              icon: widget.isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : Icon(widget.icon),
+              label: Text(widget.text),
+              onHover: (hovering) {
+                if (hovering) {
+                  _controller.forward();
+                } else {
+                  _controller.reverse();
+                }
+              },
+            )
+          : FilledButton(
+              onPressed: widget.isLoading ? null : widget.onPressed,
+              onHover: (hovering) {
+                if (hovering) {
+                  _controller.forward();
+                } else {
+                  _controller.reverse();
+                }
+              },
+              child: widget.isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : Text(widget.text),
+            ),
     );
   }
 }
@@ -174,14 +173,14 @@ class SecondaryButton extends StatelessWidget {
   final String text;
   final VoidCallback? onPressed;
   final IconData? icon;
-  
+
   const SecondaryButton({
     Key? key,
     required this.text,
     this.onPressed,
     this.icon,
   }) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     if (icon != null) {
@@ -191,11 +190,8 @@ class SecondaryButton extends StatelessWidget {
         label: Text(text),
       );
     }
-    
-    return OutlinedButton(
-      onPressed: onPressed,
-      child: Text(text),
-    );
+
+    return OutlinedButton(onPressed: onPressed, child: Text(text));
   }
 }
 
@@ -204,14 +200,14 @@ class AlipayButton extends StatelessWidget {
   final String text;
   final VoidCallback? onPressed;
   final bool outlined;
-  
+
   const AlipayButton({
     Key? key,
     required this.text,
     this.onPressed,
     this.outlined = false,
   }) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     if (outlined) {
@@ -225,7 +221,7 @@ class AlipayButton extends StatelessWidget {
         ),
       );
     }
-    
+
     return ElevatedButton.icon(
       onPressed: onPressed,
       icon: const Icon(Icons.account_balance_wallet),
@@ -245,7 +241,7 @@ class InfoCard extends StatelessWidget {
   final IconData icon;
   final Color? iconColor;
   final VoidCallback? onTap;
-  
+
   const InfoCard({
     Key? key,
     required this.title,
@@ -254,21 +250,20 @@ class InfoCard extends StatelessWidget {
     this.iconColor,
     this.onTap,
   }) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     return AppCard(
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: (iconColor ?? AppTheme.primaryColor).withOpacity(0.1),
+          backgroundColor: (iconColor ?? AppTheme.primaryColor).withOpacity(
+            0.1,
+          ),
           child: Icon(icon, color: iconColor ?? AppTheme.primaryColor),
         ),
         title: Text(
           title,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
         subtitle: subtitle != null ? Text(subtitle!) : null,
         trailing: onTap != null ? const Icon(Icons.chevron_right) : null,
@@ -284,7 +279,7 @@ class StatCard extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color? color;
-  
+
   const StatCard({
     Key? key,
     required this.label,
@@ -292,11 +287,11 @@ class StatCard extends StatelessWidget {
     required this.icon,
     this.color,
   }) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     final cardColor = color ?? AppTheme.primaryColor;
-    
+
     return AppCard(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -315,10 +310,7 @@ class StatCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             textAlign: TextAlign.center,
           ),
         ],
@@ -333,7 +325,7 @@ class EmptyState extends StatelessWidget {
   final String message;
   final String? actionText;
   final VoidCallback? onAction;
-  
+
   const EmptyState({
     Key? key,
     required this.icon,
@@ -341,7 +333,7 @@ class EmptyState extends StatelessWidget {
     this.actionText,
     this.onAction,
   }) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -350,26 +342,16 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 80,
-              color: Colors.grey[400],
-            ),
+            Icon(icon, size: 80, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
               message,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
             if (actionText != null && onAction != null) ...[
               const SizedBox(height: 24),
-              PrimaryButton(
-                text: actionText!,
-                onPressed: onAction,
-              ),
+              PrimaryButton(text: actionText!, onPressed: onAction),
             ],
           ],
         ),
@@ -381,9 +363,9 @@ class EmptyState extends StatelessWidget {
 /// 加载指示器
 class LoadingIndicator extends StatelessWidget {
   final String? message;
-  
+
   const LoadingIndicator({Key? key, this.message}) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -395,10 +377,7 @@ class LoadingIndicator extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               message!,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
           ],
         ],
@@ -411,13 +390,10 @@ class LoadingIndicator extends StatelessWidget {
 class MembershipBadge extends StatelessWidget {
   final String text;
   final Color color;
-  
-  const MembershipBadge({
-    Key? key,
-    required this.text,
-    required this.color,
-  }) : super(key: key);
-  
+
+  const MembershipBadge({Key? key, required this.text, required this.color})
+    : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -441,11 +417,7 @@ class MembershipBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.workspace_premium,
-            color: Colors.white,
-            size: 18,
-          ),
+          Icon(Icons.workspace_premium, color: Colors.white, size: 18),
           const SizedBox(width: 6),
           Text(
             text,
@@ -467,14 +439,14 @@ class SectionHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
   final Widget? action;
-  
+
   const SectionHeader({
     Key? key,
     required this.title,
     this.subtitle,
     this.action,
   }) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -497,10 +469,7 @@ class SectionHeader extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     subtitle!,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
                 ],
               ],

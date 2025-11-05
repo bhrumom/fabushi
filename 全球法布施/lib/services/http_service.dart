@@ -12,27 +12,27 @@ class HttpService {
   static final HttpService _instance = HttpService._internal();
   factory HttpService() => _instance;
   HttpService._internal();
-  
+
   // HTTP客户端
   static final http.Client _client = http.Client();
-  
+
   // 获取认证头
   static Future<Map<String, String>> _getHeaders({bool useAuth = false}) async {
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-    
+
     if (useAuth) {
       final token = await _getStoredToken();
       if (token != null) {
         headers['Authorization'] = 'Bearer $token';
       }
     }
-    
+
     return headers;
   }
-  
+
   // 获取存储的token
   static Future<String?> _getStoredToken() async {
     try {
@@ -43,26 +43,28 @@ class HttpService {
       return null;
     }
   }
-  
+
   // 处理HTTP响应
   static Map<String, dynamic> _handleResponse(http.Response response) {
     if (UnifiedConfig.enableApiLogging) {
       print('HTTP ${response.request?.method} ${response.request?.url}');
       print('Status: ${response.statusCode}');
-      print('Response: ${response.body.length > 500 ? response.body.substring(0, 500) + '...' : response.body}');
+      print(
+        'Response: ${response.body.length > 500 ? response.body.substring(0, 500) + '...' : response.body}',
+      );
     }
-    
+
     return {
       'statusCode': response.statusCode,
       'body': response.body,
       'headers': response.headers,
     };
   }
-  
+
   // 处理HTTP错误
   static Exception _handleError(dynamic error, String method, String url) {
     String errorMessage;
-    
+
     if (error is SocketException) {
       errorMessage = UnifiedConfig.errorMessages['network_error'] ?? '网络连接失败';
     } else if (error is HttpException) {
@@ -72,15 +74,15 @@ class HttpService {
     } else {
       errorMessage = '请求失败: ${error.toString()}';
     }
-    
+
     if (UnifiedConfig.enableApiLogging) {
       print('HTTP $method $url 失败: $errorMessage');
       print('错误详情: $error');
     }
-    
+
     return Exception(errorMessage);
   }
-  
+
   // 重试逻辑
   static Future<http.Response> _retryRequest(
     Future<http.Response> Function() request,
@@ -88,30 +90,30 @@ class HttpService {
     String url,
   ) async {
     int attempts = 0;
-    
+
     while (attempts < UnifiedConfig.maxRetries) {
       try {
         final response = await request();
         return response;
       } catch (e) {
         attempts++;
-        
+
         if (attempts >= UnifiedConfig.maxRetries) {
           throw _handleError(e, method, url);
         }
-        
+
         // 等待后重试
         await Future.delayed(UnifiedConfig.retryDelay * attempts);
-        
+
         if (UnifiedConfig.enableApiLogging) {
           print('重试 $method $url (第 $attempts 次)');
         }
       }
     }
-    
+
     throw Exception('重试次数已达上限');
   }
-  
+
   // GET请求
   static Future<http.Response> get(
     String url, {
@@ -120,14 +122,18 @@ class HttpService {
   }) async {
     try {
       final uri = Uri.parse(url);
-      final finalUri = queryParams != null 
-          ? uri.replace(queryParameters: {...uri.queryParameters, ...queryParams})
+      final finalUri = queryParams != null
+          ? uri.replace(
+              queryParameters: {...uri.queryParameters, ...queryParams},
+            )
           : uri;
-      
+
       final headers = await _getHeaders(useAuth: useAuth);
-      
+
       return await _retryRequest(
-        () => _client.get(finalUri, headers: headers).timeout(UnifiedConfig.requestTimeout),
+        () => _client
+            .get(finalUri, headers: headers)
+            .timeout(UnifiedConfig.requestTimeout),
         'GET',
         url,
       );
@@ -135,7 +141,7 @@ class HttpService {
       throw _handleError(e, 'GET', url);
     }
   }
-  
+
   // POST请求
   static Future<http.Response> post(
     String url, {
@@ -145,13 +151,11 @@ class HttpService {
     try {
       final headers = await _getHeaders(useAuth: useAuth);
       final jsonBody = body != null ? jsonEncode(body) : null;
-      
+
       return await _retryRequest(
-        () => _client.post(
-          Uri.parse(url),
-          headers: headers,
-          body: jsonBody,
-        ).timeout(UnifiedConfig.requestTimeout),
+        () => _client
+            .post(Uri.parse(url), headers: headers, body: jsonBody)
+            .timeout(UnifiedConfig.requestTimeout),
         'POST',
         url,
       );
@@ -159,7 +163,7 @@ class HttpService {
       throw _handleError(e, 'POST', url);
     }
   }
-  
+
   // PUT请求
   static Future<http.Response> put(
     String url, {
@@ -169,13 +173,11 @@ class HttpService {
     try {
       final headers = await _getHeaders(useAuth: useAuth);
       final jsonBody = body != null ? jsonEncode(body) : null;
-      
+
       return await _retryRequest(
-        () => _client.put(
-          Uri.parse(url),
-          headers: headers,
-          body: jsonBody,
-        ).timeout(UnifiedConfig.requestTimeout),
+        () => _client
+            .put(Uri.parse(url), headers: headers, body: jsonBody)
+            .timeout(UnifiedConfig.requestTimeout),
         'PUT',
         url,
       );
@@ -183,7 +185,7 @@ class HttpService {
       throw _handleError(e, 'PUT', url);
     }
   }
-  
+
   // DELETE请求
   static Future<http.Response> delete(
     String url, {
@@ -191,12 +193,11 @@ class HttpService {
   }) async {
     try {
       final headers = await _getHeaders(useAuth: useAuth);
-      
+
       return await _retryRequest(
-        () => _client.delete(
-          Uri.parse(url),
-          headers: headers,
-        ).timeout(UnifiedConfig.requestTimeout),
+        () => _client
+            .delete(Uri.parse(url), headers: headers)
+            .timeout(UnifiedConfig.requestTimeout),
         'DELETE',
         url,
       );
@@ -204,7 +205,7 @@ class HttpService {
       throw _handleError(e, 'DELETE', url);
     }
   }
-  
+
   // PATCH请求
   static Future<http.Response> patch(
     String url, {
@@ -214,13 +215,11 @@ class HttpService {
     try {
       final headers = await _getHeaders(useAuth: useAuth);
       final jsonBody = body != null ? jsonEncode(body) : null;
-      
+
       return await _retryRequest(
-        () => _client.patch(
-          Uri.parse(url),
-          headers: headers,
-          body: jsonBody,
-        ).timeout(UnifiedConfig.requestTimeout),
+        () => _client
+            .patch(Uri.parse(url), headers: headers, body: jsonBody)
+            .timeout(UnifiedConfig.requestTimeout),
         'PATCH',
         url,
       );
@@ -228,7 +227,7 @@ class HttpService {
       throw _handleError(e, 'PATCH', url);
     }
   }
-  
+
   // 文件上传
   static Future<http.StreamedResponse> uploadFile(
     String url,
@@ -239,7 +238,7 @@ class HttpService {
   }) async {
     try {
       final request = http.MultipartRequest('POST', Uri.parse(url));
-      
+
       // 添加认证头
       if (useAuth) {
         final token = await _getStoredToken();
@@ -247,36 +246,38 @@ class HttpService {
           request.headers['Authorization'] = 'Bearer $token';
         }
       }
-      
+
       // 添加文件
       final file = await http.MultipartFile.fromPath(fieldName, filePath);
       request.files.add(file);
-      
+
       // 添加其他字段
       if (fields != null) {
         request.fields.addAll(fields);
       }
-      
+
       if (UnifiedConfig.enableApiLogging) {
         print('上传文件: $filePath 到 $url');
       }
-      
+
       return await request.send().timeout(UnifiedConfig.requestTimeout);
     } catch (e) {
       throw _handleError(e, 'UPLOAD', url);
     }
   }
-  
+
   // 下载文件
-  static Future<List<int>> downloadFile(String url, {bool useAuth = false}) async {
+  static Future<List<int>> downloadFile(
+    String url, {
+    bool useAuth = false,
+  }) async {
     try {
       final headers = await _getHeaders(useAuth: useAuth);
-      
-      final response = await _client.get(
-        Uri.parse(url),
-        headers: headers,
-      ).timeout(UnifiedConfig.requestTimeout);
-      
+
+      final response = await _client
+          .get(Uri.parse(url), headers: headers)
+          .timeout(UnifiedConfig.requestTimeout);
+
       if (response.statusCode == 200) {
         return response.bodyBytes;
       } else {
@@ -286,21 +287,23 @@ class HttpService {
       throw _handleError(e, 'DOWNLOAD', url);
     }
   }
-  
+
   // 检查网络连接
   static Future<bool> checkConnectivity() async {
     try {
-      final response = await _client.get(
-        Uri.parse('${UnifiedConfig.currentBackendUrl}/api/auth/verify'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 5));
-      
+      final response = await _client
+          .get(
+            Uri.parse('${UnifiedConfig.currentBackendUrl}/api/auth/verify'),
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 5));
+
       return response.statusCode < 500;
     } catch (e) {
       return false;
     }
   }
-  
+
   // 解析JSON响应
   static Map<String, dynamic> parseJsonResponse(http.Response response) {
     try {
@@ -309,12 +312,12 @@ class HttpService {
       throw Exception('响应格式错误: 无法解析JSON');
     }
   }
-  
+
   // 检查响应是否成功
   static bool isSuccessResponse(http.Response response) {
     return response.statusCode >= 200 && response.statusCode < 300;
   }
-  
+
   // 获取错误消息
   static String getErrorMessage(http.Response response) {
     try {
@@ -324,7 +327,7 @@ class HttpService {
       return '服务器响应格式错误';
     }
   }
-  
+
   // 处理API响应的通用方法
   static Map<String, dynamic> handleApiResponse(http.Response response) {
     if (isSuccessResponse(response)) {
@@ -341,7 +344,7 @@ class HttpService {
       };
     }
   }
-  
+
   // 关闭HTTP客户端
   static void dispose() {
     _client.close();

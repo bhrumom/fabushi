@@ -14,7 +14,7 @@ class UnifiedApiService {
 
   // HTTP客户端
   late final http.Client _client;
-  
+
   // 初始化
   void initialize() {
     _client = http.Client();
@@ -38,7 +38,7 @@ class UnifiedApiService {
   }) async {
     final uri = _buildUri(endpoint, queryParams);
     final requestHeaders = _buildHeaders(headers);
-    
+
     if (UnifiedConfig.enableApiLogging) {
       debugPrint('GET请求: $uri');
       debugPrint('请求头: $requestHeaders');
@@ -48,11 +48,11 @@ class UnifiedApiService {
       final response = await _client
           .get(uri, headers: requestHeaders)
           .timeout(UnifiedConfig.requestTimeout);
-      
+
       if (UnifiedConfig.enableApiLogging) {
         debugPrint('GET响应: ${response.statusCode} - ${response.body}');
       }
-      
+
       return response;
     });
   }
@@ -67,7 +67,7 @@ class UnifiedApiService {
     final uri = _buildUri(endpoint, queryParams);
     final requestHeaders = _buildHeaders(headers);
     final requestBody = body != null ? jsonEncode(body) : null;
-    
+
     if (UnifiedConfig.enableApiLogging) {
       debugPrint('POST请求: $uri');
       debugPrint('请求头: $requestHeaders');
@@ -78,11 +78,11 @@ class UnifiedApiService {
       final response = await _client
           .post(uri, headers: requestHeaders, body: requestBody)
           .timeout(UnifiedConfig.requestTimeout);
-      
+
       if (UnifiedConfig.enableApiLogging) {
         debugPrint('POST响应: ${response.statusCode} - ${response.body}');
       }
-      
+
       return response;
     });
   }
@@ -97,7 +97,7 @@ class UnifiedApiService {
     final uri = _buildUri(endpoint, queryParams);
     final requestHeaders = _buildHeaders(headers);
     final requestBody = body != null ? jsonEncode(body) : null;
-    
+
     if (UnifiedConfig.enableApiLogging) {
       debugPrint('PUT请求: $uri');
     }
@@ -106,11 +106,11 @@ class UnifiedApiService {
       final response = await _client
           .put(uri, headers: requestHeaders, body: requestBody)
           .timeout(UnifiedConfig.requestTimeout);
-      
+
       if (UnifiedConfig.enableApiLogging) {
         debugPrint('PUT响应: ${response.statusCode}');
       }
-      
+
       return response;
     });
   }
@@ -123,7 +123,7 @@ class UnifiedApiService {
   }) async {
     final uri = _buildUri(endpoint, queryParams);
     final requestHeaders = _buildHeaders(headers);
-    
+
     if (UnifiedConfig.enableApiLogging) {
       debugPrint('DELETE请求: $uri');
     }
@@ -132,11 +132,11 @@ class UnifiedApiService {
       final response = await _client
           .delete(uri, headers: requestHeaders)
           .timeout(UnifiedConfig.requestTimeout);
-      
+
       if (UnifiedConfig.enableApiLogging) {
         debugPrint('DELETE响应: ${response.statusCode}');
       }
-      
+
       return response;
     });
   }
@@ -145,30 +145,31 @@ class UnifiedApiService {
 
   // 登录
   Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await post('/api/auth/login', body: {
-      'email': email,
-      'password': password,
-    });
-    
+    final response = await post(
+      '/api/auth/login',
+      body: {'email': email, 'password': password},
+    );
+
     return _handleResponse(response);
   }
 
   // 注册
   Future<Map<String, dynamic>> register(String email, String password) async {
-    final response = await post('/api/auth/register', body: {
-      'email': email,
-      'password': password,
-    });
-    
+    final response = await post(
+      '/api/auth/register',
+      body: {'email': email, 'password': password},
+    );
+
     return _handleResponse(response);
   }
 
   // 获取用户信息
   Future<Map<String, dynamic>> getUserInfo(String token) async {
-    final response = await get('/api/auth/user-info', headers: {
-      'Authorization': 'Bearer $token',
-    });
-    
+    final response = await get(
+      '/api/auth/user-info',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
     return _handleResponse(response);
   }
 
@@ -176,24 +177,27 @@ class UnifiedApiService {
 
   // 检查会员状态
   Future<Map<String, dynamic>> checkMembershipStatus(String token) async {
-    final response = await get('/api/stripe/membership-status', headers: {
-      'Authorization': 'Bearer $token',
-    });
-    
+    final response = await get(
+      '/api/stripe/membership-status',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
     return _handleResponse(response);
   }
 
   // ===== 支付宝相关API =====
 
   // 创建支付宝订单
-  Future<Map<String, dynamic>> createAlipayOrder(String token, Map<String, dynamic> orderData) async {
-    final response = await post('/api/alipay/create-order', 
-      headers: {
-        'Authorization': 'Bearer $token',
-      },
+  Future<Map<String, dynamic>> createAlipayOrder(
+    String token,
+    Map<String, dynamic> orderData,
+  ) async {
+    final response = await post(
+      '/api/alipay/create-order',
+      headers: {'Authorization': 'Bearer $token'},
       body: orderData,
     );
-    
+
     return _handleResponse(response);
   }
 
@@ -201,10 +205,11 @@ class UnifiedApiService {
 
   // 检查管理员状态
   Future<Map<String, dynamic>> checkAdminStatus(String token) async {
-    final response = await get('/api/admin/check-status', headers: {
-      'Authorization': 'Bearer $token',
-    });
-    
+    final response = await get(
+      '/api/admin/check-status',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
     return _handleResponse(response);
   }
 
@@ -213,49 +218,53 @@ class UnifiedApiService {
   // 构建URI
   Uri _buildUri(String endpoint, Map<String, String>? queryParams) {
     final baseUrl = UnifiedConfig.currentBackendUrl;
-    final fullUrl = endpoint.startsWith('http') ? endpoint : '$baseUrl$endpoint';
-    
+    final fullUrl = endpoint.startsWith('http')
+        ? endpoint
+        : '$baseUrl$endpoint';
+
     if (queryParams != null && queryParams.isNotEmpty) {
       return Uri.parse(fullUrl).replace(queryParameters: queryParams);
     }
-    
+
     return Uri.parse(fullUrl);
   }
 
   // 构建请求头
   Map<String, String> _buildHeaders(Map<String, String>? customHeaders) {
     final headers = Map<String, String>.from(UnifiedConfig.defaultHeaders);
-    
+
     if (customHeaders != null) {
       headers.addAll(customHeaders);
     }
-    
+
     return headers;
   }
 
   // 带重试的请求执行
-  Future<http.Response> _executeWithRetry(Future<http.Response> Function() request) async {
+  Future<http.Response> _executeWithRetry(
+    Future<http.Response> Function() request,
+  ) async {
     int attempts = 0;
-    
+
     while (attempts < UnifiedConfig.maxRetries) {
       try {
         return await request();
       } catch (e) {
         attempts++;
-        
+
         if (UnifiedConfig.enableApiLogging) {
           debugPrint('请求失败 (第 $attempts 次): $e');
         }
-        
+
         if (attempts >= UnifiedConfig.maxRetries) {
           rethrow;
         }
-        
+
         // 等待后重试
         await Future.delayed(UnifiedConfig.retryDelay * attempts);
       }
     }
-    
+
     throw Exception('请求失败，已达到最大重试次数');
   }
 
@@ -275,7 +284,7 @@ class UnifiedApiService {
       } catch (e) {
         errorMessage = '请求失败: HTTP ${response.statusCode}';
       }
-      
+
       throw ApiException(
         message: errorMessage,
         statusCode: response.statusCode,
@@ -303,11 +312,13 @@ class UnifiedApiService {
   Future<String?> findWorkingBackend() async {
     for (final url in UnifiedConfig.fallbackUrls) {
       try {
-        final response = await http.get(
-          Uri.parse('$url/health'),
-          headers: UnifiedConfig.defaultHeaders,
-        ).timeout(const Duration(seconds: 5));
-        
+        final response = await http
+            .get(
+              Uri.parse('$url/health'),
+              headers: UnifiedConfig.defaultHeaders,
+            )
+            .timeout(const Duration(seconds: 5));
+
         if (response.statusCode == 200) {
           if (UnifiedConfig.enableApiLogging) {
             debugPrint('找到可用的后端: $url');
@@ -321,7 +332,7 @@ class UnifiedApiService {
         continue;
       }
     }
-    
+
     return null;
   }
 }

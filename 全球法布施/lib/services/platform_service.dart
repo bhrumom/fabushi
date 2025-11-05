@@ -6,16 +6,16 @@ import 'package:flutter/services.dart';
 abstract class PlatformService {
   /// 获取当前URL
   String get currentUrl;
-  
+
   /// 替换当前历史记录状态
   void replaceHistoryState(String url);
-  
+
   /// 监听消息事件
   void listenToMessages(Function(dynamic) handler);
-  
+
   /// 打开URL
   void openUrl(String url, String target);
-  
+
   /// 清理资源
   void dispose();
 }
@@ -35,7 +35,7 @@ class WebPlatformService implements PlatformService {
     }
     return '';
   }
-  
+
   @override
   void replaceHistoryState(String url) {
     if (kIsWeb) {
@@ -48,7 +48,7 @@ class WebPlatformService implements PlatformService {
       }
     }
   }
-  
+
   @override
   void listenToMessages(Function(dynamic) handler) {
     if (kIsWeb) {
@@ -61,7 +61,7 @@ class WebPlatformService implements PlatformService {
       }
     }
   }
-  
+
   @override
   void openUrl(String url, String target) {
     if (kIsWeb) {
@@ -73,7 +73,7 @@ class WebPlatformService implements PlatformService {
       }
     }
   }
-  
+
   @override
   void dispose() {
     // Web平台不需要特殊清理
@@ -84,15 +84,15 @@ class WebPlatformService implements PlatformService {
 class NativePlatformService implements PlatformService {
   MethodChannel? _channel;
   Function(dynamic)? _messageHandler;
-  
+
   @override
   String get currentUrl => '';
-  
+
   @override
   void replaceHistoryState(String url) {
     // 非Web平台不需要实现
   }
-  
+
   @override
   void listenToMessages(Function(dynamic) handler) {
     try {
@@ -104,11 +104,11 @@ class NativePlatformService implements PlatformService {
       debugPrint('NativePlatformService: 设置消息监听失败: $e');
     }
   }
-  
+
   // 处理方法调用
   Future<dynamic> _handleMethodCall(MethodCall call) async {
     debugPrint('NativePlatformService: 收到方法调用: ${call.method}');
-    
+
     switch (call.method) {
       case 'handleAlipayCallback':
         final url = call.arguments as String?;
@@ -121,12 +121,12 @@ class NativePlatformService implements PlatformService {
         return null;
     }
   }
-  
+
   @override
   void openUrl(String url, String target) {
     // 非Web平台不需要实现，使用url_launcher处理
   }
-  
+
   @override
   void dispose() {
     _channel?.setMethodCallHandler(null);

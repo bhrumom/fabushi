@@ -9,36 +9,41 @@ class UnifiedConfig {
     // 优先检查当前URL（用于部署环境）
     if (kIsWeb) {
       final currentUrl = Uri.base.toString();
-      if (currentUrl.contains('fabushi-flutter-web-dev') || currentUrl.contains('localhost')) {
+      if (currentUrl.contains('fabushi-flutter-web-dev') ||
+          currentUrl.contains('localhost')) {
         return false; // 开发环境
       }
       if (currentUrl.contains('fabushi-flutter-web-prod')) {
         return true; // 生产环境
       }
     }
-    
+
     // 回退到编译时环境变量
-    const environment = String.fromEnvironment('ENVIRONMENT', defaultValue: 'production');
+    const environment = String.fromEnvironment(
+      'ENVIRONMENT',
+      defaultValue: 'production',
+    );
     return environment == 'production';
   }
-  
+
   static bool get isDevelopment => !isProduction;
   static bool get isWeb => kIsWeb;
-  
+
   // ===== 主要后端地址配置 =====
-  
+
   // 主要后端地址 - 优先使用
   static const String primaryBackendUrl = 'https://ombhrum.com';
-  
+
   // Cloudflare Worker 地址 - 备用
   static const String cloudflareWorkerProdUrl = 'https://flutter.ombhrum.com';
-  static const String cloudflareWorkerDevUrl = 'https://flutter-dev.ombhrum.com';
-  
+  static const String cloudflareWorkerDevUrl =
+      'https://flutter-dev.ombhrum.com';
+
   // 本地开发地址
   static const String localDevUrl = 'http://localhost:8787';
-  
+
   // ===== 智能地址选择 =====
-  
+
   // 获取当前应该使用的后端地址
   static String get currentBackendUrl {
     if (isWeb) {
@@ -66,62 +71,85 @@ class UnifiedConfig {
       }
     }
   }
-  
+
   // ===== API 端点配置 =====
-  
+
   // 认证相关API
   static String get loginUrl => '$currentBackendUrl/api/auth/login';
   static String get registerUrl => '$currentBackendUrl/api/auth/register';
   static String get verifyUrl => '$currentBackendUrl/api/auth/verify';
   static String get logoutUrl => '$currentBackendUrl/api/auth/logout';
-  static String get sendVerificationCodeUrl => '$currentBackendUrl/api/auth/send-verification-code';
+  static String get sendVerificationCodeUrl =>
+      '$currentBackendUrl/api/auth/send-verification-code';
   static String get verifyCodeUrl => '$currentBackendUrl/api/auth/verify-code';
-  static String get forgotPasswordUrl => '$currentBackendUrl/api/auth/forgot-password';
-  static String get resetPasswordUrl => '$currentBackendUrl/api/auth/reset-password';
+  static String get forgotPasswordUrl =>
+      '$currentBackendUrl/api/auth/forgot-password';
+  static String get resetPasswordUrl =>
+      '$currentBackendUrl/api/auth/reset-password';
   static String get userInfoUrl => '$currentBackendUrl/api/auth/user-info';
   static String get bindEmailUrl => '$currentBackendUrl/api/auth/bind-email';
-  
+
   // 微信登录相关API
-  static String get wechatLoginUrlApi => '$currentBackendUrl/api/auth/wechat/login-url';
-  static String get wechatLoginUrl => '$currentBackendUrl/api/auth/wechat/login';
+  static String get wechatLoginUrlApi =>
+      '$currentBackendUrl/api/auth/wechat/login-url';
+  static String get wechatLoginUrl =>
+      '$currentBackendUrl/api/auth/wechat/login';
   static String get wechatBindUrl => '$currentBackendUrl/api/auth/wechat/bind';
-  static String get wechatRegisterUrl => '$currentBackendUrl/api/auth/wechat/register';
-  static String get wechatUnbindUrl => '$currentBackendUrl/api/auth/wechat/unbind';
-  
+  static String get wechatRegisterUrl =>
+      '$currentBackendUrl/api/auth/wechat/register';
+  static String get wechatUnbindUrl =>
+      '$currentBackendUrl/api/auth/wechat/unbind';
+
   // 支付宝登录相关API
-  static String get alipayLoginUrlApi => '$currentBackendUrl/api/auth/alipay/login-url';
-  static String get alipayLoginUrl => '$currentBackendUrl/api/auth/alipay/login';
+  static String get alipayLoginUrlApi =>
+      '$currentBackendUrl/api/auth/alipay/login-url';
+  static String get alipayLoginUrl =>
+      '$currentBackendUrl/api/auth/alipay/login';
   static String get alipayBindUrl => '$currentBackendUrl/api/auth/alipay/bind';
-  static String get alipayRegisterUrl => '$currentBackendUrl/api/auth/alipay/register';
-  static String get alipayUnbindUrl => '$currentBackendUrl/api/auth/alipay/unbind';
-  
+  static String get alipayRegisterUrl =>
+      '$currentBackendUrl/api/auth/alipay/register';
+  static String get alipayUnbindUrl =>
+      '$currentBackendUrl/api/auth/alipay/unbind';
+
   // 支付宝相关API
-  static String get alipayCreateOrderUrl => '$currentBackendUrl/api/alipay/create-order';
-  static String get alipayQueryOrderUrl => '$currentBackendUrl/api/alipay/query-order';
+  static String get alipayCreateOrderUrl =>
+      '$currentBackendUrl/api/alipay/create-order';
+  static String get alipayQueryOrderUrl =>
+      '$currentBackendUrl/api/alipay/query-order';
   static String get alipayNotifyUrl => '$currentBackendUrl/api/alipay/notify';
-  static String get alipayMembershipStatusUrl => '$currentBackendUrl/api/alipay/check-membership';
-  
+  static String get alipayMembershipStatusUrl =>
+      '$currentBackendUrl/api/alipay/check-membership';
+
   // Stripe相关API
-  static String get stripeMembershipStatusUrl => '$currentBackendUrl/api/stripe/membership-status';
-  static String get stripeCreateSubscriptionUrl => '$currentBackendUrl/api/stripe/create-subscription';
-  static String get stripeCancelSubscriptionUrl => '$currentBackendUrl/api/stripe/cancel-subscription';
+  static String get stripeMembershipStatusUrl =>
+      '$currentBackendUrl/api/stripe/membership-status';
+  static String get stripeCreateSubscriptionUrl =>
+      '$currentBackendUrl/api/stripe/create-subscription';
+  static String get stripeCancelSubscriptionUrl =>
+      '$currentBackendUrl/api/stripe/cancel-subscription';
   static String get stripeWebhookUrl => '$currentBackendUrl/api/stripe/webhook';
-  static String get stripeSessionStatusUrl => '$currentBackendUrl/api/stripe/session-status';
-  
+  static String get stripeSessionStatusUrl =>
+      '$currentBackendUrl/api/stripe/session-status';
+
   // 管理员相关API
-  static String get adminCheckStatusUrl => '$currentBackendUrl/api/admin/check-status';
-  static String get adminCreateRedeemCodeUrl => '$currentBackendUrl/api/admin/create-redeem-code';
-  static String get adminRedeemCodesUrl => '$currentBackendUrl/api/admin/redeem-codes';
-  static String get adminUseRedeemCodeUrl => '$currentBackendUrl/api/admin/use-redeem-code';
-  static String get adminDeleteRedeemCodeUrl => '$currentBackendUrl/api/admin/delete-redeem-code';
-  
+  static String get adminCheckStatusUrl =>
+      '$currentBackendUrl/api/admin/check-status';
+  static String get adminCreateRedeemCodeUrl =>
+      '$currentBackendUrl/api/admin/create-redeem-code';
+  static String get adminRedeemCodesUrl =>
+      '$currentBackendUrl/api/admin/redeem-codes';
+  static String get adminUseRedeemCodeUrl =>
+      '$currentBackendUrl/api/admin/use-redeem-code';
+  static String get adminDeleteRedeemCodeUrl =>
+      '$currentBackendUrl/api/admin/delete-redeem-code';
+
   // ===== 调试和配置信息 =====
-  
+
   // 获取当前环境名称
   static String get currentEnvironment {
     return isProduction ? '生产环境' : '开发环境';
   }
-  
+
   // 获取当前URL信息（仅Web平台）
   static String get currentUrlInfo {
     if (kIsWeb) {
@@ -129,7 +157,7 @@ class UnifiedConfig {
     }
     return 'N/A (非Web平台)';
   }
-  
+
   // 打印配置信息（调试用）
   static void printConfigInfo() {
     if (kDebugMode) {
@@ -146,50 +174,59 @@ class UnifiedConfig {
       print('================');
     }
   }
-  static String get adminGetPriceUrl => '$currentBackendUrl/api/admin/get-price';
-  static String get adminPurchaseHistoryUrl => '$currentBackendUrl/api/admin/purchase-history';
-  static String get adminRedeemHistoryUrl => '$currentBackendUrl/api/admin/redeem-history';
-  
+
+  static String get adminGetPriceUrl =>
+      '$currentBackendUrl/api/admin/get-price';
+  static String get adminPurchaseHistoryUrl =>
+      '$currentBackendUrl/api/admin/purchase-history';
+  static String get adminRedeemHistoryUrl =>
+      '$currentBackendUrl/api/admin/redeem-history';
+
   // 文件上传相关API
   static String get r2ListUrl => '$currentBackendUrl/r2?list=true';
-  
+
   // 全球发送API
   static String get globalSendUrl => '$currentBackendUrl/send-global';
-  
+
   // 排行榜API
   static String get leaderboardUrl => '$currentBackendUrl/api/leaderboard';
-  static String get updateTransferDataUrl => '$currentBackendUrl/api/leaderboard/update';
-  
+  static String get updateTransferDataUrl =>
+      '$currentBackendUrl/api/leaderboard/update';
+
   // 地球纹理（大文件从R2加载）
-  static String get earthTextureUrl => '$currentBackendUrl/r2?file=globe_assets/image/mixed/Earth_DiffuseMap_2.jpg';
-  
+  static String get earthTextureUrl =>
+      '$currentBackendUrl/r2?file=globe_assets/image/mixed/Earth_DiffuseMap_2.jpg';
+
   // ===== 请求配置 =====
-  
+
   // 请求头配置
   static Map<String, String> get defaultHeaders => {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
     'User-Agent': 'FabushiApp/${isWeb ? "Web" : "Mobile"}',
   };
-  
+
   // 超时配置
   static const Duration requestTimeout = Duration(seconds: 30);
   static const Duration connectTimeout = Duration(seconds: 10);
-  
+
   // 重试配置
   static const int maxRetries = 3;
   static const Duration retryDelay = Duration(seconds: 1);
-  
+
   // ===== 存储键名 =====
   static const String tokenStorageKey = 'auth_token';
   static const String userInfoStorageKey = 'user_info';
   static const String backendUrlStorageKey = 'backend_url';
   static const String testModeStorageKey = 'test_mode';
-  
+
   // ===== 调试和日志配置 =====
   static const bool enableApiLogging = false;
-  static const bool debugMode = bool.fromEnvironment('DEBUG', defaultValue: false);
-  
+  static const bool debugMode = bool.fromEnvironment(
+    'DEBUG',
+    defaultValue: false,
+  );
+
   // ===== 错误消息配置 =====
   static const Map<String, String> errorMessages = {
     'network_error': '网络连接失败，请检查网络设置',
@@ -200,17 +237,19 @@ class UnifiedConfig {
     'validation_error': '数据验证失败',
     'unknown_error': '未知错误，请联系客服',
   };
-  
+
   // ===== 备用地址列表 =====
   static List<String> get fallbackUrls {
     // 所有平台统一策略：优先使用Cloudflare Worker，ombhrum.com作为备用
-    final workerUrl = isProduction ? cloudflareWorkerProdUrl : cloudflareWorkerDevUrl;
+    final workerUrl = isProduction
+        ? cloudflareWorkerProdUrl
+        : cloudflareWorkerDevUrl;
     return [
-      workerUrl,           // Cloudflare Worker（优先）
-      primaryBackendUrl,   // 主要后端（备用）
+      workerUrl, // Cloudflare Worker（优先）
+      primaryBackendUrl, // 主要后端（备用）
     ];
   }
-  
+
   // ===== 调试信息 =====
   static void printCurrentConfig() {
     print('=== 统一配置信息 ===');
@@ -230,10 +269,10 @@ class UnifiedConfig {
     print('备用地址数量: ${fallbackUrls.length}');
     print('================');
   }
-  
+
   // ===== 健康检查 =====
   static String get healthCheckUrl => '$currentBackendUrl/health';
-  
+
   // 检查后端是否可用
   static Future<bool> isBackendHealthy() async {
     try {

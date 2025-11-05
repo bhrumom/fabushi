@@ -11,7 +11,6 @@ class LeaderboardScreen extends StatefulWidget {
 }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
-
   @override
   void initState() {
     super.initState();
@@ -47,7 +46,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               defaultTargetPlatform == TargetPlatform.linux)
             IconButton(
               icon: const Icon(Icons.refresh),
-              onPressed: () => context.read<LeaderboardModel>().fetchLeaderboard(forceRefresh: true),
+              onPressed: () => context
+                  .read<LeaderboardModel>()
+                  .fetchLeaderboard(forceRefresh: true),
               tooltip: '刷新',
             ),
         ],
@@ -130,28 +131,39 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
   Widget _buildRankBadge(int rank) {
     Color color;
-    if (rank == 1) color = Colors.amber;
-    else if (rank == 2) color = Colors.grey;
-    else if (rank == 3) color = Colors.brown;
-    else color = Colors.blue;
+    if (rank == 1)
+      color = Colors.amber;
+    else if (rank == 2)
+      color = Colors.grey;
+    else if (rank == 3)
+      color = Colors.brown;
+    else
+      color = Colors.blue;
 
     return CircleAvatar(
       backgroundColor: color,
-      child: Text('$rank', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      child: Text(
+        '$rank',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024 * 1024 * 1024)
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
-  
+
   String _formatUpdateTime(DateTime time) {
     final now = DateTime.now();
     final diff = now.difference(time);
-    
+
     if (diff.inMinutes < 1) return '刚刚更新';
     if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
     if (diff.inDays < 1) return '${diff.inHours}小时前';

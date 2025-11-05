@@ -34,15 +34,17 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
   void _subscribeToTask() {
     // 获取当前任务
     final task = widget.downloadManager.tasks[widget.taskId];
-    debugPrint('DownloadProgressDialog: 订阅任务 ${widget.taskId}, 任务状态: ${task?.status}');
-    
+    debugPrint(
+      'DownloadProgressDialog: 订阅任务 ${widget.taskId}, 任务状态: ${task?.status}',
+    );
+
     if (task != null) {
       if (mounted) {
         setState(() {
           _currentTask = task;
         });
       }
-      
+
       // 立即检查任务状态，如果已经完成或失败，直接处理
       if (task.status == DownloadStatus.completed) {
         debugPrint('DownloadProgressDialog: 任务已完成，延迟关闭对话框');
@@ -66,38 +68,39 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
     }
 
     // 订阅任务更新
-    _subscription = widget.downloadManager.taskStream.listen((task) {
-      if (task.id == widget.taskId && mounted) {
-        debugPrint('DownloadProgressDialog: 收到任务更新 - 状态: ${task.status}');
-        setState(() {
-          _currentTask = task;
-        });
+    _subscription = widget.downloadManager.taskStream.listen(
+      (task) {
+        if (task.id == widget.taskId && mounted) {
+          debugPrint('DownloadProgressDialog: 收到任务更新 - 状态: ${task.status}');
+          setState(() {
+            _currentTask = task;
+          });
 
-        // 检查任务是否完成或失败
-        if (task.status == DownloadStatus.completed) {
-          debugPrint('DownloadProgressDialog: Stream收到完成状态，关闭对话框');
-          _onComplete();
-        } else if (task.status == DownloadStatus.failed) {
-          debugPrint('DownloadProgressDialog: Stream收到失败状态，关闭对话框');
-          _onError(task.error ?? '下载失败');
-        } else if (task.status == DownloadStatus.paused && task.error == '下载已取消') {
-          debugPrint('DownloadProgressDialog: Stream收到取消状态，关闭对话框');
-          Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('下载已取消'),
-              backgroundColor: Colors.orange,
-            ),
-          );
+          // 检查任务是否完成或失败
+          if (task.status == DownloadStatus.completed) {
+            debugPrint('DownloadProgressDialog: Stream收到完成状态，关闭对话框');
+            _onComplete();
+          } else if (task.status == DownloadStatus.failed) {
+            debugPrint('DownloadProgressDialog: Stream收到失败状态，关闭对话框');
+            _onError(task.error ?? '下载失败');
+          } else if (task.status == DownloadStatus.paused &&
+              task.error == '下载已取消') {
+            debugPrint('DownloadProgressDialog: Stream收到取消状态，关闭对话框');
+            Navigator.of(context).pop();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('下载已取消'), backgroundColor: Colors.orange),
+            );
+          }
         }
-      }
-    }, onError: (error) {
-      // 处理Stream错误
-      debugPrint('DownloadProgressDialog: Stream错误: $error');
-      if (mounted) {
-        _onError('Stream错误: $error');
-      }
-    });
+      },
+      onError: (error) {
+        // 处理Stream错误
+        debugPrint('DownloadProgressDialog: Stream错误: $error');
+        if (mounted) {
+          _onError('Stream错误: $error');
+        }
+      },
+    );
   }
 
   void _startUpdateTimer() {
@@ -123,7 +126,7 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
           } catch (e) {
             debugPrint('DownloadProgressDialog: 关闭对话框时出错: $e');
           }
-          
+
           // 执行用户回调
           try {
             widget.onComplete();
@@ -140,10 +143,7 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
     if (mounted) {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('下载失败: $error'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('下载失败: $error'), backgroundColor: Colors.red),
       );
     }
   }
@@ -197,16 +197,18 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
             overflow: TextOverflow.ellipsis,
           ),
           SizedBox(height: 16),
-          
+
           // 进度条
           LinearProgressIndicator(
             value: progress,
             minHeight: 8,
             backgroundColor: Colors.grey[300],
-            valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+            valueColor: AlwaysStoppedAnimation<Color>(
+              Theme.of(context).primaryColor,
+            ),
           ),
           SizedBox(height: 8),
-          
+
           // 进度百分比和字节数
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -216,7 +218,7 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
             ],
           ),
           SizedBox(height: 8),
-          
+
           // 下载速度和剩余时间
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -225,15 +227,12 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
               if (remainingTime > 0) Text(_formatTime(remainingTime)),
             ],
           ),
-          
+
           // 状态信息
           SizedBox(height: 8),
           Text(
             _getStatusText(task.status),
-            style: TextStyle(
-              color: _getStatusColor(task.status),
-              fontSize: 12,
-            ),
+            style: TextStyle(color: _getStatusColor(task.status), fontSize: 12),
           ),
         ],
       ),
@@ -250,7 +249,7 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
             icon: Icon(Icons.play_arrow),
             label: Text('继续'),
           ),
-        
+
         if (task.status != DownloadStatus.completed)
           TextButton.icon(
             onPressed: () {
@@ -267,21 +266,25 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
 
   String _formatBytes(int downloaded, int total) {
     if (total == 0) return '0 B';
-    
+
     String format(int bytes) {
       if (bytes < 1024) return '${bytes} B';
       if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-      if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+      if (bytes < 1024 * 1024 * 1024)
+        return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
       return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
     }
-    
+
     return '${format(downloaded)} / ${format(total)}';
   }
 
   String _formatSpeed(double bytesPerSecond) {
-    if (bytesPerSecond < 1024) return '${bytesPerSecond.toStringAsFixed(1)} B/s';
-    if (bytesPerSecond < 1024 * 1024) return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
-    if (bytesPerSecond < 1024 * 1024 * 1024) return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    if (bytesPerSecond < 1024)
+      return '${bytesPerSecond.toStringAsFixed(1)} B/s';
+    if (bytesPerSecond < 1024 * 1024)
+      return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+    if (bytesPerSecond < 1024 * 1024 * 1024)
+      return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
     return '${(bytesPerSecond / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB/s';
   }
 
@@ -300,7 +303,7 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
     if (_currentTask?.error == '下载已取消') {
       return '下载已取消';
     }
-    
+
     switch (status) {
       case DownloadStatus.pending:
         return '等待下载...';
@@ -320,7 +323,7 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
     if (_currentTask?.error == '下载已取消') {
       return Colors.orange;
     }
-    
+
     switch (status) {
       case DownloadStatus.pending:
         return Colors.grey;
@@ -373,16 +376,19 @@ class _DownloadProgressWidgetState extends State<DownloadProgressWidget> {
     }
 
     // 订阅任务更新
-    _subscription = widget.downloadManager.taskStream.listen((task) {
-      if (task.id == widget.taskId && mounted) {
-        setState(() {
-          _currentTask = task;
-        });
-      }
-    }, onError: (error) {
-      // 处理Stream错误，避免静默失败
-      debugPrint('下载进度小部件Stream错误: $error');
-    });
+    _subscription = widget.downloadManager.taskStream.listen(
+      (task) {
+        if (task.id == widget.taskId && mounted) {
+          setState(() {
+            _currentTask = task;
+          });
+        }
+      },
+      onError: (error) {
+        // 处理Stream错误，避免静默失败
+        debugPrint('下载进度小部件Stream错误: $error');
+      },
+    );
   }
 
   @override
@@ -407,7 +413,9 @@ class _DownloadProgressWidgetState extends State<DownloadProgressWidget> {
               value: progress,
               minHeight: 4,
               backgroundColor: Colors.grey[300],
-              valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                Theme.of(context).primaryColor,
+              ),
             ),
           ),
           SizedBox(width: 8),

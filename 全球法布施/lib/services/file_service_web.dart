@@ -15,7 +15,7 @@ class FileService implements AbstractFileService {
         dialogTitle: '请选择要发送的文件',
         type: FileType.any,
       );
-      
+
       if (result != null && result.files.isNotEmpty) {
         debugPrint('✅ 成功选择 ${result.files.length} 个文件');
         for (var file in result.files) {
@@ -24,7 +24,7 @@ class FileService implements AbstractFileService {
       } else {
         debugPrint('⚠️ 未选择任何文件');
       }
-      
+
       return result?.files ?? [];
     } catch (e) {
       debugPrint('❌ 在Web上选择文件时出错: $e');
@@ -41,7 +41,7 @@ class FileService implements AbstractFileService {
     }
     return;
   }
-  
+
   // 实用方法
   String getFileType(String fileName) {
     final parts = fileName.split('.');
@@ -50,7 +50,7 @@ class FileService implements AbstractFileService {
     }
     return 'unknown';
   }
-  
+
   String getFileSizeString(int sizeInBytes) {
     final kb = sizeInBytes / 1024;
     if (kb < 1024) {
@@ -63,7 +63,7 @@ class FileService implements AbstractFileService {
     final gb = mb / 1024;
     return '${gb.toStringAsFixed(2)} GB';
   }
-  
+
   Future<Uint8List> readFileBytes(PlatformFile file) async {
     if (file.bytes == null) {
       throw Exception('无法在Web平台上获取文件字节数据');
