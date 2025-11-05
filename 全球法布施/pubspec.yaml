@@ -111,6 +111,7 @@ flutter:
     - assets/images/
     - assets/data/
     - assets/built_in/
+    - assets/models/
     - assets/earth_texture.jpg
   
   fonts:
