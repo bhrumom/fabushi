@@ -1,0 +1,5 @@
+# 排除超过 25MB 的大文件
+globe_assets/image/mixed/Earth_DiffuseMap_2.jpg
+assets/佛像/A1420佛像背光观音菩萨藏佛10款STL.zip
+assets/佛像/A1420佛像背光观音菩萨藏佛10款STL/**
+assets/assets/models/佛像模型.glb
