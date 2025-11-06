@@ -40,18 +40,12 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
     }
     try {
       _isLoading = true;
-      final result = await _fetchVideosHelper(
-        startAfterDocument: _lastDocument,
-      );
+      final result = await _fetchVideosHelper(startAfterDocument: _lastDocument);
       return result;
     } on FirebaseException catch (e) {
-      return Left(
-        'Failed to fetch more videos: ${e.message ?? 'Unknown error'}',
-      );
+      return Left('Failed to fetch more videos: ${e.message ?? 'Unknown error'}');
     } catch (e) {
-      return const Left(
-        'An unexpected error occurred while fetching more videos',
-      );
+      return const Left('An unexpected error occurred while fetching more videos');
     } finally {
       _isLoading = false;
     }
@@ -79,9 +73,7 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
         if (snapshot.docs.isNotEmpty) {
           _lastDocument = snapshot.docs.last;
           videos.addAll(
-            snapshot.docs
-                .map((doc) => VideoResponseModel.fromFirestore(doc).toEntity())
-                .toList(),
+            snapshot.docs.map((doc) => VideoResponseModel.fromFirestore(doc).toEntity()).toList(),
           );
         }
       }

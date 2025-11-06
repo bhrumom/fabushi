@@ -6,11 +6,7 @@ import 'package:global_dharma_sharing/features/video_feed/presentation/view/widg
 import 'package:video_player/video_player.dart';
 
 class VideoFeedViewItem extends StatefulWidget {
-  const VideoFeedViewItem({
-    required this.videoItem,
-    required this.controller,
-    super.key,
-  });
+  const VideoFeedViewItem({required this.videoItem, required this.controller, super.key});
 
   final VideoEntity videoItem;
   final VideoPlayerController? controller;

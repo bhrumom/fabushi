@@ -13,11 +13,7 @@ void setupDependencies() {
   getIt.registerLazySingleton<ApiClient>(() => ApiClient());
 
   // 认证模块
-  getIt.registerLazySingleton<AuthRemoteDataSource>(
-    () => AuthRemoteDataSourceImpl(getIt()),
-  );
-  getIt.registerLazySingleton<AuthRepository>(
-    () => AuthRepositoryImpl(getIt()),
-  );
+  getIt.registerLazySingleton<AuthRemoteDataSource>(() => AuthRemoteDataSourceImpl(getIt()));
+  getIt.registerLazySingleton<AuthRepository>(() => AuthRepositoryImpl(getIt()));
   getIt.registerLazySingleton(() => LoginUseCase(getIt()));
 }

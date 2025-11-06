@@ -75,9 +75,7 @@ class IPLocationService {
         if (data['status'] == 'success') {
           _cachedLocation = IPLocation.fromJson(data);
           _lastFetchTime = DateTime.now();
-          print(
-            'IP定位成功: ${_cachedLocation!.country}, ${_cachedLocation!.city}',
-          );
+          print('IP定位成功: ${_cachedLocation!.country}, ${_cachedLocation!.city}');
           return _cachedLocation;
         } else {
           print('IP定位失败: ${data['message']}');

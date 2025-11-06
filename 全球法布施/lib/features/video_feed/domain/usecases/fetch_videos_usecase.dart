@@ -3,8 +3,7 @@ import 'package:global_dharma_sharing/features/video_feed/domain/repositories/vi
 import 'package:fpdart/fpdart.dart';
 
 class FetchVideosUseCase {
-  FetchVideosUseCase({required VideoFeedRepository repository})
-    : _repository = repository;
+  FetchVideosUseCase({required VideoFeedRepository repository}) : _repository = repository;
 
   final VideoFeedRepository _repository;
 

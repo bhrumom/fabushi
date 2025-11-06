@@ -13,12 +13,10 @@ class VideoFeedViewFullTextReader extends StatefulWidget {
   final String? currentParagraph;
 
   @override
-  State<VideoFeedViewFullTextReader> createState() =>
-      _VideoFeedViewFullTextReaderState();
+  State<VideoFeedViewFullTextReader> createState() => _VideoFeedViewFullTextReaderState();
 }
 
-class _VideoFeedViewFullTextReaderState
-    extends State<VideoFeedViewFullTextReader> {
+class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReader> {
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _highlightKey = GlobalKey();
 
@@ -56,10 +54,7 @@ class _VideoFeedViewFullTextReaderState
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
-        title: Text(
-          widget.bookTitle,
-          style: const TextStyle(color: Colors.white),
-        ),
+        title: Text(widget.bookTitle, style: const TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(
@@ -94,11 +89,7 @@ class _VideoFeedViewFullTextReaderState
         children: [
           TextSpan(
             text: text.substring(0, index),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              height: 1.6,
-            ),
+            style: const TextStyle(color: Colors.white, fontSize: 18, height: 1.6),
           ),
           WidgetSpan(
             child: Container(
@@ -121,11 +112,7 @@ class _VideoFeedViewFullTextReaderState
           ),
           TextSpan(
             text: text.substring(index + paragraph.length),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              height: 1.6,
-            ),
+            style: const TextStyle(color: Colors.white, fontSize: 18, height: 1.6),
           ),
         ],
       ),

@@ -47,10 +47,7 @@ class AlipayAuthService {
   }
 
   /// 支付宝登录回调处理
-  Future<Map<String, dynamic>> alipayLogin(
-    String authCode,
-    String? state,
-  ) async {
+  Future<Map<String, dynamic>> alipayLogin(String authCode, String? state) async {
     try {
       final url = await baseUrl;
       debugPrint('支付宝登录API调用: $url/api/auth/alipay/login, authCode: $authCode');

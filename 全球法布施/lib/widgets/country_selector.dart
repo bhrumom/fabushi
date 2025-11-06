@@ -60,8 +60,7 @@ class _CountrySelectorState extends State<CountrySelector> {
 
         // 如果之前没有选择国家或选择的国家不在列表中，设置为第一个国家
         if (_countryList.isNotEmpty &&
-            (!_countryList.contains(_selectedCountry) ||
-                _selectedCountry == 'ALL')) {
+            (!_countryList.contains(_selectedCountry) || _selectedCountry == 'ALL')) {
           _selectedCountry = _countryList[0];
         }
       });
@@ -115,10 +114,7 @@ class _CountrySelectorState extends State<CountrySelector> {
             items: _countryList.map((country) {
               return DropdownMenuItem<String>(
                 value: country,
-                child: Text(
-                  _countryNames[country] ?? country,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                child: Text(_countryNames[country] ?? country, overflow: TextOverflow.ellipsis),
               );
             }).toList(),
             onChanged: (String? newValue) {

@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import '../config/unified_config.dart';
+import '../core/config/app_config.dart';
 
 class UnifiedApiService {
   static final UnifiedApiService _instance = UnifiedApiService._internal();
@@ -18,8 +18,8 @@ class UnifiedApiService {
   // 初始化
   void initialize() {
     _client = http.Client();
-    if (UnifiedConfig.enableApiLogging) {
-      UnifiedConfig.printCurrentConfig();
+    if (AppConfig.enableApiLogging) {
+      AppConfig.printCurrentConfig();
     }
   }
 
@@ -39,7 +39,7 @@ class UnifiedApiService {
     final uri = _buildUri(endpoint, queryParams);
     final requestHeaders = _buildHeaders(headers);
 
-    if (UnifiedConfig.enableApiLogging) {
+    if (AppConfig.enableApiLogging) {
       debugPrint('GET请求: $uri');
       debugPrint('请求头: $requestHeaders');
     }
@@ -47,9 +47,9 @@ class UnifiedApiService {
     return await _executeWithRetry(() async {
       final response = await _client
           .get(uri, headers: requestHeaders)
-          .timeout(UnifiedConfig.requestTimeout);
+          .timeout(AppConfig.requestTimeout);
 
-      if (UnifiedConfig.enableApiLogging) {
+      if (AppConfig.enableApiLogging) {
         debugPrint('GET响应: ${response.statusCode} - ${response.body}');
       }
 
@@ -68,7 +68,7 @@ class UnifiedApiService {
     final requestHeaders = _buildHeaders(headers);
     final requestBody = body != null ? jsonEncode(body) : null;
 
-    if (UnifiedConfig.enableApiLogging) {
+    if (AppConfig.enableApiLogging) {
       debugPrint('POST请求: $uri');
       debugPrint('请求头: $requestHeaders');
       debugPrint('请求体: $requestBody');
@@ -77,9 +77,9 @@ class UnifiedApiService {
     return await _executeWithRetry(() async {
       final response = await _client
           .post(uri, headers: requestHeaders, body: requestBody)
-          .timeout(UnifiedConfig.requestTimeout);
+          .timeout(AppConfig.requestTimeout);
 
-      if (UnifiedConfig.enableApiLogging) {
+      if (AppConfig.enableApiLogging) {
         debugPrint('POST响应: ${response.statusCode} - ${response.body}');
       }
 
@@ -98,16 +98,16 @@ class UnifiedApiService {
     final requestHeaders = _buildHeaders(headers);
     final requestBody = body != null ? jsonEncode(body) : null;
 
-    if (UnifiedConfig.enableApiLogging) {
+    if (AppConfig.enableApiLogging) {
       debugPrint('PUT请求: $uri');
     }
 
     return await _executeWithRetry(() async {
       final response = await _client
           .put(uri, headers: requestHeaders, body: requestBody)
-          .timeout(UnifiedConfig.requestTimeout);
+          .timeout(AppConfig.requestTimeout);
 
-      if (UnifiedConfig.enableApiLogging) {
+      if (AppConfig.enableApiLogging) {
         debugPrint('PUT响应: ${response.statusCode}');
       }
 
@@ -124,16 +124,16 @@ class UnifiedApiService {
     final uri = _buildUri(endpoint, queryParams);
     final requestHeaders = _buildHeaders(headers);
 
-    if (UnifiedConfig.enableApiLogging) {
+    if (AppConfig.enableApiLogging) {
       debugPrint('DELETE请求: $uri');
     }
 
     return await _executeWithRetry(() async {
       final response = await _client
           .delete(uri, headers: requestHeaders)
-          .timeout(UnifiedConfig.requestTimeout);
+          .timeout(AppConfig.requestTimeout);
 
-      if (UnifiedConfig.enableApiLogging) {
+      if (AppConfig.enableApiLogging) {
         debugPrint('DELETE响应: ${response.statusCode}');
       }
 
@@ -145,30 +145,21 @@ class UnifiedApiService {
 
   // 登录
   Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await post(
-      '/api/auth/login',
-      body: {'email': email, 'password': password},
-    );
+    final response = await post('/api/auth/login', body: {'email': email, 'password': password});
 
     return _handleResponse(response);
   }
 
   // 注册
   Future<Map<String, dynamic>> register(String email, String password) async {
-    final response = await post(
-      '/api/auth/register',
-      body: {'email': email, 'password': password},
-    );
+    final response = await post('/api/auth/register', body: {'email': email, 'password': password});
 
     return _handleResponse(response);
   }
 
   // 获取用户信息
   Future<Map<String, dynamic>> getUserInfo(String token) async {
-    final response = await get(
-      '/api/auth/user-info',
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await get('/api/auth/user-info', headers: {'Authorization': 'Bearer $token'});
 
     return _handleResponse(response);
   }
@@ -217,10 +208,8 @@ class UnifiedApiService {
 
   // 构建URI
   Uri _buildUri(String endpoint, Map<String, String>? queryParams) {
-    final baseUrl = UnifiedConfig.currentBackendUrl;
-    final fullUrl = endpoint.startsWith('http')
-        ? endpoint
-        : '$baseUrl$endpoint';
+    final baseUrl = AppConfig.currentBackendUrl;
+    final fullUrl = endpoint.startsWith('http') ? endpoint : '$baseUrl$endpoint';
 
     if (queryParams != null && queryParams.isNotEmpty) {
       return Uri.parse(fullUrl).replace(queryParameters: queryParams);
@@ -231,7 +220,7 @@ class UnifiedApiService {
 
   // 构建请求头
   Map<String, String> _buildHeaders(Map<String, String>? customHeaders) {
-    final headers = Map<String, String>.from(UnifiedConfig.defaultHeaders);
+    final headers = Map<String, String>.from(AppConfig.defaultHeaders);
 
     if (customHeaders != null) {
       headers.addAll(customHeaders);
@@ -241,27 +230,25 @@ class UnifiedApiService {
   }
 
   // 带重试的请求执行
-  Future<http.Response> _executeWithRetry(
-    Future<http.Response> Function() request,
-  ) async {
+  Future<http.Response> _executeWithRetry(Future<http.Response> Function() request) async {
     int attempts = 0;
 
-    while (attempts < UnifiedConfig.maxRetries) {
+    while (attempts < AppConfig.maxRetries) {
       try {
         return await request();
       } catch (e) {
         attempts++;
 
-        if (UnifiedConfig.enableApiLogging) {
+        if (AppConfig.enableApiLogging) {
           debugPrint('请求失败 (第 $attempts 次): $e');
         }
 
-        if (attempts >= UnifiedConfig.maxRetries) {
+        if (attempts >= AppConfig.maxRetries) {
           rethrow;
         }
 
         // 等待后重试
-        await Future.delayed(UnifiedConfig.retryDelay * attempts);
+        await Future.delayed(AppConfig.retryDelay * attempts);
       }
     }
 
@@ -301,7 +288,7 @@ class UnifiedApiService {
       final response = await get('/health');
       return response.statusCode == 200;
     } catch (e) {
-      if (UnifiedConfig.enableApiLogging) {
+      if (AppConfig.enableApiLogging) {
         debugPrint('健康检查失败: $e');
       }
       return false;
@@ -310,23 +297,20 @@ class UnifiedApiService {
 
   // 测试所有备用地址
   Future<String?> findWorkingBackend() async {
-    for (final url in UnifiedConfig.fallbackUrls) {
+    for (final url in AppConfig.fallbackUrls) {
       try {
         final response = await http
-            .get(
-              Uri.parse('$url/health'),
-              headers: UnifiedConfig.defaultHeaders,
-            )
+            .get(Uri.parse('$url/health'), headers: AppConfig.defaultHeaders)
             .timeout(const Duration(seconds: 5));
 
         if (response.statusCode == 200) {
-          if (UnifiedConfig.enableApiLogging) {
+          if (AppConfig.enableApiLogging) {
             debugPrint('找到可用的后端: $url');
           }
           return url;
         }
       } catch (e) {
-        if (UnifiedConfig.enableApiLogging) {
+        if (AppConfig.enableApiLogging) {
           debugPrint('后端不可用: $url - $e');
         }
         continue;
@@ -343,11 +327,7 @@ class ApiException implements Exception {
   final int statusCode;
   final String response;
 
-  ApiException({
-    required this.message,
-    required this.statusCode,
-    required this.response,
-  });
+  ApiException({required this.message, required this.statusCode, required this.response});
 
   @override
   String toString() {

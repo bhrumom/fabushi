@@ -3,8 +3,7 @@
 part of 'search_database.dart';
 
 // ignore_for_file: type=lint
-class $TextContentsTable extends TextContents
-    with TableInfo<$TextContentsTable, TextContent> {
+class $TextContentsTable extends TextContents with TableInfo<$TextContentsTable, TextContent> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
@@ -18,9 +17,7 @@ class $TextContentsTable extends TextContents
     hasAutoIncrement: true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
+    defaultConstraints: GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'),
   );
   static const VerificationMeta _titleMeta = const VerificationMeta('title');
   @override
@@ -31,9 +28,7 @@ class $TextContentsTable extends TextContents
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _contentMeta = const VerificationMeta(
-    'content',
-  );
+  static const VerificationMeta _contentMeta = const VerificationMeta('content');
   @override
   late final GeneratedColumn<String> content = GeneratedColumn<String>(
     'content',
@@ -42,9 +37,7 @@ class $TextContentsTable extends TextContents
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _filePathMeta = const VerificationMeta(
-    'filePath',
-  );
+  static const VerificationMeta _filePathMeta = const VerificationMeta('filePath');
   @override
   late final GeneratedColumn<String> filePath = GeneratedColumn<String>(
     'file_path',
@@ -53,9 +46,7 @@ class $TextContentsTable extends TextContents
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _categoryMeta = const VerificationMeta(
-    'category',
-  );
+  static const VerificationMeta _categoryMeta = const VerificationMeta('category');
   @override
   late final GeneratedColumn<String> category = GeneratedColumn<String>(
     'category',
@@ -65,13 +56,7 @@ class $TextContentsTable extends TextContents
     requiredDuringInsert: true,
   );
   @override
-  List<GeneratedColumn> get $columns => [
-    id,
-    title,
-    content,
-    filePath,
-    category,
-  ];
+  List<GeneratedColumn> get $columns => [id, title, content, filePath, category];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -88,18 +73,12 @@ class $TextContentsTable extends TextContents
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
     if (data.containsKey('title')) {
-      context.handle(
-        _titleMeta,
-        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
-      );
+      context.handle(_titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
     } else if (isInserting) {
       context.missing(_titleMeta);
     }
     if (data.containsKey('content')) {
-      context.handle(
-        _contentMeta,
-        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
-      );
+      context.handle(_contentMeta, content.isAcceptableOrUnknown(data['content']!, _contentMeta));
     } else if (isInserting) {
       context.missing(_contentMeta);
     }
@@ -128,10 +107,7 @@ class $TextContentsTable extends TextContents
   TextContent map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return TextContent(
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}id'],
-      )!,
+      id: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}id'])!,
       title: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}title'],
@@ -191,10 +167,7 @@ class TextContent extends DataClass implements Insertable<TextContent> {
     );
   }
 
-  factory TextContent.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
+  factory TextContent.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return TextContent(
       id: serializer.fromJson<int>(json['id']),
@@ -381,8 +354,7 @@ typedef $$TextContentsTableUpdateCompanionBuilder =
       Value<String> category,
     });
 
-class $$TextContentsTableFilterComposer
-    extends Composer<_$SearchDatabase, $TextContentsTable> {
+class $$TextContentsTableFilterComposer extends Composer<_$SearchDatabase, $TextContentsTable> {
   $$TextContentsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -390,34 +362,23 @@ class $$TextContentsTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get title => $composableBuilder(
-    column: $table.title,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get content => $composableBuilder(
-    column: $table.content,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get filePath => $composableBuilder(
-    column: $table.filePath,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get filePath =>
+      $composableBuilder(column: $table.filePath, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get category => $composableBuilder(
-    column: $table.category,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get category =>
+      $composableBuilder(column: $table.category, builder: (column) => ColumnFilters(column));
 }
 
-class $$TextContentsTableOrderingComposer
-    extends Composer<_$SearchDatabase, $TextContentsTable> {
+class $$TextContentsTableOrderingComposer extends Composer<_$SearchDatabase, $TextContentsTable> {
   $$TextContentsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -425,34 +386,23 @@ class $$TextContentsTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get title => $composableBuilder(
-    column: $table.title,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get content => $composableBuilder(
-    column: $table.content,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get filePath => $composableBuilder(
-    column: $table.filePath,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get filePath =>
+      $composableBuilder(column: $table.filePath, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get category => $composableBuilder(
-    column: $table.category,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get category =>
+      $composableBuilder(column: $table.category, builder: (column) => ColumnOrderings(column));
 }
 
-class $$TextContentsTableAnnotationComposer
-    extends Composer<_$SearchDatabase, $TextContentsTable> {
+class $$TextContentsTableAnnotationComposer extends Composer<_$SearchDatabase, $TextContentsTable> {
   $$TextContentsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -460,8 +410,7 @@ class $$TextContentsTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
+  GeneratedColumn<int> get id => $composableBuilder(column: $table.id, builder: (column) => column);
 
   GeneratedColumn<String> get title =>
       $composableBuilder(column: $table.title, builder: (column) => column);
@@ -487,10 +436,7 @@ class $$TextContentsTableTableManager
           $$TextContentsTableAnnotationComposer,
           $$TextContentsTableCreateCompanionBuilder,
           $$TextContentsTableUpdateCompanionBuilder,
-          (
-            TextContent,
-            BaseReferences<_$SearchDatabase, $TextContentsTable, TextContent>,
-          ),
+          (TextContent, BaseReferences<_$SearchDatabase, $TextContentsTable, TextContent>),
           TextContent,
           PrefetchHooks Function()
         > {
@@ -499,10 +445,8 @@ class $$TextContentsTableTableManager
         TableManagerState(
           db: db,
           table: table,
-          createFilteringComposer: () =>
-              $$TextContentsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$TextContentsTableOrderingComposer($db: db, $table: table),
+          createFilteringComposer: () => $$TextContentsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () => $$TextContentsTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
               $$TextContentsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
@@ -533,9 +477,8 @@ class $$TextContentsTableTableManager
                 filePath: filePath,
                 category: category,
               ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
+          withReferenceMapper: (p0) =>
+              p0.map((e) => (e.readTable(table), BaseReferences(db, table, e))).toList(),
           prefetchHooksCallback: null,
         ),
       );
@@ -551,10 +494,7 @@ typedef $$TextContentsTableProcessedTableManager =
       $$TextContentsTableAnnotationComposer,
       $$TextContentsTableCreateCompanionBuilder,
       $$TextContentsTableUpdateCompanionBuilder,
-      (
-        TextContent,
-        BaseReferences<_$SearchDatabase, $TextContentsTable, TextContent>,
-      ),
+      (TextContent, BaseReferences<_$SearchDatabase, $TextContentsTable, TextContent>),
       TextContent,
       PrefetchHooks Function()
     >;

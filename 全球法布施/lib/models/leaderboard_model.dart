@@ -8,11 +8,7 @@ class LeaderboardEntry {
   final int totalBytes;
   final int rank;
 
-  LeaderboardEntry({
-    required this.username,
-    required this.totalBytes,
-    required this.rank,
-  });
+  LeaderboardEntry({required this.username, required this.totalBytes, required this.rank});
 
   factory LeaderboardEntry.fromJson(Map<String, dynamic> json) {
     return LeaderboardEntry(
@@ -22,11 +18,7 @@ class LeaderboardEntry {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'username': username,
-    'totalBytes': totalBytes,
-    'rank': rank,
-  };
+  Map<String, dynamic> toJson() => {'username': username, 'totalBytes': totalBytes, 'rank': rank};
 }
 
 class LeaderboardModel extends ChangeNotifier {
@@ -121,10 +113,7 @@ class LeaderboardModel extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final data = _entries.map((e) => e.toJson()).toList();
       await prefs.setString('leaderboard_cache', jsonEncode(data));
-      await prefs.setInt(
-        'leaderboard_timestamp',
-        DateTime.now().millisecondsSinceEpoch,
-      );
+      await prefs.setInt('leaderboard_timestamp', DateTime.now().millisecondsSinceEpoch);
     } catch (e) {
       debugPrint('保存缓存失败: $e');
     }

@@ -215,9 +215,7 @@ class AlipayService {
       // 包括参数排序、签名等步骤
       // 实际项目中这部分应该在服务端完成
 
-      final orderString = orderData.entries
-          .map((e) => '${e.key}="${e.value}"')
-          .join('&');
+      final orderString = orderData.entries.map((e) => '${e.key}="${e.value}"').join('&');
 
       debugPrint('生成订单字符串: $orderString');
       return orderString;

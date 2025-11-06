@@ -7,12 +7,10 @@ class BeautifulTrajectoryDemoScreen extends StatefulWidget {
   const BeautifulTrajectoryDemoScreen({super.key});
 
   @override
-  State<BeautifulTrajectoryDemoScreen> createState() =>
-      _BeautifulTrajectoryDemoScreenState();
+  State<BeautifulTrajectoryDemoScreen> createState() => _BeautifulTrajectoryDemoScreenState();
 }
 
-class _BeautifulTrajectoryDemoScreenState
-    extends State<BeautifulTrajectoryDemoScreen> {
+class _BeautifulTrajectoryDemoScreenState extends State<BeautifulTrajectoryDemoScreen> {
   final GlobalKey<EnhancedEarthGlobeWidgetState> _globeKey = GlobalKey();
   final CountryCoordinatesService _coordService = CountryCoordinatesService();
   bool _isAutoPlaying = false;
@@ -87,12 +85,7 @@ class _BeautifulTrajectoryDemoScreenState
           Center(child: EnhancedEarthGlobeWidget(key: _globeKey)),
 
           // 控制面板
-          Positioned(
-            bottom: 40,
-            left: 0,
-            right: 0,
-            child: _buildControlPanel(),
-          ),
+          Positioned(bottom: 40, left: 0, right: 0, child: _buildControlPanel()),
         ],
       ),
     );
@@ -163,9 +156,7 @@ class _BeautifulTrajectoryDemoScreenState
           backgroundColor: color.withOpacity(0.8),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
     );

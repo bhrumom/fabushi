@@ -1,11 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 class ErrorHandler {
-  static void handleError(
-    String context,
-    dynamic error, [
-    StackTrace? stackTrace,
-  ]) {
+  static void handleError(String context, dynamic error, [StackTrace? stackTrace]) {
     debugPrint('[$context] 错误: $error');
     if (stackTrace != null && kDebugMode) {
       debugPrint('堆栈跟踪: $stackTrace');

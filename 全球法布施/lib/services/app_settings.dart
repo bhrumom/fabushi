@@ -1,5 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config/unified_config.dart';
+import '../core/config/app_config.dart';
 
 class AppSettings {
   static const String _testModeKey = 'test_mode';
@@ -22,7 +22,7 @@ class AppSettings {
   // 获取后端URL - 现在始终使用统一配置
   static Future<String> getBackendUrl() async {
     // 始终使用统一配置的当前URL，不再支持用户自定义
-    return UnifiedConfig.currentBackendUrl;
+    return AppConfig.currentBackendUrl;
   }
 
   // 设置后端URL - 已移除，不再支持用户自定义后端URL

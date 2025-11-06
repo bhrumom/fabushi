@@ -59,9 +59,7 @@ class TransferModeSelector extends StatelessWidget {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeColor: isHighlighted
-            ? Theme.of(context).colorScheme.primary
-            : null,
+        activeColor: isHighlighted ? Theme.of(context).colorScheme.primary : null,
       ),
     );
   }
@@ -76,11 +74,7 @@ class TransferModeSelector extends StatelessWidget {
     return ListTile(
       title: Text(title),
       subtitle: Text(subtitle),
-      trailing: Switch(
-        value: value,
-        onChanged: onChanged,
-        activeColor: Colors.amber,
-      ),
+      trailing: Switch(value: value, onChanged: onChanged, activeColor: Colors.amber),
     );
   }
 

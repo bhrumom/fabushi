@@ -67,10 +67,7 @@ class _ZenRoomScreenState extends State<ZenRoomScreen> {
                 children: [
                   const CircularProgressIndicator(color: Color(0xFFFFD700)),
                   const SizedBox(height: 20),
-                  Text(
-                    _loadingStatus,
-                    style: const TextStyle(color: Colors.white, fontSize: 16),
-                  ),
+                  Text(_loadingStatus, style: const TextStyle(color: Colors.white, fontSize: 16)),
                 ],
               ),
             ),

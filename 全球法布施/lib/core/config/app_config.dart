@@ -7,34 +7,48 @@ class AppConfig {
   static final AppConfig instance = AppConfig._();
 
   // 环境配置
-  static const String environment = String.fromEnvironment(
-    'ENV',
-    defaultValue: 'production',
-  );
+  static const String environment = String.fromEnvironment('ENV', defaultValue: 'production');
 
-  static bool get isProduction => environment == 'production';
-  static bool get isDevelopment => environment == 'development';
+  static bool get isProduction {
+    if (kIsWeb) {
+      final currentUrl = Uri.base.toString();
+      if (currentUrl.contains('fabushi-flutter-web-dev') || currentUrl.contains('localhost')) {
+        return false;
+      }
+      if (currentUrl.contains('fabushi-flutter-web-prod')) {
+        return true;
+      }
+    }
+    return environment == 'production';
+  }
+
+  static bool get isDevelopment => !isProduction;
   static bool get isStaging => environment == 'staging';
   static bool get isWeb => kIsWeb;
 
   // API配置
   static const String primaryBackendUrl = 'https://ombhrum.com';
   static const String cloudflareWorkerProdUrl = 'https://flutter.ombhrum.com';
-  static const String cloudflareWorkerDevUrl =
-      'https://flutter-dev.ombhrum.com';
+  static const String cloudflareWorkerDevUrl = 'https://flutter-dev.ombhrum.com';
   static const String localDevUrl = 'http://localhost:8787';
 
-  static String get apiUrl {
+  static String get currentBackendUrl {
     if (isWeb) {
       final currentUrl = Uri.base.toString();
-      if (currentUrl.contains('fabushi-flutter-web-dev') ||
-          currentUrl.contains('localhost')) {
+      if (currentUrl.contains('fabushi-flutter-web-dev')) {
+        return '';
+      } else if (currentUrl.contains('fabushi-flutter-web-prod')) {
+        return '';
+      } else if (currentUrl.contains('localhost')) {
         return cloudflareWorkerDevUrl;
       }
       return cloudflareWorkerProdUrl;
+    } else {
+      return isProduction ? cloudflareWorkerProdUrl : cloudflareWorkerDevUrl;
     }
-    return isProduction ? cloudflareWorkerProdUrl : cloudflareWorkerDevUrl;
   }
+
+  static String get apiUrl => currentBackendUrl;
 
   // 应用信息
   static const String appName = '全球法布施';
@@ -77,14 +91,79 @@ class AppConfig {
   // 存储键名
   static const String tokenStorageKey = 'auth_token';
   static const String userInfoStorageKey = 'user_info';
+  static const String backendUrlStorageKey = 'backend_url';
+  static const String testModeStorageKey = 'test_mode';
+
+  // API端点
+  static String get loginUrl => '$currentBackendUrl/api/auth/login';
+  static String get registerUrl => '$currentBackendUrl/api/auth/register';
+  static String get verifyUrl => '$currentBackendUrl/api/auth/verify';
+  static String get logoutUrl => '$currentBackendUrl/api/auth/logout';
+  static String get sendVerificationCodeUrl => '$currentBackendUrl/api/auth/send-verification-code';
+  static String get verifyCodeUrl => '$currentBackendUrl/api/auth/verify-code';
+  static String get forgotPasswordUrl => '$currentBackendUrl/api/auth/forgot-password';
+  static String get resetPasswordUrl => '$currentBackendUrl/api/auth/reset-password';
+  static String get userInfoUrl => '$currentBackendUrl/api/auth/user-info';
+  static String get bindEmailUrl => '$currentBackendUrl/api/auth/bind-email';
+
+  static String get alipayCreateOrderUrl => '$currentBackendUrl/api/alipay/create-order';
+  static String get alipayQueryOrderUrl => '$currentBackendUrl/api/alipay/query-order';
+  static String get alipayMembershipStatusUrl => '$currentBackendUrl/api/alipay/check-membership';
+
+  static String get stripeMembershipStatusUrl => '$currentBackendUrl/api/stripe/membership-status';
+  static String get stripeCreateSubscriptionUrl =>
+      '$currentBackendUrl/api/stripe/create-subscription';
+  static String get stripeSessionStatusUrl => '$currentBackendUrl/api/stripe/session-status';
+
+  static String get adminCheckStatusUrl => '$currentBackendUrl/api/admin/check-status';
+  static String get adminCreateRedeemCodeUrl => '$currentBackendUrl/api/admin/create-redeem-code';
+  static String get adminRedeemCodesUrl => '$currentBackendUrl/api/admin/redeem-codes';
+  static String get adminUseRedeemCodeUrl => '$currentBackendUrl/api/admin/use-redeem-code';
+  static String get adminPurchaseHistoryUrl => '$currentBackendUrl/api/admin/purchase-history';
+  static String get adminRedeemHistoryUrl => '$currentBackendUrl/api/admin/redeem-history';
+
+  static String get leaderboardUrl => '$currentBackendUrl/api/leaderboard';
+  static String get updateTransferDataUrl => '$currentBackendUrl/api/leaderboard/update';
+
+  static String get healthCheckUrl => '$currentBackendUrl/health';
+
+  // 请求头
+  static Map<String, String> get defaultHeaders => {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'User-Agent': 'FabushiApp/${isWeb ? "Web" : "Mobile"}',
+  };
+
+  // 错误消息
+  static const Map<String, String> errorMessages = {
+    'network_error': '网络连接失败，请检查网络设置',
+    'server_error': '服务器错误，请稍后重试',
+    'timeout_error': '请求超时，请检查网络连接',
+    'auth_error': '认证失败，请重新登录',
+    'permission_error': '权限不足',
+    'validation_error': '数据验证失败',
+    'unknown_error': '未知错误，请联系客服',
+  };
+
+  // 备用地址
+  static List<String> get fallbackUrls {
+    final workerUrl = isProduction ? cloudflareWorkerProdUrl : cloudflareWorkerDevUrl;
+    return [workerUrl, primaryBackendUrl];
+  }
+
+  // 调试配置
+  static const bool enableApiLogging = false;
+  static const bool debugMode = bool.fromEnvironment('DEBUG', defaultValue: false);
 
   static void printConfigInfo() {
     if (kDebugMode) {
       print('=== 应用配置 ===');
-      print('环境: $environment');
+      print('环境: ${isProduction ? "生产" : "开发"}');
       print('平台: ${isWeb ? "Web" : "Native"}');
-      print('API URL: $apiUrl');
+      print('API URL: $currentBackendUrl');
       print('================');
     }
   }
+
+  static void printCurrentConfig() => printConfigInfo();
 }

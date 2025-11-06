@@ -77,8 +77,7 @@ class DefaultNetworkMonitorService implements NetworkMonitorService {
           uploadSpeed: 0, // 简化实现
           downloadSpeed: downloadSpeed,
           totalUploaded: _currentStats.totalUploaded,
-          totalDownloaded:
-              _currentStats.totalDownloaded + (downloadSpeed * 5 / 1024), // 估算
+          totalDownloaded: _currentStats.totalDownloaded + (downloadSpeed * 5 / 1024), // 估算
           latency: latency.round(),
           connectionType: 'mobile/wifi',
           isOnline: latency > 0,

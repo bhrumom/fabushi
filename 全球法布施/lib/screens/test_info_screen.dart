@@ -32,9 +32,7 @@ class TestInfoScreen extends StatelessWidget {
                 // 测试模式提示
                 Card(
                   elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
@@ -57,10 +55,7 @@ class TestInfoScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         const Text(
                           '当前应用运行在测试模式下，所有网络请求都会被模拟处理，无需真实的网络连接。',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF7f8c8d),
-                          ),
+                          style: TextStyle(fontSize: 14, color: Color(0xFF7f8c8d)),
                         ),
                       ],
                     ),
@@ -71,11 +66,7 @@ class TestInfoScreen extends StatelessWidget {
                 // 测试账户列表
                 const Text(
                   '测试账户',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 const SizedBox(height: 12),
 
@@ -84,9 +75,7 @@ class TestInfoScreen extends StatelessWidget {
                     margin: const EdgeInsets.only(bottom: 12),
                     child: Card(
                       elevation: 4,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
@@ -107,8 +96,7 @@ class TestInfoScreen extends StatelessWidget {
                                   onPressed: () {
                                     Clipboard.setData(
                                       ClipboardData(
-                                        text:
-                                            '邮箱: ${account['email']}\n密码: ${account['password']}',
+                                        text: '邮箱: ${account['email']}\n密码: ${account['password']}',
                                       ),
                                     );
                                     ScaffoldMessenger.of(context).showSnackBar(
@@ -126,19 +114,12 @@ class TestInfoScreen extends StatelessWidget {
                             const SizedBox(height: 8),
                             Row(
                               children: [
-                                const Icon(
-                                  Icons.email,
-                                  size: 16,
-                                  color: Color(0xFF7f8c8d),
-                                ),
+                                const Icon(Icons.email, size: 16, color: Color(0xFF7f8c8d)),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     account['email']!,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Color(0xFF2c3e50),
-                                    ),
+                                    style: const TextStyle(fontSize: 14, color: Color(0xFF2c3e50)),
                                   ),
                                 ),
                               ],
@@ -146,11 +127,7 @@ class TestInfoScreen extends StatelessWidget {
                             const SizedBox(height: 4),
                             Row(
                               children: [
-                                const Icon(
-                                  Icons.lock,
-                                  size: 16,
-                                  color: Color(0xFF7f8c8d),
-                                ),
+                                const Icon(Icons.lock, size: 16, color: Color(0xFF7f8c8d)),
                                 const SizedBox(width: 8),
                                 Text(
                                   account['password']!,
@@ -174,9 +151,7 @@ class TestInfoScreen extends StatelessWidget {
                 // 验证码信息
                 Card(
                   elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
@@ -209,10 +184,7 @@ class TestInfoScreen extends StatelessWidget {
                         const SizedBox(height: 8),
                         const Text(
                           '在注册或忘记密码时，请使用上述验证码进行验证。',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF7f8c8d),
-                          ),
+                          style: TextStyle(fontSize: 14, color: Color(0xFF7f8c8d)),
                         ),
                       ],
                     ),
@@ -224,9 +196,7 @@ class TestInfoScreen extends StatelessWidget {
                 // 功能说明
                 Card(
                   elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
@@ -234,11 +204,7 @@ class TestInfoScreen extends StatelessWidget {
                       children: [
                         Row(
                           children: const [
-                            Icon(
-                              Icons.help_outline,
-                              color: Colors.orange,
-                              size: 24,
-                            ),
+                            Icon(Icons.help_outline, color: Colors.orange, size: 24),
                             SizedBox(width: 8),
                             Text(
                               '功能说明',
@@ -256,11 +222,7 @@ class TestInfoScreen extends StatelessWidget {
                           '• 登录后的用户信息会保存在本地\n'
                           '• 会员功能和支付功能都是模拟的\n'
                           '• 可以测试完整的用户流程',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF7f8c8d),
-                            height: 1.5,
-                          ),
+                          style: TextStyle(fontSize: 14, color: Color(0xFF7f8c8d), height: 1.5),
                         ),
                       ],
                     ),

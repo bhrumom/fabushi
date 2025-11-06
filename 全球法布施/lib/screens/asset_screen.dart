@@ -8,7 +8,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import '../config/unified_config.dart';
+import '../core/config/app_config.dart';
 import '../services/downloaded_assets_service.dart';
 import '../services/download_manager.dart';
 import '../widgets/download_progress_widget.dart';
@@ -32,8 +32,7 @@ class _AssetScreenState extends State<AssetScreen> {
   Map<String, double> _downloadProgress = {};
   List<Map<String, dynamic>> _treeAssets = []; // 法宝树素材列表
   Set<String> _selectedAssets = {}; // 用户选择的素材
-  final DownloadedAssetsService _downloadedAssetsService =
-      DownloadedAssetsService();
+  final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
   final DownloadManager _downloadManager = DownloadManager();
   Map<String, String> _assetToTaskMap = {}; // assetPath到taskId的映射
   StreamSubscription<DownloadTask>? _downloadSubscription; // 下载监听器订阅
@@ -71,9 +70,9 @@ class _AssetScreenState extends State<AssetScreen> {
                 // 标记为已下载
                 _downloadedAssetsService.markAssetAsDownloaded(task.assetPath);
 
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('${task.fileName} 下载完成！')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('${task.fileName} 下载完成！')));
               } else if (task.status == DownloadStatus.failed) {
                 _downloadingAssets.remove(task.assetPath);
                 _assetToTaskMap.remove(task.assetPath);
@@ -84,18 +83,14 @@ class _AssetScreenState extends State<AssetScreen> {
                     backgroundColor: Colors.red,
                   ),
                 );
-              } else if (task.status == DownloadStatus.paused &&
-                  task.error == '下载已取消') {
+              } else if (task.status == DownloadStatus.paused && task.error == '下载已取消') {
                 // 处理取消状态
                 _downloadingAssets.remove(task.assetPath);
                 _assetToTaskMap.remove(task.assetPath);
                 _downloadProgress.remove(task.assetPath);
 
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('${task.fileName} 下载已取消'),
-                    backgroundColor: Colors.orange,
-                  ),
+                  SnackBar(content: Text('${task.fileName} 下载已取消'), backgroundColor: Colors.orange),
                 );
               }
             }
@@ -135,9 +130,7 @@ class _AssetScreenState extends State<AssetScreen> {
 
     try {
       // 从本地资源文件加载素材列表
-      final String manifestString = await rootBundle.loadString(
-        'assets/data/asset-manifest.json',
-      );
+      final String manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
       final List<dynamic> files = json.decode(manifestString);
 
       print('从本地加载的文件数量: ${files.length}');
@@ -212,9 +205,7 @@ class _AssetScreenState extends State<AssetScreen> {
   Future<void> _loadLocalR2FilesList() async {
     try {
       // 从本地资源文件加载R2文件列表
-      final String r2FilesString = await rootBundle.loadString(
-        'assets/data/r2-files-list.json',
-      );
+      final String r2FilesString = await rootBundle.loadString('assets/data/r2-files-list.json');
       final Map<String, dynamic> r2Data = json.decode(r2FilesString);
 
       // 获取文件列表（兼容objects和files字段）
@@ -223,9 +214,7 @@ class _AssetScreenState extends State<AssetScreen> {
       print('从本地加载的R2文件数量: ${files.length}');
 
       // 将R2文件合并到普通素材分组中
-      final Map<String, List<Map<String, dynamic>>> currentGroups = Map.from(
-        _assetGroups,
-      );
+      final Map<String, List<Map<String, dynamic>>> currentGroups = Map.from(_assetGroups);
 
       for (var fileInfo in files) {
         String key = fileInfo['key'];
@@ -278,9 +267,9 @@ class _AssetScreenState extends State<AssetScreen> {
 
     try {
       // 从R2存储桶获取实际文件列表
-      final String baseUrl = UnifiedConfig.isProduction
-          ? UnifiedConfig.cloudflareWorkerProdUrl
-          : UnifiedConfig.cloudflareWorkerDevUrl;
+      final String baseUrl = AppConfig.isProduction
+          ? AppConfig.cloudflareWorkerProdUrl
+          : AppConfig.cloudflareWorkerDevUrl;
       final String url = '$baseUrl/r2?list';
 
       print('查询R2存储桶文件列表: $url');
@@ -351,9 +340,7 @@ class _AssetScreenState extends State<AssetScreen> {
         _error = '查询R2存储桶文件失败: $e';
       });
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('查询R2文件失败: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('查询R2文件失败: $e')));
     }
   }
 
@@ -420,13 +407,7 @@ class _AssetScreenState extends State<AssetScreen> {
       final List<dynamic> savedFiles = json.decode(savedFilesStr);
 
       return savedFiles
-          .map(
-            (f) => {
-              'name': f['name'],
-              'size': f['size'],
-              'timestamp': f['timestamp'],
-            },
-          )
+          .map((f) => {'name': f['name'], 'size': f['size'], 'timestamp': f['timestamp']})
           .toList();
     } catch (e) {
       print('获取Web平台已保存文件失败: $e');
@@ -473,9 +454,7 @@ class _AssetScreenState extends State<AssetScreen> {
       _downloadProgress[assetPath] = 0.0;
     });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('开始下载 $fileName')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('开始下载 $fileName')));
 
     try {
       if (!kIsWeb) {
@@ -491,9 +470,9 @@ class _AssetScreenState extends State<AssetScreen> {
 
       if (source == 'r2') {
         // R2文件通过Cloudflare Worker下载
-        final String baseUrl = UnifiedConfig.isProduction
-            ? UnifiedConfig.cloudflareWorkerProdUrl
-            : UnifiedConfig.cloudflareWorkerDevUrl;
+        final String baseUrl = AppConfig.isProduction
+            ? AppConfig.cloudflareWorkerProdUrl
+            : AppConfig.cloudflareWorkerDevUrl;
         url = '$baseUrl/r2?file=${Uri.encodeComponent(assetPath)}';
       } else {
         // 静态文件下载策略
@@ -503,24 +482,20 @@ class _AssetScreenState extends State<AssetScreen> {
         } else {
           // 非Web平台：使用Cloudflare Worker的完整URL访问静态文件
           // 因为静态文件部署在Web平台上，需要通过Worker代理访问
-          final String baseUrl = UnifiedConfig.isProduction
-              ? UnifiedConfig.cloudflareWorkerProdUrl
-              : UnifiedConfig.cloudflareWorkerDevUrl;
+          final String baseUrl = AppConfig.isProduction
+              ? AppConfig.cloudflareWorkerProdUrl
+              : AppConfig.cloudflareWorkerDevUrl;
           url = '$baseUrl/$assetPath';
         }
       }
 
       print('从以下URL下载素材: $url');
       print(
-        '平台: ${kIsWeb ? "Web" : "Native"}, 来源: $source, 环境: ${UnifiedConfig.isProduction ? "生产" : "开发"}',
+        '平台: ${kIsWeb ? "Web" : "Native"}, 来源: $source, 环境: ${AppConfig.isProduction ? "生产" : "开发"}',
       );
 
       // 创建下载任务
-      final taskId = await _downloadManager.createTask(
-        url,
-        fileName,
-        assetPath,
-      );
+      final taskId = await _downloadManager.createTask(url, fileName, assetPath);
       _assetToTaskMap[assetPath] = taskId;
 
       // 显示下载进度对话框
@@ -535,12 +510,9 @@ class _AssetScreenState extends State<AssetScreen> {
         _assetToTaskMap.remove(assetPath);
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('下载 $fileName 失败: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('下载 $fileName 失败: $e'), backgroundColor: Colors.red));
     }
   }
 
@@ -574,12 +546,8 @@ class _AssetScreenState extends State<AssetScreen> {
           // 清理下载状态
           try {
             setState(() {
-              _downloadingAssets.removeWhere(
-                (asset) => asset.contains(fileName),
-              );
-              _downloadProgress.removeWhere(
-                (asset, progress) => asset.contains(fileName),
-              );
+              _downloadingAssets.removeWhere((asset) => asset.contains(fileName));
+              _downloadProgress.removeWhere((asset, progress) => asset.contains(fileName));
             });
             debugPrint('🧹 AssetScreen: 下载状态已清理');
           } catch (e) {
@@ -672,10 +640,7 @@ class _AssetScreenState extends State<AssetScreen> {
           if (_assetGroups.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.all(16.0),
-              child: Text(
-                '素材列表',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
+              child: Text('素材列表', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -706,10 +671,7 @@ class _AssetScreenState extends State<AssetScreen> {
         final dirName = dir.contains('/') ? dir.split('/').last : dir;
 
         return ExpansionTile(
-          title: Text(
-            dirName,
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
+          title: Text(dirName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           subtitle: dir.contains('/')
               ? Text(dir, style: TextStyle(fontSize: 12, color: Colors.grey))
               : null,
@@ -733,18 +695,9 @@ class _AssetScreenState extends State<AssetScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (_downloadedAssetsService.isAssetDownloaded(assetPath))
-                        Text(
-                          '已下载',
-                          style: TextStyle(color: Colors.green, fontSize: 12),
-                        ),
+                        Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12)),
                       if (description != null && description.isNotEmpty)
-                        Text(
-                          description,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey[600],
-                          ),
-                        ),
+                        Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
                     ],
                   ),
                   value: isSelected,

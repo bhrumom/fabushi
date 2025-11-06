@@ -237,12 +237,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
       );
 
       // 添加起点的脉冲效果
-      await _createPulseEffect(
-        fromLat,
-        fromLng,
-        'from_pulse_$timestamp',
-        Colors.red.shade400,
-      );
+      await _createPulseEffect(fromLat, fromLng, 'from_pulse_$timestamp', Colors.red.shade400);
 
       // 流星动画
       await _animateMovingLight(
@@ -256,12 +251,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
       );
 
       // 添加终点的脉冲效果
-      await _createPulseEffect(
-        toLat,
-        toLng,
-        'to_pulse_$timestamp',
-        Colors.green.shade400,
-      );
+      await _createPulseEffect(toLat, toLng, 'to_pulse_$timestamp', Colors.green.shade400);
 
       // 清除轨迹
       _controller.removePoint('from_$timestamp');
@@ -394,12 +384,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
   }
 
   // 计算两点间的大圆距离
-  double _calculateDistance(
-    double lat1,
-    double lng1,
-    double lat2,
-    double lng2,
-  ) {
+  double _calculateDistance(double lat1, double lng1, double lat2, double lng2) {
     const R = 6371; // 地球半径（公里）
     final dLat = _toRadians(lat2 - lat1);
     final dLng = _toRadians(lng2 - lng1);
@@ -433,12 +418,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
   }
 
   // 创建脉冲效果
-  Future<void> _createPulseEffect(
-    double lat,
-    double lng,
-    String pulseId,
-    Color color,
-  ) async {
+  Future<void> _createPulseEffect(double lat, double lng, String pulseId, Color color) async {
     const pulseSteps = 6;
     final pulseDelay = const Duration(milliseconds: 100);
 
@@ -452,10 +432,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
         Point(
           id: '${pulseId}_$i',
           coordinates: GlobeCoordinates(lat, lng),
-          style: PointStyle(
-            color: color.withAlpha(alpha.clamp(50, 255)),
-            size: size.toDouble(),
-          ),
+          style: PointStyle(color: color.withAlpha(alpha.clamp(50, 255)), size: size.toDouble()),
         ),
       );
 
@@ -542,10 +519,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
               children: [
                 const Icon(Icons.public_off, color: Colors.white54, size: 64),
                 const SizedBox(height: 16),
-                Text(
-                  '地球组件暂时不可用',
-                  style: const TextStyle(color: Colors.white70, fontSize: 16),
-                ),
+                Text('地球组件暂时不可用', style: const TextStyle(color: Colors.white70, fontSize: 16)),
               ],
             ),
           );

@@ -64,19 +64,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              decoration: const InputDecoration(
-                labelText: '用户名',
-                hintText: '请输入用户名',
-              ),
+              decoration: const InputDecoration(labelText: '用户名', hintText: '请输入用户名'),
               onChanged: (value) {
                 // 保存用户名
               },
             ),
             TextField(
-              decoration: const InputDecoration(
-                labelText: '邮箱',
-                hintText: '请输入邮箱地址',
-              ),
+              decoration: const InputDecoration(labelText: '邮箱', hintText: '请输入邮箱地址'),
               onChanged: (value) {
                 // 保存邮箱
               },
@@ -84,10 +78,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
           ElevatedButton(
             onPressed: () {
               // 这里需要获取输入的值，简化处理
@@ -110,20 +101,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
 
       if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('支付宝注册成功'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('支付宝注册成功'), backgroundColor: Colors.green));
         Navigator.of(context).pop(); // 返回主界面
         Navigator.of(context).pop();
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(authModel.error ?? '支付宝注册失败'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(authModel.error ?? '支付宝注册失败'), backgroundColor: Colors.red),
         );
       }
     }
@@ -148,40 +133,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result['error'] ?? '获取支付宝注册链接失败'),
-              backgroundColor: Colors.red,
-            ),
+            SnackBar(content: Text(result['error'] ?? '获取支付宝注册链接失败'), backgroundColor: Colors.red),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('支付宝注册出错: $e'), backgroundColor: Colors.red),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('支付宝注册出错: $e'), backgroundColor: Colors.red));
       }
     }
   }
 
   Future<void> _sendVerificationCode() async {
     if (_emailController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('请先输入邮箱地址'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先输入邮箱地址'), backgroundColor: Colors.orange));
       return;
     }
 
     if (!_isValidEmail(_emailController.text.trim())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('请输入有效的邮箱地址'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入有效的邮箱地址'), backgroundColor: Colors.orange));
       return;
     }
 
@@ -197,21 +173,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _countdown = 60;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('验证码已发送到您的邮箱'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('验证码已发送到您的邮箱'), backgroundColor: Colors.green));
 
       // 开始倒计时
       _startCountdown();
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(authModel.error ?? '发送验证码失败'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(authModel.error ?? '发送验证码失败'), backgroundColor: Colors.red),
       );
     }
   }
@@ -235,12 +205,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     if (!_codeSent) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('请先获取邮箱验证码'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先获取邮箱验证码'), backgroundColor: Colors.orange));
       return;
     }
 
@@ -254,20 +221,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
 
     if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('注册成功！已自动登录'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('注册成功！已自动登录'), backgroundColor: Colors.green));
       Navigator.of(context).pop(); // 返回登录界面
       Navigator.of(context).pop(); // 返回主界面
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(authModel.error ?? '注册失败'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(authModel.error ?? '注册失败'), backgroundColor: Colors.red),
       );
     }
   }
@@ -295,9 +256,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               padding: const EdgeInsets.all(24.0),
               child: Card(
                 elevation: 8,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: Padding(
                   padding: const EdgeInsets.all(32.0),
                   child: Form(
@@ -319,10 +278,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const SizedBox(height: 8),
                         const Text(
                           '创建您的账户，开始法布施之旅',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF7f8c8d),
-                          ),
+                          style: TextStyle(fontSize: 14, color: Color(0xFF7f8c8d)),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 24),
@@ -333,9 +289,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           decoration: InputDecoration(
                             labelText: '用户名',
                             prefixIcon: const Icon(Icons.person),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                             filled: true,
                             fillColor: Colors.grey[50],
                           ),
@@ -359,9 +313,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           decoration: InputDecoration(
                             labelText: '邮箱地址',
                             prefixIcon: const Icon(Icons.email),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                             filled: true,
                             fillColor: Colors.grey[50],
                           ),
@@ -407,15 +359,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             Expanded(
                               flex: 1,
                               child: ElevatedButton(
-                                onPressed: _countdown > 0
-                                    ? null
-                                    : _sendVerificationCode,
+                                onPressed: _countdown > 0 ? null : _sendVerificationCode,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF667eea),
                                   foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -439,9 +387,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             prefixIcon: const Icon(Icons.lock),
                             suffixIcon: IconButton(
                               icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility
-                                    : Icons.visibility_off,
+                                _obscurePassword ? Icons.visibility : Icons.visibility_off,
                               ),
                               onPressed: () {
                                 setState(() {
@@ -449,9 +395,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 });
                               },
                             ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                             filled: true,
                             fillColor: Colors.grey[50],
                           ),
@@ -477,20 +421,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
                               icon: Icon(
-                                _obscureConfirmPassword
-                                    ? Icons.visibility
-                                    : Icons.visibility_off,
+                                _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
                               ),
                               onPressed: () {
                                 setState(() {
-                                  _obscureConfirmPassword =
-                                      !_obscureConfirmPassword;
+                                  _obscureConfirmPassword = !_obscureConfirmPassword;
                                 });
                               },
                             ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                             filled: true,
                             fillColor: Colors.grey[50],
                           ),
@@ -512,15 +451,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         Consumer<AuthModel>(
                           builder: (context, authModel, child) {
                             return ElevatedButton(
-                              onPressed: authModel.isLoading
-                                  ? null
-                                  : _handleRegister,
+                              onPressed: authModel.isLoading ? null : _handleRegister,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF667eea),
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
@@ -532,18 +467,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       width: 20,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Colors.white,
-                                            ),
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                       ),
                                     )
                                   : const Text(
                                       '创建账户',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                                     ),
                             );
                           },
@@ -560,18 +489,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             backgroundColor: const Color(0xFF1677FF),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             elevation: 2,
                           ),
                           icon: const Icon(Icons.account_balance_wallet),
                           label: const Text(
                             '支付宝注册',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -580,10 +504,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(
-                              '已有账户？',
-                              style: TextStyle(color: Colors.grey[600]),
-                            ),
+                            Text('已有账户？', style: TextStyle(color: Colors.grey[600])),
                             TextButton(
                               onPressed: () {
                                 Navigator.of(context).pop();

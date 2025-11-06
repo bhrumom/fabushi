@@ -78,11 +78,7 @@ class NetworkDiagnostics {
         message: message,
       );
     } catch (e) {
-      return NetworkDiagnosticResult(
-        isConnected: false,
-        overallScore: 0,
-        message: '诊断失败: $e',
-      );
+      return NetworkDiagnosticResult(isConnected: false, overallScore: 0, message: '诊断失败: $e');
     }
   }
 

@@ -90,9 +90,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
       debugPrint('🏷️ 国家标签: $fromLabel -> $toLabel');
 
       if (state != null) {
-        debugPrint(
-          '✅ 直接添加轨迹: $fromLabel ($fromLat, $fromLng) -> $toLabel ($toLat, $toLng)',
-        );
+        debugPrint('✅ 直接添加轨迹: $fromLabel ($fromLat, $fromLng) -> $toLabel ($toLat, $toLng)');
         try {
           state.addTransferBeam(
             fromLat,
@@ -178,12 +176,9 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
             child: _isGlobeLoaded
                 ? LayoutBuilder(
                     builder: (context, constraints) {
-                      debugPrint(
-                        '🎭 Globe 渲染区域: ${constraints.maxWidth}x${constraints.maxHeight}',
-                      );
+                      debugPrint('🎭 Globe 渲染区域: ${constraints.maxWidth}x${constraints.maxHeight}');
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (_globeKey.currentState != null &&
-                            _globeState == null) {
+                        if (_globeKey.currentState != null && _globeState == null) {
                           _globeState = _globeKey.currentState;
                           debugPrint('💾 首次保存 Globe 静态引用');
                         }
@@ -212,21 +207,14 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
             right: 0,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.black.withOpacity(0.7),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: const Text(
                   '🌍 全球法布施 - 实时传输轨迹',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -238,15 +226,11 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const LeaderboardScreen(),
-                  ),
+                  MaterialPageRoute(builder: (context) => const LeaderboardScreen()),
                 );
               },
               icon: const Icon(Icons.leaderboard, color: Colors.white),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.black.withOpacity(0.7),
-              ),
+              style: IconButton.styleFrom(backgroundColor: Colors.black.withOpacity(0.7)),
               tooltip: '排行榜',
             ),
           ),
@@ -257,10 +241,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
               right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.cyan.withOpacity(0.8),
                     borderRadius: BorderRadius.circular(16),
@@ -295,10 +276,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
               child: TextButton.icon(
                 onPressed: () => _globeKey.currentState?.clearBeams(),
                 icon: const Icon(Icons.clear_all, color: Colors.white70),
-                label: const Text(
-                  '清除轨迹',
-                  style: TextStyle(color: Colors.white70),
-                ),
+                label: const Text('清除轨迹', style: TextStyle(color: Colors.white70)),
               ),
             ),
           ),
@@ -318,10 +296,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
             padding: const EdgeInsets.all(12),
             child: Column(
               children: [
-                Text(
-                  '正在向全球发送经文...',
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
-                ),
+                Text('正在向全球发送经文...', style: const TextStyle(color: Colors.white, fontSize: 16)),
                 const SizedBox(height: 8),
                 LinearProgressIndicator(
                   value: model.progress,
@@ -353,10 +328,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
               children: [
                 Text(
                   model.selectedFile?.name ?? '未选择经文',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
@@ -376,8 +348,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                     const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed:
-                            model.selectedFile != null && !model.isTransferring
+                        onPressed: model.selectedFile != null && !model.isTransferring
                             ? () => _startSending(model)
                             : null,
                         icon: const Icon(Icons.send),

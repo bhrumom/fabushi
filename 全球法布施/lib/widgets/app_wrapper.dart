@@ -59,8 +59,7 @@ class _AppWrapperState extends State<AppWrapper> {
       if (mounted) {
         setState(() {
           _initError = e.toString();
-          _isInitialized =
-              true; // Mark as initialized to show the error screen.
+          _isInitialized = true; // Mark as initialized to show the error screen.
         });
       }
     }
@@ -96,8 +95,7 @@ class _AppWrapperState extends State<AppWrapper> {
           }
 
           // 处理支付宝绑定情况
-          if (params['alipay_auth_code'] != null &&
-              params['needs_binding'] == 'true') {
+          if (params['alipay_auth_code'] != null && params['needs_binding'] == 'true') {
             final authCode = params['alipay_auth_code']!;
             final userId = params['alipay_user_id'];
             final nickname = params['alipay_nickname'] ?? '';
@@ -140,10 +138,7 @@ class _AppWrapperState extends State<AppWrapper> {
 
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(welcomeMessage),
-                  backgroundColor: Colors.green,
-                ),
+                SnackBar(content: Text(welcomeMessage), backgroundColor: Colors.green),
               );
             }
 
@@ -170,11 +165,7 @@ class _AppWrapperState extends State<AppWrapper> {
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('正在初始化应用...'),
-            ],
+            children: [CircularProgressIndicator(), SizedBox(height: 16), Text('正在初始化应用...')],
           ),
         ),
       );

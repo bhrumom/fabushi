@@ -1,5 +1,5 @@
 import 'dart:convert';
-import '../config/unified_config.dart';
+import '../core/config/app_config.dart';
 import 'http_service.dart';
 
 class LeaderboardService {
@@ -9,10 +9,7 @@ class LeaderboardService {
 
   Future<List<Map<String, dynamic>>> fetchLeaderboard() async {
     try {
-      final response = await HttpService.get(
-        UnifiedConfig.leaderboardUrl,
-        useAuth: false,
-      );
+      final response = await HttpService.get(AppConfig.leaderboardUrl, useAuth: false);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -40,7 +37,7 @@ class LeaderboardService {
   Future<void> updateTransferData(int bytes) async {
     try {
       final response = await HttpService.post(
-        UnifiedConfig.updateTransferDataUrl,
+        AppConfig.updateTransferDataUrl,
         body: {'bytes': bytes},
         useAuth: true,
       );

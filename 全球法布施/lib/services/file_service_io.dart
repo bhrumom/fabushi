@@ -110,9 +110,7 @@ class FileService implements AbstractFileService {
 
   Future<File> createTempFile(String content, {String suffix = '.tmp'}) async {
     final tempDir = await getTemporaryDirectory();
-    final tempFile = File(
-      '${tempDir.path}/temp_${DateTime.now().millisecondsSinceEpoch}$suffix',
-    );
+    final tempFile = File('${tempDir.path}/temp_${DateTime.now().millisecondsSinceEpoch}$suffix');
     await tempFile.writeAsString(content);
     return tempFile;
   }

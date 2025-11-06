@@ -58,10 +58,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
   @override
   Future<void> sendVerificationCode(String email, String type) async {
-    await apiClient.post(ApiConstants.sendVerificationCode, {
-      'email': email,
-      'type': type,
-    });
+    await apiClient.post(ApiConstants.sendVerificationCode, {'email': email, 'type': type});
   }
 
   @override
@@ -77,11 +74,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   }
 
   @override
-  Future<void> resetPassword(
-    String email,
-    String code,
-    String newPassword,
-  ) async {
+  Future<void> resetPassword(String email, String code, String newPassword) async {
     await apiClient.post(ApiConstants.resetPassword, {
       'email': email,
       'code': code,
