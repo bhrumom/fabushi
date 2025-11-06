@@ -14,23 +14,15 @@ class MyProfileScreen extends StatelessWidget {
         builder: (context, authModel, _) {
           final user = authModel.currentUser;
           if (user == null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.person_outline, size: 80, color: Colors.grey),
-                  const SizedBox(height: 20),
-                  const Text('请先登录', style: TextStyle(fontSize: 18)),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const LoginScreen()),
-                    ),
-                    child: const Text('立即登录'),
-                  ),
-                ],
-              ),
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _buildGuestCard(),
+                const SizedBox(height: 16),
+                _buildGuestFeatures(context),
+                const SizedBox(height: 16),
+                _buildLoginPrompt(context),
+              ],
             );
           }
 
@@ -105,6 +97,146 @@ class MyProfileScreen extends StatelessWidget {
           Text(label, style: const TextStyle(color: Colors.grey)),
           Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildGuestCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundColor: Colors.grey.shade300,
+              child: const Icon(Icons.person_outline, size: 40, color: Colors.grey),
+            ),
+            const SizedBox(width: 16),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '游客模式',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  Text('您正在以游客身份使用应用', style: TextStyle(color: Colors.grey)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGuestFeatures(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('游客可用功能', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            _buildFeatureItem(Icons.public, '全球法布施', '可以向全世界发送佛教经文'),
+            _buildFeatureItem(Icons.video_library, '法流观看', '可以观看佛教视频内容'),
+            _buildFeatureItem(Icons.temple_buddhist, '禅室体验', '可以进入禅室冥想'),
+            const Divider(),
+            const Text(
+              '登录后可获得更多功能：',
+              style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 8),
+            _buildFeatureItem(Icons.cloud_sync, '云端同步', '数据云端保存，多设备同步', isDisabled: true),
+            _buildFeatureItem(Icons.leaderboard, '排行榜', '查看全球发送排行榜', isDisabled: true),
+            _buildFeatureItem(Icons.card_membership, '会员服务', '享受会员专属服务', isDisabled: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeatureItem(IconData icon, String title, String description, {bool isDisabled = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 20,
+            color: isDisabled ? Colors.grey.shade400 : Colors.blue,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    color: isDisabled ? Colors.grey.shade600 : null,
+                  ),
+                ),
+                Text(
+                  description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDisabled ? Colors.grey.shade500 : Colors.grey.shade700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoginPrompt(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const Text(
+              '🙏 登录获得完整体验',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '登录后可以保存您的发送记录，参与排行榜，享受会员服务',
+              style: TextStyle(color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    ),
+                    child: const Text('登录'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    ),
+                    child: const Text('注册'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -244,6 +244,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
           ),
           Expanded(
             child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
               itemCount: statuses.length,
               itemBuilder: (context, index) {
                 final status = statuses[index];

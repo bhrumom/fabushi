@@ -32,25 +32,45 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
   @override
   void initState() {
     super.initState();
-    _controller = FlutterEarthGlobeController(
-      rotationSpeed: 0.05,
-      isRotating: true,
-      isBackgroundFollowingSphereRotation: true,
-    );
-    // 延迟加载纹理，避免初始化时崩溃
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadTextureSafely();
-    });
-    _initializeServices();
+    try {
+      _controller = FlutterEarthGlobeController(
+        rotationSpeed: 0.05,
+        isRotating: true,
+        isBackgroundFollowingSphereRotation: true,
+      );
+      // 延迟加载纹理，避免初始化时崩溃
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadTextureSafely();
+      });
+      _initializeServices();
+    } catch (e) {
+      debugPrint('⚠️ 地球组件初始化失败: $e');
+      // 初始化失败时创建一个基本的控制器
+      _controller = FlutterEarthGlobeController();
+    }
   }
 
   Future<void> _loadTextureSafely() async {
     try {
       if (!_isDisposed && mounted) {
-        _controller.loadSurface(Image.asset('assets/earth_texture.jpg').image);
+        // 安全加载纹理，添加错误处理
+        final image = Image.asset(
+          'assets/earth_texture.jpg',
+          errorBuilder: (context, error, stackTrace) {
+            debugPrint('⚠️ 地球纹理加载失败: $error');
+            return Container(
+              width: 100,
+              height: 100,
+              color: Colors.blue.shade900,
+              child: const Icon(Icons.public, color: Colors.white),
+            );
+          },
+        );
+        _controller.loadSurface(image.image);
       }
     } catch (e) {
       debugPrint('⚠️ 加载地球纹理失败: $e');
+      // 纹理加载失败时不阻止组件渲染
     }
   }
 

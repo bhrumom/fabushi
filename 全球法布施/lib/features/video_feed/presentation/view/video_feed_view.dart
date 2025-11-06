@@ -1,10 +1,11 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_entity.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_cubit.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_state.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_item.dart';
-import 'package:preload_page_view/preload_page_view.dart';
+import 'package:preload_page_view/preload_page_view.dart' hide PageScrollPhysics;
 import 'package:video_player/video_player.dart';
 
 class VideoFeedView extends StatefulWidget {
@@ -340,7 +341,7 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
           scrollDirection: Axis.vertical,
           controller: _pageController,
           itemCount: _videos.length,
-          physics: const AlwaysScrollableScrollPhysics(),
+          physics: const BouncingScrollPhysics(),
           onPageChanged: _handlePageChange,
           itemBuilder: (context, index) {
             return RepaintBoundary(
