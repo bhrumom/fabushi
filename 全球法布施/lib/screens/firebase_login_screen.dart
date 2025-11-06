@@ -67,9 +67,7 @@ class _FirebaseLoginScreenState extends State<FirebaseLoginScreen> {
       if (result['success']) {
         Navigator.pop(context);
       } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(result['error'])));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['error'])));
       }
     }
   }
@@ -83,9 +81,7 @@ class _FirebaseLoginScreenState extends State<FirebaseLoginScreen> {
       if (result['success']) {
         Navigator.pop(context);
       } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(result['error'])));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['error'])));
       }
     }
   }

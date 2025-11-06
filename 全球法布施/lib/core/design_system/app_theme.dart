@@ -58,27 +58,20 @@ class AppTheme {
 
     // 按钮主题
     elevatedButtonTheme: ElevatedButtonThemeData(
-      style:
-          ElevatedButton.styleFrom(
-            elevation: 3,
-            shadowColor: primaryColor.withOpacity(0.4),
-            backgroundColor: primaryColor,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'NotoSansSC',
-              letterSpacing: 0.5,
-            ),
-          ).copyWith(
-            overlayColor: WidgetStateProperty.all(
-              Colors.white.withOpacity(0.1),
-            ),
-          ),
+      style: ElevatedButton.styleFrom(
+        elevation: 3,
+        shadowColor: primaryColor.withOpacity(0.4),
+        backgroundColor: primaryColor,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        textStyle: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          fontFamily: 'NotoSansSC',
+          letterSpacing: 0.5,
+        ),
+      ).copyWith(overlayColor: WidgetStateProperty.all(Colors.white.withOpacity(0.1))),
     ),
 
     filledButtonTheme: FilledButtonThemeData(
@@ -92,25 +85,18 @@ class AppTheme {
     ),
 
     outlinedButtonTheme: OutlinedButtonThemeData(
-      style:
-          OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            side: const BorderSide(color: primaryColor, width: 2.5),
-            foregroundColor: primaryColor,
-            textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'NotoSansSC',
-              letterSpacing: 0.5,
-            ),
-          ).copyWith(
-            overlayColor: WidgetStateProperty.all(
-              primaryColor.withOpacity(0.08),
-            ),
-          ),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        side: const BorderSide(color: primaryColor, width: 2.5),
+        foregroundColor: primaryColor,
+        textStyle: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          fontFamily: 'NotoSansSC',
+          letterSpacing: 0.5,
+        ),
+      ).copyWith(overlayColor: WidgetStateProperty.all(primaryColor.withOpacity(0.08))),
     ),
 
     textButtonTheme: TextButtonThemeData(
@@ -145,10 +131,7 @@ class AppTheme {
         borderSide: const BorderSide(color: Colors.red, width: 2),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-      labelStyle: const TextStyle(
-        fontFamily: 'NotoSansSC',
-        fontWeight: FontWeight.w500,
-      ),
+      labelStyle: const TextStyle(fontFamily: 'NotoSansSC', fontWeight: FontWeight.w500),
       hintStyle: TextStyle(color: Colors.grey[400], fontFamily: 'NotoSansSC'),
     ),
 
@@ -159,11 +142,7 @@ class AppTheme {
     ),
 
     // Divider主题
-    dividerTheme: DividerThemeData(
-      color: Colors.grey[300],
-      thickness: 1,
-      space: 1,
-    ),
+    dividerTheme: DividerThemeData(color: Colors.grey[300], thickness: 1, space: 1),
 
     // SnackBar主题
     snackBarTheme: SnackBarThemeData(
@@ -253,9 +232,7 @@ class AppTheme {
   );
 
   // 通用装饰
-  static BoxDecoration gradientBackground = const BoxDecoration(
-    gradient: primaryGradient,
-  );
+  static BoxDecoration gradientBackground = const BoxDecoration(gradient: primaryGradient);
 
   static BoxDecoration cardDecoration = BoxDecoration(
     color: Colors.white,
@@ -267,11 +244,7 @@ class AppTheme {
         offset: const Offset(0, 8),
         spreadRadius: 0,
       ),
-      BoxShadow(
-        color: Colors.black.withOpacity(0.04),
-        blurRadius: 10,
-        offset: const Offset(0, 2),
-      ),
+      BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2)),
     ],
   );
 

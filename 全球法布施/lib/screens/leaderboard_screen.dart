@@ -46,9 +46,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               defaultTargetPlatform == TargetPlatform.linux)
             IconButton(
               icon: const Icon(Icons.refresh),
-              onPressed: () => context
-                  .read<LeaderboardModel>()
-                  .fetchLeaderboard(forceRefresh: true),
+              onPressed: () =>
+                  context.read<LeaderboardModel>().fetchLeaderboard(forceRefresh: true),
               tooltip: '刷新',
             ),
         ],
@@ -100,12 +99,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   },
                 ),
                 if (model.isLoading)
-                  const Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: LinearProgressIndicator(),
-                  ),
+                  const Positioned(top: 0, left: 0, right: 0, child: LinearProgressIndicator()),
                 if (model.error != null)
                   Positioned(
                     top: 0,
@@ -144,10 +138,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       backgroundColor: color,
       child: Text(
         '$rank',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-        ),
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -155,8 +146,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024)
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 

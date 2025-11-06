@@ -30,15 +30,9 @@ class FirebaseAuthService {
   }
 
   // 邮箱密码登录
-  Future<Map<String, dynamic>> signInWithEmail(
-    String email,
-    String password,
-  ) async {
+  Future<Map<String, dynamic>> signInWithEmail(String email, String password) async {
     try {
-      final credential = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      final credential = await _auth.signInWithEmailAndPassword(email: email, password: password);
       await _saveUserLocally(credential.user);
       return {'success': true, 'user': credential.user};
     } on FirebaseAuthException catch (e) {

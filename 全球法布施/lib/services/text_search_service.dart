@@ -62,14 +62,7 @@ class TextSearchService {
           final parts = path.split('/');
           final category = parts.length > 2 ? parts[2] : '其他';
 
-          _items.add(
-            TextItem(
-              title: title,
-              content: content,
-              filePath: path,
-              category: category,
-            ),
-          );
+          _items.add(TextItem(title: title, content: content, filePath: path, category: category));
         } catch (e) {
           // Skip files that can't be loaded
         }
@@ -99,9 +92,7 @@ class TextSearchService {
 
     try {
       final response = await http.get(
-        Uri.parse(
-          '$baseUrl/api/search?q=${Uri.encodeComponent(query)}&limit=$limit',
-        ),
+        Uri.parse('$baseUrl/api/search?q=${Uri.encodeComponent(query)}&limit=$limit'),
       );
 
       if (response.statusCode == 200) {
@@ -127,9 +118,7 @@ class TextSearchService {
       final response = await http.post(
         Uri.parse('$baseUrl/api/search/index'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'texts': _items.map((item) => item.toJson()).toList(),
-        }),
+        body: jsonEncode({'texts': _items.map((item) => item.toJson()).toList()}),
       );
 
       if (response.statusCode == 200) {

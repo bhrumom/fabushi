@@ -11,7 +11,7 @@ import '../widgets/transfer_mode_selector.dart';
 import 'global_dharma_screen.dart';
 import 'asset_screen.dart';
 import '../widgets/common_widgets.dart';
-import '../config/app_theme.dart';
+import '../core/design_system/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -55,10 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     authModel.currentUser!.username.isNotEmpty
                         ? authModel.currentUser!.username[0].toUpperCase()
                         : '?',
-                    style: const TextStyle(
-                      color: Color(0xFF667eea),
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: const TextStyle(color: Color(0xFF667eea), fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
@@ -67,9 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   case 'profile':
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (context) => const ProfileScreen(),
-                      ),
+                      MaterialPageRoute(builder: (context) => const ProfileScreen()),
                     );
                     break;
                   case 'logout':
@@ -153,9 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: PrimaryButton(
                               text: '选择文件',
                               icon: Icons.file_upload,
-                              onPressed: () => context
-                                  .read<FileTransferModel>()
-                                  .selectFiles(),
+                              onPressed: () => context.read<FileTransferModel>().selectFiles(),
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -163,9 +156,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: SecondaryButton(
                               text: '内置素材',
                               icon: Icons.image,
-                              onPressed: () => context
-                                  .read<FileTransferModel>()
-                                  .selectBuiltInAssets(context),
+                              onPressed: () =>
+                                  context.read<FileTransferModel>().selectBuiltInAssets(context),
                             ),
                           ),
                         ],
@@ -182,45 +174,28 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    '已选文件',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
-                                  ),
+                                  Text('已选文件', style: Theme.of(context).textTheme.titleMedium),
                                   const SizedBox(height: 8),
                                   SizedBox(
                                     height: 120,
                                     child: model.hasFiles
                                         ? ListView.builder(
-                                            itemCount:
-                                                model.selectedFiles.length,
+                                            itemCount: model.selectedFiles.length,
                                             itemBuilder: (context, index) {
-                                              final file =
-                                                  model.selectedFiles[index];
+                                              final file = model.selectedFiles[index];
                                               return ListTile(
                                                 dense: true,
                                                 leading: Icon(
-                                                  _getIconForFileType(
-                                                    model.getFileType(
-                                                      file.name,
-                                                    ),
-                                                  ),
+                                                  _getIconForFileType(model.getFileType(file.name)),
                                                   size: 20,
                                                 ),
                                                 title: Text(
                                                   file.name,
-                                                  style: const TextStyle(
-                                                    fontSize: 14,
-                                                  ),
+                                                  style: const TextStyle(fontSize: 14),
                                                 ),
                                                 subtitle: Text(
-                                                  model.getFileSizeString(
-                                                    file.size,
-                                                  ),
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                  ),
+                                                  model.getFileSizeString(file.size),
+                                                  style: const TextStyle(fontSize: 12),
                                                 ),
                                                 trailing: IconButton(
                                                   icon: const Icon(
@@ -228,8 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     color: Colors.red,
                                                     size: 18,
                                                   ),
-                                                  onPressed: () =>
-                                                      model.removeFile(file),
+                                                  onPressed: () => model.removeFile(file),
                                                 ),
                                               );
                                             },
@@ -237,8 +211,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         : Container(
                                             decoration: BoxDecoration(
                                               color: Colors.grey[200],
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
+                                              borderRadius: BorderRadius.circular(8),
                                             ),
                                             child: const Center(
                                               child: Text(
@@ -263,10 +236,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ),
                                         label: const Text(
                                           '清空',
-                                          style: TextStyle(
-                                            color: Colors.red,
-                                            fontSize: 12,
-                                          ),
+                                          style: TextStyle(color: Colors.red, fontSize: 12),
                                         ),
                                         onPressed: () => model.clearFiles(),
                                       ),
@@ -291,8 +261,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (context) =>
-                                              const GlobalDharmaScreen(),
+                                          builder: (context) => const GlobalDharmaScreen(),
                                         ),
                                       );
                                     }

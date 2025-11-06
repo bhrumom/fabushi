@@ -6,6 +6,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'dart:io';
 import 'firebase_options.dart';
+import 'core/di/injection.dart';
+import 'core/config/app_config.dart';
 import 'models/file_transfer_model.dart';
 import 'models/settings_model.dart';
 import 'models/auth_model.dart';
@@ -19,7 +21,13 @@ import 'core/video_feed_di/video_feed_injector.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 桌面平台设置窗口固定最大化
+  // 初始化依赖注入
+  setupDependencies();
+
+  // 打印配置信息
+  AppConfig.printConfigInfo();
+
+  // 桌面平台设置
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     await windowManager.ensureInitialized();
     await windowManager.setMaximizable(false);
@@ -27,25 +35,18 @@ void main() async {
     await windowManager.maximize();
   }
 
-  // 尝试初始化Firebase，如果失败则继续运行
+  // Firebase初始化
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
     debugPrint('✅ Firebase初始化成功');
   } catch (e) {
-    debugPrint('⚠️ Firebase初始化失败（可选功能）: $e');
+    debugPrint('⚠️ Firebase初始化失败: $e');
   }
 
-  // Web平台使用HTML渲染器
-  if (kIsWeb) {
-    debugPrint('使用HTML渲染器加快网页加载速度');
-  }
-
-  // 异步初始化，不阻塞启动
+  // 异步初始化
   AppInitializer.initialize().catchError((e) => debugPrint('初始化失败: $e'));
 
-  // 初始化 Video Feed 依赖
+  // Video Feed依赖
   setupVideoFeedDependencies();
 
   runApp(const MyApp());
@@ -58,24 +59,21 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (context) => AuthModel()),
-        ChangeNotifierProvider(create: (context) => FileTransferModel()),
-        ChangeNotifierProvider(create: (context) => SettingsModel()),
-        ChangeNotifierProvider(create: (context) => CountrySendingModel()),
-        ChangeNotifierProvider(create: (context) => LeaderboardModel()),
+        ChangeNotifierProvider(create: (_) => AuthModel()),
+        ChangeNotifierProvider(create: (_) => FileTransferModel()),
+        ChangeNotifierProvider(create: (_) => SettingsModel()),
+        ChangeNotifierProvider(create: (_) => CountrySendingModel()),
+        ChangeNotifierProvider(create: (_) => LeaderboardModel()),
       ],
       child: MaterialApp(
-        title: '全球法布施',
+        title: AppConfig.appName,
         debugShowCheckedModeBanner: false,
-        routes: {'/login': (context) => const LoginScreen()},
+        routes: {'/login': (_) => const LoginScreen()},
         theme: FlexThemeData.light(
           scheme: FlexScheme.deepPurple,
           surfaceMode: FlexSurfaceMode.levelSurfacesLowScaffold,
           blendLevel: 7,
-          subThemesData: const FlexSubThemesData(
-            blendOnLevel: 10,
-            useFlutterDefaults: true,
-          ),
+          subThemesData: const FlexSubThemesData(blendOnLevel: 10, useFlutterDefaults: true),
           visualDensity: FlexColorScheme.comfortablePlatformDensity,
           useMaterial3: true,
           fontFamily: 'NotoSansSC',
@@ -84,10 +82,7 @@ class MyApp extends StatelessWidget {
           scheme: FlexScheme.deepPurple,
           surfaceMode: FlexSurfaceMode.levelSurfacesLowScaffold,
           blendLevel: 13,
-          subThemesData: const FlexSubThemesData(
-            blendOnLevel: 20,
-            useFlutterDefaults: true,
-          ),
+          subThemesData: const FlexSubThemesData(blendOnLevel: 20, useFlutterDefaults: true),
           visualDensity: FlexColorScheme.comfortablePlatformDensity,
           useMaterial3: true,
           fontFamily: 'NotoSansSC',

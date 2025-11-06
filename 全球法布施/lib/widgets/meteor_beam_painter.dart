@@ -7,12 +7,7 @@ class MeteorBeam {
   final Color color;
   final double progress;
 
-  MeteorBeam({
-    required this.start,
-    required this.end,
-    required this.color,
-    required this.progress,
-  });
+  MeteorBeam({required this.start, required this.end, required this.color, required this.progress});
 }
 
 class MeteorBeamPainter extends CustomPainter {
@@ -37,11 +32,7 @@ class MeteorBeamPainter extends CustomPainter {
 
     // 绘制拖尾渐变
     final gradient = LinearGradient(
-      colors: [
-        beam.color.withAlpha(0),
-        beam.color.withAlpha(100),
-        beam.color.withAlpha(255),
-      ],
+      colors: [beam.color.withAlpha(0), beam.color.withAlpha(100), beam.color.withAlpha(255)],
       stops: const [0.0, 0.5, 1.0],
     );
 

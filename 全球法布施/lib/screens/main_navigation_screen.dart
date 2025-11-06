@@ -4,7 +4,7 @@ import 'leaderboard_screen.dart';
 import 'meditation_room_screen.dart';
 import 'my_profile_screen.dart';
 import 'video_feed_screen.dart';
-import '../config/app_theme.dart';
+import '../core/design_system/app_theme.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -31,11 +31,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         : const Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('正在加载地球组件...'),
-              ],
+              children: [CircularProgressIndicator(), SizedBox(height: 16), Text('正在加载地球组件...')],
             ),
           ),
     const VideoFeedScreen(),

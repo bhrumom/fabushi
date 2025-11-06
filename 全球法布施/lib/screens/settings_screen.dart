@@ -28,9 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('加载设置失败: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加载设置失败: $e')));
       }
     }
   }
@@ -56,9 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         child: SafeArea(
           child: _isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                )
+              ? const Center(child: CircularProgressIndicator(color: Colors.white))
               : SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
@@ -67,9 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       // 模式设置
                       Card(
                         elevation: 4,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: Column(
@@ -77,11 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             children: [
                               Row(
                                 children: const [
-                                  Icon(
-                                    Icons.cloud,
-                                    color: Colors.blue,
-                                    size: 24,
-                                  ),
+                                  Icon(Icons.cloud, color: Colors.blue, size: 24),
                                   SizedBox(width: 8),
                                   Text(
                                     '运行模式',
@@ -97,10 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               const ListTile(
                                 title: Text('系统模式'),
                                 subtitle: Text('统一后端配置，无需手动设置'),
-                                leading: Icon(
-                                  Icons.info_outline,
-                                  color: Colors.blue,
-                                ),
+                                leading: Icon(Icons.info_outline, color: Colors.blue),
                               ),
                             ],
                           ),
@@ -111,9 +98,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       // 后端设置
                       Card(
                         elevation: 4,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: Column(
@@ -129,9 +114,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       // 状态信息
                       Card(
                         elevation: 4,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: Column(
@@ -139,11 +122,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             children: [
                               Row(
                                 children: const [
-                                  Icon(
-                                    Icons.info_outline,
-                                    color: Colors.purple,
-                                    size: 24,
-                                  ),
+                                  Icon(Icons.info_outline, color: Colors.purple, size: 24),
                                   SizedBox(width: 8),
                                   Text(
                                     '当前状态',
@@ -158,11 +137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               const SizedBox(height: 16),
                               _buildStatusItem('运行模式', '生产模式', Colors.green),
                               // 后端地址信息已移除
-                              _buildStatusItem(
-                                '数据来源',
-                                'Cloudflare后端',
-                                Colors.green,
-                              ),
+                              _buildStatusItem('数据来源', 'Cloudflare后端', Colors.green),
                             ],
                           ),
                         ),
@@ -172,9 +147,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       // 操作按钮
                       Card(
                         elevation: 4,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: Column(
@@ -182,11 +155,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             children: [
                               Row(
                                 children: const [
-                                  Icon(
-                                    Icons.build,
-                                    color: Colors.red,
-                                    size: 24,
-                                  ),
+                                  Icon(Icons.build, color: Colors.red, size: 24),
                                   SizedBox(width: 8),
                                   Text(
                                     '操作',
@@ -216,9 +185,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.red,
                                     foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
                                   ),
                                 ),
                               ),
@@ -244,20 +211,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           SizedBox(
             width: 80,
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 14, color: Color(0xFF7f8c8d)),
-            ),
+            child: Text(label, style: const TextStyle(fontSize: 14, color: Color(0xFF7f8c8d))),
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               value,
-              style: TextStyle(
-                fontSize: 14,
-                color: color,
-                fontWeight: FontWeight.w500,
-              ),
+              style: TextStyle(fontSize: 14, color: color, fontWeight: FontWeight.w500),
             ),
           ),
         ],

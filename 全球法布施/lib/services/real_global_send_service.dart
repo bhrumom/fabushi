@@ -15,14 +15,7 @@ class RealGlobalSendService {
   final ValueChanged<double> onDataSent;
   final VoidCallback onStopped;
   final void Function(String) onLog;
-  final Function(
-    double,
-    double,
-    double,
-    double, {
-    String? fromLabel,
-    String? toLabel,
-  })?
+  final Function(double, double, double, double, {String? fromLabel, String? toLabel})?
   onTransferBeam;
 
   bool _isRunning = false;
@@ -82,10 +75,7 @@ class RealGlobalSendService {
   // 每次成功发送的回调
   final Function(int)? onCountrySent;
 
-  Future<void> startSending({
-    required List<PlatformFile> files,
-    required bool isLoop,
-  }) async {
+  Future<void> startSending({required List<PlatformFile> files, required bool isLoop}) async {
     if (_isRunning) return;
 
     _isRunning = true;
@@ -142,10 +132,7 @@ class RealGlobalSendService {
         debugPrint('🚀 准备触发轨迹回调: $countryName');
         // 使用用户IP定位的位置作为固定起点
         if (_userLatitude != null && _userLongitude != null) {
-          final fromCountry = _coordService.getByCoordinates(
-            _userLatitude!,
-            _userLongitude!,
-          );
+          final fromCountry = _coordService.getByCoordinates(_userLatitude!, _userLongitude!);
           final fromLabel = fromCountry?.countryName ?? '起点';
           debugPrint(
             '📍 使用用户位置: $fromLabel ($_userLatitude, $_userLongitude) -> $countryName (${toCountry.latitude}, ${toCountry.longitude})',
@@ -176,9 +163,7 @@ class RealGlobalSendService {
           }
         }
       } else {
-        debugPrint(
-          '⚠️ 无法触发轨迹: toCountry=${toCountry != null}, callback=${onTransferBeam != null}',
-        );
+        debugPrint('⚠️ 无法触发轨迹: toCountry=${toCountry != null}, callback=${onTransferBeam != null}');
       }
 
       // 为每个国家尝试多个服务器
@@ -244,10 +229,7 @@ class RealGlobalSendService {
         final response = await http
             .post(
               Uri.parse(serverUrl),
-              headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': 'GlobalDharmaSender/1.0',
-              },
+              headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
               body: jsonEncode(requestData),
             )
             .timeout(Duration(seconds: 10));
@@ -260,10 +242,7 @@ class RealGlobalSendService {
         final response = await http
             .post(
               Uri.parse(serverUrl),
-              headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': 'GlobalDharmaSender/1.0',
-              },
+              headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
               body: jsonEncode({
                 'title': 'Global Dharma Send - ${file.name}',
                 'body': 'File sent from $countryName ($countryCode)',

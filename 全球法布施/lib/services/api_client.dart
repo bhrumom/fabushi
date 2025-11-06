@@ -36,10 +36,7 @@ class ApiClient {
         uri = uri.replace(queryParameters: queryParams);
       }
 
-      final requestHeaders = <String, String>{
-        'Content-Type': 'application/json',
-        ...?headers,
-      };
+      final requestHeaders = <String, String>{'Content-Type': 'application/json', ...?headers};
 
       if (token != null) {
         requestHeaders['Authorization'] = 'Bearer $token';
@@ -71,10 +68,7 @@ class ApiClient {
       final url = await baseUrl;
       final uri = Uri.parse('$url$endpoint');
 
-      final requestHeaders = <String, String>{
-        'Content-Type': 'application/json',
-        ...?headers,
-      };
+      final requestHeaders = <String, String>{'Content-Type': 'application/json', ...?headers};
 
       if (token != null) {
         requestHeaders['Authorization'] = 'Bearer $token';
@@ -113,10 +107,7 @@ class ApiClient {
       final url = await baseUrl;
       final uri = Uri.parse('$url$endpoint');
 
-      final requestHeaders = <String, String>{
-        'Content-Type': 'application/json',
-        ...?headers,
-      };
+      final requestHeaders = <String, String>{'Content-Type': 'application/json', ...?headers};
 
       if (token != null) {
         requestHeaders['Authorization'] = 'Bearer $token';
@@ -152,10 +143,7 @@ class ApiClient {
       final url = await baseUrl;
       final uri = Uri.parse('$url$endpoint');
 
-      final requestHeaders = <String, String>{
-        'Content-Type': 'application/json',
-        ...?headers,
-      };
+      final requestHeaders = <String, String>{'Content-Type': 'application/json', ...?headers};
 
       if (token != null) {
         requestHeaders['Authorization'] = 'Bearer $token';
@@ -204,19 +192,13 @@ class ApiClient {
         if (data is Map<String, dynamic>) {
           return {'success': true, 'statusCode': response.statusCode, ...data};
         } else {
-          return {
-            'success': true,
-            'statusCode': response.statusCode,
-            'data': data,
-          };
+          return {'success': true, 'statusCode': response.statusCode, 'data': data};
         }
       } else {
         return {
           'success': false,
           'statusCode': response.statusCode,
-          'error': data is Map
-              ? (data['error'] ?? data['message'] ?? '请求失败')
-              : '请求失败',
+          'error': data is Map ? (data['error'] ?? data['message'] ?? '请求失败') : '请求失败',
           'details': data,
         };
       }
@@ -260,10 +242,7 @@ class ApiClient {
     );
   }
 
-  Future<Map<String, dynamic>> sendVerificationCode(
-    String email, {
-    String type = 'register',
-  }) {
+  Future<Map<String, dynamic>> sendVerificationCode(String email, {String type = 'register'}) {
     return post(
       WorkerConfig.getEndpoint('sendVerificationCode'),
       body: {'email': email, 'type': type},
@@ -283,10 +262,6 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> useRedeemCode(String token, String code) {
-    return post(
-      WorkerConfig.getEndpoint('adminUseRedeemCode'),
-      body: {'code': code},
-      token: token,
-    );
+    return post(WorkerConfig.getEndpoint('adminUseRedeemCode'), body: {'code': code}, token: token);
   }
 }

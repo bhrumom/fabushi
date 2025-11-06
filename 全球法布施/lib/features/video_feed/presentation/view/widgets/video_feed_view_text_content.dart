@@ -13,8 +13,7 @@ class VideoFeedViewTextContent extends StatefulWidget {
   final ValueChanged<String>? onCurrentParagraphChanged;
 
   @override
-  State<VideoFeedViewTextContent> createState() =>
-      _VideoFeedViewTextContentState();
+  State<VideoFeedViewTextContent> createState() => _VideoFeedViewTextContentState();
 }
 
 class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
@@ -102,8 +101,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
         r'[。！？；：、，][""'
         '」』）)]*',
       ).firstMatch(_text.substring(pos));
-      final sentenceEndInLine =
-          sentenceEnd != null && (pos + sentenceEnd.end) <= lineEndPos;
+      final sentenceEndInLine = sentenceEnd != null && (pos + sentenceEnd.end) <= lineEndPos;
 
       if (!sentenceEndInLine) {
         if (currentLine.isEmpty) {
@@ -116,10 +114,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
         }
 
         if ((buffer + currentLine).length <= 21) {
-          return (
-            buffer + currentLine,
-            hasLineBreak ? lineEnd + 1 : _text.length,
-          );
+          return (buffer + currentLine, hasLineBreak ? lineEnd + 1 : _text.length);
         }
         return (buffer, pos);
       }
@@ -167,9 +162,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     if (RegExp(r'^第\d{4}部～').hasMatch(line)) return true;
 
     // 2. 卷数信息：单独一行且包含“卷”且很短（<15字）
-    if (line.length < 15 &&
-        RegExp(r'(卷[上中下第]|[一二三四五六七八九十百千]+卷$)').hasMatch(line))
-      return true;
+    if (line.length < 15 && RegExp(r'(卷[上中下第]|[一二三四五六七八九十百千]+卷$)').hasMatch(line)) return true;
 
     // 3. 译者作者信息：单独一行且包含“造”“译”“撰”“述”且很短（<30字）
     if (line.length < 30 &&
@@ -181,10 +174,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     if (RegExp(r'^上一部：|下一部：').hasMatch(line)) return true;
 
     // 5. 经名标题：以“佛说”开头且以“经”结尾且很短（<25字）
-    if (line.length < 20 &&
-        line.startsWith('佛说') &&
-        line.endsWith('经') &&
-        !line.contains('。'))
+    if (line.length < 20 && line.startsWith('佛说') && line.endsWith('经') && !line.contains('。'))
       return true;
 
     return false;
@@ -271,11 +261,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
               padding: const EdgeInsets.all(24),
               child: SelectableText(
                 paragraph,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  height: 1.6,
-                ),
+                style: const TextStyle(color: Colors.white, fontSize: 18, height: 1.6),
               ),
             ),
           ),

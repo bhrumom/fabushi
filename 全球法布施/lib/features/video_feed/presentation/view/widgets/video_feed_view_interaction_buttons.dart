@@ -46,15 +46,9 @@ class VideoFeedViewInteractionButtons extends StatelessWidget {
                 color: isLiked ? red : white,
               ),
               SizedBox(height: safeSpacing),
-              VideoFeedViewInteractionButton(
-                icon: LucideIcons.messageCircle,
-                count: commentCount,
-              ),
+              VideoFeedViewInteractionButton(icon: LucideIcons.messageCircle, count: commentCount),
               SizedBox(height: safeSpacing),
-              VideoFeedViewInteractionButton(
-                icon: LucideIcons.send,
-                count: shareCount,
-              ),
+              VideoFeedViewInteractionButton(icon: LucideIcons.send, count: shareCount),
               SizedBox(height: safeSpacing),
               Icon(
                 isBookmarked ? Icons.bookmark : Icons.bookmark_border,

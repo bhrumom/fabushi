@@ -4,13 +4,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config/unified_config.dart';
+import '../core/config/app_config.dart';
 import '../models/user_model.dart';
 import 'http_service.dart';
 
 class AuthService {
-  static const String _tokenKey = UnifiedConfig.tokenStorageKey;
-  static const String _userInfoKey = UnifiedConfig.userInfoStorageKey;
+  static const String _tokenKey = AppConfig.tokenStorageKey;
+  static const String _userInfoKey = AppConfig.userInfoStorageKey;
 
   // 单例模式
   static final AuthService _instance = AuthService._internal();
@@ -93,7 +93,7 @@ class AuthService {
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
       final response = await HttpService.post(
-        UnifiedConfig.loginUrl,
+        AppConfig.loginUrl,
         body: {'username': username, 'password': password},
       );
 
@@ -168,7 +168,7 @@ class AuthService {
   }) async {
     try {
       final response = await HttpService.post(
-        UnifiedConfig.registerUrl,
+        AppConfig.registerUrl,
         body: {
           'username': username,
           'email': email,
@@ -196,7 +196,7 @@ class AuthService {
   }) async {
     try {
       final response = await HttpService.post(
-        UnifiedConfig.sendVerificationCodeUrl,
+        AppConfig.sendVerificationCodeUrl,
         body: {'email': email, 'type': type},
       );
 
@@ -213,13 +213,10 @@ class AuthService {
   }
 
   // 验证邮箱验证码
-  Future<Map<String, dynamic>> verifyCode({
-    required String email,
-    required String code,
-  }) async {
+  Future<Map<String, dynamic>> verifyCode({required String email, required String code}) async {
     try {
       final response = await HttpService.post(
-        UnifiedConfig.verifyCodeUrl,
+        AppConfig.verifyCodeUrl,
         body: {'email': email, 'code': code},
       );
 
@@ -238,10 +235,7 @@ class AuthService {
   // 忘记密码
   Future<Map<String, dynamic>> forgotPassword(String email) async {
     try {
-      final response = await HttpService.post(
-        UnifiedConfig.forgotPasswordUrl,
-        body: {'email': email},
-      );
+      final response = await HttpService.post(AppConfig.forgotPasswordUrl, body: {'email': email});
 
       if (response.statusCode == 200) {
         return {'success': true, 'message': '重置邮件已发送'};
@@ -263,7 +257,7 @@ class AuthService {
   }) async {
     try {
       final response = await HttpService.post(
-        UnifiedConfig.resetPasswordUrl,
+        AppConfig.resetPasswordUrl,
         body: {'email': email, 'token': token, 'newPassword': newPassword},
       );
 
@@ -287,10 +281,7 @@ class AuthService {
 
     try {
       // 优先使用 /api/admin/check-status 获取完整用户信息
-      final response = await HttpService.get(
-        UnifiedConfig.adminCheckStatusUrl,
-        useAuth: true,
-      );
+      final response = await HttpService.get(AppConfig.adminCheckStatusUrl, useAuth: true);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -302,9 +293,7 @@ class AuthService {
           createdAt: DateTime.now().toIso8601String(),
           membership: MembershipInfo(
             type: data['membershipType'] ?? 'expired',
-            isActive:
-                data['membershipType'] != null &&
-                data['membershipType'] != 'expired',
+            isActive: data['membershipType'] != null && data['membershipType'] != 'expired',
             expiresAt: data['membershipExpiresAt'],
           ),
         );
@@ -347,7 +336,7 @@ class AuthService {
   }) async {
     try {
       final response = await HttpService.post(
-        UnifiedConfig.bindEmailUrl,
+        AppConfig.bindEmailUrl,
         body: {'email': email, 'verificationCode': verificationCode},
         useAuth: true,
       );
@@ -372,7 +361,7 @@ class AuthService {
     try {
       // 调用服务器登出接口（可选）
       if (_currentToken != null) {
-        await HttpService.post(UnifiedConfig.logoutUrl, useAuth: true);
+        await HttpService.post(AppConfig.logoutUrl, useAuth: true);
       }
     } catch (e) {
       print('服务器登出失败: $e');

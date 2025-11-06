@@ -22,11 +22,7 @@ class CloudflareWorkerService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'authUrl': data['authUrl'],
-          'state': data['state'],
-        };
+        return {'success': true, 'authUrl': data['authUrl'], 'state': data['state']};
       } else {
         final data = jsonDecode(response.body);
         return {'success': false, 'message': data['error'] ?? '获取微信登录URL失败'};
@@ -66,21 +62,13 @@ class CloudflareWorkerService {
     }
   }
 
-  Future<Map<String, dynamic>> bindWechat(
-    String openid,
-    String email,
-    String password,
-  ) async {
+  Future<Map<String, dynamic>> bindWechat(String openid, String email, String password) async {
     try {
       final url = await baseUrl;
       final response = await http.post(
         Uri.parse('$url/api/auth/wechat/bind'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'openid': openid,
-          'email': email,
-          'password': password,
-        }),
+        body: jsonEncode({'openid': openid, 'email': email, 'password': password}),
       );
 
       if (response.statusCode == 200) {
@@ -147,10 +135,7 @@ class CloudflareWorkerService {
       final url = await baseUrl;
       final response = await http.post(
         Uri.parse('$url/api/auth/wechat/unbind'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       );
 
       if (response.statusCode == 200) {
@@ -172,10 +157,7 @@ class CloudflareWorkerService {
       final url = await baseUrl;
       final response = await http.get(
         Uri.parse('$url/api/auth/user-info'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       );
 
       if (response.statusCode == 200) {
@@ -201,23 +183,13 @@ class CloudflareWorkerService {
       final url = await baseUrl;
       final response = await http.post(
         Uri.parse('$url/api/auth/bind-email'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'email': email,
-          'verificationCode': verificationCode,
-        }),
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'verificationCode': verificationCode}),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'message': data['message'],
-          'email': data['email'],
-        };
+        return {'success': true, 'message': data['message'], 'email': data['email']};
       } else {
         final data = jsonDecode(response.body);
         return {'success': false, 'message': data['error'] ?? '绑定邮箱失败'};
@@ -234,19 +206,12 @@ class CloudflareWorkerService {
       final url = await baseUrl;
       final response = await http.get(
         Uri.parse('$url/api/admin/purchase-history'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'purchases': data['purchases'],
-          'total': data['total'],
-        };
+        return {'success': true, 'purchases': data['purchases'], 'total': data['total']};
       } else {
         final data = jsonDecode(response.body);
         return {'success': false, 'message': data['error'] ?? '获取购买记录失败'};
@@ -263,19 +228,12 @@ class CloudflareWorkerService {
       final url = await baseUrl;
       final response = await http.get(
         Uri.parse('$url/api/admin/redeem-history'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'redeems': data['redeems'],
-          'total': data['total'],
-        };
+        return {'success': true, 'redeems': data['redeems'], 'total': data['total']};
       } else {
         final data = jsonDecode(response.body);
         return {'success': false, 'message': data['error'] ?? '获取兑换记录失败'};
@@ -287,18 +245,12 @@ class CloudflareWorkerService {
   }
 
   // 删除兑换码（管理员功能）
-  Future<Map<String, dynamic>> deleteRedeemCode(
-    String token,
-    String code,
-  ) async {
+  Future<Map<String, dynamic>> deleteRedeemCode(String token, String code) async {
     try {
       final url = await baseUrl;
       final response = await http.delete(
         Uri.parse('$url/api/admin/delete-redeem-code'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
         body: jsonEncode({'code': code}),
       );
 
@@ -321,10 +273,7 @@ class CloudflareWorkerService {
       final url = await baseUrl;
       final response = await http.post(
         Uri.parse('$url/api/admin/get-price'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
         body: jsonEncode({'plan': plan}),
       );
 
@@ -354,10 +303,7 @@ class CloudflareWorkerService {
       final url = await baseUrl;
       final response = await http.post(
         Uri.parse('$url/api/stripe/cancel-subscription'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       );
 
       if (response.statusCode == 200) {

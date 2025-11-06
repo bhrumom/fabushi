@@ -17,119 +17,29 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
   // 全球主要城市坐标
   final List<Map<String, dynamic>> _worldCities = [
     // 亚洲
-    {
-      'name': '北京',
-      'lat': 39.9042,
-      'lng': 116.4074,
-      'continent': '亚洲',
-      'color': Colors.red,
-    },
-    {
-      'name': '东京',
-      'lat': 35.6762,
-      'lng': 139.6503,
-      'continent': '亚洲',
-      'color': Colors.pink,
-    },
-    {
-      'name': '首尔',
-      'lat': 37.5665,
-      'lng': 126.9780,
-      'continent': '亚洲',
-      'color': Colors.purple,
-    },
-    {
-      'name': '新加坡',
-      'lat': 1.3521,
-      'lng': 103.8198,
-      'continent': '亚洲',
-      'color': Colors.deepPurple,
-    },
-    {
-      'name': '新德里',
-      'lat': 28.6139,
-      'lng': 77.2090,
-      'continent': '亚洲',
-      'color': Colors.orange,
-    },
+    {'name': '北京', 'lat': 39.9042, 'lng': 116.4074, 'continent': '亚洲', 'color': Colors.red},
+    {'name': '东京', 'lat': 35.6762, 'lng': 139.6503, 'continent': '亚洲', 'color': Colors.pink},
+    {'name': '首尔', 'lat': 37.5665, 'lng': 126.9780, 'continent': '亚洲', 'color': Colors.purple},
+    {'name': '新加坡', 'lat': 1.3521, 'lng': 103.8198, 'continent': '亚洲', 'color': Colors.deepPurple},
+    {'name': '新德里', 'lat': 28.6139, 'lng': 77.2090, 'continent': '亚洲', 'color': Colors.orange},
 
     // 欧洲
-    {
-      'name': '伦敦',
-      'lat': 51.5074,
-      'lng': -0.1278,
-      'continent': '欧洲',
-      'color': Colors.blue,
-    },
-    {
-      'name': '巴黎',
-      'lat': 48.8566,
-      'lng': 2.3522,
-      'continent': '欧洲',
-      'color': Colors.indigo,
-    },
-    {
-      'name': '柏林',
-      'lat': 52.5200,
-      'lng': 13.4050,
-      'continent': '欧洲',
-      'color': Colors.blueGrey,
-    },
-    {
-      'name': '莫斯科',
-      'lat': 55.7558,
-      'lng': 37.6173,
-      'continent': '欧洲',
-      'color': Colors.cyan,
-    },
+    {'name': '伦敦', 'lat': 51.5074, 'lng': -0.1278, 'continent': '欧洲', 'color': Colors.blue},
+    {'name': '巴黎', 'lat': 48.8566, 'lng': 2.3522, 'continent': '欧洲', 'color': Colors.indigo},
+    {'name': '柏林', 'lat': 52.5200, 'lng': 13.4050, 'continent': '欧洲', 'color': Colors.blueGrey},
+    {'name': '莫斯科', 'lat': 55.7558, 'lng': 37.6173, 'continent': '欧洲', 'color': Colors.cyan},
 
     // 美洲
-    {
-      'name': '纽约',
-      'lat': 40.7128,
-      'lng': -74.0060,
-      'continent': '美洲',
-      'color': Colors.teal,
-    },
-    {
-      'name': '旧金山',
-      'lat': 37.7749,
-      'lng': -122.4194,
-      'continent': '美洲',
-      'color': Colors.cyan,
-    },
-    {
-      'name': '多伦多',
-      'lat': 43.6532,
-      'lng': -79.3832,
-      'continent': '美洲',
-      'color': Colors.lightBlue,
-    },
-    {
-      'name': '圣保罗',
-      'lat': -23.5505,
-      'lng': -46.6333,
-      'continent': '美洲',
-      'color': Colors.green,
-    },
+    {'name': '纽约', 'lat': 40.7128, 'lng': -74.0060, 'continent': '美洲', 'color': Colors.teal},
+    {'name': '旧金山', 'lat': 37.7749, 'lng': -122.4194, 'continent': '美洲', 'color': Colors.cyan},
+    {'name': '多伦多', 'lat': 43.6532, 'lng': -79.3832, 'continent': '美洲', 'color': Colors.lightBlue},
+    {'name': '圣保罗', 'lat': -23.5505, 'lng': -46.6333, 'continent': '美洲', 'color': Colors.green},
 
     // 大洋洲
-    {
-      'name': '悉尼',
-      'lat': -33.8688,
-      'lng': 151.2093,
-      'continent': '大洋洲',
-      'color': Colors.lime,
-    },
+    {'name': '悉尼', 'lat': -33.8688, 'lng': 151.2093, 'continent': '大洋洲', 'color': Colors.lime},
 
     // 非洲
-    {
-      'name': '开普敦',
-      'lat': -33.9249,
-      'lng': 18.4241,
-      'continent': '非洲',
-      'color': Colors.amber,
-    },
+    {'name': '开普敦', 'lat': -33.9249, 'lng': 18.4241, 'continent': '非洲', 'color': Colors.amber},
   ];
 
   @override
@@ -143,11 +53,7 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  const Color(0xFF0a0a0a),
-                  const Color(0xFF1a1a2e),
-                  const Color(0xFF0a0a0a),
-                ],
+                colors: [const Color(0xFF0a0a0a), const Color(0xFF1a1a2e), const Color(0xFF0a0a0a)],
               ),
             ),
             child: Center(child: EarthGlobeWidget(key: _globeKey)),
@@ -160,17 +66,11 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
             right: 0,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.black.withOpacity(0.7),
                   borderRadius: BorderRadius.circular(25),
-                  border: Border.all(
-                    color: Colors.cyan.withOpacity(0.3),
-                    width: 1,
-                  ),
+                  border: Border.all(color: Colors.cyan.withOpacity(0.3), width: 1),
                 ),
                 child: const Text(
                   '🌍 全球法布施 - 实时传输轨迹',
@@ -193,9 +93,7 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
               right: 20,
               child: Card(
                 color: Colors.black.withOpacity(0.8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(15),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
@@ -212,17 +110,12 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
                       LinearProgressIndicator(
                         value: _sentCount / _worldCities.length,
                         backgroundColor: Colors.white24,
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          Colors.cyan,
-                        ),
+                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.cyan),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         '$_sentCount / ${_worldCities.length} 个城市',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                        ),
+                        style: const TextStyle(color: Colors.white70, fontSize: 14),
                       ),
                     ],
                   ),
@@ -237,9 +130,7 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
             right: 20,
             child: Card(
               elevation: 8,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
@@ -247,10 +138,7 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
                   children: [
                     const Text(
                       '选择发送模式',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 16),
                     Row(
@@ -272,9 +160,7 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: _isSending
-                                ? null
-                                : () => _sendByContinent('亚洲'),
+                            onPressed: _isSending ? null : () => _sendByContinent('亚洲'),
                             icon: const Icon(Icons.location_on),
                             label: const Text('亚洲'),
                             style: ElevatedButton.styleFrom(
@@ -293,9 +179,7 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
                       children: [
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: _isSending
-                                ? null
-                                : () => _sendByContinent('欧洲'),
+                            onPressed: _isSending ? null : () => _sendByContinent('欧洲'),
                             icon: const Icon(Icons.location_city),
                             label: const Text('欧洲'),
                             style: ElevatedButton.styleFrom(
@@ -310,9 +194,7 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: _isSending
-                                ? null
-                                : () => _sendByContinent('美洲'),
+                            onPressed: _isSending ? null : () => _sendByContinent('美洲'),
                             icon: const Icon(Icons.flag),
                             label: const Text('美洲'),
                             style: ElevatedButton.styleFrom(
@@ -389,9 +271,7 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
   }
 
   Future<void> _sendByContinent(String continent) async {
-    final cities = _worldCities
-        .where((c) => c['continent'] == continent)
-        .toList();
+    final cities = _worldCities.where((c) => c['continent'] == continent).toList();
 
     setState(() {
       _isSending = true;

@@ -12,8 +12,7 @@ class BuddhaModelScreen extends StatefulWidget {
   State<BuddhaModelScreen> createState() => _BuddhaModelScreenState();
 }
 
-class _BuddhaModelScreenState extends State<BuddhaModelScreen>
-    with AutomaticKeepAliveClientMixin {
+class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeepAliveClientMixin {
   late three.ThreeJS threeJs;
   double _rotationY = 0.0;
   double _cameraDistance = 250.0;
@@ -40,9 +39,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen>
 
   void _startAutoRotate() {
     _autoRotateTimer?.cancel();
-    _autoRotateTimer = Timer.periodic(const Duration(milliseconds: 16), (
-      timer,
-    ) {
+    _autoRotateTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
@@ -86,12 +83,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen>
     _addStars();
 
     // 设置相机 - 使用较小的FOV以减少透视变形
-    threeJs.camera = three.PerspectiveCamera(
-      50,
-      threeJs.width / threeJs.height,
-      0.1,
-      2000,
-    );
+    threeJs.camera = three.PerspectiveCamera(50, threeJs.width / threeJs.height, 0.1, 2000);
     _updateCameraPosition();
 
     // 环境光 - 提高亮度
@@ -133,14 +125,8 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen>
       vertices.addAll([x, y, z]);
     }
 
-    geometry.setAttributeFromString(
-      'position',
-      tmath.Float32BufferAttribute.fromList(vertices, 3),
-    );
-    final material = three.PointsMaterial.fromMap({
-      'color': 0xFFFFFF,
-      'size': 2,
-    });
+    geometry.setAttributeFromString('position', tmath.Float32BufferAttribute.fromList(vertices, 3));
+    final material = three.PointsMaterial.fromMap({'color': 0xFFFFFF, 'size': 2});
     final stars = three.Points(geometry, material);
     threeJs.scene.add(stars);
   }
@@ -155,9 +141,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen>
         threeJs.scene.add(scene);
 
         // 计算整个场景的边界框
-        double minX = double.infinity,
-            minY = double.infinity,
-            minZ = double.infinity;
+        double minX = double.infinity, minY = double.infinity, minZ = double.infinity;
         double maxX = double.negativeInfinity,
             maxY = double.negativeInfinity,
             maxZ = double.negativeInfinity;
@@ -199,11 +183,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen>
         const targetSize = 150.0;
         final scale = targetSize / maxSize;
         scene.scale.setValues(scale, scale, scale);
-        scene.position.setValues(
-          -centerX * scale,
-          -centerY * scale + 30,
-          -centerZ * scale,
-        );
+        scene.position.setValues(-centerX * scale, -centerY * scale + 30, -centerZ * scale);
       }
     } catch (e, stackTrace) {
       debugPrint('加载模型失败: $e');

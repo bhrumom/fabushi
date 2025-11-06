@@ -15,16 +15,7 @@ class MeditationRoom3DWidget extends StatefulWidget {
 
 class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget>
     with TickerProviderStateMixin {
-  final List<String> _bookTitles = [
-    '金刚经',
-    '心经',
-    '法华经',
-    '华严经',
-    '楞严经',
-    '圆觉经',
-    '维摩诘经',
-    '地藏经',
-  ];
+  final List<String> _bookTitles = ['金刚经', '心经', '法华经', '华严经', '楞严经', '圆觉经', '维摩诘经', '地藏经'];
 
   late AnimationController _glowController;
   late AnimationController _rotationController;
@@ -41,15 +32,11 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget>
   @override
   void initState() {
     super.initState();
-    _glowController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
+    _glowController = AnimationController(vsync: this, duration: const Duration(seconds: 2))
+      ..repeat(reverse: true);
 
-    _rotationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 30),
-    )..repeat();
+    _rotationController = AnimationController(vsync: this, duration: const Duration(seconds: 30))
+      ..repeat();
   }
 
   void _offerIncense() {
@@ -119,19 +106,11 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget>
         duration: const Duration(milliseconds: 300),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         decoration: BoxDecoration(
-          color: isActive
-              ? color.withOpacity(0.9)
-              : Colors.brown[800]!.withOpacity(0.8),
+          color: isActive ? color.withOpacity(0.9) : Colors.brown[800]!.withOpacity(0.8),
           borderRadius: BorderRadius.circular(30),
           border: Border.all(color: isActive ? color : Colors.amber, width: 2),
           boxShadow: isActive
-              ? [
-                  BoxShadow(
-                    color: color.withOpacity(0.6),
-                    blurRadius: 20,
-                    spreadRadius: 5,
-                  ),
-                ]
+              ? [BoxShadow(color: color.withOpacity(0.6), blurRadius: 20, spreadRadius: 5)]
               : [],
         ),
         child: Column(
@@ -151,10 +130,7 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget>
               const SizedBox(height: 4),
               Text(
                 '已供养 $count 次',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.8),
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12),
               ),
             ],
           ],
@@ -175,10 +151,7 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget>
       ),
       child: Stack(
         children: [
-          if (kIsWeb)
-            Center(
-              child: SizedBox(width: 400, height: 500, child: Buddha3DWidget()),
-            ),
+          if (kIsWeb) Center(child: SizedBox(width: 400, height: 500, child: Buddha3DWidget())),
           GestureDetector(
             onTapUp: (details) {
               final size = MediaQuery.of(context).size;
@@ -187,17 +160,11 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget>
             onPanUpdate: (details) {
               setState(() {
                 _cameraAngleY += details.delta.dx * 0.01;
-                _cameraAngleX = (_cameraAngleX - details.delta.dy * 0.01).clamp(
-                  -1.5,
-                  1.5,
-                );
+                _cameraAngleX = (_cameraAngleX - details.delta.dy * 0.01).clamp(-1.5, 1.5);
               });
             },
             child: AnimatedBuilder(
-              animation: Listenable.merge([
-                _glowController,
-                _rotationController,
-              ]),
+              animation: Listenable.merge([_glowController, _rotationController]),
               builder: (context, child) {
                 return SizedBox.expand(
                   child: CustomPaint(
@@ -224,19 +191,12 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget>
                 animation: _glowController,
                 builder: (context, child) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(
-                        0.3 + _glowController.value * 0.2,
-                      ),
+                      color: Colors.black.withOpacity(0.3 + _glowController.value * 0.2),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: Colors.amber.withOpacity(
-                          0.5 + _glowController.value * 0.5,
-                        ),
+                        color: Colors.amber.withOpacity(0.5 + _glowController.value * 0.5),
                         width: 2,
                       ),
                     ),

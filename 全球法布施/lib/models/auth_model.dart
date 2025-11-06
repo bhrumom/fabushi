@@ -136,12 +136,9 @@ class AuthModel extends ChangeNotifier {
         final userJson = result['user'];
 
         // 登录后，额外获取管理员状态
-        final adminStatusResult = await _membershipService.getAdminStats(
-          _token!,
-        );
+        final adminStatusResult = await _membershipService.getAdminStats(_token!);
         final bool isAdmin =
-            adminStatusResult['success'] == true &&
-            adminStatusResult['isAdmin'] == true;
+            adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
 
         final membershipJson = userJson['membership'] ?? {};
         _currentUser = User(
@@ -209,15 +206,9 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  Future<bool> sendVerificationCode(
-    String email, {
-    String type = 'register',
-  }) async {
+  Future<bool> sendVerificationCode(String email, {String type = 'register'}) async {
     try {
-      final result = await _authService.sendVerificationCode(
-        email: email,
-        type: type,
-      );
+      final result = await _authService.sendVerificationCode(email: email, type: type);
       return result['success'] == true;
     } catch (e) {
       _setError('发送验证码失败: $e');
@@ -246,11 +237,7 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  Future<bool> resetPassword(
-    String email,
-    String token,
-    String newPassword,
-  ) async {
+  Future<bool> resetPassword(String email, String token, String newPassword) async {
     _setLoading(true);
     _clearError();
 
@@ -283,12 +270,9 @@ class AuthModel extends ChangeNotifier {
       final userModel = _authService.currentUser;
 
       if (userModel != null) {
-        final adminStatusResult = await _membershipService.getAdminStats(
-          _token!,
-        );
+        final adminStatusResult = await _membershipService.getAdminStats(_token!);
         final bool isAdmin =
-            adminStatusResult['success'] == true &&
-            adminStatusResult['isAdmin'] == true;
+            adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
 
         _currentUser = User(
           username: userModel.username,
@@ -330,12 +314,9 @@ class AuthModel extends ChangeNotifier {
         final userJson = result['user'];
 
         // 登录后，额外获取管理员状态
-        final adminStatusResult = await _membershipService.getAdminStats(
-          _token!,
-        );
+        final adminStatusResult = await _membershipService.getAdminStats(_token!);
         final bool isAdmin =
-            adminStatusResult['success'] == true &&
-            adminStatusResult['isAdmin'] == true;
+            adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
 
         final membershipJson = userJson['membership'] ?? {};
         _currentUser = User(
@@ -366,11 +347,7 @@ class AuthModel extends ChangeNotifier {
   }
 
   /// 支付宝一键注册（无需填写信息）- 从macOS回调参数直接注册
-  Future<bool> alipayOneClickRegister(
-    String alipayUserId,
-    String? nickname,
-    String? avatar,
-  ) async {
+  Future<bool> alipayOneClickRegister(String alipayUserId, String? nickname, String? avatar) async {
     _setLoading(true);
     _clearError();
 
@@ -408,12 +385,9 @@ class AuthModel extends ChangeNotifier {
 
         if (userModel != null) {
           // 获取管理员状态
-          final adminStatusResult = await _membershipService.getAdminStats(
-            _token!,
-          );
+          final adminStatusResult = await _membershipService.getAdminStats(_token!);
           final bool isAdmin =
-              adminStatusResult['success'] == true &&
-              adminStatusResult['isAdmin'] == true;
+              adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
 
           final membershipJson = userModel.membership.toJson();
           _currentUser = User(
@@ -446,18 +420,12 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  Future<bool> alipayRegister(
-    String username,
-    String email,
-    String authCode,
-  ) async {
+  Future<bool> alipayRegister(String username, String email, String authCode) async {
     _setLoading(true);
     _clearError();
 
     try {
-      debugPrint(
-        '支付宝注册开始: username=$username, email=$email, authCode=$authCode',
-      );
+      debugPrint('支付宝注册开始: username=$username, email=$email, authCode=$authCode');
 
       // 首先尝试使用授权码直接登录（可能后端已经自动创建了用户）
       final loginResult = await _alipayAuthService.alipayLogin(authCode, null);
@@ -470,12 +438,9 @@ class AuthModel extends ChangeNotifier {
         final userJson = loginResult['user'];
 
         // 获取管理员状态
-        final adminStatusResult = await _membershipService.getAdminStats(
-          _token!,
-        );
+        final adminStatusResult = await _membershipService.getAdminStats(_token!);
         final bool isAdmin =
-            adminStatusResult['success'] == true &&
-            adminStatusResult['isAdmin'] == true;
+            adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
 
         final membershipJson = userJson['membership'] ?? {};
         _currentUser = User(
@@ -502,8 +467,7 @@ class AuthModel extends ChangeNotifier {
         // 生成默认的用户名和邮箱（如果未提供）
         final autoUsername = username.isNotEmpty
             ? username
-            : (alipayUser?['nick_name'] ??
-                  '支付宝用户_${DateTime.now().millisecondsSinceEpoch}');
+            : (alipayUser?['nick_name'] ?? '支付宝用户_${DateTime.now().millisecondsSinceEpoch}');
         final autoEmail = email.isNotEmpty
             ? email
             : '${alipayUser?['user_id'] ?? authCode}@alipay.user';
@@ -527,12 +491,9 @@ class AuthModel extends ChangeNotifier {
           final userJson = result['user'];
 
           // 获取管理员状态
-          final adminStatusResult = await _membershipService.getAdminStats(
-            _token!,
-          );
+          final adminStatusResult = await _membershipService.getAdminStats(_token!);
           final bool isAdmin =
-              adminStatusResult['success'] == true &&
-              adminStatusResult['isAdmin'] == true;
+              adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
 
           final membershipJson = userJson['membership'] ?? {};
           _currentUser = User(

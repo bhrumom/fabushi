@@ -11,14 +11,10 @@ final videoFeedGetIt = GetIt.instance;
 
 void setupVideoFeedDependencies() {
   // Firebase
-  videoFeedGetIt.registerLazySingleton<FirebaseFirestore>(
-    () => FirebaseFirestore.instance,
-  );
+  videoFeedGetIt.registerLazySingleton<FirebaseFirestore>(() => FirebaseFirestore.instance);
 
   // Services
-  videoFeedGetIt.registerLazySingleton<CloudflareTextService>(
-    () => CloudflareTextService(),
-  );
+  videoFeedGetIt.registerLazySingleton<CloudflareTextService>(() => CloudflareTextService());
 
   // Repositories
   videoFeedGetIt.registerLazySingleton<VideoFeedRepository>(
@@ -34,9 +30,7 @@ void setupVideoFeedDependencies() {
   );
 
   videoFeedGetIt.registerLazySingleton<FetchMoreVideosUseCase>(
-    () => FetchMoreVideosUseCase(
-      repository: videoFeedGetIt<VideoFeedRepository>(),
-    ),
+    () => FetchMoreVideosUseCase(repository: videoFeedGetIt<VideoFeedRepository>()),
   );
 
   // Cubits

@@ -10,7 +10,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import '../services/platform_service.dart';
 import '../widgets/common_widgets.dart';
-import '../config/app_theme.dart';
+import '../core/design_system/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -83,16 +83,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (success && mounted) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('支付宝登录成功！'), backgroundColor: Colors.green),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('支付宝登录成功！'), backgroundColor: Colors.green));
       }
     } catch (e) {
       debugPrint('支付宝登录错误: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('支付宝登录失败: $e'), backgroundColor: Colors.red),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('支付宝登录失败: $e'), backgroundColor: Colors.red));
       }
     }
   }
@@ -127,10 +127,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('支付宝登录失败: $errorMessage'),
-              backgroundColor: Colors.red,
-            ),
+            SnackBar(content: Text('支付宝登录失败: $errorMessage'), backgroundColor: Colors.red),
           );
         }
         return;
@@ -215,9 +212,9 @@ class _LoginScreenState extends State<LoginScreen> {
             );
           } else {
             // 其他错误，显示错误信息
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(error), backgroundColor: Colors.red),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(error), backgroundColor: Colors.red));
           }
         }
       } else {
@@ -236,9 +233,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       debugPrint('处理macOS支付宝回调失败: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('处理支付宝回调失败: $e'), backgroundColor: Colors.red),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('处理支付宝回调失败: $e'), backgroundColor: Colors.red));
       }
     }
   }
@@ -269,18 +266,15 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result['error'] ?? '获取支付宝登录链接失败'),
-              backgroundColor: Colors.red,
-            ),
+            SnackBar(content: Text(result['error'] ?? '获取支付宝登录链接失败'), backgroundColor: Colors.red),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('支付宝登录出错: $e'), backgroundColor: Colors.red),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('支付宝登录出错: $e'), backgroundColor: Colors.red));
       }
     }
   }
@@ -311,18 +305,15 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result['error'] ?? '获取支付宝登录链接失败'),
-              backgroundColor: Colors.red,
-            ),
+            SnackBar(content: Text(result['error'] ?? '获取支付宝登录链接失败'), backgroundColor: Colors.red),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('支付宝一键注册出错: $e'), backgroundColor: Colors.red),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('支付宝一键注册出错: $e'), backgroundColor: Colors.red));
       }
     }
   }
@@ -341,10 +332,7 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).pop(); // 返回主界面
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(authModel.error ?? '登录失败'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(authModel.error ?? '登录失败'), backgroundColor: Colors.red),
       );
     }
   }
@@ -383,9 +371,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: AppTheme.primaryColor.withOpacity(
-                                        0.3,
-                                      ),
+                                      color: AppTheme.primaryColor.withOpacity(0.3),
                                       blurRadius: 20,
                                       offset: const Offset(0, 8),
                                     ),
@@ -428,9 +414,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             decoration: InputDecoration(
                               labelText: '用户名或邮箱',
                               prefixIcon: const Icon(Icons.person),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                               filled: true,
                               fillColor: Colors.grey[50],
                             ),
@@ -453,9 +437,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               prefixIcon: const Icon(Icons.lock),
                               suffixIcon: IconButton(
                                 icon: Icon(
-                                  _obscurePassword
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
+                                  _obscurePassword ? Icons.visibility : Icons.visibility_off,
                                 ),
                                 onPressed: () {
                                   setState(() {
@@ -463,9 +445,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   });
                                 },
                               ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                               filled: true,
                               fillColor: Colors.grey[50],
                             ),
@@ -487,8 +467,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               onPressed: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
-                                    builder: (context) =>
-                                        const ForgotPasswordScreen(),
+                                    builder: (context) => const ForgotPasswordScreen(),
                                   ),
                                 );
                               },
@@ -519,9 +498,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 width: double.infinity,
                                 child: AlipayButton(
                                   text: '支付宝登录',
-                                  onPressed: authModel.isLoading
-                                      ? null
-                                      : _handleAlipayLogin,
+                                  onPressed: authModel.isLoading ? null : _handleAlipayLogin,
                                 ),
                               );
                             },
@@ -554,8 +531,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               onPressed: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
-                                    builder: (context) =>
-                                        const FirebaseLoginScreen(),
+                                    builder: (context) => const FirebaseLoginScreen(),
                                   ),
                                 );
                               },
@@ -568,13 +544,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               Expanded(child: Divider(color: Colors.grey[300])),
                               Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                                child: Text(
-                                  '或',
-                                  style: TextStyle(color: Colors.grey[600]),
-                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                child: Text('或', style: TextStyle(color: Colors.grey[600])),
                               ),
                               Expanded(child: Divider(color: Colors.grey[300])),
                             ],
@@ -588,10 +559,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               text: '创建新账户',
                               onPressed: () {
                                 Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const RegisterScreen(),
-                                  ),
+                                  MaterialPageRoute(builder: (context) => const RegisterScreen()),
                                 );
                               },
                             ),
@@ -605,10 +573,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             },
                             child: Text(
                               '以游客身份继续',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 14,
-                              ),
+                              style: TextStyle(color: Colors.grey[600], fontSize: 14),
                             ),
                           ),
                         ],

@@ -18,14 +18,7 @@ class Transfer extends Equatable {
   });
 
   @override
-  List<Object> get props => [
-    id,
-    fileName,
-    fileSize,
-    targetCountry,
-    status,
-    startTime,
-  ];
+  List<Object> get props => [id, fileName, fileSize, targetCountry, status, startTime];
 }
 
 enum TransferStatus { pending, inProgress, completed, failed }

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:gbk_codec/gbk_codec.dart';
-import 'package:global_dharma_sharing/config/unified_config.dart';
+import 'package:global_dharma_sharing/core/config/app_config.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 class CloudflareTextService {
@@ -161,9 +161,7 @@ class CloudflareTextService {
     try {
       // 加载本地manifest
       if (_cachedManifest == null) {
-        final manifestString = await rootBundle.loadString(
-          'assets/data/asset-manifest.json',
-        );
+        final manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
         final List<dynamic> manifestData = json.decode(manifestString);
         _cachedManifest = manifestData.cast<Map<String, dynamic>>();
         print('Loaded local manifest with ${_cachedManifest!.length} items');
@@ -197,21 +195,14 @@ class CloudflareTextService {
           print('Successfully decoded GBK content: ${content.length} chars');
         } catch (e) {
           print('GBK decoding failed: $e, trying UTF-8');
-          content = utf8.decode(
-            contentResponse.bodyBytes,
-            allowMalformed: true,
-          );
+          content = utf8.decode(contentResponse.bodyBytes, allowMalformed: true);
         }
 
         final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
         content = _cleanDecompilerWatermark(content);
         print('Loaded cloud text from local manifest: $fileName');
 
-        return {
-          'title': fileName,
-          'content': content,
-          'filePath': selectedFile,
-        };
+        return {'title': fileName, 'content': content, 'filePath': selectedFile};
       }
       // 404等错误立即返回
       print('Failed to download file: ${contentResponse.statusCode}');
@@ -234,11 +225,7 @@ class CloudflareTextService {
 
     // 移除常见的变体
     content = content.replaceAll(
-      RegExp(
-        r'This file is decompiled.*?etextwizard\.com/',
-        multiLine: true,
-        dotAll: true,
-      ),
+      RegExp(r'This file is decompiled.*?etextwizard\.com/', multiLine: true, dotAll: true),
       '',
     );
 

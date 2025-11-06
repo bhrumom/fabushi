@@ -1,8 +1,18 @@
 # 全球法布施 Flutter 应用
 
+> 🎉 **最新更新**: 项目已完成全面重构和代码清理！查看 [CLEANUP_COMPLETE.md](CLEANUP_COMPLETE.md) 了解详情。
+
 ## 项目简介
 
 全球法布施是一个基于Flutter开发的跨平台应用，集成了Cloudflare Workers后端服务，提供用户认证、会员管理、全球文件传输等功能。应用旨在通过现代技术手段，将佛教经文和法布施内容传播到全世界。
+
+## 📚 重要文档
+
+- 🎉 [CLEANUP_COMPLETE.md](CLEANUP_COMPLETE.md) - 代码清理完成报告
+- 🔄 [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) - 代码迁移指南
+- ✅ [REFACTOR_100_COMPLETE.md](REFACTOR_100_COMPLETE.md) - 重构完成报告
+- 🛠️ [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE.md) - 维护指南
+- 📝 [CHANGELOG.md](CHANGELOG.md) - 更新日志
 
 ## 🌟 主要功能
 
@@ -82,18 +92,30 @@ git clone <repository-url>
 cd 全球法布施
 ```
 
-2. **安装依赖**
+2. **快速启动（推荐）**
 ```bash
-flutter pub get
+./quick_start.sh
 ```
 
-3. **配置后端URL**
-编辑 `lib/config.dart` 文件：
+3. **手动安装**
+```bash
+# 清理缓存
+flutter clean
+
+# 安装依赖
+flutter pub get
+
+# 格式化代码
+dart format lib/ --line-length 100
+```
+
+4. **配置后端URL**
+编辑 `lib/core/config/app_config.dart` 文件：
 ```dart
 static const String backendUrl = 'https://your-cloudflare-worker.workers.dev';
 ```
 
-4. **运行应用**
+5. **运行应用**
 ```bash
 # 调试模式
 flutter run
@@ -141,10 +163,14 @@ flutter build windows --release
 - **存储服务**: KV和R2存储
 
 ### 应用配置
-主要配置文件：`lib/config.dart`
+主要配置文件：`lib/core/config/app_config.dart`
 
 ```dart
 class AppConfig {
+  // 应用信息
+  static const String appName = '全球法布施';
+  static const String version = '1.0.1';
+  
   // 后端API地址
   static const String backendUrl = 'https://ombhrum.com';
   
@@ -155,6 +181,12 @@ class AppConfig {
   static const int fileChunkSize = 1024;
   static const int maxRetryCount = 3;
   static const int timeoutDuration = 5000;
+  
+  // 打印配置信息
+  static void printConfigInfo() {
+    debugPrint('⚙️ 应用配置: $appName v$version');
+    debugPrint('🌐 后端地址: $backendUrl');
+  }
 }
 ```
 
@@ -241,28 +273,40 @@ Content-Type: application/json
 
 ## 🔍 开发指南
 
-### 项目结构
+### 项目结构（重构后）
 ```
 lib/
-├── main.dart                 # 应用入口
-├── config.dart              # 配置文件
-├── models/                  # 数据模型
-│   ├── auth_model.dart      # 认证模型
-│   ├── file_transfer_model.dart
-│   └── settings_model.dart
-├── services/                # 服务层
-│   ├── auth_service.dart    # 认证服务
-│   ├── membership_service.dart
-│   └── global_transfer_service.dart
-├── screens/                 # 界面
-│   ├── home_screen.dart     # 主界面
-│   ├── login_screen.dart    # 登录界面
-│   ├── register_screen.dart # 注册界面
-│   ├── profile_screen.dart  # 个人中心
-│   └── membership_screen.dart
-├── widgets/                 # 组件
-└── utils/                   # 工具类
+├── core/                    # ✅ 核心层（重构后）
+│   ├── config/              # 统一配置
+│   ├── constants/           # 常量定义
+│   ├── di/                  # 依赖注入
+│   ├── errors/              # 错误处理
+│   ├── network/             # 网络层
+│   └── utils/               # 工具类
+│
+├── features/                # ✅ 功能模块（Clean Architecture）
+│   ├── auth/                # 认证模块
+│   │   ├── data/            # 数据层
+│   │   ├── domain/          # 领域层
+│   │   └── presentation/    # 表现层
+│   ├── membership/          # 会员模块
+│   ├── transfer/            # 传输模块
+│   ├── dharma/              # 法布施模块
+│   └── profile/             # 个人中心
+│
+├── shared/                  # ✅ 共享组件
+│   ├── widgets/             # UI组件
+│   └── models/              # 共享模型
+│
+├── routes/                  # ✅ 路由管理
+├── models/                  # 保留的业务模型
+├── services/                # 保留的服务层
+├── screens/                 # 保留的界面
+├── widgets/                 # 保留的组件
+└── main.dart                # ✅ 主入口（已更新）
 ```
+
+> 📌 **注意**: 项目采用渐进式迁移策略，新功能使用 `features/` 目录下的 Clean Architecture，旧代码逐步重构。
 
 ### 状态管理
 使用Provider进行状态管理：

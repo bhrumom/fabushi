@@ -20,8 +20,7 @@ class CountryCoordinate {
 }
 
 class CountryCoordinatesService {
-  static final CountryCoordinatesService _instance =
-      CountryCoordinatesService._internal();
+  static final CountryCoordinatesService _instance = CountryCoordinatesService._internal();
   factory CountryCoordinatesService() => _instance;
   CountryCoordinatesService._internal();
 
@@ -70,11 +69,7 @@ class CountryCoordinatesService {
     return _coordinates.where((c) => c.countryCode == code).firstOrNull;
   }
 
-  CountryCoordinate? getByCoordinates(
-    double lat,
-    double lng, {
-    double tolerance = 5.0,
-  }) {
+  CountryCoordinate? getByCoordinates(double lat, double lng, {double tolerance = 5.0}) {
     // 查找最接近给定坐标的国家（容差范围内）
     for (var coord in _coordinates) {
       final latDiff = (coord.latitude - lat).abs();
@@ -91,7 +86,6 @@ class CountryCoordinatesService {
   }
 
   CountryCoordinate getRandomCountry() {
-    return _coordinates[DateTime.now().millisecondsSinceEpoch %
-        _coordinates.length];
+    return _coordinates[DateTime.now().millisecondsSinceEpoch % _coordinates.length];
   }
 }

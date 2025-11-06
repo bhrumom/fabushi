@@ -29,9 +29,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
     final authModel = Provider.of<AuthModel>(context, listen: false);
 
-    final success = await authModel.forgotPassword(
-      _emailController.text.trim(),
-    );
+    final success = await authModel.forgotPassword(_emailController.text.trim());
 
     if (success && mounted) {
       setState(() {
@@ -39,17 +37,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('重置邮件已发送，请检查您的邮箱'),
-          backgroundColor: Colors.green,
-        ),
+        const SnackBar(content: Text('重置邮件已发送，请检查您的邮箱'), backgroundColor: Colors.green),
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(authModel.error ?? '发送重置邮件失败'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(authModel.error ?? '发送重置邮件失败'), backgroundColor: Colors.red),
       );
     }
   }
@@ -77,9 +69,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               padding: const EdgeInsets.all(24.0),
               child: Card(
                 elevation: 8,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: Padding(
                   padding: const EdgeInsets.all(32.0),
                   child: _emailSent ? _buildSuccessView() : _buildFormView(),
@@ -106,11 +96,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           // 标题
           const Text(
             '重置密码',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2c3e50),
-            ),
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2c3e50)),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
@@ -128,9 +114,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             decoration: InputDecoration(
               labelText: '邮箱地址',
               prefixIcon: const Icon(Icons.email),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               filled: true,
               fillColor: Colors.grey[50],
             ),
@@ -157,9 +141,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   backgroundColor: const Color(0xFF667eea),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   elevation: 2,
                 ),
                 child: authModel.isLoading
@@ -168,17 +150,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         width: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : const Text(
                         '发送重置邮件',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
               );
             },
@@ -196,10 +173,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 },
                 child: const Text(
                   '返回登录',
-                  style: TextStyle(
-                    color: Color(0xFF667eea),
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(color: Color(0xFF667eea), fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -221,11 +195,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         // 成功标题
         const Text(
           '邮件已发送',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2c3e50),
-          ),
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2c3e50)),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 16),
@@ -233,11 +203,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         // 说明文字
         Text(
           '我们已向 ${_emailController.text.trim()} 发送了重置密码的邮件。\n\n请检查您的邮箱（包括垃圾邮件文件夹），并点击邮件中的链接来重置密码。',
-          style: const TextStyle(
-            fontSize: 14,
-            color: Color(0xFF7f8c8d),
-            height: 1.5,
-          ),
+          style: const TextStyle(fontSize: 14, color: Color(0xFF7f8c8d), height: 1.5),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 32),
@@ -251,18 +217,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           },
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             side: const BorderSide(color: Color(0xFF667eea)),
           ),
           child: const Text(
             '重新发送',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF667eea),
-            ),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF667eea)),
           ),
         ),
         const SizedBox(height: 16),
@@ -276,15 +236,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             backgroundColor: const Color(0xFF667eea),
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             elevation: 2,
           ),
-          child: const Text(
-            '返回登录',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
+          child: const Text('返回登录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         ),
       ],
     );

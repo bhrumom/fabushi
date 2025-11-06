@@ -42,9 +42,7 @@ class VideoFeedViewUserHeader extends StatelessWidget {
           child: CircleAvatar(
             radius: context.sq(20),
             backgroundColor: white.withOpacity(0.2),
-            backgroundImage: profileImageUrl.isNotEmpty
-                ? NetworkImage(profileImageUrl)
-                : null,
+            backgroundImage: profileImageUrl.isNotEmpty ? NetworkImage(profileImageUrl) : null,
             child: profileImageUrl.isEmpty
                 ? Icon(Icons.menu_book, color: white, size: context.sq(20))
                 : null,

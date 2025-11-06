@@ -9,7 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../screens/asset_screen.dart';
 
-import '../config/unified_config.dart';
+import '../core/config/app_config.dart';
 import '../services/downloaded_assets_service.dart';
 import '../services/download_manager.dart';
 import '../services/real_global_send_service.dart';
@@ -69,8 +69,7 @@ class FileTransferModel extends ChangeNotifier {
   String _currentLog = '';
 
   // 已下载素材服务
-  final DownloadedAssetsService _downloadedAssetsService =
-      DownloadedAssetsService();
+  final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
   final DownloadManager _downloadManager = DownloadManager();
   Map<String, String> _assetToTaskMap = {};
 
@@ -95,8 +94,7 @@ class FileTransferModel extends ChangeNotifier {
   String get currentLog => _currentLog;
 
   // 新增属性用于首页
-  PlatformFile? get selectedFile =>
-      _selectedFiles.isNotEmpty ? _selectedFiles.first : null;
+  PlatformFile? get selectedFile => _selectedFiles.isNotEmpty ? _selectedFiles.first : null;
   double _progress = 0.0;
   double get progress => _progress;
 
@@ -170,22 +168,15 @@ class FileTransferModel extends ChangeNotifier {
     );
 
     // 如果用户选择了素材，则从Cloudflare下载
-    if (selectedAssets != null &&
-        selectedAssets is List &&
-        selectedAssets.isNotEmpty) {
+    if (selectedAssets != null && selectedAssets is List && selectedAssets.isNotEmpty) {
       // 将List<dynamic>转换为List<String>
-      final List<String> assetPaths = selectedAssets
-          .map((asset) => asset.toString())
-          .toList();
+      final List<String> assetPaths = selectedAssets.map((asset) => asset.toString()).toList();
       _downloadSelectedAssets(context, assetPaths);
     }
   }
 
   /// 下载选中的素材
-  Future<void> _downloadSelectedAssets(
-    BuildContext context,
-    List<String> assetPaths,
-  ) async {
+  Future<void> _downloadSelectedAssets(BuildContext context, List<String> assetPaths) async {
     try {
       // 初始化已下载素材服务
       await _downloadedAssetsService.initialize();
@@ -213,9 +204,7 @@ class FileTransferModel extends ChangeNotifier {
         message = '开始下载 ${needDownloadAssets.length} 个素材';
       }
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 
       // 处理已下载的素材（直接复用）
       if (alreadyDownloadedAssets.isNotEmpty) {
@@ -230,22 +219,17 @@ class FileTransferModel extends ChangeNotifier {
       }
 
       // 下载完成提示
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('所有素材处理完成')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('所有素材处理完成')));
     } catch (e) {
       // 下载失败提示
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('处理失败: $e'), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('处理失败: $e'), backgroundColor: Colors.red));
     }
   }
 
   /// 复用已下载的素材
-  Future<void> _reuseDownloadedAssets(
-    BuildContext context,
-    List<String> assetPaths,
-  ) async {
+  Future<void> _reuseDownloadedAssets(BuildContext context, List<String> assetPaths) async {
     try {
       for (String assetPath in assetPaths) {
         final fileName = assetPath.split('/').last;
@@ -304,10 +288,7 @@ class FileTransferModel extends ChangeNotifier {
       final List<dynamic> savedFiles = json.decode(savedFilesStr);
 
       // 查找文件信息
-      final fileInfo = savedFiles.firstWhere(
-        (f) => f['name'] == fileName,
-        orElse: () => null,
-      );
+      final fileInfo = savedFiles.firstWhere((f) => f['name'] == fileName, orElse: () => null);
 
       if (fileInfo == null) return null;
 
@@ -324,10 +305,7 @@ class FileTransferModel extends ChangeNotifier {
   }
 
   /// 下载单个素材（增强版，支持进度显示、暂停、断点续传）
-  Future<void> _downloadSingleAsset(
-    BuildContext context,
-    String assetPath,
-  ) async {
+  Future<void> _downloadSingleAsset(BuildContext context, String assetPath) async {
     try {
       // 构建下载URL - 根据素材路径判断是静态文件还是R2文件
       // 如果路径包含中文佛经或音频文件，说明是静态文件
@@ -341,9 +319,7 @@ class FileTransferModel extends ChangeNotifier {
       if (isStaticFile) {
         // 静态文件下载策略
         // 修复：去掉assetPath中的web/前缀
-        final cleanAssetPath = assetPath.startsWith('web/')
-            ? assetPath.substring(4)
-            : assetPath;
+        final cleanAssetPath = assetPath.startsWith('web/') ? assetPath.substring(4) : assetPath;
 
         if (kIsWeb) {
           // Web平台：使用相对路径，避免CORS问题
@@ -351,20 +327,19 @@ class FileTransferModel extends ChangeNotifier {
         } else {
           // 非Web平台：使用Cloudflare Worker的完整URL访问静态文件
           // 因为静态文件部署在Web平台上，需要通过Worker代理访问
-          final String baseUrl = UnifiedConfig.isProduction
-              ? UnifiedConfig.cloudflareWorkerProdUrl
-              : UnifiedConfig.cloudflareWorkerDevUrl;
+          final String baseUrl = AppConfig.isProduction
+              ? AppConfig.cloudflareWorkerProdUrl
+              : AppConfig.cloudflareWorkerDevUrl;
           url = '$baseUrl/$cleanAssetPath';
         }
       } else {
         // R2文件通过Cloudflare Worker下载
-        url =
-            '${UnifiedConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(assetPath)}';
+        url = '${AppConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(assetPath)}';
       }
 
       debugPrint('下载素材URL: $url');
       debugPrint(
-        '平台: ${kIsWeb ? "Web" : "Native"}, 静态文件: $isStaticFile, 环境: ${UnifiedConfig.isProduction ? "生产" : "开发"}',
+        '平台: ${kIsWeb ? "Web" : "Native"}, 静态文件: $isStaticFile, 环境: ${AppConfig.isProduction ? "生产" : "开发"}',
       );
 
       // 获取文件名
@@ -382,11 +357,7 @@ class FileTransferModel extends ChangeNotifier {
       }
 
       // 创建下载任务
-      final taskId = await _downloadManager.createTask(
-        url,
-        fileName,
-        assetPath,
-      );
+      final taskId = await _downloadManager.createTask(url, fileName, assetPath);
       _assetToTaskMap[assetPath] = taskId;
 
       // 显示下载进度对话框
@@ -401,11 +372,7 @@ class FileTransferModel extends ChangeNotifier {
   }
 
   /// 显示下载进度对话框
-  void _showDownloadProgressDialog(
-    BuildContext context,
-    String taskId,
-    String fileName,
-  ) {
+  void _showDownloadProgressDialog(BuildContext context, String taskId, String fileName) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -425,9 +392,7 @@ class FileTransferModel extends ChangeNotifier {
               if (kIsWeb) {
                 // Web平台：从localStorage获取文件
                 debugPrint('🌐 Web平台：获取下载的文件数据');
-                final fileData = await _downloadManager.getDownloadedFile(
-                  fileName,
-                );
+                final fileData = await _downloadManager.getDownloadedFile(fileName);
                 if (fileData != null) {
                   debugPrint('📊 文件数据获取成功，大小: ${fileData.length} bytes');
                   final fileInfo = PlatformFile(
@@ -442,9 +407,7 @@ class FileTransferModel extends ChangeNotifier {
                   debugPrint('✅ 文件已添加到选择列表');
 
                   // 标记素材为已下载
-                  await _downloadedAssetsService.markAssetAsDownloaded(
-                    task.assetPath,
-                  );
+                  await _downloadedAssetsService.markAssetAsDownloaded(task.assetPath);
                   debugPrint('🏷️ 素材已标记为已下载');
 
                   // 延迟确保UI更新
@@ -480,9 +443,7 @@ class FileTransferModel extends ChangeNotifier {
                     debugPrint('✅ 文件已添加到选择列表');
 
                     // 标记素材为已下载
-                    await _downloadedAssetsService.markAssetAsDownloaded(
-                      task.assetPath,
-                    );
+                    await _downloadedAssetsService.markAssetAsDownloaded(task.assetPath);
                     debugPrint('🏷️ 素材已标记为已下载');
 
                     // 延迟确保UI更新
@@ -583,26 +544,10 @@ class FileTransferModel extends ChangeNotifier {
   }
 
   // 地球轨迹回调（支持国家名称标签）
-  Function(
-    double,
-    double,
-    double,
-    double, {
-    String? fromLabel,
-    String? toLabel,
-  })?
-  _onTransferBeam;
+  Function(double, double, double, double, {String? fromLabel, String? toLabel})? _onTransferBeam;
 
   void setTransferBeamCallback(
-    Function(
-      double,
-      double,
-      double,
-      double, {
-      String? fromLabel,
-      String? toLabel,
-    })?
-    callback,
+    Function(double, double, double, double, {String? fromLabel, String? toLabel})? callback,
   ) {
     _onTransferBeam = callback;
   }
@@ -623,10 +568,7 @@ class FileTransferModel extends ChangeNotifier {
       await _initializeRealGlobalSendService();
 
       // 开始真实的全球发送
-      await _realGlobalSendService?.startSending(
-        files: _selectedFiles,
-        isLoop: _isLooping,
-      );
+      await _realGlobalSendService?.startSending(files: _selectedFiles, isLoop: _isLooping);
 
       // 传输完成，尝试上传本地累积的数据
       await _uploadPendingData();
@@ -678,9 +620,7 @@ class FileTransferModel extends ChangeNotifier {
       if (userLocation != null) {
         userLat = userLocation.latitude;
         userLng = userLocation.longitude;
-        debugPrint(
-          '📍 传输服务使用用户位置: ${userLocation.country}, ${userLocation.city}',
-        );
+        debugPrint('📍 传输服务使用用户位置: ${userLocation.country}, ${userLocation.city}');
       }
     } catch (e) {
       debugPrint('⚠️ 获取用户位置失败: $e，将使用默认位置');
@@ -833,13 +773,9 @@ class FileTransferModel extends ChangeNotifier {
   void updateCountryStatus(String? countryName, SendStatus status) {
     if (countryName == null) return;
 
-    final index = _countryStatuses.indexWhere(
-      (status) => status.countryName == countryName,
-    );
+    final index = _countryStatuses.indexWhere((status) => status.countryName == countryName);
     if (index != -1) {
-      _countryStatuses[index] = _countryStatuses[index].copyWith(
-        status: status,
-      );
+      _countryStatuses[index] = _countryStatuses[index].copyWith(status: status);
       _persistCountryStatuses();
       notifyListeners();
     }
@@ -854,9 +790,7 @@ class FileTransferModel extends ChangeNotifier {
 
   /// 获取成功发送的国家数量
   int getSuccessCount() {
-    return _countryStatuses
-        .where((status) => status.status == SendStatus.success)
-        .length;
+    return _countryStatuses.where((status) => status.status == SendStatus.success).length;
   }
 
   /// 加载持久化状态

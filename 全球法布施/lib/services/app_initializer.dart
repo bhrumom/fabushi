@@ -2,7 +2,7 @@
 // 统一管理应用启动时的初始化工作
 
 import 'package:flutter/foundation.dart';
-import '../config/unified_config.dart';
+import '../core/config/app_config.dart';
 import 'unified_api_service.dart';
 import 'app_settings.dart';
 import '../models/file_transfer_model.dart';
@@ -39,7 +39,7 @@ class AppInitializer {
     try {
       final savedUrl = await AppSettings.getBackendUrl();
       if (savedUrl.isEmpty) {
-        await AppSettings.setBackendUrl(UnifiedConfig.currentBackendUrl);
+        await AppSettings.setBackendUrl(AppConfig.currentBackendUrl);
       }
     } catch (e) {
       debugPrint('设置加载失败: $e');
@@ -81,10 +81,10 @@ class AppInitializer {
   static Future<Map<String, dynamic>> getInitializationInfo() async {
     return {
       'isInitialized': _isInitialized,
-      'currentBackendUrl': UnifiedConfig.currentBackendUrl,
-      'isProduction': UnifiedConfig.isProduction,
-      'isWeb': UnifiedConfig.isWeb,
-      'enableApiLogging': UnifiedConfig.enableApiLogging,
+      'currentBackendUrl': AppConfig.currentBackendUrl,
+      'isProduction': AppConfig.isProduction,
+      'isWeb': AppConfig.isWeb,
+      'enableApiLogging': AppConfig.enableApiLogging,
       'savedBackendUrl': await AppSettings.getBackendUrl(),
       'testMode': await AppSettings.getTestMode(),
     };

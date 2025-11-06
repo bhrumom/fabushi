@@ -40,8 +40,7 @@ class WasmProxyService {
 
     try {
       // 检查Service Worker是否已注册
-      final serviceWorkerSupported =
-          html.window.navigator.serviceWorker != null;
+      final serviceWorkerSupported = html.window.navigator.serviceWorker != null;
       if (!serviceWorkerSupported) {
         debugPrint('此浏览器不支持Service Worker');
         _initializationController.add(false);
@@ -49,8 +48,7 @@ class WasmProxyService {
       }
 
       // 检查Service Worker是否已激活
-      final registration = await html.window.navigator.serviceWorker
-          ?.getRegistration();
+      final registration = await html.window.navigator.serviceWorker?.getRegistration();
       if (registration == null) {
         debugPrint('Service Worker未注册');
         _initializationController.add(false);

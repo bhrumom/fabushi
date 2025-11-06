@@ -17,8 +17,7 @@ class VideoFeedViewOptimizedVideoPlayer extends StatefulWidget {
       _VideoFeedViewOptimizedVideoPlayerState();
 }
 
-class _VideoFeedViewOptimizedVideoPlayerState
-    extends State<VideoFeedViewOptimizedVideoPlayer>
+class _VideoFeedViewOptimizedVideoPlayerState extends State<VideoFeedViewOptimizedVideoPlayer>
     with SingleTickerProviderStateMixin {
   late AnimationController _loadingController;
   bool _isBuffering = false;
@@ -62,8 +61,7 @@ class _VideoFeedViewOptimizedVideoPlayerState
       _addControllerListener();
 
       // Schedule the setState for the next frame to avoid build errors
-      final bool shouldUpdateBuffering =
-          widget.controller?.value.isBuffering ?? false;
+      final bool shouldUpdateBuffering = widget.controller?.value.isBuffering ?? false;
       if (mounted && _isBuffering != shouldUpdateBuffering) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
@@ -185,8 +183,7 @@ class _VideoFeedViewOptimizedVideoPlayerState
             child: Stack(
               children: [
                 VideoPlayer(controller),
-                if (_isBuffering)
-                  const Center(child: CircularProgressIndicator()),
+                if (_isBuffering) const Center(child: CircularProgressIndicator()),
               ],
             ),
           ),

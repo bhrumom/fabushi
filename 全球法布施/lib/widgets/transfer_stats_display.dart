@@ -35,11 +35,7 @@ class TransferStatsDisplay extends StatelessWidget {
             ],
             _buildStatRow(context, '已发送节点数:', '$sentCount'),
             const SizedBox(height: 8.0),
-            _buildStatRow(
-              context,
-              '已发送数据:',
-              '${dataSentInMB.toStringAsFixed(2)} MB',
-            ),
+            _buildStatRow(context, '已发送数据:', '${dataSentInMB.toStringAsFixed(2)} MB'),
           ],
         ),
       ),
@@ -54,10 +50,7 @@ class TransferStatsDisplay extends StatelessWidget {
         const SizedBox(width: 8.0),
         Text(
           value,
-          style: TextStyle(
-            color: Theme.of(context).primaryColor,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold),
         ),
       ],
     );

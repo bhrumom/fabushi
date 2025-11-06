@@ -15,10 +15,7 @@ class Buddha3DWidget extends StatelessWidget {
           children: [
             Icon(Icons.web, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
-            Text(
-              '3D佛像仅在Web平台可用',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
+            Text('3D佛像仅在Web平台可用', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
           ],
         ),
       );

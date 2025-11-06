@@ -1,5 +1,35 @@
 # 更新日志
 
+## [1.0.1] - 2024-11-06
+
+### 代码清理 🧹
+
+#### 移除
+- ✅ 移除 `lib/main_refactored.dart`（已合并到main.dart）
+- ✅ 移除 `lib/config/` 目录（已迁移到core/config/）
+- ✅ 移除重复文档（README_NEW.md, REFACTOR_STATUS.md, REFACTOR_REPORT.md）
+
+#### 更新
+- ✅ 更新 `lib/main.dart` 为重构后版本
+  - 集成依赖注入
+  - 使用 AppConfig 统一配置
+  - 优化代码结构
+
+#### 备份
+- ✅ 创建备份目录 `.old_code_backup_20251106_084400/`
+- ✅ 所有移除的代码已安全备份
+
+#### 文档
+- ✅ 新增 `CLEANUP_COMPLETE.md` - 清理完成报告
+
+### 改进
+- 项目结构更清晰
+- 配置管理更统一
+- 代码维护更简单
+- 文档更精简
+
+---
+
 ## [1.0.0] - 2024-11-04
 
 ### 重构完成 🎉

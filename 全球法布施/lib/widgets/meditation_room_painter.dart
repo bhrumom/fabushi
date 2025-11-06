@@ -62,11 +62,7 @@ class MeditationRoomPainter extends CustomPainter {
           i / 5,
         )!.withOpacity((0.15 - i * 0.02) * (0.8 + glowValue * 0.2))
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, 20.0 + i * 8);
-      canvas.drawCircle(
-        Offset(buddhaCenter.dx, buddhaCenter.dy - 100),
-        120 + i * 25,
-        glowPaint,
-      );
+      canvas.drawCircle(Offset(buddhaCenter.dx, buddhaCenter.dy - 100), 120 + i * 25, glowPaint);
     }
 
     // 佛像身体（立体效果）
@@ -120,11 +116,7 @@ class MeditationRoomPainter extends CustomPainter {
     for (int i = 0; i < 5; i++) {
       final y = buddhaCenter.dy - 60 + i * 30;
       canvas.drawArc(
-        Rect.fromCenter(
-          center: Offset(buddhaCenter.dx, y),
-          width: 120,
-          height: 40,
-        ),
+        Rect.fromCenter(center: Offset(buddhaCenter.dx, y), width: 120, height: 40),
         0,
         math.pi,
         false,
@@ -134,63 +126,34 @@ class MeditationRoomPainter extends CustomPainter {
 
     // 佛像头部（立体效果）
     final headPaint = Paint()
-      ..shader = ui.Gradient.radial(
-        Offset(buddhaCenter.dx, buddhaCenter.dy - 100),
-        50,
-        [
-          const Color(0xFFFFE4B5),
-          const Color(0xFFFFD700),
-          const Color(0xFFB8860B),
-        ],
-      );
-    canvas.drawCircle(
-      Offset(buddhaCenter.dx, buddhaCenter.dy - 100),
-      50,
-      headPaint,
-    );
+      ..shader = ui.Gradient.radial(Offset(buddhaCenter.dx, buddhaCenter.dy - 100), 50, [
+        const Color(0xFFFFE4B5),
+        const Color(0xFFFFD700),
+        const Color(0xFFB8860B),
+      ]);
+    canvas.drawCircle(Offset(buddhaCenter.dx, buddhaCenter.dy - 100), 50, headPaint);
 
     // 肉髻
     final ushnishaPaint = Paint()
-      ..shader = ui.Gradient.radial(
-        Offset(buddhaCenter.dx, buddhaCenter.dy - 140),
-        20,
-        [const Color(0xFFFFD700), const Color(0xFFB8860B)],
-      );
-    canvas.drawCircle(
-      Offset(buddhaCenter.dx, buddhaCenter.dy - 140),
-      20,
-      ushnishaPaint,
-    );
+      ..shader = ui.Gradient.radial(Offset(buddhaCenter.dx, buddhaCenter.dy - 140), 20, [
+        const Color(0xFFFFD700),
+        const Color(0xFFB8860B),
+      ]);
+    canvas.drawCircle(Offset(buddhaCenter.dx, buddhaCenter.dy - 140), 20, ushnishaPaint);
 
     // 眼睛
     final eyePaint = Paint()..color = const Color(0xFF8B4513);
-    canvas.drawCircle(
-      Offset(buddhaCenter.dx - 15, buddhaCenter.dy - 105),
-      3,
-      eyePaint,
-    );
-    canvas.drawCircle(
-      Offset(buddhaCenter.dx + 15, buddhaCenter.dy - 105),
-      3,
-      eyePaint,
-    );
+    canvas.drawCircle(Offset(buddhaCenter.dx - 15, buddhaCenter.dy - 105), 3, eyePaint);
+    canvas.drawCircle(Offset(buddhaCenter.dx + 15, buddhaCenter.dy - 105), 3, eyePaint);
 
     // 光环主圈
     final haloPaint = Paint()
-      ..shader = ui.Gradient.radial(
-        Offset(buddhaCenter.dx, buddhaCenter.dy - 100),
-        90,
-        [
-          const Color(0xFFFFFFFF).withOpacity(0.9),
-          const Color(0xFFFFD700).withOpacity(0.5),
-          const Color(0xFFFFD700).withOpacity(0.0),
-        ],
-      );
-    canvas.drawCircle(
-      Offset(buddhaCenter.dx, buddhaCenter.dy - 100),
-      90,
-      haloPaint,
-    );
+      ..shader = ui.Gradient.radial(Offset(buddhaCenter.dx, buddhaCenter.dy - 100), 90, [
+        const Color(0xFFFFFFFF).withOpacity(0.9),
+        const Color(0xFFFFD700).withOpacity(0.5),
+        const Color(0xFFFFD700).withOpacity(0.0),
+      ]);
+    canvas.drawCircle(Offset(buddhaCenter.dx, buddhaCenter.dy - 100), 90, haloPaint);
 
     // 光环边缘
     final ringPaint = Paint()
@@ -198,11 +161,7 @@ class MeditationRoomPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-    canvas.drawCircle(
-      Offset(buddhaCenter.dx, buddhaCenter.dy - 100),
-      85,
-      ringPaint,
-    );
+    canvas.drawCircle(Offset(buddhaCenter.dx, buddhaCenter.dy - 100), 85, ringPaint);
 
     // 莲花座
     _drawLotusBase(canvas, Offset(buddhaCenter.dx, buddhaCenter.dy + 110));
@@ -210,10 +169,7 @@ class MeditationRoomPainter extends CustomPainter {
 
   void _drawLotusBase(Canvas canvas, Offset center) {
     final lotusPaint = Paint()
-      ..shader = ui.Gradient.radial(center, 60, [
-        const Color(0xFFFFB6C1),
-        const Color(0xFFFF69B4),
-      ]);
+      ..shader = ui.Gradient.radial(center, 60, [const Color(0xFFFFB6C1), const Color(0xFFFF69B4)]);
 
     for (int i = 0; i < 8; i++) {
       final angle = i * math.pi / 4;
@@ -236,10 +192,7 @@ class MeditationRoomPainter extends CustomPainter {
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, 10.0 + i * 2);
 
       canvas.drawCircle(
-        Offset(
-          smokeCenter.dx + math.sin(offset * 0.1) * 10,
-          smokeCenter.dy - offset,
-        ),
+        Offset(smokeCenter.dx + math.sin(offset * 0.1) * 10, smokeCenter.dy - offset),
         15 + i * 3,
         smokePaint,
       );
@@ -295,18 +248,8 @@ class MeditationRoomPainter extends CustomPainter {
       );
     final flamePath = Path()
       ..moveTo(lampCenter.dx, lampCenter.dy - 30)
-      ..quadraticBezierTo(
-        lampCenter.dx + 8,
-        lampCenter.dy - 20,
-        lampCenter.dx,
-        lampCenter.dy - 10,
-      )
-      ..quadraticBezierTo(
-        lampCenter.dx - 8,
-        lampCenter.dy - 20,
-        lampCenter.dx,
-        lampCenter.dy - 30,
-      );
+      ..quadraticBezierTo(lampCenter.dx + 8, lampCenter.dy - 20, lampCenter.dx, lampCenter.dy - 10)
+      ..quadraticBezierTo(lampCenter.dx - 8, lampCenter.dy - 20, lampCenter.dx, lampCenter.dy - 30);
     canvas.drawPath(flamePath, flamePaint);
   }
 
@@ -337,10 +280,7 @@ class MeditationRoomPainter extends CustomPainter {
       // 书的主体
       final bookPaint = Paint()..color = bookColors[i];
       canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          const Rect.fromLTWH(-25, -35, 50, 70),
-          const Radius.circular(4),
-        ),
+        RRect.fromRectAndRadius(const Rect.fromLTWH(-25, -35, 50, 70), const Radius.circular(4)),
         bookPaint,
       );
 
@@ -350,10 +290,7 @@ class MeditationRoomPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
       canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          const Rect.fromLTWH(-23, -33, 46, 66),
-          const Radius.circular(4),
-        ),
+        RRect.fromRectAndRadius(const Rect.fromLTWH(-23, -33, 46, 66), const Radius.circular(4)),
         borderPaint,
       );
 
@@ -370,10 +307,7 @@ class MeditationRoomPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       );
       textPainter.layout();
-      textPainter.paint(
-        canvas,
-        Offset(-textPainter.width / 2, -textPainter.height / 2),
-      );
+      textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
 
       canvas.restore();
     }
