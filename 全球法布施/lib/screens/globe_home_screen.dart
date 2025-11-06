@@ -30,11 +30,19 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
     // 延迟加载地球组件，先显示背景
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) {
-        setState(() => _isGlobeLoaded = true);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          debugPrint('🎬 地球组件加载完成');
-          _setupTransferBeamCallback();
-        });
+        try {
+          setState(() => _isGlobeLoaded = true);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            debugPrint('🎬 地球组件加载完成');
+            _setupTransferBeamCallback();
+          });
+        } catch (e) {
+          debugPrint('⚠️ 地球组件加载失败: $e');
+          // 即使地球组件加载失败，也要显示界面
+          if (mounted) {
+            setState(() => _isGlobeLoaded = true);
+          }
+        }
       }
     });
   }
@@ -183,20 +191,55 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                           debugPrint('💾 首次保存 Globe 静态引用');
                         }
                       });
-                      return EarthGlobeWidget(key: _globeKey);
+                      
+                      // 添加错误边界保护
+                      try {
+                        return EarthGlobeWidget(key: _globeKey);
+                      } catch (e) {
+                        debugPrint('⚠️ 地球组件渲染失败: $e');
+                        return Container(
+                          color: const Color(0xFF0a0a0a),
+                          child: const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.public, size: 80, color: Colors.cyan),
+                                SizedBox(height: 16),
+                                Text(
+                                  '🌍 地球组件加载中...',
+                                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  '请稍后或重启应用',
+                                  style: TextStyle(color: Colors.white54, fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
                     },
                   )
-                : const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(color: Colors.cyan),
-                        SizedBox(height: 16),
-                        Text(
-                          '🌍 正在加载地球组件...',
-                          style: TextStyle(color: Colors.white70, fontSize: 16),
-                        ),
-                      ],
+                : Container(
+                    color: const Color(0xFF0a0a0a),
+                    child: const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(color: Colors.cyan),
+                          SizedBox(height: 16),
+                          Text(
+                            '🌍 正在加载地球组件...',
+                            style: TextStyle(color: Colors.white70, fontSize: 16),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            '首次加载可能需要几秒钟',
+                            style: TextStyle(color: Colors.white54, fontSize: 14),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
           ),

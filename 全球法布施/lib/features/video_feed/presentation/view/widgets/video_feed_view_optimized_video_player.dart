@@ -141,6 +141,7 @@ class _VideoFeedViewOptimizedVideoPlayerState extends State<VideoFeedViewOptimiz
     }
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         // Schedule state updates for the next frame to avoid build errors
         if (controller.value.isPlaying) {
