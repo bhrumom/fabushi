@@ -84,8 +84,6 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final model = context.watch<FileTransferModel>();
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('🌍 全球法布施'),
@@ -100,57 +98,69 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
             ),
             tooltip: '搜索经文',
           ),
-          if (model.isTransferring)
-            IconButton(icon: const Icon(Icons.stop), onPressed: _stopGlobalDharma, tooltip: '停止发送')
-          else
-            IconButton(
-              icon: const Icon(Icons.play_arrow),
-              onPressed: _startGlobalDharma,
-              tooltip: '开始发送',
-            ),
+          Selector<FileTransferModel, bool>(
+            selector: (_, m) => m.isTransferring,
+            builder: (_, isTransferring, __) => isTransferring
+                ? IconButton(icon: const Icon(Icons.stop), onPressed: _stopGlobalDharma, tooltip: '停止发送')
+                : IconButton(
+                    icon: const Icon(Icons.play_arrow),
+                    onPressed: _startGlobalDharma,
+                    tooltip: '开始发送',
+                  ),
+          ),
         ],
       ),
       body: Column(
         children: [
           // 统计信息卡片
-          _buildStatsCard(model),
+          Selector<FileTransferModel, List<dynamic>>(
+            selector: (_, m) => [m.selectedFiles.length, m.countryStatuses.length, m.globalSentCount, m.globalDataSentMB, m.isLooping],
+            builder: (_, data, __) => _buildStatsCard(data[0] as int, data[1] as int, data[2] as int, data[3] as double, data[4] as bool),
+          ),
 
           // 当前日志
-          if (model.currentLog.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.all(16),
-              color: Colors.grey[100],
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: Colors.blue),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      model.currentLog,
-                      style: const TextStyle(fontSize: 14),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+          Selector<FileTransferModel, String>(
+            selector: (_, m) => m.currentLog,
+            builder: (_, log, __) => log.isNotEmpty
+                ? Container(
+                    padding: const EdgeInsets.all(16),
+                    color: Colors.grey[100],
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline, color: Colors.blue),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            log,
+                            style: const TextStyle(fontSize: 14),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-            ),
+                  )
+                : const SizedBox.shrink(),
+          ),
 
           // 国家列表
-          Expanded(child: _buildCountryList(model)),
+          Expanded(child: _buildCountryList()),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: model.isTransferring ? _stopGlobalDharma : _startGlobalDharma,
-        icon: Icon(model.isTransferring ? Icons.stop : Icons.play_arrow),
-        label: Text(model.isTransferring ? '停止发送' : '开始法布施'),
-        backgroundColor: model.isTransferring ? Colors.red : const Color(0xFF667eea),
-        foregroundColor: Colors.white,
+      floatingActionButton: Selector<FileTransferModel, bool>(
+        selector: (_, m) => m.isTransferring,
+        builder: (_, isTransferring, __) => FloatingActionButton.extended(
+          onPressed: isTransferring ? _stopGlobalDharma : _startGlobalDharma,
+          icon: Icon(isTransferring ? Icons.stop : Icons.play_arrow),
+          label: Text(isTransferring ? '停止发送' : '开始法布施'),
+          backgroundColor: isTransferring ? Colors.red : const Color(0xFF667eea),
+          foregroundColor: Colors.white,
+        ),
       ),
     );
   }
 
-  Widget _buildStatsCard(FileTransferModel model) {
+  Widget _buildStatsCard(int filesCount, int countriesCount, int sentCount, double dataMB, bool isLooping) {
     return Card(
       margin: const EdgeInsets.all(16),
       child: Padding(
@@ -163,7 +173,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const Icon(Icons.file_present, color: Colors.blue),
                 const SizedBox(width: 8),
                 Text(
-                  '已选文件: ${model.selectedFiles.length} 个',
+                  '已选文件: $filesCount 个',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
@@ -174,7 +184,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const Icon(Icons.public, color: Colors.green),
                 const SizedBox(width: 8),
                 Text(
-                  '目标国家: ${model.countryStatuses.length} 个',
+                  '目标国家: $countriesCount 个',
                   style: const TextStyle(fontSize: 16),
                 ),
               ],
@@ -184,7 +194,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
               children: [
                 const Icon(Icons.send, color: Colors.orange),
                 const SizedBox(width: 8),
-                Text('已发送: ${model.globalSentCount} 个文件', style: const TextStyle(fontSize: 16)),
+                Text('已发送: $sentCount 个文件', style: const TextStyle(fontSize: 16)),
               ],
             ),
             const SizedBox(height: 8),
@@ -193,12 +203,12 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const Icon(Icons.data_usage, color: Colors.purple),
                 const SizedBox(width: 8),
                 Text(
-                  '数据量: ${model.globalDataSentMB.toStringAsFixed(2)} MB',
+                  '数据量: ${dataMB.toStringAsFixed(2)} MB',
                   style: const TextStyle(fontSize: 16),
                 ),
               ],
             ),
-            if (model.isLooping) ...[
+            if (isLooping) ...[
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -214,32 +224,35 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
     );
   }
 
-  Widget _buildCountryList(FileTransferModel model) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              const Icon(Icons.list, color: Colors.blue),
-              const SizedBox(width: 8),
-              Text(
-                '国家发送状态 (${model.getSuccessCount()}/${model.countryStatuses.length})',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ],
+  Widget _buildCountryList() {
+    return Selector<FileTransferModel, List<CountrySendStatus>>(
+      selector: (_, m) => m.countryStatuses,
+      builder: (_, statuses, __) => Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                const Icon(Icons.list, color: Colors.blue),
+                const SizedBox(width: 8),
+                Text(
+                  '国家发送状态 (${statuses.where((s) => s.status == SendStatus.success).length}/${statuses.length})',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
           ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: model.countryStatuses.length,
-            itemBuilder: (context, index) {
-              final status = model.countryStatuses[index];
-              return _buildCountryStatusItem(status);
-            },
+          Expanded(
+            child: ListView.builder(
+              itemCount: statuses.length,
+              itemBuilder: (context, index) {
+                final status = statuses[index];
+                return _buildCountryStatusItem(status);
+              },
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
