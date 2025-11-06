@@ -25,6 +25,12 @@ export async function handleAlipayLogin(request, env) {
   return await handleAlipayLogin(request, env);
 }
 
+// macOS支付宝回调
+export async function handleMacOSAlipayCallback(request, env) {
+  const { handleMacOSAlipayCallback } = await import('../../alipay-login-functions.js');
+  return await handleMacOSAlipayCallback(request, env);
+}
+
 // 支付宝注册
 export async function handleAlipayRegister(request, env) {
   const { registerAlipayUser } = await import('../../alipay-login-functions.js');
