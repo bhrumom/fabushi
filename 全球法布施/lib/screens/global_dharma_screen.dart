@@ -225,35 +225,36 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
   }
 
   Widget _buildCountryList() {
-    return Selector<FileTransferModel, List<CountrySendStatus>>(
-      selector: (_, m) => m.countryStatuses,
-      builder: (_, statuses, __) => Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                const Icon(Icons.list, color: Colors.blue),
-                const SizedBox(width: 8),
-                Text(
-                  '国家发送状态 (${statuses.where((s) => s.status == SendStatus.success).length}/${statuses.length})',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ],
+    return Consumer<FileTransferModel>(
+      builder: (_, model, __) {
+        final statuses = model.countryStatuses;
+        return Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  const Icon(Icons.list, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Text(
+                    '国家发送状态 (${statuses.where((s) => s.status == SendStatus.success).length}/${statuses.length})',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              physics: const AlwaysScrollableScrollPhysics(),
-              itemCount: statuses.length,
-              itemBuilder: (context, index) {
-                final status = statuses[index];
-                return _buildCountryStatusItem(status);
-              },
+            Expanded(
+              child: ListView.builder(
+                itemCount: statuses.length,
+                itemBuilder: (context, index) {
+                  final status = statuses[index];
+                  return _buildCountryStatusItem(status);
+                },
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
 
