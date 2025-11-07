@@ -11,6 +11,7 @@ class VideoFeedViewInteractionButtons extends StatelessWidget {
     required this.likeCount,
     required this.commentCount,
     required this.shareCount,
+    this.onLikeTap,
     super.key,
   });
 
@@ -19,6 +20,7 @@ class VideoFeedViewInteractionButtons extends StatelessWidget {
   final int likeCount;
   final int commentCount;
   final int shareCount;
+  final VoidCallback? onLikeTap;
 
   @override
   Widget build(BuildContext context) {
@@ -40,10 +42,13 @@ class VideoFeedViewInteractionButtons extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              VideoFeedViewInteractionButton(
-                icon: isLiked ? Icons.favorite : Icons.favorite_border,
-                count: likeCount,
-                color: isLiked ? red : white,
+              GestureDetector(
+                onTap: onLikeTap,
+                child: VideoFeedViewInteractionButton(
+                  icon: isLiked ? Icons.favorite : Icons.favorite_border,
+                  count: likeCount,
+                  color: isLiked ? red : white,
+                ),
               ),
               SizedBox(height: safeSpacing),
               VideoFeedViewInteractionButton(icon: LucideIcons.messageCircle, count: commentCount),

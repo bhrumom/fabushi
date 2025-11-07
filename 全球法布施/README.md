@@ -8,9 +8,11 @@
 
 ## 📚 重要文档
 
-- 🚀 [PERFORMANCE_SUMMARY.md](PERFORMANCE_SUMMARY.md) - 性能优化完成报告（新）
-- 📊 [PERFORMANCE_OPTIMIZATION.md](PERFORMANCE_OPTIMIZATION.md) - 性能优化详细方案（新）
-- 🧪 [PERFORMANCE_TEST_GUIDE.md](PERFORMANCE_TEST_GUIDE.md) - 性能测试指南（新）
+- ❤️ [LIKE_FEATURE_GUIDE.md](LIKE_FEATURE_GUIDE.md) - 点赞功能使用指南（新）
+- 🚀 [PERFORMANCE_SUMMARY.md](PERFORMANCE_SUMMARY.md) - 性能优化完成报告
+- 📊 [PERFORMANCE_OPTIMIZATION.md](PERFORMANCE_OPTIMIZATION.md) - 性能优化详细方案
+- 🧪 [PERFORMANCE_TEST_GUIDE.md](PERFORMANCE_TEST_GUIDE.md) - 性能测试指南
+- 📦 [SHARED_ASSET_USAGE.md](SHARED_ASSET_USAGE.md) - 共享素材管理使用指南
 - 🎉 [CLEANUP_COMPLETE.md](CLEANUP_COMPLETE.md) - 代码清理完成报告
 - 🔄 [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) - 代码迁移指南
 - ✅ [REFACTOR_100_COMPLETE.md](REFACTOR_100_COMPLETE.md) - 重构完成报告
@@ -40,6 +42,14 @@
 - ✅ 实时传输进度
 - ✅ 网络状态监控
 - ✅ 传输统计分析
+- ✅ 共享素材管理（首页和法流页面共用）
+
+### 社交互动功能（v1.3.0 新增）
+- ✅ 点赞功能（类似抖音）
+- ✅ 我的喜欢列表
+- ✅ 本地数据持久化
+- ✅ 状态实时同步
+- ✅ 支持视频和文本内容
 
 ### 跨平台支持
 - ✅ Android
@@ -294,6 +304,22 @@ Content-Type: application/json
 - **异步处理**: 非阻塞UI操作
 - **错误处理**: 完善的异常处理机制
 
+### 素材管理（v1.2.0）
+- **统一存储**: 所有下载的素材存储在同一位置
+- **自动复用**: 首页和法流页面自动共享已下载素材
+- **智能检测**: 自动检测素材是否已下载，避免重复下载
+- **节省流量**: 素材只需下载一次，两个页面共用
+- **离线可用**: 已下载的素材可离线访问
+- **跨平台支持**: Web和原生平台统一管理
+
+### 点赞功能（v1.3.0 新增）
+- **实时点赞**: 在法流页面点击喜欢按钮即时生效
+- **本地持久化**: 使用 SharedPreferences 保存点赞数据
+- **状态同步**: 点赞状态在法流页面和我的页面实时同步
+- **支持多类型**: 同时支持视频内容和文本内容的点赞
+- **时间排序**: 按点赞时间倒序显示
+- **一键取消**: 在喜欢列表中可以快速取消点赞
+
 ## 🔍 开发指南
 
 ### 项目结构（重构后）
@@ -362,6 +388,28 @@ final response = await http.post(
   body: jsonEncode({'username': username, 'password': password}),
 );
 ```
+
+### 共享素材管理
+使用SharedAssetManager管理素材：
+
+```dart
+import 'package:global_dharma_sharing/services/shared_asset_manager.dart';
+
+final assetManager = SharedAssetManager();
+await assetManager.initialize();
+
+// 检查素材是否已下载
+if (assetManager.isAssetDownloaded(assetPath)) {
+  // 直接使用本地文件
+  final file = await assetManager.getDownloadedAsset(assetPath);
+} else {
+  // 下载素材
+  final taskId = await assetManager.downloadAsset(assetPath);
+  await assetManager.startDownload(taskId);
+}
+```
+
+详细使用方法请查看 [SHARED_ASSET_USAGE.md](SHARED_ASSET_USAGE.md)
 
 ## 🐛 故障排除
 

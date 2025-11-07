@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
+import '../services/like_service.dart';
+import 'liked_content_screen.dart';
 import 'login_screen.dart';
 
 class MyProfileScreen extends StatelessWidget {
@@ -30,6 +32,8 @@ class MyProfileScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             children: [
               _buildUserCard(user),
+              const SizedBox(height: 16),
+              _buildLikedSection(context),
               const SizedBox(height: 16),
               _buildMembershipCard(user),
               const SizedBox(height: 16),
@@ -192,6 +196,57 @@ class MyProfileScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLikedSection(BuildContext context) {
+    final likeService = LikeService();
+    return ListenableBuilder(
+      listenable: likeService,
+      builder: (context, _) {
+        final likedCount = likeService.likedCount;
+        return Card(
+          child: InkWell(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const LikedContentScreen()),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.favorite, color: Colors.red.shade400, size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '我的喜欢',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          likedCount > 0 ? '$likedCount 个内容' : '还没有喜欢的内容',
+                          style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

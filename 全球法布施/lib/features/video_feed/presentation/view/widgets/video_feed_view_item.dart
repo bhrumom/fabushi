@@ -3,6 +3,8 @@ import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_optimized_video_player.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_overlay_section.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_text_content.dart';
+import 'package:global_dharma_sharing/models/liked_item.dart';
+import 'package:global_dharma_sharing/services/like_service.dart';
 import 'package:video_player/video_player.dart';
 
 class VideoFeedViewItem extends StatefulWidget {
@@ -17,6 +19,64 @@ class VideoFeedViewItem extends StatefulWidget {
 
 class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
   String? _currentParagraph;
+  final LikeService _likeService = LikeService();
+  bool _isLiked = false;
+  int _likeCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _likeService.initialize();
+    _isLiked = _likeService.isLiked(widget.videoItem.id);
+    _likeCount = _likeService.getLikeCount(widget.videoItem.id);
+    if (_likeCount == 0) {
+      _likeCount = widget.videoItem.likeCount;
+    }
+    _likeService.addListener(_updateLikeState);
+  }
+
+  @override
+  void dispose() {
+    _likeService.removeListener(_updateLikeState);
+    super.dispose();
+  }
+
+  void _updateLikeState() {
+    if (mounted) {
+      setState(() {
+        _isLiked = _likeService.isLiked(widget.videoItem.id);
+        _likeCount = _likeService.getLikeCount(widget.videoItem.id);
+      });
+    }
+  }
+
+  void _handleLikeTap() async {
+    final item = LikedItem(
+      id: widget.videoItem.id,
+      username: widget.videoItem.username,
+      description: widget.videoItem.description,
+      videoUrl: widget.videoItem.contentType == ContentType.video
+          ? widget.videoItem.videoUrl
+          : null,
+      textContent: widget.videoItem.textContent,
+      profileImageUrl: widget.videoItem.profileImageUrl,
+      likedAt: DateTime.now(),
+      contentType: widget.videoItem.contentType == ContentType.video ? 'video' : 'text',
+    );
+
+    await _likeService.toggleLike(item);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isLiked ? '已添加到喜欢' : '已取消喜欢'),
+          duration: const Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(bottom: 100, left: 20, right: 20),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,13 +100,14 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
           username: widget.videoItem.username,
           description: widget.videoItem.description,
           isBookmarked: false,
-          isLiked: false,
-          likeCount: widget.videoItem.likeCount,
+          isLiked: _isLiked,
+          likeCount: _likeCount,
           commentCount: widget.videoItem.commentCount,
           shareCount: widget.videoItem.shareCount,
           contentType: widget.videoItem.contentType,
           textContent: widget.videoItem.textContent,
           currentParagraph: _currentParagraph,
+          onLikeTap: _handleLikeTap,
         ),
       ],
     );
