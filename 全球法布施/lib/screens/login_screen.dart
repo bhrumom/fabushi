@@ -569,7 +569,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           // 游客模式按钮
                           TextButton(
                             onPressed: () {
-                              Navigator.of(context).pop(); // 返回主界面，以游客身份使用
+                              // 检查是否可以pop，如果不能则使用pushReplacement
+                              if (Navigator.of(context).canPop()) {
+                                Navigator.of(context).pop();
+                              } else {
+                                // 如果无法pop，跳转到主页
+                                Navigator.of(context).pushReplacementNamed('/');
+                              }
                             },
                             child: Text(
                               '以游客身份继续',
