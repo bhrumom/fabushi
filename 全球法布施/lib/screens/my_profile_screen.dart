@@ -266,7 +266,9 @@ class MyProfileScreen extends StatelessWidget {
           onTap: () async {
             await authModel.logout();
             if (context.mounted) {
-              Navigator.of(context).pushReplacementNamed('/login');
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已退出登录，您现在以游客身份使用')),
+              );
             }
           },
         ),
