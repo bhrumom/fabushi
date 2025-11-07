@@ -16,6 +16,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
     this.contentType = ContentType.video,
     this.textContent,
     this.currentParagraph,
+    this.onLikeTap,
     super.key,
   });
 
@@ -30,6 +31,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
   final ContentType contentType;
   final String? textContent;
   final String? currentParagraph;
+  final VoidCallback? onLikeTap;
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +56,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
             likeCount: likeCount,
             commentCount: commentCount,
             shareCount: shareCount,
+            onLikeTap: onLikeTap,
           ),
         ],
       ),

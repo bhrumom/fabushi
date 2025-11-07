@@ -10,8 +10,8 @@ import 'package:http/http.dart' as http;
 
 import '../screens/asset_screen.dart';
 import '../core/config/app_config.dart';
-import '../services/downloaded_assets_service.dart';
-import '../services/download_manager.dart';
+import '../services/shared_asset_manager.dart';
+import '../services/download_manager.dart' show DownloadStatus;
 import '../services/real_global_send_service.dart';
 import '../services/ip_location_service.dart';
 import '../services/leaderboard_service.dart';
@@ -45,9 +45,7 @@ class FileTransferModel extends ChangeNotifier {
   List<CountrySendStatus> _countryStatuses = [];
   String _currentLog = '';
 
-  final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
-  final DownloadManager _downloadManager = DownloadManager();
-  Map<String, String> _assetToTaskMap = {};
+  final SharedAssetManager _sharedAssetManager = SharedAssetManager();
   final IPLocationService _ipLocationService = IPLocationService();
 
   bool _isDisposed = false;
@@ -203,13 +201,13 @@ class FileTransferModel extends ChangeNotifier {
 
   Future<void> _downloadSelectedAssets(BuildContext context, List<String> assetPaths) async {
     try {
-      await _downloadedAssetsService.initialize();
+      await _sharedAssetManager.initialize();
 
       final List<String> needDownloadAssets = [];
       final List<String> alreadyDownloadedAssets = [];
 
       for (String assetPath in assetPaths) {
-        if (_downloadedAssetsService.isAssetDownloaded(assetPath)) {
+        if (_sharedAssetManager.isAssetDownloaded(assetPath)) {
           alreadyDownloadedAssets.add(assetPath);
         } else {
           needDownloadAssets.add(assetPath);
@@ -248,42 +246,10 @@ class FileTransferModel extends ChangeNotifier {
   Future<void> _reuseDownloadedAssets(BuildContext context, List<String> assetPaths) async {
     try {
       for (String assetPath in assetPaths) {
-        final fileName = assetPath.split('/').last;
-
-        if (kIsWeb) {
-          final fileData = await _getFileFromWebStorage(fileName);
-          if (fileData != null) {
-            final fileInfo = PlatformFile(
-              name: fileName,
-              size: fileData.length,
-              path: null,
-              bytes: Uint8List.fromList(fileData),
-            );
-            addFiles([fileInfo]);
-            debugPrint('Web平台复用已下载素材: $fileName');
-          }
-        } else {
-          final Directory? dir;
-          if (Platform.isAndroid) {
-            dir = await getExternalStorageDirectory();
-          } else {
-            dir = await getApplicationDocumentsDirectory();
-          }
-
-          if (dir != null) {
-            final filePath = '${dir.path}/$fileName';
-            final file = File(filePath);
-
-            if (await file.exists()) {
-              final fileInfo = PlatformFile(
-                name: fileName,
-                size: await file.length(),
-                path: filePath,
-              );
-              addFiles([fileInfo]);
-              debugPrint('本地平台复用已下载素材: $fileName');
-            }
-          }
+        final file = await _sharedAssetManager.getDownloadedAsset(assetPath);
+        if (file != null) {
+          addFiles([file]);
+          debugPrint('复用已下载素材: ${file.name}');
         }
       }
     } catch (e) {
@@ -292,135 +258,48 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
 
-  Future<List<int>?> _getFileFromWebStorage(String fileName) async {
-    try {
-      if (!kIsWeb) return null;
 
-      final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
-      final List<dynamic> savedFiles = json.decode(savedFilesStr);
-
-      final fileInfo = savedFiles.firstWhere((f) => f['name'] == fileName, orElse: () => null);
-
-      if (fileInfo == null) return null;
-
-      final fileDataStr = html.window.localStorage['file_$fileName'];
-      if (fileDataStr == null) return null;
-
-      return base64.decode(fileDataStr);
-    } catch (e) {
-      debugPrint('从Web存储获取文件失败: $e');
-      return null;
-    }
-  }
 
   Future<void> _downloadSingleAsset(BuildContext context, String assetPath) async {
     try {
-      final bool isStaticFile = assetPath.contains('乾隆大藏经') ||
-          assetPath.contains('房山石经陀罗尼') ||
-          assetPath.contains('咒语') ||
-          assetPath.contains('经文');
-
-      final String url;
-      if (isStaticFile) {
-        final cleanAssetPath = assetPath.startsWith('web/') ? assetPath.substring(4) : assetPath;
-
-        if (kIsWeb) {
-          url = '/$cleanAssetPath';
-        } else {
-          final String baseUrl = AppConfig.isProduction
-              ? AppConfig.cloudflareWorkerProdUrl
-              : AppConfig.cloudflareWorkerDevUrl;
-          url = '$baseUrl/$cleanAssetPath';
-        }
-      } else {
-        url = '${AppConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(assetPath)}';
-      }
-
-      debugPrint('下载素材URL: $url');
-
+      final taskId = await _sharedAssetManager.downloadAsset(assetPath);
       final fileName = assetPath.split('/').last;
 
-      final existingTaskId = _assetToTaskMap[assetPath];
-      if (existingTaskId != null) {
-        final task = _downloadManager.tasks[existingTaskId];
-        if (task != null && task.status == DownloadStatus.paused) {
-          await _downloadManager.resumeDownload(existingTaskId);
-          return;
-        }
-      }
+      _showDownloadProgressDialog(context, taskId, fileName, assetPath);
 
-      final taskId = await _downloadManager.createTask(url, fileName, assetPath);
-      _assetToTaskMap[assetPath] = taskId;
-
-      _showDownloadProgressDialog(context, taskId, fileName);
-
-      await _downloadManager.startDownload(taskId);
+      await _sharedAssetManager.startDownload(taskId);
     } catch (e) {
       debugPrint('下载素材失败: $e');
       rethrow;
     }
   }
 
-  void _showDownloadProgressDialog(BuildContext context, String taskId, String fileName) {
+  void _showDownloadProgressDialog(BuildContext context, String taskId, String fileName, String assetPath) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => DownloadProgressDialog(
         taskId: taskId,
-        downloadManager: _downloadManager,
+        downloadManager: _sharedAssetManager.downloadManager,
         onComplete: () async {
           debugPrint('📥 下载完成回调开始执行');
 
           try {
-            final task = _downloadManager.tasks[taskId];
+            final task = _sharedAssetManager.downloadManager.tasks[taskId];
             if (task != null && task.status == DownloadStatus.completed) {
-              final fileName = task.fileName;
               debugPrint('📁 处理下载完成的文件: $fileName');
 
-              if (kIsWeb) {
-                final fileData = await _downloadManager.getDownloadedFile(fileName);
-                if (fileData != null) {
-                  final fileInfo = PlatformFile(
-                    name: fileName,
-                    size: fileData.length,
-                    path: null,
-                    bytes: fileData,
-                  );
-
-                  addFiles([fileInfo]);
-                  await _downloadedAssetsService.markAssetAsDownloaded(task.assetPath);
-                  await Future.delayed(Duration(milliseconds: 200));
-                }
-              } else {
-                final Directory? dir;
-                if (Platform.isAndroid) {
-                  dir = await getExternalStorageDirectory();
-                } else {
-                  dir = await getApplicationDocumentsDirectory();
-                }
-
-                if (dir != null) {
-                  final filePath = '${dir.path}/$fileName';
-                  final file = File(filePath);
-
-                  if (await file.exists()) {
-                    final fileInfo = PlatformFile(
-                      name: fileName,
-                      size: await file.length(),
-                      path: filePath,
-                    );
-
-                    addFiles([fileInfo]);
-                    await _downloadedAssetsService.markAssetAsDownloaded(task.assetPath);
-                    await Future.delayed(Duration(milliseconds: 200));
-                  }
-                }
+              final file = await _sharedAssetManager.getDownloadedAsset(assetPath);
+              if (file != null) {
+                addFiles([file]);
+                await _sharedAssetManager.markAssetDownloaded(assetPath);
+                await Future.delayed(Duration(milliseconds: 200));
               }
             }
           } catch (e) {
             debugPrint('❌ 下载完成处理出错: $e');
           } finally {
-            _assetToTaskMap.remove(taskId);
+            _sharedAssetManager.clearTaskMapping(assetPath);
 
             if (!_isDisposed && context.mounted) {
               try {

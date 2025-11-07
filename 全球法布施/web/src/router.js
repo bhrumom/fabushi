@@ -7,6 +7,7 @@ import { handleCheckAdminStatus, handleListRedeemCodes, handleDeleteRedeemCode, 
 import { handleGetAssetsList, handleR2List, handleR2Proxy } from './handlers/assets.js';
 import { handleSearch, handleIndexTexts } from './handlers/search.js';
 import { handleGetLeaderboard, handleUpdateTransferData } from './handlers/leaderboard.js';
+import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts } from './handlers/likes.js';
 import { jsonResponse } from './utils/response.js';
 
 export async function route(request, env, db, ctx) {
@@ -66,6 +67,11 @@ export async function route(request, env, db, ctx) {
   // 排行榜API
   if (pathname === '/api/leaderboard' && method === 'GET') return await handleGetLeaderboard(request, env, db);
   if (pathname === '/api/leaderboard/update' && method === 'POST') return await handleUpdateTransferData(request, env, db);
+
+  // 点赞API
+  if (pathname === '/api/likes/toggle' && method === 'POST') return await handleToggleLike(request, env, db);
+  if (pathname === '/api/likes/count' && method === 'GET') return await handleGetLikeCount(request, env, db);
+  if (pathname === '/api/likes/batch-counts' && method === 'POST') return await handleBatchGetLikeCounts(request, env, db);
 
   return null;
 }

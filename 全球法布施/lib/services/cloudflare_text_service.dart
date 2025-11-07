@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:gbk_codec/gbk_codec.dart';
 import 'package:global_dharma_sharing/core/config/app_config.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'dart:io';
+import 'package:global_dharma_sharing/services/shared_asset_manager.dart';
 
 class CloudflareTextService {
   static final _random = Random();
@@ -12,6 +14,7 @@ class CloudflareTextService {
   static final List<Map<String, dynamic>> _preloadQueue = [];
   static bool _isPreloading = false;
   static const int _queueSize = 21;
+  final SharedAssetManager _sharedAssetManager = SharedAssetManager();
 
   // 硬编码的佛经文本内容
   static final List<Map<String, String>> _sampleTexts = [
@@ -159,6 +162,8 @@ class CloudflareTextService {
   /// 从本地manifest读取文件列表，然后从云端下载内容
   Future<Map<String, dynamic>?> _getCloudTextFromLocalManifest() async {
     try {
+      await _sharedAssetManager.initialize();
+
       // 加载本地manifest
       if (_cachedManifest == null) {
         final manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
@@ -182,9 +187,45 @@ class CloudflareTextService {
       final selectedFile = txtFiles[_random.nextInt(txtFiles.length)];
       print('Selected file from local manifest: $selectedFile');
 
+      // 修正路径：如果路径不包含built_in，则添加
+      String requestPath = selectedFile;
+      if (!selectedFile.contains('built_in') && selectedFile.startsWith('assets/')) {
+        requestPath = selectedFile.replaceFirst('assets/', 'assets/built_in/');
+        print('Corrected path to: $requestPath');
+      }
+
+      // 检查是否已下载
+      if (_sharedAssetManager.isAssetDownloaded(requestPath)) {
+        print('素材已下载，从本地读取: $requestPath');
+        final file = await _sharedAssetManager.getDownloadedAsset(requestPath);
+        if (file != null) {
+          String content;
+          if (file.bytes != null) {
+            try {
+              content = gbk_bytes.decode(file.bytes!);
+            } catch (e) {
+              content = utf8.decode(file.bytes!, allowMalformed: true);
+            }
+          } else if (file.path != null) {
+            final fileContent = await File(file.path!).readAsBytes();
+            try {
+              content = gbk_bytes.decode(fileContent);
+            } catch (e) {
+              content = utf8.decode(fileContent, allowMalformed: true);
+            }
+          } else {
+            return null;
+          }
+
+          final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
+          content = _cleanDecompilerWatermark(content);
+          return {'title': fileName, 'content': content, 'filePath': selectedFile};
+        }
+      }
+
       // 从Cloudflare下载内容
       final contentResponse = await http
-          .get(Uri.parse('$baseUrl/$selectedFile'))
+          .get(Uri.parse('$baseUrl/$requestPath'))
           .timeout(const Duration(seconds: 2));
 
       if (contentResponse.statusCode == 200) {
@@ -197,6 +238,9 @@ class CloudflareTextService {
           print('GBK decoding failed: $e, trying UTF-8');
           content = utf8.decode(contentResponse.bodyBytes, allowMalformed: true);
         }
+
+        // 标记为已下载
+        await _sharedAssetManager.markAssetDownloaded(requestPath);
 
         final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
         content = _cleanDecompilerWatermark(content);

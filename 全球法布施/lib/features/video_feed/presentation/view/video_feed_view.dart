@@ -5,6 +5,7 @@ import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_
 import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_cubit.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_state.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_item.dart';
+import 'package:global_dharma_sharing/services/like_service.dart';
 import 'package:preload_page_view/preload_page_view.dart' hide PageScrollPhysics;
 import 'package:video_player/video_player.dart';
 
@@ -74,6 +75,10 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
       final state = context.read<VideoFeedCubit>().state;
       if (state.videos.isNotEmpty) {
         setState(() => _videos = state.videos);
+
+        // 获取点赞数
+        final contentIds = state.videos.map((v) => v.id).toList();
+        await LikeService().fetchLikeCounts(contentIds);
 
         await _initAndPlayVideo(0);
       }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
+import '../services/like_service.dart';
 import '../services/membership_service.dart';
 import '../services/alipay_auth_service.dart';
 import 'user_model.dart';
@@ -109,6 +110,7 @@ class AuthModel extends ChangeNotifier {
           alipayUserId: _currentUser!.alipayUserId,
         );
         await _authService.setAuth(token, basicUserModel);
+        LikeService().setAuthToken(token);
 
         notifyListeners(); // 立即更新UI显示登录状态
 
@@ -623,6 +625,7 @@ class AuthModel extends ChangeNotifier {
       _currentUser = null;
       _token = null;
       _clearError();
+      LikeService().setAuthToken(null);
 
       // 清除存储的认证信息
       final prefs = await SharedPreferences.getInstance();
