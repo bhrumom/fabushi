@@ -1,155 +1,96 @@
 import { jsonResponse } from '../utils/response.js';
 
-// 获取所有txt文件列表（包括乾隆大藏经）
-async function getTextFiles(env) {
-  // 使用预定义的文件列表（从dharma_assets.dart生成）
-  const files = [
-    // 经文
-    { path: 'assets/built_in/经文/般若波罗蜜多心经.txt', category: '经文' },
-    { path: 'assets/built_in/经文/妙法莲华经精选.txt', category: '经文' },
-    { path: 'assets/built_in/经文/智慧法语.txt', category: '经文' },
-    { path: 'assets/built_in/经文/阿弥陀佛圣号.txt', category: '经文' },
-    // 咒语
-    { path: 'assets/built_in/咒语/772陀罗尼梵音(hum版).txt', category: '咒语' },
-    { path: 'assets/built_in/咒语/慈悲咒语.txt', category: '咒语' },
-    { path: 'assets/built_in/咒语/和平祈愿.txt', category: '咒语' },
-  ];
-  
-  // 如果需要搜索乾隆大藏经，需要从manifest读取文件列表
-  // 这里先返回基础文件列表
-  return files;
-}
-
-// 从R2或静态资源获取文件列表
-async function getAllTextFilesFromManifest(env) {
+// 使用D1数据库搜索文本
+export async function handleSearch(request, env, db) {
   try {
-    // 尝试读取asset-manifest.json
-    const manifestUrl = new URL('/assets/data/asset-manifest.json', 'https://dummy.local');
-    const manifestResponse = await env.ASSETS.fetch(manifestUrl.toString());
-    
-    if (manifestResponse.ok) {
-      const manifest = await manifestResponse.json();
-      const txtFiles = [];
-      
-      // manifest是数组格式
-      for (const item of manifest) {
-        const path = item.key;
-        if (path && path.endsWith('.txt')) {
-          let category = '经文';
-          if (path.includes('咒语')) category = '咒语';
-          else if (path.includes('乾隆大藏经')) category = '乾隆大藏经';
-          
-          txtFiles.push({ path, category });
-        }
-      }
-      
-      console.log(`Found ${txtFiles.length} text files in manifest`);
-      return txtFiles;
-    }
-  } catch (e) {
-    console.error('Error reading manifest:', e);
-  }
-  
-  // 如果读取manifest失败，返回基础列表
-  return getTextFiles(env);
-}
-
-// 读取文件内容
-async function readTextFile(env, path) {
-  try {
-    // 确保路径以 / 开头
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-    const fileUrl = new URL(normalizedPath, 'https://dummy.local');
-    const response = await env.ASSETS.fetch(fileUrl.toString());
-    if (response.ok) {
-      return await response.text();
-    }
-    console.log(`File not found: ${normalizedPath}, status: ${response.status}`);
-  } catch (e) {
-    console.error(`Error reading ${path}:`, e);
-  }
-  return null;
-}
-
-// 搜索文本
-export async function handleSearch(request, env) {
-  try {
-    console.log('Search handler called');
-    console.log('env.ASSETS:', !!env?.ASSETS);
-    
-    if (!env || !env.ASSETS) {
-      console.error('ASSETS not available');
-      return jsonResponse({ error: 'ASSETS not available', query: '', total: 0, results: [] }, 500);
-    }
-
     const url = new URL(request.url);
     const query = url.searchParams.get('q') || '';
-    const includeAll = url.searchParams.get('all') === 'true';
-    
-    console.log('Search query:', query, 'includeAll:', includeAll);
+    const category = url.searchParams.get('category'); // 可选：按分类筛选
+    const limit = parseInt(url.searchParams.get('limit') || '50');
+    const offset = parseInt(url.searchParams.get('offset') || '0');
     
     if (!query) {
       return jsonResponse({ query: '', total: 0, results: [] });
     }
 
-    const files = includeAll ? await getAllTextFilesFromManifest(env) : await getTextFiles(env);
-  const results = [];
-  const queryLower = query.toLowerCase();
+    // 构建SQL查询
+    const searchPattern = `%${query}%`;
+    let sql = `
+      SELECT id, title, content, file_path, category,
+             CASE 
+               WHEN title LIKE ? THEN 1
+               ELSE 0
+             END as title_match
+      FROM text_contents
+      WHERE title LIKE ? OR content LIKE ?
+    `;
+    
+    const params = [searchPattern, searchPattern, searchPattern];
+    
+    // 添加分类筛选
+    if (category) {
+      sql += ' AND category = ?';
+      params.push(category);
+    }
+    
+    // 排序：标题匹配优先
+    sql += ' ORDER BY title_match DESC, id ASC';
+    
+    // 分页
+    sql += ' LIMIT ? OFFSET ?';
+    params.push(limit, offset);
 
-  for (const file of files) {
-    const content = await readTextFile(env, file.path);
-    if (!content) continue;
-
-    const title = file.path.split('/').pop().replace('.txt', '');
-    const titleLower = title.toLowerCase();
-    const contentLower = content.toLowerCase();
-
-    // 检查标题或内容是否匹配
-    if (titleLower.includes(queryLower) || contentLower.includes(queryLower)) {
-      // 生成预览
-      let preview = content;
+    const { results } = await db.prepare(sql).bind(...params).all();
+    
+    // 生成预览
+    const formattedResults = results.map(row => {
+      const queryLower = query.toLowerCase();
+      const contentLower = row.content.toLowerCase();
       const index = contentLower.indexOf(queryLower);
       
+      let preview = row.content;
       if (index !== -1) {
         const start = Math.max(0, index - 50);
-        const end = Math.min(content.length, index + query.length + 150);
+        const end = Math.min(row.content.length, index + query.length + 150);
         preview = (start > 0 ? '...' : '') + 
-                  content.substring(start, end) + 
-                  (end < content.length ? '...' : '');
+                  row.content.substring(start, end) + 
+                  (end < row.content.length ? '...' : '');
       } else {
-        preview = content.substring(0, 200);
+        preview = row.content.substring(0, 200);
       }
-
-      results.push({
-        id: file.path,
-        title,
-        path: file.path,
-        category: file.category,
+      
+      return {
+        id: row.file_path,
+        title: row.title,
+        path: row.file_path,
+        category: row.category,
         preview,
-        contentLength: content.length,
-        titleMatch: titleLower.includes(queryLower)
-      });
-    }
-  }
+        contentLength: row.content.length,
+        titleMatch: row.title_match === 1
+      };
+    });
 
-  // 标题匹配优先排序
-  results.sort((a, b) => {
-    if (a.titleMatch && !b.titleMatch) return -1;
-    if (!a.titleMatch && b.titleMatch) return 1;
-    return 0;
-  });
+    // 获取总数
+    let countSql = 'SELECT COUNT(*) as total FROM text_contents WHERE title LIKE ? OR content LIKE ?';
+    const countParams = [searchPattern, searchPattern];
+    if (category) {
+      countSql += ' AND category = ?';
+      countParams.push(category);
+    }
+    const { total } = await db.prepare(countSql).bind(...countParams).first();
 
     return jsonResponse({
       query,
-      total: results.length,
-      results
+      category: category || 'all',
+      total: total || 0,
+      limit,
+      offset,
+      results: formattedResults
     });
   } catch (error) {
     console.error('Search error:', error);
-    console.error('Error stack:', error.stack);
     return jsonResponse({ 
-      error: error.message, 
-      stack: error.stack,
+      error: error.message,
       query: query || '', 
       total: 0, 
       results: [] 
@@ -157,27 +98,52 @@ export async function handleSearch(request, env) {
   }
 }
 
-// 获取经文内容
-export async function handleGetTextContent(request, env) {
-  const url = new URL(request.url);
-  const path = url.searchParams.get('path');
-  
-  if (!path) {
-    return jsonResponse({ error: '缺少path参数' }, 400);
+// 获取经文内容（从D1）
+export async function handleGetTextContent(request, env, db) {
+  try {
+    const url = new URL(request.url);
+    const path = url.searchParams.get('path');
+    
+    if (!path) {
+      return jsonResponse({ error: '缺少path参数' }, 400);
+    }
+
+    const result = await db
+      .prepare('SELECT title, content, file_path, category FROM text_contents WHERE file_path = ?')
+      .bind(path)
+      .first();
+
+    if (!result) {
+      return jsonResponse({ error: '未找到内容' }, 404);
+    }
+
+    return jsonResponse({
+      title: result.title,
+      content: result.content,
+      path: result.file_path,
+      category: result.category
+    });
+  } catch (error) {
+    console.error('Get text content error:', error);
+    return jsonResponse({ error: error.message }, 500);
   }
+}
 
-  const content = await readTextFile(env, path);
-  if (!content) {
-    return jsonResponse({ error: '未找到内容' }, 404);
+// 获取所有分类
+export async function handleGetCategories(request, env, db) {
+  try {
+    const { results } = await db
+      .prepare('SELECT DISTINCT category, COUNT(*) as count FROM text_contents GROUP BY category')
+      .all();
+
+    return jsonResponse({
+      categories: results.map(r => ({
+        name: r.category,
+        count: r.count
+      }))
+    });
+  } catch (error) {
+    console.error('Get categories error:', error);
+    return jsonResponse({ error: error.message }, 500);
   }
-
-  const title = path.split('/').pop().replace('.txt', '');
-  const category = path.includes('经文') ? '经文' : '咒语';
-
-  return jsonResponse({
-    title,
-    content,
-    path,
-    category
-  });
 }

@@ -5,7 +5,7 @@ import { handleCreateAlipayOrder, handleQueryAlipayOrder, handleAlipayNotify } f
 import { handleCreateRedeemCode, handleUseRedeemCode, handleGetPurchaseHistory, handleGetRedeemHistory } from './handlers/redeem.js';
 import { handleCheckAdminStatus, handleListRedeemCodes, handleDeleteRedeemCode, handleGetAdminPrice } from './handlers/admin.js';
 import { handleGetAssetsList, handleR2List, handleR2Proxy } from './handlers/assets.js';
-import { handleSearch, handleIndexTexts } from './handlers/search.js';
+import { handleSearch, handleGetTextContent, handleGetCategories } from './handlers/search.js';
 import { handleGetLeaderboard, handleUpdateTransferData } from './handlers/leaderboard.js';
 import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts } from './handlers/likes.js';
 import { jsonResponse } from './utils/response.js';
@@ -61,8 +61,9 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/r2' && url.searchParams.has('file')) return await handleR2Proxy(request, env);
 
   // 搜索API
-  if (pathname === '/api/search' && method === 'GET') return await handleSearch(request, env);
-  if (pathname === '/api/search/index' && method === 'POST') return await handleIndexTexts(request, env);
+  if (pathname === '/api/search' && method === 'GET') return await handleSearch(request, env, db);
+  if (pathname === '/api/search/content' && method === 'GET') return await handleGetTextContent(request, env, db);
+  if (pathname === '/api/search/categories' && method === 'GET') return await handleGetCategories(request, env, db);
 
   // 排行榜API
   if (pathname === '/api/leaderboard' && method === 'GET') return await handleGetLeaderboard(request, env, db);
