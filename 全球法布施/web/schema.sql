@@ -129,9 +129,37 @@ CREATE TABLE IF NOT EXISTS text_contents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  category TEXT NOT NULL
+  file_path TEXT UNIQUE NOT NULL,
+  category TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_text_contents_title ON text_contents(title);
 CREATE INDEX idx_text_contents_category ON text_contents(category);
+CREATE INDEX idx_text_contents_file_path ON text_contents(file_path);
+
+-- 全文搜索索引（使用FTS5虚拟表提升搜索性能）
+CREATE VIRTUAL TABLE IF NOT EXISTS text_contents_fts USING fts5(
+  title,
+  content,
+  content='text_contents',
+  content_rowid='id'
+);
+
+-- FTS触发器：插入
+CREATE TRIGGER IF NOT EXISTS text_contents_ai AFTER INSERT ON text_contents BEGIN
+  INSERT INTO text_contents_fts(rowid, title, content)
+  VALUES (new.id, new.title, new.content);
+END;
+
+-- FTS触发器：删除
+CREATE TRIGGER IF NOT EXISTS text_contents_ad AFTER DELETE ON text_contents BEGIN
+  DELETE FROM text_contents_fts WHERE rowid = old.id;
+END;
+
+-- FTS触发器：更新
+CREATE TRIGGER IF NOT EXISTS text_contents_au AFTER UPDATE ON text_contents BEGIN
+  DELETE FROM text_contents_fts WHERE rowid = old.id;
+  INSERT INTO text_contents_fts(rowid, title, content)
+  VALUES (new.id, new.title, new.content);
+END;
