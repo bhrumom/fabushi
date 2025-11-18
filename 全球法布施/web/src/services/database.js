@@ -87,8 +87,8 @@ export class DatabaseService {
   }
 
   async getPurchaseHistory(username) {
-    const result = await this.db.prepare('SELECT * FROM purchase_history WHERE username = ? ORDER BY purchased_at DESC').bind(username).all();
-    return result.results;
+    const result = await this.db.prepare('SELECT * FROM purchase_history WHERE user_id = ? ORDER BY purchased_at DESC').bind(username).all();
+    return result.results || [];
   }
 
   // 兑换记录
@@ -103,8 +103,8 @@ export class DatabaseService {
   }
 
   async getRedeemHistory(username) {
-    const result = await this.db.prepare('SELECT * FROM redeem_history WHERE username = ? ORDER BY redeemed_at DESC').bind(username).all();
-    return result.results;
+    const result = await this.db.prepare('SELECT * FROM redeem_history WHERE user_id = ? ORDER BY redeemed_at DESC').bind(username).all();
+    return result.results || [];
   }
 
   // 兑换码列表

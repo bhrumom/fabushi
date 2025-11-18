@@ -22,14 +22,14 @@ class MembershipService {
 
   Future<Map<String, dynamic>> getMembershipStatus(String token) async {
     try {
-      // 统一使用 /api/alipay/check-membership 端点，它能处理所有类型的会员
-      final endpoint = Uri.parse(AppConfig.alipayMembershipStatusUrl).path;
+      // 使用 /api/stripe/membership-status 端点
+      final endpoint = Uri.parse(AppConfig.stripeMembershipStatusUrl).path;
       final response = await _apiClient.get(endpoint, token: token);
 
-      if (response['success'] == true) {
-        return {'success': true, 'membership': response['membership']};
+      if (response != null) {
+        return {'success': true, 'membership': response};
       } else {
-        return {'success': false, 'message': response['message'] ?? '获取会员状态失败'};
+        return {'success': false, 'message': '获取会员状态失败'};
       }
     } catch (e) {
       debugPrint('获取会员状态失败: $e');

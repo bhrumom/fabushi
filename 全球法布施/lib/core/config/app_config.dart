@@ -27,25 +27,14 @@ class AppConfig {
   static bool get isWeb => kIsWeb;
 
   // API配置
-  static const String primaryBackendUrl = 'https://ombhrum.com';
+  static const String primaryBackendUrl = 'https://flutter.ombhrum.com';
   static const String cloudflareWorkerProdUrl = 'https://flutter.ombhrum.com';
-  static const String cloudflareWorkerDevUrl = 'https://flutter-dev.ombhrum.com';
+  static const String cloudflareWorkerDevUrl = 'https://flutter.ombhrum.com';
   static const String localDevUrl = 'http://localhost:8787';
 
   static String get currentBackendUrl {
-    if (isWeb) {
-      final currentUrl = Uri.base.toString();
-      if (currentUrl.contains('fabushi-flutter-web-dev')) {
-        return '';
-      } else if (currentUrl.contains('fabushi-flutter-web-prod')) {
-        return '';
-      } else if (currentUrl.contains('localhost')) {
-        return cloudflareWorkerDevUrl;
-      }
-      return cloudflareWorkerProdUrl;
-    } else {
-      return isProduction ? cloudflareWorkerProdUrl : cloudflareWorkerDevUrl;
-    }
+    // 统一使用 flutter.ombhrum.com 作为后端地址
+    return primaryBackendUrl;
   }
 
   static String get apiUrl => currentBackendUrl;
@@ -147,12 +136,11 @@ class AppConfig {
 
   // 备用地址
   static List<String> get fallbackUrls {
-    final workerUrl = isProduction ? cloudflareWorkerProdUrl : cloudflareWorkerDevUrl;
-    return [workerUrl, primaryBackendUrl];
+    return [primaryBackendUrl];
   }
 
   // 调试配置
-  static const bool enableApiLogging = false;
+  static const bool enableApiLogging = true;
   static const bool debugMode = bool.fromEnvironment('DEBUG', defaultValue: false);
 
   static void printConfigInfo() {
