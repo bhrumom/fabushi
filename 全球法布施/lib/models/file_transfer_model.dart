@@ -282,34 +282,30 @@ class FileTransferModel extends ChangeNotifier {
         taskId: taskId,
         downloadManager: _sharedAssetManager.downloadManager,
         onComplete: () async {
-          debugPrint('📥 下载完成回调开始执行');
+          debugPrint('📥 下载完成回调开始执行 - 文件: $fileName');
 
           try {
-            final task = _sharedAssetManager.downloadManager.tasks[taskId];
-            if (task != null && task.status == DownloadStatus.completed) {
-              debugPrint('📁 处理下载完成的文件: $fileName');
-
-              final file = await _sharedAssetManager.getDownloadedAsset(assetPath);
-              if (file != null) {
-                addFiles([file]);
-                await _sharedAssetManager.markAssetDownloaded(assetPath);
-                await Future.delayed(Duration(milliseconds: 200));
-              }
+            // 先标记为已下载
+            await _sharedAssetManager.markAssetDownloaded(assetPath);
+            debugPrint('✅ 已标记为已下载: $assetPath');
+            
+            // 等待一下确保文件完全写入
+            await Future.delayed(Duration(milliseconds: 100));
+            
+            final file = await _sharedAssetManager.getDownloadedAsset(assetPath);
+            debugPrint('💾 获取已下载文件: ${file?.name}, 大小: ${file?.size}');
+            
+            if (file != null) {
+              debugPrint('✅ 即将添加文件到列表: ${file.name}');
+              addFiles([file]);
+              debugPrint('✅ 文件已添加到列表，当前总数: ${_selectedFiles.length}');
+            } else {
+              debugPrint('❌ 无法获取已下载的文件: $assetPath');
             }
           } catch (e) {
             debugPrint('❌ 下载完成处理出错: $e');
           } finally {
             _sharedAssetManager.clearTaskMapping(assetPath);
-
-            if (!_isDisposed && context.mounted) {
-              try {
-                if (Navigator.of(context).canPop()) {
-                  Navigator.of(context).pop();
-                }
-              } catch (e) {
-                debugPrint('⚠️ 关闭对话框时出错: $e');
-              }
-            }
           }
         },
       ),
@@ -318,17 +314,20 @@ class FileTransferModel extends ChangeNotifier {
 
   void addFiles(List<PlatformFile> files) {
     _selectedFiles.addAll(files);
-    notifyListeners();
+    debugPrint('📁 添加文件: ${files.map((f) => f.name).join(', ')}，当前总数: ${_selectedFiles.length}');
+    notifyListeners(); // 立即通知，不使用防抖
   }
 
   void removeFile(PlatformFile file) {
     _selectedFiles.remove(file);
-    notifyListeners();
+    debugPrint('🗑️ 移除文件: ${file.name}，当前总数: ${_selectedFiles.length}');
+    notifyListeners(); // 立即通知，不使用防抖
   }
 
   void clearFiles() {
     _selectedFiles.clear();
-    notifyListeners();
+    debugPrint('🧹 清空所有文件');
+    notifyListeners(); // 立即通知，不使用防抖
   }
 
   String getFileType(String fileName) {

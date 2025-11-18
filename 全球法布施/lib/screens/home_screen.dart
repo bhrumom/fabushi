@@ -197,12 +197,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildFileList() {
-    // 性能优化：只监听文件列表变化
-    return Selector<FileTransferModel, List<dynamic>>(
-      selector: (_, model) => [model.selectedFiles, model.hasFiles],
-      builder: (context, data, _) {
+    // 修复：正确监听文件列表变化
+    return Selector<FileTransferModel, String>(
+      selector: (_, model) => '${model.selectedFiles.length}_${model.selectedFiles.map((f) => f.name).join('|')}',
+      builder: (context, _, __) {
         final model = context.read<FileTransferModel>();
-        final hasFiles = data[1] as bool;
+        final hasFiles = model.hasFiles;
 
         return Card(
           elevation: 1,
