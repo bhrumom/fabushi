@@ -35,6 +35,9 @@ class SharedAssetManager {
 
   /// 获取已下载的素材文件
   Future<PlatformFile?> getDownloadedAsset(String assetPath) async {
+    // 关键修复：让出主线程控制权
+    await Future.delayed(Duration.zero);
+    
     final fileName = assetPath.split('/').last;
     debugPrint('🔍 尝试获取已下载素材: $fileName');
 
@@ -86,6 +89,8 @@ class SharedAssetManager {
     final Map<String, PlatformFile?> result = {};
     
     for (String assetPath in assetPaths) {
+      // 关键修复：每次处理前让出主线程控制权
+      await Future.delayed(Duration.zero);
       result[assetPath] = await getDownloadedAsset(assetPath);
     }
     
@@ -161,6 +166,9 @@ class SharedAssetManager {
   Future<List<int>?> _getFileFromWebStorage(String fileName) async {
     try {
       if (!kIsWeb) return null;
+
+      // 关键修复：让出主线程控制权
+      await Future.delayed(Duration.zero);
 
       final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
       final List<dynamic> savedFiles = json.decode(savedFilesStr);

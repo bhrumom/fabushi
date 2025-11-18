@@ -120,6 +120,8 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
     for (final videoUrl in videosToPreload) {
       if (!_preloadQueue.contains(videoUrl)) {
         _preloadQueue.add(videoUrl);
+        // 关键修复：让出主线程控制权，避免阻塞UI
+        await Future.delayed(Duration.zero);
         await _preloadVideo(videoUrl);
       }
     }
@@ -127,6 +129,9 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
 
   Future<void> _preloadVideo(String videoUrl) async {
     try {
+      // 关键修复：让出主线程控制权
+      await Future.delayed(Duration.zero);
+      
       final file = await getCachedVideoFile(videoUrl);
       _preloadedFiles[videoUrl] = file;
 
@@ -143,6 +148,9 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
     if (_preloadedFiles.containsKey(videoUrl)) {
       return _preloadedFiles[videoUrl]!;
     }
+
+    // 关键修复：让出主线程控制权
+    await Future.delayed(Duration.zero);
 
     final cacheManager = DefaultCacheManager();
     final fileInfo = await cacheManager.getFileFromCache(videoUrl);

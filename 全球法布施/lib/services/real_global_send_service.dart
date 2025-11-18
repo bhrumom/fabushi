@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:isolate';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -90,6 +91,9 @@ class RealGlobalSendService {
         for (final file in files) {
           if (!_isRunning) break;
 
+          // 关键修复：在处理每个文件前让出主线程控制权
+          await Future.delayed(Duration.zero);
+
           final countriesSent = await _sendFileToAllCountries(file);
 
           _sentCount++;
@@ -102,6 +106,9 @@ class RealGlobalSendService {
           onLog(
             '📊 文件 ${file.name}: ${fileSizeMB.toStringAsFixed(2)} MB × $countriesSent 国 = ${(fileSizeMB * countriesSent).toStringAsFixed(2)} MB',
           );
+          
+          // 文件处理完成后稍作延迟
+          await Future.delayed(Duration(milliseconds: 100));
         }
       } while (isLoop && _isRunning);
     } finally {
@@ -198,8 +205,13 @@ class RealGlobalSendService {
 
       _currentCountryIndex++;
 
-      // 添加小延迟避免过于频繁的请求
-      await Future.delayed(Duration(milliseconds: 100));
+      // 关键修复：让出主线程控制权，避免阻塞UI
+      await Future.delayed(Duration.zero);
+      
+      // 每10个国家后增加稍长延迟，进一步确保UI响应性
+      if (i % 10 == 0) {
+        await Future.delayed(Duration(milliseconds: 50));
+      }
     }
 
     onLog('✅ 文件 ${file.name} 发送完成 - 成功: $successCount, 失败: $failCount');
@@ -213,6 +225,9 @@ class RealGlobalSendService {
     String countryName,
   ) async {
     try {
+      // 关键修复：在网络请求前让出主线程控制权
+      await Future.delayed(Duration.zero);
+      
       // 准备发送数据
       final requestData = {
         'fileName': file.name,
@@ -232,7 +247,7 @@ class RealGlobalSendService {
               headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
               body: jsonEncode(requestData),
             )
-            .timeout(Duration(seconds: 10));
+            .timeout(Duration(seconds: 5)); // 减少超时时间，提高响应性
 
         if (response.statusCode != 200) {
           throw Exception('HTTP ${response.statusCode}');
@@ -249,7 +264,7 @@ class RealGlobalSendService {
                 'userId': 1,
               }),
             )
-            .timeout(Duration(seconds: 10));
+            .timeout(Duration(seconds: 5)); // 减少超时时间，提高响应性
 
         if (response.statusCode != 201) {
           throw Exception('HTTP ${response.statusCode}');
