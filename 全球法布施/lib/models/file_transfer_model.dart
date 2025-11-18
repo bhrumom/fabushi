@@ -97,9 +97,11 @@ class FileTransferModel extends ChangeNotifier {
     _hasPendingUpdate = true;
 
     _batchUpdateTimer?.cancel();
-    _batchUpdateTimer = Timer(const Duration(milliseconds: 16), () {
+    _batchUpdateTimer = Timer(const Duration(milliseconds: 16), () async {
       if (!_isDisposed) {
         _hasPendingUpdate = false;
+        // 关键修复：让出主线程控制权，避免阻塞UI
+        await Future.delayed(Duration.zero);
         notifyListeners();
       }
     });
@@ -124,7 +126,7 @@ class FileTransferModel extends ChangeNotifier {
       } catch (e) {
         debugPrint('持久化失败: $e');
       }
-      // 避免阻塞主线程
+      // 关键修复：每次持久化操作后让出主线程控制权
       await Future.delayed(Duration.zero);
     }
 
@@ -486,13 +488,19 @@ class FileTransferModel extends ChangeNotifier {
 
   void updateProgress(int count) {
     _globalSentCount = count;
-    _schedulePersist(_persistTransferState);
+    // 关键修复：减少持久化频率，避免过度阻塞UI
+    if (count % 10 == 0) {
+      _schedulePersist(_persistTransferState);
+    }
     _scheduleNotify();
   }
 
   void updateDataSent(double dataMB) {
     _globalDataSentMB = dataMB;
-    _schedulePersist(_persistTransferState);
+    // 关键修复：减少持久化频率，避免过度阻塞UI
+    if (dataMB.toInt() % 10 == 0) {
+      _schedulePersist(_persistTransferState);
+    }
     _scheduleNotify();
   }
 
@@ -559,14 +567,20 @@ class FileTransferModel extends ChangeNotifier {
     final index = _countryStatuses.indexWhere((status) => status.countryName == countryName);
     if (index != -1) {
       _countryStatuses[index] = _countryStatuses[index].copyWith(status: status);
-      _schedulePersist(_persistCountryStatuses);
+      // 关键修复：只在状态变为成功或失败时持久化，减少频率
+      if (status == SendStatus.success || status == SendStatus.failed) {
+        _schedulePersist(_persistCountryStatuses);
+      }
       _scheduleNotify();
     }
   }
 
   void updateLog(String log) {
     _currentLog = log;
-    _schedulePersist(_persistTransferState);
+    // 关键修复：日志更新不需要频繁持久化，只在重要日志时持久化
+    if (log.contains('成功') || log.contains('失败') || log.contains('完成')) {
+      _schedulePersist(_persistTransferState);
+    }
     _scheduleNotify();
   }
 

@@ -117,13 +117,18 @@ class CloudflareTextService {
     if (_isPreloading || _preloadQueue.length >= _queueSize) return;
 
     _isPreloading = true;
-    _loadOneToQueue().then((_) {
+    // 关键修复：使用Future.delayed确保不阻塞主线程
+    Future.delayed(Duration.zero, () async {
+      await _loadOneToQueue();
       _isPreloading = false;
     });
   }
 
   /// 加载一个文本到队列
   Future<void> _loadOneToQueue() async {
+    // 关键修复：让出主线程控制权
+    await Future.delayed(Duration.zero);
+    
     final content = await _getCloudTextFromLocalManifest();
     if (content != null) {
       _preloadQueue.add(content);
@@ -138,13 +143,16 @@ class CloudflareTextService {
 
     print('开始后台预加载 $_queueSize 个文本...');
 
-    // 异步后台加载，不阻塞
-    Future.microtask(() async {
+    // 关键修复：使用真正的异步后台加载，不阻塞主线程
+    Future.delayed(Duration.zero, () async {
       int loaded = 0;
       int attempts = 0;
       const maxAttempts = _queueSize * 3;
 
       while (loaded < _queueSize && attempts < maxAttempts) {
+        // 关键修复：每次加载前让出主线程控制权
+        await Future.delayed(Duration.zero);
+        
         final content = await _getCloudTextFromLocalManifest();
         if (content != null) {
           _preloadQueue.add(content);
@@ -152,6 +160,11 @@ class CloudflareTextService {
           print('预加载进度: $loaded/$_queueSize');
         }
         attempts++;
+        
+        // 关键修复：每加载一个内容后短暂延迟，确保UI响应性
+        if (loaded % 3 == 0) {
+          await Future.delayed(Duration(milliseconds: 10));
+        }
       }
 
       print('预加载完成: ${_preloadQueue.length} 个文本');
@@ -161,18 +174,22 @@ class CloudflareTextService {
 
   /// 从本地manifest读取文件列表，然后从云端下载内容
   Future<Map<String, dynamic>?> _getCloudTextFromLocalManifest() async {
+    String? selectedFile;
     try {
       await _sharedAssetManager.initialize();
 
       // 加载本地manifest
       if (_cachedManifest == null) {
+        // 关键修复：加载manifest时也让出主线程控制权
+        await Future.delayed(Duration.zero);
         final manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
+        await Future.delayed(Duration.zero); // JSON解析前也让出控制权
         final List<dynamic> manifestData = json.decode(manifestString);
         _cachedManifest = manifestData.cast<Map<String, dynamic>>();
         print('Loaded local manifest with ${_cachedManifest!.length} items');
       }
 
-      // 筛选txt文件
+      // 筛选txt文件，优先选择较小的文件以减少超时
       final txtFiles = _cachedManifest!
           .where((item) => item['key']?.toString().endsWith('.txt') == true)
           .map((item) => item['key'].toString())
@@ -183,9 +200,20 @@ class CloudflareTextService {
         return null;
       }
 
-      // 随机选择一个文件
-      final selectedFile = txtFiles[_random.nextInt(txtFiles.length)];
+      // 优先选择单卷或较小的文件
+      final preferredFiles = txtFiles.where((file) => 
+          file.contains('一卷') || 
+          file.contains('二卷') || 
+          file.contains('三卷') ||
+          file.contains('心经') ||
+          file.contains('咒语')
+      ).toList();
+      
+      selectedFile = preferredFiles.isNotEmpty 
+          ? preferredFiles[_random.nextInt(preferredFiles.length)]
+          : txtFiles[_random.nextInt(txtFiles.length)];
       print('Selected file from local manifest: $selectedFile');
+      print('File size estimate: ${selectedFile.contains('一卷') ? 'Small' : selectedFile.contains('十卷') ? 'Large' : 'Medium'}');
 
       // 修正路径：如果路径不包含built_in，则添加
       String requestPath = selectedFile;
@@ -223,12 +251,41 @@ class CloudflareTextService {
         }
       }
 
-      // 从Cloudflare下载内容
-      final contentResponse = await http
-          .get(Uri.parse('$baseUrl/$requestPath'))
-          .timeout(const Duration(seconds: 2));
+      // 关键修复：网络请求前让出主线程控制权
+      await Future.delayed(Duration.zero);
+      
+      // 从Cloudflare下载内容 - 增加超时时间以处理大文件
+      http.Response? contentResponse;
+      int retryCount = 0;
+      const maxRetries = 2;
+      
+      while (retryCount <= maxRetries) {
+        try {
+          print('Attempting to download: $baseUrl/$requestPath (attempt ${retryCount + 1})');
+          final startTime = DateTime.now();
+          contentResponse = await http
+              .get(Uri.parse('$baseUrl/$requestPath'))
+              .timeout(const Duration(seconds: 10));
+          final duration = DateTime.now().difference(startTime);
+          print('Download completed in ${duration.inMilliseconds}ms');
+          break; // 成功则退出循环
+        } catch (e) {
+          retryCount++;
+          if (e.toString().contains('TimeoutException')) {
+            print('Timeout on attempt $retryCount for $requestPath after 10 seconds');
+          } else {
+            print('Network error on attempt $retryCount for $requestPath: $e');
+          }
+          
+          if (retryCount > maxRetries) {
+            rethrow; // 超过最大重试次数，抛出异常
+          }
+          
+          await Future.delayed(Duration(milliseconds: 500 * retryCount)); // 指数退避
+        }
+      }
 
-      if (contentResponse.statusCode == 200) {
+      if (contentResponse != null && contentResponse.statusCode == 200) {
         // 文件是GBK编码
         String content;
         try {
@@ -249,10 +306,31 @@ class CloudflareTextService {
         return {'title': fileName, 'content': content, 'filePath': selectedFile};
       }
       // 404等错误立即返回
-      print('Failed to download file: ${contentResponse.statusCode}');
+      if (contentResponse != null) {
+        print('Failed to download file: ${contentResponse.statusCode}');
+      } else {
+        print('Failed to download file: contentResponse is null');
+      }
       return null;
     } catch (e) {
-      print('Error loading from local manifest: $e');
+      if (e.toString().contains('TimeoutException')) {
+        print('Timeout loading file ${selectedFile ?? 'unknown'}: $e');
+        print('Falling back to sample texts due to timeout');
+      } else {
+        print('Error loading from local manifest: $e');
+        print('Falling back to sample texts due to error');
+      }
+      
+      // 回退到样本文本
+      if (_sampleTexts.isNotEmpty) {
+        final sampleText = _sampleTexts[_random.nextInt(_sampleTexts.length)];
+        return {
+          'title': sampleText['title']!,
+          'content': sampleText['content']!,
+          'filePath': 'sample_text'
+        };
+      }
+      
       return null;
     }
   }
