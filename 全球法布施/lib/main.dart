@@ -43,11 +43,15 @@ void main() async {
     debugPrint('⚠️ Firebase初始化失败: $e');
   }
 
-  // 异步初始化
-  AppInitializer.initialize().catchError((e) => debugPrint('初始化失败: $e'));
+  // 延迟异步初始化，避免阻塞启动
+  Future.delayed(const Duration(milliseconds: 100), () {
+    AppInitializer.initialize().catchError((e) => debugPrint('初始化失败: $e'));
+  });
 
-  // Video Feed依赖
-  setupVideoFeedDependencies();
+  // 延迟Video Feed依赖初始化
+  Future.delayed(const Duration(milliseconds: 200), () {
+    setupVideoFeedDependencies();
+  });
 
   runApp(const MyApp());
 }

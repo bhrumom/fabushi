@@ -13,19 +13,22 @@ class UnifiedApiService {
   UnifiedApiService._internal();
 
   // HTTP客户端
-  late final http.Client _client;
+  http.Client? _client;
 
   // 初始化
   void initialize() {
-    _client = http.Client();
-    if (AppConfig.enableApiLogging) {
-      AppConfig.printCurrentConfig();
+    if (_client == null) {
+      _client = http.Client();
+      if (AppConfig.enableApiLogging) {
+        AppConfig.printCurrentConfig();
+      }
     }
   }
 
   // 销毁
   void dispose() {
-    _client.close();
+    _client?.close();
+    _client = null;
   }
 
   // ===== 通用请求方法 =====
@@ -45,7 +48,7 @@ class UnifiedApiService {
     }
 
     return await _executeWithRetry(() async {
-      final response = await _client
+      final response = await (_client ?? http.Client())
           .get(uri, headers: requestHeaders)
           .timeout(AppConfig.requestTimeout);
 
@@ -75,7 +78,7 @@ class UnifiedApiService {
     }
 
     return await _executeWithRetry(() async {
-      final response = await _client
+      final response = await (_client ?? http.Client())
           .post(uri, headers: requestHeaders, body: requestBody)
           .timeout(AppConfig.requestTimeout);
 
@@ -103,7 +106,7 @@ class UnifiedApiService {
     }
 
     return await _executeWithRetry(() async {
-      final response = await _client
+      final response = await (_client ?? http.Client())
           .put(uri, headers: requestHeaders, body: requestBody)
           .timeout(AppConfig.requestTimeout);
 
@@ -129,7 +132,7 @@ class UnifiedApiService {
     }
 
     return await _executeWithRetry(() async {
-      final response = await _client
+      final response = await (_client ?? http.Client())
           .delete(uri, headers: requestHeaders)
           .timeout(AppConfig.requestTimeout);
 

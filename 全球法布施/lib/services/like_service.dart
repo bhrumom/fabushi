@@ -14,6 +14,8 @@ class LikeService extends ChangeNotifier {
   final Map<String, int> _likeCounts = {};
   bool _isInitialized = false;
   String? _authToken;
+  
+  bool get isInitialized => _isInitialized;
 
   static const String _storageKey = 'liked_items';
 
@@ -21,6 +23,7 @@ class LikeService extends ChangeNotifier {
     if (_isInitialized) return;
     await _loadLikedItems();
     _isInitialized = true;
+    notifyListeners(); // 确保UI更新
   }
 
   Future<void> _loadLikedItems() async {

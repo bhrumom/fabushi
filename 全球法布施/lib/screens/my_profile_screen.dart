@@ -201,6 +201,12 @@ class MyProfileScreen extends StatelessWidget {
 
   Widget _buildLikedSection(BuildContext context) {
     final likeService = LikeService();
+    
+    // 确保服务已初始化
+    if (!likeService.isInitialized) {
+      likeService.initialize();
+    }
+    
     return ListenableBuilder(
       listenable: likeService,
       builder: (context, _) {
