@@ -244,24 +244,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                   ),
           ),
           Positioned(top: 60, left: 20, right: 20, child: _buildStatusBar()),
-          Positioned(
-            top: 20,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  '🌍 全球法布施 - 实时传输轨迹',
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ),
+
           Positioned(
             top: 20,
             right: 20,
@@ -311,52 +294,14 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
               );
             },
           ),
-          Positioned(
-            bottom: 20,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: TextButton.icon(
-                onPressed: () => _globeKey.currentState?.clearBeams(),
-                icon: const Icon(Icons.clear_all, color: Colors.white70),
-                label: const Text('清除轨迹', style: TextStyle(color: Colors.white70)),
-              ),
-            ),
-          ),
+
         ],
       ),
     );
   }
 
   Widget _buildStatusBar() {
-    return Consumer<FileTransferModel>(
-      builder: (context, model, _) {
-        if (!model.isTransferring) return const SizedBox.shrink();
-
-        return Card(
-          color: Colors.black.withOpacity(0.7),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                Text('正在向全球发送经文...', style: const TextStyle(color: Colors.white, fontSize: 16)),
-                const SizedBox(height: 8),
-                LinearProgressIndicator(
-                  value: model.progress,
-                  backgroundColor: Colors.white24,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.cyan),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${(model.progress * 100).toStringAsFixed(0)}%',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+    return const SizedBox.shrink();
   }
 
   Widget _buildControlPanel(BuildContext context) {
