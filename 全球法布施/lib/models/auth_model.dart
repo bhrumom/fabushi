@@ -457,6 +457,10 @@ class AuthModel extends ChangeNotifier {
         );
 
         await _storeAuth();
+        
+        // 初始化点赞服务
+        await LikeService().initialize();
+        
         _setLoading(false);
         notifyListeners();
         return true;

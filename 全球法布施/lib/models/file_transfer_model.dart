@@ -18,6 +18,7 @@ import '../services/leaderboard_service.dart';
 import '../widgets/download_progress_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_html/html.dart' as html;
+import '../core/startup/deferred_loader.dart';
 
 enum TransferStatus { idle, transferring, completed, error }
 
@@ -64,16 +65,25 @@ class FileTransferModel extends ChangeNotifier {
   bool _isPersisting = false;
 
   FileTransferModel() {
-    _initializeModel();
+    // 延迟初始化，避免阻塞启动
+    DeferredLoader().scheduleTask(
+      'file_transfer_init',
+      const Duration(milliseconds: 300),
+      _initializeModel,
+    );
   }
 
   Future<void> _initializeModel() async {
-    await _loadPersistedState();
-    if (_isTransferring) {
-      _isTransferring = false;
-      _schedulePersist(_persistTransferState);
-      debugPrint('🔄 应用启动，清除传输状态');
-      _scheduleNotify();
+    try {
+      await _loadPersistedState();
+      if (_isTransferring) {
+        _isTransferring = false;
+        _schedulePersist(_persistTransferState);
+        debugPrint('🔄 应用启动，清除传输状态');
+        _scheduleNotify();
+      }
+    } catch (e) {
+      debugPrint('❌ FileTransferModel初始化失败: $e');
     }
   }
 
