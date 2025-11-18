@@ -3,6 +3,8 @@ import { handleSendVerificationCode, handleForgotPassword, handleResetPassword }
 import { handleGetWechatLoginUrl, handleGetAlipayLoginUrl, handleAlipayLogin, handleAlipayRegister, handleBindEmail, handleMacOSAlipayCallback } from './handlers/thirdparty.js';
 import { handleCreateAlipayOrder, handleQueryAlipayOrder, handleAlipayNotify } from './handlers/payment.js';
 import { handleCreateRedeemCode, handleUseRedeemCode, handleGetPurchaseHistory, handleGetRedeemHistory } from './handlers/redeem.js';
+import { handleCheckMembershipStatus, handleCheckAlipayMembership } from './handlers/membership.js';
+import { handleMigrateKvToD1 } from './handlers/migration.js';
 import { handleCheckAdminStatus, handleListRedeemCodes, handleDeleteRedeemCode, handleGetAdminPrice } from './handlers/admin.js';
 import { handleGetAssetsList, handleR2List, handleR2Proxy } from './handlers/assets.js';
 import { handleSearch, handleGetTextContent, handleGetCategories } from './handlers/search.js';
@@ -44,6 +46,10 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/alipay/create-order' && method === 'POST') return await handleCreateAlipayOrder(request, env, db);
   if (pathname === '/api/alipay/query-order' && method === 'GET') return await handleQueryAlipayOrder(request, env, db);
   if (pathname === '/api/alipay/notify' && method === 'POST') return await handleAlipayNotify(request, env, db);
+  if (pathname === '/api/alipay/check-membership' && method === 'GET') return await handleCheckAlipayMembership(request, env, db);
+
+  // 会员API
+  if (pathname === '/api/stripe/membership-status' && method === 'GET') return await handleCheckMembershipStatus(request, env, db);
 
   // 兑换码API
   if (pathname === '/api/admin/create-redeem-code' && method === 'POST') return await handleCreateRedeemCode(request, env, db);
@@ -73,6 +79,9 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/likes/toggle' && method === 'POST') return await handleToggleLike(request, env, db);
   if (pathname === '/api/likes/count' && method === 'GET') return await handleGetLikeCount(request, env, db);
   if (pathname === '/api/likes/batch-counts' && method === 'POST') return await handleBatchGetLikeCounts(request, env, db);
+
+  // 迁移API（管理员专用）
+  if (pathname === '/api/admin/migrate-kv-to-d1' && method === 'POST') return await handleMigrateKvToD1(request, env, db);
 
   return null;
 }
