@@ -114,7 +114,15 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
   void _onComplete() {
     debugPrint('DownloadProgressDialog: 执行完成回调');
     if (mounted) {
-      // 延迟执行，确保所有UI更新完成
+      // 先执行用户回调，再关闭对话框
+      try {
+        widget.onComplete();
+        debugPrint('DownloadProgressDialog: 用户回调执行完成');
+      } catch (e) {
+        debugPrint('DownloadProgressDialog: 执行用户回调时出错: $e');
+      }
+      
+      // 延迟关闭对话框
       Future.delayed(Duration(milliseconds: 100), () {
         if (mounted) {
           try {
@@ -122,14 +130,6 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
             debugPrint('DownloadProgressDialog: 对话框已关闭');
           } catch (e) {
             debugPrint('DownloadProgressDialog: 关闭对话框时出错: $e');
-          }
-
-          // 执行用户回调
-          try {
-            widget.onComplete();
-            debugPrint('DownloadProgressDialog: 用户回调执行完成');
-          } catch (e) {
-            debugPrint('DownloadProgressDialog: 执行用户回调时出错: $e');
           }
         }
       });

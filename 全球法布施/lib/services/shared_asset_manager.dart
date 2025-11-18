@@ -35,19 +35,21 @@ class SharedAssetManager {
 
   /// 获取已下载的素材文件
   Future<PlatformFile?> getDownloadedAsset(String assetPath) async {
-    if (!isAssetDownloaded(assetPath)) return null;
-
     final fileName = assetPath.split('/').last;
+    debugPrint('🔍 尝试获取已下载素材: $fileName');
 
     if (kIsWeb) {
       final fileData = await _getFileFromWebStorage(fileName);
       if (fileData != null) {
+        debugPrint('✅ Web平台找到文件: $fileName, 大小: ${fileData.length}');
         return PlatformFile(
           name: fileName,
           size: fileData.length,
           path: null,
           bytes: Uint8List.fromList(fileData),
         );
+      } else {
+        debugPrint('❌ Web平台未找到文件: $fileName');
       }
     } else {
       final Directory? dir;
@@ -60,13 +62,18 @@ class SharedAssetManager {
       if (dir != null) {
         final filePath = '${dir.path}/$fileName';
         final file = File(filePath);
+        debugPrint('🔍 检查本地文件: $filePath');
 
         if (await file.exists()) {
+          final size = await file.length();
+          debugPrint('✅ 本地平台找到文件: $fileName, 大小: $size');
           return PlatformFile(
             name: fileName,
-            size: await file.length(),
+            size: size,
             path: filePath,
           );
+        } else {
+          debugPrint('❌ 本地平台未找到文件: $filePath');
         }
       }
     }
