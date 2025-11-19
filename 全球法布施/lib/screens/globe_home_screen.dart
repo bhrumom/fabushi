@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/file_transfer_model.dart';
 import '../widgets/earth_globe_widget.dart';
 import 'leaderboard_screen.dart';
+import '../core/design_system/app_theme.dart';
 
 class GlobeHomeScreen extends StatefulWidget {
   const GlobeHomeScreen({super.key});
@@ -177,10 +178,11 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
     });
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
           Container(
-            color: const Color(0xFF0a0a0a),
+            color: Colors.transparent, // Keep transparent to show SpaceBackground
             child: _isGlobeLoaded
                 ? LayoutBuilder(
                     builder: (context, constraints) {
@@ -198,7 +200,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                       } catch (e) {
                         debugPrint('⚠️ 地球组件渲染失败: $e');
                         return Container(
-                          color: const Color(0xFF0a0a0a),
+                          color: Colors.transparent,
                           child: const Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -222,7 +224,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                     },
                   )
                 : Container(
-                    color: const Color(0xFF0a0a0a),
+                    color: Colors.transparent,
                     child: const Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -256,7 +258,10 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                 );
               },
               icon: const Icon(Icons.leaderboard, color: Colors.white),
-              style: IconButton.styleFrom(backgroundColor: Colors.black.withOpacity(0.7)),
+              style: IconButton.styleFrom(
+                backgroundColor: AppTheme.glassDecoration.color,
+                highlightColor: AppTheme.primaryColor.withOpacity(0.3),
+              ),
               tooltip: '排行榜',
             ),
           ),
@@ -268,8 +273,8 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.cyan.withOpacity(0.8),
+                  decoration: AppTheme.glassDecoration.copyWith(
+                    color: AppTheme.primaryColor.withOpacity(0.6),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
@@ -307,8 +312,8 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
   Widget _buildControlPanel(BuildContext context) {
     return Consumer<FileTransferModel>(
       builder: (context, model, _) {
-        return Card(
-          elevation: 8,
+        return Container(
+          decoration: AppTheme.glassDecoration,
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -316,7 +321,11 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
               children: [
                 Text(
                   model.selectedFile?.name ?? '未选择经文',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                    fontSize: 16, 
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
@@ -330,6 +339,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                         label: const Text('选择经文'),
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
+                          backgroundColor: AppTheme.secondaryColor.withOpacity(0.8),
                         ),
                       ),
                     ),
@@ -343,7 +353,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                         label: const Text('开始发送'),
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
-                          backgroundColor: Colors.green,
+                          backgroundColor: AppTheme.primaryColor,
                         ),
                       ),
                     ),

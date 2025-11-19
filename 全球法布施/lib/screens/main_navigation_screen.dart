@@ -5,6 +5,7 @@ import 'meditation_room_screen.dart';
 import 'my_profile_screen.dart';
 import 'video_feed_screen.dart';
 import '../core/design_system/app_theme.dart';
+import '../widgets/space_background.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -41,22 +42,68 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: _screens),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
-          setState(() => _currentIndex = index);
-        },
-        backgroundColor: Colors.white,
-        elevation: 8,
-        height: 60,
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.public), label: '首页'),
-          NavigationDestination(icon: Icon(Icons.video_library), label: '法流'),
-          NavigationDestination(icon: Icon(Icons.temple_buddhist), label: '禅室'),
-          NavigationDestination(icon: Icon(Icons.person), label: '我的'),
-        ],
+    return SpaceBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: IndexedStack(index: _currentIndex, children: _screens),
+        bottomNavigationBar: Theme(
+          data: Theme.of(context).copyWith(
+            navigationBarTheme: NavigationBarThemeData(
+              backgroundColor: Colors.transparent,
+              indicatorColor: AppTheme.primaryColor.withOpacity(0.3),
+              iconTheme: WidgetStateProperty.all(
+                const IconThemeData(color: Colors.white),
+              ),
+              labelTextStyle: WidgetStateProperty.all(
+                const TextStyle(color: Colors.white),
+              ),
+            ),
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0x1AFFFFFF), // Glass effect
+              border: const Border(top: BorderSide(color: Color(0x26FFFFFF))),
+              boxShadow: [
+                 BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, -2),
+                 )
+              ],
+            ),
+            child: NavigationBar(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: (index) {
+                setState(() => _currentIndex = index);
+              },
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              height: 70,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.public_outlined), 
+                  selectedIcon: Icon(Icons.public),
+                  label: '首页'
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.video_library_outlined), 
+                  selectedIcon: Icon(Icons.video_library),
+                  label: '法流'
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.self_improvement_outlined), 
+                  selectedIcon: Icon(Icons.self_improvement),
+                  label: '禅室'
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline), 
+                  selectedIcon: Icon(Icons.person),
+                  label: '我的'
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -17,6 +17,7 @@ import 'services/app_initializer.dart';
 import 'widgets/app_wrapper.dart';
 import 'screens/login_screen.dart';
 import 'core/video_feed_di/video_feed_injector.dart';
+import 'core/design_system/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -73,25 +74,9 @@ class MyApp extends StatelessWidget {
         title: AppConfig.appName,
         debugShowCheckedModeBanner: false,
         routes: {'/login': (_) => const LoginScreen()},
-        theme: FlexThemeData.light(
-          scheme: FlexScheme.deepPurple,
-          surfaceMode: FlexSurfaceMode.levelSurfacesLowScaffold,
-          blendLevel: 7,
-          subThemesData: const FlexSubThemesData(blendOnLevel: 10, useFlutterDefaults: true),
-          visualDensity: FlexColorScheme.comfortablePlatformDensity,
-          useMaterial3: true,
-          fontFamily: 'NotoSansSC',
-        ),
-        darkTheme: FlexThemeData.dark(
-          scheme: FlexScheme.deepPurple,
-          surfaceMode: FlexSurfaceMode.levelSurfacesLowScaffold,
-          blendLevel: 13,
-          subThemesData: const FlexSubThemesData(blendOnLevel: 20, useFlutterDefaults: true),
-          visualDensity: FlexColorScheme.comfortablePlatformDensity,
-          useMaterial3: true,
-          fontFamily: 'NotoSansSC',
-        ),
-        themeMode: ThemeMode.light,
+        theme: AppTheme.lightTheme, // Though we prefer dark for space theme
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.dark, // Enforce Dark/Space theme
         home: const AppWrapper(),
       ),
     );

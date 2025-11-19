@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../models/leaderboard_model.dart';
+import '../widgets/space_background.dart';
+import '../core/design_system/app_theme.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -21,38 +23,42 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('全球排行榜'),
-        actions: [
-          Consumer<LeaderboardModel>(
-            builder: (context, model, _) {
-              if (model.lastUpdateTime != null) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Text(
-                      _formatUpdateTime(model.lastUpdateTime!),
-                      style: const TextStyle(fontSize: 12),
+    return SpaceBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text('全球排行榜', style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.transparent,
+          iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            Consumer<LeaderboardModel>(
+              builder: (context, model, _) {
+                if (model.lastUpdateTime != null) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        _formatUpdateTime(model.lastUpdateTime!),
+                        style: const TextStyle(fontSize: 12, color: Colors.white70),
+                      ),
                     ),
-                  ),
-                );
-              }
-              return const SizedBox.shrink();
-            },
-          ),
-          if (defaultTargetPlatform == TargetPlatform.macOS ||
-              defaultTargetPlatform == TargetPlatform.windows ||
-              defaultTargetPlatform == TargetPlatform.linux)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: () =>
-                  context.read<LeaderboardModel>().fetchLeaderboard(forceRefresh: true),
-              tooltip: '刷新',
+                  );
+                }
+                return const SizedBox.shrink();
+              },
             ),
-        ],
-      ),
-      body: Consumer<LeaderboardModel>(
+            if (defaultTargetPlatform == TargetPlatform.macOS ||
+                defaultTargetPlatform == TargetPlatform.windows ||
+                defaultTargetPlatform == TargetPlatform.linux)
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                onPressed: () =>
+                    context.read<LeaderboardModel>().fetchLeaderboard(forceRefresh: true),
+                tooltip: '刷新',
+              ),
+          ],
+        ),
+        body: Consumer<LeaderboardModel>(
         builder: (context, model, _) {
           if (model.isLoading && model.entries.isEmpty) {
             return const Center(child: CircularProgressIndicator());
@@ -77,7 +83,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           }
 
           if (model.entries.isEmpty) {
-            return const Center(child: Text('暂无排行榜数据'));
+            return const Center(child: Text('暂无排行榜数据', style: TextStyle(color: Colors.white70)));
           }
 
           return RefreshIndicator(
@@ -89,11 +95,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   itemCount: model.entries.length,
                   itemBuilder: (context, index) {
                     final entry = model.entries[index];
-                    return Card(
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: AppTheme.glassDecoration,
                       child: ListTile(
                         leading: _buildRankBadge(entry.rank),
-                        title: Text(entry.username),
-                        trailing: Text(_formatBytes(entry.totalBytes)),
+                        title: Text(entry.username, style: const TextStyle(color: Colors.white)),
+                        trailing: Text(_formatBytes(entry.totalBytes), style: const TextStyle(color: Colors.white70)),
                       ),
                     );
                   },
@@ -120,7 +128,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           );
         },
       ),
-    );
+    ));
   }
 
   Widget _buildRankBadge(int rank) {

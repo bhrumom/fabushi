@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../core/design_system/app_theme.dart';
+import 'space_background.dart';
 
-/// 渐变背景容器
+/// 渐变背景容器 (Now Space Background)
 class GradientBackground extends StatelessWidget {
   final Widget child;
 
@@ -9,11 +10,11 @@ class GradientBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(decoration: AppTheme.gradientBackground, child: child);
+    return SpaceBackground(child: child);
   }
 }
 
-/// 统一的卡片容器
+/// 统一的卡片容器 (Glassmorphism)
 class AppCard extends StatefulWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -54,8 +55,8 @@ class _AppCardState extends State<AppCard> with SingleTickerProviderStateMixin {
       onExit: (_) => _controller.reverse(),
       child: AnimatedBuilder(
         animation: _elevationAnimation,
-        builder: (context, child) => Card(
-          elevation: _elevationAnimation.value,
+        builder: (context, child) => Container(
+          decoration: AppTheme.glassDecoration,
           margin: widget.margin ?? const EdgeInsets.symmetric(vertical: 8),
           child: Padding(padding: widget.padding ?? const EdgeInsets.all(16), child: widget.child),
         ),

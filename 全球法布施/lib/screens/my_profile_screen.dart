@@ -4,6 +4,7 @@ import '../models/auth_model.dart';
 import '../services/like_service.dart';
 import 'liked_content_screen.dart';
 import 'login_screen.dart';
+import '../core/design_system/app_theme.dart';
 
 class MyProfileScreen extends StatelessWidget {
   const MyProfileScreen({super.key});
@@ -11,7 +12,12 @@ class MyProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('我的')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('我的', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: Consumer<AuthModel>(
         builder: (context, authModel, _) {
           final user = authModel.currentUser;
@@ -46,12 +52,17 @@ class MyProfileScreen extends StatelessWidget {
   }
 
   Widget _buildUserCard(User user) {
-    return Card(
+    return Container(
+      decoration: AppTheme.glassDecoration,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            CircleAvatar(radius: 40, child: Text(user.username[0].toUpperCase())),
+            CircleAvatar(
+              radius: 40, 
+              backgroundColor: AppTheme.primaryColor,
+              child: Text(user.username[0].toUpperCase(), style: const TextStyle(color: Colors.white))
+            ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -59,9 +70,9 @@ class MyProfileScreen extends StatelessWidget {
                 children: [
                   Text(
                     user.username,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
-                  Text(user.email, style: const TextStyle(color: Colors.grey)),
+                  Text(user.email, style: const TextStyle(color: Colors.white70)),
                 ],
               ),
             ),
@@ -72,13 +83,14 @@ class MyProfileScreen extends StatelessWidget {
   }
 
   Widget _buildMembershipCard(User user) {
-    return Card(
+    return Container(
+      decoration: AppTheme.glassDecoration,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('会员信息', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('会员信息', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
             const SizedBox(height: 12),
             _buildInfoRow('会员类型', user.membershipType ?? '普通用户'),
             if (user.membershipExpiry != null)
@@ -98,23 +110,24 @@ class MyProfileScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.grey)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
+          Text(label, style: const TextStyle(color: Colors.white70)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w500, color: Colors.white)),
         ],
       ),
     );
   }
 
   Widget _buildGuestCard() {
-    return Card(
+    return Container(
+      decoration: AppTheme.glassDecoration,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
             CircleAvatar(
               radius: 40,
-              backgroundColor: Colors.grey.shade300,
-              child: const Icon(Icons.person_outline, size: 40, color: Colors.grey),
+              backgroundColor: Colors.white24,
+              child: const Icon(Icons.person_outline, size: 40, color: Colors.white),
             ),
             const SizedBox(width: 16),
             const Expanded(
@@ -123,9 +136,9 @@ class MyProfileScreen extends StatelessWidget {
                 children: [
                   Text(
                     '游客模式',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
-                  Text('您正在以游客身份使用应用', style: TextStyle(color: Colors.grey)),
+                  Text('您正在以游客身份使用应用', style: TextStyle(color: Colors.white70)),
                 ],
               ),
             ),
@@ -136,21 +149,22 @@ class MyProfileScreen extends StatelessWidget {
   }
 
   Widget _buildGuestFeatures(BuildContext context) {
-    return Card(
+    return Container(
+      decoration: AppTheme.glassDecoration,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('游客可用功能', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('游客可用功能', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
             const SizedBox(height: 12),
             _buildFeatureItem(Icons.public, '全球法布施', '可以向全世界发送佛教经文'),
             _buildFeatureItem(Icons.video_library, '法流观看', '可以观看佛教视频内容'),
             _buildFeatureItem(Icons.temple_buddhist, '禅室体验', '可以进入禅室冥想'),
-            const Divider(),
+            const Divider(color: Colors.white24),
             const Text(
               '登录后可获得更多功能：',
-              style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w500),
+              style: TextStyle(fontSize: 14, color: Colors.white60, fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 8),
             _buildFeatureItem(Icons.cloud_sync, '云端同步', '数据云端保存，多设备同步', isDisabled: true),
@@ -170,7 +184,7 @@ class MyProfileScreen extends StatelessWidget {
           Icon(
             icon,
             size: 20,
-            color: isDisabled ? Colors.grey.shade400 : Colors.blue,
+            color: isDisabled ? Colors.white24 : AppTheme.accentColor,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -181,14 +195,14 @@ class MyProfileScreen extends StatelessWidget {
                   title,
                   style: TextStyle(
                     fontWeight: FontWeight.w500,
-                    color: isDisabled ? Colors.grey.shade600 : null,
+                    color: isDisabled ? Colors.white38 : Colors.white,
                   ),
                 ),
                 Text(
                   description,
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDisabled ? Colors.grey.shade500 : Colors.grey.shade700,
+                    color: isDisabled ? Colors.white24 : Colors.white70,
                   ),
                 ),
               ],
@@ -211,43 +225,48 @@ class MyProfileScreen extends StatelessWidget {
       listenable: likeService,
       builder: (context, _) {
         final likedCount = likeService.likedCount;
-        return Card(
-          child: InkWell(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const LikedContentScreen()),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(12),
+        return Container(
+          decoration: AppTheme.glassDecoration,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const LikedContentScreen()),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.favorite, color: Colors.redAccent, size: 28),
                     ),
-                    child: Icon(Icons.favorite, color: Colors.red.shade400, size: 28),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '我的喜欢',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          likedCount > 0 ? '$likedCount 个内容' : '还没有喜欢的内容',
-                          style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                        ),
-                      ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '我的喜欢',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            likedCount > 0 ? '$likedCount 个内容' : '还没有喜欢的内容',
+                            style: const TextStyle(fontSize: 13, color: Colors.white70),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Icon(Icons.chevron_right, color: Colors.grey.shade400),
-                ],
+                    const Icon(Icons.chevron_right, color: Colors.white70),
+                  ],
+                ),
               ),
             ),
           ),
@@ -257,19 +276,20 @@ class MyProfileScreen extends StatelessWidget {
   }
 
   Widget _buildLoginPrompt(BuildContext context) {
-    return Card(
+    return Container(
+      decoration: AppTheme.glassDecoration,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             const Text(
               '🙏 登录获得完整体验',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
             ),
             const SizedBox(height: 8),
             const Text(
               '登录后可以保存您的发送记录，参与排行榜，享受会员服务',
-              style: TextStyle(color: Colors.grey),
+              style: TextStyle(color: Colors.white70),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -281,6 +301,10 @@ class MyProfileScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(builder: (context) => const LoginScreen()),
                     ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.white70),
+                      foregroundColor: Colors.white,
+                    ),
                     child: const Text('登录'),
                   ),
                 ),
@@ -290,6 +314,10 @@ class MyProfileScreen extends StatelessWidget {
                     onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      foregroundColor: Colors.white,
                     ),
                     child: const Text('注册'),
                   ),
@@ -306,24 +334,24 @@ class MyProfileScreen extends StatelessWidget {
     return Column(
       children: [
         ListTile(
-          leading: const Icon(Icons.card_membership),
-          title: const Text('购买记录'),
-          trailing: const Icon(Icons.chevron_right),
+          leading: const Icon(Icons.card_membership, color: Colors.white),
+          title: const Text('购买记录', style: TextStyle(color: Colors.white)),
+          trailing: const Icon(Icons.chevron_right, color: Colors.white70),
           onTap: () {
             // TODO: 导航到购买记录页面
           },
         ),
         ListTile(
-          leading: const Icon(Icons.settings),
-          title: const Text('设置'),
-          trailing: const Icon(Icons.chevron_right),
+          leading: const Icon(Icons.settings, color: Colors.white),
+          title: const Text('设置', style: TextStyle(color: Colors.white)),
+          trailing: const Icon(Icons.chevron_right, color: Colors.white70),
           onTap: () {
             // TODO: 导航到设置页面
           },
         ),
         ListTile(
-          leading: const Icon(Icons.logout),
-          title: const Text('退出登录'),
+          leading: const Icon(Icons.logout, color: Colors.white),
+          title: const Text('退出登录', style: TextStyle(color: Colors.white)),
           onTap: () async {
             await authModel.logout();
             if (context.mounted) {

@@ -340,7 +340,13 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('登录')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('登录', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
       body: GradientBackground(
         child: SafeArea(
           child: Center(
@@ -348,108 +354,120 @@ class _LoginScreenState extends State<LoginScreen> {
               padding: const EdgeInsets.all(24.0),
               child: Hero(
                 tag: 'login_card',
-                child: Material(
-                  elevation: 12,
-                  shadowColor: AppTheme.primaryColor.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(24),
-                  child: Container(
-                    constraints: const BoxConstraints(maxWidth: 500),
-                    padding: const EdgeInsets.all(40.0),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // 标题
-                          Column(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  gradient: AppTheme.primaryGradient,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppTheme.primaryColor.withOpacity(0.3),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 8),
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.auto_awesome,
-                                  size: 40,
-                                  color: Colors.white,
-                                ),
+                child: Container(
+                  decoration: AppTheme.glassDecoration.copyWith(
+                    color: const Color(0x40000000), // Slightly darker for better contrast
+                  ),
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  padding: const EdgeInsets.all(40.0),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // 标题
+                        Column(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                gradient: AppTheme.primaryGradient,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppTheme.primaryColor.withOpacity(0.5),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 20),
-                              const Text(
-                                '🙏 全球法布施',
-                                style: TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF2c3e50),
-                                  letterSpacing: 1,
-                                ),
-                                textAlign: TextAlign.center,
+                              child: const Icon(
+                                Icons.auto_awesome,
+                                size: 40,
+                                color: Colors.white,
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                '登录您的账户',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey[600],
-                                  letterSpacing: 0.5,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 40),
-
-                          // 用户名输入框
-                          TextFormField(
-                            controller: _usernameController,
-                            decoration: InputDecoration(
-                              labelText: '用户名或邮箱',
-                              prefixIcon: const Icon(Icons.person),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                              filled: true,
-                              fillColor: Colors.grey[50],
                             ),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return '请输入用户名或邮箱';
-                              }
-                              return null;
-                            },
-                            textInputAction: TextInputAction.next,
-                          ),
-                          const SizedBox(height: 16),
-
-                          // 密码输入框
-                          TextFormField(
-                            controller: _passwordController,
-                            obscureText: _obscurePassword,
-                            decoration: InputDecoration(
-                              labelText: '密码',
-                              prefixIcon: const Icon(Icons.lock),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscurePassword ? Icons.visibility : Icons.visibility_off,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _obscurePassword = !_obscurePassword;
-                                  });
-                                },
+                            const SizedBox(height: 20),
+                            const Text(
+                              '🙏 全球法布施',
+                              style: TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                letterSpacing: 1,
                               ),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                              filled: true,
-                              fillColor: Colors.grey[50],
+                              textAlign: TextAlign.center,
                             ),
-                            validator: (value) {
+                            const SizedBox(height: 8),
+                            Text(
+                              '登录您的账户',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.white.withOpacity(0.7),
+                                letterSpacing: 0.5,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 40),
+
+                        // 用户名输入框
+                        TextFormField(
+                          controller: _usernameController,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: '用户名或邮箱',
+                            labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                            prefixIcon: const Icon(Icons.person, color: Colors.white70),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                            ),
+                            filled: true,
+                            fillColor: Colors.white.withOpacity(0.1),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return '请输入用户名或邮箱';
+                            }
+                            return null;
+                          },
+                          textInputAction: TextInputAction.next,
+                        ),
+                        const SizedBox(height: 16),
+
+                        // 密码输入框
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: _obscurePassword,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: '密码',
+                            labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                            prefixIcon: const Icon(Icons.lock, color: Colors.white70),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                                color: Colors.white70,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _obscurePassword = !_obscurePassword;
+                                });
+                              },
+                            ),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                            ),
+                            filled: true,
+                            fillColor: Colors.white.withOpacity(0.1),
+                          ),
+                          validator: (value) {
                               if (value == null || value.isEmpty) {
                                 return '请输入密码';
                               }
@@ -591,7 +609,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
-      ),
     );
   }
 }
