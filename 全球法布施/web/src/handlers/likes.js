@@ -82,3 +82,28 @@ export async function handleBatchGetLikeCounts(request, env, db) {
     return jsonResponse({ error: '获取失败' }, 500);
   }
 }
+
+export async function handleGetMyLikes(request, env, db) {
+  try {
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    
+    if (!token) {
+      return jsonResponse({ error: '未登录' }, 401);
+    }
+
+    const decoded = verifyToken(token, env.JWT_SECRET);
+    if (!decoded?.userId) {
+      return jsonResponse({ error: '无效的token' }, 401);
+    }
+
+    const results = await db.prepare(
+      'SELECT content_id as id, content_type as contentType, created_at as likedAt FROM content_likes WHERE user_id = ? ORDER BY created_at DESC'
+    ).bind(decoded.userId).all();
+
+    return jsonResponse({ success: true, likes: results.results });
+  } catch (error) {
+    console.error('Get my likes error:', error);
+    return jsonResponse({ error: '获取失败' }, 500);
+  }
+}

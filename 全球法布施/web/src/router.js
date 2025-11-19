@@ -9,7 +9,7 @@ import { handleCheckAdminStatus, handleListRedeemCodes, handleDeleteRedeemCode, 
 import { handleGetAssetsList, handleR2List, handleR2Proxy } from './handlers/assets.js';
 import { handleSearch, handleGetTextContent, handleGetCategories } from './handlers/search.js';
 import { handleGetLeaderboard, handleUpdateTransferData } from './handlers/leaderboard.js';
-import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts } from './handlers/likes.js';
+import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts, handleGetMyLikes } from './handlers/likes.js';
 import { handleBuiltinMigration, handleFullTextSearch, handleGetCategories as handleBuiltinCategories } from '../migrate-builtin-handler-fixed.js';
 import { jsonResponse } from './utils/response.js';
 
@@ -80,6 +80,7 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/likes/toggle' && method === 'POST') return await handleToggleLike(request, env, db);
   if (pathname === '/api/likes/count' && method === 'GET') return await handleGetLikeCount(request, env, db);
   if (pathname === '/api/likes/batch-counts' && method === 'POST') return await handleBatchGetLikeCounts(request, env, db);
+  if (pathname === '/api/likes/my-likes' && method === 'GET') return await handleGetMyLikes(request, env, db);
 
   // 迁移API（管理员专用）
   if (pathname === '/api/admin/migrate-kv-to-d1' && method === 'POST') return await handleMigrateKvToD1(request, env, db);
