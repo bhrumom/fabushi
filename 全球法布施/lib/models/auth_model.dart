@@ -111,6 +111,7 @@ class AuthModel extends ChangeNotifier {
         );
         await _authService.setAuth(token, basicUserModel);
         LikeService().setAuthToken(token);
+        await LikeService().initialize(userId: _currentUser!.username);
 
         notifyListeners(); // 立即更新UI显示登录状态
 
@@ -155,6 +156,7 @@ class AuthModel extends ChangeNotifier {
         );
 
         await _storeAuth();
+        await LikeService().initialize(userId: _currentUser!.username);
 
         _setLoading(false);
         notifyListeners();
@@ -332,6 +334,7 @@ class AuthModel extends ChangeNotifier {
         );
 
         await _storeAuth();
+        await LikeService().initialize(userId: _currentUser!.username);
 
         _setLoading(false);
         notifyListeners();
@@ -404,6 +407,7 @@ class AuthModel extends ChangeNotifier {
           );
 
           await _storeAuth();
+          await LikeService().initialize(userId: _currentUser!.username);
           _setLoading(false);
           notifyListeners();
           return true;
@@ -457,9 +461,7 @@ class AuthModel extends ChangeNotifier {
         );
 
         await _storeAuth();
-        
-        // 初始化点赞服务
-        await LikeService().initialize();
+        await LikeService().initialize(userId: _currentUser!.username);
         
         _setLoading(false);
         notifyListeners();
@@ -514,6 +516,7 @@ class AuthModel extends ChangeNotifier {
           );
 
           await _storeAuth();
+          await LikeService().initialize(userId: _currentUser!.username);
           _setLoading(false);
           notifyListeners();
           return true;
@@ -630,6 +633,7 @@ class AuthModel extends ChangeNotifier {
       _token = null;
       _clearError();
       LikeService().setAuthToken(null);
+      await LikeService().clearUserData();
 
       // 清除存储的认证信息
       final prefs = await SharedPreferences.getInstance();

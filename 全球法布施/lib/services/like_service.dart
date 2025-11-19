@@ -14,22 +14,32 @@ class LikeService extends ChangeNotifier {
   final Map<String, int> _likeCounts = {};
   bool _isInitialized = false;
   String? _authToken;
+  String? _currentUserId;
   
   bool get isInitialized => _isInitialized;
 
-  static const String _storageKey = 'liked_items';
+  String _getStorageKey() => 'liked_items_${_currentUserId ?? "guest"}';
 
-  Future<void> initialize() async {
-    if (_isInitialized) return;
-    await _loadLikedItems();
-    _isInitialized = true;
-    notifyListeners(); // 确保UI更新
+  Future<void> initialize({String? userId}) async {
+    if (userId != null && userId != _currentUserId) {
+      _currentUserId = userId;
+      _likedItems.clear();
+      _likeCounts.clear();
+      await _loadLikedItems();
+      _isInitialized = true;
+      notifyListeners();
+    } else if (!_isInitialized) {
+      _currentUserId = userId;
+      await _loadLikedItems();
+      _isInitialized = true;
+      notifyListeners();
+    }
   }
 
   Future<void> _loadLikedItems() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final jsonString = prefs.getString(_storageKey);
+      final jsonString = prefs.getString(_getStorageKey());
       if (jsonString != null) {
         final List<dynamic> jsonList = jsonDecode(jsonString);
         _likedItems.clear();
@@ -47,7 +57,7 @@ class LikeService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonList = _likedItems.values.map((item) => item.toJson()).toList();
-      await prefs.setString(_storageKey, jsonEncode(jsonList));
+      await prefs.setString(_getStorageKey(), jsonEncode(jsonList));
     } catch (e) {
       debugPrint('保存点赞数据失败: $e');
     }
@@ -57,6 +67,14 @@ class LikeService extends ChangeNotifier {
 
   void setAuthToken(String? token) {
     _authToken = token;
+  }
+
+  Future<void> clearUserData() async {
+    _likedItems.clear();
+    _likeCounts.clear();
+    _currentUserId = null;
+    _isInitialized = false;
+    notifyListeners();
   }
 
   Future<void> toggleLike(LikedItem item) async {
