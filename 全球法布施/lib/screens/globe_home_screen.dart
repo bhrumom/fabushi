@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/file_transfer_model.dart';
-import '../widgets/earth_globe_widget.dart';
+import '../widgets/three_js_globe_widget.dart';
 import 'leaderboard_screen.dart';
 import '../core/design_system/app_theme.dart';
 
@@ -14,8 +14,8 @@ class GlobeHomeScreen extends StatefulWidget {
 
 class _GlobeHomeScreenState extends State<GlobeHomeScreen>
     with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
-  static EarthGlobeWidgetState? _globeState; // 静态引用，保持在页面切换时不丢失
-  final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
+  static ThreeJsGlobeWidgetState? _globeState; // 静态引用，保持在页面切换时不丢失
+  final GlobalKey<ThreeJsGlobeWidgetState> _globeKey = GlobalKey();
   String _currentTransfer = '';
   final List<Map<String, dynamic>> _pendingBeams = []; // 缓存待播放的轨迹（包含标签）
   bool _isGlobeLoaded = false; // 地球组件是否已加载
@@ -196,7 +196,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                       
                       // 添加错误边界保护
                       try {
-                        return EarthGlobeWidget(key: _globeKey);
+                        return ThreeJsGlobeWidget(key: _globeKey);
                       } catch (e) {
                         debugPrint('⚠️ 地球组件渲染失败: $e');
                         return Container(
