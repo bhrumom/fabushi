@@ -12,9 +12,9 @@ class VideoFeedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.transparent,
         title: const Text('法流', style: TextStyle(color: Colors.white)),
         centerTitle: true,
         actions: [

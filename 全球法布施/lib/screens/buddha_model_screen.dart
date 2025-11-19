@@ -76,8 +76,8 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
   Future<void> _setup() async {
     // 创建场景
     threeJs.scene = three.Scene();
-    // 星空背景
-    threeJs.scene.background = tmath.Color.fromHex32(0x000428);
+    // 星空背景 - Match spaceDeepBlue (0x0B0E14)
+    threeJs.scene.background = tmath.Color.fromHex32(0x0B0E14);
 
     // 添加星星
     _addStars();
@@ -206,6 +206,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
   Widget build(BuildContext context) {
     super.build(context);
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: Listener(
         onPointerDown: (event) {
           _isUserDragging = true;
