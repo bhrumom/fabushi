@@ -10,6 +10,7 @@ import { handleGetAssetsList, handleR2List, handleR2Proxy } from './handlers/ass
 import { handleSearch, handleGetTextContent, handleGetCategories } from './handlers/search.js';
 import { handleGetLeaderboard, handleUpdateTransferData } from './handlers/leaderboard.js';
 import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts } from './handlers/likes.js';
+import { handleBuiltinMigration, handleFullTextSearch, handleGetCategories as handleBuiltinCategories } from '../migrate-builtin-handler-fixed.js';
 import { jsonResponse } from './utils/response.js';
 
 export async function route(request, env, db, ctx) {
@@ -82,6 +83,11 @@ export async function route(request, env, db, ctx) {
 
   // 迁移API（管理员专用）
   if (pathname === '/api/admin/migrate-kv-to-d1' && method === 'POST') return await handleMigrateKvToD1(request, env, db);
+  
+  // 内置内容迁移API
+  if (pathname === '/migrate-builtin-complete' && method === 'POST') return await handleBuiltinMigration(request, env);
+  if (pathname === '/api/builtin/search' && method === 'GET') return await handleFullTextSearch(request, env);
+  if (pathname === '/api/builtin/categories' && method === 'GET') return await handleBuiltinCategories(request, env);
 
   return null;
 }

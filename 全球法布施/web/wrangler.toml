@@ -1,5 +1,5 @@
 name = "fabushi-flutter-web"
-main = "worker.js"
+main = "worker-simple.js"
 compatibility_date = "2024-08-01"
 
 # KV存储配置 - 复用后端的KV存储
