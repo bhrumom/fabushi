@@ -26,11 +26,13 @@ class LikeService extends ChangeNotifier {
       _likedItems.clear();
       _likeCounts.clear();
       await _loadLikedItems();
+      await _syncFromCloud();
       _isInitialized = true;
       notifyListeners();
     } else if (!_isInitialized) {
       _currentUserId = userId;
       await _loadLikedItems();
+      await _syncFromCloud();
       _isInitialized = true;
       notifyListeners();
     }
@@ -93,6 +95,32 @@ class LikeService extends ChangeNotifier {
 
     // 同步到云端
     _syncToCloud(item.id, item.contentType, wasLiked ? 'unlike' : 'like');
+  }
+
+  Future<void> _syncFromCloud() async {
+    if (_authToken == null) return;
+    
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConfig.apiUrl}/api/likes/my-likes'),
+        headers: {'Authorization': 'Bearer $_authToken'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['likes'] != null) {
+          final List<dynamic> likes = data['likes'];
+          for (var like in likes) {
+            final item = LikedItem.fromJson(like);
+            _likedItems[item.id] = item;
+          }
+          await _saveLikedItems();
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('从云端加载点赞数据失败: $e');
+    }
   }
 
   Future<void> _syncToCloud(String contentId, String contentType, String action) async {
