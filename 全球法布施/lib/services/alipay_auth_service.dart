@@ -27,11 +27,15 @@ class AlipayAuthService {
         headers: {'Content-Type': 'application/json'},
       );
 
+      if (response.body.isEmpty) {
+        return {'success': false, 'message': '服务器返回空响应'};
+      }
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return {
           'success': true,
-          'loginUrl': data['authUrl'], // 注意：前端期望的是loginUrl而不是authUrl
+          'loginUrl': data['authUrl'],
           'state': data['state'],
           'appId': data['appId'],
           'platform': data['platform'],
@@ -59,6 +63,10 @@ class AlipayAuthService {
       );
 
       debugPrint('支付宝登录API响应: ${response.statusCode} - ${response.body}');
+
+      if (response.body.isEmpty) {
+        return {'success': false, 'message': '服务器返回空响应'};
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
