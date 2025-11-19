@@ -28,7 +28,7 @@ class SpaceBackground extends StatelessWidget {
         ),
         
         // Star Field (Painted)
-        const Positioned.fill(
+        Positioned.fill(
           child: CustomPaint(
             painter: StarFieldPainter(),
           ),
