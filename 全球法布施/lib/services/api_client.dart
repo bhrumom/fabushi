@@ -188,9 +188,9 @@ class ApiClient {
           };
         }
 
-        // 如果数据是 Map，直接合并；否则包装在 data 字段中
+        // 如果数据是 Map，返回原数据；否则包装在 data 字段中
         if (data is Map<String, dynamic>) {
-          return {'success': true, 'statusCode': response.statusCode, ...data};
+          return data;
         } else {
           return {'success': true, 'statusCode': response.statusCode, 'data': data};
         }

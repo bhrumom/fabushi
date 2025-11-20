@@ -285,6 +285,24 @@ class AuthService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        print('📥 获取到的用户数据: $data');
+        
+        // 检查会员到期时间
+        final membershipExpiresAt = data['membershipExpiresAt'];
+        final membershipType = data['membershipType'] ?? 'expired';
+        
+        // 判断会员是否激活
+        bool isActive = false;
+        if (membershipExpiresAt != null && membershipType != 'expired') {
+          try {
+            final expiryDate = DateTime.parse(membershipExpiresAt);
+            isActive = expiryDate.isAfter(DateTime.now());
+            print('📅 会员到期时间: $expiryDate, 是否激活: $isActive');
+          } catch (e) {
+            print('⚠️ 解析会员到期时间失败: $e');
+          }
+        }
+        
         // 构建完整的用户信息
         return UserModel(
           username: data['username'] ?? '',
@@ -292,9 +310,9 @@ class AuthService {
           emailVerified: true,
           createdAt: DateTime.now().toIso8601String(),
           membership: MembershipInfo(
-            type: data['membershipType'] ?? 'expired',
-            isActive: data['membershipType'] != null && data['membershipType'] != 'expired',
-            expiresAt: data['membershipExpiresAt'],
+            type: membershipType,
+            isActive: isActive,
+            expiresAt: membershipExpiresAt,
           ),
         );
       } else {

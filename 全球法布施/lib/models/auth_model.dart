@@ -79,6 +79,7 @@ class AuthModel extends ChangeNotifier {
   String? get error => _error;
   bool get isLoggedIn => _currentUser != null && _token != null;
   bool get hasPremiumAccess => _currentUser?.hasPremiumMembership ?? false;
+  String? get authToken => _token;
   bool get isAdmin => _currentUser?.isAdmin ?? false;
 
   AuthModel() {
@@ -270,14 +271,22 @@ class AuthModel extends ChangeNotifier {
     if (_token == null) return;
 
     try {
+      debugPrint('🔄 开始刷新用户信息...');
+      
+      // 先获取管理员状态
+      final adminStatusResult = await _membershipService.getAdminStats(_token!);
+      final bool isAdmin =
+          adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
+      
+      debugPrint('👤 管理员状态: $isAdmin');
+
+      // 再刷新用户信息
       await _authService.refreshUserInfo();
       final userModel = _authService.currentUser;
 
       if (userModel != null) {
-        final adminStatusResult = await _membershipService.getAdminStats(_token!);
-        final bool isAdmin =
-            adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
-
+        debugPrint('📊 会员信息: ${userModel.membership.type}, 过期: ${userModel.membership.expiresAt}');
+        
         _currentUser = User(
           username: userModel.username,
           email: userModel.email ?? '',
@@ -288,11 +297,16 @@ class AuthModel extends ChangeNotifier {
           isAdmin: isAdmin,
           alipayUserId: userModel.alipayUserId,
         );
+        
         await _storeAuth();
         notifyListeners();
+        
+        debugPrint('✅ 用户信息刷新完成');
+      } else {
+        debugPrint('⚠️ 未能获取用户信息');
       }
     } catch (e) {
-      debugPrint('刷新用户信息失败: $e');
+      debugPrint('❌ 刷新用户信息失败: $e');
     }
   }
 
@@ -315,22 +329,26 @@ class AuthModel extends ChangeNotifier {
 
       if (result['success'] == true) {
         _token = result['token'];
-        final userJson = result['user'];
+        final username = result['username'] ?? '';
+        final email = result['email'] ?? '';
 
-        // 登录后，额外获取管理员状态
-        final adminStatusResult = await _membershipService.getAdminStats(_token!);
-        final bool isAdmin =
-            adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
+        // 先设置token到AuthService
+        final basicUserModel = UserModel(
+          username: username,
+          email: email,
+          emailVerified: true,
+          createdAt: DateTime.now().toIso8601String(),
+          membership: MembershipInfo(type: 'trial', isActive: true),
+        );
+        await _authService.setAuth(_token!, basicUserModel);
 
-        final membershipJson = userJson['membership'] ?? {};
+        // 创建临时用户对象
         _currentUser = User(
-          username: userJson['username'] ?? '',
-          email: userJson['email'] ?? '',
-          membershipType: membershipJson['type'],
-          membershipExpiry: membershipJson['expiresAt'] != null
-              ? DateTime.parse(membershipJson['expiresAt'])
-              : null,
-          isAdmin: isAdmin,
+          username: username,
+          email: email,
+          membershipType: 'trial',
+          membershipExpiry: DateTime.now().add(const Duration(days: 3)),
+          isAdmin: false,
         );
 
         await _storeAuth();
@@ -338,9 +356,12 @@ class AuthModel extends ChangeNotifier {
 
         _setLoading(false);
         notifyListeners();
+        
+        // 后台刷新完整用户信息（包括会员信息和管理员状态）
+        refreshUserInfo();
         return true;
       } else {
-        _setError(result['error'] ?? '支付宝登录失败');
+        _setError(result['message'] ?? '支付宝登录失败');
         _setLoading(false);
         return false;
       }
@@ -666,8 +687,7 @@ class AuthModel extends ChangeNotifier {
     _error = null;
   }
 
-  // 获取当前用户的认证token，用于API请求
-  String? get authToken => _token;
+
 
   // 检查用户是否有权限执行某个操作
   bool hasPermission(String permission) {
@@ -688,10 +708,12 @@ class AuthModel extends ChangeNotifier {
   // 获取用户会员状态描述
   String getMembershipStatusText() {
     if (_currentUser == null) return '未登录';
-    if (_currentUser!.isAdmin) return '管理员';
+    if (_currentUser!.membershipType == null || _currentUser!.membershipType == 'expired') {
+      return '已过期';
+    }
     if (_currentUser!.isPremiumMember) return '高级会员';
     if (_currentUser!.isTrialMember) return '试用会员';
-    return '普通用户';
+    return _currentUser!.membershipType ?? '普通用户';
   }
 
   // 获取会员到期时间描述

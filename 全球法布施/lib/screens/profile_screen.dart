@@ -290,11 +290,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   leading: const Icon(Icons.refresh, color: Color(0xFF667eea)),
                   title: const Text('刷新用户信息'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    authModel.refreshUserInfo();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('正在刷新用户信息...'), backgroundColor: Colors.blue),
-                    );
+                  onTap: () async {
+                    await authModel.refreshUserInfo();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('已刷新用户信息'), backgroundColor: Colors.green),
+                      );
+                    }
                   },
                 ),
                 const Divider(height: 1),
@@ -307,6 +309,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       context,
                       MaterialPageRoute(builder: (context) => const MembershipScreen()),
                     );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.receipt_long, color: Color(0xFF667eea)),
+                  title: const Text('购买记录'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    try {
+                      final result = await _membershipService.getPurchaseHistory(authModel.authToken!);
+                      if (context.mounted) {
+                        final purchases = result['purchases'] as List? ?? [];
+                        _showPurchaseHistory(context, purchases);
+                      }
+                    } catch (e) {
+                      debugPrint('加载历史记录失败: $e');
+                      if (context.mounted) {
+                        _showPurchaseHistory(context, []);
+                      }
+                    }
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.card_giftcard, color: Color(0xFF667eea)),
+                  title: const Text('兑换记录'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    try {
+                      final result = await _membershipService.getRedeemHistory(authModel.authToken!);
+                      if (context.mounted) {
+                        final redeems = result['redeems'] as List? ?? [];
+                        _showRedeemHistory(context, redeems);
+                      }
+                    } catch (e) {
+                      debugPrint('加载兑换记录失败: $e');
+                      if (context.mounted) {
+                        _showRedeemHistory(context, []);
+                      }
+                    }
                   },
                 ),
                 const Divider(height: 1),
@@ -342,5 +384,80 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (user.isPremiumMember) return Colors.amber;
     if (user.isTrialMember) return Colors.blue;
     return Colors.grey;
+  }
+
+  void _showPurchaseHistory(BuildContext context, List purchases) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('购买记录'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: purchases.isEmpty
+              ? const Center(child: Text('暂无购买记录'))
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: purchases.length,
+                  itemBuilder: (context, index) {
+                    final purchase = purchases[index] as Map<String, dynamic>;
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      child: ListTile(
+                        title: Text(purchase['plan']?.toString() ?? '未知套餐'),
+                        subtitle: Text('金额: ${purchase['amount']?.toString() ?? '0'} ${purchase['currency']?.toString() ?? 'CNY'}\n时间: ${purchase['purchased_at']?.toString() ?? ''}'),
+                        trailing: Text(
+                          purchase['status']?.toString() ?? '',
+                          style: TextStyle(
+                            color: purchase['status'] == 'completed' ? Colors.green : Colors.orange,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRedeemHistory(BuildContext context, List redeems) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('兑换记录'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: redeems.isEmpty
+              ? const Center(child: Text('暂无兑换记录'))
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: redeems.length,
+                  itemBuilder: (context, index) {
+                    final redeem = redeems[index] as Map<String, dynamic>;
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      child: ListTile(
+                        title: Text(redeem['name']?.toString() ?? '兑换码'),
+                        subtitle: Text('天数: ${redeem['days']?.toString() ?? '0'} 天\n时间: ${redeem['redeemed_at']?.toString() ?? ''}'),
+                        trailing: const Icon(Icons.check_circle, color: Colors.green),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
   }
 }

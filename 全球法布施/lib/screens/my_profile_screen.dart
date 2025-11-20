@@ -4,6 +4,7 @@ import '../models/auth_model.dart';
 import '../services/like_service.dart';
 import 'liked_content_screen.dart';
 import 'login_screen.dart';
+import 'membership_screen.dart';
 import '../core/design_system/app_theme.dart';
 
 class MyProfileScreen extends StatelessWidget {
@@ -90,13 +91,27 @@ class MyProfileScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('会员信息', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('会员信息', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                if (user.isAdmin)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text('管理员', style: TextStyle(color: Colors.white, fontSize: 12)),
+                  ),
+              ],
+            ),
             const SizedBox(height: 12),
             _buildInfoRow('会员类型', user.membershipType ?? '普通用户'),
             if (user.membershipExpiry != null)
               _buildInfoRow(
                 '到期时间',
-                '${user.membershipExpiry!.year}-${user.membershipExpiry!.month}-${user.membershipExpiry!.day}',
+                '${user.membershipExpiry!.year}-${user.membershipExpiry!.month.toString().padLeft(2, '0')}-${user.membershipExpiry!.day.toString().padLeft(2, '0')}',
               ),
           ],
         ),
@@ -335,10 +350,26 @@ class MyProfileScreen extends StatelessWidget {
       children: [
         ListTile(
           leading: const Icon(Icons.card_membership, color: Colors.white),
-          title: const Text('购买记录', style: TextStyle(color: Colors.white)),
+          title: const Text('会员中心', style: TextStyle(color: Colors.white)),
           trailing: const Icon(Icons.chevron_right, color: Colors.white70),
           onTap: () {
-            // TODO: 导航到购买记录页面
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const MembershipScreen()),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.refresh, color: Colors.white),
+          title: const Text('刷新会员信息', style: TextStyle(color: Colors.white)),
+          trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+          onTap: () async {
+            await authModel.refreshUserInfo();
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已刷新会员信息')),
+              );
+            }
           },
         ),
         ListTile(
@@ -346,7 +377,9 @@ class MyProfileScreen extends StatelessWidget {
           title: const Text('设置', style: TextStyle(color: Colors.white)),
           trailing: const Icon(Icons.chevron_right, color: Colors.white70),
           onTap: () {
-            // TODO: 导航到设置页面
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('设置功能开发中')),
+            );
           },
         ),
         ListTile(

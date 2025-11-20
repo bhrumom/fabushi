@@ -249,16 +249,16 @@ class PurchaseRecord {
 
   factory PurchaseRecord.fromJson(Map<String, dynamic> json) {
     return PurchaseRecord(
-      id: json['id'] as String,
-      orderId: json['orderId'] as String,
-      plan: json['plan'] as String,
-      amount: json['amount'] as String,
-      currency: json['currency'] as String,
-      status: json['status'] as String,
-      paymentMethod: json['paymentMethod'] as String,
-      purchasedAt: json['purchasedAt'] as String,
-      validFrom: json['validFrom'] as String,
-      validTo: json['validTo'] as String,
+      id: (json['id'] ?? '') as String,
+      orderId: (json['order_id'] ?? json['orderId'] ?? '') as String,
+      plan: (json['plan'] ?? '') as String,
+      amount: (json['amount'] ?? '0') as String,
+      currency: (json['currency'] ?? 'CNY') as String,
+      status: (json['status'] ?? 'unknown') as String,
+      paymentMethod: (json['payment_method'] ?? json['paymentMethod'] ?? '') as String,
+      purchasedAt: (json['purchased_at'] ?? json['purchasedAt'] ?? '') as String,
+      validFrom: (json['valid_from'] ?? json['validFrom'] ?? '') as String,
+      validTo: (json['valid_to'] ?? json['validTo'] ?? '') as String,
     );
   }
 
@@ -348,15 +348,15 @@ class RedeemRecord {
 
   factory RedeemRecord.fromJson(Map<String, dynamic> json) {
     return RedeemRecord(
-      id: json['id'] as String,
-      code: json['code'] as String,
-      type: json['type'] as String,
-      name: json['name'] as String,
-      days: json['days'] as int,
-      redeemedAt: json['redeemedAt'] as String,
-      validFrom: json['validFrom'] as String,
-      validTo: json['validTo'] as String,
-      previousExpiryDate: json['previousExpiryDate'] as String?,
+      id: (json['id'] ?? '') as String,
+      code: (json['code'] ?? '') as String,
+      type: (json['type'] ?? '') as String,
+      name: (json['name'] ?? '') as String,
+      days: (json['days'] ?? 0) as int,
+      redeemedAt: (json['redeemed_at'] ?? json['redeemedAt'] ?? '') as String,
+      validFrom: (json['valid_from'] ?? json['validFrom'] ?? '') as String,
+      validTo: (json['valid_to'] ?? json['validTo'] ?? '') as String,
+      previousExpiryDate: json['previous_expiry_date'] ?? json['previousExpiryDate'] as String?,
     );
   }
 

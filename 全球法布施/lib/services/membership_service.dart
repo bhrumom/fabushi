@@ -292,10 +292,10 @@ class MembershipService {
       final endpoint = Uri.parse(AppConfig.adminPurchaseHistoryUrl).path;
       final response = await _apiClient.get(endpoint, token: token);
 
-      if (response['success'] == true) {
+      if (response != null && response['purchases'] != null) {
         return {'success': true, 'purchases': response['purchases']};
       } else {
-        return {'success': false, 'message': response['message'] ?? '获取购买记录失败'};
+        return {'success': false, 'message': '获取购买记录失败'};
       }
     } catch (e) {
       debugPrint('获取购买记录失败: $e');
@@ -309,10 +309,10 @@ class MembershipService {
       final endpoint = Uri.parse(AppConfig.adminRedeemHistoryUrl).path;
       final response = await _apiClient.get(endpoint, token: token);
 
-      if (response['success'] == true) {
+      if (response != null && response['redeems'] != null) {
         return {'success': true, 'redeems': response['redeems']};
       } else {
-        return {'success': false, 'message': response['message'] ?? '获取兑换记录失败'};
+        return {'success': false, 'message': '获取兑换记录失败'};
       }
     } catch (e) {
       debugPrint('获取兑换记录失败: $e');

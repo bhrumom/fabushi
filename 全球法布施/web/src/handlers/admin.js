@@ -19,7 +19,9 @@ export async function handleCheckAdminStatus(request, env, db) {
   return jsonResponse({
     isAdmin: isAdmin(user.email),
     email: user.email,
-    username: user.username
+    username: user.username,
+    membershipType: user.membership_type || 'expired',
+    membershipExpiresAt: user.membership_expires_at
   });
 }
 
