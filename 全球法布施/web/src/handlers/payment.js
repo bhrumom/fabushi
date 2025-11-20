@@ -2,6 +2,7 @@ import { jsonResponse } from '../utils/response.js';
 import { verifyToken } from '../../auth-utils.js';
 import { MEMBERSHIP_PLANS } from '../config/constants.js';
 import { isAdmin } from '../utils/helpers.js';
+import { importPrivateKey, generateSign } from '../../alipay-utils.js';
 
 // 创建支付宝订单
 export async function handleCreateAlipayOrder(request, env, db) {
@@ -16,7 +17,7 @@ export async function handleCreateAlipayOrder(request, env, db) {
     return jsonResponse({ error: '认证失败' }, 401);
   }
 
-  const { plan = 'monthly' } = await request.json();
+  const { plan = 'monthly', platform = 'app' } = await request.json();
   const planDetails = MEMBERSHIP_PLANS[plan];
   if (!planDetails) {
     return jsonResponse({ error: '无效的会员计划' }, 400);
@@ -29,7 +30,7 @@ export async function handleCreateAlipayOrder(request, env, db) {
 
   const isAdminUser = isAdmin(user.email);
   const finalAmount = isAdminUser ? planDetails.adminPrice : planDetails.price;
-  const outTradeNo = `MEMBER_${tokenData.username}_${Date.now()}`;
+  const outTradeNo = platform === 'web' ? `WEB_${tokenData.username}_${Date.now()}` : `MEMBER_${tokenData.username}_${Date.now()}`;
 
   await db.createOrder({
     orderId: outTradeNo,
@@ -39,14 +40,60 @@ export async function handleCreateAlipayOrder(request, env, db) {
     originalAmount: planDetails.price,
     isAdminOrder: isAdminUser,
     status: 'PENDING',
-    platform: 'alipay',
+    platform: platform || 'app',
     createdAt: new Date().toISOString()
   });
 
+  // Web平台：电脑网站支付
+  if (platform === 'web') {
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+    const bizContent = {
+      out_trade_no: outTradeNo,
+      total_amount: finalAmount,
+      subject: `全球法布施 - ${planDetails.name}`,
+      product_code: 'FAST_INSTANT_TRADE_PAY',
+      timeout_express: '30m',
+      quit_url: env.WORKER_URL || 'https://flutter.ombhrum.com'
+    };
+
+    const params = {
+      app_id: env.ALIPAY_APP_ID,
+      method: 'alipay.trade.page.pay',
+      format: 'JSON',
+      charset: 'utf-8',
+      sign_type: 'RSA2',
+      timestamp,
+      version: '1.0',
+      notify_url: `${env.WORKER_URL || 'https://flutter.ombhrum.com'}/api/alipay/notify`,
+      return_url: `${env.WORKER_URL || 'https://flutter.ombhrum.com'}/payment-success.html`,
+      biz_content: JSON.stringify(bizContent)
+    };
+
+    const privateKey = await importPrivateKey(env.ALIPAY_PRIVATE_KEY);
+    params.sign = await generateSign(params, privateKey);
+
+    const gateway = env.ALIPAY_SANDBOX === 'true' ? 'https://openapi-sandbox.dl.alipaydev.com/gateway.do' : 'https://openapi.alipay.com/gateway.do';
+    const queryString = new URLSearchParams(params).toString();
+    const paymentUrl = `${gateway}?${queryString}`;
+
+    return jsonResponse({
+      success: true,
+      orderId: outTradeNo,
+      amount: finalAmount,
+      plan,
+      paymentUrl
+    });
+  }
+
+  // APP支付：当面付
   return jsonResponse({
+    success: true,
     orderId: outTradeNo,
     amount: finalAmount,
-    plan
+    plan,
+    qrCode: null
   });
 }
 

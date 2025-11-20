@@ -94,7 +94,7 @@ class MembershipService {
   /// 创建支付宝Web端订单（电脑网站支付）
   Future<Map<String, dynamic>> createAlipayWebOrder(String token, String plan) async {
     try {
-      final endpoint = '/api/alipay/create-web-order';
+      final endpoint = '/api/alipay/create-order';
       final response = await _apiClient.post(
         endpoint,
         body: {
