@@ -63,16 +63,19 @@ async function generateAlipayLoginUrl(env, platform) {
     console.log('生成的授权URL:', authUrl);
     
     // 存储state用于验证，macOS应用需要特殊标记
-    if (env.USERS_KV) {
+    if (env.DB) {
       const stateData = {
         type: callbackType,
         timestamp: Date.now(),
         valid: true
       };
-      await env.USERS_KV.put(`alipay_state:${state}`, JSON.stringify(stateData), { expirationTtl: 600 }); // 10分钟有效
-      console.log('state已存储到KV:', stateData);
+      const expiresAt = new Date(Date.now() + 600000).toISOString(); // 10分钟后过期
+      await env.DB.prepare(
+        'INSERT INTO alipay_states (state, state_data, expires_at) VALUES (?, ?, ?)'
+      ).bind(state, JSON.stringify(stateData), expiresAt).run();
+      console.log('state已存储到D1:', stateData);
     } else {
-      console.warn('USERS_KV未绑定，跳过state存储');
+      console.warn('DB未绑定，跳过state存储');
     }
     
     const response = jsonResponse({ 
@@ -244,12 +247,14 @@ async function handleAlipayLogin(request, env) {
     
     // 验证state
     if (state) {
-      const storedState = await env.USERS_KV.get(`alipay_state:${state}`);
+      const storedState = await env.DB.prepare(
+        'SELECT state_data FROM alipay_states WHERE state = ? AND expires_at > datetime("now")'
+      ).bind(state).first();
       if (!storedState) {
         return jsonResponse({ error: '无效的state参数' }, 400);
       }
       // 删除已使用的state
-      await env.USERS_KV.delete(`alipay_state:${state}`);
+      await env.DB.prepare('DELETE FROM alipay_states WHERE state = ?').bind(state).run();
     }
     
     // 获取支付宝用户信息
@@ -274,13 +279,17 @@ async function handleAlipayLogin(request, env) {
     }
     
     // 检查是否已有注册账号
-    const existingUser = await env.USERS_KV.get(`alipay_binding:${alipayUser.user_id}`);
+    const bindingResult = await env.DB.prepare(
+      'SELECT username FROM alipay_bindings WHERE alipay_user_id = ?'
+    ).bind(alipayUser.user_id).first();
     
-    if (existingUser) {
+    if (bindingResult) {
       // 已有注册账号，直接登录
-      const userData = await env.USERS_KV.get(`user:${existingUser}`);
-      if (userData) {
-        const user = JSON.parse(userData);
+      const userResult = await env.DB.prepare(
+        'SELECT * FROM users WHERE username = ?'
+      ).bind(bindingResult.username).first();
+      if (userResult) {
+        const user = userResult;
         const token = await generateToken(user.username, env);
         return jsonResponse({ 
           token, 
@@ -317,7 +326,9 @@ async function registerAlipayUser(request, env) {
     // 一键注册模式：自动生成用户名和邮箱
     if (oneClick === true) {
       // 检查支付宝是否已注册
-      const existingAlipay = await env.USERS_KV.get(`alipay_binding:${alipayUserId}`);
+      const existingAlipay = await env.DB.prepare(
+        'SELECT username FROM alipay_bindings WHERE alipay_user_id = ?'
+      ).bind(alipayUserId).first();
       if (existingAlipay) {
         return jsonResponse({ error: '该支付宝账号已注册其他用户' }, 400);
       }
@@ -328,13 +339,19 @@ async function registerAlipayUser(request, env) {
       let counter = 1;
       
       // 确保用户名唯一
-      while (await env.USERS_KV.get(`user:${autoUsername}`)) {
+      let usernameCheck = await env.DB.prepare(
+        'SELECT username FROM users WHERE username = ?'
+      ).bind(autoUsername).first();
+      while (usernameCheck) {
         autoUsername = `${baseUsername}_${counter}`;
         counter++;
+        usernameCheck = await env.DB.prepare(
+          'SELECT username FROM users WHERE username = ?'
+        ).bind(autoUsername).first();
       }
       
-      // 生成默认邮箱
-      const autoEmail = `${alipayUserId}@alipay.user`;
+      // 生成唯一邮箱（添加时间戳确保唯一性）
+      const autoEmail = `alipay_${alipayUserId}_${Date.now()}@alipay.user`;
       
       // 创建新用户
       const creds = await createPasswordHash('alipay_default_password'); // 默认密码
@@ -355,13 +372,32 @@ async function registerAlipayUser(request, env) {
         membershipExpiresAt: calculateTrialEndDate().toISOString()
       };
       
-      // 保存用户信息
-      await env.USERS_KV.put(`user:${autoUsername}`, JSON.stringify(userData));
-      await env.USERS_KV.put(`email_to_username:${autoEmail}`, autoUsername);
+      // 保存用户信息到 D1 数据库
+      await env.DB.prepare(`
+        INSERT INTO users (
+          username, email, password_hash, salt, iterations, algo,
+          email_verified, membership_type, membership_expires_at,
+          alipay_user_id, alipay_open_id, alipay_nickname, alipay_avatar,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        autoUsername, autoEmail, creds.passwordHash, creds.salt, creds.iterations, creds.algo,
+        1, // email_verified
+        'trial', // membership_type
+        calculateTrialEndDate().toISOString(),
+        alipayUserId, alipayOpenId || null, alipayNickname || '支付宝用户', alipayAvatar || null,
+        new Date().toISOString(), new Date().toISOString()
+      ).run();
+      
+      // 建立邮箱到用户名的映射
+      await env.DB.prepare(
+        'INSERT INTO email_username_mapping (email, username) VALUES (?, ?)'
+      ).bind(autoEmail, autoUsername).run();
       
       // 建立支付宝到用户的映射
-      await env.USERS_KV.put(`alipay_binding:${alipayUserId}`, autoUsername);
-      await env.USERS_KV.put(`user_alipay:${autoUsername}`, alipayUserId);
+      await env.DB.prepare(
+        'INSERT OR REPLACE INTO alipay_bindings (alipay_user_id, username, bound_at) VALUES (?, ?, ?)'
+      ).bind(alipayUserId, autoUsername, new Date().toISOString()).run();
       
       // 生成JWT token
       const token = await generateToken(autoUsername, env);
@@ -400,13 +436,17 @@ async function registerAlipayUser(request, env) {
     }
     
     // 检查邮箱是否已存在
-    const existingUser = await env.USERS_KV.get(`email_to_username:${normalizedEmail}`);
-    if (existingUser) {
+    const existingEmail = await env.DB.prepare(
+      'SELECT username FROM email_username_mapping WHERE email = ?'
+    ).bind(normalizedEmail).first();
+    if (existingEmail) {
       return jsonResponse({ error: '该邮箱已被注册' }, 400);
     }
     
     // 检查支付宝是否已注册
-    const existingAlipay = await env.USERS_KV.get(`alipay_binding:${alipayUserId}`);
+    const existingAlipay = await env.DB.prepare(
+      'SELECT username FROM alipay_bindings WHERE alipay_user_id = ?'
+    ).bind(alipayUserId).first();
     if (existingAlipay) {
       return jsonResponse({ error: '该支付宝账号已注册其他用户' }, 400);
     }
@@ -430,13 +470,29 @@ async function registerAlipayUser(request, env) {
       membershipExpiresAt: null
     };
     
-    // 保存用户信息
-    await env.USERS_KV.put(`user:${username}`, JSON.stringify(userData));
-    await env.USERS_KV.put(`email_to_username:${normalizedEmail}`, username);
+    // 保存用户信息到 D1
+    await env.DB.prepare(`
+      INSERT INTO users (
+        username, email, password_hash, salt, iterations, algo,
+        email_verified, membership_type,
+        alipay_user_id, alipay_open_id, alipay_nickname, alipay_avatar,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      username.trim(), normalizedEmail, creds.passwordHash, creds.salt, creds.iterations, creds.algo,
+      1, 'free',
+      alipayUserId, alipayOpenId || null, alipayNickname || '支付宝用户', alipayAvatar || null,
+      new Date().toISOString(), new Date().toISOString()
+    ).run();
+    
+    await env.DB.prepare(
+      'INSERT INTO email_username_mapping (email, username) VALUES (?, ?)'
+    ).bind(normalizedEmail, username.trim()).run();
     
     // 建立支付宝到用户的映射
-    await env.USERS_KV.put(`alipay_binding:${alipayUserId}`, username);
-    await env.USERS_KV.put(`user_alipay:${username}`, alipayUserId);
+    await env.DB.prepare(
+      'INSERT INTO alipay_bindings (alipay_user_id, username, bound_at) VALUES (?, ?, ?)'
+    ).bind(alipayUserId, username.trim(), new Date().toISOString()).run();
     
     // 生成JWT token
     const token = await generateToken(username, env);
@@ -465,21 +521,27 @@ async function sendRegistrationCaptcha(request, env) {
     }
     
     // 检查用户名是否已存在
-    const existingUser = await env.USERS_KV.get(`user:${username}`);
+    const existingUser = await env.DB.prepare(
+      'SELECT username FROM users WHERE username = ?'
+    ).bind(username).first();
     if (existingUser) {
       return jsonResponse({ error: '用户名已存在' }, 400);
     }
     
     // 如提供邮箱则检查唯一
     if (email) {
-      const emailMapped = await env.USERS_KV.get(`email_to_username:${String(email).trim().toLowerCase()}`);
+      const emailMapped = await env.DB.prepare(
+        'SELECT username FROM email_username_mapping WHERE email = ?'
+      ).bind(String(email).trim().toLowerCase()).first();
       if (emailMapped) {
         return jsonResponse({ error: '该邮箱已被注册' }, 400);
       }
     }
     
     // 检查支付宝是否已注册
-    const existingBinding = await env.USERS_KV.get(`alipay_binding:${alipayUserId}`);
+    const existingBinding = await env.DB.prepare(
+      'SELECT username FROM alipay_bindings WHERE alipay_user_id = ?'
+    ).bind(alipayUserId).first();
     if (existingBinding) {
       return jsonResponse({ error: '该支付宝账号已注册其他用户' }, 400);
     }
@@ -511,15 +573,31 @@ async function sendRegistrationCaptcha(request, env) {
       subscriptionId: null
     };
     
-    // 保存用户数据
-    await env.USERS_KV.put(`user:${username}`, JSON.stringify(userData));
+    // 保存用户数据到 D1
+    await env.DB.prepare(`
+      INSERT INTO users (
+        username, email, password_hash, salt, iterations, algo,
+        email_verified, membership_type, membership_expires_at,
+        alipay_user_id, alipay_nickname, alipay_avatar,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      username, userData.email, userData.passwordHash, userData.salt, userData.iterations, userData.algo,
+      userData.emailVerified ? 1 : 0, userData.membershipType, userData.freeTrialEndDate,
+      alipayUserId, nickname || '支付宝用户', avatar || '',
+      new Date().toISOString(), new Date().toISOString()
+    ).run();
+    
     if (userData.email) {
-      await env.USERS_KV.put(`email_to_username:${userData.email}`, username);
+      await env.DB.prepare(
+        'INSERT INTO email_username_mapping (email, username) VALUES (?, ?)'
+      ).bind(userData.email, username).run();
     }
     
     // 建立支付宝注册关系
-    await env.USERS_KV.put(`alipay_binding:${alipayUserId}`, username);
-    await env.USERS_KV.put(`user_alipay:${username}`, alipayUserId);
+    await env.DB.prepare(
+      'INSERT INTO alipay_bindings (alipay_user_id, username, bound_at) VALUES (?, ?, ?)'
+    ).bind(alipayUserId, username, new Date().toISOString()).run();
     
     const token = await generateToken(username, env);
     return jsonResponse({ 
@@ -547,7 +625,9 @@ async function checkEmailAvailability(request, env) {
     }
     
     // 检查邮箱是否已存在
-    const existingUser = await env.USERS_KV.get(`user:${normalizedEmail}`);
+    const existingUser = await env.DB.prepare(
+      'SELECT username FROM email_username_mapping WHERE email = ?'
+    ).bind(normalizedEmail).first();
     
     return jsonResponse({
       success: true,
@@ -590,7 +670,9 @@ async function handleMacOSAlipayCallback(request, env) {
     
     // 验证state
     if (state) {
-      const storedStateData = await env.USERS_KV.get(`alipay_state:${state}`);
+      const storedStateData = await env.DB.prepare(
+        'SELECT state_data FROM alipay_states WHERE state = ? AND expires_at > datetime("now")'
+      ).bind(state).first();
       if (!storedStateData) {
         console.error('macOS支付宝回调无效的state参数:', state);
         const redirectUrl = `globaldharma://error=invalid_state&error_message=${encodeURIComponent('登录状态无效，请重新登录')}`;
@@ -599,7 +681,7 @@ async function handleMacOSAlipayCallback(request, env) {
       
       // 检查是否为macOS应用的state
       try {
-        const stateData = JSON.parse(storedStateData);
+        const stateData = JSON.parse(storedStateData.state_data);
         if (stateData.type !== 'macos') {
           console.warn('state类型不匹配，期望macos，实际:', stateData.type);
         }
@@ -608,7 +690,7 @@ async function handleMacOSAlipayCallback(request, env) {
       }
       
       // 删除已使用的state
-      await env.USERS_KV.delete(`alipay_state:${state}`);
+      await env.DB.prepare('DELETE FROM alipay_states WHERE state = ?').bind(state).run();
     }
     
     // 获取支付宝用户信息
@@ -645,13 +727,17 @@ async function handleMacOSAlipayCallback(request, env) {
     }
     
     // 检查是否已有注册账号
-    const existingUser = await env.USERS_KV.get(`alipay_binding:${alipayUser.user_id}`);
+    const macosBindingResult = await env.DB.prepare(
+      'SELECT username FROM alipay_bindings WHERE alipay_user_id = ?'
+    ).bind(alipayUser.user_id).first();
     
-    if (existingUser) {
+    if (macosBindingResult) {
       // 已有注册账号，直接登录
-      const userData = await env.USERS_KV.get(`user:${existingUser}`);
-      if (userData) {
-        const user = JSON.parse(userData);
+      const macosUserResult = await env.DB.prepare(
+        'SELECT * FROM users WHERE username = ?'
+      ).bind(macosBindingResult.username).first();
+      if (macosUserResult) {
+        const user = macosUserResult;
         const token = await generateToken(user.username, env);
         
         console.log('macOS应用支付宝登录成功，用户已注册:', user.username);
@@ -709,7 +795,9 @@ async function handleAlipayCallback(request, env) {
     
     // 验证state
     if (state) {
-      const storedState = await env.USERS_KV.get(`alipay_state:${state}`);
+      const storedState = await env.DB.prepare(
+        'SELECT state_data FROM alipay_states WHERE state = ? AND expires_at > datetime("now")'
+      ).bind(state).first();
       if (!storedState) {
         console.error('无效的state参数:', state);
         // 直接跳转到Flutter应用的错误页面，不再经过HTML登录页面
@@ -718,7 +806,7 @@ async function handleAlipayCallback(request, env) {
         return Response.redirect(redirectUrl.toString(), 302);
       }
       // 删除已使用的state
-      await env.USERS_KV.delete(`alipay_state:${state}`);
+      await env.DB.prepare('DELETE FROM alipay_states WHERE state = ?').bind(state).run();
     }
     
     // 获取支付宝用户信息
@@ -735,13 +823,17 @@ async function handleAlipayCallback(request, env) {
     }
     
     // 检查是否已有注册账号
-    const existingUser = await env.USERS_KV.get(`alipay_binding:${alipayUser.user_id}`);
+    const webBindingResult = await env.DB.prepare(
+      'SELECT username FROM alipay_bindings WHERE alipay_user_id = ?'
+    ).bind(alipayUser.user_id).first();
     
-    if (existingUser) {
+    if (webBindingResult) {
       // 已有注册账号，直接登录
-      const userData = await env.USERS_KV.get(`user:${existingUser}`);
-      if (userData) {
-        const user = JSON.parse(userData);
+      const webUserResult = await env.DB.prepare(
+        'SELECT * FROM users WHERE username = ?'
+      ).bind(webBindingResult.username).first();
+      if (webUserResult) {
+        const user = webUserResult;
         const token = await generateToken(user.username, env);
         
         // 直接跳转到Flutter主应用，通过URL hash传递登录信息

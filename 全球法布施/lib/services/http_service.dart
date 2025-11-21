@@ -27,6 +27,9 @@ class HttpService {
       final token = await _getStoredToken();
       if (token != null) {
         headers['Authorization'] = 'Bearer $token';
+        print('🔐 HttpService: 添加认证头 Authorization: Bearer ${token.substring(0, 20)}...');
+      } else {
+        print('⚠️ HttpService: useAuth=true 但没有token');
       }
     }
 
@@ -37,9 +40,15 @@ class HttpService {
   static Future<String?> _getStoredToken() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(AppConfig.tokenStorageKey);
+      final token = prefs.getString(AppConfig.tokenStorageKey);
+      if (token != null) {
+        print('🔑 HttpService: 成功获取token: ${token.substring(0, 20)}...');
+      } else {
+        print('⚠️ HttpService: SharedPreferences中没有token');
+      }
+      return token;
     } catch (e) {
-      print('获取存储的token失败: $e');
+      print('❌ HttpService: 获取存储的token失败: $e');
       return null;
     }
   }

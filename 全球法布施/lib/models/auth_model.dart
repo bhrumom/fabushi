@@ -387,7 +387,7 @@ class AuthModel extends ChangeNotifier {
         avatar: avatar,
       );
 
-      debugPrint('支付宝一键注册结果: $result');
+      debugPrint('支付宝一键注册结果: success=${result['success']}, error=${result['error']}');
 
       if (result['success'] == true) {
         // 注册成功后自动登录
@@ -395,7 +395,7 @@ class AuthModel extends ChangeNotifier {
         final username = result['username'];
         final email = result['email'];
 
-        // 先设置token到AuthService
+        // 创建基本用户模型
         final basicUserModel = UserModel(
           username: username,
           email: email ?? '',
@@ -403,38 +403,29 @@ class AuthModel extends ChangeNotifier {
           createdAt: DateTime.now().toIso8601String(),
           membership: MembershipInfo(type: 'trial', isActive: true),
         );
+
+        // 关键：先保存token到SharedPreferences，确保后续API调用能获取到token
         await _authService.setAuth(_token!, basicUserModel);
-
-        // 获取完整的用户信息
-        await _authService.refreshUserInfo();
-        final userModel = _authService.currentUser;
-
-        if (userModel != null) {
-          // 获取管理员状态
-          final adminStatusResult = await _membershipService.getAdminStats(_token!);
-          final bool isAdmin =
-              adminStatusResult['success'] == true && adminStatusResult['isAdmin'] == true;
-
-          final membershipJson = userModel.membership.toJson();
-          _currentUser = User(
-            username: userModel.username,
-            email: userModel.email ?? '',
-            membershipType: membershipJson['type'],
-            membershipExpiry: membershipJson['expiresAt'] != null
-                ? DateTime.parse(membershipJson['expiresAt'])
-                : null,
-            isAdmin: isAdmin,
-            alipayUserId: userModel.alipayUserId,
-          );
-
-          await _storeAuth();
-          await LikeService().initialize(userId: _currentUser!.username);
-          _setLoading(false);
-          notifyListeners();
-          return true;
-        } else {
-          throw Exception('获取用户信息失败');
-        }
+        
+        // 创建临时用户对象
+        _currentUser = User(
+          username: username,
+          email: email ?? '',
+          membershipType: 'trial',
+          membershipExpiry: DateTime.now().add(const Duration(days: 3)),
+          isAdmin: false,
+        );
+        
+        // 立即保存并通知UI
+        await _storeAuth();
+        await LikeService().initialize(userId: _currentUser!.username);
+        _setLoading(false);
+        notifyListeners();
+        
+        // 后台异步刷新完整用户信息（包括会员信息和管理员状态）
+        refreshUserInfo();
+        
+        return true;
       } else {
         _setError(result['message'] ?? '支付宝一键注册失败');
         _setLoading(false);
@@ -622,7 +613,7 @@ class AuthModel extends ChangeNotifier {
         membership: MembershipInfo(type: 'trial', isActive: true),
       );
 
-      // 设置token到AuthService
+      // 关键：先设置token到AuthService（会保存到SharedPreferences）
       await _authService.setAuth(token, basicUserModel);
 
       // 设置本地用户状态
@@ -636,9 +627,13 @@ class AuthModel extends ChangeNotifier {
 
       // 立即保存并通知UI
       await _storeAuth();
+      await LikeService().initialize(userId: _currentUser!.username);
       notifyListeners();
 
       debugPrint('✅ Token已设置，登录完成');
+      
+      // 后台异步刷新完整用户信息
+      refreshUserInfo();
     } catch (e) {
       debugPrint('使用token登录失败: $e');
     }

@@ -40,6 +40,9 @@ class ApiClient {
 
       if (token != null) {
         requestHeaders['Authorization'] = 'Bearer $token';
+        debugPrint('🔐 ApiClient: 添加认证头 Authorization: Bearer ${token.substring(0, 20)}...');
+      } else {
+        debugPrint('⚠️ ApiClient: 没有token');
       }
 
       debugPrint('🌐 GET: $uri');
@@ -72,6 +75,9 @@ class ApiClient {
 
       if (token != null) {
         requestHeaders['Authorization'] = 'Bearer $token';
+        debugPrint('🔐 ApiClient: 添加认证头 Authorization: Bearer ${token.substring(0, 20)}...');
+      } else {
+        debugPrint('⚠️ ApiClient: 没有token');
       }
 
       debugPrint('🌐 POST: $uri');
@@ -172,6 +178,11 @@ class ApiClient {
   Map<String, dynamic> _handleResponse(http.Response response) {
     debugPrint('📥 Response: ${response.statusCode} ${response.reasonPhrase}');
     debugPrint('📄 原始响应体: ${response.body}');
+    
+    // 如果是 401 错误，打印请求头信息帮助调试
+    if (response.statusCode == 401) {
+      debugPrint('❌ 401 认证失败 - 请求头: ${response.request?.headers}');
+    }
 
     try {
       final data = jsonDecode(response.body);

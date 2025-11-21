@@ -70,9 +70,19 @@ class AuthService {
 
   // 从外部直接设置认证信息（例如，从Web URL hash登录时）
   Future<void> setAuth(String token, UserModel user) async {
+    print('🔑 AuthService.setAuth: 开始保存token: ${token.substring(0, 20)}...');
     _currentToken = token;
     _currentUser = user;
     await _saveAuth(token, user);
+    
+    // 验证保存是否成功
+    final prefs = await SharedPreferences.getInstance();
+    final savedToken = prefs.getString(_tokenKey);
+    if (savedToken == token) {
+      print('✅ AuthService.setAuth: token已成功保存到SharedPreferences');
+    } else {
+      print('❌ AuthService.setAuth: token保存失败！');
+    }
   }
 
   // 清除存储的认证信息

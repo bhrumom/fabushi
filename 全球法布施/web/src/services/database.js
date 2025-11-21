@@ -9,6 +9,12 @@ export class DatabaseService {
     return await this.db.prepare('SELECT * FROM users WHERE username = ?').bind(username).first();
   }
 
+  async getUserByAlipayId(alipayUserId) {
+    const binding = await this.db.prepare('SELECT username FROM alipay_bindings WHERE alipay_user_id = ?').bind(alipayUserId).first();
+    if (!binding) return null;
+    return await this.getUser(binding.username);
+  }
+
   async getUserByEmail(email) {
     const mapping = await this.db.prepare('SELECT username FROM email_username_mapping WHERE email = ?').bind(email).first();
     if (!mapping) return null;
