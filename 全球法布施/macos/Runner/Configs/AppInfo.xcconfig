@@ -8,7 +8,7 @@
 PRODUCT_NAME = global_dharma_sharing
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.globalDharmaSharing
+PRODUCT_BUNDLE_IDENTIFIER = com.ombhrum.fabushi
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.

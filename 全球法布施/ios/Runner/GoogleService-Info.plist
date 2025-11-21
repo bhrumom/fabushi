@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>700291601159-c64bhqmod4d4flb8g01c5hki2e0cu0o2.apps.googleusercontent.com</string>
+	<string>700291601159-1upjd1cqitujs9tnk26ltfhir639k77g.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.700291601159-c64bhqmod4d4flb8g01c5hki2e0cu0o2</string>
+	<string>com.googleusercontent.apps.700291601159-1upjd1cqitujs9tnk26ltfhir639k77g</string>
 	<key>API_KEY</key>
 	<string>AIzaSyCsvE8XER-hGKOftkTO6B5qGHTfI5vG-ik</string>
 	<key>GCM_SENDER_ID</key>
@@ -13,7 +13,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.example.globalDharmaSharing</string>
+	<string>com.ombhrum.fabushi</string>
 	<key>PROJECT_ID</key>
 	<string>quanqiubushi</string>
 	<key>STORAGE_BUCKET</key>
@@ -29,6 +29,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:700291601159:ios:ae57131c72d41361622ba2</string>
+	<string>1:700291601159:ios:a37861f095a35c41622ba2</string>
 </dict>
 </plist>
