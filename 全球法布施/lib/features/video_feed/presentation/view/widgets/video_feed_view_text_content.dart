@@ -27,7 +27,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     super.initState();
     if (widget.textContent.isNotEmpty) {
       _text = widget.textContent;
-      _currentPosition = Random().nextInt(max(_text.length - 100, 1));
+      _currentPosition = _findValidStartPosition(Random().nextInt(max(_text.length - 100, 1)));
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
@@ -44,7 +44,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
         _text = widget.textContent;
         _cache.clear();
         final randomPos = Random().nextInt(max(_text.length - 100, 1));
-        _currentPosition = randomPos;
+        _currentPosition = _findValidStartPosition(randomPos);
         _currentPage = Random().nextInt(9999) + 1;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -60,18 +60,26 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     super.dispose();
   }
 
-  (String, int)? _getNextParagraph(int startPos) {
+  int _findValidStartPosition(int randomPos) {
+    if (randomPos == 0) return 0;
+    
+    int pos = 0;
+    int lastValidPos = 0;
+    
+    while (pos < randomPos && pos < _text.length) {
+      final result = _getNextParagraph(pos);
+      if (result == null) break;
+      lastValidPos = result.$2;
+      pos = result.$3;
+    }
+    
+    return lastValidPos;
+  }
+
+  (String, int, int)? _getNextParagraph(int startPos) {
     if (startPos >= _text.length) return null;
 
     int pos = startPos;
-
-    // 如果不是从0开始，先找到下一个句子结束标点后的位置
-    if (pos > 0) {
-      final nextEnd = RegExp(r'[。！？；：、，]').firstMatch(_text.substring(pos));
-      if (nextEnd != null) {
-        pos = pos + nextEnd.end;
-      }
-    }
 
     // 跳过空白字符和标点符号
     while (pos < _text.length &&
@@ -85,6 +93,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     if (pos >= _text.length) return null;
 
     String buffer = '';
+    final contentStart = pos;
 
     while (pos < _text.length) {
       final lineEnd = _text.indexOf('\n', pos);
@@ -110,13 +119,13 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
         }
 
         if (buffer.isEmpty) {
-          return (currentLine, hasLineBreak ? lineEnd + 1 : _text.length);
+          return (currentLine, contentStart, hasLineBreak ? lineEnd + 1 : _text.length);
         }
 
         if ((buffer + currentLine).length <= 21) {
-          return (buffer + currentLine, hasLineBreak ? lineEnd + 1 : _text.length);
+          return (buffer + currentLine, contentStart, hasLineBreak ? lineEnd + 1 : _text.length);
         }
-        return (buffer, pos);
+        return (buffer, contentStart, pos);
       }
 
       final sentenceEndPos = pos + sentenceEnd.end;
@@ -138,9 +147,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
 
       if (sentence.length > 21) {
         if (buffer.isEmpty) {
-          return (sentence, sentenceEndPos);
+          return (sentence, contentStart, sentenceEndPos);
         }
-        return (buffer, pos);
+        return (buffer, contentStart, pos);
       }
 
       if (buffer.isEmpty) {
@@ -150,11 +159,11 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
         buffer += sentence;
         pos = sentenceEndPos;
       } else {
-        return (buffer, pos);
+        return (buffer, contentStart, pos);
       }
     }
 
-    return buffer.isNotEmpty ? (buffer, pos) : null;
+    return buffer.isNotEmpty ? (buffer, contentStart, pos) : null;
   }
 
   bool _isMetadataLine(String line) {
@@ -205,9 +214,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
 
   void _goNext() {
     final result = _getNextParagraph(_currentPosition);
-    if (result != null && result.$2 < _text.length) {
+    if (result != null && result.$3 < _text.length) {
       setState(() {
-        _currentPosition = result.$2;
+        _currentPosition = result.$3;
         _currentPage++;
       });
       widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
@@ -217,17 +226,33 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
   void _goPrevious() {
     int pos = 0;
     int lastPos = 0;
+    int secondLastPos = 0;
 
+    // 遍历所有段落，找到当前位置之前的最后一个段落
     while (pos < _currentPosition) {
       final result = _getNextParagraph(pos);
-      if (result == null || result.$2 >= _currentPosition) break;
-      lastPos = pos;
-      pos = result.$2;
+      if (result == null) break;
+      
+      // 如果下一个段落的起始位置已经到达或超过当前位置，停止
+      if (result.$2 >= _currentPosition) break;
+      
+      // 保存前两个位置
+      secondLastPos = lastPos;
+      lastPos = result.$2;
+      pos = result.$3;
     }
 
-    if (lastPos != _currentPosition) {
+    // 如果找到了前一个段落，切换到它
+    if (lastPos != _currentPosition && lastPos > 0) {
       setState(() {
         _currentPosition = lastPos;
+        _currentPage--;
+      });
+      widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
+    } else if (secondLastPos > 0 && secondLastPos != _currentPosition) {
+      // 如果lastPos等于当前位置，使用secondLastPos
+      setState(() {
+        _currentPosition = secondLastPos;
         _currentPage--;
       });
       widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
