@@ -67,10 +67,6 @@ dependencies:
   # 支付
   tobias: ^5.3.0  # 支付宝
 
-# Tobias 配置
-tobias:
-  url_scheme: fabushi
-
   # WebView
   webview_flutter: ^4.4.2
   flutter_inappwebview: ^6.0.0
@@ -100,6 +96,10 @@ tobias:
   fpdart: ^1.1.0
   json_annotation: ^4.9.0
   gbk_codec: ^0.4.0
+
+# Tobias 配置
+tobias:
+  url_scheme: fabushi
 
 dev_dependencies:
   flutter_test:

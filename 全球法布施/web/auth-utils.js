@@ -134,22 +134,41 @@ async function generateToken(username, env) {
 
 async function verifyToken(token, env) {
   try {
+    console.log('🔍 verifyToken: 开始验证');
     const parts = token.split('.');
-    if (parts.length !== 3) return null;
+    if (parts.length !== 3) {
+      console.log('❌ verifyToken: token 格式错误，parts.length =', parts.length);
+      return null;
+    }
     const [headerB64, payloadB64, sigB64] = parts;
     const enc = new TextEncoder();
     const secret = (env && (env.JWT_SECRET || (env.vars && env.vars.JWT_SECRET))) || 'dev-secret';
+    console.log('🔑 verifyToken: 使用 secret:', secret ? secret.substring(0, 20) + '...' : 'null');
 
     const data = `${headerB64}.${payloadB64}`;
     const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
     const sig = base64UrlDecodeToArray(sigB64);
     const valid = await crypto.subtle.verify('HMAC', key, sig, enc.encode(data));
-    if (!valid) return null;
+    console.log('🔐 verifyToken: 签名验证结果:', valid);
+    if (!valid) {
+      console.log('❌ verifyToken: 签名验证失败');
+      return null;
+    }
 
-    const payload = JSON.parse(atob(payloadB64));
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    // 使用 base64UrlDecodeToArray 解码，然后转换为 UTF-8 字符串
+    const payloadBytes = base64UrlDecodeToArray(payloadB64);
+    const payloadStr = new TextDecoder().decode(payloadBytes);
+    const payload = JSON.parse(payloadStr);
+    console.log('📦 verifyToken: payload =', payload);
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < now) {
+      console.log('❌ verifyToken: token 已过期, exp:', payload.exp, 'now:', now);
+      return null;
+    }
+    console.log('✅ verifyToken: 验证成功');
     return payload;
-  } catch {
+  } catch (e) {
+    console.log('❌ verifyToken: 异常:', e.message);
     return null;
   }
 }

@@ -38,17 +38,29 @@
 	<string>该应用需要访问本地网络以进行文件传输</string>
 	<key>NSSystemAdministrationUsageDescription</key>
 	<string>该应用需要网络权限来进行全球文件传输</string>
-	<!-- 支付宝URL Scheme配置 -->
+	<!-- URL Scheme配置 -->
 	<key>CFBundleURLTypes</key>
 	<array>
+		<!-- 应用包名 URL Scheme (支付宝/通用回调) -->
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>alipay</string>
+			<string>com.ombhrum.fabushi</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>globaldharma</string>
+				<string>com.ombhrum.fabushi</string>
+			</array>
+		</dict>
+		<!-- Google登录 -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>google</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.700291601159-c64bhqmod4d4flb8g01c5hki2e0cu0o2</string>
 			</array>
 		</dict>
 	</array>
@@ -62,28 +74,5 @@
 	<!-- Google Sign-In Configuration -->
 	<key>GIDClientID</key>
 	<string>700291601159-c64bhqmod4d4flb8g01c5hki2e0cu0o2.apps.googleusercontent.com</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>google</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.700291601159-c64bhqmod4d4flb8g01c5hki2e0cu0o2</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>alipay</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>globaldharma</string>
-			</array>
-		</dict>
-	</array>
 </dict>
 </plist>

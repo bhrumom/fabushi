@@ -102,11 +102,16 @@ class _LoginScreenState extends State<LoginScreen> {
     debugPrint('收到macOS支付宝回调: $url');
 
     try {
+      // 解码 HTML 实体 (&amp; -> &)
+      String decodedUrl = url.replaceAll('&amp;', '&');
+      
       // 解析自定义scheme URL
       Map<String, String> params = {};
 
-      // 移除 scheme 部分
-      String urlWithoutScheme = url.replaceFirst('globaldharma://', '');
+      // 移除 scheme 部分（支持两种格式）
+      String urlWithoutScheme = decodedUrl
+          .replaceFirst('com.ombhrum.fabushi://', '')
+          .replaceFirst('globaldharma://', ''); // 保留向后兼容
 
       // 直接解析查询参数（无论是否有?）
       final queryParams = urlWithoutScheme.split('&');

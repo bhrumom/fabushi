@@ -4,14 +4,26 @@ import { isAdmin } from '../utils/helpers.js';
 
 // 检查管理员状态
 export async function handleCheckAdminStatus(request, env, db) {
+  console.log('🔍 handleCheckAdminStatus 被调用');
   const authHeader = request.headers.get('Authorization');
+  console.log('📋 Authorization header:', authHeader ? authHeader.substring(0, 30) + '...' : 'null');
+  
   if (!authHeader?.startsWith('Bearer ')) {
+    console.log('❌ 未提供认证信息');
     return jsonResponse({ error: '未提供认证信息' }, 401);
   }
 
   const token = authHeader.substring(7);
+  console.log('🔑 Token preview:', token.substring(0, 30) + '...');
+  console.log('🔐 JWT_SECRET 状态:', env.JWT_SECRET ? '已配置' : '未配置（将使用默认值）');
+  
   const tokenData = await verifyToken(token, env);
-  if (!tokenData) return jsonResponse({ error: '认证失败' }, 401);
+  console.log('✅ Token 验证结果:', tokenData ? '成功' : '失败');
+  
+  if (!tokenData) {
+    console.log('❌ Token 验证失败，返回 401');
+    return jsonResponse({ error: '认证失败' }, 401);
+  }
 
   const user = await db.getUser(tokenData.username);
   if (!user) return jsonResponse({ error: '用户不存在' }, 404);

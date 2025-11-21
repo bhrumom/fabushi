@@ -656,7 +656,7 @@ async function handleMacOSAlipayCallback(request, env) {
     
     if (!authCode) {
       // macOS应用回调失败，重定向到应用并传递错误信息
-      const redirectUrl = `globaldharma://error=missing_auth_code&error_message=${encodeURIComponent('缺少授权码')}`;
+      const redirectUrl = `com.ombhrum.fabushi://error=missing_auth_code&error_message=${encodeURIComponent('缺少授权码')}`;
       console.error('macOS支付宝回调缺少授权码，重定向到应用:', redirectUrl);
       return Response.redirect(redirectUrl, 302);
     }
@@ -664,7 +664,7 @@ async function handleMacOSAlipayCallback(request, env) {
     // 验证授权码格式
     if (authCode.length < 10) {
       console.error('macOS支付宝回调授权码格式无效:', authCode);
-      const redirectUrl = `globaldharma://error=invalid_auth_code&error_message=${encodeURIComponent('授权码格式无效')}`;
+      const redirectUrl = `com.ombhrum.fabushi://error=invalid_auth_code&error_message=${encodeURIComponent('授权码格式无效')}`;
       return Response.redirect(redirectUrl, 302);
     }
     
@@ -675,7 +675,7 @@ async function handleMacOSAlipayCallback(request, env) {
       ).bind(state).first();
       if (!storedStateData) {
         console.error('macOS支付宝回调无效的state参数:', state);
-        const redirectUrl = `globaldharma://error=invalid_state&error_message=${encodeURIComponent('登录状态无效，请重新登录')}`;
+        const redirectUrl = `com.ombhrum.fabushi://error=invalid_state&error_message=${encodeURIComponent('登录状态无效，请重新登录')}`;
         return Response.redirect(redirectUrl, 302);
       }
       
@@ -703,7 +703,7 @@ async function handleMacOSAlipayCallback(request, env) {
       // 如果是授权码相关问题，重定向到应用并传递错误信息
       if (alipayUserResult.code === 'CODE_INVALID' || alipayUserResult.code === 'CODE_REUSED') {
         const errorMessage = alipayUserResult.message || '支付宝授权失败';
-        const redirectUrl = `globaldharma://error=auth_failed&error_message=${encodeURIComponent(errorMessage)}&error_code=${alipayUserResult.code}`;
+        const redirectUrl = `com.ombhrum.fabushi://error=auth_failed&error_message=${encodeURIComponent(errorMessage)}&error_code=${alipayUserResult.code}`;
         console.log('macOS支付宝授权失败，重定向到应用:', redirectUrl);
         return Response.redirect(redirectUrl, 302);
       }
@@ -722,7 +722,7 @@ async function handleMacOSAlipayCallback(request, env) {
     // 检查用户信息是否完整
     if (!alipayUser || !alipayUser.user_id) {
       console.error('macOS应用支付宝用户信息不完整:', alipayUser);
-      const redirectUrl = `globaldharma://error=invalid_alipay_user&error_message=${encodeURIComponent('支付宝用户信息不完整')}`;
+      const redirectUrl = `com.ombhrum.fabushi://error=invalid_alipay_user&error_message=${encodeURIComponent('支付宝用户信息不完整')}`;
       return Response.redirect(redirectUrl, 302);
     }
     
@@ -738,12 +738,15 @@ async function handleMacOSAlipayCallback(request, env) {
       ).bind(macosBindingResult.username).first();
       if (macosUserResult) {
         const user = macosUserResult;
+        console.log('🔐 生成 token 前 - JWT_SECRET 状态:', env.JWT_SECRET ? '已配置' : '未配置');
+        console.log('🔑 生成 token 前 - JWT_SECRET 值:', env.JWT_SECRET ? env.JWT_SECRET.substring(0, 20) + '...' : 'null');
         const token = await generateToken(user.username, env);
+        console.log('✅ token 已生成:', token.substring(0, 30) + '...');
         
         console.log('macOS应用支付宝登录成功，用户已注册:', user.username);
         
         // 重定向到macOS应用并传递登录成功信息
-        const redirectUrl = `globaldharma://alipay_auth_code=${authCode}&state=${state}&token=${token}&username=${user.username}&isNewUser=false&loginMethod=alipay&alipay_user_id=${alipayUser.user_id}&alipay_nickname=${encodeURIComponent(alipayUser.nick_name || '')}&alipay_avatar=${encodeURIComponent(alipayUser.avatar || '')}`;
+        const redirectUrl = `com.ombhrum.fabushi://alipay_auth_code=${authCode}&state=${state}&token=${token}&username=${user.username}&isNewUser=false&loginMethod=alipay&alipay_user_id=${alipayUser.user_id}&alipay_nickname=${encodeURIComponent(alipayUser.nick_name || '')}&alipay_avatar=${encodeURIComponent(alipayUser.avatar || '')}`;
         
         console.log('macOS应用支付宝登录成功，重定向到应用:', redirectUrl);
         return Response.redirect(redirectUrl, 302);
@@ -753,14 +756,14 @@ async function handleMacOSAlipayCallback(request, env) {
     // 新用户或未注册，重定向到macOS应用并传递用户信息
     console.log('macOS应用新用户或未注册支付宝账号，重定向到应用进行注册');
     
-    const redirectUrl = `globaldharma://alipay_auth_code=${authCode}&state=${state}&isNewUser=true&needsRegistration=true&loginMethod=alipay&alipay_user_id=${alipayUser.user_id}&alipay_nickname=${encodeURIComponent(alipayUser.nick_name || '')}&alipay_avatar=${encodeURIComponent(alipayUser.avatar || '')}`;
+    const redirectUrl = `com.ombhrum.fabushi://alipay_auth_code=${authCode}&state=${state}&isNewUser=true&needsRegistration=true&loginMethod=alipay&alipay_user_id=${alipayUser.user_id}&alipay_nickname=${encodeURIComponent(alipayUser.nick_name || '')}&alipay_avatar=${encodeURIComponent(alipayUser.avatar || '')}`;
     
     console.log('macOS应用新用户，重定向到应用进行注册:', redirectUrl);
     return Response.redirect(redirectUrl, 302);
     
   } catch (error) {
     console.error('macOS应用支付宝回调处理失败:', error);
-    const redirectUrl = `globaldharma://error=callback_failed&error_message=${encodeURIComponent(error.message || '支付宝登录处理失败')}`;
+    const redirectUrl = `com.ombhrum.fabushi://error=callback_failed&error_message=${encodeURIComponent(error.message || '支付宝登录处理失败')}`;
     return Response.redirect(redirectUrl, 302);
   }
 }
