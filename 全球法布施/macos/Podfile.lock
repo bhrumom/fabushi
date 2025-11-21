@@ -1278,6 +1278,8 @@ PODS:
     - OrderedSet (~> 6.0.3)
   - flutter_local_notifications (0.0.1):
     - FlutterMacOS
+  - flutter_volume_controller (0.0.1):
+    - FlutterMacOS
   - FlutterAngle (0.0.8)
   - FlutterMacOS (1.0.0)
   - geolocator_apple (1.2.0):
@@ -1460,6 +1462,7 @@ DEPENDENCIES:
   - flutter_angle (from `Flutter/ephemeral/.symlinks/plugins/flutter_angle/darwin`)
   - flutter_inappwebview_macos (from `Flutter/ephemeral/.symlinks/plugins/flutter_inappwebview_macos/macos`)
   - flutter_local_notifications (from `Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos`)
+  - flutter_volume_controller (from `Flutter/ephemeral/.symlinks/plugins/flutter_volume_controller/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
   - geolocator_apple (from `Flutter/ephemeral/.symlinks/plugins/geolocator_apple/darwin`)
   - google_sign_in_ios (from `Flutter/ephemeral/.symlinks/plugins/google_sign_in_ios/darwin`)
@@ -1519,6 +1522,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_inappwebview_macos/macos
   flutter_local_notifications:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos
+  flutter_volume_controller:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_volume_controller/macos
   FlutterMacOS:
     :path: Flutter/ephemeral
   geolocator_apple:
@@ -1569,6 +1574,7 @@ SPEC CHECKSUMS:
   flutter_angle: 667171798186da22259bed91555207507060bd4d
   flutter_inappwebview_macos: c2d68649f9f8f1831bfcd98d73fd6256366d9d1d
   flutter_local_notifications: 4bf37a31afde695b56091b4ae3e4d9c7a7e6cda0
+  flutter_volume_controller: ae08bf0838e4901f299781c3ab5056dfab0c2f74
   FlutterAngle: c810891af800750361b1d0e7cc944f2338d5ae18
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
   geolocator_apple: ab36aa0e8b7d7a2d7639b3b4e48308394e8cef5e

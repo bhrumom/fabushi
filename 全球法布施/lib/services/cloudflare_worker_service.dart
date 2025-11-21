@@ -318,4 +318,27 @@ class CloudflareWorkerService {
       return {'success': false, 'message': '网络连接失败'};
     }
   }
+
+  // 同步修行记录
+  Future<Map<String, dynamic>> syncMeditationRecord(String token, Map<String, dynamic> recordData) async {
+    try {
+      final url = await baseUrl;
+      final response = await http.post(
+        Uri.parse('$url/api/meditation/record'),
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+        body: jsonEncode(recordData),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'message': data['message']};
+      } else {
+        final data = jsonDecode(response.body);
+        return {'success': false, 'message': data['error'] ?? '同步修行记录失败'};
+      }
+    } catch (e) {
+      debugPrint('同步修行记录失败: $e');
+      return {'success': false, 'message': '网络连接失败'};
+    }
+  }
 }
