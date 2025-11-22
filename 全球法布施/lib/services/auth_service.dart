@@ -357,6 +357,33 @@ class AuthService {
     }
   }
 
+  // 更新个人资料
+  Future<Map<String, dynamic>> updateProfile({String? nickname, String? avatar}) async {
+    try {
+      final body = <String, dynamic>{};
+      if (nickname != null) body['nickname'] = nickname;
+      if (avatar != null) body['avatar'] = avatar;
+
+      final response = await HttpService.post(
+        '${AppConfig.apiUrl}/api/auth/update-profile',
+        body: body,
+        useAuth: true,
+      );
+
+      if (response.statusCode == 200) {
+        // 刷新用户信息
+        await refreshUserInfo();
+        return {'success': true, 'message': '更新成功'};
+      } else {
+        final errorData = jsonDecode(response.body);
+        return {'success': false, 'error': errorData['error'] ?? '更新失败'};
+      }
+    } catch (e) {
+      print('更新个人资料失败: $e');
+      return {'success': false, 'error': '网络错误，请检查网络连接'};
+    }
+  }
+
   // 绑定邮箱
   Future<Map<String, dynamic>> bindEmail({
     required String email,

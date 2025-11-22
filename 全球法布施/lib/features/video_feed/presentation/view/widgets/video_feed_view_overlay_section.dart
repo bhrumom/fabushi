@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_entity.dart';
-import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_interaction_buttons.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_user_info_section.dart';
+import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_interaction_buttons.dart';
 
 class VideoFeedViewOverlaySection extends StatelessWidget {
   const VideoFeedViewOverlaySection({
@@ -17,6 +17,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
     this.textContent,
     this.currentParagraph,
     this.onLikeTap,
+    this.onCommentTap,
     super.key,
   });
 
@@ -32,6 +33,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
   final String? textContent;
   final String? currentParagraph;
   final VoidCallback? onLikeTap;
+  final VoidCallback? onCommentTap;
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +59,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
             commentCount: commentCount,
             shareCount: shareCount,
             onLikeTap: onLikeTap,
+            onCommentTap: onCommentTap,
           ),
         ],
       ),

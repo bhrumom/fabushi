@@ -5,6 +5,7 @@ import 'package:global_dharma_sharing/features/video_feed/presentation/view/widg
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_text_content.dart';
 import 'package:global_dharma_sharing/models/liked_item.dart';
 import 'package:global_dharma_sharing/services/like_service.dart';
+import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/comment_bottom_sheet.dart';
 import 'package:video_player/video_player.dart';
 
 class VideoFeedViewItem extends StatefulWidget {
@@ -108,8 +109,18 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
           textContent: widget.videoItem.textContent,
           currentParagraph: _currentParagraph,
           onLikeTap: _handleLikeTap,
+          onCommentTap: _handleCommentTap,
         ),
       ],
+    );
+  }
+
+  void _handleCommentTap() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => CommentBottomSheet(videoId: widget.videoItem.id),
     );
   }
 }

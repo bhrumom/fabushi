@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:ui';
 import '../models/auth_model.dart';
 import '../services/like_service.dart';
 import 'liked_content_screen.dart';
 import 'login_screen.dart';
 import 'membership_screen.dart';
+import 'edit_profile_screen.dart';
 import '../core/design_system/app_theme.dart';
 
 class MyProfileScreen extends StatelessWidget {
@@ -13,38 +15,32 @@ class MyProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text('我的', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
+      backgroundColor: const Color(0xFF121212),
       body: Consumer<AuthModel>(
         builder: (context, authModel, _) {
           final user = authModel.currentUser;
-          if (user == null) {
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _buildGuestCard(),
-                const SizedBox(height: 16),
-                _buildGuestFeatures(context),
-                const SizedBox(height: 16),
-                _buildLoginPrompt(context),
-              ],
-            );
-          }
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _buildUserCard(user),
-              const SizedBox(height: 16),
-              _buildLikedSection(context),
-              const SizedBox(height: 16),
-              _buildMembershipCard(user),
-              const SizedBox(height: 16),
-              _buildActionButtons(context, authModel),
+          return CustomScrollView(
+            slivers: [
+              _buildSliverAppBar(context, user),
+              SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    if (user != null) ...[
+                      _buildStatsSection(context),
+                      const SizedBox(height: 20),
+                      _buildMembershipCard(context, user),
+                      const SizedBox(height: 20),
+                      _buildMenuSection(context, authModel),
+                    ] else ...[
+                      _buildGuestFeatures(context),
+                      const SizedBox(height: 20),
+                      _buildLoginPrompt(context),
+                    ],
+                    const SizedBox(height: 40),
+                  ]),
+                ),
+              ),
             ],
           );
         },
@@ -52,349 +48,344 @@ class MyProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildUserCard(User user) {
-    return Container(
-      decoration: AppTheme.glassDecoration,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+  Widget _buildSliverAppBar(BuildContext context, User? user) {
+    return SliverAppBar(
+      expandedHeight: 280,
+      pinned: true,
+      backgroundColor: const Color(0xFF121212),
+      flexibleSpace: FlexibleSpaceBar(
+        background: Stack(
+          fit: StackFit.expand,
           children: [
-            CircleAvatar(
-              radius: 40, 
-              backgroundColor: AppTheme.primaryColor,
-              child: Text(user.username[0].toUpperCase(), style: const TextStyle(color: Colors.white))
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user.username,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  Text(user.email, style: const TextStyle(color: Colors.white70)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMembershipCard(User user) {
-    return Container(
-      decoration: AppTheme.glassDecoration,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('会员信息', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                if (user.isAdmin)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text('管理员', style: TextStyle(color: Colors.white, fontSize: 12)),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _buildInfoRow('会员类型', user.membershipType ?? '普通用户'),
-            if (user.membershipExpiry != null)
-              _buildInfoRow(
-                '到期时间',
-                '${user.membershipExpiry!.year}-${user.membershipExpiry!.month.toString().padLeft(2, '0')}-${user.membershipExpiry!.day.toString().padLeft(2, '0')}',
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(color: Colors.white70)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w500, color: Colors.white)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGuestCard() {
-    return Container(
-      decoration: AppTheme.glassDecoration,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 40,
-              backgroundColor: Colors.white24,
-              child: const Icon(Icons.person_outline, size: 40, color: Colors.white),
-            ),
-            const SizedBox(width: 16),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '游客模式',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  Text('您正在以游客身份使用应用', style: TextStyle(color: Colors.white70)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGuestFeatures(BuildContext context) {
-    return Container(
-      decoration: AppTheme.glassDecoration,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('游客可用功能', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-            const SizedBox(height: 12),
-            _buildFeatureItem(Icons.public, '全球法布施', '可以向全世界发送佛教经文'),
-            _buildFeatureItem(Icons.video_library, '法流观看', '可以观看佛教视频内容'),
-            _buildFeatureItem(Icons.temple_buddhist, '禅室体验', '可以进入禅室冥想'),
-            const Divider(color: Colors.white24),
-            const Text(
-              '登录后可获得更多功能：',
-              style: TextStyle(fontSize: 14, color: Colors.white60, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 8),
-            _buildFeatureItem(Icons.cloud_sync, '云端同步', '数据云端保存，多设备同步', isDisabled: true),
-            _buildFeatureItem(Icons.leaderboard, '排行榜', '查看全球发送排行榜', isDisabled: true),
-            _buildFeatureItem(Icons.card_membership, '会员服务', '享受会员专属服务', isDisabled: true),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFeatureItem(IconData icon, String title, String description, {bool isDisabled = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 20,
-            color: isDisabled ? Colors.white24 : AppTheme.accentColor,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500,
-                    color: isDisabled ? Colors.white38 : Colors.white,
+            // 背景图
+            Image.asset(
+              'assets/images/meditation_bg.jpg', // 假设有这个背景图，如果没有会显示错误，可以用颜色代替
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF2C3E50), Color(0xFF000000)],
                   ),
                 ),
-                Text(
-                  description,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDisabled ? Colors.white24 : Colors.white70,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLikedSection(BuildContext context) {
-    final likeService = LikeService();
-    
-    // 确保服务已初始化
-    if (!likeService.isInitialized) {
-      likeService.initialize();
-    }
-    
-    return ListenableBuilder(
-      listenable: likeService,
-      builder: (context, _) {
-        final likedCount = likeService.likedCount;
-        return Container(
-          decoration: AppTheme.glassDecoration,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const LikedContentScreen()),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
+            ),
+            // 模糊遮罩
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(color: Colors.black.withOpacity(0.3)),
+            ),
+            // 用户信息
+            if (user != null)
+              Positioned(
+                bottom: 40,
+                left: 20,
+                right: 20,
                 child: Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
+                    Hero(
+                      tag: 'profile_avatar',
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: CircleAvatar(
+                          radius: 40,
+                          backgroundColor: AppTheme.primaryColor,
+                          backgroundImage: user.avatar != null ? NetworkImage(user.avatar!) : null,
+                          child: user.avatar == null
+                              ? Text(
+                                  (user.displayName.isNotEmpty ? user.displayName[0] : '?').toUpperCase(),
+                                  style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+                                )
+                              : null,
+                        ),
                       ),
-                      child: Icon(Icons.favorite, color: Colors.redAccent, size: 28),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 20),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            '我的喜欢',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                          Text(
+                            user.displayName,
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              shadows: [Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 2))],
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            likedCount > 0 ? '$likedCount 个内容' : '还没有喜欢的内容',
-                            style: const TextStyle(fontSize: 13, color: Colors.white70),
+                            user.email,
+                            style: const TextStyle(color: Colors.white70, fontSize: 14),
                           ),
+                          const SizedBox(height: 8),
+                          if (user.isAdmin)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(colors: [Colors.purple, Colors.deepPurple]),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text('管理员', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
                         ],
                       ),
                     ),
-                    const Icon(Icons.chevron_right, color: Colors.white70),
+                    IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.white),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const EditProfileScreen()),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.person_outline, size: 60, color: Colors.white54),
+                    SizedBox(height: 10),
+                    Text('游客模式', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsSection(BuildContext context) {
+    final likeService = LikeService();
+    if (!likeService.isInitialized) likeService.initialize();
+
+    return ListenableBuilder(
+      listenable: likeService,
+      builder: (context, _) {
+        return Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                context,
+                icon: Icons.favorite,
+                label: '我的喜欢',
+                value: '${likeService.likedCount}',
+                color: Colors.redAccent,
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const LikedContentScreen())),
+              ),
             ),
-          ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildStatCard(
+                context,
+                icon: Icons.history,
+                label: '浏览历史',
+                value: '0', // 暂未实现
+                color: Colors.blueAccent,
+                onTap: () {},
+              ),
+            ),
+          ],
         );
       },
     );
   }
 
-  Widget _buildLoginPrompt(BuildContext context) {
-    return Container(
-      decoration: AppTheme.glassDecoration,
-      child: Padding(
+  Widget _buildStatCard(BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
         padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white10),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4)),
+          ],
+        ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '🙏 登录获得完整体验',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 20),
             ),
-            const SizedBox(height: 8),
-            const Text(
-              '登录后可以保存您的发送记录，参与排行榜，享受会员服务',
-              style: TextStyle(color: Colors.white70),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const LoginScreen()),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.white70),
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('登录'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const LoginScreen()),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryColor,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('注册'),
-                  ),
-                ),
-              ],
-            ),
+            const SizedBox(height: 12),
+            Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+            Text(label, style: const TextStyle(fontSize: 12, color: Colors.white54)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildActionButtons(BuildContext context, AuthModel authModel) {
-    return Column(
-      children: [
-        ListTile(
-          leading: const Icon(Icons.card_membership, color: Colors.white),
-          title: const Text('会员中心', style: TextStyle(color: Colors.white)),
-          trailing: const Icon(Icons.chevron_right, color: Colors.white70),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const MembershipScreen()),
-            );
-          },
+  Widget _buildMembershipCard(BuildContext context, User user) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFD4AF37), Color(0xFFC5A028)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        ListTile(
-          leading: const Icon(Icons.refresh, color: Colors.white),
-          title: const Text('刷新会员信息', style: TextStyle(color: Colors.white)),
-          trailing: const Icon(Icons.chevron_right, color: Colors.white70),
-          onTap: () async {
-            await authModel.refreshUserInfo();
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已刷新会员信息')),
-              );
-            }
-          },
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(color: const Color(0xFFD4AF37).withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('会员权益', style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(user.membershipType ?? '普通用户', style: const TextStyle(color: Colors.black87, fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            user.membershipExpiry != null
+                ? '有效期至: ${user.membershipExpiry!.year}-${user.membershipExpiry!.month}-${user.membershipExpiry!.day}'
+                : '您当前是普通用户',
+            style: const TextStyle(color: Colors.black54, fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const MembershipScreen())),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black87,
+                foregroundColor: const Color(0xFFD4AF37),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              child: const Text('立即升级 / 续费'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuSection(BuildContext context, AuthModel authModel) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        children: [
+          _buildMenuItem(
+            icon: Icons.refresh,
+            title: '刷新数据',
+            onTap: () async {
+              await authModel.refreshUserInfo();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('数据已刷新')));
+              }
+            },
+          ),
+          const Divider(color: Colors.white10, height: 1),
+          _buildMenuItem(
+            icon: Icons.settings,
+            title: '设置',
+            onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('设置功能开发中'))),
+          ),
+          const Divider(color: Colors.white10, height: 1),
+          _buildMenuItem(
+            icon: Icons.logout,
+            title: '退出登录',
+            isDestructive: true,
+            onTap: () async {
+              await authModel.logout();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已退出登录')));
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuItem({required IconData icon, required String title, required VoidCallback onTap, bool isDestructive = false}) {
+    return ListTile(
+      leading: Icon(icon, color: isDestructive ? Colors.redAccent : Colors.white70),
+      title: Text(title, style: TextStyle(color: isDestructive ? Colors.redAccent : Colors.white)),
+      trailing: const Icon(Icons.chevron_right, color: Colors.white24),
+      onTap: onTap,
+    );
+  }
+
+  Widget _buildGuestFeatures(BuildContext context) {
+    // ... (Keep existing implementation or simplify)
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('游客功能', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+          SizedBox(height: 10),
+          Text('• 全球法布施\n• 法流观看\n• 禅室体验', style: TextStyle(color: Colors.white70, height: 1.5)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoginPrompt(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const LoginScreen())),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.primaryColor,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
-        ListTile(
-          leading: const Icon(Icons.settings, color: Colors.white),
-          title: const Text('设置', style: TextStyle(color: Colors.white)),
-          trailing: const Icon(Icons.chevron_right, color: Colors.white70),
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('设置功能开发中')),
-            );
-          },
-        ),
-        ListTile(
-          leading: const Icon(Icons.logout, color: Colors.white),
-          title: const Text('退出登录', style: TextStyle(color: Colors.white)),
-          onTap: () async {
-            await authModel.logout();
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已退出登录，您现在以游客身份使用')),
-              );
-            }
-          },
-        ),
-      ],
+        child: const Text('立即登录 / 注册', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+      ),
     );
   }
 }

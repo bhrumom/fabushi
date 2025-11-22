@@ -21,11 +21,28 @@ CREATE TABLE IF NOT EXISTS users (
   alipay_user_id TEXT,
   alipay_nickname TEXT,
   alipay_bound_at TEXT,
+  alipay_bound_at TEXT,
   total_transferred_bytes INTEGER DEFAULT 0,
   last_transfer_at TEXT,
+  nickname TEXT,
+  avatar TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT
 );
+
+-- 评论表
+CREATE TABLE IF NOT EXISTS comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  video_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  parent_id INTEGER,
+  like_count INTEGER DEFAULT 0
+);
+
+CREATE INDEX idx_comments_video_id ON comments(video_id);
+CREATE INDEX idx_comments_user_id ON comments(user_id);
 
 -- 注意: total_transferred_bytes 和 last_transfer_at 字段用于排行榜功能
 -- 迁移日期: 2025-11-04

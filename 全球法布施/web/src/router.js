@@ -1,4 +1,5 @@
-import { handleRegister, handleLogin, handleGetUserInfo } from './handlers/auth.js';
+import { handleRegister, handleLogin, handleGetUserInfo, handleUpdateProfile } from './handlers/auth.js';
+import { handleGetComments, handlePostComment, handleDeleteComment } from './handlers/comments.js';
 import { handleSendVerificationCode, handleForgotPassword, handleResetPassword } from './handlers/verification.js';
 import { handleGetWechatLoginUrl, handleGetAlipayLoginUrl, handleAlipayLogin, handleAlipayRegister, handleBindEmail, handleMacOSAlipayCallback } from './handlers/thirdparty.js';
 import { handleCreateAlipayOrder, handleQueryAlipayOrder, handleAlipayNotify } from './handlers/payment.js';
@@ -35,7 +36,14 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/auth/forgot-password' && method === 'POST') return await handleForgotPassword(request, env, db);
   if (pathname === '/api/auth/reset-password' && method === 'POST') return await handleResetPassword(request, env, db);
   if (pathname === '/api/auth/bind-email' && method === 'POST') return await handleBindEmail(request, env, db);
-  
+  if (pathname === '/api/auth/bind-email' && method === 'POST') return await handleBindEmail(request, env, db);
+  if (pathname === '/api/auth/update-profile' && method === 'POST') return await handleUpdateProfile(request, env, db);
+
+  // 评论API
+  if (pathname === '/api/comments' && method === 'GET') return await handleGetComments(request, env, db);
+  if (pathname === '/api/comments' && method === 'POST') return await handlePostComment(request, env, db);
+  if (pathname === '/api/comments' && method === 'DELETE') return await handleDeleteComment(request, env, db);
+
   // 第三方登录
   if (pathname === '/api/auth/wechat/login-url' && method === 'GET') return await handleGetWechatLoginUrl(request, env);
   if (pathname === '/api/auth/alipay/login-url' && method === 'GET') return await handleGetAlipayLoginUrl(request, env);
@@ -84,7 +92,7 @@ export async function route(request, env, db, ctx) {
 
   // 迁移API（管理员专用）
   if (pathname === '/api/admin/migrate-kv-to-d1' && method === 'POST') return await handleMigrateKvToD1(request, env, db);
-  
+
   // 内置内容迁移API
   if (pathname === '/migrate-builtin-complete' && method === 'POST') return await handleBuiltinMigration(request, env);
   if (pathname === '/api/builtin/search' && method === 'GET') return await handleFullTextSearch(request, env);

@@ -14,6 +14,8 @@ class UserModel {
   final String? alipayNickname;
   final String? alipayAvatar;
   final String? alipayBoundAt;
+  final String? nickname;
+  final String? avatar;
   final MembershipInfo membership;
 
   UserModel({
@@ -29,6 +31,8 @@ class UserModel {
     this.alipayNickname,
     this.alipayAvatar,
     this.alipayBoundAt,
+    this.nickname,
+    this.avatar,
     required this.membership,
   });
 
@@ -47,6 +51,8 @@ class UserModel {
       alipayNickname: json['alipayNickname'] as String?,
       alipayAvatar: json['alipayAvatar'] as String?,
       alipayBoundAt: json['alipayBoundAt'] as String?,
+      nickname: json['nickname'] as String?,
+      avatar: json['avatar'] as String?,
       membership: MembershipInfo.fromJson(json['membership'] ?? {}),
     );
   }
@@ -66,6 +72,8 @@ class UserModel {
       'alipayNickname': alipayNickname,
       'alipayAvatar': alipayAvatar,
       'alipayBoundAt': alipayBoundAt,
+      'nickname': nickname,
+      'avatar': avatar,
       'membership': membership.toJson(),
     };
   }
@@ -108,6 +116,9 @@ class UserModel {
 
   // 获取显示名称
   String get displayName {
+    if (nickname != null && nickname!.isNotEmpty) {
+      return nickname!;
+    }
     if (wechatNickname != null && wechatNickname!.isNotEmpty) {
       return wechatNickname!;
     }
@@ -119,6 +130,9 @@ class UserModel {
 
   // 获取头像URL
   String? get avatarUrl {
+    if (avatar != null && avatar!.isNotEmpty) {
+      return avatar;
+    }
     if (wechatHeadimgurl != null && wechatHeadimgurl!.isNotEmpty) {
       return wechatHeadimgurl;
     }

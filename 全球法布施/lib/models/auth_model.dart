@@ -14,6 +14,8 @@ class User {
   final DateTime? membershipExpiry;
   final bool isAdmin;
   final String? alipayUserId;
+  final String? nickname;
+  final String? avatar;
 
   User({
     required this.username,
@@ -22,6 +24,8 @@ class User {
     this.membershipExpiry,
     this.isAdmin = false,
     this.alipayUserId,
+    this.nickname,
+    this.avatar,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -34,6 +38,8 @@ class User {
           : null,
       isAdmin: json['isAdmin'] ?? false,
       alipayUserId: json['alipayUserId'],
+      nickname: json['nickname'],
+      avatar: json['avatar'],
     );
   }
 
@@ -45,8 +51,12 @@ class User {
       'membershipExpiry': membershipExpiry?.toIso8601String(),
       'isAdmin': isAdmin,
       'alipayUserId': alipayUserId,
+      'nickname': nickname,
+      'avatar': avatar,
     };
   }
+
+  String get displayName => nickname?.isNotEmpty == true ? nickname! : username;
 
   bool get hasPremiumMembership {
     if (membershipType == null) return false;
@@ -296,6 +306,8 @@ class AuthModel extends ChangeNotifier {
               : null,
           isAdmin: isAdmin,
           alipayUserId: userModel.alipayUserId,
+          nickname: userModel.nickname,
+          avatar: userModel.avatarUrl,
         );
         
         await _storeAuth();
