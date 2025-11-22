@@ -288,9 +288,11 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
     Color color,
     Duration duration,
   ) async {
-    const steps = 80;
+    // 性能优化：减少步数从 80 到 45，仍保持流畅效果
+    const steps = 45;
     final stepDelay = Duration(milliseconds: duration.inMilliseconds ~/ steps);
-    const tailLength = 20;
+    // 性能优化：减少拖尾长度从 20 到 10
+    const tailLength = 10;
 
     // 计算优美的弧线路径控制点
     final midLat = (fromLat + toLat) / 2;
@@ -308,6 +310,11 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
     for (int i = 0; i <= steps; i++) {
       if (_isDisposed || !mounted) break;
 
+      // 性能优化：每5步让出主线程，确保UI响应性
+      if (i % 5 == 0 && i > 0) {
+        await Future.delayed(Duration.zero);
+      }
+
       final t = i / steps;
 
       // 使用二次贝塞尔曲线计算弧线路径
@@ -317,21 +324,13 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
       // 添加流星头部（白色核心 + 彩色光晕）
       final headId = '${beamId}_head_$i';
 
-      // 最外层光晕（大范围辉光）
-      _controller.addPoint(
-        Point(
-          id: '${headId}_glow_outer',
-          coordinates: GlobeCoordinates(lat, lng),
-          style: PointStyle(color: color.withOpacity(0.3), size: 20),
-        ),
-      );
-
-      // 中层彩色光晕
+      // 性能优化：减少光晕层级从 3 层到 2 层
+      // 彩色光晕
       _controller.addPoint(
         Point(
           id: '${headId}_glow',
           coordinates: GlobeCoordinates(lat, lng),
-          style: PointStyle(color: color.withOpacity(0.7), size: 14),
+          style: PointStyle(color: color.withOpacity(0.5), size: 16),
         ),
       );
 
@@ -365,25 +364,28 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
           ),
         );
 
-        // 移除拖尾点
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (!_isDisposed && mounted) {
-            try {
-              _controller.removePoint(tailId);
-            } catch (_) {}
-          }
+        // 性能优化：使用 microtask 批量处理删除操作
+        Future.microtask(() {
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (!_isDisposed && mounted) {
+              try {
+                _controller.removePoint(tailId);
+              } catch (_) {}
+            }
+          });
         });
       }
 
-      // 移除头部点（包括所有光晕）
-      Future.delayed(const Duration(milliseconds: 150), () {
-        if (!_isDisposed && mounted) {
-          try {
-            _controller.removePoint(headId);
-            _controller.removePoint('${headId}_glow');
-            _controller.removePoint('${headId}_glow_outer');
-          } catch (_) {}
-        }
+      // 移除头部点（包括光晕）
+      Future.microtask(() {
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (!_isDisposed && mounted) {
+            try {
+              _controller.removePoint(headId);
+              _controller.removePoint('${headId}_glow');
+            } catch (_) {}
+          }
+        });
       });
 
       await Future.delayed(stepDelay);

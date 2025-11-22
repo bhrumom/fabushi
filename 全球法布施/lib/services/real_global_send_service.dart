@@ -133,6 +133,9 @@ class RealGlobalSendService {
 
       onLog('🌍 发送到 $countryName ($countryCode) - 使用 ${servers.length} 个服务器');
 
+      // 性能优化：在触发轨迹动画前让出主线程
+      await Future.delayed(Duration.zero);
+
       // 触发3D地球轨迹动画（带国家名称标签）
       final toCountry = _coordService.getByCountryCode(countryCode);
       if (toCountry != null && onTransferBeam != null) {
@@ -208,9 +211,9 @@ class RealGlobalSendService {
       // 关键修复：让出主线程控制权，避免阻塞UI
       await Future.delayed(Duration.zero);
       
-      // 每10个国家后增加稍长延迟，进一步确保UI响应性
-      if (i % 10 == 0) {
-        await Future.delayed(Duration(milliseconds: 50));
+      // 性能优化：每5个国家（而非10个）后增加更长延迟，进一步确保UI响应性
+      if (i % 5 == 0 && i > 0) {
+        await Future.delayed(Duration(milliseconds: 100));
       }
     }
 

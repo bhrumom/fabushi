@@ -19,6 +19,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
   String _currentTransfer = '';
   final List<Map<String, dynamic>> _pendingBeams = []; // 缓存待播放的轨迹（包含标签）
   bool _isGlobeLoaded = false; // 地球组件是否已加载
+  bool _isCallbackSetup = false; // 性能优化：防止重复设置回调
 
   @override
   void initState() {
@@ -55,6 +56,8 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
       if (!_isGlobeLoaded) {
         _loadGlobe();
       } else {
+        // 性能优化：标记需要重新设置回调
+        _isCallbackSetup = false;
         _setupTransferBeamCallback();
       }
     }
@@ -64,6 +67,8 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
   void didUpdateWidget(GlobeHomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 页面更新时重新设置回调
+    // 性能优化：标记需要重新设置回调
+    _isCallbackSetup = false;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _setupTransferBeamCallback();
     });
@@ -76,6 +81,12 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   void _setupTransferBeamCallback() {
+    // 性能优化：如果回调已设置且Globe状态仍然有效，跳过重复设置
+    if (_isCallbackSetup && _globeState != null && _globeKey.currentState != null) {
+      debugPrint('⏭️ 跳过重复设置回调');
+      return;
+    }
+
     // 更新静态引用
     if (_globeKey.currentState != null) {
       _globeState = _globeKey.currentState;
@@ -130,6 +141,8 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
       }
     });
 
+    // 标记回调已设置
+    _isCallbackSetup = true;
     _playPendingBeams();
     debugPrint('🔧 轨迹回调已设置');
   }
@@ -171,11 +184,13 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
   Widget build(BuildContext context) {
     super.build(context); // 必须调用以保持状态
 
-    // 每次 build 时重新设置回调，确保切换页面后回调仍然有效
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint('🔄 页面 build 完成，准备设置回调');
-      _setupTransferBeamCallback();
-    });
+    // 性能优化：仅在回调未设置时才在 postFrameCallback 中设置
+    if (!_isCallbackSetup) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        debugPrint('🔄 页面 build 完成，准备设置回调');
+        _setupTransferBeamCallback();
+      });
+    }
 
     return Scaffold(
       backgroundColor: Colors.transparent,
