@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:gbk_codec/gbk_codec.dart';
 import 'package:global_dharma_sharing/core/config/app_config.dart';
@@ -183,8 +184,10 @@ class CloudflareTextService {
         // 关键修复：加载manifest时也让出主线程控制权
         await Future.delayed(Duration.zero);
         final manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
-        await Future.delayed(Duration.zero); // JSON解析前也让出控制权
-        final List<dynamic> manifestData = json.decode(manifestString);
+        
+        // 使用compute在后台解析JSON
+        final List<dynamic> manifestData = await compute(_parseManifestJson, manifestString);
+        
         _cachedManifest = manifestData.cast<Map<String, dynamic>>();
         print('Loaded local manifest with ${_cachedManifest!.length} items');
       }
@@ -227,27 +230,17 @@ class CloudflareTextService {
         print('素材已下载，从本地读取: $requestPath');
         final file = await _sharedAssetManager.getDownloadedAsset(requestPath);
         if (file != null) {
-          String content;
+          final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
+          
+          // 使用compute在后台处理文本解码和清理
           if (file.bytes != null) {
-            try {
-              content = gbk_bytes.decode(file.bytes!);
-            } catch (e) {
-              content = utf8.decode(file.bytes!, allowMalformed: true);
-            }
+             return await compute(_processTextContent, _TextProcessingParams(file.bytes!, fileName, selectedFile));
           } else if (file.path != null) {
             final fileContent = await File(file.path!).readAsBytes();
-            try {
-              content = gbk_bytes.decode(fileContent);
-            } catch (e) {
-              content = utf8.decode(fileContent, allowMalformed: true);
-            }
+            return await compute(_processTextContent, _TextProcessingParams(fileContent, fileName, selectedFile));
           } else {
             return null;
           }
-
-          final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
-          content = _cleanDecompilerWatermark(content);
-          return {'title': fileName, 'content': content, 'filePath': selectedFile};
         }
       }
 
@@ -286,24 +279,20 @@ class CloudflareTextService {
       }
 
       if (contentResponse != null && contentResponse.statusCode == 200) {
-        // 文件是GBK编码
-        String content;
-        try {
-          content = gbk_bytes.decode(contentResponse.bodyBytes);
-          print('Successfully decoded GBK content: ${content.length} chars');
-        } catch (e) {
-          print('GBK decoding failed: $e, trying UTF-8');
-          content = utf8.decode(contentResponse.bodyBytes, allowMalformed: true);
-        }
-
         // 标记为已下载
         await _sharedAssetManager.markAssetDownloaded(requestPath);
 
         final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
-        content = _cleanDecompilerWatermark(content);
+        
+        // 使用compute在后台处理文本解码和清理
+        final result = await compute(
+          _processTextContent, 
+          _TextProcessingParams(contentResponse.bodyBytes, fileName, selectedFile)
+        );
+        
         print('Loaded cloud text from local manifest: $fileName');
 
-        return {'title': fileName, 'content': content, 'filePath': selectedFile};
+        return result;
       }
       // 404等错误立即返回
       if (contentResponse != null) {
@@ -358,4 +347,39 @@ class CloudflareTextService {
   Future<List<Map<String, String>>> getAllTexts() async {
     return _sampleTexts;
   }
+}
+
+/// 用于在后台isolate中处理文本内容的参数类
+class _TextProcessingParams {
+  final List<int> bytes;
+  final String fileName;
+  final String filePath;
+
+  _TextProcessingParams(this.bytes, this.fileName, this.filePath);
+}
+
+/// 顶层函数：在后台isolate中处理文本解码和清理
+Map<String, dynamic> _processTextContent(_TextProcessingParams params) {
+  String content;
+  try {
+    content = gbk_bytes.decode(params.bytes);
+    print('Successfully decoded GBK content: ${content.length} chars');
+  } catch (e) {
+    print('GBK decoding failed: $e, trying UTF-8');
+    content = utf8.decode(params.bytes, allowMalformed: true);
+  }
+
+  // 清理水印
+  content = CloudflareTextService._cleanDecompilerWatermark(content);
+  
+  return {
+    'title': params.fileName,
+    'content': content,
+    'filePath': params.filePath
+  };
+}
+
+/// 顶层函数：在后台isolate中解析JSON
+List<dynamic> _parseManifestJson(String jsonString) {
+  return json.decode(jsonString);
 }
