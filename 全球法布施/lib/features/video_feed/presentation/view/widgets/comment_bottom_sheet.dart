@@ -7,8 +7,9 @@ import '../../../../../../core/design_system/app_theme.dart';
 
 class CommentBottomSheet extends StatefulWidget {
   final String videoId;
+  final VoidCallback? onCommentPosted;
 
-  const CommentBottomSheet({super.key, required this.videoId});
+  const CommentBottomSheet({super.key, required this.videoId, this.onCommentPosted});
 
   @override
   State<CommentBottomSheet> createState() => _CommentBottomSheetState();
@@ -67,6 +68,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
         setState(() {
           _comments.insert(0, newComment);
         });
+        widget.onCommentPosted?.call();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('评论发表成功')),
         );

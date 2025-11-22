@@ -23,6 +23,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
   final LikeService _likeService = LikeService();
   bool _isLiked = false;
   int _likeCount = 0;
+  int _commentCount = 0;
 
   @override
   void initState() {
@@ -33,6 +34,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
     if (_likeCount == 0) {
       _likeCount = widget.videoItem.likeCount;
     }
+    _commentCount = widget.videoItem.commentCount;
     _likeService.addListener(_updateLikeState);
   }
 
@@ -103,7 +105,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
           isBookmarked: false,
           isLiked: _isLiked,
           likeCount: _likeCount,
-          commentCount: widget.videoItem.commentCount,
+          commentCount: _commentCount,
           shareCount: widget.videoItem.shareCount,
           contentType: widget.videoItem.contentType,
           textContent: widget.videoItem.textContent,
@@ -120,7 +122,16 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => CommentBottomSheet(videoId: widget.videoItem.id),
+      builder: (context) => CommentBottomSheet(
+        videoId: widget.videoItem.id,
+        onCommentPosted: () {
+          if (mounted) {
+            setState(() {
+              _commentCount++;
+            });
+          }
+        },
+      ),
     );
   }
 }
