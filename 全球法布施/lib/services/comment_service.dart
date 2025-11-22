@@ -31,7 +31,7 @@ class CommentService {
   }
 
   // 发布评论
-  Future<CommentModel?> postComment(String videoId, String content, {int? parentId}) async {
+  Future<Map<String, dynamic>> postComment(String videoId, String content, {int? parentId}) async {
     try {
       final response = await HttpService.post(
         '${AppConfig.apiUrl}/api/comments',
@@ -45,14 +45,19 @@ class CommentService {
 
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        return CommentModel.fromJson(data['comment']);
+        return {'success': true, 'comment': CommentModel.fromJson(data['comment'])};
       } else {
-        debugPrint('发布评论失败: ${response.statusCode}');
-        return null;
+        debugPrint('发布评论失败: ${response.statusCode} ${response.body}');
+        try {
+          final errorData = jsonDecode(response.body);
+          return {'success': false, 'error': errorData['error'] ?? '发布失败'};
+        } catch (_) {
+          return {'success': false, 'error': '发布失败: ${response.statusCode}'};
+        }
       }
     } catch (e) {
       debugPrint('发布评论异常: $e');
-      return null;
+      return {'success': false, 'error': '网络错误，请检查网络连接'};
     }
   }
 

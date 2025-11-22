@@ -57,11 +57,12 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
     }
 
     setState(() => _isSending = true);
-    final newComment = await _commentService.postComment(widget.videoId, content);
+    final result = await _commentService.postComment(widget.videoId, content);
     
     if (mounted) {
       setState(() => _isSending = false);
-      if (newComment != null) {
+      if (result['success']) {
+        final newComment = result['comment'] as CommentModel;
         _commentController.clear();
         setState(() {
           _comments.insert(0, newComment);
@@ -71,7 +72,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('评论发表失败，请稍后重试')),
+          SnackBar(content: Text(result['error'] ?? '评论发表失败，请稍后重试')),
         );
       }
     }

@@ -16,7 +16,7 @@ export async function handleGetComments(request, env, db) {
 
         // 获取评论列表，包含用户信息
         // 使用LEFT JOIN关联users表获取头像和昵称
-        const comments = await db.prepare(`
+        const comments = await db.db.prepare(`
       SELECT 
         c.id, c.video_id, c.user_id, c.content, c.created_at, c.parent_id, c.like_count,
         u.username, u.nickname, u.avatar
@@ -28,7 +28,7 @@ export async function handleGetComments(request, env, db) {
     `).bind(videoId, pageSize, offset).all();
 
         // 获取总评论数
-        const totalResult = await db.prepare(`
+        const totalResult = await db.db.prepare(`
       SELECT COUNT(*) as count FROM comments WHERE video_id = ?
     `).bind(videoId).first();
 
@@ -67,13 +67,13 @@ export async function handlePostComment(request, env, db) {
         const now = new Date().toISOString();
 
         // 插入评论
-        const result = await db.prepare(`
+        const result = await db.db.prepare(`
       INSERT INTO comments (video_id, user_id, content, created_at, parent_id)
       VALUES (?, ?, ?, ?, ?)
     `).bind(videoId, tokenData.username, content, now, parentId || null).run();
 
         // 获取新插入的评论详情（包含用户信息）
-        const newComment = await db.prepare(`
+        const newComment = await db.db.prepare(`
       SELECT 
         c.id, c.video_id, c.user_id, c.content, c.created_at, c.parent_id, c.like_count,
         u.username, u.nickname, u.avatar
@@ -88,7 +88,7 @@ export async function handlePostComment(request, env, db) {
         }, 201);
     } catch (error) {
         console.error('发布评论失败:', error);
-        return jsonResponse({ error: '发布评论失败' }, 500);
+        return jsonResponse({ error: '发布评论失败: ' + error.message }, 500);
     }
 }
 
@@ -114,7 +114,7 @@ export async function handleDeleteComment(request, env, db) {
         }
 
         // 检查评论是否存在以及是否属于当前用户
-        const comment = await db.prepare(`
+        const comment = await db.db.prepare(`
       SELECT user_id FROM comments WHERE id = ?
     `).bind(commentId).first();
 
@@ -127,7 +127,7 @@ export async function handleDeleteComment(request, env, db) {
             return jsonResponse({ error: '无权删除此评论' }, 403);
         }
 
-        await db.prepare(`
+        await db.db.prepare(`
       DELETE FROM comments WHERE id = ?
     `).bind(commentId).run();
 
