@@ -116,6 +116,9 @@ class AppConfig {
 
   static String get healthCheckUrl => '$currentBackendUrl/health';
 
+  // iOS 后台保活静音音频
+  static String get silenceAudioUrl => '$currentBackendUrl/static/audio/silence.mp3';
+
   // 请求头
   static Map<String, String> get defaultHeaders => {
     'Content-Type': 'application/json',

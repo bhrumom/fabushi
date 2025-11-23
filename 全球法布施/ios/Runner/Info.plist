@@ -45,5 +45,19 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	
+	<!-- 后台音频模式 -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	
+	<!-- 通知权限说明 -->
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>需要通知权限以显示发送进度和状态</string>
+	
+	<!-- 媒体库权限说明 -->
+	<key>NSAppleMusicUsageDescription</key>
+	<string>应用需要音频播放功能以保持后台运行</string>
 </dict>
 </plist>

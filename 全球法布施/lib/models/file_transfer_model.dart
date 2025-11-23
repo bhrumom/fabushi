@@ -15,6 +15,8 @@ import '../services/download_manager.dart' show DownloadStatus;
 import '../services/real_global_send_service.dart';
 import '../services/ip_location_service.dart';
 import '../services/leaderboard_service.dart';
+import '../services/foreground_service_manager.dart';
+import '../services/ios_background_audio_handler.dart';
 import '../widgets/download_progress_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_html/html.dart' as html;
@@ -28,6 +30,7 @@ class FileTransferModel extends ChangeNotifier {
   bool _isGlobalSendEnabled = true;
   bool _isLooping = false;
   double _sendRateMB = 1.0;
+  int _loopCount = 0;  // 循环发送计数
 
   // 文件相关
   List<PlatformFile> _selectedFiles = [];
@@ -48,6 +51,10 @@ class FileTransferModel extends ChangeNotifier {
 
   final SharedAssetManager _sharedAssetManager = SharedAssetManager();
   final IPLocationService _ipLocationService = IPLocationService();
+  
+  // 后台服务管理器
+  final ForegroundServiceManager _foregroundService = ForegroundServiceManager();
+  IOSBackgroundAudioHandler? _iosAudioHandler;
 
   bool _isDisposed = false;
 
@@ -90,6 +97,7 @@ class FileTransferModel extends ChangeNotifier {
   // Getters
   bool get isGlobalSendEnabled => _isGlobalSendEnabled;
   bool get isLooping => _isLooping;
+  int get loopCount => _loopCount;
   double get sendRateMB => _sendRateMB;
   List<PlatformFile> get selectedFiles => _selectedFiles;
   List<String> get countryList => _countryList;
@@ -395,20 +403,51 @@ class FileTransferModel extends ChangeNotifier {
 
     _isTransferring = true;
     _status = TransferStatus.transferring;
+    
+    // 初始化循环计数
+    if (!_isLooping) {
+      _loopCount = 0;
+    }
+    _loopCount++;
+    
     _schedulePersist(_persistTransferState);
     _scheduleNotify();
 
     try {
-      debugPrint('🚀 开始真实全球传输 - 文件数量: ${_selectedFiles.length}');
+      debugPrint('🚀 开始真实全球传输 - 文件数量: ${_selectedFiles.length}, 循环: $_isLooping, 轮次: $_loopCount');
+
+      // 启动后台服务
+      await _startBackgroundService();
 
       await _initializeRealGlobalSendService();
-      await _realGlobalSendService?.startSending(files: _selectedFiles, isLoop: _isLooping);
+      await _realGlobalSendService?.startSending(files: _selectedFiles, isLoop: false);  // 单次发送
       await _uploadPendingData();
+      
       debugPrint('✅ 传输完成，数据已上传');
+      
+      // 检查是否需要循环
+      if (_isLooping && _isTransferring) {
+        debugPrint('🔄 准备下一轮循环发送...');
+        // 等待2秒后开始下一轮
+        await Future.delayed(const Duration(seconds: 2));
+        
+        // 再次检查循环状态（用户可能在等待期间关闭了循环）
+        if (_isLooping && _isTransferring) {
+          await startGlobalTransfer();  // 递归调用开始下一轮
+          return;  // 返回，不执行下面的停止服务逻辑
+        }
+      }
+      
+      // 发送完成，停止后台服务
+      await _stopBackgroundService();
+      _isTransferring = false;
+      _status = TransferStatus.completed;
+      
     } catch (e) {
       debugPrint('❌ 传输失败: $e');
       _status = TransferStatus.error;
       _isTransferring = false;
+      await _stopBackgroundService();
       _schedulePersist(_persistTransferState);
       _scheduleNotify();
     }
@@ -421,6 +460,12 @@ class FileTransferModel extends ChangeNotifier {
     _status = TransferStatus.idle;
 
     _realGlobalSendService?.stopSending();
+    
+    // 停止后台服务
+    _stopBackgroundService();
+    
+    // 重置循环计数
+    _loopCount = 0;
 
     _schedulePersist(_persistTransferState);
     debugPrint('🛑 传输已停止');
@@ -432,6 +477,72 @@ class FileTransferModel extends ChangeNotifier {
     _status = TransferStatus.completed;
     _schedulePersist(_persistTransferState);
     _scheduleNotify();
+  }
+
+  /// 启动后台服务（Android 前台服务或 iOS 后台音频）
+  Future<void> _startBackgroundService() async {
+    try {
+      final fileName = _selectedFiles.isNotEmpty ? _selectedFiles.first.name : '未知文件';
+      
+      if (Platform.isAndroid) {
+        // Android 前台服务
+        await _foregroundService.initialize();
+        await _foregroundService.start(
+          fileName: fileName,
+          totalCountries: _countryStatuses.length,
+        );
+        debugPrint('✅ Android 前台服务已启动');
+      } else if (Platform.isIOS) {
+        // iOS 后台音频
+        _iosAudioHandler ??= await initIOSBackgroundAudio();
+        await _iosAudioHandler?.startBackgroundAudio(
+          fileName: fileName,
+          totalCountries: _countryStatuses.length,
+        );
+        debugPrint('✅ iOS 后台音频已启动');
+      }
+    } catch (e) {
+      debugPrint('⚠️ 启动后台服务失败: $e');
+    }
+  }
+
+  /// 停止后台服务
+  Future<void> _stopBackgroundService() async {
+    try {
+      if (Platform.isAndroid) {
+        await _foregroundService.showCompletionNotification(
+          totalSent: _globalSentCount,
+          loopCount: _loopCount,
+        );
+      } else if (Platform.isIOS) {
+        await _iosAudioHandler?.showCompletion(
+          totalSent: _globalSentCount,
+          loopCount: _loopCount,
+        );
+      }
+      debugPrint('✅ 后台服务已停止');
+    } catch (e) {
+      debugPrint('⚠️ 停止后台服务失败: $e');
+    }
+  }
+
+  /// 更新后台服务进度
+  void _updateBackgroundServiceProgress(String country, int sent, int total) {
+    if (Platform.isAndroid) {
+      _foregroundService.updateProgress(
+        sentCount: sent,
+        totalCount: total,
+        currentCountry: country,
+        loopCount: _loopCount,
+      );
+    } else if (Platform.isIOS) {
+      _iosAudioHandler?.updateProgress(
+        sentCount: sent,
+        totalCount: total,
+        currentCountry: country,
+        loopCount: _loopCount,
+      );
+    }
   }
 
   Future<void> _initializeRealGlobalSendService() async {
@@ -502,6 +613,13 @@ class FileTransferModel extends ChangeNotifier {
     if (count % 10 == 0) {
       _schedulePersist(_persistTransferState);
     }
+    
+    // 更新后台服务进度
+    if (_countryStatuses.isNotEmpty && count > 0 && count <= _countryStatuses.length) {
+      final currentCountry = _countryStatuses[count - 1].countryName;
+      _updateBackgroundServiceProgress(currentCountry, count, _countryStatuses.length);
+    }
+    
     _scheduleNotify();
   }
 
