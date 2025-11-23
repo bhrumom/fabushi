@@ -2,19 +2,23 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
-/// 在线人数服务
+/// 在线人数服务 - WebSocket 版本
 /// 管理用户在线状态并提供实时人数统计
 class OnlineCounterService {
   static const String baseUrl = 'https://flutter.ombhrum.com';
+  static const String wsUrl = 'wss://flutter.ombhrum.com';
   static const Duration heartbeatInterval = Duration(seconds: 30);
-  static const Duration countPollInterval = Duration(seconds: 10);
+  static const Duration reconnectDelay = Duration(seconds: 5);
 
   final _uuid = const Uuid();
   String? _sessionId;
   String? _currentActivity;
   Timer? _heartbeatTimer;
-  Timer? _countPollTimer;
+  WebSocketChannel? _channel;
+  bool _isConnected = false;
+  bool _shouldReconnect = false;
   
   // 在线人数流控制器
   final _onlineCountController = StreamController<int>.broadcast();
@@ -25,7 +29,7 @@ class OnlineCounterService {
 
   /// 加入活动
   Future<bool> joinActivity(String activityType) async {
-    if (_currentActivity == activityType && _sessionId != null) {
+    if (_currentActivity == activityType && _sessionId != null && _isConnected) {
       // 已经加入该活动
       return true;
     }
@@ -37,39 +41,123 @@ class OnlineCounterService {
 
     _sessionId = _uuid.v4();
     _currentActivity = activityType;
+    _shouldReconnect = true;
 
+    // 尝试建立 WebSocket 连接
+    final wsSuccess = await _connectWebSocket(activityType);
+    
+    if (wsSuccess) {
+      return true;
+    } else {
+      // WebSocket 失败，降级到 HTTP
+      print('WebSocket 连接失败，使用 HTTP 降级方案');
+      return await _joinViaHttp(activityType);
+    }
+  }
+
+  /// 建立 WebSocket 连接
+  Future<bool> _connectWebSocket(String activityType) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/online/join'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'activityType': activityType,
-          'sessionId': _sessionId,
-        }),
+      final uri = Uri.parse('$wsUrl/api/online/ws?activityType=$activityType');
+      _channel = WebSocketChannel.connect(uri);
+
+      // 监听 WebSocket 消息
+      _channel!.stream.listen(
+        (message) {
+          _handleWebSocketMessage(message);
+        },
+        onError: (error) {
+          print('WebSocket 错误: $error');
+          _handleWebSocketError();
+        },
+        onDone: () {
+          print('WebSocket 连接关闭');
+          _handleWebSocketClose();
+        },
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _updateCount(data['count'] ?? 0);
-        
-        // 启动心跳定时器
-        _startHeartbeat();
-        
-        // 启动计数轮询
-        _startCountPolling();
-        
-        return true;
-      } else {
-        print('加入活动失败: ${response.statusCode}');
-        _sessionId = null;
-        _currentActivity = null;
-        return false;
+      // 发送 join 消息
+      _sendWebSocketMessage({
+        'action': 'join',
+        'sessionId': _sessionId,
+        'activityType': activityType,
+      });
+
+      _isConnected = true;
+      
+      // 启动心跳
+      _startHeartbeat();
+
+      return true;
+    } catch (e) {
+      print('WebSocket 连接失败: $e');
+      return false;
+    }
+  }
+
+  /// 处理 WebSocket 消息
+  void _handleWebSocketMessage(dynamic message) {
+    try {
+      final data = jsonDecode(message);
+      
+      switch (data['type']) {
+        case 'count_update':
+          _updateCount(data['count'] ?? 0);
+          break;
+        case 'error':
+          print('服务器错误: ${data['message']}');
+          if (data['shouldRejoin'] == true) {
+            _reconnect();
+          }
+          break;
       }
     } catch (e) {
-      print('加入活动错误: $e');
-      _sessionId = null;
-      _currentActivity = null;
-      return false;
+      print('处理 WebSocket 消息错误: $e');
+    }
+  }
+
+  /// 处理 WebSocket 错误
+  void _handleWebSocketError() {
+    _isConnected = false;
+    if (_shouldReconnect && _currentActivity != null) {
+      _reconnect();
+    }
+  }
+
+  /// 处理 WebSocket 关闭
+  void _handleWebSocketClose() {
+    _isConnected = false;
+    if (_shouldReconnect && _currentActivity != null) {
+      _reconnect();
+    }
+  }
+
+  /// 重新连接
+  Future<void> _reconnect() async {
+    if (!_shouldReconnect || _currentActivity == null) {
+      return;
+    }
+
+    print('尝试重新连接...');
+    await Future.delayed(reconnectDelay);
+    
+    if (_shouldReconnect && _currentActivity != null) {
+      final success = await _connectWebSocket(_currentActivity!);
+      if (!success) {
+        // 重连失败，降级到 HTTP
+        await _joinViaHttp(_currentActivity!);
+      }
+    }
+  }
+
+  /// 发送 WebSocket 消息
+  void _sendWebSocketMessage(Map<String, dynamic> message) {
+    if (_channel != null && _isConnected) {
+      try {
+        _channel!.sink.add(jsonEncode(message));
+      } catch (e) {
+        print('发送 WebSocket 消息失败: $e');
+      }
     }
   }
 
@@ -79,26 +167,29 @@ class OnlineCounterService {
       return;
     }
 
-    // 停止定时器
+    _shouldReconnect = false;
     _stopHeartbeat();
-    _stopCountPolling();
 
-    try {
-      await http.post(
-        Uri.parse('$baseUrl/api/online/leave'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'activityType': _currentActivity,
-          'sessionId': _sessionId,
-        }),
-      );
-    } catch (e) {
-      print('离开活动错误: $e');
-    } finally {
-      _sessionId = null;
-      _currentActivity = null;
-      _updateCount(0);
+    if (_isConnected && _channel != null) {
+      // 通过 WebSocket 离开
+      _sendWebSocketMessage({
+        'action': 'leave',
+        'sessionId': _sessionId,
+        'activityType': _currentActivity,
+      });
+      
+      await Future.delayed(const Duration(milliseconds: 100));
+      await _channel!.sink.close();
+      _channel = null;
+      _isConnected = false;
+    } else {
+      // 通过 HTTP 离开
+      await _leaveViaHttp();
     }
+
+    _sessionId = null;
+    _currentActivity = null;
+    _updateCount(0);
   }
 
   /// 发送心跳
@@ -107,52 +198,16 @@ class OnlineCounterService {
       return;
     }
 
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/online/heartbeat'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'activityType': _currentActivity,
-          'sessionId': _sessionId,
-        }),
-      );
-
-      if (response.statusCode == 404) {
-        // 会话已超时，需要重新加入
-        final data = jsonDecode(response.body);
-        if (data['shouldRejoin'] == true && _currentActivity != null) {
-          print('会话超时，重新加入活动');
-          final activityType = _currentActivity!;
-          _sessionId = null;
-          _currentActivity = null;
-          await joinActivity(activityType);
-        }
-      } else if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _updateCount(data['count'] ?? _currentCount);
-      }
-    } catch (e) {
-      print('心跳发送错误: $e');
-    }
-  }
-
-  /// 获取在线人数
-  Future<void> fetchCount() async {
-    if (_currentActivity == null) {
-      return;
-    }
-
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/online/count?activityType=$_currentActivity'),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _updateCount(data['count'] ?? 0);
-      }
-    } catch (e) {
-      print('获取在线人数错误: $e');
+    if (_isConnected && _channel != null) {
+      // WebSocket 心跳
+      _sendWebSocketMessage({
+        'action': 'heartbeat',
+        'sessionId': _sessionId,
+        'activityType': _currentActivity,
+      });
+    } else {
+      // HTTP 心跳（降级方案）
+      await _heartbeatViaHttp();
     }
   }
 
@@ -186,20 +241,6 @@ class OnlineCounterService {
     _heartbeatTimer = null;
   }
 
-  /// 启动计数轮询
-  void _startCountPolling() {
-    _stopCountPolling();
-    _countPollTimer = Timer.periodic(countPollInterval, (timer) {
-      fetchCount();
-    });
-  }
-
-  /// 停止计数轮询
-  void _stopCountPolling() {
-    _countPollTimer?.cancel();
-    _countPollTimer = null;
-  }
-
   /// 更新在线人数并通知监听者
   void _updateCount(int count) {
     if (_currentCount != count) {
@@ -210,10 +251,86 @@ class OnlineCounterService {
     }
   }
 
+  // ==================== HTTP 降级方案 ====================
+
+  /// HTTP 降级：加入活动
+  Future<bool> _joinViaHttp(String activityType) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/online/join'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'activityType': activityType,
+          'sessionId': _sessionId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _updateCount(data['count'] ?? 0);
+        _startHeartbeat();
+        return true;
+      } else {
+        print('HTTP 加入失败: ${response.statusCode}');
+        return false;
+      }
+    } catch (e) {
+      print('HTTP 加入错误: $e');
+      return false;
+    }
+  }
+
+  /// HTTP 降级：心跳
+  Future<void> _heartbeatViaHttp() async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/online/heartbeat'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'activityType': _currentActivity,
+          'sessionId': _sessionId,
+        }),
+      );
+
+      if (response.statusCode == 404) {
+        final data = jsonDecode(response.body);
+        if (data['shouldRejoin'] == true && _currentActivity != null) {
+          print('会话超时，重新加入');
+          final activityType = _currentActivity!;
+          _sessionId = _uuid.v4();
+          await _joinViaHttp(activityType);
+        }
+      } else if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _updateCount(data['count'] ?? _currentCount);
+      }
+    } catch (e) {
+      print('HTTP 心跳错误: $e');
+    }
+  }
+
+  /// HTTP 降级：离开活动
+  Future<void> _leaveViaHttp() async {
+    try {
+      await http.post(
+        Uri.parse('$baseUrl/api/online/leave'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'activityType': _currentActivity,
+          'sessionId': _sessionId,
+        }),
+      );
+    } catch (e) {
+      print('HTTP 离开错误: $e');
+    }
+  }
+
   /// 清理资源
   void dispose() {
+    _shouldReconnect = false;
     _stopHeartbeat();
-    _stopCountPolling();
+    _channel?.sink.close();
+    _channel = null;
     _onlineCountController.close();
   }
 }

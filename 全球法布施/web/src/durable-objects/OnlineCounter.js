@@ -1,29 +1,38 @@
 /**
- * OnlineCounter Durable Object
+ * OnlineCounter Durable Object - WebSocket Version
  * 管理特定活动类型的在线用户计数
  * 
  * 功能：
+ * - WebSocket 实时推送在线人数变化
  * - 追踪用户会话和最后心跳时间
  * - 自动清理超时用户（90秒未心跳）
- * - 提供实时在线人数统计
+ * - 向所有连接的客户端广播更新
  */
 export class OnlineCounter {
     constructor(state, env) {
         this.state = state;
         this.env = env;
-        // 存储格式: sessionId -> lastHeartbeat (timestamp)
+        // 存储格式: sessionId -> { lastHeartbeat: timestamp, ws: WebSocket }
         this.sessions = new Map();
+        // WebSocket 连接: ws -> sessionId
+        this.webSockets = new Map();
         this.TIMEOUT_MS = 90 * 1000; // 90秒超时
         this.CLEANUP_INTERVAL_MS = 30 * 1000; // 30秒检查一次
     }
 
     /**
-     * 处理HTTP请求
+     * 处理HTTP请求（包括 WebSocket 升级）
      */
     async fetch(request) {
         const url = new URL(request.url);
-        const action = url.searchParams.get('action');
 
+        // WebSocket 升级请求
+        if (request.headers.get('Upgrade') === 'websocket') {
+            return this.handleWebSocket(request);
+        }
+
+        // 保留 HTTP 端点作为降级方案
+        const action = url.searchParams.get('action');
         try {
             switch (action) {
                 case 'join':
@@ -44,7 +53,142 @@ export class OnlineCounter {
     }
 
     /**
-     * 用户加入活动
+     * 处理 WebSocket 连接
+     */
+    async handleWebSocket(request) {
+        const pair = new WebSocketPair();
+        const [client, server] = Object.values(pair);
+
+        // 接受 WebSocket 连接
+        server.accept();
+
+        // 设置 WebSocket 事件处理器
+        server.addEventListener('message', async (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                await this.handleWebSocketMessage(server, message);
+            } catch (error) {
+                console.error('WebSocket message error:', error);
+                server.send(JSON.stringify({ type: 'error', message: error.message }));
+            }
+        });
+
+        server.addEventListener('close', () => {
+            this.handleWebSocketClose(server);
+        });
+
+        server.addEventListener('error', (error) => {
+            console.error('WebSocket error:', error);
+            this.handleWebSocketClose(server);
+        });
+
+        return new Response(null, { status: 101, webSocket: client });
+    }
+
+    /**
+     * 处理 WebSocket 消息
+     */
+    async handleWebSocketMessage(ws, message) {
+        const { action, sessionId, activityType } = message;
+
+        switch (action) {
+            case 'join':
+                if (!sessionId) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'sessionId required' }));
+                    return;
+                }
+
+                const now = Date.now();
+                this.sessions.set(sessionId, { lastHeartbeat: now, ws });
+                this.webSockets.set(ws, sessionId);
+
+                await this.ensureAlarm();
+
+                console.log(`Session ${sessionId} joined via WebSocket. Total: ${this.sessions.size}`);
+
+                // 广播给所有客户端
+                this.broadcastCount();
+                break;
+
+            case 'heartbeat':
+                if (!sessionId) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'sessionId required' }));
+                    return;
+                }
+
+                const session = this.sessions.get(sessionId);
+                if (!session) {
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        message: 'Session not found',
+                        shouldRejoin: true
+                    }));
+                    return;
+                }
+
+                session.lastHeartbeat = Date.now();
+                break;
+
+            case 'leave':
+                if (!sessionId) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'sessionId required' }));
+                    return;
+                }
+
+                this.sessions.delete(sessionId);
+                this.webSockets.delete(ws);
+
+                console.log(`Session ${sessionId} left. Total: ${this.sessions.size}`);
+
+                // 广播更新
+                this.broadcastCount();
+                break;
+
+            default:
+                ws.send(JSON.stringify({ type: 'error', message: 'Invalid action' }));
+        }
+    }
+
+    /**
+     * 处理 WebSocket 断开
+     */
+    handleWebSocketClose(ws) {
+        const sessionId = this.webSockets.get(ws);
+        if (sessionId) {
+            this.sessions.delete(sessionId);
+            this.webSockets.delete(ws);
+            console.log(`WebSocket closed for session ${sessionId}. Total: ${this.sessions.size}`);
+
+            // 广播更新
+            this.broadcastCount();
+        }
+    }
+
+    /**
+     * 向所有连接的客户端广播在线人数
+     */
+    broadcastCount() {
+        const count = this.sessions.size;
+        const message = JSON.stringify({
+            type: 'count_update',
+            count,
+            timestamp: Date.now()
+        });
+
+        for (const [ws, sessionId] of this.webSockets.entries()) {
+            try {
+                ws.send(message);
+            } catch (error) {
+                console.error(`Failed to send to session ${sessionId}:`, error);
+                // 清理失败的连接
+                this.webSockets.delete(ws);
+                this.sessions.delete(sessionId);
+            }
+        }
+    }
+
+    /**
+     * HTTP 降级方案：用户加入活动
      */
     async handleJoin(request) {
         const { sessionId } = await request.json();
@@ -54,12 +198,11 @@ export class OnlineCounter {
         }
 
         const now = Date.now();
-        this.sessions.set(sessionId, now);
+        this.sessions.set(sessionId, { lastHeartbeat: now, ws: null });
 
-        // 设置定时清理（如果还没设置）
         await this.ensureAlarm();
 
-        console.log(`Session ${sessionId} joined. Total: ${this.sessions.size}`);
+        console.log(`Session ${sessionId} joined via HTTP. Total: ${this.sessions.size}`);
 
         return this.jsonResponse({
             success: true,
@@ -69,7 +212,7 @@ export class OnlineCounter {
     }
 
     /**
-     * 用户心跳保活
+     * HTTP 降级方案：用户心跳保活
      */
     async handleHeartbeat(request) {
         const { sessionId } = await request.json();
@@ -78,16 +221,15 @@ export class OnlineCounter {
             return this.jsonResponse({ error: 'sessionId required' }, 400);
         }
 
-        if (!this.sessions.has(sessionId)) {
-            // 会话不存在，可能已超时，返回错误让客户端重新join
+        const session = this.sessions.get(sessionId);
+        if (!session) {
             return this.jsonResponse({
                 error: 'Session not found',
                 shouldRejoin: true
             }, 404);
         }
 
-        const now = Date.now();
-        this.sessions.set(sessionId, now);
+        session.lastHeartbeat = Date.now();
 
         return this.jsonResponse({
             success: true,
@@ -96,7 +238,7 @@ export class OnlineCounter {
     }
 
     /**
-     * 用户主动离开
+     * HTTP 降级方案：用户主动离开
      */
     async handleLeave(request) {
         const { sessionId } = await request.json();
@@ -107,7 +249,7 @@ export class OnlineCounter {
 
         const existed = this.sessions.delete(sessionId);
 
-        console.log(`Session ${sessionId} left. Total: ${this.sessions.size}`);
+        console.log(`Session ${sessionId} left via HTTP. Total: ${this.sessions.size}`);
 
         return this.jsonResponse({
             success: true,
@@ -120,7 +262,6 @@ export class OnlineCounter {
      * 获取当前在线人数
      */
     async handleCount() {
-        // 先清理超时会话
         await this.cleanupTimeoutSessions();
 
         return this.jsonResponse({
@@ -135,15 +276,25 @@ export class OnlineCounter {
         const now = Date.now();
         let cleanedCount = 0;
 
-        for (const [sessionId, lastHeartbeat] of this.sessions.entries()) {
-            if (now - lastHeartbeat > this.TIMEOUT_MS) {
+        for (const [sessionId, session] of this.sessions.entries()) {
+            if (now - session.lastHeartbeat > this.TIMEOUT_MS) {
                 this.sessions.delete(sessionId);
+                if (session.ws) {
+                    this.webSockets.delete(session.ws);
+                    try {
+                        session.ws.close(1000, 'Session timeout');
+                    } catch (e) {
+                        console.error('Error closing WebSocket:', e);
+                    }
+                }
                 cleanedCount++;
             }
         }
 
         if (cleanedCount > 0) {
             console.log(`Cleaned ${cleanedCount} timeout sessions. Remaining: ${this.sessions.size}`);
+            // 广播更新后的计数
+            this.broadcastCount();
         }
 
         return cleanedCount;
@@ -155,7 +306,6 @@ export class OnlineCounter {
     async ensureAlarm() {
         const currentAlarm = await this.state.storage.getAlarm();
         if (currentAlarm === null) {
-            // 设置下一次清理时间
             await this.state.storage.setAlarm(Date.now() + this.CLEANUP_INTERVAL_MS);
         }
     }
