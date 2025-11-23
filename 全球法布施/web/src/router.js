@@ -11,6 +11,7 @@ import { handleGetAssetsList, handleR2List, handleR2Proxy } from './handlers/ass
 import { handleSearch, handleGetTextContent, handleGetCategories } from './handlers/search.js';
 import { handleGetLeaderboard, handleUpdateTransferData } from './handlers/leaderboard.js';
 import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts, handleGetMyLikes } from './handlers/likes.js';
+import { handleOnlineJoin, handleOnlineHeartbeat, handleOnlineLeave, handleOnlineCount } from './handlers/online.js';
 import { handleBuiltinMigration, handleFullTextSearch, handleGetCategories as handleBuiltinCategories } from '../migrate-builtin-handler-fixed.js';
 import { jsonResponse } from './utils/response.js';
 
@@ -89,6 +90,12 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/likes/count' && method === 'GET') return await handleGetLikeCount(request, env, db);
   if (pathname === '/api/likes/batch-counts' && method === 'POST') return await handleBatchGetLikeCounts(request, env, db);
   if (pathname === '/api/likes/my-likes' && method === 'GET') return await handleGetMyLikes(request, env, db);
+
+  // 在线人数API
+  if (pathname === '/api/online/join' && method === 'POST') return await handleOnlineJoin(request, env);
+  if (pathname === '/api/online/heartbeat' && method === 'POST') return await handleOnlineHeartbeat(request, env);
+  if (pathname === '/api/online/leave' && method === 'POST') return await handleOnlineLeave(request, env);
+  if (pathname === '/api/online/count' && method === 'GET') return await handleOnlineCount(request, env);
 
   // 迁移API（管理员专用）
   if (pathname === '/api/admin/migrate-kv-to-d1' && method === 'POST') return await handleMigrateKvToD1(request, env, db);

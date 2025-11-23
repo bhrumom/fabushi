@@ -7,6 +7,8 @@ import '../models/auth_model.dart';
 import '../models/sutra_model.dart';
 import '../services/cloudflare_worker_service.dart';
 import 'buddha_model_screen.dart';
+import '../services/online_counter_service.dart';
+import '../widgets/online_counter_widget.dart';
 
 import '../widgets/incense_3d_widget.dart';
 
@@ -31,6 +33,7 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
   
   // 服务
   final CloudflareWorkerService _apiService = CloudflareWorkerService();
+  final _onlineCounterService = OnlineCounterService();
 
   @override
   void initState() {
@@ -42,6 +45,18 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
     
     // 初始化音量监听
     _initVolumeListener();
+    
+    // 获取初始在线人数
+    _fetchInitialCount();
+  }
+
+  Future<void> _fetchInitialCount() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+    try {
+      await _onlineCounterService.fetchCountForActivity('zen_room');
+    } catch (e) {
+      debugPrint('获取初始在线人数失败: $e');
+    }
   }
 
   Future<void> _initVolumeListener() async {
@@ -64,6 +79,7 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
     _timer?.cancel();
     _incenseController.dispose();
     FlutterVolumeController.removeListener();
+    _onlineCounterService.dispose();
     super.dispose();
   }
 
@@ -83,6 +99,9 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
     });
     _incenseController.forward(from: 0);
     
+    // 加入禅室活动
+    _onlineCounterService.joinActivity('zen_room');
+    
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
         _elapsedTime += const Duration(seconds: 1);
@@ -100,6 +119,9 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
     setState(() {
       _isMeditating = false;
     });
+    
+    // 离开禅室活动
+    _onlineCounterService.leaveActivity();
   }
 
   Future<void> _finishMeditation() async {
@@ -240,26 +262,13 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // 经文选择
-                    InkWell(
-                      onTap: _isMeditating ? null : _showSutraSelection,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.8),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.menu_book, size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              _selectedSutra?.title ?? '选择经文',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                      ),
+                    // 在线人数显示
+                    OnlineCounterWidget(
+                      countStream: _onlineCounterService.onlineCountStream,
+                      initialCount: _onlineCounterService.currentCount,
+                      icon: Icons.self_improvement,
+                      prefix: '🧘 正在修行:',
+                      color: const Color(0xFFD4AF37),
                     ),
                     // 计时器
                     Container(

@@ -32,6 +32,16 @@ binding = "R2_BUCKET"
 bucket_name = "bushi"
 preview_bucket_name = "bushi"
 
+# Durable Objects配置
+[[durable_objects.bindings]]
+name = "ONLINE_COUNTER"
+class_name = "OnlineCounter"
+script_name = "fabushi-flutter-web"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["OnlineCounter"]
+
 # D1数据库配置
 [[d1_databases]]
 binding = "DB"
@@ -86,6 +96,11 @@ bucket_name = "bushi"
 binding = "DB"
 database_name = "fabushi-db"
 database_id = "7b6318f0-fbc2-42f9-9887-85f878ae76d0"
+
+[[env.production.durable_objects.bindings]]
+name = "ONLINE_COUNTER"
+class_name = "OnlineCounter"
+script_name = "fabushi-flutter-web-prod"
 
 [[env.production.send_email]]
 name = "EMAIL"

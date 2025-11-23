@@ -4,6 +4,8 @@ import '../models/file_transfer_model.dart';
 import '../widgets/earth_globe_widget.dart';
 import 'leaderboard_screen.dart';
 import '../core/design_system/app_theme.dart';
+import '../services/online_counter_service.dart';
+import '../widgets/online_counter_widget.dart';
 
 class GlobeHomeScreen extends StatefulWidget {
   const GlobeHomeScreen({super.key});
@@ -20,12 +22,23 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
   final List<Map<String, dynamic>> _pendingBeams = []; // 缓存待播放的轨迹（包含标签）
   bool _isGlobeLoaded = false; // 地球组件是否已加载
   bool _isCallbackSetup = false; // 性能优化：防止重复设置回调
+  final _onlineCounterService = OnlineCounterService();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadGlobe();
+    _fetchInitialCount();
+  }
+
+  Future<void> _fetchInitialCount() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+    try {
+      await _onlineCounterService.fetchCountForActivity('global_sending');
+    } catch (e) {
+      debugPrint('获取初始在线人数失败: $e');
+    }
   }
 
   void _loadGlobe() {
@@ -76,6 +89,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   @override
   void dispose() {
+    _onlineCounterService.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -260,7 +274,18 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                     ),
                   ),
           ),
-          Positioned(top: 60, left: 20, right: 20, child: _buildStatusBar()),
+          // 在线人数显示
+          Positioned(
+            top: 20,
+            left: 20,
+            child: OnlineCounterWidget(
+              countStream: _onlineCounterService.onlineCountStream,
+              initialCount: _onlineCounterService.currentCount,
+              icon: Icons.public,
+              prefix: '🌍 正在全球发送:',
+              color: AppTheme.primaryColor,
+            ),
+          ),
 
           Positioned(
             top: 20,

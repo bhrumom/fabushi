@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
 import '../services/app_initializer.dart';
-import '../screens/home_screen.dart';
 import '../screens/main_navigation_screen.dart';
 import '../services/platform_service.dart';
 
