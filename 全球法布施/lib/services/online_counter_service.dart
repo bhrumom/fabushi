@@ -30,11 +30,9 @@ class OnlineCounterService {
   /// 加入活动
   Future<bool> joinActivity(String activityType) async {
     if (_currentActivity == activityType && _sessionId != null && _isConnected) {
-      // 已经加入该活动
       return true;
     }
 
-    // 如果正在参与其他活动，先离开
     if (_currentActivity != null) {
       await leaveActivity();
     }
@@ -43,14 +41,13 @@ class OnlineCounterService {
     _currentActivity = activityType;
     _shouldReconnect = true;
 
-    // 尝试建立 WebSocket 连接
+    // 尝试 WebSocket 连接
     final wsSuccess = await _connectWebSocket(activityType);
     
     if (wsSuccess) {
       return true;
     } else {
-      // WebSocket 失败，降级到 HTTP
-      print('WebSocket 连接失败，使用 HTTP 降级方案');
+      print('📡 WebSocket 不可用，使用 HTTP 轮询');
       return await _joinViaHttp(activityType);
     }
   }
@@ -58,39 +55,72 @@ class OnlineCounterService {
   /// 建立 WebSocket 连接
   Future<bool> _connectWebSocket(String activityType) async {
     try {
-      final uri = Uri.parse('$wsUrl/api/online/ws?activityType=$activityType');
-      _channel = WebSocketChannel.connect(uri);
+      final uri = Uri.parse('$wsUrl/api/online/ws')
+          .replace(queryParameters: {'activityType': activityType});
+      
+      print('🔌 准备连接 WebSocket: $uri');
+      
+      try {
+        _channel = WebSocketChannel.connect(uri);
+        print('🔌 WebSocketChannel.connect 调用完成');
+      } catch (e) {
+        print('❌ WebSocketChannel.connect 异常: $e');
+        return false;
+      }
 
-      // 监听 WebSocket 消息
+      // 监听消息
       _channel!.stream.listen(
         (message) {
+          if (!_isConnected) {
+            _isConnected = true;
+            print('✅ WebSocket 已收到首条消息，连接确认成功');
+          }
+          print('📩 收到 WebSocket 消息: $message');
           _handleWebSocketMessage(message);
         },
         onError: (error) {
-          print('WebSocket 错误: $error');
+          print('❌ WebSocket stream 错误: $error');
           _handleWebSocketError();
         },
         onDone: () {
-          print('WebSocket 连接关闭');
+          print('🔌 WebSocket stream 关闭');
           _handleWebSocketClose();
         },
+        cancelOnError: false,
       );
 
-      // 发送 join 消息
+      // 等待连接建立
+      print('⏳ 等待连接建立...');
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // 发送 join
+      print('mb 发送 join 消息...');
       _sendWebSocketMessage({
         'action': 'join',
         'sessionId': _sessionId,
         'activityType': activityType,
       });
 
-      _isConnected = true;
+      // 等待响应
+      print('⏳ 等待服务器响应...');
+      int retryCount = 0;
+      while (!_isConnected && retryCount < 6) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        retryCount++;
+        if (_isConnected) break;
+        print('⏳ 等待响应... ${retryCount}/6');
+      }
       
-      // 启动心跳
-      _startHeartbeat();
-
-      return true;
+      if (_isConnected) {
+        print('✅ WebSocket 连接流程完成');
+        _startHeartbeat();
+        return true;
+      }
+      
+      print('📡 WebSocket 连接超时或失败，降级到 HTTP');
+      return false;
     } catch (e) {
-      print('WebSocket 连接失败: $e');
+      print('❌ WebSocket 建立连接过程异常: $e');
       return false;
     }
   }
@@ -152,7 +182,7 @@ class OnlineCounterService {
 
   /// 发送 WebSocket 消息
   void _sendWebSocketMessage(Map<String, dynamic> message) {
-    if (_channel != null && _isConnected) {
+    if (_channel != null) {
       try {
         _channel!.sink.add(jsonEncode(message));
       } catch (e) {
@@ -171,17 +201,22 @@ class OnlineCounterService {
     _stopHeartbeat();
 
     if (_isConnected && _channel != null) {
-      // 通过 WebSocket 离开
-      _sendWebSocketMessage({
-        'action': 'leave',
-        'sessionId': _sessionId,
-        'activityType': _currentActivity,
-      });
-      
-      await Future.delayed(const Duration(milliseconds: 100));
-      await _channel!.sink.close();
-      _channel = null;
-      _isConnected = false;
+      try {
+        // 通过 WebSocket 离开
+        _sendWebSocketMessage({
+          'action': 'leave',
+          'sessionId': _sessionId,
+          'activityType': _currentActivity,
+        });
+        
+        await Future.delayed(const Duration(milliseconds: 100));
+        await _channel!.sink.close();
+      } catch (e) {
+        print('关闭 WebSocket 时出错: $e');
+      } finally {
+        _channel = null;
+        _isConnected = false;
+      }
     } else {
       // 通过 HTTP 离开
       await _leaveViaHttp();

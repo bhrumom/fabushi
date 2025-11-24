@@ -8,7 +8,8 @@
 
 ## 📚 重要文档
 
-- ❤️ [LIKE_FEATURE_GUIDE.md](LIKE_FEATURE_GUIDE.md) - 点赞功能使用指南（新）
+- 🔌 [WEBSOCKET_ENABLED.md](WEBSOCKET_ENABLED.md) - WebSocket 功能启用指南（新）
+- ❤️ [LIKE_FEATURE_GUIDE.md](LIKE_FEATURE_GUIDE.md) - 点赞功能使用指南
 - 🚀 [PERFORMANCE_SUMMARY.md](PERFORMANCE_SUMMARY.md) - 性能优化完成报告
 - 📊 [PERFORMANCE_OPTIMIZATION.md](PERFORMANCE_OPTIMIZATION.md) - 性能优化详细方案
 - 🧪 [PERFORMANCE_TEST_GUIDE.md](PERFORMANCE_TEST_GUIDE.md) - 性能测试指南
@@ -44,7 +45,14 @@
 - ✅ 传输统计分析
 - ✅ 共享素材管理（首页和法流页面共用）
 
-### 社交互动功能（v1.3.0 新增）
+### 在线人数统计（v1.4.0 新增）
+- ✅ WebSocket 实时连接
+- ✅ 在线人数实时更新
+- ✅ 自动重连机制
+- ✅ HTTP 降级方案
+- ✅ 支持多活动类型
+
+### 社交互动功能（v1.3.0）
 - ✅ 点赞功能（类似抖音）
 - ✅ 我的喜欢列表
 - ✅ 本地数据持久化
@@ -91,7 +99,21 @@
 
 ## 🚀 快速开始
 
-### 性能优化版本（推荐）
+### WebSocket 功能部署（新）
+
+启用实时在线人数统计：
+
+```bash
+# 部署 WebSocket 后端
+./deploy_websocket.sh
+
+# 运行应用
+flutter run
+```
+
+详细说明请查看 [WEBSOCKET_ENABLED.md](WEBSOCKET_ENABLED.md)
+
+### 性能优化版本
 
 如果您遇到首页全球发送卡顿问题，可以应用性能优化版本：
 

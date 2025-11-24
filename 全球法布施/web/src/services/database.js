@@ -4,6 +4,11 @@ export class DatabaseService {
     this.db = db;
   }
 
+  // 直接暴露 prepare 方法，允许处理器直接调用 db.prepare()
+  prepare(query) {
+    return this.db.prepare(query);
+  }
+
   // 用户操作
   async getUser(username) {
     return await this.db.prepare('SELECT * FROM users WHERE username = ?').bind(username).first();
@@ -117,19 +122,19 @@ export class DatabaseService {
   async listRedeemCodes(status, page, limit) {
     let query = 'SELECT * FROM redeem_codes';
     const params = [];
-    
+
     if (status === 'used') {
       query += ' WHERE used = 1';
     } else if (status === 'unused') {
       query += ' WHERE used = 0';
     }
-    
+
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, (page - 1) * limit);
-    
+
     const result = await this.db.prepare(query).bind(...params).all();
     const countResult = await this.db.prepare('SELECT COUNT(*) as total FROM redeem_codes').first();
-    
+
     return {
       codes: result.results,
       total: countResult.total,
@@ -153,11 +158,11 @@ export class DatabaseService {
         ORDER BY total_transferred_bytes DESC
         LIMIT ?
       `).bind(limit).all();
-      
+
       if (!result || !result.results) {
         return [];
       }
-      
+
       return result.results.map((entry, index) => ({
         username: entry.username || 'Unknown',
         totalBytes: entry.totalBytes || 0,

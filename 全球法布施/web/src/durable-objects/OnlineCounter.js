@@ -16,6 +16,8 @@ export class OnlineCounter {
         this.sessions = new Map();
         // WebSocket 连接: ws -> sessionId
         this.webSockets = new Map();
+        // 临时存储未验证的 WebSocket 连接，防止 GC
+        this.pendingSockets = new Set();
         this.TIMEOUT_MS = 90 * 1000; // 90秒超时
         this.CLEANUP_INTERVAL_MS = 30 * 1000; // 30秒检查一次
     }
@@ -25,9 +27,16 @@ export class OnlineCounter {
      */
     async fetch(request) {
         const url = new URL(request.url);
+        const upgradeHeader = request.headers.get('Upgrade');
+
+        console.log('DO received request:', {
+            upgrade: upgradeHeader,
+            path: url.pathname
+        });
 
         // WebSocket 升级请求
-        if (request.headers.get('Upgrade') === 'websocket') {
+        if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') {
+            console.log('DO handling WebSocket');
             return this.handleWebSocket(request);
         }
 
@@ -56,33 +65,49 @@ export class OnlineCounter {
      * 处理 WebSocket 连接
      */
     async handleWebSocket(request) {
-        const pair = new WebSocketPair();
-        const [client, server] = Object.values(pair);
+        try {
+            const pair = new WebSocketPair();
+            const [client, server] = Object.values(pair);
 
-        // 接受 WebSocket 连接
-        server.accept();
+            console.log('Creating WebSocket pair');
 
-        // 设置 WebSocket 事件处理器
-        server.addEventListener('message', async (event) => {
-            try {
-                const message = JSON.parse(event.data);
-                await this.handleWebSocketMessage(server, message);
-            } catch (error) {
-                console.error('WebSocket message error:', error);
-                server.send(JSON.stringify({ type: 'error', message: error.message }));
-            }
-        });
+            // 接受 WebSocket 连接
+            // 使用 Standard WebSocket API (server.accept()) 而不是 Hibernatable API (state.acceptWebSocket())
+            // 因为我们使用的是 event listeners 模式
+            server.accept();
+            console.log('WebSocket accepted (Standard API)');
 
-        server.addEventListener('close', () => {
-            this.handleWebSocketClose(server);
-        });
+            // 添加到 pendingSockets 防止 GC
+            this.pendingSockets.add(server);
 
-        server.addEventListener('error', (error) => {
-            console.error('WebSocket error:', error);
-            this.handleWebSocketClose(server);
-        });
+            // 设置 WebSocket 事件处理器
+            server.addEventListener('message', async (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    await this.handleWebSocketMessage(server, message);
+                } catch (error) {
+                    console.error('WebSocket message error:', error);
+                    server.send(JSON.stringify({ type: 'error', message: error.message }));
+                }
+            });
 
-        return new Response(null, { status: 101, webSocket: client });
+            server.addEventListener('close', () => {
+                this.pendingSockets.delete(server);
+                this.handleWebSocketClose(server);
+            });
+
+            server.addEventListener('error', (error) => {
+                console.error('WebSocket error:', error);
+                this.pendingSockets.delete(server);
+                this.handleWebSocketClose(server);
+            });
+
+            console.log('Returning 101 response');
+            return new Response(null, { status: 101, webSocket: client });
+        } catch (error) {
+            console.error('handleWebSocket error:', error);
+            return new Response('WebSocket upgrade failed: ' + error.message, { status: 500 });
+        }
     }
 
     /**
@@ -175,9 +200,12 @@ export class OnlineCounter {
             timestamp: Date.now()
         });
 
+        console.log(`Broadcasting count ${count} to ${this.webSockets.size} clients`);
+
         for (const [ws, sessionId] of this.webSockets.entries()) {
             try {
                 ws.send(message);
+                console.log(`Sent update to session ${sessionId}`);
             } catch (error) {
                 console.error(`Failed to send to session ${sessionId}:`, error);
                 // 清理失败的连接
