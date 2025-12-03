@@ -3,6 +3,8 @@ import 'package:flutter_earth_globe/flutter_earth_globe.dart';
 import 'package:flutter_earth_globe/flutter_earth_globe_controller.dart';
 import 'package:flutter_earth_globe/globe_coordinates.dart';
 import 'package:flutter_earth_globe/point.dart';
+import 'package:flutter_earth_globe/point_connection.dart';
+import 'package:flutter_earth_globe/point_connection_style.dart';
 import '../services/country_coordinates_service.dart';
 import '../services/ip_location_service.dart';
 import 'dart:math' as math;
@@ -15,10 +17,9 @@ class EarthGlobeWidget extends StatefulWidget {
 }
 
 class EarthGlobeWidgetState extends State<EarthGlobeWidget>
-    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin {
   late FlutterEarthGlobeController _controller;
   bool _isDisposed = false;
-  final Map<String, AnimationController> _beamAnimations = {};
   final CountryCoordinatesService _coordService = CountryCoordinatesService();
   final IPLocationService _ipLocationService = IPLocationService();
   final math.Random _random = math.Random();
@@ -197,6 +198,10 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
     }
   }
 
+  // 轨迹队列管理 - 限制同时显示的轨迹数量
+  final List<String> _activeConnections = [];
+  static const int _maxActiveConnections = 10; // 最多同时显示10条连线
+
   Future<void> addTransferBeam(
     double fromLat,
     double fromLng,
@@ -207,272 +212,94 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
     String? fromLabel,
     String? toLabel,
   }) async {
+    if (_isDisposed || !mounted) return;
+
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final connId = 'conn_$timestamp';
+    final destId = 'dest_$timestamp';
+    final displayDuration = duration ?? const Duration(seconds: 3);
+
+    // 获取国家名称（如果没有提供）
+    if (toLabel == null) {
+      final toCountry = _coordService.getByCoordinates(toLat, toLng);
+      toLabel = toCountry?.countryName;
+    }
+
+    // 限制同时显示的连线数量，移除最旧的
+    if (_activeConnections.length >= _maxActiveConnections) {
+      final oldestId = _activeConnections.removeAt(0);
+      _safeRemoveConnection(oldestId);
+      _safeRemovePoint('dest_${oldestId.split('_').last}');
+    }
+
+    // 添加目标点（绿色标记 + 国家名称）
+    _controller.addPoint(
+      Point(
+        id: destId,
+        coordinates: GlobeCoordinates(toLat, toLng),
+        style: PointStyle(color: Colors.greenAccent, size: 8),
+        label: toLabel,
+        isLabelVisible: true,
+        labelTextStyle: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+        ),
+      ),
+    );
+
+    // 添加从用户位置到目标的连线
+    final startLat = _userLatitude ?? fromLat;
+    final startLng = _userLongitude ?? fromLng;
+    
+    _controller.addPointConnection(
+      PointConnection(
+        id: connId,
+        start: GlobeCoordinates(startLat, startLng),
+        end: GlobeCoordinates(toLat, toLng),
+        isMoving: true,
+        style: PointConnectionStyle(
+          type: PointConnectionType.dashed,
+          color: color ?? Colors.cyan,
+          lineWidth: 1.5,
+          dashSize: 4,
+        ),
+      ),
+    );
+
+    _activeConnections.add(connId);
+
+    // 延迟后自动移除
+    Future.delayed(displayDuration, () {
+      _safeRemoveConnection(connId);
+      _safeRemovePoint(destId);
+      _activeConnections.remove(connId);
+    });
+  }
+
+  // 安全移除点
+  void _safeRemovePoint(String pointId) {
     if (!_isDisposed && mounted) {
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final beamId = 'beam_$timestamp';
-      final transferDuration = duration ?? const Duration(seconds: 2);
-
-      // 获取国家名称（如果没有提供）
-      if (fromLabel == null) {
-        final fromCountry = _coordService.getByCoordinates(fromLat, fromLng);
-        fromLabel = fromCountry?.countryName;
-      }
-      if (toLabel == null) {
-        final toCountry = _coordService.getByCoordinates(toLat, toLng);
-        toLabel = toCountry?.countryName;
-      }
-
-      // 添加起点标记（带国家名称）
-      _controller.addPoint(
-        Point(
-          id: 'from_$timestamp',
-          coordinates: GlobeCoordinates(fromLat, fromLng),
-          style: PointStyle(color: Colors.red.shade400, size: 8),
-          label: fromLabel,
-          isLabelVisible: true,
-          labelTextStyle: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            shadows: [Shadow(color: Colors.black, blurRadius: 6)],
-          ),
-        ),
-      );
-
-      // 添加终点标记（带国家名称）
-      _controller.addPoint(
-        Point(
-          id: 'to_$timestamp',
-          coordinates: GlobeCoordinates(toLat, toLng),
-          style: PointStyle(color: Colors.green.shade400, size: 6),
-          label: toLabel,
-          isLabelVisible: true,
-          labelTextStyle: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            shadows: [Shadow(color: Colors.black, blurRadius: 6)],
-          ),
-        ),
-      );
-
-      // 添加起点的脉冲效果
-      await _createPulseEffect(fromLat, fromLng, 'from_pulse_$timestamp', Colors.red.shade400);
-
-      // 流星动画
-      await _animateMovingLight(
-        fromLat,
-        fromLng,
-        toLat,
-        toLng,
-        beamId,
-        color ?? Colors.cyan,
-        transferDuration,
-      );
-
-      // 添加终点的脉冲效果
-      await _createPulseEffect(toLat, toLng, 'to_pulse_$timestamp', Colors.green.shade400);
-
-      // 清除轨迹
-      _controller.removePoint('from_$timestamp');
-      _controller.removePoint('to_$timestamp');
+      try {
+        _controller.removePoint(pointId);
+      } catch (_) {}
     }
   }
 
-  Future<void> _animateMovingLight(
-    double fromLat,
-    double fromLng,
-    double toLat,
-    double toLng,
-    String beamId,
-    Color color,
-    Duration duration,
-  ) async {
-    // 性能优化：减少步数从 80 到 45，仍保持流畅效果
-    const steps = 45;
-    final stepDelay = Duration(milliseconds: duration.inMilliseconds ~/ steps);
-    // 性能优化：减少拖尾长度从 20 到 10
-    const tailLength = 10;
-
-    // 计算优美的弧线路径控制点
-    final midLat = (fromLat + toLat) / 2;
-    final midLng = (fromLng + toLng) / 2;
-
-    // 平衡的弧线高度（立体感 + 连续性）
-    final distance = _calculateDistance(fromLat, fromLng, toLat, toLng);
-    final arcHeight = math.min(distance * 0.4, 40); // 平衡高度
-
-    // 计算垂直向上的偏移
-    final angle = math.atan2(toLat - fromLat, toLng - fromLng);
-    final arcLat = midLat + arcHeight * math.cos(angle + math.pi / 2);
-    final arcLng = midLng + arcHeight * math.sin(angle + math.pi / 2);
-
-    for (int i = 0; i <= steps; i++) {
-      if (_isDisposed || !mounted) break;
-
-      // 性能优化：每5步让出主线程，确保UI响应性
-      if (i % 5 == 0 && i > 0) {
-        await Future.delayed(Duration.zero);
-      }
-
-      final t = i / steps;
-
-      // 使用二次贝塞尔曲线计算弧线路径
-      final lat = _quadraticBezier(fromLat, arcLat, toLat, t);
-      final lng = _quadraticBezier(fromLng, arcLng, toLng, t);
-
-      // 添加流星头部（白色核心 + 彩色光晕）
-      final headId = '${beamId}_head_$i';
-
-      // 性能优化：减少光晕层级从 3 层到 2 层
-      // 彩色光晕
-      _controller.addPoint(
-        Point(
-          id: '${headId}_glow',
-          coordinates: GlobeCoordinates(lat, lng),
-          style: PointStyle(color: color.withOpacity(0.5), size: 16),
-        ),
-      );
-
-      // 核心白色亮点
-      _controller.addPoint(
-        Point(
-          id: headId,
-          coordinates: GlobeCoordinates(lat, lng),
-          style: PointStyle(color: Colors.white, size: 10),
-        ),
-      );
-
-      // 添加流星拖尾（渐变）
-      for (int j = 1; j <= tailLength; j++) {
-        if (i - j < 0) continue;
-
-        final tailT = (i - j) / steps;
-        final tailLat = _quadraticBezier(fromLat, arcLat, toLat, tailT);
-        final tailLng = _quadraticBezier(fromLng, arcLng, toLng, tailT);
-        final tailId = '${beamId}_tail_${i}_$j';
-        final opacity = (1 - j / tailLength);
-
-        _controller.addPoint(
-          Point(
-            id: tailId,
-            coordinates: GlobeCoordinates(tailLat, tailLng),
-            style: PointStyle(
-              color: color.withOpacity(opacity * 0.8),
-              size: (14 - j * 0.6).clamp(4, 14),
-            ),
-          ),
-        );
-
-        // 性能优化：使用 microtask 批量处理删除操作
-        Future.microtask(() {
-          Future.delayed(const Duration(milliseconds: 100), () {
-            if (!_isDisposed && mounted) {
-              try {
-                _controller.removePoint(tailId);
-              } catch (_) {}
-            }
-          });
-        });
-      }
-
-      // 移除头部点（包括光晕）
-      Future.microtask(() {
-        Future.delayed(const Duration(milliseconds: 150), () {
-          if (!_isDisposed && mounted) {
-            try {
-              _controller.removePoint(headId);
-              _controller.removePoint('${headId}_glow');
-            } catch (_) {}
-          }
-        });
-      });
-
-      await Future.delayed(stepDelay);
-    }
-
-    // 清理所有残留点
-    await Future.delayed(const Duration(milliseconds: 500));
+  // 安全移除连线
+  void _safeRemoveConnection(String connId) {
     if (!_isDisposed && mounted) {
-      for (int i = 0; i <= steps; i++) {
-        try {
-          _controller.removePoint('${beamId}_head_$i');
-          for (int j = 1; j <= tailLength; j++) {
-            _controller.removePoint('${beamId}_tail_${i}_$j');
-          }
-        } catch (_) {}
-      }
-    }
-  }
-
-  // 计算两点间的大圆距离
-  double _calculateDistance(double lat1, double lng1, double lat2, double lng2) {
-    const R = 6371; // 地球半径（公里）
-    final dLat = _toRadians(lat2 - lat1);
-    final dLng = _toRadians(lng2 - lng1);
-    final a =
-        math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_toRadians(lat1)) *
-            math.cos(_toRadians(lat2)) *
-            math.sin(dLng / 2) *
-            math.sin(dLng / 2);
-    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
-    return R * c;
-  }
-
-  // 角度转弧度
-  double _toRadians(double degrees) {
-    return degrees * math.pi / 180;
-  }
-
-  // 二次贝塞尔曲线插值（优化版）
-  double _quadraticBezier(double p0, double p1, double p2, double t) {
-    final u = 1 - t;
-    return u * u * p0 + 2 * u * t * p1 + t * t * p2;
-  }
-
-  // 三次贝塞尔曲线插值（更平滑）
-  double _cubicBezier(double p0, double p1, double p2, double p3, double t) {
-    final u = 1 - t;
-    final tt = t * t;
-    final uu = u * u;
-    return uu * u * p0 + 3 * uu * t * p1 + 3 * u * tt * p2 + tt * t * p3;
-  }
-
-  // 创建脉冲效果
-  Future<void> _createPulseEffect(double lat, double lng, String pulseId, Color color) async {
-    const pulseSteps = 6;
-    final pulseDelay = const Duration(milliseconds: 100);
-
-    for (int i = 0; i < pulseSteps; i++) {
-      if (_isDisposed || !mounted) break;
-
-      final size = 15 + i * 3;
-      final alpha = 255 - (i * 40);
-
-      _controller.addPoint(
-        Point(
-          id: '${pulseId}_$i',
-          coordinates: GlobeCoordinates(lat, lng),
-          style: PointStyle(color: color.withAlpha(alpha.clamp(50, 255)), size: size.toDouble()),
-        ),
-      );
-
-      // 逐步移除脉冲环
-      Future.delayed(pulseDelay * 2, () {
-        if (!_isDisposed && mounted) {
-          try {
-            _controller.removePoint('${pulseId}_$i');
-          } catch (_) {}
-        }
-      });
-
-      await Future.delayed(pulseDelay);
+      try {
+        _controller.removePointConnection(connId);
+      } catch (_) {}
     }
   }
 
   void clearBeams() {
     if (!_isDisposed && mounted) {
+      // 清除活跃连线列表
+      _activeConnections.clear();
       // 清除所有点和连接，保留用户位置标记
       for (var point in List.from(_controller.points)) {
         if (point.id != 'user_location') {
@@ -508,10 +335,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
   void dispose() {
     if (!_isDisposed) {
       _isDisposed = true;
-      for (var controller in _beamAnimations.values) {
-        controller.dispose();
-      }
-      _beamAnimations.clear();
+      _activeConnections.clear();
       try {
         _controller.dispose();
       } catch (e) {

@@ -18,7 +18,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
     with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   static EarthGlobeWidgetState? _globeState; // 静态引用，保持在页面切换时不丢失
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
-  String _currentTransfer = '';
+  String _currentSendingCountry = ''; // 当前正在发送的国家
   final List<Map<String, dynamic>> _pendingBeams = []; // 缓存待播放的轨迹（包含标签）
   bool _isGlobeLoaded = false; // 地球组件是否已加载
   bool _isCallbackSetup = false; // 性能优化：防止重复设置回调
@@ -97,14 +97,12 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
   void _setupTransferBeamCallback() {
     // 性能优化：如果回调已设置且Globe状态仍然有效，跳过重复设置
     if (_isCallbackSetup && _globeState != null && _globeKey.currentState != null) {
-      debugPrint('⏭️ 跳过重复设置回调');
       return;
     }
 
     // 更新静态引用
     if (_globeKey.currentState != null) {
       _globeState = _globeKey.currentState;
-      debugPrint('🔗 更新 Globe 静态引用');
     }
 
     final model = Provider.of<FileTransferModel>(context, listen: false);
@@ -116,40 +114,40 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
       String? fromLabel,
       String? toLabel,
     }) {
+      // 更新当前发送的国家名称
+      if (toLabel != null && mounted) {
+        setState(() {
+          _currentSendingCountry = toLabel;
+        });
+      }
+
       // 优先使用静态引用
       final state = _globeState ?? _globeKey.currentState;
-      debugPrint(
-        '📡 轨迹回调触发: staticState=${_globeState != null}, keyState=${_globeKey.currentState != null}',
-      );
-      debugPrint('🏷️ 国家标签: $fromLabel -> $toLabel');
 
       if (state != null) {
-        debugPrint('✅ 直接添加轨迹: $fromLabel ($fromLat, $fromLng) -> $toLabel ($toLat, $toLng)');
         try {
+          // 显示目标点和连线，3秒后自动消失
           state.addTransferBeam(
             fromLat,
             fromLng,
             toLat,
             toLng,
-            color: Colors.cyan,
-            duration: const Duration(seconds: 5),
-            fromLabel: fromLabel,
+            duration: const Duration(seconds: 3),
             toLabel: toLabel,
           );
         } catch (e) {
           debugPrint('❌ 添加轨迹失败: $e');
         }
       } else {
-        debugPrint('💾 缓存轨迹数据，等待页面可见');
+        // 缓存数据，等待页面可见
         _pendingBeams.add({
           'fromLat': fromLat,
           'fromLng': fromLng,
           'toLat': toLat,
           'toLng': toLng,
-          'fromLabel': fromLabel,
           'toLabel': toLabel,
         });
-        if (_pendingBeams.length > 50) {
+        if (_pendingBeams.length > 20) {
           _pendingBeams.removeAt(0);
         }
       }
@@ -158,7 +156,6 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
     // 标记回调已设置
     _isCallbackSetup = true;
     _playPendingBeams();
-    debugPrint('🔧 轨迹回调已设置');
   }
 
   void _playPendingBeams() {
@@ -166,12 +163,10 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
 
     final state = _globeState ?? _globeKey.currentState;
     if (state == null) {
-      debugPrint('⏳ Globe 还未准备好，稍后重试');
       Future.delayed(const Duration(milliseconds: 500), _playPendingBeams);
       return;
     }
 
-    debugPrint('🎬 播放 ${_pendingBeams.length} 条缓存轨迹');
     for (final beam in _pendingBeams) {
       try {
         state.addTransferBeam(
@@ -179,13 +174,11 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
           beam['fromLng'] as double,
           beam['toLat'] as double,
           beam['toLng'] as double,
-          color: Colors.cyan,
-          duration: const Duration(seconds: 5),
-          fromLabel: beam['fromLabel'] as String?,
+          duration: const Duration(seconds: 3),
           toLabel: beam['toLabel'] as String?,
         );
       } catch (e) {
-        debugPrint('❌ 播放缓存轨迹失败: $e');
+        debugPrint('❌ 播放缓存目标点失败: $e');
       }
     }
     _pendingBeams.clear();
@@ -305,48 +298,61 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
               tooltip: '排行榜',
             ),
           ),
-          if (_currentTransfer.isNotEmpty)
-            Positioned(
-              top: 80,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: AppTheme.glassDecoration.copyWith(
-                    color: AppTheme.primaryColor.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    _currentTransfer,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+          // 实时发送状态显示
+          Consumer<FileTransferModel>(
+            builder: (context, model, _) {
+              if (!model.isTransferring || _currentSendingCountry.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Positioned(
+                top: 70,
+                left: 20,
+                right: 20,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: AppTheme.glassDecoration.copyWith(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.cyan,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          '正在发送到 $_currentSendingCountry',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ),
-            ),
-          Consumer<FileTransferModel>(
-            builder: (context, model, _) {
-              if (model.isTransferring) return const SizedBox.shrink();
-              return Positioned(
-                bottom: 100,
-                left: 20,
-                right: 20,
-                child: _buildControlPanel(context),
               );
             },
+          ),
+          // 控制面板 - 始终显示
+          Positioned(
+            bottom: 100,
+            left: 20,
+            right: 20,
+            child: _buildControlPanel(context),
           ),
 
         ],
       ),
     );
-  }
-
-  Widget _buildStatusBar() {
-    return const SizedBox.shrink();
   }
 
   Widget _buildControlPanel(BuildContext context) {
@@ -355,141 +361,171 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
         return Container(
           decoration: AppTheme.glassDecoration,
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  model.selectedFile?.name ?? '未选择经文',
-                  style: const TextStyle(
-                    fontSize: 16, 
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                
-                // 循环发送开关
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            model.isLooping ? Icons.repeat : Icons.repeat_one,
-                            color: model.isLooping ? AppTheme.primaryColor : Colors.white70,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            model.isLooping ? '循环发送 (第 ${model.loopCount} 轮)' : '循环发送',
-                            style: TextStyle(
-                              color: model.isLooping ? AppTheme.primaryColor : Colors.white70,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Switch(
-                        value: model.isLooping,
-                        onChanged: (value) => model.setLooping(value),
-                        activeColor: AppTheme.primaryColor,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: model.isTransferring ? null : () => _selectFile(context),
-                        icon: const Icon(Icons.menu_book),
-                        label: const Text('选择经文'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          backgroundColor: AppTheme.secondaryColor.withOpacity(0.8),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: model.isTransferring
-                          ? ElevatedButton.icon(
-                              onPressed: () => _stopSending(model),
-                              icon: const Icon(Icons.stop),
-                              label: const Text('停止发送'),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                backgroundColor: Colors.red,
-                              ),
-                            )
-                          : ElevatedButton.icon(
-                              onPressed: model.selectedFile != null && !model.isTransferring
-                                  ? () => _startSending(model)
-                                  : null,
-                              icon: const Icon(Icons.send),
-                              label: const Text('开始发送'),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                backgroundColor: AppTheme.primaryColor,
-                              ),
-                            ),
-                    ),
-                  ],
-                ),
-                
-                // 发送进度显示
+                // 发送进度显示（发送中时显示在顶部）
                 if (model.isTransferring) ...[
-                  const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
+                      color: AppTheme.primaryColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
                     ),
                     child: Column(
                       children: [
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              '已发送: ${model.globalSentCount} 个国家',
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 13,
-                              ),
+                            Row(
+                              children: [
+                                Icon(Icons.send, color: AppTheme.primaryColor, size: 18),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '已发送: ${model.globalSentCount} 个国家',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                             ),
                             if (model.loopCount > 0)
-                              Text(
-                                '第 ${model.loopCount} 轮',
-                                style: TextStyle(
-                                  color: AppTheme.primaryColor,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryColor.withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '第 ${model.loopCount} 轮',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        LinearProgressIndicator(
-                          backgroundColor: Colors.white.withOpacity(0.2),
-                          valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+                        const SizedBox(height: 10),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            backgroundColor: Colors.white.withOpacity(0.2),
+                            valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+                            minHeight: 6,
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 12),
+                ] else ...[
+                  // 未发送时显示文件名
+                  Text(
+                    model.selectedFile?.name ?? '未选择经文',
+                    style: const TextStyle(
+                      fontSize: 15, 
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  // 循环发送开关（仅在未发送时显示）
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              model.isLooping ? Icons.repeat : Icons.repeat_one,
+                              color: model.isLooping ? AppTheme.primaryColor : Colors.white70,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '循环发送',
+                              style: TextStyle(
+                                color: model.isLooping ? AppTheme.primaryColor : Colors.white70,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(
+                          height: 28,
+                          child: Switch(
+                            value: model.isLooping,
+                            onChanged: (value) => model.setLooping(value),
+                            activeColor: AppTheme.primaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                 ],
+                
+                // 按钮行
+                Row(
+                  children: [
+                    // 选择经文按钮（发送中时禁用）
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: model.isTransferring ? null : () => _selectFile(context),
+                        icon: Icon(Icons.menu_book, size: 18),
+                        label: const Text('选择经文', style: TextStyle(fontSize: 13)),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          backgroundColor: model.isTransferring 
+                              ? Colors.grey.withOpacity(0.3)
+                              : AppTheme.secondaryColor.withOpacity(0.8),
+                          disabledBackgroundColor: Colors.grey.withOpacity(0.3),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    // 开始/停止按钮
+                    Expanded(
+                      child: model.isTransferring
+                          ? ElevatedButton.icon(
+                              onPressed: () => _stopSending(model),
+                              icon: const Icon(Icons.stop, size: 18),
+                              label: const Text('停止发送', style: TextStyle(fontSize: 13)),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                backgroundColor: Colors.red.shade600,
+                              ),
+                            )
+                          : ElevatedButton.icon(
+                              onPressed: model.selectedFile != null
+                                  ? () => _startSending(model)
+                                  : null,
+                              icon: const Icon(Icons.send, size: 18),
+                              label: const Text('开始发送', style: TextStyle(fontSize: 13)),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                backgroundColor: AppTheme.primaryColor,
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -532,6 +568,11 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   void _stopSending(FileTransferModel model) {
     model.stopTransfer();
+    
+    // 清除当前发送状态
+    setState(() {
+      _currentSendingCountry = '';
+    });
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

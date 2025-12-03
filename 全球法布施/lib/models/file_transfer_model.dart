@@ -398,32 +398,40 @@ class FileTransferModel extends ChangeNotifier {
     _onTransferBeam = callback;
   }
 
-  Future<void> startGlobalTransfer() async {
-    if (_isTransferring || _selectedFiles.isEmpty) return;
+  Future<void> startGlobalTransfer({bool isLoopContinuation = false}) async {
+    // 如果不是循环继续，检查是否已在传输中
+    if (!isLoopContinuation && _isTransferring) return;
+    if (_selectedFiles.isEmpty) return;
 
     _isTransferring = true;
     _status = TransferStatus.transferring;
     
-    // 初始化循环计数
-    if (!_isLooping) {
-      _loopCount = 0;
+    // 初始化或增加循环计数
+    if (!isLoopContinuation) {
+      _loopCount = _isLooping ? 1 : 0;
+    } else {
+      _loopCount++;
     }
-    _loopCount++;
+    
+    // 重置发送计数（每轮重新开始）
+    _globalSentCount = 0;
     
     _schedulePersist(_persistTransferState);
     _scheduleNotify();
 
     try {
-      debugPrint('🚀 开始真实全球传输 - 文件数量: ${_selectedFiles.length}, 循环: $_isLooping, 轮次: $_loopCount');
+      debugPrint('🚀 开始全球传输 - 文件数量: ${_selectedFiles.length}, 循环: $_isLooping, 轮次: $_loopCount');
 
-      // 启动后台服务
-      await _startBackgroundService();
+      // 启动后台服务（仅首次）
+      if (!isLoopContinuation) {
+        await _startBackgroundService();
+      }
 
       await _initializeRealGlobalSendService();
-      await _realGlobalSendService?.startSending(files: _selectedFiles, isLoop: false);  // 单次发送
+      await _realGlobalSendService?.startSending(files: _selectedFiles, isLoop: false);
       await _uploadPendingData();
       
-      debugPrint('✅ 传输完成，数据已上传');
+      debugPrint('✅ 第 $_loopCount 轮传输完成');
       
       // 检查是否需要循环
       if (_isLooping && _isTransferring) {
@@ -433,7 +441,7 @@ class FileTransferModel extends ChangeNotifier {
         
         // 再次检查循环状态（用户可能在等待期间关闭了循环）
         if (_isLooping && _isTransferring) {
-          await startGlobalTransfer();  // 递归调用开始下一轮
+          await startGlobalTransfer(isLoopContinuation: true);  // 递归调用开始下一轮
           return;  // 返回，不执行下面的停止服务逻辑
         }
       }
