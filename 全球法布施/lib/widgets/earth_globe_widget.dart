@@ -198,9 +198,12 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
     }
   }
 
-  // 轨迹队列管理 - 限制同时显示的轨迹数量
-  final List<String> _activeConnections = [];
-  static const int _maxActiveConnections = 10; // 最多同时显示10条连线
+  // 当前活跃的轨迹（只保留一条，代表当前正在发送的国家）
+  String? _currentConnectionId;
+  String? _currentDestPointId;
+  
+  // 发送状态管理 - 控制地球旋转和视角
+  bool _isSending = false;
 
   Future<void> addTransferBeam(
     double fromLat,
@@ -214,28 +217,49 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
   }) async {
     if (_isDisposed || !mounted) return;
 
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final connId = 'conn_$timestamp';
-    final destId = 'dest_$timestamp';
-    final displayDuration = duration ?? const Duration(seconds: 3);
-
     // 获取国家名称（如果没有提供）
     if (toLabel == null) {
       final toCountry = _coordService.getByCoordinates(toLat, toLng);
       toLabel = toCountry?.countryName;
     }
 
-    // 限制同时显示的连线数量，移除最旧的
-    if (_activeConnections.length >= _maxActiveConnections) {
-      final oldestId = _activeConnections.removeAt(0);
-      _safeRemoveConnection(oldestId);
-      _safeRemovePoint('dest_${oldestId.split('_').last}');
+    // 发送时暂停地球自动旋转，确保轨迹可见
+    if (!_isSending) {
+      _isSending = true;
+      _controller.stopRotation();
+      debugPrint('🌍 暂停地球旋转，开始显示轨迹');
     }
+
+    // 移除上一条轨迹（上一个国家发送完成了）
+    if (_currentConnectionId != null) {
+      _safeRemoveConnection(_currentConnectionId!);
+    }
+    if (_currentDestPointId != null) {
+      _safeRemovePoint(_currentDestPointId!);
+    }
+
+    // 生成新的ID
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    _currentConnectionId = 'conn_$timestamp';
+    _currentDestPointId = 'dest_$timestamp';
+
+    // 计算轨迹中点，用于聚焦视角
+    final startLat = _userLatitude ?? fromLat;
+    final startLng = _userLongitude ?? fromLng;
+    final midLat = (startLat + toLat) / 2;
+    final midLng = (startLng + toLng) / 2;
+    
+    // 聚焦到轨迹中点，确保轨迹始终可见
+    _controller.focusOnCoordinates(
+      GlobeCoordinates(midLat, midLng),
+      animate: true,
+      duration: const Duration(milliseconds: 300),
+    );
 
     // 添加目标点（绿色标记 + 国家名称）
     _controller.addPoint(
       Point(
-        id: destId,
+        id: _currentDestPointId!,
         coordinates: GlobeCoordinates(toLat, toLng),
         style: PointStyle(color: Colors.greenAccent, size: 8),
         label: toLabel,
@@ -250,12 +274,9 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
     );
 
     // 添加从用户位置到目标的连线
-    final startLat = _userLatitude ?? fromLat;
-    final startLng = _userLongitude ?? fromLng;
-    
     _controller.addPointConnection(
       PointConnection(
-        id: connId,
+        id: _currentConnectionId!,
         start: GlobeCoordinates(startLat, startLng),
         end: GlobeCoordinates(toLat, toLng),
         isMoving: true,
@@ -267,15 +288,8 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
         ),
       ),
     );
-
-    _activeConnections.add(connId);
-
-    // 延迟后自动移除
-    Future.delayed(displayDuration, () {
-      _safeRemoveConnection(connId);
-      _safeRemovePoint(destId);
-      _activeConnections.remove(connId);
-    });
+    
+    // 轨迹会一直显示，直到下一个国家开始发送或调用 clearBeams
   }
 
   // 安全移除点
@@ -298,9 +312,17 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
 
   void clearBeams() {
     if (!_isDisposed && mounted) {
-      // 清除活跃连线列表
-      _activeConnections.clear();
-      // 清除所有点和连接，保留用户位置标记
+      // 清除当前轨迹
+      if (_currentConnectionId != null) {
+        _safeRemoveConnection(_currentConnectionId!);
+        _currentConnectionId = null;
+      }
+      if (_currentDestPointId != null) {
+        _safeRemovePoint(_currentDestPointId!);
+        _currentDestPointId = null;
+      }
+      
+      // 清除所有其他点和连接，保留用户位置标记
       for (var point in List.from(_controller.points)) {
         if (point.id != 'user_location') {
           _controller.removePoint(point.id);
@@ -308,6 +330,13 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
       }
       for (var conn in List.from(_controller.connections)) {
         _controller.removePointConnection(conn.id);
+      }
+      
+      // 恢复地球旋转
+      if (_isSending) {
+        _isSending = false;
+        _controller.startRotation();
+        debugPrint('🌍 清除轨迹，恢复地球旋转');
       }
     }
   }
@@ -335,7 +364,8 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
   void dispose() {
     if (!_isDisposed) {
       _isDisposed = true;
-      _activeConnections.clear();
+      _currentConnectionId = null;
+      _currentDestPointId = null;
       try {
         _controller.dispose();
       } catch (e) {

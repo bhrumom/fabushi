@@ -390,10 +390,10 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
 
-  Function(double, double, double, double, {String? fromLabel, String? toLabel})? _onTransferBeam;
+  Function(double, double, double, double, {String? fromLabel, String? toLabel, Duration? displayDuration})? _onTransferBeam;
 
   void setTransferBeamCallback(
-    Function(double, double, double, double, {String? fromLabel, String? toLabel})? callback,
+    Function(double, double, double, double, {String? fromLabel, String? toLabel, Duration? displayDuration})? callback,
   ) {
     _onTransferBeam = callback;
   }

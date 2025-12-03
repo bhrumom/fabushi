@@ -113,6 +113,7 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
       toLng, {
       String? fromLabel,
       String? toLabel,
+      Duration? displayDuration,
     }) {
       // 更新当前发送的国家名称
       if (toLabel != null && mounted) {
@@ -126,13 +127,13 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
 
       if (state != null) {
         try {
-          // 显示目标点和连线，3秒后自动消失
+          // 显示目标点和连线，使用实际发送时间作为显示时长
           state.addTransferBeam(
             fromLat,
             fromLng,
             toLat,
             toLng,
-            duration: const Duration(seconds: 3),
+            duration: displayDuration ?? const Duration(milliseconds: 800),
             toLabel: toLabel,
           );
         } catch (e) {
@@ -555,6 +556,16 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
     // 开始真实的全球发送，轨迹动画将自动触发
     await model.startGlobalTransfer();
 
+    // 发送完成后清除轨迹
+    _globeKey.currentState?.clearBeams();
+    
+    // 清除当前发送状态
+    if (mounted) {
+      setState(() {
+        _currentSendingCountry = '';
+      });
+    }
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -568,6 +579,9 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   void _stopSending(FileTransferModel model) {
     model.stopTransfer();
+    
+    // 清除轨迹
+    _globeKey.currentState?.clearBeams();
     
     // 清除当前发送状态
     setState(() {

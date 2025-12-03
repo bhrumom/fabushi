@@ -16,7 +16,7 @@ class RealGlobalSendService {
   final ValueChanged<double> onDataSent;
   final VoidCallback onStopped;
   final void Function(String) onLog;
-  final Function(double, double, double, double, {String? fromLabel, String? toLabel})?
+  final Function(double, double, double, double, {String? fromLabel, String? toLabel, Duration? displayDuration})?
   onTransferBeam;
 
   bool _isRunning = false;
@@ -137,6 +137,9 @@ class RealGlobalSendService {
       await Future.delayed(Duration.zero);
 
       // 触发3D地球轨迹动画（带国家名称标签）
+      // 轨迹显示时间与实际发送间隔一致：约500ms（网络请求时间 + 延迟）
+      const beamDisplayDuration = Duration(milliseconds: 800);
+      
       final toCountry = _coordService.getByCountryCode(countryCode);
       if (toCountry != null && onTransferBeam != null) {
         debugPrint('🚀 准备触发轨迹回调: $countryName');
@@ -154,6 +157,7 @@ class RealGlobalSendService {
             toCountry.longitude,
             fromLabel: fromLabel,
             toLabel: countryName,
+            displayDuration: beamDisplayDuration,
           );
         } else {
           // 如果没有用户位置，使用中国北京作为默认起点
@@ -169,6 +173,7 @@ class RealGlobalSendService {
               toCountry.longitude,
               fromLabel: '中国',
               toLabel: countryName,
+              displayDuration: beamDisplayDuration,
             );
           }
         }
