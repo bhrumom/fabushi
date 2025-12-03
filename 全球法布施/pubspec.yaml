@@ -123,7 +123,7 @@ flutter:
     - assets/images/
     - assets/data/
     - assets/built_in/
-    - assets/models/
+    # ❌ 移除 assets/models/ - 改为网络动态加载 (节省 ~160MB)
     - assets/earth_texture.jpg
   
   fonts:
