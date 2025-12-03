@@ -383,11 +383,34 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
   Widget build(BuildContext context) {
     super.build(context); // 必须调用以保持状态
 
+    // 根据屏幕尺寸动态计算地球大小
+    final screenSize = MediaQuery.of(context).size;
+    final screenWidth = screenSize.width;
+    final screenHeight = screenSize.height;
+    
+    // 移动端使用较小的地球，桌面端使用较大的地球
+    // 取屏幕宽高的较小值，然后按比例缩放
+    final minDimension = screenWidth < screenHeight ? screenWidth : screenHeight;
+    
+    // 移动端（宽度 < 600）：地球半径为屏幕较小边的 28%
+    // 平板/桌面端：地球半径为屏幕较小边的 35%，但最大不超过 180
+    double radius;
+    if (screenWidth < 600) {
+      // 移动端：更小的地球，留出更多空间给控制面板
+      radius = minDimension * 0.28;
+      // 最小半径 80，最大半径 130
+      radius = radius.clamp(80.0, 130.0);
+    } else {
+      // 平板/桌面端
+      radius = minDimension * 0.35;
+      radius = radius.clamp(100.0, 180.0);
+    }
+
     // 添加错误边界
     return Builder(
       builder: (context) {
         try {
-          return FlutterEarthGlobe(controller: _controller, radius: 150);
+          return FlutterEarthGlobe(controller: _controller, radius: radius);
         } catch (e) {
           debugPrint('❌ FlutterEarthGlobe 渲染失败: $e');
           return Center(
