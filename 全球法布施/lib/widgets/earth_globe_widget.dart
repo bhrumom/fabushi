@@ -250,10 +250,11 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
     final midLng = (startLng + toLng) / 2;
     
     // 聚焦到轨迹中点，确保轨迹始终可见
+    // 视角缓慢移动，速度与自转类似，更平滑自然
     _controller.focusOnCoordinates(
       GlobeCoordinates(midLat, midLng),
       animate: true,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 2000),
     );
 
     // 添加目标点（绿色标记 + 国家名称）
