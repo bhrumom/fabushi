@@ -228,8 +228,10 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // 背景：佛像
-        const BuddhaModelScreen(),
+        // 背景：佛像 - 使用 Positioned.fill 确保填满整个区域
+        const Positioned.fill(
+          child: BuddhaModelScreen(),
+        ),
         
         // 遮罩层 (当修行开始时稍微变暗，突出前景)
         if (_isMeditating)
@@ -262,24 +264,27 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // 在线人数显示
-                    OnlineCounterWidget(
-                      countStream: _onlineCounterService.onlineCountStream,
-                      initialCount: _onlineCounterService.currentCount,
-                      icon: Icons.self_improvement,
-                      prefix: '🧘 正在修行:',
-                      color: const Color(0xFFD4AF37),
+                    // 在线人数显示 - 使用 Flexible 防止溢出
+                    Flexible(
+                      child: OnlineCounterWidget(
+                        countStream: _onlineCounterService.onlineCountStream,
+                        initialCount: _onlineCounterService.currentCount,
+                        icon: Icons.self_improvement,
+                        prefix: '🧘 修行:',
+                        color: const Color(0xFFD4AF37),
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     // 计时器
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.5),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
                         '${_elapsedTime.inMinutes.toString().padLeft(2, '0')}:${(_elapsedTime.inSeconds % 60).toString().padLeft(2, '0')} / 30:00',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                     ),
                   ],

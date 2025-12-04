@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:three_js_core/three_js_core.dart' as three;
 import 'package:three_js_math/three_js_math.dart' as tmath;
@@ -133,10 +134,16 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
 
   Future<void> _loadModel() async {
     try {
+      // 统一使用相同路径，Web 版本的模型放在 web/assets/models/ 目录
+      // 原生平台的模型放在 assets/models/ 目录
+      const modelPath = 'assets/models/佛像模型.glb';
+      debugPrint('开始加载佛像模型: $modelPath (kIsWeb: $kIsWeb)');
       final loader = GLTFLoader();
-      final gltf = await loader.fromAsset('assets/models/佛像模型.glb');
+      final gltf = await loader.fromAsset(modelPath);
+      debugPrint('GLTF 加载结果: ${gltf != null ? "成功" : "失败"}');
 
       if (gltf?.scene != null) {
+        debugPrint('场景存在，添加到 threeJs.scene');
         final scene = gltf!.scene!;
         threeJs.scene.add(scene);
 
@@ -186,7 +193,7 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
         scene.position.setValues(-centerX * scale, -centerY * scale + 30, -centerZ * scale);
       }
     } catch (e, stackTrace) {
-      debugPrint('加载模型失败: $e');
+      debugPrint('❌ 加载模型失败: $e');
       debugPrint('堆栈: $stackTrace');
     }
   }
@@ -205,30 +212,30 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Listener(
-        onPointerDown: (event) {
-          _isUserDragging = true;
+    return Listener(
+      onPointerDown: (event) {
+        _isUserDragging = true;
+        _lastPointerX = event.position.dx;
+      },
+      onPointerMove: (event) {
+        if (_isUserDragging && _lastPointerX != null) {
+          final delta = event.position.dx - _lastPointerX!;
+          _rotationY += delta * 0.01;
+          _updateCameraPosition();
           _lastPointerX = event.position.dx;
-        },
-        onPointerMove: (event) {
-          if (_isUserDragging && _lastPointerX != null) {
-            final delta = event.position.dx - _lastPointerX!;
-            _rotationY += delta * 0.01;
-            _updateCameraPosition();
-            _lastPointerX = event.position.dx;
-          }
-        },
-        onPointerUp: (event) {
-          _isUserDragging = false;
-          _lastPointerX = null;
-        },
-        onPointerCancel: (event) {
-          _isUserDragging = false;
-          _lastPointerX = null;
-        },
-        child: SizedBox.expand(child: threeJs.build()),
+        }
+      },
+      onPointerUp: (event) {
+        _isUserDragging = false;
+        _lastPointerX = null;
+      },
+      onPointerCancel: (event) {
+        _isUserDragging = false;
+        _lastPointerX = null;
+      },
+      child: Container(
+        color: const Color(0xFF0B0E14), // 深蓝色背景作为后备
+        child: threeJs.build(),
       ),
     );
   }
