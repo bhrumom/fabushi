@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:global_dharma_sharing/core/utils/extensions/context_size_extensions.dart';
+import 'package:global_dharma_sharing/core/design_system/colors.dart';
 import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_entity.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_description_text.dart';
-import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_user_header.dart';
 
 class VideoFeedViewUserInfoSection extends StatelessWidget {
   const VideoFeedViewUserInfoSection({
-    required this.profileImageUrl,
     required this.username,
     required this.description,
     this.contentType = ContentType.video,
@@ -15,7 +13,6 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
     super.key,
   });
 
-  final String profileImageUrl;
   final String username;
   final String description;
   final ContentType contentType;
@@ -24,20 +21,28 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+
     return Padding(
-      padding: context.paddingAll(16),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.end,
-        spacing: context.h(8),
+        mainAxisSize: MainAxisSize.min,
         children: [
-          VideoFeedViewUserHeader(
-            profileImageUrl: profileImageUrl,
-            username: username,
-            contentType: contentType,
-            textContent: textContent,
-            currentParagraph: currentParagraph,
+          // @用户名 - 支持换行显示
+          Text(
+            '@$username',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: white,
+              fontWeight: FontWeight.bold,
+              fontSize: isMobile ? 15 : 18,
+            ),
           ),
+          const SizedBox(height: 8),
           VideoFeedViewDescriptionText(text: description),
         ],
       ),

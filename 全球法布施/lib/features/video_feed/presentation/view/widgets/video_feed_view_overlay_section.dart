@@ -37,14 +37,18 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final rightColumnWidth = screenWidth < 600 ? 56.0 : 70.0;
+
     return RepaintBoundary(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Stack(
         children: [
-          Flexible(
+          // 左下角用户信息区域
+          Positioned(
+            left: 0,
+            right: rightColumnWidth + 8,
+            bottom: 0,
             child: VideoFeedViewUserInfoSection(
-              profileImageUrl: profileImageUrl,
               username: username,
               description: description,
               contentType: contentType,
@@ -52,14 +56,25 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
               currentParagraph: currentParagraph,
             ),
           ),
-          VideoFeedViewInteractionButtons(
-            isLiked: isLiked,
-            isBookmarked: isBookmarked,
-            likeCount: likeCount,
-            commentCount: commentCount,
-            shareCount: shareCount,
-            onLikeTap: onLikeTap,
-            onCommentTap: onCommentTap,
+          // 右侧：头像 + 交互按钮
+          Positioned(
+            right: 0,
+            bottom: 0,
+            top: 0,
+            child: VideoFeedViewInteractionButtons(
+              profileImageUrl: profileImageUrl,
+              isLiked: isLiked,
+              isBookmarked: isBookmarked,
+              likeCount: likeCount,
+              commentCount: commentCount,
+              shareCount: shareCount,
+              onLikeTap: onLikeTap,
+              onCommentTap: onCommentTap,
+              contentType: contentType,
+              textContent: textContent,
+              username: username,
+              currentParagraph: currentParagraph,
+            ),
           ),
         ],
       ),

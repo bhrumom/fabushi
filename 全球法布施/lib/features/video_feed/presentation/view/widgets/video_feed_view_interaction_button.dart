@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:global_dharma_sharing/core/design_system/colors.dart';
-import 'package:global_dharma_sharing/core/utils/extensions/context_size_extensions.dart';
 
 class VideoFeedViewInteractionButton extends StatelessWidget {
   const VideoFeedViewInteractionButton({
@@ -8,23 +7,28 @@ class VideoFeedViewInteractionButton extends StatelessWidget {
     required this.count,
     super.key,
     this.color = white,
+    this.iconSize = 36.0,
+    this.compact = false,
   });
 
   final IconData icon;
   final int count;
   final Color color;
+  final double iconSize;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      spacing: context.h(4),
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: color, size: context.sq(36)),
+        Icon(icon, color: color, size: iconSize),
+        SizedBox(height: compact ? 2 : 4),
         Text(
           count.toString(),
           style: TextStyle(
             color: white,
-            fontSize: context.fontSize(14),
+            fontSize: compact ? 12 : 14,
             fontWeight: FontWeight.w500,
           ),
         ),
