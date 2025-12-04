@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 class VideoFeedViewTextContent extends StatefulWidget {
@@ -266,6 +265,8 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
     }
 
     final paragraph = _getCurrentParagraph();
+    // 计算当前页在5个点中的位置（循环显示）
+    final dotIndex = (_currentPage - 1) % 5;
 
     return Container(
       color: Colors.black,
@@ -281,17 +282,49 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
               _goNext();
             }
           },
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: SelectableText(
-                paragraph,
-                style: const TextStyle(color: Colors.white, fontSize: 18, height: 1.6),
+          child: Stack(
+            children: [
+              // 文本内容
+              Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: SelectableText(
+                    paragraph,
+                    style: const TextStyle(color: Colors.white, fontSize: 18, height: 1.6),
+                  ),
+                ),
               ),
-            ),
+              // 底部页面指示点
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 100, // 在用户信息上方
+                child: _buildPageIndicator(dotIndex),
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  /// 构建页面指示点（类似抖音图片轮播）
+  Widget _buildPageIndicator(int activeIndex) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(5, (index) {
+        final isActive = index == activeIndex;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          width: isActive ? 16 : 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(3),
+          ),
+        );
+      }),
     );
   }
 }
