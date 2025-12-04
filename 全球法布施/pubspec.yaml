@@ -123,8 +123,9 @@ flutter:
     - assets/images/
     - assets/data/
     - assets/built_in/
-    # ❌ 移除 assets/models/ - 改为网络动态加载 (节省 ~160MB)
+    - assets/models/
     - assets/earth_texture.jpg
+    - assets/ip_data/
   
   fonts:
     - family: NotoSansSC

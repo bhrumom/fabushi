@@ -13,6 +13,7 @@ import '../core/config/app_config.dart';
 import '../services/shared_asset_manager.dart';
 import '../services/download_manager.dart' show DownloadStatus;
 import '../services/real_global_send_service.dart';
+import '../services/platform_global_send_service.dart';
 import '../services/ip_location_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/foreground_service_manager.dart';
@@ -46,6 +47,7 @@ class FileTransferModel extends ChangeNotifier {
 
   // 服务
   RealGlobalSendService? _realGlobalSendService;
+  PlatformGlobalSendService? _platformGlobalSendService;
   List<CountrySendStatus> _countryStatuses = [];
   String _currentLog = '';
 
@@ -427,8 +429,8 @@ class FileTransferModel extends ChangeNotifier {
         await _startBackgroundService();
       }
 
-      await _initializeRealGlobalSendService();
-      await _realGlobalSendService?.startSending(files: _selectedFiles, isLoop: false);
+      await _initializePlatformGlobalSendService();
+      await _platformGlobalSendService?.startSending(files: _selectedFiles, isLoop: false);
       await _uploadPendingData();
       
       debugPrint('✅ 第 $_loopCount 轮传输完成');
@@ -467,7 +469,7 @@ class FileTransferModel extends ChangeNotifier {
     _isTransferring = false;
     _status = TransferStatus.idle;
 
-    _realGlobalSendService?.stopSending();
+    _platformGlobalSendService?.stopSending();
     
     // 停止后台服务
     _stopBackgroundService();
@@ -551,6 +553,61 @@ class FileTransferModel extends ChangeNotifier {
         loopCount: _loopCount,
       );
     }
+  }
+
+  /// 初始化平台自适应全球发送服务
+  /// Web 平台使用 HTTP，其他平台使用 UDP (GeoLite2 IP)
+  Future<void> _initializePlatformGlobalSendService() async {
+    double? userLat;
+    double? userLng;
+
+    try {
+      final userLocation = await _ipLocationService.getCurrentLocation();
+      if (userLocation != null) {
+        userLat = userLocation.latitude;
+        userLng = userLocation.longitude;
+        debugPrint('📍 传输服务使用用户位置: ${userLocation.country}, ${userLocation.city}');
+      }
+    } catch (e) {
+      debugPrint('⚠️ 获取用户位置失败: $e，将使用默认位置');
+    }
+
+    _platformGlobalSendService = PlatformGlobalSendService(
+      onProgress: (count) {
+        updateProgress(count);
+      },
+      onDataSent: (dataMB) {
+        updateDataSent(dataMB);
+      },
+      onStopped: () {
+        _onTransferCompleted();
+      },
+      onLog: (message) {
+        // 打印所有日志用于调试
+        debugPrint('📡 [GlobalSend] $message');
+        // 更新 UI 日志
+        if (message.contains('成功') || message.contains('失败') || 
+            message.contains('HTTP') || message.contains('UDP') ||
+            message.contains('🚀') || message.contains('📤') ||
+            message.contains('✅') || message.contains('❌') ||
+            message.contains('初始化') || message.contains('Socket')) {
+          updateLog(message);
+          _parseLogAndUpdateCountryStatus(message);
+        }
+      },
+      onTransferBeam: _onTransferBeam,
+      onCountrySent: (bytes) async {
+        await _saveToLocal(bytes);
+      },
+      userLatitude: userLat,
+      userLongitude: userLng,
+    );
+
+    await _platformGlobalSendService?.initialize();
+    
+    // 打印当前使用的发送模式
+    final mode = _platformGlobalSendService?.sendMode ?? 'Unknown';
+    debugPrint('📋 平台全球发送服务初始化完成 - 模式: $mode');
   }
 
   Future<void> _initializeRealGlobalSendService() async {
@@ -804,7 +861,7 @@ class FileTransferModel extends ChangeNotifier {
   void dispose() {
     _isDisposed = true;
     _batchUpdateTimer?.cancel();
-    _realGlobalSendService?.stopSending();
+    _platformGlobalSendService?.stopSending();
     stopTransfer();
     super.dispose();
   }
