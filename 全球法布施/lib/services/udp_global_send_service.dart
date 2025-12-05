@@ -77,7 +77,7 @@ class UDPGlobalSendService {
     if (_isRunning) return;
 
     _isRunning = true;
-    _sentCount = 0;
+    _sentCount = 0;  // 这里改为国家计数
     _dataSentInMB = 0.0;
 
     RawDatagramSocket? socket;
@@ -91,6 +91,10 @@ class UDPGlobalSendService {
       onLog('📤 开始 UDP 全球发送 - 文件数: ${files.length}, 目标国家: ${countryCodes.length}');
 
       do {
+        // 每轮循环重置国家计数
+        _sentCount = 0;
+        onProgress(_sentCount);
+        
         for (final file in files) {
           if (!_isRunning) break;
 
@@ -118,11 +122,9 @@ class UDPGlobalSendService {
           final countriesSent = await _sendFileToAllCountriesWithBytes(
             socket, file.name, fileBytes, file.size, countryCodes);
 
-          _sentCount++;
           final fileSizeMB = file.size / (1024 * 1024);
           _dataSentInMB += fileSizeMB * countriesSent;
 
-          onProgress(_sentCount);
           onDataSent(_dataSentInMB);
 
           onLog('📊 UDP 文件 ${file.name}: ${fileSizeMB.toStringAsFixed(2)} MB × $countriesSent 国 成功');
@@ -205,6 +207,8 @@ class UDPGlobalSendService {
 
       if (countrySuccess) {
         successCount++;
+        _sentCount++;  // 实时更新国家计数
+        onProgress(_sentCount);  // 实时通知进度更新
         onLog('✅ UDP 发送到 $countryName ($countryCode) 成功 ($sendCount 次)');
         
         if (onCountrySent != null) {

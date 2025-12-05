@@ -80,7 +80,7 @@ class RealGlobalSendService {
     if (_isRunning) return;
 
     _isRunning = true;
-    _sentCount = 0;
+    _sentCount = 0;  // 这里改为国家计数
     _dataSentInMB = 0.0;
     _currentCountryIndex = 0;
 
@@ -88,6 +88,10 @@ class RealGlobalSendService {
       onLog('🚀 开始真实全球发送 - 文件数量: ${files.length}, 目标国家: $_totalCountries 个');
 
       do {
+        // 每轮循环重置国家计数
+        _sentCount = 0;
+        onProgress(_sentCount);
+        
         for (final file in files) {
           if (!_isRunning) break;
 
@@ -96,11 +100,9 @@ class RealGlobalSendService {
 
           final countriesSent = await _sendFileToAllCountries(file);
 
-          _sentCount++;
           final fileSizeMB = file.size / (1024 * 1024);
           _dataSentInMB += fileSizeMB * countriesSent;
 
-          onProgress(_sentCount);
           onDataSent(_dataSentInMB);
 
           onLog(
@@ -206,7 +208,10 @@ class RealGlobalSendService {
         }
       }
 
-      if (!countrySuccess) {
+      if (countrySuccess) {
+        _sentCount++;  // 实时更新国家计数
+        onProgress(_sentCount);  // 实时通知进度更新
+      } else {
         failCount++;
         onLog('❌ $countryName ($countryCode) 所有服务器发送失败');
       }

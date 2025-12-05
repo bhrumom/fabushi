@@ -430,23 +430,11 @@ class FileTransferModel extends ChangeNotifier {
       }
 
       await _initializePlatformGlobalSendService();
-      await _platformGlobalSendService?.startSending(files: _selectedFiles, isLoop: false);
+      // 传递循环参数给底层服务，让底层服务处理循环逻辑
+      await _platformGlobalSendService?.startSending(files: _selectedFiles, isLoop: _isLooping);
       await _uploadPendingData();
       
-      debugPrint('✅ 第 $_loopCount 轮传输完成');
-      
-      // 检查是否需要循环
-      if (_isLooping && _isTransferring) {
-        debugPrint('🔄 准备下一轮循环发送...');
-        // 等待2秒后开始下一轮
-        await Future.delayed(const Duration(seconds: 2));
-        
-        // 再次检查循环状态（用户可能在等待期间关闭了循环）
-        if (_isLooping && _isTransferring) {
-          await startGlobalTransfer(isLoopContinuation: true);  // 递归调用开始下一轮
-          return;  // 返回，不执行下面的停止服务逻辑
-        }
-      }
+      debugPrint('✅ 传输完成，循环模式: $_isLooping, 轮次: $_loopCount');
       
       // 发送完成，停止后台服务
       await _stopBackgroundService();
