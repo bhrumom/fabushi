@@ -578,7 +578,8 @@ class FileTransferModel extends ChangeNotifier {
             message.contains('HTTP') || message.contains('UDP') ||
             message.contains('🚀') || message.contains('📤') ||
             message.contains('✅') || message.contains('❌') ||
-            message.contains('初始化') || message.contains('Socket')) {
+            message.contains('初始化') || message.contains('Socket') ||
+            message.contains('🔄')) {
           updateLog(message);
           _parseLogAndUpdateCountryStatus(message);
         }
@@ -586,6 +587,12 @@ class FileTransferModel extends ChangeNotifier {
       onTransferBeam: _onTransferBeam,
       onCountrySent: (bytes) async {
         await _saveToLocal(bytes);
+      },
+      onLoopStart: (loopNum) {
+        // 更新轮次计数
+        _loopCount = loopNum;
+        debugPrint('🔄 轮次更新: $_loopCount');
+        _scheduleNotify();
       },
       userLatitude: userLat,
       userLongitude: userLng,

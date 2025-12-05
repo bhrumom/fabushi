@@ -18,12 +18,14 @@ class RealGlobalSendService {
   final void Function(String) onLog;
   final Function(double, double, double, double, {String? fromLabel, String? toLabel, Duration? displayDuration})?
   onTransferBeam;
+  final Function(int)? onLoopStart;  // 每轮循环开始时的回调，参数为轮次
 
   bool _isRunning = false;
   int _sentCount = 0;
   double _dataSentInMB = 0.0;
   int _totalCountries = 0;
   int _currentCountryIndex = 0;
+  int _loopCount = 0;  // 当前轮次
 
   // 全球249个国家的服务器配置（将动态加载）
   Map<String, List<String>> globalCountryServers = {};
@@ -42,6 +44,7 @@ class RealGlobalSendService {
     required this.onLog,
     this.onTransferBeam,
     this.onCountrySent,
+    this.onLoopStart,
     double? userLatitude,
     double? userLongitude,
   }) {
@@ -87,10 +90,19 @@ class RealGlobalSendService {
     try {
       onLog('🚀 开始真实全球发送 - 文件数量: ${files.length}, 目标国家: $_totalCountries 个');
 
+      _loopCount = 0;  // 重置轮次计数
+      
       do {
-        // 每轮循环重置国家计数
+        // 每轮循环开始
+        _loopCount++;
         _sentCount = 0;
         onProgress(_sentCount);
+        
+        // 通知轮次更新
+        if (onLoopStart != null) {
+          onLoopStart!(_loopCount);
+        }
+        onLog('🔄 开始第 $_loopCount 轮发送');
         
         for (final file in files) {
           if (!_isRunning) break;

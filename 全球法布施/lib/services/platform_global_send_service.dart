@@ -13,6 +13,7 @@ class PlatformGlobalSendService {
   final void Function(String) onLog;
   final Function(double, double, double, double, {String? fromLabel, String? toLabel, Duration? displayDuration})? onTransferBeam;
   final Function(int)? onCountrySent;
+  final Function(int)? onLoopStart;  // 每轮循环开始时的回调，参数为轮次
 
   double? _userLatitude;
   double? _userLongitude;
@@ -30,6 +31,7 @@ class PlatformGlobalSendService {
     required this.onLog,
     this.onTransferBeam,
     this.onCountrySent,
+    this.onLoopStart,
     double? userLatitude,
     double? userLongitude,
   }) {
@@ -55,6 +57,7 @@ class PlatformGlobalSendService {
           onLog: onLog,
           onTransferBeam: onTransferBeam,
           onCountrySent: onCountrySent,
+          onLoopStart: onLoopStart,
           userLatitude: _userLatitude,
           userLongitude: _userLongitude,
         );
@@ -71,6 +74,7 @@ class PlatformGlobalSendService {
           onLog: onLog,
           onTransferBeam: onTransferBeam,
           onCountrySent: onCountrySent,
+          onLoopStart: onLoopStart,
           userLatitude: _userLatitude,
           userLongitude: _userLongitude,
         );

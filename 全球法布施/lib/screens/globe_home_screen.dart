@@ -543,6 +543,9 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
   void _startSending(FileTransferModel model) async {
     _globeKey.currentState?.clearBeams();
 
+    // 加入在线活动，增加在线人数
+    await _onlineCounterService.joinActivity('global_sending');
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -555,6 +558,9 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
 
     // 开始真实的全球发送，轨迹动画将自动触发
     await model.startGlobalTransfer();
+
+    // 发送完成后离开在线活动
+    await _onlineCounterService.leaveActivity();
 
     // 发送完成后清除轨迹
     _globeKey.currentState?.clearBeams();
@@ -577,8 +583,11 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
   }
 
-  void _stopSending(FileTransferModel model) {
+  void _stopSending(FileTransferModel model) async {
     model.stopTransfer();
+    
+    // 离开在线活动，减少在线人数
+    await _onlineCounterService.leaveActivity();
     
     // 清除轨迹
     _globeKey.currentState?.clearBeams();
