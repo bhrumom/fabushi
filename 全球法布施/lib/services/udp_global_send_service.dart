@@ -169,37 +169,49 @@ class UDPGlobalSendService {
         continue;
       }
 
-      // 向该国家的多个 IP 发送 UDP 数据包
+      // 持续向该国家的多个 IP 发送 UDP 数据包，直到地球视角动画完成（约 2 秒）
+      // 这样可以确保用户能看到完整的轨迹动画
+      final sendStartTime = DateTime.now();
+      const minSendDuration = Duration(milliseconds: 2000); // 最少发送 2 秒
+      
       bool countrySuccess = false;
-      for (final ip in ips.take(5)) { // 每个国家最多尝试 5 个 IP
+      int ipIndex = 0;
+      int sendCount = 0;
+      
+      while (!countrySuccess || DateTime.now().difference(sendStartTime) < minSendDuration) {
+        if (!_isRunning) break;
+        
+        // 循环使用该国家的所有 IP
+        final ip = ips[ipIndex % ips.length];
+        ipIndex++;
+        
         try {
           final success = await _sendUDPPacketWithBytes(
             socket, fileName, fileBytes, fileSize, ip, countryCode, countryName);
           if (success) {
             countrySuccess = true;
-            break;
+            sendCount++;
           }
         } catch (e) {
           // UDP 发送失败，继续尝试下一个 IP
-          continue;
         }
+        
+        // 短暂延迟，避免发送过快
+        await Future.delayed(const Duration(milliseconds: 100));
+        
+        // 最多发送 20 次，防止无限循环
+        if (ipIndex >= 20) break;
       }
 
       if (countrySuccess) {
         successCount++;
-        // 使用包含 UDP 关键字的日志，确保能被过滤器捕获
-        onLog('✅ UDP 发送到 $countryName ($countryCode) 成功');
+        onLog('✅ UDP 发送到 $countryName ($countryCode) 成功 ($sendCount 次)');
         
         if (onCountrySent != null) {
-          onCountrySent!(fileSize);
+          onCountrySent!(fileSize * sendCount);
         }
       } else {
         onLog('❌ UDP 发送到 $countryName ($countryCode) 失败');
-      }
-
-      // 每 5 个国家后稍作延迟
-      if (i % 5 == 0 && i > 0) {
-        await Future.delayed(const Duration(milliseconds: 50));
       }
     }
 
