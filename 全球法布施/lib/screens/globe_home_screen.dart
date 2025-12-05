@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/file_transfer_model.dart';
@@ -412,6 +414,40 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                               ),
                           ],
                         ),
+                        // 场能广播状态显示
+                        if (model.isFieldEnergyMode && model.fieldBroadcastCount > 0) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(Icons.wifi_tethering, color: Colors.purple, size: 16),
+                              const SizedBox(width: 6),
+                              Text(
+                                '场能广播: ${model.fieldBroadcastCount} 次',
+                                style: const TextStyle(
+                                  color: Colors.purple,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: Colors.purple,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.purple.withOpacity(0.5),
+                                      blurRadius: 4,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
@@ -479,6 +515,81 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                       ],
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  
+                  // 无网场能模式开关
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: model.isFieldEnergyMode 
+                          ? Colors.purple.withOpacity(0.2)
+                          : Colors.white.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: model.isFieldEnergyMode 
+                          ? Border.all(color: Colors.purple.withOpacity(0.5))
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Icon(
+                                model.isFieldEnergyMode ? Icons.wifi_tethering : Icons.wifi_tethering_off,
+                                color: model.isFieldEnergyMode ? Colors.purple : Colors.white70,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '无网场能模式',
+                                      style: TextStyle(
+                                        color: model.isFieldEnergyMode ? Colors.purple : Colors.white70,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    Text(
+                                      model.isFieldEnergyMode && model.hotspotMessage.isNotEmpty
+                                          ? model.hotspotMessage
+                                          : '自动开启热点向周围广播',
+                                      style: TextStyle(
+                                        color: model.isFieldEnergyMode 
+                                            ? Colors.purple.withOpacity(0.7)
+                                            : Colors.white54,
+                                        fontSize: 10,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(
+                          height: 28,
+                          child: Switch(
+                            value: model.isFieldEnergyMode,
+                            onChanged: (value) async {
+                              await model.setFieldEnergyMode(value);
+                              // 如果需要显示热点指导，弹出指导弹窗
+                              if (model.needsHotspotGuide && mounted) {
+                                _showHotspotGuideDialog(context);
+                                model.clearHotspotGuide();
+                              }
+                            },
+                            activeColor: Colors.purple,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 12),
                 ],
                 
@@ -538,6 +649,151 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
   void _selectFile(BuildContext context) async {
     final model = Provider.of<FileTransferModel>(context, listen: false);
     await model.selectBuiltInAssets(context);
+  }
+
+  /// 显示热点开启指导弹窗
+  void _showHotspotGuideDialog(BuildContext context) {
+    // 根据平台显示不同的指导内容
+    String title;
+    List<String> steps;
+    String tip;
+    
+    if (kIsWeb) {
+      return; // Web 平台不支持
+    } else if (Platform.isIOS) {
+      title = '开启个人热点';
+      steps = [
+        '1. 点击下方"前往设置"按钮',
+        '2. 找到"个人热点"选项',
+        '3. 开启"允许其他人加入"',
+        '4. 返回本应用开始发送',
+      ];
+      tip = '💡 开启热点后，经文能量将通过 Wi-Fi 信号向周围空间广播';
+    } else if (Platform.isAndroid) {
+      title = '开启便携式热点';
+      steps = [
+        '1. 点击下方"前往设置"按钮',
+        '2. 找到"热点与网络共享"或"便携式热点"',
+        '3. 开启"便携式 WLAN 热点"',
+        '4. 返回本应用开始发送',
+      ];
+      tip = '💡 开启热点后，经文能量将通过 Wi-Fi 信号向周围空间广播';
+    } else if (Platform.isMacOS) {
+      title = '开启互联网共享';
+      steps = [
+        '1. 点击下方"前往设置"按钮',
+        '2. 在"共享"面板中找到"互联网共享"',
+        '3. 选择"Wi-Fi"作为共享方式',
+        '4. 勾选启用"互联网共享"',
+        '5. 返回本应用开始发送',
+      ];
+      tip = '💡 开启共享后，经文能量将通过 Wi-Fi 信号向周围空间广播';
+    } else {
+      title = '开启热点';
+      steps = [
+        '1. 打开系统设置',
+        '2. 找到网络或热点设置',
+        '3. 开启 Wi-Fi 热点功能',
+        '4. 返回本应用开始发送',
+      ];
+      tip = '💡 开启热点后，经文能量将通过 Wi-Fi 信号向周围空间广播';
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.wifi_tethering, color: Colors.purple, size: 28),
+            const SizedBox(width: 12),
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '请按以下步骤开启热点：',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...steps.map((step) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                step,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+            )),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.purple.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.purple.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lightbulb_outline, color: Colors.purple, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      tip,
+                      style: TextStyle(
+                        color: Colors.purple[200],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              '稍后设置',
+              style: TextStyle(color: Colors.white54),
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              // 再次触发打开设置
+              final model = Provider.of<FileTransferModel>(context, listen: false);
+              model.setFieldEnergyMode(true);
+            },
+            icon: const Icon(Icons.settings, size: 18),
+            label: const Text('前往设置'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.purple,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _startSending(FileTransferModel model) async {

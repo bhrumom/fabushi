@@ -18,6 +18,8 @@ import '../services/ip_location_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/foreground_service_manager.dart';
 import '../services/ios_background_audio_handler.dart';
+import '../services/wifi_field_broadcast_service.dart';
+import '../services/hotspot_manager_service.dart';
 import '../widgets/download_progress_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_html/html.dart' as html;
@@ -30,8 +32,10 @@ class FileTransferModel extends ChangeNotifier {
   // 传输模式状态
   bool _isGlobalSendEnabled = true;
   bool _isLooping = false;
+  bool _isFieldEnergyMode = false;  // 无网场能模式
   double _sendRateMB = 1.0;
   int _loopCount = 0;  // 循环发送计数
+  int _fieldBroadcastCount = 0;  // 场能广播次数
 
   // 文件相关
   List<PlatformFile> _selectedFiles = [];
@@ -57,6 +61,12 @@ class FileTransferModel extends ChangeNotifier {
   // 后台服务管理器
   final ForegroundServiceManager _foregroundService = ForegroundServiceManager();
   IOSBackgroundAudioHandler? _iosAudioHandler;
+  
+  // 场能广播服务
+  WiFiFieldBroadcastService? _fieldBroadcastService;
+  final HotspotManagerService _hotspotManager = HotspotManagerService();
+  String _hotspotMessage = '';  // 热点状态消息
+  bool _needsHotspotGuide = false;  // 是否需要显示热点指导
 
   bool _isDisposed = false;
 
@@ -99,7 +109,17 @@ class FileTransferModel extends ChangeNotifier {
   // Getters
   bool get isGlobalSendEnabled => _isGlobalSendEnabled;
   bool get isLooping => _isLooping;
+  bool get isFieldEnergyMode => _isFieldEnergyMode;
   int get loopCount => _loopCount;
+  int get fieldBroadcastCount => _fieldBroadcastCount;
+  String get hotspotMessage => _hotspotMessage;
+  bool get needsHotspotGuide => _needsHotspotGuide;
+  
+  /// 清除热点指导标记
+  void clearHotspotGuide() {
+    _needsHotspotGuide = false;
+    notifyListeners();
+  }
   double get sendRateMB => _sendRateMB;
   List<PlatformFile> get selectedFiles => _selectedFiles;
   List<String> get countryList => _countryList;
@@ -179,6 +199,32 @@ class FileTransferModel extends ChangeNotifier {
   void setLooping(bool looping) {
     _isLooping = looping;
     notifyListeners();
+  }
+
+  /// 设置无网场能模式
+  Future<void> setFieldEnergyMode(bool enabled) async {
+    _isFieldEnergyMode = enabled;
+    _hotspotMessage = '';
+    _needsHotspotGuide = false;
+    notifyListeners();
+    debugPrint('🌟 无网场能模式: ${enabled ? "开启" : "关闭"}');
+    
+    if (enabled && !kIsWeb) {
+      // 自动尝试开启热点
+      final result = await _hotspotManager.enableHotspot();
+      _hotspotMessage = result.message;
+      debugPrint('📡 热点状态: ${result.message}');
+      
+      // 如果需要用户手动操作，显示指导
+      if (result.needsManualAction) {
+        _needsHotspotGuide = true;
+      }
+      notifyListeners();
+    } else if (!enabled) {
+      // 关闭热点（如果是我们开启的）
+      await _hotspotManager.disableHotspot();
+      _needsHotspotGuide = false;
+    }
   }
 
   void setSendRateMB(double rateMB) {
@@ -422,11 +468,16 @@ class FileTransferModel extends ChangeNotifier {
     _scheduleNotify();
 
     try {
-      debugPrint('🚀 开始全球传输 - 文件数量: ${_selectedFiles.length}, 循环: $_isLooping, 轮次: $_loopCount');
+      debugPrint('🚀 开始全球传输 - 文件数量: ${_selectedFiles.length}, 循环: $_isLooping, 轮次: $_loopCount, 场能模式: $_isFieldEnergyMode');
 
       // 启动后台服务（仅首次）
       if (!isLoopContinuation) {
         await _startBackgroundService();
+        
+        // 如果开启了场能模式，同时启动场能广播
+        if (_isFieldEnergyMode && !kIsWeb) {
+          await _startFieldEnergyBroadcast();
+        }
       }
 
       await _initializePlatformGlobalSendService();
@@ -435,6 +486,9 @@ class FileTransferModel extends ChangeNotifier {
       await _uploadPendingData();
       
       debugPrint('✅ 传输完成，循环模式: $_isLooping, 轮次: $_loopCount');
+      
+      // 停止场能广播
+      _stopFieldEnergyBroadcast();
       
       // 发送完成，停止后台服务
       await _stopBackgroundService();
@@ -445,10 +499,58 @@ class FileTransferModel extends ChangeNotifier {
       debugPrint('❌ 传输失败: $e');
       _status = TransferStatus.error;
       _isTransferring = false;
+      _stopFieldEnergyBroadcast();
       await _stopBackgroundService();
       _schedulePersist(_persistTransferState);
       _scheduleNotify();
     }
+  }
+
+  /// 启动场能广播
+  Future<void> _startFieldEnergyBroadcast() async {
+    if (kIsWeb) return;  // Web 平台不支持
+    if (_selectedFiles.isEmpty) return;
+    
+    try {
+      _fieldBroadcastService = WiFiFieldBroadcastService(
+        onLog: (message) {
+          debugPrint('🌟 [场能] $message');
+        },
+        onBroadcastCount: (count) {
+          _fieldBroadcastCount = count;
+          _scheduleNotify();
+        },
+      );
+      
+      await _fieldBroadcastService!.initialize();
+      
+      // 获取第一个文件的数据进行广播
+      final file = _selectedFiles.first;
+      Uint8List? fileBytes = file.bytes;
+      
+      if (fileBytes == null && file.path != null) {
+        final fileObj = File(file.path!);
+        fileBytes = await fileObj.readAsBytes();
+      }
+      
+      if (fileBytes != null) {
+        await _fieldBroadcastService!.startBroadcast(
+          data: fileBytes,
+          fileName: file.name,
+        );
+        debugPrint('🌟 场能广播已启动: ${file.name}');
+      }
+    } catch (e) {
+      debugPrint('⚠️ 启动场能广播失败: $e');
+    }
+  }
+
+  /// 停止场能广播
+  void _stopFieldEnergyBroadcast() {
+    _fieldBroadcastService?.stopBroadcast();
+    _fieldBroadcastService?.dispose();
+    _fieldBroadcastService = null;
+    debugPrint('🛑 场能广播已停止');
   }
 
   void stopTransfer() {
@@ -459,11 +561,15 @@ class FileTransferModel extends ChangeNotifier {
 
     _platformGlobalSendService?.stopSending();
     
+    // 停止场能广播
+    _stopFieldEnergyBroadcast();
+    
     // 停止后台服务
     _stopBackgroundService();
     
     // 重置循环计数
     _loopCount = 0;
+    _fieldBroadcastCount = 0;
 
     _schedulePersist(_persistTransferState);
     debugPrint('🛑 传输已停止');

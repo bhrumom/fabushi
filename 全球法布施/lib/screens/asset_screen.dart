@@ -16,9 +16,6 @@ import '../widgets/download_progress_widget.dart';
 // 导入Web平台特定的包
 import 'package:universal_html/html.dart' as html;
 
-// 定义素材服务器的基地址
-// const String _baseUrl = 'https://fabushi-flutter-web.workers.dev';
-
 class AssetScreen extends StatefulWidget {
   @override
   _AssetScreenState createState() => _AssetScreenState();
@@ -30,33 +27,77 @@ class _AssetScreenState extends State<AssetScreen> {
   String? _error;
   Set<String> _downloadingAssets = {};
   Map<String, double> _downloadProgress = {};
-  List<Map<String, dynamic>> _treeAssets = []; // 法宝树素材列表
-  Set<String> _selectedAssets = {}; // 用户选择的素材
+  List<Map<String, dynamic>> _treeAssets = [];
+  Set<String> _selectedAssets = {};
   final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
   final DownloadManager _downloadManager = DownloadManager();
-  Map<String, String> _assetToTaskMap = {}; // assetPath到taskId的映射
-  StreamSubscription<DownloadTask>? _downloadSubscription; // 下载监听器订阅
+  Map<String, String> _assetToTaskMap = {};
+  StreamSubscription<DownloadTask>? _downloadSubscription;
+  
+  // 搜索相关
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _isSearching = false;
+  
+  // 展开状态缓存
+  final Set<String> _expandedGroups = {};
 
   @override
   void initState() {
     super.initState();
     print('当前平台: ${kIsWeb ? "Web" : "非Web"}');
     print('素材来源: 本地资源文件');
-
-    // 初始化已下载素材服务
     _initializeDownloadedAssetsService();
-
-    // 监听下载任务更新
     _setupDownloadListener();
+    
+    // 监听搜索输入变化
+    _searchController.addListener(_onSearchChanged);
   }
 
-  /// 设置下载监听器
+  void _onSearchChanged() {
+    final query = _searchController.text.trim();
+    if (query != _searchQuery) {
+      setState(() {
+        _searchQuery = query;
+        _isSearching = query.isNotEmpty;
+        if (_isSearching) {
+          _performSearch(query);
+        } else {
+          _searchResults.clear();
+        }
+      });
+    }
+  }
+
+  /// 执行搜索 - 只搜索标题
+  void _performSearch(String query) {
+    if (query.isEmpty) {
+      _searchResults.clear();
+      return;
+    }
+    
+    final lowerQuery = query.toLowerCase();
+    final results = <Map<String, dynamic>>[];
+    
+    for (final group in _assetGroups.values) {
+      for (final asset in group) {
+        final name = (asset['name'] ?? '').toString().toLowerCase();
+        // 只搜索标题/文件名
+        if (name.contains(lowerQuery)) {
+          results.add(asset);
+        }
+      }
+    }
+    
+    _searchResults = results;
+  }
+
   void _setupDownloadListener() {
     _downloadSubscription = _downloadManager.taskStream.listen(
       (task) {
         if (mounted) {
           setState(() {
-            // 更新下载进度
             if (task.status == DownloadStatus.downloading ||
                 task.status == DownloadStatus.completed ||
                 task.status == DownloadStatus.failed ||
@@ -66,17 +107,13 @@ class _AssetScreenState extends State<AssetScreen> {
               if (task.status == DownloadStatus.completed) {
                 _downloadingAssets.remove(task.assetPath);
                 _assetToTaskMap.remove(task.assetPath);
-
-                // 标记为已下载
                 _downloadedAssetsService.markAssetAsDownloaded(task.assetPath);
-
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('${task.fileName} 下载完成！')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('${task.fileName} 下载完成！')),
+                );
               } else if (task.status == DownloadStatus.failed) {
                 _downloadingAssets.remove(task.assetPath);
                 _assetToTaskMap.remove(task.assetPath);
-
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('${task.fileName} 下载失败: ${task.error}'),
@@ -84,11 +121,9 @@ class _AssetScreenState extends State<AssetScreen> {
                   ),
                 );
               } else if (task.status == DownloadStatus.paused && task.error == '下载已取消') {
-                // 处理取消状态
                 _downloadingAssets.remove(task.assetPath);
                 _assetToTaskMap.remove(task.assetPath);
                 _downloadProgress.remove(task.assetPath);
-
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('${task.fileName} 下载已取消'), backgroundColor: Colors.orange),
                 );
@@ -103,25 +138,16 @@ class _AssetScreenState extends State<AssetScreen> {
     );
   }
 
-  /// 初始化已下载素材服务
   Future<void> _initializeDownloadedAssetsService() async {
     await _downloadedAssetsService.initialize();
-    // 所有平台都从本地加载素材列表
     await _loadLocalAssets();
-    // 加载本地R2文件列表，无需查询即可查看
     await _loadLocalR2FilesList();
   }
 
-  // 获取法宝树素材列表（仅用于展示，不实际下载）
   Future<void> _fetchTreeAssets() async {
-    // 所有平台都从本地加载素材列表，不再从网络获取
     await _loadLocalAssets();
-
-    // 如果需要树形结构，可以在这里对本地素材列表进行转换
-    // 目前保持与之前相同的平面结构
   }
 
-  // 从本地加载素材列表
   Future<void> _loadLocalAssets() async {
     setState(() {
       _isLoading = true;
@@ -129,20 +155,17 @@ class _AssetScreenState extends State<AssetScreen> {
     });
 
     try {
-      // 从本地资源文件加载素材列表
       final String manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
       final List<dynamic> files = json.decode(manifestString);
 
       print('从本地加载的文件数量: ${files.length}');
 
-      // 按目录分组 - 支持多级目录结构
       final Map<String, List<Map<String, dynamic>>> groups = {};
       final List<Map<String, dynamic>> treeAssets = [];
 
       for (var fileInfo in files) {
         String key = fileInfo['key'];
 
-        // 过滤掉JSON文件和隐藏文件（如.DS_Store）
         if (key.toLowerCase().endsWith('.json') ||
             key.contains('/.DS_Store') ||
             key.startsWith('.')) {
@@ -151,8 +174,6 @@ class _AssetScreenState extends State<AssetScreen> {
 
         if (key.contains('/')) {
           final parts = key.split('/');
-
-          // 构建多级目录结构
           String currentPath = '';
           for (int i = 0; i < parts.length - 1; i++) {
             final dir = parts[i];
@@ -164,7 +185,6 @@ class _AssetScreenState extends State<AssetScreen> {
             final fullPath = currentPath;
             final fileName = parts.sublist(i + 1).join('/');
 
-            // 只在最后一层添加文件
             if (i == parts.length - 2) {
               if (!groups.containsKey(fullPath)) {
                 groups[fullPath] = [];
@@ -201,41 +221,34 @@ class _AssetScreenState extends State<AssetScreen> {
     }
   }
 
-  // 加载本地R2文件列表并合并到普通素材中
   Future<void> _loadLocalR2FilesList() async {
     try {
-      // 从本地资源文件加载R2文件列表
       final String r2FilesString = await rootBundle.loadString('assets/data/r2-files-list.json');
       final Map<String, dynamic> r2Data = json.decode(r2FilesString);
-
-      // 获取文件列表（兼容objects和files字段）
       final List<dynamic> files = r2Data['objects'] ?? r2Data['files'] ?? [];
 
       print('从本地加载的R2文件数量: ${files.length}');
 
-      // 将R2文件合并到普通素材分组中
       final Map<String, List<Map<String, dynamic>>> currentGroups = Map.from(_assetGroups);
 
       for (var fileInfo in files) {
         String key = fileInfo['key'];
 
-        // 过滤掉JSON文件和隐藏文件（如.DS_Store）
         if (key.toLowerCase().endsWith('.json') ||
             key.contains('/.DS_Store') ||
             key.startsWith('.')) {
           continue;
         }
 
-        // R2文件统一放入"R2素材"分组
         const String directory = 'R2素材';
         final assetInfo = {
-          'name': key, // 文件名就是key
-          'source': 'r2', // R2存储桶中的文件
+          'name': key,
+          'source': 'r2',
           'key': key,
           'directory': directory,
           'size': fileInfo['size'] ?? 0,
-          'uploaded': fileInfo['uploaded'], // R2特有的上传时间
-          'isDownloaded': false, // 标记是否已下载
+          'uploaded': fileInfo['uploaded'],
+          'isDownloaded': false,
         };
 
         if (!currentGroups.containsKey(directory)) {
@@ -254,11 +267,9 @@ class _AssetScreenState extends State<AssetScreen> {
       print('本地R2文件列表已合并完成');
     } catch (e) {
       print('加载本地R2文件列表失败: $e');
-      // 如果加载失败，不影响主功能
     }
   }
 
-  // 查询R2存储桶中的文件列表（手动触发）
   Future<void> _queryR2Files() async {
     setState(() {
       _isLoading = true;
@@ -266,7 +277,6 @@ class _AssetScreenState extends State<AssetScreen> {
     });
 
     try {
-      // 从R2存储桶获取实际文件列表
       final String baseUrl = AppConfig.isProduction
           ? AppConfig.cloudflareWorkerProdUrl
           : AppConfig.cloudflareWorkerDevUrl;
@@ -285,31 +295,28 @@ class _AssetScreenState extends State<AssetScreen> {
 
       print('从R2存储桶获取的文件数量: ${files.length}');
 
-      // 按目录分组 - R2文件都在根目录，统一放入一个分组
       final Map<String, List<Map<String, dynamic>>> groups = {};
       final List<Map<String, dynamic>> treeAssets = [];
 
       for (var fileInfo in files) {
         String key = fileInfo['key'];
 
-        // 过滤掉JSON文件和隐藏文件（如.DS_Store）
         if (key.toLowerCase().endsWith('.json') ||
             key.contains('/.DS_Store') ||
             key.startsWith('.')) {
           continue;
         }
 
-        // R2存储桶中的文件统一放入“R2存储桶文件”分组
         const String directory = 'R2存储桶文件';
         final assetInfo = {
-          'name': key, // 文件名就是key
-          'source': 'r2', // R2存储桶中的文件
+          'name': key,
+          'source': 'r2',
           'key': key,
           'directory': directory,
-          'description': fileInfo['key'] ?? '', // 使用key作为描述
+          'description': fileInfo['key'] ?? '',
           'size': fileInfo['size'] ?? 0,
-          'uploaded': fileInfo['uploaded'], // R2特有的上传时间
-          'isDownloaded': false, // 标记是否已下载
+          'uploaded': fileInfo['uploaded'],
+          'isDownloaded': false,
         };
 
         if (!groups.containsKey(directory)) {
@@ -329,10 +336,9 @@ class _AssetScreenState extends State<AssetScreen> {
         _isLoading = false;
       });
 
-      // 显示成功提示
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('成功获取 ${files.length} 个R2文件')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('成功获取 ${files.length} 个R2文件')),
+      );
     } catch (e) {
       print('查询R2存储桶文件失败: $e');
       setState(() {
@@ -340,29 +346,26 @@ class _AssetScreenState extends State<AssetScreen> {
         _error = '查询R2存储桶文件失败: $e';
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('查询R2文件失败: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('查询R2文件失败: $e')),
+      );
     }
   }
 
-  // Web平台文件保存方法
   Future<void> _saveFileForWeb(String fileName, List<int> bytes) async {
     if (!kIsWeb) return;
 
     try {
-      // 使用Web的本地存储API保存文件
-      // 这里使用localStorage来保存文件信息，实际文件数据可以使用IndexedDB
       final fileData = {
         'name': fileName,
         'size': bytes.length,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'data': convert.base64.encode(bytes), // 将文件数据转换为base64字符串存储
+        'data': convert.base64.encode(bytes),
       };
 
-      // 获取已保存的文件列表
       final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
       final List<dynamic> savedFiles = json.decode(savedFilesStr);
 
-      // 检查是否已存在同名文件，如果存在则替换
       int existingIndex = savedFiles.indexWhere((f) => f['name'] == fileName);
       if (existingIndex >= 0) {
         savedFiles[existingIndex] = fileData;
@@ -370,10 +373,7 @@ class _AssetScreenState extends State<AssetScreen> {
         savedFiles.add(fileData);
       }
 
-      // 保存更新后的文件列表
       html.window.localStorage['saved_files'] = json.encode(savedFiles);
-
-      // 保存文件数据到单独的存储项
       html.window.localStorage['file_$fileName'] = fileData['data'].toString();
 
       print('Web平台文件保存成功: $fileName, 大小: ${bytes.length} bytes');
@@ -383,7 +383,6 @@ class _AssetScreenState extends State<AssetScreen> {
     }
   }
 
-  // 从Web平台存储读取文件数据
   List<int>? _readFileDataFromWeb(String fileName) {
     if (!kIsWeb) return null;
 
@@ -398,7 +397,6 @@ class _AssetScreenState extends State<AssetScreen> {
     }
   }
 
-  // 获取Web平台已保存的文件列表
   List<Map<String, dynamic>> _getSavedFilesForWeb() {
     if (!kIsWeb) return [];
 
@@ -415,7 +413,6 @@ class _AssetScreenState extends State<AssetScreen> {
     }
   }
 
-  // 从Web平台存储中读取文件数据
   List<int>? _readFileForWeb(String fileName) {
     if (!kIsWeb) return null;
 
@@ -430,7 +427,6 @@ class _AssetScreenState extends State<AssetScreen> {
     }
   }
 
-  /// 下载素材（增强版，支持进度显示、暂停、断点续传）
   Future<void> _downloadAsset(Map<String, dynamic> assetInfo) async {
     final String assetPath = assetInfo['key'];
     final String fileName = assetInfo['name'];
@@ -438,12 +434,10 @@ class _AssetScreenState extends State<AssetScreen> {
 
     if (_downloadingAssets.contains(assetPath)) return;
 
-    // 检查是否已有下载任务
     final existingTaskId = _assetToTaskMap[assetPath];
     if (existingTaskId != null) {
       final task = _downloadManager.tasks[existingTaskId];
       if (task != null && task.status == DownloadStatus.paused) {
-        // 如果任务已暂停，显示恢复对话框
         _showDownloadDialog(existingTaskId, fileName);
         return;
       }
@@ -469,19 +463,14 @@ class _AssetScreenState extends State<AssetScreen> {
       final String url;
 
       if (source == 'r2') {
-        // R2文件通过Cloudflare Worker下载
         final String baseUrl = AppConfig.isProduction
             ? AppConfig.cloudflareWorkerProdUrl
             : AppConfig.cloudflareWorkerDevUrl;
         url = '$baseUrl/r2?file=${Uri.encodeComponent(assetPath)}';
       } else {
-        // 静态文件下载策略
         if (kIsWeb) {
-          // Web平台：使用相对路径，避免CORS问题
           url = '/$assetPath';
         } else {
-          // 非Web平台：使用Cloudflare Worker的完整URL访问静态文件
-          // 因为静态文件部署在Web平台上，需要通过Worker代理访问
           final String baseUrl = AppConfig.isProduction
               ? AppConfig.cloudflareWorkerProdUrl
               : AppConfig.cloudflareWorkerDevUrl;
@@ -490,18 +479,13 @@ class _AssetScreenState extends State<AssetScreen> {
       }
 
       print('从以下URL下载素材: $url');
-      print(
-        '平台: ${kIsWeb ? "Web" : "Native"}, 来源: $source, 环境: ${AppConfig.isProduction ? "生产" : "开发"}',
-      );
+      print('平台: ${kIsWeb ? "Web" : "Native"}, 来源: $source, 环境: ${AppConfig.isProduction ? "生产" : "开发"}');
 
-      // 创建下载任务
       final taskId = await _downloadManager.createTask(url, fileName, assetPath);
       _assetToTaskMap[assetPath] = taskId;
 
-      // 显示下载进度对话框
       _showDownloadDialog(taskId, fileName);
 
-      // 开始下载
       await _downloadManager.startDownload(taskId);
     } catch (e) {
       setState(() {
@@ -510,13 +494,12 @@ class _AssetScreenState extends State<AssetScreen> {
         _assetToTaskMap.remove(assetPath);
       });
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('下载 $fileName 失败: $e'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('下载 $fileName 失败: $e'), backgroundColor: Colors.red),
+      );
     }
   }
 
-  /// 显示下载进度对话框
   void _showDownloadDialog(String taskId, String fileName) {
     showDialog(
       context: context,
@@ -528,7 +511,6 @@ class _AssetScreenState extends State<AssetScreen> {
           debugPrint('🎉 AssetScreen: 下载完成回调触发');
 
           try {
-            // 下载完成后的处理
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -543,7 +525,6 @@ class _AssetScreenState extends State<AssetScreen> {
             debugPrint('❌ AssetScreen: 显示下载完成提示时出错: $e');
           }
 
-          // 清理下载状态
           try {
             setState(() {
               _downloadingAssets.removeWhere((asset) => asset.contains(fileName));
@@ -554,7 +535,6 @@ class _AssetScreenState extends State<AssetScreen> {
             debugPrint('❌ AssetScreen: 清理下载状态时出错: $e');
           }
 
-          // 确保关闭对话框 - 与Web平台保持一致
           try {
             if (mounted && Navigator.of(context).canPop()) {
               Navigator.of(context).pop();
@@ -568,20 +548,15 @@ class _AssetScreenState extends State<AssetScreen> {
     );
   }
 
-  // 确认选择素材并返回
   void _confirmSelection() {
     if (_selectedAssets.isEmpty) return;
-
-    // 将选中的素材信息传递回上一个页面
     Navigator.pop(context, _selectedAssets.toList());
   }
 
   @override
   void dispose() {
-    // 取消下载监听器订阅
     _downloadSubscription?.cancel();
-    // 注意：下载管理器是单例，不应在这里释放，避免影响正在进行的下载任务
-    // _downloadManager.dispose(); // 移除这行，避免提前释放
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -593,15 +568,18 @@ class _AssetScreenState extends State<AssetScreen> {
         actions: [
           IconButton(
             icon: Icon(Icons.refresh),
-            onPressed: _isLoading
-                ? null
-                : () {
-                    _loadLocalAssets();
-                  },
+            onPressed: _isLoading ? null : _loadLocalAssets,
           ),
         ],
       ),
-      body: _buildBody(),
+      body: Column(
+        children: [
+          // 搜索栏
+          _buildSearchBar(),
+          // 内容区域
+          Expanded(child: _buildBody()),
+        ],
+      ),
       floatingActionButton: _selectedAssets.isNotEmpty
           ? FloatingActionButton.extended(
               onPressed: _confirmSelection,
@@ -614,9 +592,61 @@ class _AssetScreenState extends State<AssetScreen> {
     );
   }
 
+  /// 构建搜索栏
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: '搜索经文标题...',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchQuery = '';
+                      _isSearching = false;
+                      _searchResults.clear();
+                    });
+                  },
+                )
+              : null,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
+          ),
+          filled: true,
+          fillColor: Colors.grey.shade50,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+      ),
+    );
+  }
+
   Widget _buildBody() {
     if (_isLoading) {
-      return Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_error != null && _assetGroups.isEmpty) {
@@ -624,122 +654,373 @@ class _AssetScreenState extends State<AssetScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('加载失败: $_error', style: TextStyle(color: Colors.red)),
-            SizedBox(height: 16),
-            ElevatedButton(onPressed: _loadLocalAssets, child: Text('重试')),
+            Text('加载失败: $_error', style: const TextStyle(color: Colors.red)),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: _loadLocalAssets, child: const Text('重试')),
           ],
         ),
       );
     }
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 素材列表（包含普通素材和R2素材）
-          if (_assetGroups.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text('素材列表', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+    // 如果正在搜索，显示搜索结果
+    if (_isSearching) {
+      return _buildSearchResults();
+    }
+
+    return _buildAssetGroupList();
+  }
+
+  /// 构建搜索结果列表
+  Widget _buildSearchResults() {
+    if (_searchResults.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text(
+              '未找到 "$_searchQuery" 相关的经文',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Text(
-                '选择您需要的素材，点击"选择发送"后将自动从云端服务器下载',
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ),
-            Divider(),
-            _buildAssetList(_assetGroups),
           ],
-        ],
-      ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(
+            '找到 ${_searchResults.length} 个结果',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _searchResults.length,
+            itemBuilder: (context, index) {
+              final assetInfo = _searchResults[index];
+              return _buildAssetItem(assetInfo);
+            },
+          ),
+        ),
+      ],
     );
   }
 
-  /// 构建素材列表的通用方法
-  Widget _buildAssetList(Map<String, List<Map<String, dynamic>>> assetGroups) {
+  /// 构建素材分组列表 - 优化版本
+  Widget _buildAssetGroupList() {
+    if (_assetGroups.isEmpty) {
+      return const Center(child: Text('暂无素材'));
+    }
+
+    final sortedKeys = _assetGroups.keys.toList()..sort();
+
     return ListView.builder(
-      shrinkWrap: true,
-      physics: NeverScrollableScrollPhysics(), // 禁用内部滚动，由外部ListView控制
-      itemCount: assetGroups.keys.length,
+      itemCount: sortedKeys.length + 1, // +1 for header
       itemBuilder: (context, index) {
-        final dir = assetGroups.keys.elementAt(index);
-        final files = assetGroups[dir]!;
-
-        // 提取目录名称（显示最后一级目录）
-        final dirName = dir.contains('/') ? dir.split('/').last : dir;
-
-        return ExpansionTile(
-          title: Text(dirName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          subtitle: dir.contains('/')
-              ? Text(dir, style: TextStyle(fontSize: 12, color: Colors.grey))
-              : null,
-          children: files.map((assetInfo) {
-            final String assetPath = assetInfo['key'];
-            final String fileName = assetInfo['name'];
-            final bool isSelected = _selectedAssets.contains(assetPath);
-            final String? description = assetInfo['description'];
-
-            return Column(
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CheckboxListTile(
-                  title: Row(
-                    children: [
-                      Expanded(child: Text(fileName)),
-                      if (_downloadedAssetsService.isAssetDownloaded(assetPath))
-                        Icon(Icons.check_circle, color: Colors.green, size: 20),
-                    ],
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_downloadedAssetsService.isAssetDownloaded(assetPath))
-                        Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12)),
-                      if (description != null && description.isNotEmpty)
-                        Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-                    ],
-                  ),
-                  value: isSelected,
-                  onChanged: (bool? value) {
-                    setState(() {
-                      if (value == true) {
-                        _selectedAssets.add(assetPath);
-                      } else {
-                        _selectedAssets.remove(assetPath);
-                      }
-                    });
-                  },
+                const Text('素材列表', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text(
+                  '选择您需要的素材，点击"选择发送"后将自动从云端服务器下载',
+                  style: TextStyle(color: Colors.grey[600]),
                 ),
-                // 显示下载进度
-                if (_downloadingAssets.contains(assetPath))
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    child: Row(
+              ],
+            ),
+          );
+        }
+
+        final dir = sortedKeys[index - 1];
+        final files = _assetGroups[dir]!;
+        final dirName = dir.contains('/') ? dir.split('/').last : dir;
+        final isExpanded = _expandedGroups.contains(dir);
+
+        return _OptimizedExpansionTile(
+          key: ValueKey(dir),
+          title: dirName,
+          subtitle: dir.contains('/') ? dir : null,
+          itemCount: files.length,
+          isExpanded: isExpanded,
+          onExpansionChanged: (expanded) {
+            setState(() {
+              if (expanded) {
+                _expandedGroups.add(dir);
+              } else {
+                _expandedGroups.remove(dir);
+              }
+            });
+          },
+          children: files,
+          itemBuilder: (assetInfo) => _buildAssetItem(assetInfo),
+        );
+      },
+    );
+  }
+
+  /// 构建单个素材项 - 优化版本
+  Widget _buildAssetItem(Map<String, dynamic> assetInfo) {
+    final String assetPath = assetInfo['key'];
+    final String fileName = assetInfo['name'];
+    final bool isSelected = _selectedAssets.contains(assetPath);
+    final String? description = assetInfo['description'];
+    final bool isDownloaded = _downloadedAssetsService.isAssetDownloaded(assetPath);
+    final bool isDownloading = _downloadingAssets.contains(assetPath);
+
+    return Column(
+      children: [
+        CheckboxListTile(
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  fileName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (isDownloaded)
+                const Icon(Icons.check_circle, color: Colors.green, size: 20),
+            ],
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (isDownloaded)
+                const Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12)),
+              if (description != null && description.isNotEmpty)
+                Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+            ],
+          ),
+          value: isSelected,
+          onChanged: (bool? value) {
+            setState(() {
+              if (value == true) {
+                _selectedAssets.add(assetPath);
+              } else {
+                _selectedAssets.remove(assetPath);
+              }
+            });
+          },
+        ),
+        if (isDownloading)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: LinearProgressIndicator(
+                    value: _downloadProgress[assetPath] ?? 0.0,
+                    minHeight: 4,
+                    backgroundColor: Colors.grey[300],
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Theme.of(context).primaryColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${((_downloadProgress[assetPath] ?? 0.0) * 100).toStringAsFixed(0)}%',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+
+/// 优化的展开组件 - 完全避免卡顿
+class _OptimizedExpansionTile extends StatefulWidget {
+  final String title;
+  final String? subtitle;
+  final int itemCount;
+  final bool isExpanded;
+  final ValueChanged<bool> onExpansionChanged;
+  final List<Map<String, dynamic>> children;
+  final Widget Function(Map<String, dynamic>) itemBuilder;
+
+  const _OptimizedExpansionTile({
+    super.key,
+    required this.title,
+    this.subtitle,
+    required this.itemCount,
+    required this.isExpanded,
+    required this.onExpansionChanged,
+    required this.children,
+    required this.itemBuilder,
+  });
+
+  @override
+  State<_OptimizedExpansionTile> createState() => _OptimizedExpansionTileState();
+}
+
+class _OptimizedExpansionTileState extends State<_OptimizedExpansionTile> {
+  bool _isExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isExpanded = widget.isExpanded;
+  }
+
+  @override
+  void didUpdateWidget(_OptimizedExpansionTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isExpanded != oldWidget.isExpanded) {
+      _isExpanded = widget.isExpanded;
+    }
+  }
+
+  void _handleTap() {
+    setState(() {
+      _isExpanded = !_isExpanded;
+    });
+    // 延迟通知父组件，避免同步setState导致卡顿
+    Future.microtask(() {
+      widget.onExpansionChanged(_isExpanded);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).primaryColor;
+    
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _handleTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  AnimatedRotation(
+                    turns: _isExpanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 150),
+                    child: const Icon(Icons.expand_more),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: LinearProgressIndicator(
-                            value: _downloadProgress[assetPath] ?? 0.0,
-                            minHeight: 4,
-                            backgroundColor: Colors.grey[300],
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Theme.of(context).primaryColor,
-                            ),
-                          ),
-                        ),
-                        SizedBox(width: 8),
                         Text(
-                          '${((_downloadProgress[assetPath] ?? 0.0) * 100).toStringAsFixed(0)}%',
-                          style: TextStyle(fontSize: 12),
+                          widget.title,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                         ),
+                        if (widget.subtitle != null)
+                          Text(
+                            widget.subtitle!,
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
                       ],
                     ),
                   ),
-              ],
-            );
-          }).toList(),
-        );
-      },
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${widget.itemCount}',
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        // 只在展开时构建子项，不使用动画避免卡顿
+        if (_isExpanded)
+          _LazyChildrenBuilder(
+            children: widget.children,
+            itemBuilder: widget.itemBuilder,
+          ),
+        const Divider(height: 1),
+      ],
+    );
+  }
+}
+
+/// 懒加载子项构建器 - 分批构建避免卡顿
+class _LazyChildrenBuilder extends StatefulWidget {
+  final List<Map<String, dynamic>> children;
+  final Widget Function(Map<String, dynamic>) itemBuilder;
+
+  const _LazyChildrenBuilder({
+    required this.children,
+    required this.itemBuilder,
+  });
+
+  @override
+  State<_LazyChildrenBuilder> createState() => _LazyChildrenBuilderState();
+}
+
+class _LazyChildrenBuilderState extends State<_LazyChildrenBuilder> {
+  int _loadedCount = 0;
+  static const int _batchSize = 10; // 每批加载10个
+
+  @override
+  void initState() {
+    super.initState();
+    // 首次加载一批
+    _loadedCount = _batchSize.clamp(0, widget.children.length);
+    // 如果还有更多，延迟加载
+    if (_loadedCount < widget.children.length) {
+      _loadMore();
+    }
+  }
+
+  void _loadMore() {
+    if (_loadedCount >= widget.children.length) return;
+    
+    Future.delayed(const Duration(milliseconds: 16), () {
+      if (mounted && _loadedCount < widget.children.length) {
+        setState(() {
+          _loadedCount = (_loadedCount + _batchSize).clamp(0, widget.children.length);
+        });
+        if (_loadedCount < widget.children.length) {
+          _loadMore();
+        }
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (int i = 0; i < _loadedCount; i++)
+          widget.itemBuilder(widget.children[i]),
+        if (_loadedCount < widget.children.length)
+          const Padding(
+            padding: EdgeInsets.all(8.0),
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+      ],
     );
   }
 }
