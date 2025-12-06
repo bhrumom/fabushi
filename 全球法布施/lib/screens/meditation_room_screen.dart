@@ -27,9 +27,13 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
   Timer? _timer;
   Duration _elapsedTime = Duration.zero;
   static const Duration _targetDuration = Duration(minutes: 30);
+  bool _isCircumambulating = false; // 绕佛状态
   
   // 动画控制器
   late AnimationController _incenseController;
+  
+  // 佛像组件的 Key（保留用于手动控制，但主要通过参数控制）
+  final GlobalKey<BuddhaModelScreenState> _buddhaKey = GlobalKey();
   
   // 服务
   final CloudflareWorkerService _apiService = CloudflareWorkerService();
@@ -116,9 +120,12 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
   void _stopMeditation() {
     _timer?.cancel();
     _incenseController.stop();
+    debugPrint('🛑 停止修行，绕佛状态: $_isCircumambulating');
     setState(() {
       _isMeditating = false;
+      // 绕佛状态保持独立，不随修行停止而停止
     });
+    debugPrint('🛑 停止修行后，绕佛状态: $_isCircumambulating');
     
     // 离开禅室活动
     _onlineCounterService.leaveActivity();
@@ -184,6 +191,15 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
     }
   }
 
+  void _toggleCircumambulation() {
+    setState(() {
+      _isCircumambulating = !_isCircumambulating;
+    });
+    debugPrint('🔄 绕佛切换: $_isCircumambulating');
+    // 同时通过 GlobalKey 直接调用，确保状态同步
+    _buddhaKey.currentState?.setAutoRotate(_isCircumambulating);
+  }
+
   void _showSutraSelection() {
     showModalBottomSheet(
       context: context,
@@ -229,8 +245,11 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
     return Stack(
       children: [
         // 背景：佛像 - 使用 Positioned.fill 确保填满整个区域
-        const Positioned.fill(
-          child: BuddhaModelScreen(),
+        Positioned.fill(
+          child: BuddhaModelScreen(
+            key: _buddhaKey,
+            autoRotate: _isCircumambulating,
+          ),
         ),
         
         // 遮罩层 (当修行开始时稍微变暗，突出前景)
@@ -239,20 +258,26 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
             color: Colors.black.withOpacity(0.3),
           ),
 
-        // 3D 香 (左侧)
-        if (_isMeditating)
-          Positioned(
-            left: 20,
-            bottom: 100,
-            width: 100,
-            height: 400,
-            child: AnimatedBuilder(
-              animation: _incenseController,
-              builder: (context, child) {
-                return Incense3DWidget(progress: _incenseController.value);
-              },
+        // 3D 香 (左侧) - 始终存在，通过透明度控制显示，避免OpenGL上下文冲突
+        Positioned(
+          left: 20,
+          bottom: 100,
+          width: 100,
+          height: 400,
+          child: AnimatedOpacity(
+            opacity: _isMeditating ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 300),
+            child: IgnorePointer(
+              ignoring: !_isMeditating,
+              child: AnimatedBuilder(
+                animation: _incenseController,
+                builder: (context, child) {
+                  return Incense3DWidget(progress: _incenseController.value);
+                },
+              ),
             ),
           ),
+        ),
 
         // UI 覆盖层
         SafeArea(
@@ -318,17 +343,71 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
 
               const SizedBox(height: 40),
 
-              // 控制按钮
+              // 底部控制按钮区域
               Padding(
-                padding: const EdgeInsets.only(bottom: 40),
-                child: FloatingActionButton.extended(
-                  onPressed: _toggleMeditation,
-                  backgroundColor: _isMeditating ? Colors.red : const Color(0xFFD4AF37), // 金色
-                  icon: Icon(_isMeditating ? Icons.stop : Icons.self_improvement),
-                  label: Text(
-                    _isMeditating ? '结束修行' : '开始念经',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
+                padding: const EdgeInsets.only(bottom: 40, left: 20, right: 20),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // 绕佛按钮 - 放在左侧
+                    GestureDetector(
+                      onTap: _toggleCircumambulation,
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: _isCircumambulating 
+                              ? const Color(0xFFD4AF37)
+                              : Colors.black.withOpacity(0.6),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: _isCircumambulating 
+                                ? const Color(0xFFD4AF37)
+                                : Colors.white30,
+                            width: 2,
+                          ),
+                          boxShadow: _isCircumambulating
+                              ? [
+                                  BoxShadow(
+                                    color: const Color(0xFFD4AF37).withOpacity(0.4),
+                                    blurRadius: 12,
+                                    spreadRadius: 2,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.rotate_right,
+                              color: _isCircumambulating ? Colors.white : Colors.white70,
+                              size: 22,
+                            ),
+                            Text(
+                              '绕佛',
+                              style: TextStyle(
+                                color: _isCircumambulating ? Colors.white : Colors.white70,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    // 开始/结束念经按钮 - 中间主按钮
+                    FloatingActionButton.extended(
+                      onPressed: _toggleMeditation,
+                      backgroundColor: _isMeditating ? Colors.red : const Color(0xFFD4AF37),
+                      icon: Icon(_isMeditating ? Icons.stop : Icons.self_improvement),
+                      label: Text(
+                        _isMeditating ? '结束修行' : '开始念经',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

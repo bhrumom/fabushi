@@ -7,26 +7,52 @@ import 'dart:async';
 import 'dart:math' as math;
 
 class BuddhaModelScreen extends StatefulWidget {
-  const BuddhaModelScreen({super.key});
+  final bool autoRotate;
+  
+  const BuddhaModelScreen({super.key, this.autoRotate = false});
 
   @override
-  State<BuddhaModelScreen> createState() => _BuddhaModelScreenState();
+  State<BuddhaModelScreen> createState() => BuddhaModelScreenState();
 }
 
-class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeepAliveClientMixin {
+class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeepAliveClientMixin {
   late three.ThreeJS threeJs;
   double _rotationY = 0.0;
   double _cameraDistance = 250.0;
   Timer? _autoRotateTimer;
   bool _isUserDragging = false;
   double? _lastPointerX;
+  bool _isAutoRotating = false; // 默认不自动旋转
+  int _renderErrorCount = 0; // 渲染错误计数
+  DateTime? _lastSuccessfulRender; // 上次成功渲染时间
+
+  /// 获取当前是否正在自动旋转
+  bool get isAutoRotating => _isAutoRotating;
+
+  /// 设置自动旋转状态
+  void setAutoRotate(bool enabled) {
+    debugPrint('🎯 setAutoRotate: $enabled (当前: $_isAutoRotating, timer: ${_autoRotateTimer != null})');
+    _isAutoRotating = enabled;
+    if (enabled) {
+      // 确保启动旋转
+      if (_autoRotateTimer == null) {
+        _startAutoRotate();
+      }
+    } else {
+      _stopAutoRotate();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _isAutoRotating = widget.autoRotate;
     threeJs = three.ThreeJS(
       onSetupComplete: () {
-        _startAutoRotate();
+        // 根据参数决定是否启动自动旋转
+        if (widget.autoRotate) {
+          _startAutoRotate();
+        }
         if (mounted) setState(() {});
       },
       setup: _setup,
@@ -38,18 +64,37 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
     );
   }
 
+  @override
+  void didUpdateWidget(BuddhaModelScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    debugPrint('📍 didUpdateWidget: old=${oldWidget.autoRotate}, new=${widget.autoRotate}, current=$_isAutoRotating');
+    // 只在 autoRotate 参数真正变化时才更新旋转状态
+    if (oldWidget.autoRotate != widget.autoRotate) {
+      debugPrint('🔄 绕佛状态变化: ${oldWidget.autoRotate} -> ${widget.autoRotate}');
+      setAutoRotate(widget.autoRotate);
+    }
+  }
+
   void _startAutoRotate() {
     _autoRotateTimer?.cancel();
+    debugPrint('🎬 启动绕佛旋转');
     _autoRotateTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (!mounted) {
+        debugPrint('⚠️ 组件已卸载，停止旋转');
         timer.cancel();
+        _autoRotateTimer = null;
         return;
       }
-      if (!_isUserDragging) {
+      if (!_isUserDragging && _isAutoRotating) {
         _rotationY -= 0.005;
         _updateCameraPosition();
       }
     });
+  }
+
+  void _stopAutoRotate() {
+    _autoRotateTimer?.cancel();
+    _autoRotateTimer = null;
   }
 
   void _updateCameraAspect() {
@@ -66,12 +111,20 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
   }
 
   void _updateCameraPosition() {
-    if (!mounted || threeJs.camera == null) return;
-    final x = _cameraDistance * math.sin(_rotationY);
-    final y = 0.0;
-    final z = _cameraDistance * math.cos(_rotationY);
-    threeJs.camera.position.setValues(x, y, z);
-    threeJs.camera.lookAt(tmath.Vector3(0, 0, 0));
+    if (!mounted) return;
+    try {
+      if (threeJs.camera == null) return;
+      final x = _cameraDistance * math.sin(_rotationY);
+      final y = 0.0;
+      final z = _cameraDistance * math.cos(_rotationY);
+      threeJs.camera.position.setValues(x, y, z);
+      threeJs.camera.lookAt(tmath.Vector3(0, 0, 0));
+      _lastSuccessfulRender = DateTime.now();
+      _renderErrorCount = 0;
+    } catch (e) {
+      _renderErrorCount++;
+      debugPrint('⚠️ 更新相机位置失败 ($_renderErrorCount): $e');
+    }
   }
 
   Future<void> _setup() async {
@@ -212,6 +265,14 @@ class _BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKee
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    // 确保 Timer 状态与 _isAutoRotating 一致
+    if (_isAutoRotating && _autoRotateTimer == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _isAutoRotating && _autoRotateTimer == null) {
+          _startAutoRotate();
+        }
+      });
+    }
     return Listener(
       onPointerDown: (event) {
         _isUserDragging = true;
