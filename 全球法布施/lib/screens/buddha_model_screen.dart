@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:three_js_core/three_js_core.dart' as three;
+import 'package:three_js/three_js.dart' as three_full; // 用于CylinderGeometry
 import 'package:three_js_math/three_js_math.dart' as tmath;
 import 'package:three_js_advanced_loaders/three_js_advanced_loaders.dart';
 import 'dart:async';
@@ -8,8 +9,15 @@ import 'dart:math' as math;
 
 class BuddhaModelScreen extends StatefulWidget {
   final bool autoRotate;
+  final bool isBurning; // 是否正在燃烧（开始念经后）
+  final double incenseProgress; // 香燃烧进度 0.0-1.0
   
-  const BuddhaModelScreen({super.key, this.autoRotate = false});
+  const BuddhaModelScreen({
+    super.key, 
+    this.autoRotate = false,
+    this.isBurning = false,
+    this.incenseProgress = 0.0,
+  });
 
   @override
   State<BuddhaModelScreen> createState() => BuddhaModelScreenState();
@@ -25,6 +33,23 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
   bool _isAutoRotating = false; // 默认不自动旋转
   int _renderErrorCount = 0; // 渲染错误计数
   DateTime? _lastSuccessfulRender; // 上次成功渲染时间
+  
+  // 香相关
+  three.Mesh? _incenseStick;
+  three.Mesh? _burningTip;
+  three.PointLight? _tipLight;
+  // Use Points for smoke to allow "particle" effect (fading, size change)
+  three.Points? _smokeParticles;
+  final int _particleCount = 150;
+  final List<double> _particleSpeeds = [];
+  Timer? _smokeTimer;
+  bool _isBurning = false; // Whether it is burning
+  
+  // 香的基准位置
+  static const double _incenseBaseX = 0.0;
+  static const double _incenseBaseY = -60.0;
+  static const double _incenseBaseZ = 80.0;
+  static const double _incenseFullHeight = 40.0;
 
   /// 获取当前是否正在自动旋转
   bool get isAutoRotating => _isAutoRotating;
@@ -41,6 +66,16 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
     } else {
       _stopAutoRotate();
     }
+  }
+  
+  /// 更新香的燃烧进度（供外部调用）
+  void updateIncenseProgress(double progress) {
+    _updateIncenseProgress(progress);
+  }
+  
+  /// 设置香的燃烧状态（供外部调用）
+  void setBurning(bool burning) {
+    _updateBurningState(burning);
   }
 
   @override
@@ -72,6 +107,16 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
     if (oldWidget.autoRotate != widget.autoRotate) {
       debugPrint('🔄 绕佛状态变化: ${oldWidget.autoRotate} -> ${widget.autoRotate}');
       setAutoRotate(widget.autoRotate);
+    }
+    
+    // 更新香的燃烧状态
+    if (oldWidget.isBurning != widget.isBurning) {
+      _updateBurningState(widget.isBurning);
+    }
+    
+    // 更新香的燃烧进度
+    if (oldWidget.incenseProgress != widget.incenseProgress) {
+      _updateIncenseProgress(widget.incenseProgress);
     }
   }
 
@@ -191,6 +236,193 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
 
     // 加载模型
     await _loadModel();
+    
+    // 创建香（初始隐藏）
+    _createIncense();
+  }
+  
+  /// Create 3D Incense - Improved Realism
+  void _createIncense() {
+    // Incense Stick - Slender cylinder
+    // Real incense is very thin, approx radius 0.2-0.3, height 40
+    // Adjusted: Thinner (0.15)
+    final stickGeometry = three_full.CylinderGeometry(0.15, 0.15, _incenseFullHeight, 16);
+    final stickMaterial = three.MeshStandardMaterial.fromMap({
+      'color': 0x8B5A2B,  // Standard Incense Brown (lighter, more natural)
+      'roughness': 1.0, 
+      'metalness': 0.0,
+    });
+    _incenseStick = three.Mesh(stickGeometry, stickMaterial);
+    _incenseStick!.position.setValues(
+      _incenseBaseX,
+      _incenseBaseY + _incenseFullHeight / 2,
+      _incenseBaseZ,
+    );
+    _incenseStick!.visible = true;
+    threeJs.scene.add(_incenseStick!);
+
+    // Burning Tip - Glowing ember
+    // Slightly wider than the stick to simulate ash/burning head
+    final tipGeometry = three_full.CylinderGeometry(0.16, 0.16, 0.8, 16);
+    final tipMaterial = three.MeshBasicMaterial.fromMap({
+      'color': 0xFF4500, // OrangeRed
+    });
+    _burningTip = three.Mesh(tipGeometry, tipMaterial);
+    _burningTip!.position.setValues(
+      _incenseBaseX,
+      _incenseBaseY + _incenseFullHeight,
+      _incenseBaseZ,
+    );
+    _burningTip!.visible = false;
+    threeJs.scene.add(_burningTip!);
+
+    // Add a point light to simulate the glow of the ember onto the Buddha/Environment
+    _tipLight = three.PointLight(0xFF5500, 2.0, 30); // Orange light, intensity 2, distance 30
+    _tipLight!.position.setValues(_burningTip!.position.x, _burningTip!.position.y, _burningTip!.position.z);
+    _tipLight!.visible = false;
+    threeJs.scene.add(_tipLight!);
+
+    // Smoke Particles
+    _createSmokeParticles();
+  }
+  
+  /// Create Smoke Particles
+  void _createSmokeParticles() {
+    final geometry = three.BufferGeometry();
+    final positions = <double>[];
+    final opacity = <double>[]; // We'll map 'size' to 'opacity' if possible, or just use positions.
+    // In this simple renderer, we might not have per-vertex opacity easily without custom shaders.
+    // We will simulate fading by moving them far away or scaling them to 0 if possible.
+    // Warning: Flutter ThreeJS might handle PointsMaterial sizeAttenuation.
+    
+    // Initialize particles at the tip
+    for (int i = 0; i < _particleCount; i++) {
+        // Start all at base, hidden
+        positions.addAll([0, -1000, 0]); 
+        _particleSpeeds.add(0.5 + math.Random().nextDouble() * 0.5); // Random speed
+    }
+
+    geometry.setAttributeFromString('position', tmath.Float32BufferAttribute.fromList(positions, 3));
+    
+    // Smoky particle material
+    final material = three.PointsMaterial.fromMap({
+      'color': 0xEEEEEE, 
+      'size': 1.5, // Much finer particles for subtle smoke
+      'transparent': true,
+      'opacity': 0.3, // Lower opacity
+      'sizeAttenuation': true,
+      // 'map': texture... (If we had a smoke texture, but sticking to simple circles)
+      // 'blending': three.AdditiveBlending, // Better for smoke?
+    });
+    
+    _smokeParticles = three.Points(geometry, material);
+    _smokeParticles!.visible = false;
+    threeJs.scene.add(_smokeParticles!);
+  }
+  
+  /// 更新香的燃烧状态
+  void _updateBurningState(bool burning) {
+    _isBurning = burning;
+    // Stick is always visible. Tip, Light, and Smoke are only visible when burning.
+    _burningTip?.visible = burning;
+    _tipLight?.visible = burning;
+    _smokeParticles?.visible = burning;
+    
+    if (burning) {
+      _startSmokeAnimation();
+    } else {
+      _smokeTimer?.cancel();
+      _smokeTimer = null;
+      // 停止燃烧时重置香的高度
+      _resetIncense();
+    }
+  }
+  
+  /// 重置香的状态
+  void _resetIncense() {
+    if (_incenseStick == null) return;
+    _incenseStick!.scale.setValues(1, 1, 1);
+    _incenseStick!.position.y = _incenseBaseY + _incenseFullHeight / 2;
+  }
+  
+  /// 更新香的燃烧进度 - 使用原来的逻辑
+  void _updateIncenseProgress(double progress) {
+    if (_incenseStick == null || _burningTip == null || !_isBurning) return;
+    
+    final remaining = 1.0 - progress;
+    final currentHeight = _incenseFullHeight * remaining;
+    
+    // 更新香柱高度和位置（通过缩放Y轴实现燃烧效果）
+    _incenseStick!.scale.setValues(1, remaining.clamp(0.01, 1.0), 1);
+    _incenseStick!.position.y = _incenseBaseY + currentHeight / 2;
+    
+    // Update tip and light position
+    if (_burningTip != null) {
+      _burningTip!.position.y = _incenseBaseY + currentHeight;
+      _burningTip!.visible = _isBurning && remaining > 0.01;
+      
+      if (_tipLight != null) {
+        _tipLight!.position.setValues(_burningTip!.position.x, _burningTip!.position.y, _burningTip!.position.z);
+        _tipLight!.visible = _burningTip!.visible;
+      }
+    }
+  }
+  
+  /// 启动烟雾动画
+  void _startSmokeAnimation() {
+    _smokeTimer?.cancel();
+    _smokeTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (!mounted || !_isBurning) {
+        timer.cancel();
+        return;
+      }
+      _animateSmoke();
+    });
+  }
+  
+  /// Smoke Animation - Particle System
+  void _animateSmoke() {
+    if (_smokeParticles == null || _burningTip == null) return;
+    
+    final positions = _smokeParticles!.geometry!.getAttributeFromString('position');
+    final array = positions.array;
+    final tipPos = _burningTip!.position;
+    final time = DateTime.now().millisecondsSinceEpoch * 0.001;
+    
+    // Wind factors
+    final windX = math.sin(time * 0.5) * 0.5;
+    final windZ = math.cos(time * 0.3) * 0.3;
+
+    for (int i = 0; i < _particleCount; i++) {
+        // Read current pos
+        double px = array[i * 3];
+        double py = array[i * 3 + 1];
+        double pz = array[i * 3 + 2];
+        
+        // If particle is "dead" (too high) or hidden (y < -500), reset to tip
+        // Increased height limit from +15.0 to +45.0 for longer smoke trail
+        if (py > tipPos.y + 45.0 || py < -500) {
+            // Reset to tip with slight random offset
+            px = tipPos.x + (math.Random().nextDouble() - 0.5) * 0.5;
+            py = tipPos.y + (math.Random().nextDouble() * 2.0); // Start slightly above
+            pz = tipPos.z + (math.Random().nextDouble() - 0.5) * 0.5;
+        } else {
+            // Move up
+            final speed = _particleSpeeds[i];
+            py += speed * 0.6; // Slightly faster upward speed
+
+            // Wind/Drift
+            final heightFactor = (py - tipPos.y) / 45.0; // 0 to 1 based on new height
+            px += windX * heightFactor * 1.5 + math.sin(time * 2.0 + py * 0.5) * 0.1;
+            pz += windZ * heightFactor * 1.5 + math.cos(time * 1.5 + py * 0.5) * 0.1;
+        }
+        
+        array[i * 3] = px;
+        array[i * 3 + 1] = py;
+        array[i * 3 + 2] = pz;
+    }
+    
+    positions.needsUpdate = true;
   }
 
   void _addStars() {
@@ -284,6 +516,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
   void dispose() {
     _autoRotateTimer?.cancel();
     _autoRotateTimer = null;
+    _smokeTimer?.cancel();
+    _smokeTimer = null;
     threeJs.dispose();
     super.dispose();
   }

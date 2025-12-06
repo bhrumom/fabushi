@@ -10,7 +10,7 @@ import 'buddha_model_screen.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/online_counter_widget.dart';
 
-import '../widgets/incense_3d_widget.dart';
+// 香已集成到佛像3D场景中
 
 class MeditationRoomScreen extends StatefulWidget {
   const MeditationRoomScreen({Key? key}) : super(key: key);
@@ -47,11 +47,19 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
       duration: _targetDuration,
     );
     
+    // 监听香燃烧进度，更新佛像场景中的香
+    _incenseController.addListener(_onIncenseProgressChanged);
+    
     // 初始化音量监听
     _initVolumeListener();
     
     // 获取初始在线人数
     _fetchInitialCount();
+  }
+  
+  void _onIncenseProgressChanged() {
+    // 直接更新佛像场景中的香进度
+    _buddhaKey.currentState?.updateIncenseProgress(_incenseController.value);
   }
 
   Future<void> _fetchInitialCount() async {
@@ -81,6 +89,7 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
   @override
   void dispose() {
     _timer?.cancel();
+    _incenseController.removeListener(_onIncenseProgressChanged);
     _incenseController.dispose();
     FlutterVolumeController.removeListener();
     _onlineCounterService.dispose();
@@ -244,112 +253,169 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // 背景：佛像 - 使用 Positioned.fill 确保填满整个区域
+        // 背景：佛像和香（香集成在3D场景中，香一直显示，燃烧状态由isBurning控制）
         Positioned.fill(
           child: BuddhaModelScreen(
             key: _buddhaKey,
             autoRotate: _isCircumambulating,
+            isBurning: _isMeditating,
+            incenseProgress: _incenseController.value,
           ),
         ),
         
         // 遮罩层 (当修行开始时稍微变暗，突出前景)
         if (_isMeditating)
           Container(
-            color: Colors.black.withOpacity(0.3),
+            color: Colors.black.withOpacity(0.2),
           ),
-
-        // 3D 香 (左侧) - 始终存在，通过透明度控制显示，避免OpenGL上下文冲突
-        Positioned(
-          left: 20,
-          bottom: 100,
-          width: 100,
-          height: 400,
-          child: AnimatedOpacity(
-            opacity: _isMeditating ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 300),
-            child: IgnorePointer(
-              ignoring: !_isMeditating,
-              child: AnimatedBuilder(
-                animation: _incenseController,
-                builder: (context, child) {
-                  return Incense3DWidget(progress: _incenseController.value);
-                },
-              ),
-            ),
-          ),
-        ),
 
         // UI 覆盖层
         SafeArea(
           child: Column(
             children: [
-              // 顶部状态栏
+              // Top status bar
               Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: Column(
                   children: [
-                    // 在线人数显示 - 使用 Flexible 防止溢出
-                    Flexible(
-                      child: OnlineCounterWidget(
-                        countStream: _onlineCounterService.onlineCountStream,
-                        initialCount: _onlineCounterService.currentCount,
-                        icon: Icons.self_improvement,
-                        prefix: '🧘 修行:',
-                        color: const Color(0xFFD4AF37),
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Online Count
+                        Flexible(
+                          child: OnlineCounterWidget(
+                            countStream: _onlineCounterService.onlineCountStream,
+                            initialCount: _onlineCounterService.currentCount,
+                            icon: Icons.self_improvement,
+                            prefix: '🧘',
+                            color: const Color(0xFFD4AF37),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Timer
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white24, width: 0.5),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.timer_outlined, color: Colors.white70, size: 14),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${_elapsedTime.inMinutes.toString().padLeft(2, '0')}:${(_elapsedTime.inSeconds % 60).toString().padLeft(2, '0')}',
+                                style: const TextStyle(
+                                  color: Colors.white, 
+                                  fontWeight: FontWeight.w600, 
+                                  fontFamily: 'monospace'
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    // 计时器
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '${_elapsedTime.inMinutes.toString().padLeft(2, '0')}:${(_elapsedTime.inSeconds % 60).toString().padLeft(2, '0')} / 30:00',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                    ),
+                    
                   ],
                 ),
               ),
 
-              const Spacer(),
-
-              // 计数显示
+              // Chant Counter - Moved to Top Left to avoid center obstruction
               if (_isMeditating)
-                Column(
-                  children: [
-                    const Text(
-                      '念诵计数',
-                      style: TextStyle(color: Colors.white70, fontSize: 16),
-                    ),
-                    Text(
-                      '$_chantCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 16.0, top: 8.0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$_chantCount',
+                            style: const TextStyle(
+                              color: Color(0xFFD4AF37),
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Text(
+                            '遍数',
+                            style: TextStyle(color: Colors.white54, fontSize: 10),
+                          ),
+                        ],
                       ),
                     ),
-                    const Text(
-                      '按音量+键计数',
-                      style: TextStyle(color: Colors.white54, fontSize: 12),
-                    ),
-                  ],
+                  ),
                 ),
 
-              const SizedBox(height: 40),
+              const Spacer(),
 
-              // 底部控制按钮区域
+              // Bottom Control Area
               Padding(
-                padding: const EdgeInsets.only(bottom: 40, left: 20, right: 20),
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // 绕佛按钮 - 放在左侧
+                    // Start/Stop Button (Main)
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _toggleMeditation,
+                        child: Container(
+                          height: 56,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: _isMeditating 
+                                ? [const Color(0xFF8B3A3A), const Color(0xFF602020)] // Dark Red
+                                : [const Color(0xFFD4AF37), const Color(0xFFA67C00)], // Gold
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(28),
+                            boxShadow: [
+                              BoxShadow(
+                                color: (_isMeditating ? Colors.red : const Color(0xFFD4AF37)).withOpacity(0.3),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                _isMeditating ? Icons.stop_circle_outlined : Icons.play_circle_outline,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _isMeditating ? '结束修行' : '开始念经',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(width: 16),
+                    
+                    // Circumambulate Button (Icon only)
                     GestureDetector(
                       onTap: _toggleCircumambulation,
                       child: Container(
@@ -357,54 +423,21 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
                         height: 56,
                         decoration: BoxDecoration(
                           color: _isCircumambulating 
-                              ? const Color(0xFFD4AF37)
-                              : Colors.black.withOpacity(0.6),
+                              ? const Color(0xFFD4AF37).withOpacity(0.2)
+                              : Colors.black.withOpacity(0.4),
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: _isCircumambulating 
                                 ? const Color(0xFFD4AF37)
-                                : Colors.white30,
-                            width: 2,
+                                : Colors.white24,
+                            width: 1.5,
                           ),
-                          boxShadow: _isCircumambulating
-                              ? [
-                                  BoxShadow(
-                                    color: const Color(0xFFD4AF37).withOpacity(0.4),
-                                    blurRadius: 12,
-                                    spreadRadius: 2,
-                                  ),
-                                ]
-                              : null,
                         ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.rotate_right,
-                              color: _isCircumambulating ? Colors.white : Colors.white70,
-                              size: 22,
-                            ),
-                            Text(
-                              '绕佛',
-                              style: TextStyle(
-                                color: _isCircumambulating ? Colors.white : Colors.white70,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                        child: Icon(
+                          Icons.rotate_right,
+                          color: _isCircumambulating ? const Color(0xFFD4AF37) : Colors.white70,
+                          size: 26,
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    // 开始/结束念经按钮 - 中间主按钮
-                    FloatingActionButton.extended(
-                      onPressed: _toggleMeditation,
-                      backgroundColor: _isMeditating ? Colors.red : const Color(0xFFD4AF37),
-                      icon: Icon(_isMeditating ? Icons.stop : Icons.self_improvement),
-                      label: Text(
-                        _isMeditating ? '结束修行' : '开始念经',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
