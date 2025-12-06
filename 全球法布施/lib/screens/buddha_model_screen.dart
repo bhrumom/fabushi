@@ -78,6 +78,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
   void _startAutoRotate() {
     _autoRotateTimer?.cancel();
     debugPrint('🎬 启动绕佛旋转');
+    _isReturningToStart = false;
     _autoRotateTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (!mounted) {
         debugPrint('⚠️ 组件已卸载，停止旋转');
@@ -85,16 +86,41 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
         _autoRotateTimer = null;
         return;
       }
-      if (!_isUserDragging && _isAutoRotating) {
+      
+      if (_isUserDragging) return;
+      
+      // 继续旋转（无论是正常绕佛还是返回原位）
+      if (_isAutoRotating || _isReturningToStart) {
         _rotationY -= 0.005;
         _updateCameraPosition();
+        
+        // 如果正在返回原位，检查是否接近初始位置
+        if (_isReturningToStart) {
+          // 归一化角度到 0 ~ 2π
+          double normalizedRotation = _rotationY % (2 * math.pi);
+          if (normalizedRotation < 0) {
+            normalizedRotation += 2 * math.pi;
+          }
+          
+          // 检查是否接近 0 或 2π（即初始位置）
+          if (normalizedRotation < 0.01 || normalizedRotation > (2 * math.pi - 0.01)) {
+            debugPrint('🎯 已返回初始位置，停止旋转');
+            _rotationY = 0.0;
+            _updateCameraPosition();
+            _isReturningToStart = false;
+            timer.cancel();
+            _autoRotateTimer = null;
+          }
+        }
       }
     });
   }
 
+  bool _isReturningToStart = false; // 是否正在返回初始位置
+
   void _stopAutoRotate() {
-    _autoRotateTimer?.cancel();
-    _autoRotateTimer = null;
+    // 标记为正在返回初始位置，继续旋转直到回到原位
+    _isReturningToStart = true;
   }
 
   void _updateCameraAspect() {
