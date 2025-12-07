@@ -45,6 +45,27 @@ export class DatabaseService {
     await this.db.prepare(`UPDATE users SET ${fields}, updated_at = ? WHERE username = ?`).bind(...values, new Date().toISOString(), username).run();
   }
 
+  // 根据手机号查询用户
+  async getUserByPhone(phoneNumber) {
+    return await this.db.prepare('SELECT * FROM users WHERE phone_number = ?').bind(phoneNumber).first();
+  }
+
+  // 根据Firebase UID查询用户
+  async getUserByFirebaseUid(firebaseUid) {
+    return await this.db.prepare('SELECT * FROM users WHERE firebase_uid = ?').bind(firebaseUid).first();
+  }
+
+  // 创建手机用户 (无密码)
+  async createPhoneUser(userData) {
+    await this.db.prepare(`
+      INSERT INTO users (username, email, phone_number, firebase_uid, password_hash, salt, iterations, algo, email_verified, membership_type, free_trial_end_date, created_at)
+      VALUES (?, ?, ?, ?, '', '', 0, '', 1, ?, ?, ?)
+    `).bind(
+      userData.username, userData.email, userData.phoneNumber, userData.firebaseUid,
+      userData.membershipType, userData.freeTrialEndDate, userData.createdAt
+    ).run();
+  }
+
   // 订单操作
   async createOrder(orderData) {
     await this.db.prepare(`

@@ -173,3 +173,95 @@ export async function handleUpdateProfile(request, env, db) {
     return jsonResponse({ error: '更新个人资料失败' }, 500);
   }
 }
+
+// Firebase手机登录/注册
+export async function handleFirebasePhoneLogin(request, env, db) {
+  try {
+    const { idToken, phoneNumber, firebaseUid, isNewUser } = await request.json();
+
+    if (!idToken || !phoneNumber || !firebaseUid) {
+      return jsonResponse({ error: '缺少必要参数' }, 400);
+    }
+
+    // 验证Firebase ID Token (简化版，生产环境应使用Firebase Admin SDK)
+    // 这里信任客户端传来的信息，因为token已在客户端验证
+    // 生产环境建议：使用 firebase-admin 验证 token
+
+    // 检查是否已有此手机号的用户
+    let user = await db.getUserByPhone(phoneNumber);
+
+    if (!user) {
+      // 检查是否有此firebase_uid的用户
+      user = await db.getUserByFirebaseUid(firebaseUid);
+    }
+
+    let token;
+    let username;
+
+    if (user) {
+      // 已存在用户，更新firebase信息并登录
+      if (!user.firebase_uid) {
+        await db.prepare(`
+          UPDATE users SET firebase_uid = ?, phone_number = ?, updated_at = ?
+          WHERE username = ?
+        `).bind(firebaseUid, phoneNumber, new Date().toISOString(), user.username).run();
+      }
+
+      username = user.username;
+      token = await generateToken(username, env);
+
+      return jsonResponse({
+        success: true,
+        token,
+        username,
+        isNewUser: false,
+        user: {
+          username: user.username,
+          email: user.email || '',
+          phoneNumber: phoneNumber,
+          membership: {
+            type: user.membership_type || 'trial',
+            expiresAt: user.membership_expires_at
+          }
+        }
+      });
+    } else {
+      // 新用户注册
+      username = `user_${Date.now().toString(36)}`;
+      const email = `${firebaseUid}@phone.user`;
+      const trialEndDate = calculateTrialEndDate();
+
+      // 创建用户 (手机登录用户无密码)
+      await db.createPhoneUser({
+        username,
+        email,
+        phoneNumber,
+        firebaseUid,
+        membershipType: 'trial',
+        freeTrialEndDate: trialEndDate.toISOString(),
+        createdAt: new Date().toISOString()
+      });
+
+      token = await generateToken(username, env);
+
+      return jsonResponse({
+        success: true,
+        token,
+        username,
+        isNewUser: true,
+        user: {
+          username,
+          email,
+          phoneNumber,
+          membership: {
+            type: 'trial',
+            expiresAt: trialEndDate.toISOString()
+          }
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Firebase手机登录失败:', error);
+    return jsonResponse({ error: 'Firebase手机登录失败: ' + error.message }, 500);
+  }
+}

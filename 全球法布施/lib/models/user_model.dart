@@ -16,6 +16,7 @@ class UserModel {
   final String? alipayBoundAt;
   final String? nickname;
   final String? avatar;
+  final String? phoneNumber;
   final MembershipInfo membership;
 
   UserModel({
@@ -33,6 +34,7 @@ class UserModel {
     this.alipayBoundAt,
     this.nickname,
     this.avatar,
+    this.phoneNumber,
     required this.membership,
   });
 
@@ -53,6 +55,7 @@ class UserModel {
       alipayBoundAt: json['alipayBoundAt'] as String?,
       nickname: json['nickname'] as String?,
       avatar: json['avatar'] as String?,
+      phoneNumber: json['phoneNumber'] as String?,
       membership: MembershipInfo.fromJson(json['membership'] ?? {}),
     );
   }
@@ -74,6 +77,7 @@ class UserModel {
       'alipayBoundAt': alipayBoundAt,
       'nickname': nickname,
       'avatar': avatar,
+      'phoneNumber': phoneNumber,
       'membership': membership.toJson(),
     };
   }

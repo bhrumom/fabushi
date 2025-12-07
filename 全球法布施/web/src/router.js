@@ -1,4 +1,4 @@
-import { handleRegister, handleLogin, handleGetUserInfo, handleUpdateProfile } from './handlers/auth.js';
+import { handleRegister, handleLogin, handleGetUserInfo, handleUpdateProfile, handleFirebasePhoneLogin } from './handlers/auth.js';
 import { handleGetComments, handlePostComment, handleDeleteComment } from './handlers/comments.js';
 import { handleSendVerificationCode, handleForgotPassword, handleResetPassword } from './handlers/verification.js';
 import { handleGetWechatLoginUrl, handleGetAlipayLoginUrl, handleAlipayLogin, handleAlipayRegister, handleBindEmail, handleMacOSAlipayCallback } from './handlers/thirdparty.js';
@@ -39,6 +39,7 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/auth/bind-email' && method === 'POST') return await handleBindEmail(request, env, db);
   if (pathname === '/api/auth/bind-email' && method === 'POST') return await handleBindEmail(request, env, db);
   if (pathname === '/api/auth/update-profile' && method === 'POST') return await handleUpdateProfile(request, env, db);
+  if (pathname === '/api/auth/firebase-phone-login' && method === 'POST') return await handleFirebasePhoneLogin(request, env, db);
 
   // 评论API
   if (pathname === '/api/comments' && method === 'GET') return await handleGetComments(request, env, db);

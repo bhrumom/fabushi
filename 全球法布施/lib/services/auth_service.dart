@@ -449,4 +449,65 @@ class AuthService {
       return false;
     }
   }
+
+  // Firebase手机号登录
+  Future<Map<String, dynamic>> firebasePhoneLogin({
+    required String idToken,
+    required String phoneNumber,
+    required String firebaseUid,
+    required bool isNewUser,
+  }) async {
+    try {
+      final response = await HttpService.post(
+        '${AppConfig.apiUrl}/api/auth/firebase-phone-login',
+        body: {
+          'idToken': idToken,
+          'phoneNumber': phoneNumber,
+          'firebaseUid': firebaseUid,
+          'isNewUser': isNewUser,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data['success'] == true && data['token'] != null) {
+          final token = data['token'] as String;
+          final userJson = data['user'];
+
+          // 构建用户信息
+          final userInfo = UserModel(
+            username: data['username'] ?? userJson?['username'] ?? '',
+            email: userJson?['email'] ?? '',
+            emailVerified: true,
+            createdAt: DateTime.now().toIso8601String(),
+            membership: MembershipInfo(
+              type: userJson?['membership']?['type'] ?? 'trial',
+              isActive: true,
+              expiresAt: userJson?['membership']?['expiresAt'],
+            ),
+            phoneNumber: phoneNumber,
+          );
+
+          await _saveAuth(token, userInfo);
+
+          return {
+            'success': true,
+            'token': token,
+            'username': data['username'],
+            'user': userJson,
+            'isNewUser': data['isNewUser'] ?? isNewUser,
+          };
+        } else {
+          return {'success': false, 'error': data['error'] ?? 'Firebase手机登录失败'};
+        }
+      } else {
+        final errorData = jsonDecode(response.body);
+        return {'success': false, 'error': errorData['error'] ?? 'Firebase手机登录失败'};
+      }
+    } catch (e) {
+      print('Firebase手机登录请求失败: $e');
+      return {'success': false, 'error': '网络错误，请检查网络连接'};
+    }
+  }
 }

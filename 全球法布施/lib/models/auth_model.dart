@@ -16,6 +16,8 @@ class User {
   final String? alipayUserId;
   final String? nickname;
   final String? avatar;
+  final String? phoneNumber;
+  final String? firebaseUid;
 
   User({
     required this.username,
@@ -26,6 +28,8 @@ class User {
     this.alipayUserId,
     this.nickname,
     this.avatar,
+    this.phoneNumber,
+    this.firebaseUid,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -40,6 +44,8 @@ class User {
       alipayUserId: json['alipayUserId'],
       nickname: json['nickname'],
       avatar: json['avatar'],
+      phoneNumber: json['phoneNumber'],
+      firebaseUid: json['firebaseUid'],
     );
   }
 
@@ -53,6 +59,8 @@ class User {
       'alipayUserId': alipayUserId,
       'nickname': nickname,
       'avatar': avatar,
+      'phoneNumber': phoneNumber,
+      'firebaseUid': firebaseUid,
     };
   }
 
@@ -445,6 +453,84 @@ class AuthModel extends ChangeNotifier {
       }
     } catch (e) {
       _setError('支付宝一键注册时发生错误: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Firebase手机号登录 - 同步到D1后端
+  Future<bool> firebasePhoneLogin({
+    required String idToken,
+    required String phoneNumber,
+    required String firebaseUid,
+    required bool isNewUser,
+  }) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      debugPrint('📱 Firebase手机登录开始: phone=$phoneNumber, isNew=$isNewUser');
+
+      // 调用后端API同步Firebase用户到D1
+      final result = await _authService.firebasePhoneLogin(
+        idToken: idToken,
+        phoneNumber: phoneNumber,
+        firebaseUid: firebaseUid,
+        isNewUser: isNewUser,
+      );
+
+      debugPrint('📱 Firebase手机登录结果: success=${result['success']}');
+
+      if (result['success'] == true) {
+        _token = result['token'];
+        final userJson = result['user'];
+        final username = result['username'] ?? userJson?['username'] ?? '';
+
+        // 创建基本用户模型
+        final basicUserModel = UserModel(
+          username: username,
+          email: userJson?['email'] ?? '',
+          emailVerified: true,
+          createdAt: DateTime.now().toIso8601String(),
+          membership: MembershipInfo(
+            type: userJson?['membership']?['type'] ?? 'trial',
+            isActive: true,
+          ),
+        );
+
+        await _authService.setAuth(_token!, basicUserModel);
+
+        // 创建用户对象
+        _currentUser = User(
+          username: username,
+          email: userJson?['email'] ?? '',
+          membershipType: userJson?['membership']?['type'] ?? 'trial',
+          membershipExpiry: userJson?['membership']?['expiresAt'] != null
+              ? DateTime.parse(userJson['membership']['expiresAt'])
+              : DateTime.now().add(const Duration(days: 3)),
+          isAdmin: false,
+          phoneNumber: phoneNumber,
+          firebaseUid: firebaseUid,
+        );
+
+        await _storeAuth();
+        await LikeService().initialize(userId: _currentUser!.username);
+        _setLoading(false);
+        notifyListeners();
+
+        // 后台刷新完整用户信息
+        refreshUserInfo();
+
+        debugPrint('✅ Firebase手机登录完成: $username');
+        return true;
+      } else {
+        _setError(result['error'] ?? 'Firebase手机登录失败');
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Firebase手机登录错误: $e');
+      _setError('Firebase手机登录错误: $e');
       _setLoading(false);
       return false;
     }
