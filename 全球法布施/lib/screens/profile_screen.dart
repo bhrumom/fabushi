@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
 import '../models/user_model.dart';
 import '../services/membership_service.dart';
-import 'login_screen.dart';
+import 'douyin_login_screen.dart';
 import 'membership_screen.dart';
 import '../widgets/common_widgets.dart';
 import '../core/design_system/app_theme.dart';
@@ -162,7 +162,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onPressed: () {
                     Navigator.of(
                       context,
-                    ).push(MaterialPageRoute(builder: (context) => const LoginScreen()));
+                    ).push(MaterialPageRoute(builder: (context) => const DouyinLoginScreen()));
                   },
                 ),
               ],

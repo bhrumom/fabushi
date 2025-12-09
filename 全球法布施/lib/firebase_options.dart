@@ -41,7 +41,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '700291601159',
     projectId: 'quanqiubushi',
     storageBucket: 'quanqiubushi.firebasestorage.app',
-    iosBundleId: 'com.example.globalDharmaSharing',
+    iosBundleId: 'com.ombhrum.fabushi',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -50,6 +50,6 @@ class DefaultFirebaseOptions {
     messagingSenderId: '700291601159',
     projectId: 'quanqiubushi',
     storageBucket: 'quanqiubushi.firebasestorage.app',
-    iosBundleId: 'com.example.globalDharmaSharing',
+    iosBundleId: 'com.ombhrum.fabushi',
   );
 }

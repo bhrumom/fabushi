@@ -8,7 +8,7 @@ export async function handleSearch(request, env, db) {
     const category = url.searchParams.get('category'); // 可选：按分类筛选
     const limit = parseInt(url.searchParams.get('limit') || '50');
     const offset = parseInt(url.searchParams.get('offset') || '0');
-    
+
     if (!query) {
       return jsonResponse({ query: '', total: 0, results: [] });
     }
@@ -24,41 +24,41 @@ export async function handleSearch(request, env, db) {
       FROM text_contents
       WHERE title LIKE ? OR content LIKE ?
     `;
-    
+
     const params = [searchPattern, searchPattern, searchPattern];
-    
+
     // 添加分类筛选
     if (category) {
       sql += ' AND category = ?';
       params.push(category);
     }
-    
+
     // 排序：标题匹配优先
     sql += ' ORDER BY title_match DESC, id ASC';
-    
+
     // 分页
     sql += ' LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
     const { results } = await db.prepare(sql).bind(...params).all();
-    
+
     // 生成预览
     const formattedResults = results.map(row => {
       const queryLower = query.toLowerCase();
       const contentLower = row.content.toLowerCase();
       const index = contentLower.indexOf(queryLower);
-      
+
       let preview = row.content;
       if (index !== -1) {
         const start = Math.max(0, index - 50);
         const end = Math.min(row.content.length, index + query.length + 150);
-        preview = (start > 0 ? '...' : '') + 
-                  row.content.substring(start, end) + 
-                  (end < row.content.length ? '...' : '');
+        preview = (start > 0 ? '...' : '') +
+          row.content.substring(start, end) +
+          (end < row.content.length ? '...' : '');
       } else {
         preview = row.content.substring(0, 200);
       }
-      
+
       return {
         id: row.file_path,
         title: row.title,
@@ -89,11 +89,11 @@ export async function handleSearch(request, env, db) {
     });
   } catch (error) {
     console.error('Search error:', error);
-    return jsonResponse({ 
+    return jsonResponse({
       error: error.message,
-      query: query || '', 
-      total: 0, 
-      results: [] 
+      query: query || '',
+      total: 0,
+      results: []
     }, 500);
   }
 }
@@ -103,7 +103,7 @@ export async function handleGetTextContent(request, env, db) {
   try {
     const url = new URL(request.url);
     const path = url.searchParams.get('path');
-    
+
     if (!path) {
       return jsonResponse({ error: '缺少path参数' }, 400);
     }

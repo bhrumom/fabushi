@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/file_transfer_model.dart';
 import '../models/auth_model.dart';
 import 'settings_screen.dart';
-import 'login_screen.dart';
+import 'douyin_login_screen.dart';
 import 'profile_screen.dart';
 import '../widgets/enhanced_transfer_stats.dart';
 import '../widgets/transfer_mode_selector.dart';
@@ -52,7 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                      MaterialPageRoute(builder: (context) => const DouyinLoginScreen()),
                     );
                   },
                   tooltip: '登录',

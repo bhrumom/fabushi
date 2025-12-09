@@ -1,4 +1,5 @@
 import { handleRegister, handleLogin, handleGetUserInfo, handleUpdateProfile, handleFirebasePhoneLogin } from './handlers/auth.js';
+import { handleSendSmsCode, handleSmsLogin } from './handlers/sms.js';
 import { handleGetComments, handlePostComment, handleDeleteComment } from './handlers/comments.js';
 import { handleSendVerificationCode, handleForgotPassword, handleResetPassword } from './handlers/verification.js';
 import { handleGetWechatLoginUrl, handleGetAlipayLoginUrl, handleAlipayLogin, handleAlipayRegister, handleBindEmail, handleMacOSAlipayCallback } from './handlers/thirdparty.js';
@@ -28,6 +29,10 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/health') {
     return jsonResponse({ status: 'ok', timestamp: new Date().toISOString() });
   }
+
+  // 短信验证码API (全平台支持)
+  if (pathname === '/api/sms/send' && method === 'POST') return await handleSendSmsCode(request, env, db);
+  if (pathname === '/api/sms/login' && method === 'POST') return await handleSmsLogin(request, env, db);
 
   // 认证API
   if (pathname === '/api/auth/register' && method === 'POST') return await handleRegister(request, env, db);

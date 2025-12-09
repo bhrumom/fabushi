@@ -15,7 +15,7 @@ import 'models/country_sending_model.dart';
 import 'models/leaderboard_model.dart';
 import 'services/app_initializer.dart';
 import 'widgets/app_wrapper.dart';
-import 'screens/login_screen.dart';
+import 'screens/douyin_login_screen.dart';
 import 'core/video_feed_di/video_feed_injector.dart';
 import 'core/design_system/app_theme.dart';
 
@@ -73,7 +73,7 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: AppConfig.appName,
         debugShowCheckedModeBanner: false,
-        routes: {'/login': (_) => const LoginScreen()},
+        routes: {'/login': (_) => const DouyinLoginScreen()},
         theme: AppTheme.lightTheme, // Though we prefer dark for space theme
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.dark, // Enforce Dark/Space theme
