@@ -87,13 +87,45 @@ export async function handleCreateAlipayOrder(request, env, db) {
     });
   }
 
-  // APP支付：当面付
+  // APP支付：生成 orderString 供客户端调用支付宝 SDK
+  const now = new Date();
+  const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+  const appBizContent = {
+    out_trade_no: outTradeNo,
+    total_amount: finalAmount.toString(),
+    subject: `全球法布施 - ${planDetails.name}`,
+    product_code: 'QUICK_MSECURITY_PAY',
+    timeout_express: '30m'
+  };
+
+  const appParams = {
+    app_id: env.ALIPAY_APP_ID,
+    method: 'alipay.trade.app.pay',
+    format: 'JSON',
+    charset: 'utf-8',
+    sign_type: 'RSA2',
+    timestamp,
+    version: '1.0',
+    notify_url: `${env.WORKER_URL || 'https://flutter.ombhrum.com'}/api/alipay/notify`,
+    biz_content: JSON.stringify(appBizContent)
+  };
+
+  const privateKey = await importPrivateKey(env.ALIPAY_PRIVATE_KEY);
+  appParams.sign = await generateSign(appParams, privateKey);
+
+  // 生成 orderString：将参数拼接成 key=value&key=value 格式，值需要 URL 编码
+  const orderString = Object.keys(appParams)
+    .sort()
+    .map(key => `${key}=${encodeURIComponent(appParams[key])}`)
+    .join('&');
+
   return jsonResponse({
     success: true,
     orderId: outTradeNo,
     amount: finalAmount,
     plan,
-    qrCode: null
+    orderString
   });
 }
 
@@ -101,7 +133,7 @@ export async function handleCreateAlipayOrder(request, env, db) {
 export async function handleQueryAlipayOrder(request, env, db) {
   const url = new URL(request.url);
   const orderId = url.searchParams.get('orderId');
-  
+
   if (!orderId) {
     return jsonResponse({ error: '订单ID不能为空' }, 400);
   }
@@ -132,7 +164,7 @@ export async function handleAlipayNotify(request, env, db) {
   if (params.trade_status === 'TRADE_SUCCESS' || params.trade_status === 'TRADE_FINISHED') {
     const outTradeNo = params.out_trade_no;
     const order = await db.getOrder(outTradeNo);
-    
+
     if (!order) {
       return new Response('failure', { status: 404 });
     }
@@ -150,12 +182,12 @@ export async function handleAlipayNotify(request, env, db) {
     const user = await db.getUser(order.user_id);
     const planDetails = MEMBERSHIP_PLANS[order.plan];
     const now = new Date();
-    
+
     let startDate = now;
     if (user.membership_expires_at && new Date(user.membership_expires_at) > now) {
       startDate = new Date(user.membership_expires_at);
     }
-    
+
     const endDate = new Date(startDate.getTime() + planDetails.duration);
 
     await db.updateUser(order.user_id, {

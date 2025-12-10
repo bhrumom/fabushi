@@ -81,6 +81,7 @@ class MembershipService {
           'orderId': response['orderId'],
           'amount': response['amount'],
           'plan': response['plan'],
+          'orderString': response['orderString'],
         };
       } else {
         return {'success': false, 'message': response['message'] ?? '创建支付宝订单失败'};
