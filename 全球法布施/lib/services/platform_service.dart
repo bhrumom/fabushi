@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:app_links/app_links.dart';
 
 /// 平台服务抽象类
 abstract class PlatformService {
@@ -84,6 +86,12 @@ class WebPlatformService implements PlatformService {
 class NativePlatformService implements PlatformService {
   MethodChannel? _channel;
   Function(dynamic)? _messageHandler;
+  late final AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
+
+  NativePlatformService() {
+    _appLinks = AppLinks();
+  }
 
   @override
   String get currentUrl => '';
@@ -97,15 +105,55 @@ class NativePlatformService implements PlatformService {
   void listenToMessages(Function(dynamic) handler) {
     try {
       _messageHandler = handler;
+      
+      // 使用 app_links 监听深度链接
+      debugPrint('NativePlatformService: 开始监听深度链接回调');
+      
+      // 监听应用运行时的链接
+      _linkSubscription = _appLinks.uriLinkStream.listen((Uri uri) {
+        debugPrint('NativePlatformService: 收到深度链接: $uri');
+        _handleDeepLink(uri.toString());
+      });
+      
+      // 检查应用启动时的初始链接
+      _checkInitialLink();
+      
+      // 同时保留MethodChannel监听（兼容macOS）
       _channel = const MethodChannel('com.globaldharma.alipay/callback');
       _channel!.setMethodCallHandler(_handleMethodCall);
-      debugPrint('NativePlatformService: 开始监听支付宝回调消息');
+      
     } catch (e) {
       debugPrint('NativePlatformService: 设置消息监听失败: $e');
     }
   }
 
-  // 处理方法调用
+  // 检查应用启动时的初始链接
+  Future<void> _checkInitialLink() async {
+    try {
+      final uri = await _appLinks.getInitialLink();
+      if (uri != null) {
+        debugPrint('NativePlatformService: 检测到初始深度链接: $uri');
+        _handleDeepLink(uri.toString());
+      }
+    } catch (e) {
+      debugPrint('NativePlatformService: 检查初始链接失败: $e');
+    }
+  }
+
+  // 处理深度链接
+  void _handleDeepLink(String url) {
+    debugPrint('NativePlatformService: 处理深度链接URL: $url');
+    
+    // 检查是否是支付宝回调
+    if (url.startsWith('com.ombhrum.fabushi://') || 
+        url.startsWith('globaldharma://')) {
+      if (_messageHandler != null) {
+        _messageHandler!(url);
+      }
+    }
+  }
+
+  // 处理方法调用（兼容macOS）
   Future<dynamic> _handleMethodCall(MethodCall call) async {
     debugPrint('NativePlatformService: 收到方法调用: ${call.method}');
 
@@ -130,6 +178,7 @@ class NativePlatformService implements PlatformService {
   @override
   void dispose() {
     _channel?.setMethodCallHandler(null);
+    _linkSubscription?.cancel();
     _messageHandler = null;
   }
 }

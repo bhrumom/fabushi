@@ -2,7 +2,7 @@ import { handleRegister, handleLogin, handleGetUserInfo, handleUpdateProfile, ha
 import { handleSendSmsCode, handleSmsLogin } from './handlers/sms.js';
 import { handleGetComments, handlePostComment, handleDeleteComment } from './handlers/comments.js';
 import { handleSendVerificationCode, handleForgotPassword, handleResetPassword } from './handlers/verification.js';
-import { handleGetWechatLoginUrl, handleGetAlipayLoginUrl, handleAlipayLogin, handleAlipayRegister, handleBindEmail, handleMacOSAlipayCallback } from './handlers/thirdparty.js';
+import { handleGetWechatLoginUrl, handleGetAlipayLoginUrl, handleAlipayLogin, handleAlipayRegister, handleBindEmail, handleMacOSAlipayCallback, handleMobileAlipayCallback, handleGetAlipayAuthString, handleAlipaySDKLogin } from './handlers/thirdparty.js';
 import { handleCreateAlipayOrder, handleQueryAlipayOrder, handleAlipayNotify } from './handlers/payment.js';
 import { handleCreateRedeemCode, handleUseRedeemCode, handleGetPurchaseHistory, handleGetRedeemHistory } from './handlers/redeem.js';
 import { handleCheckMembershipStatus, handleCheckAlipayMembership } from './handlers/membership.js';
@@ -57,6 +57,9 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/auth/alipay/login' && method === 'POST') return await handleAlipayLogin(request, env);
   if (pathname === '/api/auth/alipay/register' && method === 'POST') return await handleAlipayRegister(request, env);
   if (pathname === '/api/auth/alipay/macos-callback' && method === 'GET') return await handleMacOSAlipayCallback(request, env);
+  if (pathname === '/api/auth/alipay/mobile-callback' && method === 'GET') return await handleMobileAlipayCallback(request, env);
+  if (pathname === '/api/auth/alipay/auth-string' && method === 'GET') return await handleGetAlipayAuthString(request, env);
+  if (pathname === '/api/auth/alipay/sdk-login' && method === 'POST') return await handleAlipaySDKLogin(request, env);
 
   // 支付API
   if (pathname === '/api/alipay/create-order' && method === 'POST') return await handleCreateAlipayOrder(request, env, db);

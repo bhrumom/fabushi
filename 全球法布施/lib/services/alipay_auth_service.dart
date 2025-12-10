@@ -50,6 +50,83 @@ class AlipayAuthService {
     }
   }
 
+  /// 获取支付宝SDK授权字符串
+  /// 用于移动端SDK直接调用支付宝APP
+  Future<Map<String, dynamic>> getAlipayAuthString() async {
+    try {
+      final url = await baseUrl;
+
+      final response = await http.get(
+        Uri.parse('$url/api/auth/alipay/auth-string'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.body.isEmpty) {
+        return {'success': false, 'message': '服务器返回空响应'};
+      }
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['authString'] != null) {
+          return {
+            'success': true,
+            'authString': data['authString'],
+            'targetId': data['targetId'],
+          };
+        } else {
+          return {'success': false, 'message': data['error'] ?? '获取授权字符串失败'};
+        }
+      } else {
+        final data = jsonDecode(response.body);
+        return {'success': false, 'message': data['error'] ?? '获取授权字符串失败'};
+      }
+    } catch (e) {
+      debugPrint('获取支付宝授权字符串失败: $e');
+      return {'success': false, 'message': '网络连接失败'};
+    }
+  }
+
+  /// SDK授权登录（将auth_code发送给后端换取用户信息和token）
+  Future<Map<String, dynamic>> alipaySDKLogin(String authCode, {String? targetId}) async {
+    try {
+      final url = await baseUrl;
+      debugPrint('SDK登录API调用: $url/api/auth/alipay/sdk-login, authCode: $authCode');
+
+      final response = await http.post(
+        Uri.parse('$url/api/auth/alipay/sdk-login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'auth_code': authCode,
+          'target_id': targetId,
+        }),
+      );
+
+      debugPrint('SDK登录API响应: ${response.statusCode} - ${response.body}');
+
+      if (response.body.isEmpty) {
+        return {'success': false, 'message': '服务器返回空响应'};
+      }
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {
+          'success': data['success'] ?? false,
+          'token': data['token'],
+          'username': data['username'],
+          'isNewUser': data['isNewUser'] ?? false,
+          'needsRegistration': data['needsRegistration'] ?? false,
+          'alipayUser': data['alipayUser'],
+        };
+      } else {
+        final data = jsonDecode(response.body);
+        return {'success': false, 'message': data['error'] ?? 'SDK登录失败'};
+      }
+    } catch (e) {
+      debugPrint('SDK登录失败: $e');
+      return {'success': false, 'message': '网络连接失败'};
+    }
+  }
+
   /// 支付宝登录回调处理
   Future<Map<String, dynamic>> alipayLogin(String authCode, String? state) async {
     try {

@@ -9,6 +9,8 @@ import '../models/auth_model.dart';
 import '../services/firebase_auth_service.dart';
 import '../services/firebase_rest_auth_service.dart';
 import '../services/platform_service.dart';
+import '../services/alipay_service.dart';
+import '../services/alipay_auth_service.dart';
 import '../core/design_system/app_theme.dart';
 import '../widgets/recaptcha_dialog.dart';
 
@@ -343,6 +345,18 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
 
   // ==================== 支付宝登录逻辑 ====================
 
+  /// 检测是否为移动端（iOS/Android）
+  bool get _isMobile {
+    if (kIsWeb) return false;
+    return Platform.isIOS || Platform.isAndroid;
+  }
+
+  /// 将支付宝网页授权URL转换为App唤起URL（备用方案）
+  String _convertToAlipayAppUrl(String webAuthUrl) {
+    final encodedUrl = Uri.encodeComponent(webAuthUrl);
+    return 'alipays://platformapi/startapp?appId=20000067&url=$encodedUrl';
+  }
+
   Future<void> _handleAlipayLogin() async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
 
@@ -352,35 +366,171 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     });
 
     try {
-      String? platform;
-      if (!kIsWeb && Platform.isMacOS) {
-        platform = 'macos';
-      }
-
-      final result = await authModel.getAlipayLoginUrl(platform: platform);
-
-      if (result['success'] == true && result['loginUrl'] != null) {
-        final loginUrl = result['loginUrl'] as String;
-
-        final uri = Uri.parse(loginUrl);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        } else if (kIsWeb) {
-          _platformService.openUrl(loginUrl, '_self');
-        }
+      if (_isMobile) {
+        // 移动端：使用SDK方式
+        await _handleAlipaySDKLogin(authModel);
       } else {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _errorMessage = result['error'] ?? '获取支付宝登录链接失败';
-          });
-        }
+        // 桌面端/Web：使用网页授权方式
+        await _handleAlipayWebLogin(authModel);
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
           _errorMessage = '支付宝登录出错: $e';
+        });
+      }
+    }
+  }
+
+  /// 使用SDK方式进行支付宝授权登录（移动端）
+  Future<void> _handleAlipaySDKLogin(AuthModel authModel) async {
+    try {
+      // 1. 检查支付宝是否安装
+      final alipayService = AlipayService();
+      final isInstalled = await alipayService.isAlipayInstalled();
+      
+      if (!isInstalled) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = '未安装支付宝APP，请先安装支付宝';
+          });
+        }
+        return;
+      }
+
+      // 2. 从后端获取授权字符串
+      debugPrint('开始SDK授权登录：获取授权字符串...');
+      final authStringResult = await AlipayAuthService().getAlipayAuthString();
+      
+      if (authStringResult['success'] != true || authStringResult['authString'] == null) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = authStringResult['message'] ?? '获取授权字符串失败';
+          });
+        }
+        return;
+      }
+
+      final authString = authStringResult['authString'] as String;
+      final targetId = authStringResult['targetId'] as String?;
+      
+      // 3. 调用SDK进行授权
+      debugPrint('调用支付宝SDK进行授权...');
+      final authResult = await alipayService.authWithAlipay(authString);
+      
+      debugPrint('SDK授权结果: $authResult');
+      
+      if (authResult['success'] != true) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = authResult['message'] ?? '支付宝授权失败';
+          });
+        }
+        return;
+      }
+
+      // 4. 获取auth_code，发送给后端登录
+      final authCode = authResult['authCode'] as String?;
+      if (authCode == null) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = '未获取到授权码';
+          });
+        }
+        return;
+      }
+
+      debugPrint('获取到auth_code，发送给后端登录...');
+      final loginResult = await AlipayAuthService().alipaySDKLogin(authCode, targetId: targetId);
+      
+      debugPrint('SDK登录结果: $loginResult');
+      
+      if (loginResult['success'] == true) {
+        if (loginResult['needsRegistration'] == true) {
+          // 新用户需要注册
+          final alipayUser = loginResult['alipayUser'];
+          if (alipayUser != null) {
+            // 自动一键注册
+            final registerResult = await authModel.alipayOneClickRegister(
+              alipayUser['userId'] ?? '',
+              alipayUser['nickname'],
+              alipayUser['avatar'],
+            );
+            
+            if (registerResult && mounted) {
+              Navigator.of(context).pop(true);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('支付宝登录成功！'), backgroundColor: Colors.green),
+              );
+            } else if (mounted) {
+              setState(() {
+                _isLoading = false;
+                _errorMessage = authModel.error ?? '注册失败';
+              });
+            }
+          }
+        } else {
+          // 已有用户，直接使用token登录
+          final token = loginResult['token'] as String?;
+          final username = loginResult['username'] as String?;
+          
+          if (token != null && username != null) {
+            await authModel.loginWithToken(token, username);
+            if (mounted) {
+              Navigator.of(context).pop(true);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('欢迎回来，$username！'), backgroundColor: Colors.green),
+              );
+            }
+          }
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = loginResult['message'] ?? '登录失败';
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('SDK登录异常: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = '支付宝登录失败: $e';
+        });
+      }
+    }
+  }
+
+  /// 使用网页方式进行支付宝授权登录（桌面端/Web）
+  Future<void> _handleAlipayWebLogin(AuthModel authModel) async {
+    String? platform;
+    if (!kIsWeb && Platform.isMacOS) {
+      platform = 'macos';
+    }
+
+    final result = await authModel.getAlipayLoginUrl(platform: platform);
+
+    if (result['success'] == true && result['loginUrl'] != null) {
+      final loginUrl = result['loginUrl'] as String;
+      final uri = Uri.parse(loginUrl);
+      
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else if (kIsWeb) {
+        _platformService.openUrl(loginUrl, '_self');
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = result['error'] ?? '获取支付宝登录链接失败';
         });
       }
     }

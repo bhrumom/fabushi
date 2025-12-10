@@ -33,6 +33,104 @@ class AlipayService {
     }
   }
 
+  /// 使用支付宝SDK进行授权登录
+  /// authString 是从后端获取的签名后的授权字符串
+  Future<Map<String, dynamic>> authWithAlipay(String authString) async {
+    try {
+      if (kIsWeb) {
+        return {'success': false, 'message': '支付宝SDK授权不支持Web平台'};
+      }
+
+      // 检查支付宝是否安装
+      bool isInstalled = await isAlipayInstalled();
+      if (!isInstalled) {
+        return {'success': false, 'message': '未安装支付宝APP，请先安装支付宝'};
+      }
+
+      debugPrint('开始支付宝SDK授权登录');
+
+      // 调用支付宝SDK进行授权
+      final result = await _tobias.auth(authString);
+
+      debugPrint('支付宝授权结果: $result');
+
+      // 解析授权结果
+      return _parseAuthResult(result);
+    } catch (e) {
+      debugPrint('支付宝SDK授权失败: $e');
+      return {'success': false, 'message': '授权失败: $e'};
+    }
+  }
+
+  /// 解析授权结果
+  Map<String, dynamic> _parseAuthResult(Map<dynamic, dynamic> result) {
+    try {
+      // 授权结果码
+      // 9000 - 授权成功
+      // 4000 - 系统异常
+      // 6001 - 用户取消
+      // 6002 - 网络连接错误
+
+      final resultStatus = result['resultStatus']?.toString() ?? '';
+      final memo = result['memo']?.toString() ?? '';
+      final resultData = result['result']?.toString() ?? '';
+
+      debugPrint('授权结果状态: $resultStatus');
+      debugPrint('授权结果描述: $memo');
+      debugPrint('授权结果数据: $resultData');
+
+      bool success = false;
+      String message = '';
+      String? authCode;
+
+      switch (resultStatus) {
+        case '9000':
+          success = true;
+          message = '授权成功';
+          // 从result中解析auth_code
+          authCode = _extractAuthCode(resultData);
+          break;
+        case '4000':
+          message = '系统异常';
+          break;
+        case '6001':
+          message = '用户取消授权';
+          break;
+        case '6002':
+          message = '网络连接错误';
+          break;
+        default:
+          message = '未知错误: $memo';
+      }
+
+      return {
+        'success': success,
+        'message': message,
+        'resultStatus': resultStatus,
+        'authCode': authCode,
+        'memo': memo,
+        'result': resultData,
+      };
+    } catch (e) {
+      debugPrint('解析授权结果失败: $e');
+      return {'success': false, 'message': '解析授权结果失败: $e'};
+    }
+  }
+
+  /// 从授权结果中提取auth_code
+  String? _extractAuthCode(String resultData) {
+    try {
+      // 授权结果格式: success=true&auth_code=xxx&user_id=xxx&...
+      final params = Uri.splitQueryString(resultData);
+      final authCode = params['auth_code'];
+      debugPrint('提取到auth_code: $authCode');
+      return authCode;
+    } catch (e) {
+      debugPrint('提取auth_code失败: $e');
+      return null;
+    }
+  }
+
   /// 发起支付宝APP支付
   Future<Map<String, dynamic>> payWithAlipay(String orderString) async {
     try {
