@@ -13,6 +13,7 @@ import { handleSearch, handleGetTextContent, handleGetCategories } from './handl
 import { handleGetLeaderboard, handleUpdateTransferData } from './handlers/leaderboard.js';
 import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts, handleGetMyLikes } from './handlers/likes.js';
 import { handleOnlineJoin, handleOnlineHeartbeat, handleOnlineLeave, handleOnlineCount } from './handlers/online.js';
+import { handleSyncRecord, handleGetRecords, handleGetStats, handleGetWeeklyStats, handleGetMonthlyStats, handleSetGoal, handleGetGoals, handleMeditationSettings } from './handlers/meditation.js';
 import { handleBuiltinMigration, handleFullTextSearch, handleGetCategories as handleBuiltinCategories } from '../migrate-builtin-handler-fixed.js';
 import { jsonResponse } from './utils/response.js';
 
@@ -106,6 +107,16 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/online/leave' && method === 'POST') return await handleOnlineLeave(request, env);
   if (pathname === '/api/online/count' && method === 'GET') return await handleOnlineCount(request, env);
 
+  // 修行记录API
+  if (pathname === '/api/meditation/record' && method === 'POST') return await handleSyncRecord(request, env, db);
+  if (pathname === '/api/meditation/records' && method === 'GET') return await handleGetRecords(request, env, db);
+  if (pathname === '/api/meditation/stats' && method === 'GET') return await handleGetStats(request, env, db);
+  if (pathname === '/api/meditation/weekly' && method === 'GET') return await handleGetWeeklyStats(request, env, db);
+  if (pathname === '/api/meditation/monthly' && method === 'GET') return await handleGetMonthlyStats(request, env, db);
+  if (pathname === '/api/meditation/goal' && method === 'POST') return await handleSetGoal(request, env, db);
+  if (pathname === '/api/meditation/goal' && method === 'GET') return await handleGetGoals(request, env, db);
+  if (pathname === '/api/meditation/settings' && (method === 'GET' || method === 'POST')) return await handleMeditationSettings(request, env, db);
+
   // 迁移API（管理员专用）
   if (pathname === '/api/admin/migrate-kv-to-d1' && method === 'POST') return await handleMigrateKvToD1(request, env, db);
 
@@ -116,3 +127,4 @@ export async function route(request, env, db, ctx) {
 
   return null;
 }
+

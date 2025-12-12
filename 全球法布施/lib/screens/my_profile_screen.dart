@@ -3,12 +3,15 @@ import 'package:provider/provider.dart';
 import 'dart:ui';
 import '../models/auth_model.dart';
 import '../services/like_service.dart';
+import '../services/practice_stats_service.dart';
 import 'liked_content_screen.dart';
 import 'membership_screen.dart';
 import 'edit_profile_screen.dart';
 import 'douyin_login_screen.dart';
 import 'settings_screen.dart';
 import '../core/design_system/app_theme.dart';
+import '../widgets/practice_stats_card.dart';
+import '../widgets/practice_dialogs.dart';
 
 /// 抖音风格个人中心页面
 class MyProfileScreen extends StatelessWidget {
@@ -21,6 +24,12 @@ class MyProfileScreen extends StatelessWidget {
       body: Consumer<AuthModel>(
         builder: (context, authModel, _) {
           final user = authModel.currentUser;
+          
+          // 设置统计服务的Token
+          if (user != null && authModel.authToken != null) {
+            PracticeStatsService().setAuthToken(authModel.authToken);
+          }
+          
           return CustomScrollView(
             slivers: [
               _buildSliverAppBar(context, user, authModel),
@@ -32,6 +41,9 @@ class MyProfileScreen extends StatelessWidget {
                       if (user != null) ...[
                         const SizedBox(height: 16),
                         _buildStatsRow(context, user),
+                        const SizedBox(height: 20),
+                        // 修行统计卡片
+                        _buildPracticeStatsCard(context),
                         const SizedBox(height: 20),
                         _buildFeatureGrid(context),
                         const SizedBox(height: 20),
@@ -55,6 +67,35 @@ class MyProfileScreen extends StatelessWidget {
       ),
     );
   }
+
+  /// 修行统计卡片
+  Widget _buildPracticeStatsCard(BuildContext context) {
+    return PracticeStatsCard(
+      onTapRecord: () {
+        showDialog(
+          context: context,
+          builder: (context) => const AddPracticeRecordDialog(),
+        );
+      },
+      onTapHistory: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('修行记录功能完善中')),
+        );
+      },
+      onTapDedication: () {
+        showDialog(
+          context: context,
+          builder: (context) => const SetGoalDialog(),
+        );
+      },
+      onTapSettings: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('功课设置功能完善中')),
+        );
+      },
+    );
+  }
+
 
   Widget _buildSliverAppBar(BuildContext context, User? user, AuthModel authModel) {
     return SliverAppBar(
