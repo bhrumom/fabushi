@@ -756,22 +756,49 @@ class FileTransferModel extends ChangeNotifier {
   }
 
   void _parseLogAndUpdateCountryStatus(String logMessage) {
-    if (logMessage.contains('发送到') && logMessage.contains('成功')) {
-      final regex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*成功');
-      final match = regex.firstMatch(logMessage);
-      if (match != null) {
-        final countryName = match.group(1)?.trim();
-        updateCountryStatus(countryName, SendStatus.success);
+    // 匹配 UDP 格式: "✅ UDP 发送到 中国 (CN) 成功" 或 HTTP 格式
+    if (logMessage.contains('成功')) {
+      // UDP 格式: 发送到 国家名 (代码) 成功
+      final udpRegex = RegExp(r'发送到\s+([^\s(]+)\s+\(([A-Z]{2})\)\s+成功');
+      final udpMatch = udpRegex.firstMatch(logMessage);
+      if (udpMatch != null) {
+        final countryName = udpMatch.group(1)?.trim();
+        if (countryName != null) {
+          updateCountryStatus(countryName, SendStatus.success);
+          // 直接更新通知栏进度
+          _updateBackgroundServiceProgress(countryName, _globalSentCount, _countryStatuses.isNotEmpty ? _countryStatuses.length : 200);
+        }
+        return;
       }
-    } else if (logMessage.contains('发送到') && logMessage.contains('失败')) {
-      final regex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*失败');
-      final match = regex.firstMatch(logMessage);
-      if (match != null) {
-        final countryName = match.group(1)?.trim();
+      
+      // HTTP 格式: 发送到 国家名 (代码) ... 成功
+      final httpRegex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*成功');
+      final httpMatch = httpRegex.firstMatch(logMessage);
+      if (httpMatch != null) {
+        final countryName = httpMatch.group(1)?.trim();
+        if (countryName != null) {
+          updateCountryStatus(countryName, SendStatus.success);
+          _updateBackgroundServiceProgress(countryName, _globalSentCount, _countryStatuses.isNotEmpty ? _countryStatuses.length : 200);
+        }
+      }
+    } else if (logMessage.contains('失败')) {
+      final udpRegex = RegExp(r'发送到\s+([^\s(]+)\s+\(([A-Z]{2})\)\s+失败');
+      final udpMatch = udpRegex.firstMatch(logMessage);
+      if (udpMatch != null) {
+        final countryName = udpMatch.group(1)?.trim();
+        updateCountryStatus(countryName, SendStatus.failed);
+        return;
+      }
+      
+      final httpRegex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*失败');
+      final httpMatch = httpRegex.firstMatch(logMessage);
+      if (httpMatch != null) {
+        final countryName = httpMatch.group(1)?.trim();
         updateCountryStatus(countryName, SendStatus.failed);
       }
     }
   }
+
 
   void updateProgress(int count) {
     _globalSentCount = count;

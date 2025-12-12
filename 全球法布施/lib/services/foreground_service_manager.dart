@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 /// Android 前台服务管理器
 /// 负责管理前台服务的启动、停止和通知更新
@@ -10,19 +11,74 @@ class ForegroundServiceManager {
   ForegroundServiceManager._internal();
 
   bool _isServiceRunning = false;
+  bool _isInitialized = false;
   bool get isServiceRunning => _isServiceRunning;
+
+  /// 请求通知权限 (Android 13+ 需要)
+  Future<bool> requestNotificationPermission() async {
+    if (!Platform.isAndroid) return true;
+    
+    try {
+      // 检查当前权限状态
+      final status = await Permission.notification.status;
+      debugPrint('📬 当前通知权限状态: $status');
+      
+      if (status.isGranted) {
+        debugPrint('✅ 通知权限已授予');
+        return true;
+      }
+      
+      if (status.isDenied) {
+        // 请求权限
+        debugPrint('📬 正在请求通知权限...');
+        final result = await Permission.notification.request();
+        debugPrint('📬 通知权限请求结果: $result');
+        return result.isGranted;
+      }
+      
+      if (status.isPermanentlyDenied) {
+        debugPrint('⚠️ 通知权限被永久拒绝，请在设置中开启');
+        // 可以引导用户去设置页面
+        return false;
+      }
+      
+      return false;
+    } catch (e) {
+      debugPrint('❌ 请求通知权限失败: $e');
+      return false;
+    }
+  }
 
   /// 初始化前台服务
   Future<void> initialize() async {
     if (!Platform.isAndroid) return;
+    if (_isInitialized) return;
+
+    // 首先请求通知权限
+    final hasPermission = await requestNotificationPermission();
+    if (!hasPermission) {
+      debugPrint('⚠️ 通知权限未授予，前台服务可能无法正常显示通知');
+    }
+
+    // 请求忽略电池优化（可选，帮助后台运行）
+    try {
+      final batteryStatus = await Permission.ignoreBatteryOptimizations.status;
+      if (!batteryStatus.isGranted) {
+        debugPrint('📋 正在请求忽略电池优化...');
+        await Permission.ignoreBatteryOptimizations.request();
+      }
+    } catch (e) {
+      debugPrint('⚠️ 请求忽略电池优化失败: $e');
+    }
 
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'global_dharma_sending',
         channelName: '全球法布施发送',
         channelDescription: '显示全球法布施发送进度',
-        channelImportance: NotificationChannelImportance.LOW,
-        priority: NotificationPriority.LOW,
+        channelImportance: NotificationChannelImportance.HIGH,
+        priority: NotificationPriority.HIGH,
+        visibility: NotificationVisibility.VISIBILITY_PUBLIC,
       ),
       iosNotificationOptions: const IOSNotificationOptions(
         showNotification: false,
@@ -32,12 +88,14 @@ class ForegroundServiceManager {
         autoRunOnBoot: false,
         autoRunOnMyPackageReplaced: false,
         allowWakeLock: true,
-        allowWifiLock: false,
+        allowWifiLock: true,
       ),
     );
 
+    _isInitialized = true;
     debugPrint('✅ Android 前台服务已初始化');
   }
+
 
   /// 启动前台服务
   Future<bool> start({
