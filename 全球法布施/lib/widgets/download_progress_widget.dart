@@ -20,7 +20,7 @@ class DownloadProgressDialog extends StatefulWidget {
 }
 
 class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
-  late StreamSubscription<DownloadTask> _subscription;
+  StreamSubscription<DownloadTask>? _subscription;
   DownloadTask? _currentTask;
   Timer? _updateTimer;
 
@@ -147,7 +147,7 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
 
   @override
   void dispose() {
-    _subscription.cancel();
+    _subscription?.cancel();
     _updateTimer?.cancel();
     super.dispose();
   }
