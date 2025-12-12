@@ -333,20 +333,24 @@ class FileTransferModel extends ChangeNotifier {
       final taskId = await _sharedAssetManager.downloadAsset(assetPath);
       final fileName = assetPath.split('/').last;
 
-      _showDownloadProgressDialog(context, taskId, fileName, assetPath);
+      // 使用 Completer 等待下载完成后再返回
+      await _showDownloadProgressDialog(context, taskId, fileName, assetPath);
 
-      await _sharedAssetManager.startDownload(taskId);
+      debugPrint('✅ 素材下载完成并关闭对话框: $fileName');
     } catch (e) {
       debugPrint('下载素材失败: $e');
       rethrow;
     }
   }
 
-  void _showDownloadProgressDialog(BuildContext context, String taskId, String fileName, String assetPath) {
+  Future<void> _showDownloadProgressDialog(BuildContext context, String taskId, String fileName, String assetPath) async {
+    // 使用 Completer 来等待下载完成
+    final completer = Completer<void>();
+    
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => DownloadProgressDialog(
+      builder: (dialogContext) => DownloadProgressDialog(
         taskId: taskId,
         downloadManager: _sharedAssetManager.downloadManager,
         onComplete: () async {
@@ -374,10 +378,37 @@ class FileTransferModel extends ChangeNotifier {
             debugPrint('❌ 下载完成处理出错: $e');
           } finally {
             _sharedAssetManager.clearTaskMapping(assetPath);
+            // 完成 Completer，让调用者知道下载已完成
+            if (!completer.isCompleted) {
+              completer.complete();
+            }
           }
         },
       ),
     );
+    
+    // 启动下载任务
+    _sharedAssetManager.startDownload(taskId);
+    
+    // 同时监听下载任务的状态变化，防止非正常完成情况
+    _sharedAssetManager.downloadManager.taskStream
+        .where((task) => task.id == taskId)
+        .listen((task) {
+      if (task.status == DownloadStatus.completed || 
+          task.status == DownloadStatus.failed) {
+        if (!completer.isCompleted) {
+          // 给一点时间让 onComplete 先执行
+          Future.delayed(Duration(milliseconds: 200), () {
+            if (!completer.isCompleted) {
+              completer.complete();
+            }
+          });
+        }
+      }
+    });
+    
+    // 等待下载完成
+    await completer.future;
   }
 
   void addFiles(List<PlatformFile> files) {
