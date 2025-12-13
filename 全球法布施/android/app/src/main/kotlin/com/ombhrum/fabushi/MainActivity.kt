@@ -12,10 +12,12 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.fabushi.app/hotspot"
+    private val DEVICE_INFO_CHANNEL = "com.ombhrum.fabushi/device_info"
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
+        // 热点相关 Method Channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "isHotspotEnabled" -> {
@@ -28,6 +30,24 @@ class MainActivity : FlutterActivity() {
                 "openHotspotSettings" -> {
                     openHotspotSettings()
                     result.success(true)
+                }
+                else -> {
+                    result.notImplemented()
+                }
+            }
+        }
+
+        // 设备信息 Method Channel（用于保活设置页面）
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, DEVICE_INFO_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getDeviceBrand" -> {
+                    result.success(Build.BRAND)
+                }
+                "getDeviceModel" -> {
+                    result.success(Build.MODEL)
+                }
+                "getDeviceManufacturer" -> {
+                    result.success(Build.MANUFACTURER)
                 }
                 else -> {
                     result.notImplemented()

@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:global_dharma_sharing/core/video_feed_di/video_feed_injector.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_cubit.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_state.dart';
-import 'package:global_dharma_sharing/features/video_feed/presentation/view/video_feed_view.dart';
+import 'package:global_dharma_sharing/features/video_feed/presentation/view/feed_tab_view.dart';
 import 'search_screen.dart';
 
 class VideoFeedScreen extends StatelessWidget {
@@ -12,21 +12,8 @@ class VideoFeedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        title: const Text('法流', style: TextStyle(color: Colors.white)),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search, color: Colors.white),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const SearchScreen()),
-            ),
-          ),
-        ],
-      ),
+      backgroundColor: Colors.black,
+      // Labels and search are now handled inside FeedTabView within the body
       body: BlocProvider(
         create: (context) => videoFeedGetIt<VideoFeedCubit>(),
         child: BlocBuilder<VideoFeedCubit, VideoFeedState>(
@@ -105,7 +92,7 @@ class VideoFeedScreen extends StatelessWidget {
               );
             }
 
-            return const VideoFeedView();
+            return const FeedTabView();
           },
         ),
       ),

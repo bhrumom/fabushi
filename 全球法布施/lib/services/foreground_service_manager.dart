@@ -84,9 +84,9 @@ class ForegroundServiceManager {
         showNotification: false,
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.repeat(5000),
-        autoRunOnBoot: false,
-        autoRunOnMyPackageReplaced: false,
+        eventAction: ForegroundTaskEventAction.repeat(1000), // 缩短到1秒，提高活跃度
+        autoRunOnBoot: true, // 开机后自动启动
+        autoRunOnMyPackageReplaced: true, // 应用更新后自动启动
         allowWakeLock: true,
         allowWifiLock: true,
       ),
@@ -218,10 +218,19 @@ class ForegroundTaskHandler extends TaskHandler {
     debugPrint('🚀 前台任务已启动: $timestamp');
   }
 
+  int _heartbeatCount = 0;
+  DateTime? _lastHeartbeat;
+
   @override
   void onRepeatEvent(DateTime timestamp) {
-    // 周期性事件处理（每5秒触发一次）
-    // 可以在这里检查发送状态、更新统计等
+    // 心跳机制：保持服务活跃，防止被系统杀掉
+    _heartbeatCount++;
+    _lastHeartbeat = timestamp;
+    
+    // 每60秒输出一次心跳日志（避免日志过多）
+    if (_heartbeatCount % 60 == 0) {
+      debugPrint('💓 服务心跳 #$_heartbeatCount - ${timestamp.toIso8601String()}');
+    }
   }
 
   @override

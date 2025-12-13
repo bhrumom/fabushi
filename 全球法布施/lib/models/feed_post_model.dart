@@ -1,43 +1,41 @@
-class CommentModel {
+/// 感应/发愿帖子模型
+class FeedPostModel {
   final int id;
   final String videoId;
   final String userId;
   final String content;
   final DateTime createdAt;
-  final int? parentId;
+  final String tag; // 'ganying' | 'fayuan'
   final int likeCount;
   final String? username;
   final String? nickname;
   final String? avatar;
-  final String? tag; // 'ganying' | 'fayuan' | null
 
-  CommentModel({
+  FeedPostModel({
     required this.id,
     required this.videoId,
     required this.userId,
     required this.content,
     required this.createdAt,
-    this.parentId,
+    required this.tag,
     this.likeCount = 0,
     this.username,
     this.nickname,
     this.avatar,
-    this.tag,
   });
 
-  factory CommentModel.fromJson(Map<String, dynamic> json) {
-    return CommentModel(
+  factory FeedPostModel.fromJson(Map<String, dynamic> json) {
+    return FeedPostModel(
       id: json['id'],
-      videoId: json['video_id'],
+      videoId: json['video_id'] ?? '',
       userId: json['user_id'],
       content: json['content'],
       createdAt: DateTime.parse(json['created_at']),
-      parentId: json['parent_id'],
+      tag: json['tag'],
       likeCount: json['like_count'] ?? 0,
       username: json['username'],
       nickname: json['nickname'],
       avatar: json['avatar'],
-      tag: json['tag'],
     );
   }
 
@@ -48,14 +46,27 @@ class CommentModel {
       'user_id': userId,
       'content': content,
       'created_at': createdAt.toIso8601String(),
-      'parent_id': parentId,
+      'tag': tag,
       'like_count': likeCount,
       'username': username,
       'nickname': nickname,
       'avatar': avatar,
-      'tag': tag,
     };
   }
 
   String get displayName => nickname?.isNotEmpty == true ? nickname! : (username ?? '匿名用户');
+  
+  bool get isGanying => tag == 'ganying';
+  bool get isFayuan => tag == 'fayuan';
+  
+  String get tagDisplayName {
+    switch (tag) {
+      case 'ganying':
+        return '感应';
+      case 'fayuan':
+        return '发愿';
+      default:
+        return '';
+    }
+  }
 }

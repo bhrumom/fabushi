@@ -1,6 +1,6 @@
 import { handleRegister, handleLogin, handleGetUserInfo, handleUpdateProfile, handleFirebasePhoneLogin } from './handlers/auth.js';
 import { handleSendSmsCode, handleSmsLogin } from './handlers/sms.js';
-import { handleGetComments, handlePostComment, handleDeleteComment } from './handlers/comments.js';
+import { handleGetComments, handlePostComment, handleDeleteComment, handleGetTaggedPosts, handleGetHotFeed, handleGetPostDetail } from './handlers/comments.js';
 import { handleSendVerificationCode, handleForgotPassword, handleResetPassword } from './handlers/verification.js';
 import { handleGetWechatLoginUrl, handleGetAlipayLoginUrl, handleAlipayLogin, handleAlipayRegister, handleBindEmail, handleMacOSAlipayCallback, handleMobileAlipayCallback, handleGetAlipayAuthString, handleAlipaySDKLogin } from './handlers/thirdparty.js';
 import { handleCreateAlipayOrder, handleQueryAlipayOrder, handleAlipayNotify } from './handlers/payment.js';
@@ -51,6 +51,11 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/comments' && method === 'GET') return await handleGetComments(request, env, db);
   if (pathname === '/api/comments' && method === 'POST') return await handlePostComment(request, env, db);
   if (pathname === '/api/comments' && method === 'DELETE') return await handleDeleteComment(request, env, db);
+
+  // 帖子/动态 API（感应/发愿）
+  if (pathname === '/api/posts' && method === 'GET') return await handleGetTaggedPosts(request, env, db);
+  if (pathname === '/api/posts/detail' && method === 'GET') return await handleGetPostDetail(request, env, db);
+  if (pathname === '/api/feed/hot' && method === 'GET') return await handleGetHotFeed(request, env, db);
 
   // 第三方登录
   if (pathname === '/api/auth/wechat/login-url' && method === 'GET') return await handleGetWechatLoginUrl(request, env);

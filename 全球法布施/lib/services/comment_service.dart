@@ -30,16 +30,21 @@ class CommentService {
     }
   }
 
-  // 发布评论
-  Future<Map<String, dynamic>> postComment(String videoId, String content, {int? parentId}) async {
+  // 发布评论（支持标签：ganying/fayuan）
+  Future<Map<String, dynamic>> postComment(String videoId, String content, {int? parentId, String? tag}) async {
     try {
+      final body = <String, dynamic>{
+        'videoId': videoId,
+        'content': content,
+        'parentId': parentId,
+      };
+      if (tag != null) {
+        body['tag'] = tag;
+      }
+      
       final response = await HttpService.post(
         '${AppConfig.apiUrl}/api/comments',
-        body: {
-          'videoId': videoId,
-          'content': content,
-          'parentId': parentId,
-        },
+        body: body,
         useAuth: true,
       );
 

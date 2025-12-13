@@ -21,6 +21,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
   List<CommentModel> _comments = [];
   bool _isLoading = true;
   bool _isSending = false;
+  String? _selectedTag; // 'ganying' | 'fayuan' | null
 
   @override
   void initState() {
@@ -58,7 +59,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
     }
 
     setState(() => _isSending = true);
-    final result = await _commentService.postComment(widget.videoId, content);
+    final result = await _commentService.postComment(widget.videoId, content, tag: _selectedTag);
     
     if (mounted) {
       setState(() => _isSending = false);
@@ -67,6 +68,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
         _commentController.clear();
         setState(() {
           _comments.insert(0, newComment);
+          _selectedTag = null; // 重置标签选择
         });
         widget.onCommentPosted?.call();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -132,49 +134,72 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
                       ),
           ),
 
-          // 底部输入框
+          // 底部输入框（带标签选择）
           Container(
             padding: EdgeInsets.only(
               left: 16,
               right: 16,
-              top: 12,
-              bottom: 12 + MediaQuery.of(context).viewInsets.bottom,
+              top: 8,
+              bottom: 8 + MediaQuery.of(context).viewInsets.bottom,
             ),
             decoration: const BoxDecoration(
               color: Color(0xFF2A2A2A),
               border: Border(top: BorderSide(color: Colors.white10)),
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _commentController,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: '说点什么...',
-                      hintStyle: const TextStyle(color: Colors.white38),
-                      filled: true,
-                      fillColor: Colors.white10,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide.none,
+                // 标签选择行
+                Row(
+                  children: [
+                    const Text('发表为：', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    const SizedBox(width: 8),
+                    _buildTagButton('普通评论', null),
+                    const SizedBox(width: 8),
+                    _buildTagButton('感应', 'ganying'),
+                    const SizedBox(width: 8),
+                    _buildTagButton('发愿', 'fayuan'),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // 输入行
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _commentController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: _selectedTag == 'ganying' 
+                              ? '分享你的感应体验...'
+                              : _selectedTag == 'fayuan'
+                                  ? '写下你的愿望...'
+                                  : '说点什么...',
+                          hintStyle: const TextStyle(color: Colors.white38),
+                          filled: true,
+                          fillColor: Colors.white10,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                        onSubmitted: (_) => _postComment(),
                       ),
                     ),
-                    onSubmitted: (_) => _postComment(),
-                  ),
+                    const SizedBox(width: 12),
+                    _isSending
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(color: AppTheme.primaryColor, strokeWidth: 2),
+                          )
+                        : IconButton(
+                            icon: const Icon(Icons.send, color: AppTheme.primaryColor),
+                            onPressed: _postComment,
+                          ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                _isSending
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(color: AppTheme.primaryColor, strokeWidth: 2),
-                      )
-                    : IconButton(
-                        icon: const Icon(Icons.send, color: AppTheme.primaryColor),
-                        onPressed: _postComment,
-                      ),
               ],
             ),
           ),
@@ -253,5 +278,46 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
     } else {
       return '${date.year}-${date.month}-${date.day}';
     }
+  }
+
+  Widget _buildTagButton(String label, String? tag) {
+    final isSelected = _selectedTag == tag;
+    Color bgColor;
+    Color textColor;
+    
+    if (tag == 'ganying') {
+      bgColor = isSelected ? Colors.orange : Colors.orange.withOpacity(0.1);
+      textColor = isSelected ? Colors.white : Colors.orange;
+    } else if (tag == 'fayuan') {
+      bgColor = isSelected ? Colors.purple : Colors.purple.withOpacity(0.1);
+      textColor = isSelected ? Colors.white : Colors.purple;
+    } else {
+      bgColor = isSelected ? Colors.white24 : Colors.transparent;
+      textColor = isSelected ? Colors.white : Colors.white54;
+    }
+
+    return GestureDetector(
+      onTap: () => setState(() => _selectedTag = tag),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected 
+                ? (tag == 'ganying' ? Colors.orange : tag == 'fayuan' ? Colors.purple : Colors.white38)
+                : Colors.transparent,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: textColor,
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -1,226 +1,91 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import '../services/app_settings.dart';
+import 'keep_alive_guide_screen.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
-
-  @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    try {
-      // 设置已简化，只加载基本状态
-      setState(() {
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加载设置失败: $e')));
-      }
-    }
-  }
-
-  // 所有后端URL和测试模式相关功能已完全移除
-  // 配置统一通过 unified_config.dart 管理
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('应用设置'),
-        backgroundColor: const Color(0xFF667eea),
+        title: const Text('设置'),
+        backgroundColor: const Color(0xFF121212),
         foregroundColor: Colors.white,
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
-          ),
-        ),
-        child: SafeArea(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: Colors.white))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 模式设置
-                      Card(
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: const [
-                                  Icon(Icons.cloud, color: Colors.blue, size: 24),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    '运行模式',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF2c3e50),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              const ListTile(
-                                title: Text('系统模式'),
-                                subtitle: Text('统一后端配置，无需手动设置'),
-                                leading: Icon(Icons.info_outline, color: Colors.blue),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // 后端设置
-                      Card(
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // 后端配置已完全移除，所有配置统一通过 unified_config.dart 管理
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // 状态信息
-                      Card(
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: const [
-                                  Icon(Icons.info_outline, color: Colors.purple, size: 24),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    '当前状态',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF2c3e50),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              _buildStatusItem('运行模式', '生产模式', Colors.green),
-                              // 后端地址信息已移除
-                              _buildStatusItem('数据来源', 'Cloudflare后端', Colors.green),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // 操作按钮
-                      Card(
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: const [
-                                  Icon(Icons.build, color: Colors.red, size: 24),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    '操作',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF2c3e50),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  onPressed: () {
-                                    // 设置重置功能已简化，只显示提示信息
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('设置已重置为默认配置'),
-                                        backgroundColor: Colors.green,
-                                      ),
-                                    );
-                                  },
-                                  icon: const Icon(Icons.restore),
-                                  label: const Text('重置为默认设置'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 32),
-                    ],
-                  ),
+      backgroundColor: const Color(0xFF121212),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Android 后台保活设置（仅 Android 显示）
+            if (Platform.isAndroid)
+              _buildSettingItem(
+                context,
+                icon: Icons.battery_saver,
+                iconColor: Colors.green,
+                title: '后台保活设置',
+                subtitle: '防止应用被系统清理',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const KeepAliveGuideScreen()),
                 ),
+              ),
+
+            _buildSettingItem(
+              context,
+              icon: Icons.info_outline,
+              iconColor: Colors.blue,
+              title: '关于',
+              subtitle: '版本 1.0.0',
+              onTap: () => showAboutDialog(
+                context: context,
+                applicationName: '全球法布施',
+                applicationVersion: '1.0.0',
+                children: [const Text('传播佛法，利益众生')],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildStatusItem(String label, String value, Color color) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(label, style: const TextStyle(fontSize: 14, color: Color(0xFF7f8c8d))),
+  Widget _buildSettingItem(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      color: const Color(0xFF1E1E1E),
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: iconColor.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(fontSize: 14, color: color, fontWeight: FontWeight.w500),
-            ),
+          child: Icon(icon, color: iconColor, size: 24),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w500,
           ),
-        ],
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(color: Colors.white54, fontSize: 13),
+        ),
+        trailing: const Icon(Icons.chevron_right, color: Colors.white24),
+        onTap: onTap,
       ),
     );
   }
