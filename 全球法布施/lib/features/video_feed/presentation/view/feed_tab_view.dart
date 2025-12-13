@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'widgets/feed_tab_bar.dart';
 import 'widgets/feed_post_list_view.dart';
 import 'widgets/hot_feed_list_view.dart';
+import 'widgets/shop_mall_list_view.dart';
 import 'video_feed_view.dart';
 
 /// 法流标签切换主视图
-/// 包含法流、热门、感应、发愿四个标签页
+/// 包含法流、热门、感应、发愿、商城五个标签页
 class FeedTabView extends StatefulWidget {
   const FeedTabView({super.key});
 
@@ -59,6 +60,9 @@ class _FeedTabViewState extends State<FeedTabView> {
                 
                 // 发愿 - 朋友圈式列表
                 FeedPostListView(tag: 'fayuan'),
+                
+                // 商城 - 抖音风格商城
+                ShopMallListView(),
               ],
             ),
           ),

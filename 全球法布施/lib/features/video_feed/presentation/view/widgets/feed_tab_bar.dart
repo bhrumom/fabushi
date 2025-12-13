@@ -18,22 +18,28 @@ class FeedTabBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          // 左侧占位，保持中间标签居中
-          const SizedBox(width: 48),
+          // 左侧占位，保持中间标签居中 (减少宽度以适应更多标签)
+          const SizedBox(width: 40),
 
           // 中间标签栏
           Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildTab('法流', 0),
-                const SizedBox(width: 16),
-                _buildTab('热门', 1),
-                const SizedBox(width: 16),
-                _buildTab('感应', 2),
-                const SizedBox(width: 16),
-                _buildTab('发愿', 3),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildTab('法流', 0),
+                  const SizedBox(width: 12),
+                  _buildTab('热门', 1),
+                  const SizedBox(width: 12),
+                  _buildTab('感应', 2),
+                  const SizedBox(width: 12),
+                  _buildTab('发愿', 3),
+                  const SizedBox(width: 12),
+                  _buildTab('商城', 4),
+                ],
+              ),
             ),
           ),
           
