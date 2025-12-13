@@ -159,9 +159,9 @@ class _ShopMallListViewState extends State<ShopMallListView> {
             child: CustomScrollView(
               slivers: [
                 // 顶部间距（为固定搜索栏和标签栏留空间）
-                // TabBar (约50) + 搜索栏 (约40) + 间距
+                // TabBar (约50) + 搜索栏 (约40) + 间距 + 安全余量
                 const SliverToBoxAdapter(
-                  child: SizedBox(height: 120),
+                  child: SizedBox(height: 150),
                 ),
 
                 // 用户功能菜单 (订单、地址、收藏)
@@ -211,7 +211,7 @@ class _ShopMallListViewState extends State<ShopMallListView> {
 
           // 固定搜索栏 (顶层)
           Positioned(
-            top: 54, // 下移以避开顶部 TabBar
+            top: 90, // 下移以避开顶部 TabBar
             left: 0,
             right: 0,
             child: Container(
