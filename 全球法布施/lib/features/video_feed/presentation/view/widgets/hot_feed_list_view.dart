@@ -124,6 +124,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
             username: '',
             description: '热门内容',
             videoUrl: '',
+            profileImageUrl: '',
             likeCount: likeCount,
             commentCount: 0,
             shareCount: 0,
