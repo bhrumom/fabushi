@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../../models/feed_post_model.dart';
 import '../../../../../core/design_system/app_theme.dart';
+import '../../../../../services/video_title_service.dart';
 
 /// 感应/发愿帖子卡片（朋友圈风格）
 class FeedPostCard extends StatelessWidget {
@@ -9,6 +10,7 @@ class FeedPostCard extends StatelessWidget {
   final VoidCallback? onAvatarTap;
   final VoidCallback? onLikeTap;
   final VoidCallback? onCommentTap;
+  final VoidCallback? onOriginalVideoTap; // 点击@原视频标题的回调
   final bool isLiked;
 
   const FeedPostCard({
@@ -18,6 +20,7 @@ class FeedPostCard extends StatelessWidget {
     this.onAvatarTap,
     this.onLikeTap,
     this.onCommentTap,
+    this.onOriginalVideoTap,
     this.isLiked = false,
   });
 
@@ -51,6 +54,13 @@ class FeedPostCard extends StatelessWidget {
               maxLines: 6,
               overflow: TextOverflow.ellipsis,
             ),
+            
+            // 原视频链接（单独一行，显示在内容下方）
+            if (post.videoId.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _buildOriginalVideoLink(),
+            ],
+            
             const SizedBox(height: 12),
             
             // 底部操作栏
@@ -59,6 +69,87 @@ class FeedPostCard extends StatelessWidget {
         ),
       ),
     );
+  }
+  
+  /// 构建原视频链接（单独一行）
+  Widget _buildOriginalVideoLink() {
+    // 提取可读标题
+    String displayTitle = _extractDisplayTitle(post.videoId, post.videoTitle);
+    
+    return GestureDetector(
+      onTap: onOriginalVideoTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppTheme.primaryColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.play_circle_outline, color: AppTheme.primaryColor, size: 16),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                '@$displayTitle',
+                style: const TextStyle(
+                  color: AppTheme.primaryColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  /// 从 videoId 提取可读的显示标题
+  String _extractDisplayTitle(String videoId, String? videoTitle) {
+    // 首先尝试从VideoTitleService获取真实标题
+    final cachedTitle = VideoTitleService().getVideoTitle(videoId);
+    if (cachedTitle != null && cachedTitle.isNotEmpty) {
+      return cachedTitle;
+    }
+    
+    // 如果API已提供标题且不是原始ID格式，直接使用
+    if (videoTitle != null && videoTitle.isNotEmpty) {
+      if (!RegExp(r'^(text|video)[\s_-]?\d+').hasMatch(videoTitle)) {
+        return videoTitle;
+      }
+    }
+    
+    if (videoId.isEmpty) return '原视频';
+    
+    // 如果是路径格式，提取文件名
+    String contentId = videoId;
+    if (contentId.contains('/')) {
+      final parts = contentId.split('/');
+      contentId = parts.last;
+    }
+    
+    // 去掉扩展名
+    if (contentId.contains('.')) {
+      contentId = contentId.substring(0, contentId.lastIndexOf('.'));
+    }
+    
+    // 替换下划线和横杠为空格
+    String title = contentId.replaceAll(RegExp(r'[_-]'), ' ').trim();
+    
+    // 如果是纯数字ID格式如 "text 1764818600612 1"，返回更友好的名称
+    if (RegExp(r'^(text|video)\s+\d+').hasMatch(title)) {
+      return '法布施内容';
+    }
+    
+    // 首字母大写
+    if (title.isNotEmpty) {
+      title = title[0].toUpperCase() + title.substring(1);
+    }
+    
+    return title.isEmpty ? '法布施内容' : title;
   }
 
   Widget _buildUserHeader() {
@@ -168,29 +259,6 @@ class FeedPostCard extends StatelessWidget {
             ],
           ),
         ),
-        
-        const Spacer(),
-        
-        // 原视频链接（如果有）
-        if (post.videoId.isNotEmpty)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.play_circle_outline, color: AppTheme.primaryColor, size: 16),
-                SizedBox(width: 4),
-                Text(
-                  '查看原帖',
-                  style: TextStyle(color: AppTheme.primaryColor, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
       ],
     );
   }

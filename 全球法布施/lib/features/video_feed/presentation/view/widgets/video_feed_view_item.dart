@@ -124,6 +124,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
       backgroundColor: Colors.transparent,
       builder: (context) => CommentBottomSheet(
         videoId: widget.videoItem.id,
+        videoTitle: widget.videoItem.username, // username 字段存储的是视频标题
         onCommentPosted: () {
           if (mounted) {
             setState(() {

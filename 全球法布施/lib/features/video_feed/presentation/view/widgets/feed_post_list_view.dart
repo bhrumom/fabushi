@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../../../../models/feed_post_model.dart';
 import '../../../../../services/feed_service.dart';
+import '../../../../../services/video_title_service.dart';
+import '../../../../../features/video_feed/domain/entities/video_entity.dart';
 import 'feed_post_card.dart';
+import 'comment_bottom_sheet.dart';
+import 'video_feed_view_item.dart';
 
 /// 感应/发愿帖子列表视图（朋友圈风格）
 class FeedPostListView extends StatefulWidget {
@@ -79,6 +83,36 @@ class _FeedPostListViewState extends State<FeedPostListView> {
     }
   }
 
+  /// 点击@原视频标题时跳转到全屏视频并显示评论
+  void _navigateToOriginalVideo(FeedPostModel post) {
+    if (post.videoId.isEmpty) return;
+    
+    // 从VideoTitleService获取视频数据
+    final videoTitleService = VideoTitleService();
+    final videoEntity = videoTitleService.getVideo(post.videoId);
+    
+    if (videoEntity != null) {
+      // 跳转到全屏视频页面
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => _OriginalVideoScreen(
+            video: videoEntity,
+            autoShowComments: true,
+          ),
+        ),
+      );
+    } else {
+      // 如果找不到视频数据，直接打开评论
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => CommentBottomSheet(videoId: post.videoId),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -142,7 +176,7 @@ class _FeedPostListViewState extends State<FeedPostListView> {
           return FeedPostCard(
             post: post,
             onTap: () {
-              // TODO: 打开帖子详情
+              // 打开帖子详情 - 使用评论底部弹窗
             },
             onAvatarTap: () {
               // TODO: 跳转用户主页
@@ -153,8 +187,71 @@ class _FeedPostListViewState extends State<FeedPostListView> {
             onCommentTap: () {
               // TODO: 打开评论
             },
+            onOriginalVideoTap: () => _navigateToOriginalVideo(post),
           );
         },
+      ),
+    );
+  }
+}
+
+/// 原视频全屏显示页面
+class _OriginalVideoScreen extends StatefulWidget {
+  final VideoEntity video;
+  final bool autoShowComments;
+
+  const _OriginalVideoScreen({
+    required this.video,
+    this.autoShowComments = true,
+  });
+
+  @override
+  State<_OriginalVideoScreen> createState() => _OriginalVideoScreenState();
+}
+
+class _OriginalVideoScreenState extends State<_OriginalVideoScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // 延迟显示评论底部弹窗
+    if (widget.autoShowComments) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (context) => CommentBottomSheet(videoId: widget.video.id),
+            );
+          }
+        });
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // 视频/文本内容
+          VideoFeedViewItem(
+            videoItem: widget.video,
+            controller: null, // 将在内部初始化
+          ),
+          // 返回按钮
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

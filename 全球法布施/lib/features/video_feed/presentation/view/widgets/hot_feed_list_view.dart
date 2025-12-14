@@ -1,7 +1,15 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:preload_page_view/preload_page_view.dart' hide PageScrollPhysics;
+import 'package:video_player/video_player.dart';
 import '../../../../../services/feed_service.dart';
+import '../../../../../services/like_service.dart';
+import '../../../../../models/liked_item.dart';
+import '../../../../../features/video_feed/domain/entities/video_entity.dart';
+import '../../../../../features/video_feed/presentation/view/widgets/video_feed_view_item.dart';
 
-/// 热门内容列表（只显示有点赞量的内容）
+/// 热门内容列表（只显示有点赞量的内容，使用法流样式展示）
 class HotFeedListView extends StatefulWidget {
   const HotFeedListView({super.key});
 
@@ -10,78 +18,204 @@ class HotFeedListView extends StatefulWidget {
 }
 
 class _HotFeedListViewState extends State<HotFeedListView> {
-  final FeedService _feedService = FeedService();
+  final LikeService _likeService = LikeService();
   
-  List<Map<String, dynamic>> _hotItems = [];
+  List<VideoEntity> _hotVideos = [];
   bool _isLoading = true;
-  bool _isLoadingMore = false;
-  bool _hasMore = true;
-  int _currentPage = 1;
-  final ScrollController _scrollController = ScrollController();
+  int _currentPage = 0;
+  final PreloadPageController _pageController = PreloadPageController();
+  
+  // Video controller cache
+  final Map<String, VideoPlayerController> _controllerCache = {};
+  final List<String> _accessOrder = [];
+  final int _maxCacheSize = 3;
 
   @override
   void initState() {
     super.initState();
+    _likeService.initialize();
     _loadHotContent();
-    _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _pageController.dispose();
+    _disposeAllControllers();
     super.dispose();
   }
 
-  void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
-      _loadMoreContent();
+  Future<void> _disposeAllControllers() async {
+    for (final controller in _controllerCache.values) {
+      try {
+        if (controller.value.isInitialized) {
+          await controller.pause();
+        }
+        await controller.dispose();
+      } catch (e) {
+        debugPrint('Error disposing controller: $e');
+      }
     }
+    _controllerCache.clear();
+    _accessOrder.clear();
   }
 
   Future<void> _loadHotContent() async {
-    setState(() {
-      _isLoading = true;
-      _currentPage = 1;
-    });
+    setState(() => _isLoading = true);
 
     try {
-      final hotContent = await _feedService.getHotFeed(page: 1, pageSize: 20);
+      // 获取已点赞的内容列表
+      final likedItems = _likeService.getLikedItems();
       
+      if (likedItems.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _hotVideos = [];
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
+      // 先获取点赞数
+      final contentIds = likedItems.map((item) => item.id).toList();
+      await _likeService.fetchLikeCounts(contentIds);
+
+      // 将 LikedItem 转换为 VideoEntity
+      final videos = likedItems.map((item) {
+        // 获取点赞数，至少显示1（因为用户已经点赞了）
+        int likeCount = _likeService.getLikeCount(item.id);
+        if (likeCount == 0) likeCount = 1;
+        
+        return VideoEntity(
+          id: item.id,
+          username: item.username,
+          description: item.description,
+          videoUrl: item.videoUrl ?? '',
+          profileImageUrl: item.profileImageUrl,
+          likeCount: likeCount,
+          commentCount: 0,
+          shareCount: 0,
+          timestamp: item.likedAt,
+          contentType: item.contentType == 'video' ? ContentType.video : ContentType.text,
+          textContent: item.textContent,
+        );
+      }).toList();
+
       if (mounted) {
         setState(() {
-          _hotItems = hotContent;
+          _hotVideos = videos;
           _isLoading = false;
-          _hasMore = hotContent.length >= 20;
         });
+
+        // 初始化第一个视频
+        if (_hotVideos.isNotEmpty && _hotVideos[0].contentType == ContentType.video) {
+          await _initAndPlayVideo(0);
+        }
       }
     } catch (e) {
+      debugPrint('加载热门内容失败: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
   }
 
-  Future<void> _loadMoreContent() async {
-    if (_isLoadingMore || !_hasMore) return;
+  Future<void> _initAndPlayVideo(int index) async {
+    if (_hotVideos.isEmpty || index >= _hotVideos.length) return;
+    
+    final video = _hotVideos[index];
+    if (video.contentType != ContentType.video || video.videoUrl.isEmpty) return;
+    
+    await _getOrCreateController(video);
+    await _playController(video.id);
+    if (mounted) setState(() {});
+  }
 
-    setState(() => _isLoadingMore = true);
-    _currentPage++;
+  Future<VideoPlayerController?> _getOrCreateController(VideoEntity video) async {
+    if (video.contentType == ContentType.text || video.videoUrl.isEmpty) {
+      return null;
+    }
+
+    if (_controllerCache.containsKey(video.id)) {
+      _touchController(video.id);
+      return _controllerCache[video.id];
+    }
 
     try {
-      final moreContent = await _feedService.getHotFeed(page: _currentPage, pageSize: 20);
+      final cacheManager = DefaultCacheManager();
+      final file = await cacheManager.getSingleFile(video.videoUrl);
       
-      if (mounted) {
-        setState(() {
-          _hotItems.addAll(moreContent);
-          _isLoadingMore = false;
-          _hasMore = moreContent.length >= 20;
-        });
-      }
+      final controller = VideoPlayerController.file(file);
+      await controller.initialize();
+      await controller.setLooping(true);
+      
+      _controllerCache[video.id] = controller;
+      _touchController(video.id);
+      _enforceCacheLimit();
+      
+      return controller;
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoadingMore = false);
+      debugPrint('Error initializing controller: $e');
+      return null;
+    }
+  }
+
+  void _touchController(String videoId) {
+    _accessOrder.remove(videoId);
+    _accessOrder.add(videoId);
+  }
+
+  void _enforceCacheLimit() {
+    while (_controllerCache.length > _maxCacheSize && _accessOrder.isNotEmpty) {
+      final oldestId = _accessOrder.first;
+      _removeController(oldestId);
+    }
+  }
+
+  Future<void> _removeController(String videoId) async {
+    final controller = _controllerCache.remove(videoId);
+    _accessOrder.remove(videoId);
+    if (controller != null) {
+      try {
+        if (controller.value.isInitialized) await controller.pause();
+        await controller.dispose();
+      } catch (e) {
+        debugPrint('Error disposing controller: $e');
       }
     }
+  }
+
+  Future<void> _playController(String videoId) async {
+    final controller = _controllerCache[videoId];
+    if (controller != null && controller.value.isInitialized && !controller.value.isPlaying) {
+      try {
+        await controller.play();
+      } catch (e) {
+        debugPrint('Error playing video: $e');
+      }
+    }
+  }
+
+  Future<void> _pauseAllControllers() async {
+    for (final controller in _controllerCache.values) {
+      try {
+        if (controller.value.isInitialized && controller.value.isPlaying) {
+          await controller.pause();
+        }
+      } catch (e) {
+        debugPrint('Error pausing video: $e');
+      }
+    }
+  }
+
+  Future<void> _handlePageChange(int newPage) async {
+    _currentPage = newPage;
+    await _pauseAllControllers();
+    await _initAndPlayVideo(newPage);
+  }
+
+  VideoPlayerController? _getController(String videoId) {
+    return _controllerCache[videoId];
   }
 
   @override
@@ -92,123 +226,46 @@ class _HotFeedListViewState extends State<HotFeedListView> {
       );
     }
 
-    if (_hotItems.isEmpty) {
-      return const Center(
+    if (_hotVideos.isEmpty) {
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.local_fire_department_outlined, size: 64, color: Colors.white24),
-            SizedBox(height: 16),
-            Text('暂无热门内容', style: TextStyle(color: Colors.white54, fontSize: 16)),
-            SizedBox(height: 8),
-            Text('点赞多的内容会出现在这里', style: TextStyle(color: Colors.white38, fontSize: 14)),
+            const Icon(Icons.favorite_border, size: 64, color: Colors.white24),
+            const SizedBox(height: 16),
+            const Text('暂无热门内容', style: TextStyle(color: Colors.white54, fontSize: 16)),
+            const SizedBox(height: 8),
+            const Text('在法流页面点赞的内容会出现在这里', style: TextStyle(color: Colors.white38, fontSize: 14)),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _loadHotContent,
+              icon: const Icon(Icons.refresh),
+              label: const Text('刷新'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white24,
+                foregroundColor: Colors.white,
+              ),
+            ),
           ],
         ),
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _loadHotContent,
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: EdgeInsets.fromLTRB(
-          16, 
-          MediaQuery.of(context).padding.top + 60, 
-          16, 
-          16
-        ),
-        itemCount: _hotItems.length + (_isLoadingMore ? 1 : 0),
-        itemBuilder: (context, index) {
-          if (index == _hotItems.length) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54),
-                ),
-              ),
-            );
-          }
-
-          final item = _hotItems[index];
-          return _buildHotItemCard(item, index);
-        },
-      ),
-    );
-  }
-
-  Widget _buildHotItemCard(Map<String, dynamic> item, int index) {
-    final contentId = item['id'] ?? '';
-    final likeCount = item['like_count'] ?? 0;
-    final contentType = item['content_type'] ?? 'text';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Row(
-        children: [
-          // 排名
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: index < 3 
-                  ? (index == 0 ? Colors.orange : index == 1 ? Colors.grey[400] : Colors.brown[300])
-                  : Colors.white10,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                '${index + 1}',
-                style: TextStyle(
-                  color: index < 3 ? Colors.white : Colors.white54,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
+    return PreloadPageView.builder(
+      scrollDirection: Axis.vertical,
+      controller: _pageController,
+      itemCount: _hotVideos.length,
+      physics: const BouncingScrollPhysics(),
+      onPageChanged: _handlePageChange,
+      itemBuilder: (context, index) {
+        return RepaintBoundary(
+          child: VideoFeedViewItem(
+            key: ValueKey(_hotVideos[index].id),
+            controller: _getController(_hotVideos[index].id),
+            videoItem: _hotVideos[index],
           ),
-          const SizedBox(width: 12),
-          
-          // 内容信息
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  contentId.length > 30 ? '${contentId.substring(0, 30)}...' : contentId,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  contentType == 'text' ? '文本内容' : '视频内容',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          
-          // 点赞数
-          Row(
-            children: [
-              const Icon(Icons.favorite, color: Colors.red, size: 18),
-              const SizedBox(width: 4),
-              Text(
-                '$likeCount',
-                style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

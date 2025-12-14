@@ -58,7 +58,7 @@ export async function handlePostComment(request, env, db) {
             return jsonResponse({ error: '认证失败' }, 401);
         }
 
-        const { videoId, content, parentId, tag } = await request.json();
+        const { videoId, content, parentId, tag, videoTitle } = await request.json();
 
         if (!videoId || !content) {
             return jsonResponse({ error: '视频ID和内容不能为空' }, 400);
@@ -72,16 +72,16 @@ export async function handlePostComment(request, env, db) {
 
         const now = new Date().toISOString();
 
-        // 插入评论（包含标签）
+        // 插入评论（包含标签和视频标题）
         const result = await db.db.prepare(`
-      INSERT INTO comments (video_id, user_id, content, created_at, parent_id, tag)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(videoId, tokenData.username, content, now, parentId || null, tag || null).run();
+      INSERT INTO comments (video_id, user_id, content, created_at, parent_id, tag, video_title)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(videoId, tokenData.username, content, now, parentId || null, tag || null, videoTitle || null).run();
 
-        // 获取新插入的评论详情（包含用户信息和标签）
+        // 获取新插入的评论详情（包含用户信息、标签、视频标题）
         const newComment = await db.db.prepare(`
       SELECT 
-        c.id, c.video_id, c.user_id, c.content, c.created_at, c.parent_id, c.like_count, c.tag,
+        c.id, c.video_id, c.user_id, c.content, c.created_at, c.parent_id, c.like_count, c.tag, c.video_title,
         u.username, u.nickname, u.avatar
       FROM comments c
       LEFT JOIN users u ON c.user_id = u.username
@@ -157,10 +157,10 @@ export async function handleGetTaggedPosts(request, env, db) {
             return jsonResponse({ error: '标签类型无效，必须是 ganying 或 fayuan' }, 400);
         }
 
-        // 获取带标签的帖子，包含用户信息和点赞数
+        // 获取带标签的帖子，包含用户信息、点赞数和视频标题
         const posts = await db.db.prepare(`
       SELECT 
-        c.id, c.video_id, c.user_id, c.content, c.created_at, c.tag, c.like_count,
+        c.id, c.video_id, c.user_id, c.content, c.created_at, c.tag, c.like_count, c.video_title,
         u.username, u.nickname, u.avatar
       FROM comments c
       LEFT JOIN users u ON c.user_id = u.username
@@ -169,13 +169,31 @@ export async function handleGetTaggedPosts(request, env, db) {
       LIMIT ? OFFSET ?
     `).bind(tag, pageSize, offset).all();
 
+        // 为每个帖子处理 video_title（优先使用数据库存储的标题，否则从 video_id 提取）
+        const postsWithTitle = posts.results.map(post => {
+            // 如果数据库有存储的标题，直接使用
+            if (post.video_title && post.video_title.trim()) {
+                return post;
+            }
+
+            // 否则尝试从 video_id 提取（兼容旧数据）
+            let videoTitle = '';
+            if (post.video_id) {
+                const parts = post.video_id.split('/');
+                const filename = parts[parts.length - 1];
+                videoTitle = filename.replace(/\.[^/.]+$/, '');
+                videoTitle = videoTitle.replace(/[_-]/g, ' ');
+            }
+            return { ...post, video_title: videoTitle };
+        });
+
         // 获取总数
         const totalResult = await db.db.prepare(`
       SELECT COUNT(*) as count FROM comments WHERE tag = ?
     `).bind(tag).first();
 
         return jsonResponse({
-            posts: posts.results,
+            posts: postsWithTitle,
             total: totalResult.count,
             page,
             pageSize
@@ -195,13 +213,13 @@ export async function handleGetHotFeed(request, env, db) {
         const offset = (page - 1) * pageSize;
 
         // 获取点赞数最高的内容
-        // 这里从 likes 表统计各内容的点赞数
+        // 从 content_likes 表统计各内容的点赞数
         const hotContent = await db.db.prepare(`
       SELECT 
         content_id as id,
         content_type,
         COUNT(*) as like_count
-      FROM likes
+      FROM content_likes
       GROUP BY content_id
       ORDER BY like_count DESC
       LIMIT ? OFFSET ?
@@ -209,7 +227,7 @@ export async function handleGetHotFeed(request, env, db) {
 
         // 获取总数
         const totalResult = await db.db.prepare(`
-      SELECT COUNT(DISTINCT content_id) as count FROM likes
+      SELECT COUNT(DISTINCT content_id) as count FROM content_likes
     `).first();
 
         return jsonResponse({

@@ -3,13 +3,15 @@ import 'package:provider/provider.dart';
 import '../../../../../../models/auth_model.dart';
 import '../../../../../../models/comment_model.dart';
 import '../../../../../../services/comment_service.dart';
+import '../../../../../../services/video_title_service.dart';
 import '../../../../../../core/design_system/app_theme.dart';
 
 class CommentBottomSheet extends StatefulWidget {
   final String videoId;
+  final String? videoTitle; // 视频标题（用于感应/发愿标记）
   final VoidCallback? onCommentPosted;
 
-  const CommentBottomSheet({super.key, required this.videoId, this.onCommentPosted});
+  const CommentBottomSheet({super.key, required this.videoId, this.videoTitle, this.onCommentPosted});
 
   @override
   State<CommentBottomSheet> createState() => _CommentBottomSheetState();
@@ -59,7 +61,19 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
     }
 
     setState(() => _isSending = true);
-    final result = await _commentService.postComment(widget.videoId, content, tag: _selectedTag);
+    
+    // 获取视频标题：优先使用传入的标题，否则从缓存获取
+    String? videoTitle = widget.videoTitle;
+    if ((videoTitle == null || videoTitle.isEmpty) && _selectedTag != null) {
+      videoTitle = VideoTitleService().getVideoTitle(widget.videoId);
+    }
+    
+    final result = await _commentService.postComment(
+      widget.videoId, 
+      content, 
+      tag: _selectedTag,
+      videoTitle: _selectedTag != null ? videoTitle : null, // 只在有标签时传标题
+    );
     
     if (mounted) {
       setState(() => _isSending = false);
@@ -230,9 +244,34 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  comment.displayName,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+                Row(
+                  children: [
+                    Text(
+                      comment.displayName,
+                      style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                    // 显示感应/发愿标签
+                    if (comment.tag != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: comment.tag == 'ganying' 
+                              ? Colors.orange.withOpacity(0.2) 
+                              : Colors.purple.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          comment.tag == 'ganying' ? '感应' : '发愿',
+                          style: TextStyle(
+                            color: comment.tag == 'ganying' ? Colors.orange : Colors.purple,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(

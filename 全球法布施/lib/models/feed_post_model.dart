@@ -2,6 +2,7 @@
 class FeedPostModel {
   final int id;
   final String videoId;
+  final String? videoTitle; // 原视频标题
   final String userId;
   final String content;
   final DateTime createdAt;
@@ -14,6 +15,7 @@ class FeedPostModel {
   FeedPostModel({
     required this.id,
     required this.videoId,
+    this.videoTitle,
     required this.userId,
     required this.content,
     required this.createdAt,
@@ -28,6 +30,7 @@ class FeedPostModel {
     return FeedPostModel(
       id: json['id'],
       videoId: json['video_id'] ?? '',
+      videoTitle: json['video_title'],
       userId: json['user_id'],
       content: json['content'],
       createdAt: DateTime.parse(json['created_at']),
@@ -43,6 +46,7 @@ class FeedPostModel {
     return {
       'id': id,
       'video_id': videoId,
+      'video_title': videoTitle,
       'user_id': userId,
       'content': content,
       'created_at': createdAt.toIso8601String(),
