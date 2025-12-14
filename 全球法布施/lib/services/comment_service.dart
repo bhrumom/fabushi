@@ -9,6 +9,35 @@ class CommentService {
   factory CommentService() => _instance;
   CommentService._internal();
 
+  // 评论数缓存
+  final Map<String, int> _commentCounts = {};
+
+  // 获取缓存的评论数
+  int getCommentCount(String videoId) => _commentCounts[videoId] ?? 0;
+
+  // 批量获取评论数
+  Future<void> fetchCommentCounts(List<String> videoIds) async {
+    if (videoIds.isEmpty) return;
+    
+    try {
+      final response = await HttpService.post(
+        '${AppConfig.apiUrl}/api/comments/batch-counts',
+        body: {'videoIds': videoIds},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final Map<String, dynamic> counts = data['counts'];
+        for (final entry in counts.entries) {
+          _commentCounts[entry.key] = entry.value as int;
+        }
+        debugPrint('获取评论数成功: ${counts.length} 个');
+      }
+    } catch (e) {
+      debugPrint('批量获取评论数异常: $e');
+    }
+  }
+
   // 获取评论列表
   Future<List<CommentModel>> getComments(String videoId, {int page = 1, int pageSize = 20}) async {
     try {

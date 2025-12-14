@@ -20,7 +20,8 @@ class FeedPostListView extends StatefulWidget {
   State<FeedPostListView> createState() => _FeedPostListViewState();
 }
 
-class _FeedPostListViewState extends State<FeedPostListView> {
+class _FeedPostListViewState extends State<FeedPostListView>
+    with AutomaticKeepAliveClientMixin {
   final FeedService _feedService = FeedService();
   final ScrollController _scrollController = ScrollController();
   
@@ -29,6 +30,10 @@ class _FeedPostListViewState extends State<FeedPostListView> {
   bool _isLoadingMore = false;
   bool _hasMore = true;
   int _currentPage = 1;
+  bool _hasLoadedOnce = false; // 是否已经加过一次
+
+  @override
+  bool get wantKeepAlive => true; // 保持状态
 
   @override
   void initState() {
@@ -50,6 +55,12 @@ class _FeedPostListViewState extends State<FeedPostListView> {
   }
 
   Future<void> _loadPosts() async {
+    // 如果已经加载过且有数据，不重复加载（保持状态）
+    if (_hasLoadedOnce && _posts.isNotEmpty) {
+      setState(() => _isLoading = false);
+      return;
+    }
+    
     setState(() {
       _isLoading = true;
       _currentPage = 1;
@@ -62,6 +73,23 @@ class _FeedPostListViewState extends State<FeedPostListView> {
         _posts = posts;
         _isLoading = false;
         _hasMore = posts.length >= 20;
+        _hasLoadedOnce = true;
+      });
+    }
+  }
+
+  /// 下拉刷新 - 强制重新加载
+  Future<void> _refreshPosts() async {
+    _hasLoadedOnce = false; // 允许重新加载
+    _currentPage = 1;
+
+    final posts = await _feedService.getTaggedPosts(widget.tag, page: 1);
+    
+    if (mounted) {
+      setState(() {
+        _posts = posts;
+        _hasMore = posts.length >= 20;
+        _hasLoadedOnce = true;
       });
     }
   }
@@ -115,6 +143,8 @@ class _FeedPostListViewState extends State<FeedPostListView> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: Colors.white),
@@ -122,34 +152,45 @@ class _FeedPostListViewState extends State<FeedPostListView> {
     }
 
     if (_posts.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              widget.tag == 'ganying' ? Icons.auto_awesome : Icons.favorite_outline,
-              size: 64,
-              color: Colors.white24,
+      // 空状态也支持下拉刷新
+      return RefreshIndicator(
+        onRefresh: _refreshPosts,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height - 200,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    widget.tag == 'ganying' ? Icons.auto_awesome : Icons.favorite_outline,
+                    size: 64,
+                    color: Colors.white24,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    widget.tag == 'ganying' ? '还没有感应分享' : '还没有发愿',
+                    style: const TextStyle(color: Colors.white54, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '下拉刷新~',
+                    style: TextStyle(color: Colors.white38, fontSize: 14),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              widget.tag == 'ganying' ? '还没有感应分享' : '还没有发愿',
-              style: const TextStyle(color: Colors.white54, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '成为第一个分享的人吧~',
-              style: TextStyle(color: Colors.white38, fontSize: 14),
-            ),
-          ],
+          ),
         ),
       );
     }
 
     return RefreshIndicator(
-      onRefresh: _loadPosts,
+      onRefresh: _refreshPosts,
       child: ListView.builder(
         controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(), // 确保可以下拉刷新
         padding: EdgeInsets.only(
           top: MediaQuery.of(context).padding.top + 60, 
           bottom: 80

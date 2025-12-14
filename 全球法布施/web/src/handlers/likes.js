@@ -5,7 +5,13 @@ export async function handleToggleLike(request, env, db) {
   try {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    const userId = token ? verifyToken(token, env.JWT_SECRET)?.userId : null;
+
+    // 验证 token 获取用户信息
+    let userId = null;
+    if (token) {
+      const decoded = await verifyToken(token, env);
+      userId = decoded?.username || null;
+    }
 
     const { contentId, contentType, action } = await request.json();
 
@@ -87,19 +93,19 @@ export async function handleGetMyLikes(request, env, db) {
   try {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    
+
     if (!token) {
       return jsonResponse({ error: '未登录' }, 401);
     }
 
-    const decoded = verifyToken(token, env.JWT_SECRET);
-    if (!decoded?.userId) {
+    const decoded = await verifyToken(token, env);
+    if (!decoded?.username) {
       return jsonResponse({ error: '无效的token' }, 401);
     }
 
     const results = await db.prepare(
       'SELECT content_id as id, content_type as contentType, created_at as likedAt FROM content_likes WHERE user_id = ? ORDER BY created_at DESC'
-    ).bind(decoded.userId).all();
+    ).bind(decoded.username).all();
 
     return jsonResponse({ success: true, likes: results.results });
   } catch (error) {
@@ -107,3 +113,4 @@ export async function handleGetMyLikes(request, env, db) {
     return jsonResponse({ error: '获取失败' }, 500);
   }
 }
+

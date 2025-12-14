@@ -5,6 +5,7 @@ import 'package:global_dharma_sharing/features/video_feed/presentation/view/widg
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_text_content.dart';
 import 'package:global_dharma_sharing/models/liked_item.dart';
 import 'package:global_dharma_sharing/services/like_service.dart';
+import 'package:global_dharma_sharing/services/content_stats_service.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/comment_bottom_sheet.dart';
 import 'package:video_player/video_player.dart';
 
@@ -29,12 +30,23 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
   void initState() {
     super.initState();
     _likeService.initialize();
+    
+    // 从缓存获取点赞数
     _isLiked = _likeService.isLiked(widget.videoItem.id);
-    _likeCount = _likeService.getLikeCount(widget.videoItem.id);
+    _likeCount = ContentStatsService().getLikeCount(widget.videoItem.id);
+    if (_likeCount == 0) {
+      _likeCount = _likeService.getLikeCount(widget.videoItem.id);
+    }
     if (_likeCount == 0) {
       _likeCount = widget.videoItem.likeCount;
     }
-    _commentCount = widget.videoItem.commentCount;
+    
+    // 从缓存获取评论数
+    _commentCount = ContentStatsService().getCommentCount(widget.videoItem.id);
+    if (_commentCount == 0) {
+      _commentCount = widget.videoItem.commentCount;
+    }
+    
     _likeService.addListener(_updateLikeState);
   }
 

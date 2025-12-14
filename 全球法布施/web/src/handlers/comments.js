@@ -272,3 +272,44 @@ export async function handleGetPostDetail(request, env, db) {
         return jsonResponse({ error: '获取帖子详情失败' }, 500);
     }
 }
+
+// 批量获取评论数
+export async function handleBatchGetCommentCounts(request, env, db) {
+    try {
+        const { videoIds } = await request.json();
+
+        if (!videoIds || !Array.isArray(videoIds) || videoIds.length === 0) {
+            return jsonResponse({ error: '视频ID列表不能为空' }, 400);
+        }
+
+        // 限制一次最多查询100个
+        const limitedIds = videoIds.slice(0, 100);
+
+        // 构建查询
+        const placeholders = limitedIds.map(() => '?').join(',');
+        const results = await db.db.prepare(`
+            SELECT video_id, COUNT(*) as comment_count
+            FROM comments
+            WHERE video_id IN (${placeholders})
+            GROUP BY video_id
+        `).bind(...limitedIds).all();
+
+        // 构建映射
+        const counts = {};
+        for (const row of results.results) {
+            counts[row.video_id] = row.comment_count;
+        }
+
+        // 确保所有请求的ID都有值（没有评论的返回0）
+        for (const id of limitedIds) {
+            if (!(id in counts)) {
+                counts[id] = 0;
+            }
+        }
+
+        return jsonResponse({ counts });
+    } catch (error) {
+        console.error('批量获取评论数失败:', error);
+        return jsonResponse({ error: '获取评论数失败' }, 500);
+    }
+}

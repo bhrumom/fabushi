@@ -6,6 +6,7 @@ import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/vide
 import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_state.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_item.dart';
 import 'package:global_dharma_sharing/services/like_service.dart';
+import 'package:global_dharma_sharing/services/content_stats_service.dart';
 import 'package:global_dharma_sharing/services/video_title_service.dart';
 import 'package:preload_page_view/preload_page_view.dart' hide PageScrollPhysics;
 import 'package:video_player/video_player.dart';
@@ -80,9 +81,9 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
         // 注册视频标题到缓存服务
         VideoTitleService().registerVideos(state.videos);
 
-        // 获取点赞数
+        // 获取点赞数和评论数（单次请求）
         final contentIds = state.videos.map((v) => v.id).toList();
-        await LikeService().fetchLikeCounts(contentIds);
+        await ContentStatsService().fetchContentStats(contentIds);
 
         await _initAndPlayVideo(0);
       }

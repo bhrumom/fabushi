@@ -1,6 +1,6 @@
 import { handleRegister, handleLogin, handleGetUserInfo, handleUpdateProfile, handleFirebasePhoneLogin } from './handlers/auth.js';
 import { handleSendSmsCode, handleSmsLogin } from './handlers/sms.js';
-import { handleGetComments, handlePostComment, handleDeleteComment, handleGetTaggedPosts, handleGetHotFeed, handleGetPostDetail } from './handlers/comments.js';
+import { handleGetComments, handlePostComment, handleDeleteComment, handleGetTaggedPosts, handleGetHotFeed, handleGetPostDetail, handleBatchGetCommentCounts } from './handlers/comments.js';
 import { handleSendVerificationCode, handleForgotPassword, handleResetPassword } from './handlers/verification.js';
 import { handleGetWechatLoginUrl, handleGetAlipayLoginUrl, handleAlipayLogin, handleAlipayRegister, handleBindEmail, handleMacOSAlipayCallback, handleMobileAlipayCallback, handleGetAlipayAuthString, handleAlipaySDKLogin } from './handlers/thirdparty.js';
 import { handleCreateAlipayOrder, handleQueryAlipayOrder, handleAlipayNotify } from './handlers/payment.js';
@@ -12,6 +12,7 @@ import { handleGetAssetsList, handleR2List, handleR2Proxy } from './handlers/ass
 import { handleSearch, handleGetTextContent, handleGetCategories } from './handlers/search.js';
 import { handleGetLeaderboard, handleUpdateTransferData } from './handlers/leaderboard.js';
 import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts, handleGetMyLikes } from './handlers/likes.js';
+import { handleBatchGetContentStats } from './handlers/content-stats.js';
 import { handleOnlineJoin, handleOnlineHeartbeat, handleOnlineLeave, handleOnlineCount } from './handlers/online.js';
 import { handleSyncRecord, handleGetRecords, handleGetStats, handleGetWeeklyStats, handleGetMonthlyStats, handleSetGoal, handleGetGoals, handleMeditationSettings } from './handlers/meditation.js';
 import { handleBuiltinMigration, handleFullTextSearch, handleGetCategories as handleBuiltinCategories } from '../migrate-builtin-handler-fixed.js';
@@ -51,6 +52,7 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/comments' && method === 'GET') return await handleGetComments(request, env, db);
   if (pathname === '/api/comments' && method === 'POST') return await handlePostComment(request, env, db);
   if (pathname === '/api/comments' && method === 'DELETE') return await handleDeleteComment(request, env, db);
+  if (pathname === '/api/comments/batch-counts' && method === 'POST') return await handleBatchGetCommentCounts(request, env, db);
 
   // 帖子/动态 API（感应/发愿）
   if (pathname === '/api/posts' && method === 'GET') return await handleGetTaggedPosts(request, env, db);
@@ -105,6 +107,9 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/likes/count' && method === 'GET') return await handleGetLikeCount(request, env, db);
   if (pathname === '/api/likes/batch-counts' && method === 'POST') return await handleBatchGetLikeCounts(request, env, db);
   if (pathname === '/api/likes/my-likes' && method === 'GET') return await handleGetMyLikes(request, env, db);
+
+  // 内容统计API（合并点赞数+评论数）
+  if (pathname === '/api/content/batch-stats' && method === 'POST') return await handleBatchGetContentStats(request, env, db);
 
   // 在线人数API
   if (pathname === '/api/online/join' && method === 'POST') return await handleOnlineJoin(request, env);

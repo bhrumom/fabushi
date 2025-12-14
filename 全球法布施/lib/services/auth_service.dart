@@ -319,6 +319,8 @@ class AuthService {
           email: data['email'] ?? '',
           emailVerified: true,
           createdAt: DateTime.now().toIso8601String(),
+          nickname: data['nickname'],
+          avatar: data['avatar'],
           membership: MembershipInfo(
             type: membershipType,
             isActive: isActive,
