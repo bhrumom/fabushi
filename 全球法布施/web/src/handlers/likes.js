@@ -24,6 +24,16 @@ export async function handleToggleLike(request, env, db) {
             await db.prepare(
                 'INSERT OR IGNORE INTO content_likes (content_id, content_type, user_id, title, file_path, created_at) VALUES (?, ?, ?, ?, ?, ?)'
             ).bind(contentId, contentType, userId, title || null, filePath || null, new Date().toISOString()).run();
+
+            // 同步更新统一的 content_metadata 表
+            await db.prepare(`
+                INSERT INTO content_metadata (content_id, content_type, title, file_path, like_count, comment_count)
+                VALUES (?, ?, ?, ?, 1, 0)
+                ON CONFLICT(content_id) DO UPDATE SET 
+                  title = COALESCE(excluded.title, title),
+                  file_path = COALESCE(excluded.file_path, file_path),
+                  like_count = like_count + 1
+            `).bind(contentId, contentType, title || null, filePath || null).run();
         } else if (action === 'unlike') {
             if (userId) {
                 await db.prepare('DELETE FROM content_likes WHERE content_id = ? AND user_id = ?')
@@ -32,6 +42,11 @@ export async function handleToggleLike(request, env, db) {
                 await db.prepare('DELETE FROM content_likes WHERE content_id = ? AND user_id IS NULL')
                     .bind(contentId).run();
             }
+
+            // 更新 content_metadata 的 like_count
+            await db.prepare(`
+                UPDATE content_metadata SET like_count = MAX(0, like_count - 1) WHERE content_id = ?
+            `).bind(contentId).run();
         }
 
         const result = await db.prepare(

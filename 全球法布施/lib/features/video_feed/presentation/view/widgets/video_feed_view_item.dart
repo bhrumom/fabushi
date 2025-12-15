@@ -138,6 +138,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
       builder: (context) => CommentBottomSheet(
         videoId: widget.videoItem.id,
         videoTitle: widget.videoItem.username, // username 字段存储的是视频标题
+        filePath: widget.videoItem.id, // 使用 id 作为统一的内容ID
         onCommentPosted: () {
           if (mounted) {
             setState(() {

@@ -58,7 +58,7 @@ export async function handlePostComment(request, env, db) {
             return jsonResponse({ error: '认证失败' }, 401);
         }
 
-        const { videoId, content, parentId, tag, videoTitle } = await request.json();
+        const { videoId, content, parentId, tag, videoTitle, filePath } = await request.json();
 
         if (!videoId || !content) {
             return jsonResponse({ error: '视频ID和内容不能为空' }, 400);
@@ -72,11 +72,24 @@ export async function handlePostComment(request, env, db) {
 
         const now = new Date().toISOString();
 
-        // 插入评论（包含标签和视频标题）
+        // 使用 filePath 或 videoId 作为统一内容ID
+        const contentId = filePath || videoId;
+
+        // 插入评论（包含标签和视频标题）- 使用统一的 contentId
         const result = await db.db.prepare(`
       INSERT INTO comments (video_id, user_id, content, created_at, parent_id, tag, video_title)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(videoId, tokenData.username, content, now, parentId || null, tag || null, videoTitle || null).run();
+    `).bind(contentId, tokenData.username, content, now, parentId || null, tag || null, videoTitle || null).run();
+
+        // 同步更新 content_metadata 的 comment_count
+        await db.db.prepare(`
+            INSERT INTO content_metadata (content_id, content_type, title, file_path, like_count, comment_count)
+            VALUES (?, 'text', ?, ?, 0, 1)
+            ON CONFLICT(content_id) DO UPDATE SET 
+              title = COALESCE(excluded.title, title),
+              file_path = COALESCE(excluded.file_path, file_path),
+              comment_count = comment_count + 1
+        `).bind(contentId, videoTitle || null, filePath || null).run();
 
         // 获取新插入的评论详情（包含用户信息、标签、视频标题）
         const newComment = await db.db.prepare(`
@@ -204,7 +217,7 @@ export async function handleGetTaggedPosts(request, env, db) {
     }
 }
 
-// 获取热门内容（按点赞数排序，包含内容元数据）
+// 获取热门内容（从统一的 content_metadata 表获取，包含点赞数和评论数）
 export async function handleGetHotFeed(request, env, db) {
     try {
         const url = new URL(request.url);
@@ -212,23 +225,24 @@ export async function handleGetHotFeed(request, env, db) {
         const pageSize = parseInt(url.searchParams.get('pageSize') || '20');
         const offset = (page - 1) * pageSize;
 
-        // 获取点赞数最高的内容，同时获取 title 和 file_path
+        // 从统一的 content_metadata 表获取热门内容
         const hotContent = await db.db.prepare(`
           SELECT 
             content_id as id,
             content_type,
-            MAX(title) as title,
-            MAX(file_path) as file_path,
-            COUNT(*) as like_count
-          FROM content_likes
-          GROUP BY content_id
-          ORDER BY like_count DESC
+            title,
+            file_path,
+            like_count,
+            comment_count
+          FROM content_metadata
+          WHERE like_count > 0 OR comment_count > 0
+          ORDER BY like_count DESC, comment_count DESC
           LIMIT ? OFFSET ?
         `).bind(pageSize, offset).all();
 
         // 获取总数
         const totalResult = await db.db.prepare(`
-          SELECT COUNT(DISTINCT content_id) as count FROM content_likes
+          SELECT COUNT(*) as count FROM content_metadata WHERE like_count > 0 OR comment_count > 0
         `).first();
 
         return jsonResponse({

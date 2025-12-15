@@ -9,9 +9,10 @@ import '../../../../../../core/design_system/app_theme.dart';
 class CommentBottomSheet extends StatefulWidget {
   final String videoId;
   final String? videoTitle; // 视频标题（用于感应/发愿标记）
+  final String? filePath;   // 文件路径（用于统一内容ID）
   final VoidCallback? onCommentPosted;
 
-  const CommentBottomSheet({super.key, required this.videoId, this.videoTitle, this.onCommentPosted});
+  const CommentBottomSheet({super.key, required this.videoId, this.videoTitle, this.filePath, this.onCommentPosted});
 
   @override
   State<CommentBottomSheet> createState() => _CommentBottomSheetState();
@@ -73,6 +74,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
       content, 
       tag: _selectedTag,
       videoTitle: _selectedTag != null ? videoTitle : null, // 只在有标签时传标题
+      filePath: widget.filePath ?? widget.videoId, // 使用 filePath 或 videoId 作为统一ID
     );
     
     if (mounted) {

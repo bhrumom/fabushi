@@ -113,6 +113,54 @@ class CloudflareTextService {
     }
   }
 
+  /// 根据 filePath 加载指定的文本内容（用于热门页面）
+  Future<Map<String, dynamic>?> getTextByFilePath(String filePath) async {
+    try {
+      if (filePath.isEmpty) return null;
+      
+      print('根据 filePath 加载内容: $filePath');
+      
+      await _sharedAssetManager.initialize();
+      
+      // 修正路径
+      String requestPath = filePath;
+      if (!filePath.contains('built_in') && filePath.startsWith('assets/')) {
+        requestPath = filePath.replaceFirst('assets/', 'assets/built_in/');
+      }
+      
+      final fileName = filePath.split('/').last.replaceAll('.txt', '');
+      
+      // 检查是否已下载
+      if (_sharedAssetManager.isAssetDownloaded(requestPath)) {
+        print('素材已下载，从本地读取: $requestPath');
+        final file = await _sharedAssetManager.getDownloadedAsset(requestPath);
+        if (file != null) {
+          if (file.bytes != null) {
+            return await compute(_processTextContent, _TextProcessingParams(file.bytes!, fileName, filePath));
+          } else if (file.path != null) {
+            final fileContent = await File(file.path!).readAsBytes();
+            return await compute(_processTextContent, _TextProcessingParams(fileContent, fileName, filePath));
+          }
+        }
+      }
+      
+      // 从云端下载
+      final response = await http.get(Uri.parse('$baseUrl/$requestPath'))
+          .timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode == 200) {
+        await _sharedAssetManager.markAssetDownloaded(requestPath);
+        return await compute(_processTextContent, _TextProcessingParams(response.bodyBytes, fileName, filePath));
+      }
+      
+      print('加载失败: ${response.statusCode}');
+      return null;
+    } catch (e) {
+      print('根据 filePath 加载失败: $e');
+      return null;
+    }
+  }
+
   /// 异步补充队列
   void _refillQueue() {
     if (_isPreloading || _preloadQueue.length >= _queueSize) return;

@@ -136,7 +136,10 @@ class _FeedPostListViewState extends State<FeedPostListView>
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (context) => CommentBottomSheet(videoId: post.videoId),
+        builder: (context) => CommentBottomSheet(
+          videoId: post.videoId,
+          filePath: post.videoId, // 使用 videoId 作为统一内容ID
+        ),
       );
     }
   }
@@ -263,7 +266,10 @@ class _OriginalVideoScreenState extends State<_OriginalVideoScreen> {
               context: context,
               isScrollControlled: true,
               backgroundColor: Colors.transparent,
-              builder: (context) => CommentBottomSheet(videoId: widget.video.id),
+              builder: (context) => CommentBottomSheet(
+                videoId: widget.video.id,
+                filePath: widget.video.id, // 使用 id 作为统一内容ID
+              ),
             );
           }
         });

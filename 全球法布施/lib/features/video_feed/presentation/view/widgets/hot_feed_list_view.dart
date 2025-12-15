@@ -3,7 +3,6 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:preload_page_view/preload_page_view.dart' hide PageScrollPhysics;
 import 'package:video_player/video_player.dart';
 import '../../../../../services/feed_service.dart';
-import '../../../../../services/content_stats_service.dart';
 import '../../../../../services/cloudflare_text_service.dart';
 import '../../../../../features/video_feed/domain/entities/video_entity.dart';
 import '../../../../../features/video_feed/presentation/view/widgets/video_feed_view_item.dart';
@@ -98,8 +97,9 @@ class _HotFeedListViewState extends State<HotFeedListView>
         final title = hotItem['title'] as String?;
         final filePath = hotItem['file_path'] as String?;
         final likeCount = hotItem['like_count'] as int? ?? 0;
+        final commentCount = hotItem['comment_count'] as int? ?? 0; // 从统一API获取
         
-        debugPrint('处理热门内容: id=$contentId, title=$title, filePath=$filePath');
+        debugPrint('🔥 处理热门内容: id=$contentId, title=$title, filePath=$filePath, likeCount=$likeCount');
 
         if (contentType == 'text') {
           // 文本内容：根据 filePath 加载，或者使用随机内容
@@ -107,9 +107,12 @@ class _HotFeedListViewState extends State<HotFeedListView>
           String displayTitle = title ?? '热门内容';
           
           if (filePath != null && filePath.isNotEmpty) {
+            debugPrint('🔥 有 filePath，尝试加载: $filePath');
             // 有 filePath，从云端加载对应的文本
             textContent = await _loadTextFromFilePath(filePath);
+            debugPrint('🔥 加载结果: ${textContent != null ? "成功 ${textContent.length}字符" : "失败"}');
             if (textContent == null) {
+              debugPrint('🔥 加载失败，使用随机内容');
               // 加载失败，使用随机内容
               final randomContent = await _textService.getRandomTextContent();
               if (randomContent != null) {
@@ -118,6 +121,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
               }
             }
           } else {
+            debugPrint('🔥 没有 filePath，使用随机内容');
             // 没有 filePath，使用随机内容
             final randomContent = await _textService.getRandomTextContent();
             if (randomContent != null) {
@@ -134,7 +138,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
               videoUrl: '',
               profileImageUrl: '',
               likeCount: likeCount,
-              commentCount: 0,
+              commentCount: commentCount, // 使用统一API返回的评论数
               shareCount: 0,
               timestamp: DateTime.now(),
               contentType: ContentType.text,
@@ -150,7 +154,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
             videoUrl: '', // 需要从其他地方获取视频URL
             profileImageUrl: '',
             likeCount: likeCount,
-            commentCount: 0,
+            commentCount: commentCount, // 使用统一API返回的评论数
             shareCount: 0,
             timestamp: DateTime.now(),
             contentType: ContentType.video,
@@ -158,33 +162,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
         }
       }
 
-      // 3. 获取评论数
-      if (videos.isNotEmpty) {
-        final contentIds = videos.map((v) => v.id).toList();
-        await ContentStatsService().fetchContentStats(contentIds);
-        
-        // 更新评论数
-        for (int i = 0; i < videos.length; i++) {
-          final v = videos[i];
-          final updatedCommentCount = ContentStatsService().getCommentCount(v.id);
-          
-          if (updatedCommentCount > 0) {
-            videos[i] = VideoEntity(
-              id: v.id,
-              username: v.username,
-              description: v.description,
-              videoUrl: v.videoUrl,
-              profileImageUrl: v.profileImageUrl,
-              likeCount: v.likeCount,
-              commentCount: updatedCommentCount,
-              shareCount: v.shareCount,
-              timestamp: v.timestamp,
-              contentType: v.contentType,
-              textContent: v.textContent,
-            );
-          }
-        }
-      }
+      // 评论数已从统一的 content_metadata API 获取，无需再单独获取
 
       if (mounted) {
         setState(() {
@@ -209,12 +187,16 @@ class _HotFeedListViewState extends State<HotFeedListView>
     }
   }
 
-  /// 根据 filePath 加载文本内容
+  /// 根据 filePath 加载文本内容（复用 CloudflareTextService 逻辑）
   Future<String?> _loadTextFromFilePath(String filePath) async {
     try {
-      // TODO: 实现根据 filePath 从云端加载文本内容的逻辑
-      // 目前暂时返回 null，使用随机内容
       debugPrint('尝试从 filePath 加载: $filePath');
+      if (filePath.isEmpty) return null;
+      
+      final result = await _textService.getTextByFilePath(filePath);
+      if (result != null) {
+        return result['content'] as String?;
+      }
       return null;
     } catch (e) {
       debugPrint('加载文本失败: $e');
