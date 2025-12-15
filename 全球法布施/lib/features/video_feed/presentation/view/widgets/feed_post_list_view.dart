@@ -117,7 +117,11 @@ class _FeedPostListViewState extends State<FeedPostListView>
     
     // 从VideoTitleService获取视频数据
     final videoTitleService = VideoTitleService();
-    final videoEntity = videoTitleService.getVideo(post.videoId);
+    // 先用 videoId 查找，如果找不到再用标题查找（兼容旧数据）
+    VideoEntity? videoEntity = videoTitleService.getVideo(post.videoId);
+    if (videoEntity == null && post.videoTitle != null) {
+      videoEntity = videoTitleService.getVideoByTitle(post.videoTitle!);
+    }
     
     if (videoEntity != null) {
       // 跳转到全屏视频页面
@@ -125,7 +129,7 @@ class _FeedPostListViewState extends State<FeedPostListView>
         context,
         MaterialPageRoute(
           builder: (context) => _OriginalVideoScreen(
-            video: videoEntity,
+            video: videoEntity!,
             autoShowComments: true,
           ),
         ),

@@ -85,9 +85,10 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
         final textData = await _textService.getRandomTextContent();
 
         if (textData != null) {
+          final filePath = textData['filePath'] as String?;
           videos.add(
             VideoEntity(
-              id: 'text_${DateTime.now().millisecondsSinceEpoch}_$i',
+              id: filePath ?? 'text_${DateTime.now().millisecondsSinceEpoch}_$i', // 优先使用 filePath 作为统一ID
               username: textData['title'] ?? '佛法文本',
               description: '点击头像阅读全文',
               videoUrl: '',
@@ -98,7 +99,7 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
               timestamp: DateTime.now(),
               contentType: ContentType.text,
               textContent: textData['content'],
-              filePath: textData['filePath'],  // 保存文件路径
+              filePath: filePath,
             ),
           );
         }

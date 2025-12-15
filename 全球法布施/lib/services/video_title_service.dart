@@ -13,9 +13,14 @@ class VideoTitleService {
   /// 注册视频到缓存（在VideoFeedView加载时调用）
   void registerVideos(List<VideoEntity> videos) {
     for (final video in videos) {
+      // 用 id 作为 key 注册
       _videoCache[video.id] = video;
+      // 同时用 filePath 作为 key 注册（如果有的话）
+      if (video.filePath != null && video.filePath!.isNotEmpty) {
+        _videoCache[video.filePath!] = video;
+      }
     }
-    debugPrint('VideoTitleService: 注册了 ${videos.length} 个视频');
+    debugPrint('VideoTitleService: 注册了 ${videos.length} 个视频，缓存大小: ${_videoCache.length}');
   }
   
   /// 根据视频ID获取标题
@@ -27,6 +32,17 @@ class VideoTitleService {
   /// 根据视频ID获取完整视频数据
   VideoEntity? getVideo(String videoId) {
     return _videoCache[videoId];
+  }
+  
+  /// 根据标题搜索视频（用于旧评论数据的兼容）
+  VideoEntity? getVideoByTitle(String title) {
+    try {
+      return _videoCache.values.firstWhere(
+        (video) => video.username == title,
+      );
+    } catch (e) {
+      return null;
+    }
   }
   
   /// 获取所有已缓存视频的ID列表
