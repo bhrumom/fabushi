@@ -204,7 +204,7 @@ export async function handleGetTaggedPosts(request, env, db) {
     }
 }
 
-// 获取热门内容（按点赞数排序）
+// 获取热门内容（按点赞数排序，包含内容元数据）
 export async function handleGetHotFeed(request, env, db) {
     try {
         const url = new URL(request.url);
@@ -212,23 +212,24 @@ export async function handleGetHotFeed(request, env, db) {
         const pageSize = parseInt(url.searchParams.get('pageSize') || '20');
         const offset = (page - 1) * pageSize;
 
-        // 获取点赞数最高的内容
-        // 从 content_likes 表统计各内容的点赞数
+        // 获取点赞数最高的内容，同时获取 title 和 file_path
         const hotContent = await db.db.prepare(`
-      SELECT 
-        content_id as id,
-        content_type,
-        COUNT(*) as like_count
-      FROM content_likes
-      GROUP BY content_id
-      ORDER BY like_count DESC
-      LIMIT ? OFFSET ?
-    `).bind(pageSize, offset).all();
+          SELECT 
+            content_id as id,
+            content_type,
+            MAX(title) as title,
+            MAX(file_path) as file_path,
+            COUNT(*) as like_count
+          FROM content_likes
+          GROUP BY content_id
+          ORDER BY like_count DESC
+          LIMIT ? OFFSET ?
+        `).bind(pageSize, offset).all();
 
         // 获取总数
         const totalResult = await db.db.prepare(`
-      SELECT COUNT(DISTINCT content_id) as count FROM content_likes
-    `).first();
+          SELECT COUNT(DISTINCT content_id) as count FROM content_likes
+        `).first();
 
         return jsonResponse({
             hotContent: hotContent.results,

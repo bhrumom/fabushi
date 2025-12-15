@@ -32,6 +32,9 @@ class VideoTitleService {
   /// 获取所有已缓存视频的ID列表
   List<String> get cachedVideoIds => _videoCache.keys.toList();
   
+  /// 获取所有已缓存的视频实体列表
+  List<VideoEntity> getAllVideos() => _videoCache.values.toList();
+  
   /// 清空缓存
   void clear() {
     _videoCache.clear();

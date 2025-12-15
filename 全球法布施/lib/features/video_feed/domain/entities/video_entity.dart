@@ -15,6 +15,7 @@ class VideoEntity extends Equatable {
     required this.timestamp,
     this.contentType = ContentType.video,
     this.textContent,
+    this.filePath,
   });
 
   final String id;
@@ -28,6 +29,7 @@ class VideoEntity extends Equatable {
   final DateTime timestamp;
   final ContentType contentType;
   final String? textContent;
+  final String? filePath; // 文本内容的文件路径，用于热门页面加载
 
   @override
   List<Object?> get props => [
@@ -42,5 +44,7 @@ class VideoEntity extends Equatable {
     timestamp,
     contentType,
     textContent,
+    filePath,
   ];
 }
+

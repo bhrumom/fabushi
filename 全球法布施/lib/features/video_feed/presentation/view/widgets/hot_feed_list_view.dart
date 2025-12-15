@@ -3,13 +3,12 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:preload_page_view/preload_page_view.dart' hide PageScrollPhysics;
 import 'package:video_player/video_player.dart';
 import '../../../../../services/feed_service.dart';
-import '../../../../../services/like_service.dart';
 import '../../../../../services/content_stats_service.dart';
-import '../../../../../services/video_title_service.dart';
+import '../../../../../services/cloudflare_text_service.dart';
 import '../../../../../features/video_feed/domain/entities/video_entity.dart';
 import '../../../../../features/video_feed/presentation/view/widgets/video_feed_view_item.dart';
 
-/// 热门内容列表（从后端获取全局热门内容，按点赞数排序）
+/// 热门内容列表（从后端获取热门内容，根据 file_path 加载完整内容）
 class HotFeedListView extends StatefulWidget {
   const HotFeedListView({super.key});
 
@@ -20,13 +19,13 @@ class HotFeedListView extends StatefulWidget {
 class _HotFeedListViewState extends State<HotFeedListView>
     with AutomaticKeepAliveClientMixin {
   final FeedService _feedService = FeedService();
-  final VideoTitleService _videoTitleService = VideoTitleService();
+  final CloudflareTextService _textService = CloudflareTextService();
   
   List<VideoEntity> _hotVideos = [];
   bool _isLoading = true;
   int _currentPage = 0;
   final PreloadPageController _pageController = PreloadPageController();
-  bool _hasLoadedOnce = false; // 保持状态标记
+  bool _hasLoadedOnce = false;
   
   // Video controller cache
   final Map<String, VideoPlayerController> _controllerCache = {};
@@ -34,7 +33,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
   final int _maxCacheSize = 3;
 
   @override
-  bool get wantKeepAlive => true; // 保持状态
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -74,9 +73,11 @@ class _HotFeedListViewState extends State<HotFeedListView>
     setState(() => _isLoading = true);
 
     try {
-      // 从后端API获取全局热门内容
+      // 1. 从后端API获取热门内容列表（包含 title 和 file_path）
       final hotContentList = await _feedService.getHotFeed(page: 1, pageSize: 50);
       
+      debugPrint('获取到 ${hotContentList.length} 条热门内容');
+
       if (hotContentList.isEmpty) {
         if (mounted) {
           setState(() {
@@ -88,73 +89,94 @@ class _HotFeedListViewState extends State<HotFeedListView>
         return;
       }
 
-      debugPrint('获取到 ${hotContentList.length} 条热门内容');
-
-      // 获取详细的内容信息
+      // 2. 为每个热门内容加载完整数据
       final List<VideoEntity> videos = [];
       
       for (final hotItem in hotContentList) {
         final contentId = hotItem['id'] as String;
         final contentType = hotItem['content_type'] as String? ?? 'text';
+        final title = hotItem['title'] as String?;
+        final filePath = hotItem['file_path'] as String?;
         final likeCount = hotItem['like_count'] as int? ?? 0;
         
-        // 尝试从 VideoTitleService 获取已加载的视频信息
-        final existingVideo = _videoTitleService.getVideo(contentId);
-        
-        if (existingVideo != null) {
-          // 使用已有的视频信息，但更新点赞数
-          videos.add(VideoEntity(
-            id: existingVideo.id,
-            username: existingVideo.username,
-            description: existingVideo.description,
-            videoUrl: existingVideo.videoUrl,
-            profileImageUrl: existingVideo.profileImageUrl,
-            likeCount: likeCount,
-            commentCount: existingVideo.commentCount,
-            shareCount: existingVideo.shareCount,
-            timestamp: existingVideo.timestamp,
-            contentType: existingVideo.contentType,
-            textContent: existingVideo.textContent,
-          ));
+        debugPrint('处理热门内容: id=$contentId, title=$title, filePath=$filePath');
+
+        if (contentType == 'text') {
+          // 文本内容：根据 filePath 加载，或者使用随机内容
+          String? textContent;
+          String displayTitle = title ?? '热门内容';
+          
+          if (filePath != null && filePath.isNotEmpty) {
+            // 有 filePath，从云端加载对应的文本
+            textContent = await _loadTextFromFilePath(filePath);
+            if (textContent == null) {
+              // 加载失败，使用随机内容
+              final randomContent = await _textService.getRandomTextContent();
+              if (randomContent != null) {
+                textContent = randomContent['content'];
+                displayTitle = randomContent['title'] ?? displayTitle;
+              }
+            }
+          } else {
+            // 没有 filePath，使用随机内容
+            final randomContent = await _textService.getRandomTextContent();
+            if (randomContent != null) {
+              textContent = randomContent['content'];
+              displayTitle = randomContent['title'] ?? displayTitle;
+            }
+          }
+          
+          if (textContent != null) {
+            videos.add(VideoEntity(
+              id: contentId,
+              username: displayTitle,
+              description: '点击头像阅读全文',
+              videoUrl: '',
+              profileImageUrl: '',
+              likeCount: likeCount,
+              commentCount: 0,
+              shareCount: 0,
+              timestamp: DateTime.now(),
+              contentType: ContentType.text,
+              textContent: textContent,
+            ));
+          }
         } else {
-          // 如果没有缓存的视频信息，创建一个基本的实体
-          // 这种情况可能是用户还没有浏览过法流页面
+          // 视频内容
           videos.add(VideoEntity(
             id: contentId,
-            username: '',
-            description: '热门内容',
-            videoUrl: '',
+            username: title ?? '热门视频',
+            description: '',
+            videoUrl: '', // 需要从其他地方获取视频URL
             profileImageUrl: '',
             likeCount: likeCount,
             commentCount: 0,
             shareCount: 0,
             timestamp: DateTime.now(),
-            contentType: contentType == 'video' ? ContentType.video : ContentType.text,
-            textContent: contentType == 'text' ? '加载中...' : null,
+            contentType: ContentType.video,
           ));
         }
       }
 
-      // 获取点赞数和评论数（单次API请求）
+      // 3. 获取评论数
       if (videos.isNotEmpty) {
         final contentIds = videos.map((v) => v.id).toList();
         await ContentStatsService().fetchContentStats(contentIds);
         
-        // 更新统计信息
+        // 更新评论数
         for (int i = 0; i < videos.length; i++) {
           final v = videos[i];
-          final updatedLikeCount = ContentStatsService().getLikeCount(v.id);
           final updatedCommentCount = ContentStatsService().getCommentCount(v.id);
           
-          if (updatedLikeCount > 0 || updatedCommentCount > 0) {
+          if (updatedCommentCount > 0) {
             videos[i] = VideoEntity(
               id: v.id,
               username: v.username,
               description: v.description,
               videoUrl: v.videoUrl,
               profileImageUrl: v.profileImageUrl,
-              likeCount: updatedLikeCount > 0 ? updatedLikeCount : v.likeCount,
-              commentCount: updatedCommentCount > 0 ? updatedCommentCount : v.commentCount,
+              likeCount: v.likeCount,
+              commentCount: updatedCommentCount,
               shareCount: v.shareCount,
               timestamp: v.timestamp,
               contentType: v.contentType,
@@ -179,8 +201,24 @@ class _HotFeedListViewState extends State<HotFeedListView>
     } catch (e) {
       debugPrint('加载热门内容失败: $e');
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _hasLoadedOnce = true;
+        });
       }
+    }
+  }
+
+  /// 根据 filePath 加载文本内容
+  Future<String?> _loadTextFromFilePath(String filePath) async {
+    try {
+      // TODO: 实现根据 filePath 从云端加载文本内容的逻辑
+      // 目前暂时返回 null，使用随机内容
+      debugPrint('尝试从 filePath 加载: $filePath');
+      return null;
+    } catch (e) {
+      debugPrint('加载文本失败: $e');
+      return null;
     }
   }
 

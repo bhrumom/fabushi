@@ -77,6 +77,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
       profileImageUrl: widget.videoItem.profileImageUrl,
       likedAt: DateTime.now(),
       contentType: widget.videoItem.contentType == ContentType.video ? 'video' : 'text',
+      filePath: widget.videoItem.filePath,  // 传递文件路径
     );
 
     await _likeService.toggleLike(item);

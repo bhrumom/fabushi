@@ -98,6 +98,7 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
               timestamp: DateTime.now(),
               contentType: ContentType.text,
               textContent: textData['content'],
+              filePath: textData['filePath'],  // 保存文件路径
             ),
           );
         }

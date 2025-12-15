@@ -93,8 +93,14 @@ class LikeService extends ChangeNotifier {
     await _saveLikedItems();
     notifyListeners();
 
-    // 同步到云端
-    _syncToCloud(item.id, item.contentType, wasLiked ? 'unlike' : 'like');
+    // 同步到云端，点赞时额外发送标题和文件路径
+    _syncToCloud(
+      item.id, 
+      item.contentType, 
+      wasLiked ? 'unlike' : 'like',
+      title: item.username,  // username 字段存储的是标题
+      filePath: item.filePath,
+    );
   }
 
   Future<void> _syncFromCloud() async {
@@ -123,21 +129,29 @@ class LikeService extends ChangeNotifier {
     }
   }
 
-  Future<void> _syncToCloud(String contentId, String contentType, String action) async {
+  Future<void> _syncToCloud(String contentId, String contentType, String action, {String? title, String? filePath}) async {
     try {
       final headers = {'Content-Type': 'application/json'};
       if (_authToken != null) {
         headers['Authorization'] = 'Bearer $_authToken';
       }
 
+      final body = {
+        'contentId': contentId,
+        'contentType': contentType,
+        'action': action,
+      };
+      
+      // 点赞时额外发送标题和文件路径
+      if (action == 'like') {
+        if (title != null) body['title'] = title;
+        if (filePath != null) body['filePath'] = filePath;
+      }
+
       final response = await http.post(
         Uri.parse('${AppConfig.apiUrl}/api/likes/toggle'),
         headers: headers,
-        body: jsonEncode({
-          'contentId': contentId,
-          'contentType': contentType,
-          'action': action,
-        }),
+        body: jsonEncode(body),
       );
 
       if (response.statusCode == 200) {
