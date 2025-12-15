@@ -1,330 +1,273 @@
-import 'dart:math';
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
+/// 文字视频内容组件 - 强调型卡点字幕效果
 class VideoFeedViewTextContent extends StatefulWidget {
   const VideoFeedViewTextContent({
     required this.textContent,
+    this.isVisible = false,
     this.onCurrentParagraphChanged,
     super.key,
   });
 
   final String textContent;
-  final ValueChanged<String>? onCurrentParagraphChanged;
+  final bool isVisible;
+  final Function(String)? onCurrentParagraphChanged;
 
   @override
   State<VideoFeedViewTextContent> createState() => _VideoFeedViewTextContentState();
 }
 
 class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent> {
-  int _currentPosition = 0;
-  final Map<int, String> _cache = {};
-  static int _currentPage = 1;
-  late String _text;
+  FlutterTts? _tts;
+  bool _ttsReady = false;
+  
+  List<String> _sentences = [];
+  int _index = 0;
+  int _speakingIndex = -1;  // 当前正在朗读的句子索引，用于防止重复处理
+  double _scale = 1.0;
+  Timer? _timer;
+  bool _playing = false;
+  bool _disposed = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.textContent.isNotEmpty) {
-      _text = widget.textContent;
-      _currentPosition = _findValidStartPosition(Random().nextInt(max(_text.length - 100, 1)));
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
-        }
+    _parseSentences();
+    _initTts();
+  }
+
+  void _parseSentences() {
+    _sentences = [];
+    if (widget.textContent.isEmpty) return;
+    
+    final parts = widget.textContent.split(RegExp(r'[，。！？、；：\n]+'));
+    for (final p in parts) {
+      final t = p.trim();
+      if (t.isNotEmpty) _sentences.add(t);
+    }
+    debugPrint('TTS: Parsed ${_sentences.length} sentences');
+  }
+
+  Future<void> _initTts() async {
+    if (_disposed) return;
+    
+    try {
+      _tts = FlutterTts();
+      await _tts?.setLanguage('zh-CN');
+      await _tts?.setSpeechRate(0.7);
+      await _tts?.setVolume(1.0);
+      
+      // 设置为 false 让 speak() 立即返回，回调驱动下一句
+      await _tts?.awaitSpeakCompletion(false);
+      
+      _tts?.setCompletionHandler(() {
+        debugPrint('TTS: [Callback] Completion, speakingIndex=$_speakingIndex, index=$_index');
+        _onSpeakComplete();
       });
+      
+      _tts?.setErrorHandler((msg) {
+        debugPrint('TTS: [Callback] Error: $msg');
+        _onSpeakComplete();
+      });
+      
+      _ttsReady = true;
+      debugPrint('TTS: Initialized, isVisible=${widget.isVisible}');
+      
+      if (widget.isVisible && _sentences.isNotEmpty) {
+        Future.delayed(const Duration(milliseconds: 300), _tryStart);
+      }
+    } catch (e) {
+      debugPrint('TTS: Init error: $e');
     }
   }
 
-  @override
-  void didUpdateWidget(VideoFeedViewTextContent oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.textContent != oldWidget.textContent) {
-      setState(() {
-        _text = widget.textContent;
-        _cache.clear();
-        final randomPos = Random().nextInt(max(_text.length - 100, 1));
-        _currentPosition = _findValidStartPosition(randomPos);
-        _currentPage = Random().nextInt(9999) + 1;
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
+  void _tryStart() {
+    if (_disposed || !mounted) return;
+    if (!widget.isVisible || _playing || _sentences.isEmpty) return;
+    
+    debugPrint('TTS: Starting playback');
+    _playing = true;
+    _index = 0;
+    _speakingIndex = -1;
+    _playNext();
+  }
+
+  // 软停止：只设置标志，不调用 TTS stop（避免影响其他页面）
+  void _softStop() {
+    if (!_playing) return;
+    debugPrint('TTS: Soft stopping (flag only)');
+    _playing = false;
+    _speakingIndex = -1;
+    _timer?.cancel();
+  }
+  
+  // 硬停止：在 dispose 时使用，会调用 TTS stop
+  void _hardStop() {
+    debugPrint('TTS: Hard stopping');
+    _playing = false;
+    _speakingIndex = -1;
+    _timer?.cancel();
+    try {
+      _tts?.stop();
+    } catch (e) {
+      debugPrint('TTS: Stop error: $e');
+    }
+  }
+
+  void _playNext() {
+    if (_disposed || !mounted || !_playing) {
+      debugPrint('TTS: _playNext skipped');
+      return;
+    }
+    
+    if (_sentences.isEmpty) return;
+    
+    if (_index >= _sentences.length) {
+      _index = 0;
+    }
+    
+    final text = _sentences[_index];
+    _speakingIndex = _index;  // 记录当前正在朗读的句子索引
+    
+    debugPrint('TTS: Playing [$_index/${_sentences.length}]: ${text.length > 30 ? text.substring(0, 30) + "..." : text}');
+    
+    // 更新UI
+    if (mounted && !_disposed) {
+      setState(() => _scale = 0.8);
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted && !_disposed) {
+          setState(() => _scale = 1.0);
         }
       });
+    }
+    
+    widget.onCurrentParagraphChanged?.call(text);
+    
+    if (_ttsReady && _playing) {
+      _tts?.speak(text);
+    } else {
+      // TTS不可用时使用计时器模拟
+      final ms = 500 + text.length * 80;
+      _timer = Timer(Duration(milliseconds: ms), _onSpeakComplete);
+    }
+  }
+
+  void _onSpeakComplete() {
+    // 检查是否是当前句子的完成回调（防止旧回调干扰）
+    if (_speakingIndex != _index) {
+      debugPrint('TTS: Ignoring stale callback (speakingIndex=$_speakingIndex, index=$_index)');
+      return;
+    }
+    
+    debugPrint('TTS: onSpeakComplete, playing=$_playing, index=$_index');
+    
+    if (_disposed || !mounted || !_playing) return;
+    
+    _timer?.cancel();
+    
+    // 立即播放下一句
+    _index++;
+    debugPrint('TTS: Moving to index $_index');
+    
+    if (mounted && !_disposed) {
+      setState(() {});
+    }
+    
+    _playNext();
+  }
+
+  @override
+  void didUpdateWidget(VideoFeedViewTextContent old) {
+    super.didUpdateWidget(old);
+    
+    if (old.isVisible != widget.isVisible) {
+      debugPrint('TTS: Visibility ${old.isVisible} -> ${widget.isVisible}');
+      
+      Future.microtask(() {
+        if (_disposed || !mounted) return;
+        
+        if (widget.isVisible && !_playing) {
+          _tryStart();
+        } else if (!widget.isVisible && _playing) {
+          _softStop();  // 使用软停止
+        }
+      });
+    }
+    
+    if (old.textContent != widget.textContent) {
+      debugPrint('TTS: Content changed');
+      _softStop();  // 使用软停止
+      _parseSentences();
+      _index = 0;
+      if (widget.isVisible && _sentences.isNotEmpty) {
+        Future.microtask(() {
+          if (mounted && !_disposed && widget.isVisible) {
+            _tryStart();
+          }
+        });
+      }
     }
   }
 
   @override
   void dispose() {
+    _disposed = true;
+    _hardStop();  // dispose 时使用硬停止
     super.dispose();
-  }
-
-  int _findValidStartPosition(int randomPos) {
-    if (randomPos == 0) return 0;
-    
-    int pos = 0;
-    int lastValidPos = 0;
-    
-    while (pos < randomPos && pos < _text.length) {
-      final result = _getNextParagraph(pos);
-      if (result == null) break;
-      lastValidPos = result.$2;
-      pos = result.$3;
-    }
-    
-    return lastValidPos;
-  }
-
-  (String, int, int)? _getNextParagraph(int startPos) {
-    if (startPos >= _text.length) return null;
-
-    int pos = startPos;
-
-    // 跳过空白字符和标点符号
-    while (pos < _text.length &&
-        RegExp(
-          r'[\s""'
-          '「」『』（）()、，,]',
-        ).hasMatch(_text[pos])) {
-      pos++;
-    }
-
-    if (pos >= _text.length) return null;
-
-    String buffer = '';
-    final contentStart = pos;
-
-    while (pos < _text.length) {
-      final lineEnd = _text.indexOf('\n', pos);
-      final hasLineBreak = lineEnd != -1;
-      final lineEndPos = hasLineBreak ? lineEnd : _text.length;
-      final currentLine = _text.substring(pos, lineEndPos).trim();
-
-      if (currentLine.isNotEmpty && _isMetadataLine(currentLine)) {
-        pos = hasLineBreak ? lineEnd + 1 : _text.length;
-        continue;
-      }
-
-      final sentenceEnd = RegExp(
-        r'[。！？；：、，][""'
-        '」』）)]*',
-      ).firstMatch(_text.substring(pos));
-      final sentenceEndInLine = sentenceEnd != null && (pos + sentenceEnd.end) <= lineEndPos;
-
-      if (!sentenceEndInLine) {
-        if (currentLine.isEmpty) {
-          pos = hasLineBreak ? lineEnd + 1 : _text.length;
-          continue;
-        }
-
-        if (buffer.isEmpty) {
-          return (currentLine, contentStart, hasLineBreak ? lineEnd + 1 : _text.length);
-        }
-
-        if ((buffer + currentLine).length <= 21) {
-          return (buffer + currentLine, contentStart, hasLineBreak ? lineEnd + 1 : _text.length);
-        }
-        return (buffer, contentStart, pos);
-      }
-
-      final sentenceEndPos = pos + sentenceEnd.end;
-      final sentence = _text
-          .substring(pos, sentenceEndPos)
-          .trim()
-          .replaceAll(
-            RegExp(
-              r'^[""'
-              '「」『』（）(),、，\s]+',
-            ),
-            '',
-          );
-
-      if (sentence.isEmpty || sentence.length < 2) {
-        pos = sentenceEndPos;
-        continue;
-      }
-
-      if (sentence.length > 21) {
-        if (buffer.isEmpty) {
-          return (sentence, contentStart, sentenceEndPos);
-        }
-        return (buffer, contentStart, pos);
-      }
-
-      if (buffer.isEmpty) {
-        buffer = sentence;
-        pos = sentenceEndPos;
-      } else if ((buffer + sentence).length <= 21) {
-        buffer += sentence;
-        pos = sentenceEndPos;
-      } else {
-        return (buffer, contentStart, pos);
-      }
-    }
-
-    return buffer.isNotEmpty ? (buffer, contentStart, pos) : null;
-  }
-
-  bool _isMetadataLine(String line) {
-    // 1. 部号标题：第XXXX部～...
-    if (RegExp(r'^第\d{4}部～').hasMatch(line)) return true;
-
-    // 2. 卷数信息：单独一行且包含“卷”且很短（<15字）
-    if (line.length < 15 && RegExp(r'(卷[上中下第]|[一二三四五六七八九十百千]+卷$)').hasMatch(line)) return true;
-
-    // 3. 译者作者信息：单独一行且包含“造”“译”“撰”“述”且很短（<30字）
-    if (line.length < 30 &&
-        !RegExp(r'^(夫|如是我闻|尔时|佛告|世尊|一时)').hasMatch(line) &&
-        RegExp(r'[菩萨法师大师尊者].*[造译撰述集注疏释]$').hasMatch(line))
-      return true;
-
-    // 4. 导航链接：上一部/下一部
-    if (RegExp(r'^上一部：|下一部：').hasMatch(line)) return true;
-
-    // 5. 经名标题：以“佛说”开头且以“经”结尾且很短（<25字）
-    if (line.length < 20 && line.startsWith('佛说') && line.endsWith('经') && !line.contains('。'))
-      return true;
-
-    return false;
-  }
-
-  String _getCurrentParagraph() {
-    if (_cache.containsKey(_currentPosition)) {
-      return _cache[_currentPosition]!;
-    }
-
-    final result = _getNextParagraph(_currentPosition);
-    if (result == null) {
-      print('⚠️ No paragraph at position $_currentPosition');
-      return '';
-    }
-
-    final paragraph = result.$1;
-    print(
-      '📄 Paragraph at $_currentPosition: ${paragraph.substring(0, paragraph.length > 20 ? 20 : paragraph.length)}...',
-    );
-    _cache[_currentPosition] = paragraph;
-    if (_cache.length > 5) {
-      _cache.remove(_cache.keys.first);
-    }
-
-    return paragraph;
-  }
-
-  void _goNext() {
-    final result = _getNextParagraph(_currentPosition);
-    if (result != null && result.$3 < _text.length) {
-      setState(() {
-        _currentPosition = result.$3;
-        _currentPage++;
-      });
-      widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
-    }
-  }
-
-  void _goPrevious() {
-    int pos = 0;
-    int lastPos = 0;
-    int secondLastPos = 0;
-
-    // 遍历所有段落，找到当前位置之前的最后一个段落
-    while (pos < _currentPosition) {
-      final result = _getNextParagraph(pos);
-      if (result == null) break;
-      
-      // 如果下一个段落的起始位置已经到达或超过当前位置，停止
-      if (result.$2 >= _currentPosition) break;
-      
-      // 保存前两个位置
-      secondLastPos = lastPos;
-      lastPos = result.$2;
-      pos = result.$3;
-    }
-
-    // 如果找到了前一个段落，切换到它
-    if (lastPos != _currentPosition && lastPos > 0) {
-      setState(() {
-        _currentPosition = lastPos;
-        _currentPage--;
-      });
-      widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
-    } else if (secondLastPos > 0 && secondLastPos != _currentPosition) {
-      // 如果lastPos等于当前位置，使用secondLastPos
-      setState(() {
-        _currentPosition = secondLastPos;
-        _currentPage--;
-      });
-      widget.onCurrentParagraphChanged?.call(_getCurrentParagraph());
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.textContent.isEmpty) {
-      return Container(color: Colors.black);
+    if (_sentences.isEmpty) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: Text('暂无内容', style: TextStyle(color: Colors.white54)),
+        ),
+      );
     }
-
-    final paragraph = _getCurrentParagraph();
-    // 计算当前页在5个点中的位置（循环显示）
-    final dotIndex = (_currentPage - 1) % 5;
-
-    return Container(
-      color: Colors.black,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (details) {
-            final width = MediaQuery.of(context).size.width;
-            if (details.globalPosition.dx < width / 2) {
-              _goPrevious();
-            } else {
-              _goNext();
-            }
-          },
-          child: Stack(
-            children: [
-              // 文本内容
-              Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: SelectableText(
-                    paragraph,
-                    style: const TextStyle(color: Colors.white, fontSize: 18, height: 1.6),
-                  ),
+    
+    final safeIndex = _index.clamp(0, _sentences.length - 1);
+    final text = _sentences[safeIndex];
+    final isEmphasis = RegExp(r'[\d一二三四五六七八九十百千万亿]|佛|法|僧|经|功德').hasMatch(text);
+    
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (_playing) {
+          _softStop();
+          setState(() {});
+        } else if (widget.isVisible) {
+          _tryStart();
+        }
+      },
+      child: Container(
+        color: Colors.black,
+        width: double.infinity,
+        height: double.infinity,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Transform.scale(
+              scale: _scale,
+              child: Text(
+                text,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: isEmphasis ? 48 : 36,
+                  fontWeight: FontWeight.w900,
+                  color: isEmphasis ? Colors.red : Colors.white,
+                  shadows: const [
+                    Shadow(color: Colors.black, blurRadius: 8, offset: Offset(2, 2)),
+                  ],
                 ),
               ),
-              // 底部页面指示点
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 100, // 在用户信息上方
-                child: _buildPageIndicator(dotIndex),
-              ),
-            ],
+            ),
           ),
         ),
       ),
-    );
-  }
-
-  /// 构建页面指示点（类似抖音图片轮播）
-  Widget _buildPageIndicator(int activeIndex) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(5, (index) {
-        final isActive = index == activeIndex;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.symmetric(horizontal: 3),
-          width: isActive ? 16 : 6,
-          height: 6,
-          decoration: BoxDecoration(
-            color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(3),
-          ),
-        );
-      }),
     );
   }
 }

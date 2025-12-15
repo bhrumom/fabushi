@@ -10,10 +10,16 @@ import 'package:global_dharma_sharing/features/video_feed/presentation/view/widg
 import 'package:video_player/video_player.dart';
 
 class VideoFeedViewItem extends StatefulWidget {
-  const VideoFeedViewItem({required this.videoItem, required this.controller, super.key});
+  const VideoFeedViewItem({
+    required this.videoItem,
+    required this.controller,
+    this.isVisible = false,
+    super.key,
+  });
 
   final VideoEntity videoItem;
   final VideoPlayerController? controller;
+  final bool isVisible;
 
   @override
   State<VideoFeedViewItem> createState() => _VideoFeedViewItemState();
@@ -101,6 +107,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
         widget.videoItem.contentType == ContentType.text
             ? VideoFeedViewTextContent(
                 textContent: widget.videoItem.textContent ?? '',
+                isVisible: widget.isVisible,
                 onCurrentParagraphChanged: (paragraph) {
                   if (mounted) {
                     setState(() => _currentParagraph = paragraph);

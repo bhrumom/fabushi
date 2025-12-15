@@ -298,6 +298,13 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
 
     final previousPage = _currentPage;
     _currentPage = newPage;
+    
+    // 使用 postFrameCallback 延迟 setState，避免在构建期间调用
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
 
     // For fast scrolling, be more aggressive
     final isFastScroll = (newPage - previousPage).abs() > 1;
@@ -360,6 +367,7 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
                 key: ValueKey(_videos[index].id),
                 controller: _getController(_videos[index].id),
                 videoItem: _videos[index],
+                isVisible: index == _currentPage,
               ),
             );
           },
