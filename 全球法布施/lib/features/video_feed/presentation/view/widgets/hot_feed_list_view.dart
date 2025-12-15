@@ -319,23 +319,36 @@ class _HotFeedListViewState extends State<HotFeedListView>
     }
 
     if (_hotVideos.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      return RefreshIndicator(
+        onRefresh: _refreshHotContent,
+        color: Colors.white,
+        backgroundColor: Colors.white24,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            const Icon(Icons.local_fire_department_outlined, size: 64, color: Colors.white24),
-            const SizedBox(height: 16),
-            const Text('暂无热门内容', style: TextStyle(color: Colors.white54, fontSize: 16)),
-            const SizedBox(height: 8),
-            const Text('快去法流页面点赞喜欢的内容吧~', style: TextStyle(color: Colors.white38, fontSize: 14)),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _refreshHotContent,
-              icon: const Icon(Icons.refresh),
-              label: const Text('刷新'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white24,
-                foregroundColor: Colors.white,
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.8,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.local_fire_department_outlined, size: 64, color: Colors.white24),
+                    const SizedBox(height: 16),
+                    const Text('暂无热门内容', style: TextStyle(color: Colors.white54, fontSize: 16)),
+                    const SizedBox(height: 8),
+                    const Text('快去法流页面点赞喜欢的内容吧~', style: TextStyle(color: Colors.white38, fontSize: 14)),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: _refreshHotContent,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('刷新'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white24,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -343,21 +356,36 @@ class _HotFeedListViewState extends State<HotFeedListView>
       );
     }
 
-    return PreloadPageView.builder(
-      scrollDirection: Axis.vertical,
-      controller: _pageController,
-      itemCount: _hotVideos.length,
-      physics: const BouncingScrollPhysics(),
-      onPageChanged: _handlePageChange,
-      itemBuilder: (context, index) {
-        return RepaintBoundary(
-          child: VideoFeedViewItem(
-            key: ValueKey(_hotVideos[index].id),
-            controller: _getController(_hotVideos[index].id),
-            videoItem: _hotVideos[index],
-          ),
-        );
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        // 检测是否在最后一页并且过度滚动（上拉到底）
+        if (notification is OverscrollNotification) {
+          // 正值表示向下过度滚动（在底部继续上拉）
+          if (notification.overscroll > 0 && 
+              _currentPage == _hotVideos.length - 1 &&
+              !_isLoading) {
+            // 触发刷新
+            _refreshHotContent();
+          }
+        }
+        return false;
       },
+      child: PreloadPageView.builder(
+        scrollDirection: Axis.vertical,
+        controller: _pageController,
+        itemCount: _hotVideos.length,
+        physics: const BouncingScrollPhysics(),
+        onPageChanged: _handlePageChange,
+        itemBuilder: (context, index) {
+          return RepaintBoundary(
+            child: VideoFeedViewItem(
+              key: ValueKey(_hotVideos[index].id),
+              controller: _getController(_hotVideos[index].id),
+              videoItem: _hotVideos[index],
+            ),
+          );
+        },
+      ),
     );
   }
 }
