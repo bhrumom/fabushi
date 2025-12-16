@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'globe_home_screen.dart';
 import 'leaderboard_screen.dart';
 import 'meditation_room_screen.dart';
@@ -6,6 +7,7 @@ import 'my_profile_screen.dart';
 import 'video_feed_screen.dart';
 import '../core/design_system/app_theme.dart';
 import '../widgets/space_background.dart';
+import '../providers/video_feed_visibility_notifier.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -23,6 +25,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     super.initState();
     // 立即加载，由 GlobeHomeScreen 内部控制延迟
     _isGlobeReady = true;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 初始化时设置视频流页面可见性（默认 index=0 不可见）
+    _updateVideoFeedVisibility();
+  }
+
+  /// 更新视频流页面可见性状态
+  void _updateVideoFeedVisibility() {
+    // 使用 context.read 避免重复监听
+    final notifier = context.read<VideoFeedVisibilityNotifier>();
+    notifier.setVisible(_currentIndex == 1); // index 1 是法流页面
   }
 
   // 保持所有页面实例，避免重建
@@ -75,6 +91,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               selectedIndex: _currentIndex,
               onDestinationSelected: (index) {
                 setState(() => _currentIndex = index);
+                _updateVideoFeedVisibility();
               },
               backgroundColor: Colors.transparent,
               elevation: 0,

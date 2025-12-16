@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:global_dharma_sharing/services/tts_manager.dart';
+import 'package:global_dharma_sharing/providers/video_feed_visibility_notifier.dart';
+import 'package:global_dharma_sharing/providers/tts_mute_notifier.dart';
 
 /// 文字视频内容组件 - MV卡拉OK风格逐字高亮
 /// 
@@ -73,6 +76,10 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   
   // TTS管理器
   final TtsManager _ttsManager = TtsManager();
+  
+  // 监听器引用（用于移除）
+  VoidCallback? _muteListener;
+  VoidCallback? _visibilityListener;
 
   @override
   void initState() {
@@ -83,6 +90,88 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _initAnimations();
     _parseContent();
     _initTts();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _setupListeners();
+  }
+
+  /// 设置静音和可见性监听器
+  void _setupListeners() {
+    // 设置静音监听器
+    if (_muteListener == null) {
+      try {
+        final muteNotifier = context.read<TtsMuteNotifier>();
+        _muteListener = () => _onMuteChanged(muteNotifier.isMuted);
+        muteNotifier.addListener(_muteListener!);
+      } catch (e) {
+        debugPrint('📱 TTS: Could not setup mute listener: $e');
+      }
+    }
+    
+    // 设置页面可见性监听器
+    if (_visibilityListener == null) {
+      try {
+        final visibilityNotifier = context.read<VideoFeedVisibilityNotifier>();
+        _visibilityListener = () => _onPageVisibilityChanged(visibilityNotifier.isVideoFeedVisible);
+        visibilityNotifier.addListener(_visibilityListener!);
+      } catch (e) {
+        debugPrint('📱 TTS: Could not setup visibility listener: $e');
+      }
+    }
+  }
+
+  /// 移除监听器
+  void _removeListeners() {
+    if (_muteListener != null) {
+      try {
+        context.read<TtsMuteNotifier>().removeListener(_muteListener!);
+      } catch (e) {
+        // 忽略，可能context已不可用
+      }
+      _muteListener = null;
+    }
+    
+    if (_visibilityListener != null) {
+      try {
+        context.read<VideoFeedVisibilityNotifier>().removeListener(_visibilityListener!);
+      } catch (e) {
+        // 忽略，可能context已不可用
+      }
+      _visibilityListener = null;
+    }
+  }
+
+  /// 静音状态变化回调
+  void _onMuteChanged(bool isMuted) {
+    if (_disposed || !mounted) return;
+    
+    debugPrint('📱 TTS: Mute changed to ${isMuted ? "MUTED" : "UNMUTED"}');
+    
+    if (isMuted && _playing) {
+      // 被静音了，停止播放
+      _stopPlayback();
+    } else if (!isMuted && !_playing && widget.isVisible) {
+      // 取消静音，并且item可见，尝试开始播放
+      _tryStart();
+    }
+  }
+
+  /// 页面可见性变化回调
+  void _onPageVisibilityChanged(bool isPageVisible) {
+    if (_disposed || !mounted) return;
+    
+    debugPrint('📱 TTS: Page visibility changed to ${isPageVisible ? "VISIBLE" : "HIDDEN"}');
+    
+    if (!isPageVisible && _playing) {
+      // 页面不可见，停止播放
+      _stopPlayback();
+    } else if (isPageVisible && !_playing && widget.isVisible) {
+      // 页面变为可见，且item可见，尝试开始播放
+      _tryStart();
+    }
   }
   
   void _initAnimations() {
@@ -142,14 +231,8 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
       
       debugPrint('📱 TTS TextContent: TTS ready | SentenceMode=$_useSentenceMode | ownerId=$_ownerId');
       
-      if (widget.isVisible && _sentences.isNotEmpty) {
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted && !_disposed && widget.isVisible && !_playing) {
-            debugPrint('📱 TTS TextContent: Post-init starting playback');
-            _tryStart();
-          }
-        });
-      }
+      // 不再在初始化后自动开始播放，等待可见性和静音状态检查
+      // TTS播放由 _tryStart 方法控制，该方法会检查页面可见性和静音状态
     } catch (e) {
       debugPrint('📱 TTS TextContent: Init error: $e');
     }
@@ -505,12 +588,50 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _fallbackTimer = null;
   }
 
+  /// 检查是否应该播放TTS
+  /// 需要同时满足：item可见 + 页面激活 + 未静音
+  bool _shouldPlayTts() {
+    if (!mounted || _disposed) return false;
+    if (!widget.isVisible) return false;
+    
+    // 检查页面可见性
+    try {
+      final visibilityNotifier = context.read<VideoFeedVisibilityNotifier>();
+      if (!visibilityNotifier.isVideoFeedVisible) {
+        debugPrint('📱 TTS: Page not visible, skipping playback');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('📱 TTS: Could not read visibility notifier: $e');
+      return false;
+    }
+    
+    // 检查静音状态
+    try {
+      final muteNotifier = context.read<TtsMuteNotifier>();
+      if (muteNotifier.isMuted) {
+        debugPrint('📱 TTS: Muted, skipping playback');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('📱 TTS: Could not read mute notifier: $e');
+      return false;
+    }
+    
+    return true;
+  }
+
   void _tryStart() {
     if (_disposed || !mounted) return;
-    if (!widget.isVisible || _playing || _sentences.isEmpty) return;
+    if (_playing || _sentences.isEmpty) return;
     if (!_ttsInitialized) {
       debugPrint('📱 TTS TextContent: TTS not ready yet, will retry');
       Future.delayed(const Duration(milliseconds: 300), _tryStart);
+      return;
+    }
+    
+    // 检查是否应该播放（item可见 + 页面激活 + 未静音）
+    if (!_shouldPlayTts()) {
       return;
     }
     
@@ -628,6 +749,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   void dispose() {
     debugPrint('📱 TTS TextContent: Disposing $_ownerId');
     _disposed = true;
+    _removeListeners();
     _cancelFallbackTimer();
     _cancelSentenceTimeout();
     _pulseController?.dispose();

@@ -18,6 +18,8 @@ import 'widgets/app_wrapper.dart';
 import 'screens/douyin_login_screen.dart';
 import 'core/video_feed_di/video_feed_injector.dart';
 import 'core/design_system/app_theme.dart';
+import 'providers/video_feed_visibility_notifier.dart';
+import 'providers/tts_mute_notifier.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -69,6 +71,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SettingsModel()),
         ChangeNotifierProvider(create: (_) => CountrySendingModel()),
         ChangeNotifierProvider(create: (_) => LeaderboardModel()),
+        ChangeNotifierProvider(create: (_) => VideoFeedVisibilityNotifier()),
+        ChangeNotifierProvider(create: (_) => TtsMuteNotifier()..initialize()),
       ],
       child: MaterialApp(
         title: AppConfig.appName,

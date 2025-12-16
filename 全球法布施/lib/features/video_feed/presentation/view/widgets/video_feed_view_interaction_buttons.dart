@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:global_dharma_sharing/core/design_system/colors.dart';
 import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_entity.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_interaction_button.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_full_text_reader.dart';
+import 'package:global_dharma_sharing/providers/tts_mute_notifier.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 class VideoFeedViewInteractionButtons extends StatefulWidget {
@@ -99,8 +101,44 @@ class _VideoFeedViewInteractionButtonsState
             color: white,
             size: iconSize,
           ),
+          // TTS静音按钮 - 只在文字内容时显示
+          if (widget.contentType == ContentType.text) ...[  
+            SizedBox(height: isMobile ? 16 : 20),
+            _buildMuteButton(iconSize, isMobile),
+          ],
         ],
       ),
+    );
+  }
+
+  /// 构建TTS静音/取消静音按钮
+  Widget _buildMuteButton(double iconSize, bool isMobile) {
+    return Consumer<TtsMuteNotifier>(
+      builder: (context, muteNotifier, child) {
+        return GestureDetector(
+          onTap: () {
+            muteNotifier.toggleMute();
+          },
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: muteNotifier.isMuted 
+                  ? Colors.black.withValues(alpha: 0.5)
+                  : Colors.blue.withValues(alpha: 0.6),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: white.withValues(alpha: 0.3),
+                width: 1,
+              ),
+            ),
+            child: Icon(
+              muteNotifier.isMuted ? Icons.volume_off : Icons.volume_up,
+              color: white,
+              size: iconSize * 0.85,
+            ),
+          ),
+        );
+      },
     );
   }
 
