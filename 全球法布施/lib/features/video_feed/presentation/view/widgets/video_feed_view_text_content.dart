@@ -5,9 +5,10 @@ import 'package:global_dharma_sharing/services/tts_manager.dart';
 /// 文字视频内容组件 - MV卡拉OK风格逐字高亮
 /// 
 /// 特点：
-/// - 逐字/逐词高亮，类似MV字幕效果
-/// - 当前朗读的字会放大、变色、发光
-/// - 平滑的动画过渡效果
+/// - 智能同步算法：逐句播放 + completion回调校准
+/// - 自适应学习：从每句的实际播放时间学习语速
+/// - 实时漂移校正：句内动态调整高亮速度
+/// - 无进度回调时也能精确同步：利用句子完成回调
 /// - 使用全局单例TTS管理器，避免多实例冲突
 class VideoFeedViewTextContent extends StatefulWidget {
   const VideoFeedViewTextContent({
@@ -34,13 +35,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   // 文本结构
   List<String> _sentences = [];
   List<String> _words = [];
-  String _fullText = '';
-  
-  // 位置追踪
-  List<int> _sentenceStartPositions = [];
-  List<int> _sentenceEndPositions = [];
-  List<int> _wordStartPositions = [];
-  List<int> _wordEndPositions = [];
   
   int _currentSentenceIndex = 0;
   int _currentWordIndex = -1;
@@ -50,21 +44,28 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   bool _disposed = false;
   bool _ttsInitialized = false;
   
-  // 错误重试计数
-  int _errorRetryCount = 0;
-  static const int _maxErrorRetries = 3;
+  // ========= 逐句播放模式 =========
+  bool _useSentenceMode = true;  // 使用逐句播放模式
+  bool _waitingForCompletion = false;  // 是否在等待TTS完成
   
   // Fallback 机制
   Timer? _fallbackTimer;
+  Timer? _sentenceTimeoutTimer;  // 句子超时计时器
   bool _progressCallbackReceived = false;
   
   // 时间追踪
-  Stopwatch? _playbackStopwatch;
-  int _sentenceStartTime = 0;
+  Stopwatch? _sentenceStopwatch;  // 当前句子的计时器
   
-  // 可调参数
-  static const int _msPerChar = 130;
-  static const int _sentencePauseMs = 300;
+  // ========= 智能同步算法参数 =========
+  // 基础语速参数（毫秒/字符）- 会根据实际TTS回调动态调整
+  double _baseMsPerChar = 140.0;  // 默认值略保守
+  // 当前句子的动态速度
+  double _currentMsPerChar = 140.0;
+  // 句子间停顿时间
+  static const int _sentencePauseMs = 400;
+  
+  // 自适应学习数据
+  final List<double> _historicalMsPerChar = [];
   
   // 动画控制器
   AnimationController? _pulseController;
@@ -94,36 +95,23 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     );
   }
 
-  /// 解析内容：分句 + 记录位置
+  /// 解析内容：分句
   void _parseContent() {
     _sentences = [];
-    _sentenceStartPositions = [];
-    _sentenceEndPositions = [];
-    _fullText = '';
     
     if (widget.textContent.isEmpty) return;
     
+    // 使用标点分句
     final parts = widget.textContent.split(RegExp(r'[，。！？、；：\n]+'));
     for (final p in parts) {
       final t = p.trim();
       if (t.isNotEmpty) _sentences.add(t);
     }
     
-    if (_sentences.isEmpty) return;
-    
-    final buffer = StringBuffer();
-    for (int i = 0; i < _sentences.length; i++) {
-      _sentenceStartPositions.add(buffer.length);
-      buffer.write(_sentences[i]);
-      if (i < _sentences.length - 1) {
-        buffer.write('，');
-      }
-      _sentenceEndPositions.add(buffer.length);
+    debugPrint('TTS MV: Parsed ${_sentences.length} sentences');
+    if (_sentences.isNotEmpty) {
+      _parseWordsForSentence(0);
     }
-    _fullText = buffer.toString();
-    
-    debugPrint('TTS MV: Parsed ${_sentences.length} sentences, ${_fullText.length} chars total');
-    _parseWordsForSentence(0);
   }
   
   void _parseWordsForSentence(int sentenceIndex) {
@@ -131,34 +119,29 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     
     final sentence = _sentences[sentenceIndex];
     _words = [];
-    _wordStartPositions = [];
-    _wordEndPositions = [];
-    
-    final sentenceStart = _sentenceStartPositions[sentenceIndex];
     
     for (int i = 0; i < sentence.length; i++) {
       final char = sentence[i];
       if (char.trim().isNotEmpty) {
         _words.add(char);
-        _wordStartPositions.add(sentenceStart + i);
-        _wordEndPositions.add(sentenceStart + i + 1);
       }
     }
     
-    debugPrint('TTS MV: Sentence $sentenceIndex has ${_words.length} words');
+    debugPrint('TTS MV: Sentence $sentenceIndex has ${_words.length} chars: "${sentence.substring(0, sentence.length.clamp(0, 15))}..."');
   }
 
   Future<void> _initTts() async {
     if (_disposed) return;
     
     try {
-      // 初始化全局TTS管理器
       await _ttsManager.initialize();
       _ttsInitialized = true;
       
-      debugPrint('📱 TTS TextContent: TTS ready | Visible=${widget.isVisible} | ownerId=$_ownerId');
+      // 检测是否需要使用逐句模式
+      _useSentenceMode = _ttsManager.useFallbackOnly;
       
-      // 如果当前可见，准备启动
+      debugPrint('📱 TTS TextContent: TTS ready | SentenceMode=$_useSentenceMode | ownerId=$_ownerId');
+      
       if (widget.isVisible && _sentences.isNotEmpty) {
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted && !_disposed && widget.isVisible && !_playing) {
@@ -178,180 +161,264 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
       onProgress: (text, start, end, word) {
         if (_disposed || !mounted || !_playing) return;
         
-        final elapsed = _playbackStopwatch?.elapsedMilliseconds ?? 0;
-        
         if (!_progressCallbackReceived) {
           _progressCallbackReceived = true;
           _cancelFallbackTimer();
-          debugPrint('📱 TTS [${elapsed}ms] ✅ Progress callback WORKING!');
+          _cancelSentenceTimeout();
+          debugPrint('📱 TTS ✅ Progress callback WORKING! Switching to progress mode');
+          // 进度回调工作，不再使用逐句模式
+          _useSentenceMode = false;
         }
         
-        debugPrint('📱 TTS [${elapsed}ms] Progress: pos=$end, word="$word"');
-        _updateHighlightFromPosition(end);
+        // 使用进度回调更新高亮
+        _updateHighlightFromProgress(end, word);
       },
       onCompletion: () {
         if (_disposed || !mounted || !_playing) return;
-        _onPlaybackComplete();
+        
+        debugPrint('📱 TTS 🔔 Completion callback received');
+        
+        if (_useSentenceMode) {
+          // 逐句模式：句子播放完成
+          _onSentenceComplete();
+        } else {
+          // 全文模式：全部播放完成
+          _onPlaybackComplete();
+        }
       },
       onError: (msg) {
-        final elapsed = _playbackStopwatch?.elapsedMilliseconds ?? 0;
-        debugPrint('📱 TTS [${elapsed}ms] ❌ Error: $msg');
+        debugPrint('📱 TTS ❌ Error: $msg');
         if (_disposed || !mounted || !_playing) return;
-        
-        // 检查是否是 -8 错误（TTS引擎忙）
-        if (msg.contains('-8')) {
-          _errorRetryCount++;
-          if (_errorRetryCount >= _maxErrorRetries) {
-            debugPrint('📱 TTS: Max retries reached, stopping');
-            // 达到最大重试次数，只运行fallback动画，不再尝试TTS
-            return;
-          }
-          // 等待更长时间后重试
-          debugPrint('📱 TTS: Retry $_errorRetryCount/$_maxErrorRetries after 2s');
-          Future.delayed(const Duration(seconds: 2), () {
-            if (_disposed || !mounted || !_playing) return;
-            _ttsManager.speak(_fullText, _ownerId);
-          });
-          return;
-        }
-        
-        // 其他错误正常处理
-        _onPlaybackComplete();
+        _handleTtsError(msg);
       },
     );
   }
   
-  void _updateHighlightFromPosition(int position) {
-    if (_sentences.isEmpty) return;
+  /// 使用进度回调更新高亮（支持进度回调的设备）
+  void _updateHighlightFromProgress(int end, String word) {
+    // 在当前句子中找到对应的字
+    if (_words.isEmpty) return;
     
-    int newSentenceIndex = _currentSentenceIndex;
-    for (int i = 0; i < _sentenceEndPositions.length; i++) {
-      if (position < _sentenceEndPositions[i]) {
-        newSentenceIndex = i;
-        break;
-      }
-      if (i == _sentenceEndPositions.length - 1) {
-        newSentenceIndex = i;
-      }
-    }
+    // 简单实现：根据位置估算当前字
+    final estimatedIndex = (end / 2).clamp(0, _words.length - 1).toInt();
     
-    if (newSentenceIndex != _currentSentenceIndex) {
-      debugPrint('TTS MV: Switching to sentence $newSentenceIndex');
-      _currentSentenceIndex = newSentenceIndex;
-      _parseWordsForSentence(newSentenceIndex);
-      _currentWordIndex = -1;
-      widget.onCurrentParagraphChanged?.call(_sentences[newSentenceIndex]);
-    }
-    
-    if (_wordEndPositions.isNotEmpty) {
-      int newWordIndex = _currentWordIndex;
-      for (int i = 0; i < _wordEndPositions.length; i++) {
-        if (position <= _wordEndPositions[i] && position >= _wordStartPositions[i]) {
-          newWordIndex = i;
-          break;
-        }
-        if (position > _wordEndPositions[i] && i == _wordEndPositions.length - 1) {
-          newWordIndex = i;
-        }
-      }
-      
-      if (newWordIndex != _currentWordIndex && newWordIndex >= 0) {
-        _currentWordIndex = newWordIndex;
-        _pulseController?.forward(from: 0);
-        debugPrint('TTS MV: Highlighting word $_currentWordIndex: ${_words[_currentWordIndex]}');
-      }
-    }
-    
-    if (mounted && !_disposed) {
-      setState(() {});
+    if (estimatedIndex != _currentWordIndex && estimatedIndex >= 0) {
+      _currentWordIndex = estimatedIndex;
+      _pulseController?.forward(from: 0);
+      if (mounted) setState(() {});
     }
   }
   
-  void _startFallbackTimer() {
-    _cancelFallbackTimer();
+  /// 句子播放完成（逐句模式核心逻辑）
+  void _onSentenceComplete() {
+    if (_disposed || !mounted || !_playing) return;
     
-    if (!_ttsManager.useFallbackOnly) {
-      _progressCallbackReceived = false;
+    final sentenceElapsed = _sentenceStopwatch?.elapsedMilliseconds ?? 0;
+    _cancelFallbackTimer();
+    _cancelSentenceTimeout();
+    _waitingForCompletion = false;
+    
+    // 学习这句的实际速度
+    if (_words.isNotEmpty && sentenceElapsed > 0) {
+      final actualMsPerChar = sentenceElapsed / _words.length;
+      _recordHistoricalSpeed(actualMsPerChar);
+      
+      debugPrint('📱 TTS 📊 Sentence $_currentSentenceIndex complete | '
+          'actual=${sentenceElapsed}ms | '
+          'speed=${actualMsPerChar.toStringAsFixed(1)}ms/char | '
+          'predicted=${_currentMsPerChar.toStringAsFixed(1)}ms/char');
     }
+    
+    // 确保高亮到最后一个字
+    if (_words.isNotEmpty) {
+      _currentWordIndex = _words.length - 1;
+      if (mounted) setState(() {});
+    }
+    
+    // 播放下一句
+    final nextSentence = _currentSentenceIndex + 1;
+    if (nextSentence < _sentences.length) {
+      debugPrint('📱 TTS ⏸️ Pause ${_sentencePauseMs}ms before sentence $nextSentence');
+      
+      Future.delayed(Duration(milliseconds: _sentencePauseMs), () {
+        if (_disposed || !mounted || !_playing) return;
+        _playSentence(nextSentence);
+      });
+    } else {
+      // 全部播放完成，循环
+      debugPrint('📱 TTS 🔁 All sentences complete, restarting in 800ms');
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (_disposed || !mounted || !_playing) return;
+        _playSentence(0);
+      });
+    }
+  }
+  
+  /// 播放单个句子（逐句模式）
+  Future<void> _playSentence(int sentenceIndex) async {
+    if (_disposed || !mounted || !_playing) return;
+    if (sentenceIndex >= _sentences.length) return;
+    
+    _currentSentenceIndex = sentenceIndex;
+    _parseWordsForSentence(sentenceIndex);
+    
+    // 通知句子变化
+    widget.onCurrentParagraphChanged?.call(_sentences[sentenceIndex]);
+    
+    // 计算这句的预期速度
+    _currentMsPerChar = _calculateMsPerChar(_words.length);
+    final expectedDuration = (_words.length * _currentMsPerChar).round();
+    
+    debugPrint('📱 TTS 📖 Playing sentence $sentenceIndex | '
+        'chars=${_words.length} | '
+        'speed=${_currentMsPerChar.toStringAsFixed(1)}ms/char | '
+        'expected=${expectedDuration}ms');
+    
+    // 重置句子计时器
+    _sentenceStopwatch = Stopwatch()..start();
+    _currentWordIndex = 0;
+    _waitingForCompletion = true;
+    
+    if (mounted) setState(() {});
+    
+    // 启动句内高亮 fallback
+    _startSentenceFallback();
+    
+    // 设置超时保护（预期时间的 1.5 倍）
+    _startSentenceTimeout(expectedDuration);
+    
+    // 播放这个句子
+    final sentence = _sentences[sentenceIndex];
+    await _ttsManager.speak(sentence, _ownerId);
+  }
+  
+  /// 启动句内高亮 fallback
+  void _startSentenceFallback() {
+    _cancelFallbackTimer();
     
     if (_words.isEmpty) return;
     
-    final elapsed = _playbackStopwatch?.elapsedMilliseconds ?? 0;
-    _sentenceStartTime = elapsed;
-    
-    final sentenceDuration = _words.length * _msPerChar;
-    
-    debugPrint('📱 TTS [${elapsed}ms] 📖 SENTENCE $_currentSentenceIndex START | '
-        'chars=${_words.length} | expected=${sentenceDuration}ms | '
-        'text="${_sentences[_currentSentenceIndex].substring(0, _sentences[_currentSentenceIndex].length.clamp(0, 10))}..."');
-    
     _currentWordIndex = 0;
     _pulseController?.forward(from: 0);
-    if (mounted) setState(() {});
     
-    debugPrint('📱 TTS [${elapsed}ms] 🔤 Word 0/${_words.length}: "${_words[0]}"');
-    
-    _scheduleFallbackForWord(0);
+    _scheduleFallbackWord(0);
   }
   
-  void _scheduleFallbackForWord(int wordIndex) {
-    if (!_ttsManager.useFallbackOnly && _progressCallbackReceived) return;
+  /// 调度下一个字的高亮
+  void _scheduleFallbackWord(int wordIndex) {
     if (!_playing || _disposed) return;
+    // 如果已经收到进度回调，不再使用 fallback
+    if (_progressCallbackReceived) return;
     
-    _fallbackTimer = Timer(Duration(milliseconds: _msPerChar), () {
+    final elapsed = _sentenceStopwatch?.elapsedMilliseconds ?? 0;
+    final wordsRemaining = _words.length - wordIndex - 1;
+    
+    // 计算下一个字的延迟
+    int delayMs;
+    if (wordsRemaining <= 0) {
+      // 最后一个字，等待 completion
+      return;
+    } else {
+      // 动态计算延迟，确保匀速完成
+      final expectedTotal = _words.length * _currentMsPerChar;
+      final remainingTime = expectedTotal - elapsed;
+      
+      if (remainingTime > 0) {
+        delayMs = (remainingTime / wordsRemaining).clamp(50.0, 300.0).round();
+      } else {
+        // 已经落后，快速追赶
+        delayMs = 50;
+      }
+    }
+    
+    _fallbackTimer = Timer(Duration(milliseconds: delayMs), () {
       if (_disposed || !mounted || !_playing) return;
-      if (!_ttsManager.useFallbackOnly && _progressCallbackReceived) return;
+      if (_progressCallbackReceived) return;
       
-      final elapsed = _playbackStopwatch?.elapsedMilliseconds ?? 0;
       final nextWordIndex = wordIndex + 1;
-      
       if (nextWordIndex < _words.length) {
         _currentWordIndex = nextWordIndex;
         _pulseController?.forward(from: 0);
         if (mounted) setState(() {});
         
-        if (nextWordIndex % 5 == 0 || nextWordIndex == _words.length - 1) {
-          debugPrint('📱 TTS [${elapsed}ms] 🔤 Word $nextWordIndex/${_words.length}: "${_words[nextWordIndex]}"');
-        }
-        
-        _scheduleFallbackForWord(nextWordIndex);
-      } else {
-        final sentenceElapsed = elapsed - _sentenceStartTime;
-        debugPrint('📱 TTS [${elapsed}ms] 📖 SENTENCE $_currentSentenceIndex END | '
-            'actual=${sentenceElapsed}ms | expected=${_words.length * _msPerChar}ms');
-        
-        final nextSentence = _currentSentenceIndex + 1;
-        if (nextSentence < _sentences.length) {
-          debugPrint('📱 TTS [${elapsed}ms] ⏸️ Pause ${_sentencePauseMs}ms before next sentence');
-          
-          Future.delayed(Duration(milliseconds: _sentencePauseMs), () {
-            if (_disposed || !mounted || !_playing) return;
-            if (!_ttsManager.useFallbackOnly && _progressCallbackReceived) return;
-            
-            final pauseElapsed = _playbackStopwatch?.elapsedMilliseconds ?? 0;
-            _currentSentenceIndex = nextSentence;
-            _parseWordsForSentence(nextSentence);
-            _sentenceStartTime = pauseElapsed;
-            
-            final nextSentenceDuration = _words.length * _msPerChar;
-            debugPrint('📱 TTS [${pauseElapsed}ms] 📖 SENTENCE $nextSentence START | '
-                'chars=${_words.length} | expected=${nextSentenceDuration}ms | '
-                'text="${_sentences[nextSentence].substring(0, _sentences[nextSentence].length.clamp(0, 10))}..."');
-            
-            _currentWordIndex = 0;
-            widget.onCurrentParagraphChanged?.call(_sentences[nextSentence]);
-            _pulseController?.forward(from: 0);
-            if (mounted) setState(() {});
-            
-            debugPrint('📱 TTS [${pauseElapsed}ms] 🔤 Word 0/${_words.length}: "${_words[0]}"');
-            
-            _scheduleFallbackForWord(0);
-          });
-        } else {
-          debugPrint('📱 TTS [${elapsed}ms] 🔚 Last sentence finished, waiting for TTS completion callback');
-        }
+        _scheduleFallbackWord(nextWordIndex);
       }
+      // 不处理最后一个字之后的情况，等待 completion
     });
+  }
+  
+  /// 设置句子超时保护
+  void _startSentenceTimeout(int expectedDuration) {
+    _cancelSentenceTimeout();
+    
+    // 超时时间 = 预期时间 * 1.5 + 1秒缓冲
+    final timeout = (expectedDuration * 1.5).round() + 1000;
+    
+    _sentenceTimeoutTimer = Timer(Duration(milliseconds: timeout), () {
+      if (_disposed || !mounted || !_playing) return;
+      if (!_waitingForCompletion) return;
+      
+      debugPrint('📱 TTS ⚠️ Sentence timeout after ${timeout}ms, forcing completion');
+      _onSentenceComplete();
+    });
+  }
+  
+  void _cancelSentenceTimeout() {
+    _sentenceTimeoutTimer?.cancel();
+    _sentenceTimeoutTimer = null;
+  }
+  
+  /// 记录历史语速数据
+  void _recordHistoricalSpeed(double msPerChar) {
+    // 只接受合理范围内的值
+    if (msPerChar < 50 || msPerChar > 400) return;
+    
+    _historicalMsPerChar.add(msPerChar);
+    if (_historicalMsPerChar.length > 10) {
+      _historicalMsPerChar.removeAt(0);
+    }
+    
+    // 更新基础语速（加权平均，新数据权重更高）
+    if (_historicalMsPerChar.isNotEmpty) {
+      double sum = 0;
+      double weightSum = 0;
+      for (int i = 0; i < _historicalMsPerChar.length; i++) {
+        final weight = (i + 1).toDouble();
+        sum += _historicalMsPerChar[i] * weight;
+        weightSum += weight;
+      }
+      _baseMsPerChar = sum / weightSum;
+      debugPrint('📱 TTS 📊 Updated base speed: ${_baseMsPerChar.toStringAsFixed(1)}ms/char '
+          '(from ${_historicalMsPerChar.length} samples)');
+    }
+  }
+  
+  /// 计算当前句子的预估每字毫秒数
+  double _calculateMsPerChar(int charCount) {
+    double msPerChar = _baseMsPerChar;
+    
+    // 根据句子长度调整
+    if (charCount < 5) {
+      msPerChar *= 0.85;  // 短句稍快
+    } else if (charCount > 20) {
+      msPerChar *= 1.15;  // 长句稍慢
+    }
+    
+    return msPerChar.clamp(80.0, 250.0);
+  }
+  
+  void _handleTtsError(String msg) {
+    if (msg.contains('-8')) {
+      // TTS引擎忙，等待后重试当前句子
+      debugPrint('📱 TTS: Engine busy, retrying in 500ms');
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (_disposed || !mounted || !_playing) return;
+        _playSentence(_currentSentenceIndex);
+      });
+    } else {
+      // 其他错误，跳到下一句
+      _onSentenceComplete();
+    }
   }
   
   void _cancelFallbackTimer() {
@@ -370,68 +437,62 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     
     debugPrint('📱 TTS TextContent: _tryStart called for $_ownerId');
     
-    // 初始化计时器
-    _playbackStopwatch = Stopwatch()..start();
-    
-    debugPrint('📱 TTS [0ms] ▶️ PLAYBACK START | '
-        'sentences=${_sentences.length} | totalChars=${_fullText.length} | '
-        'msPerChar=$_msPerChar | pauseMs=$_sentencePauseMs');
-    
     _playing = true;
-    _errorRetryCount = 0;  // 重置错误计数
+    _progressCallbackReceived = false;
     _currentSentenceIndex = 0;
     _currentWordIndex = -1;
-    _parseWordsForSentence(0);
     
-    if (mounted && !_disposed) {
-      setState(() {});
-    }
-    
-    if (_sentences.isNotEmpty) {
-      widget.onCurrentParagraphChanged?.call(_sentences[0]);
-    }
+    if (mounted) setState(() {});
     
     // 注册回调
     _registerTtsCallbacks();
     
-    // 启动 fallback
-    _startFallbackTimer();
+    debugPrint('📱 TTS ▶️ PLAYBACK START | '
+        'mode=${_useSentenceMode ? "SENTENCE" : "FULL"} | '
+        'sentences=${_sentences.length} | '
+        'baseMsPerChar=${_baseMsPerChar.toStringAsFixed(1)}');
     
-    // 使用TTS管理器朗读
-    _ttsManager.speak(_fullText, _ownerId);
+    if (_useSentenceMode) {
+      // 逐句播放模式
+      _playSentence(0);
+    } else {
+      // 全文播放模式（有进度回调的设备）
+      _playFullText();
+    }
+  }
+  
+  /// 全文播放模式
+  void _playFullText() {
+    if (_sentences.isEmpty) return;
+    
+    _parseWordsForSentence(0);
+    widget.onCurrentParagraphChanged?.call(_sentences[0]);
+    
+    final fullText = _sentences.join('，');
+    _ttsManager.speak(fullText, _ownerId);
   }
   
   void _onPlaybackComplete() {
     if (_disposed || !mounted || !_playing) return;
     
-    final elapsed = _playbackStopwatch?.elapsedMilliseconds ?? 0;
-    debugPrint('📱 TTS [${elapsed}ms] 🔁 LOOP RESTART | waiting 800ms');
+    debugPrint('📱 TTS 🔁 LOOP RESTART | waiting 800ms');
     
     _cancelFallbackTimer();
+    _cancelSentenceTimeout();
     
     _currentSentenceIndex = 0;
     _currentWordIndex = -1;
-    _parseWordsForSentence(0);
     
-    if (mounted && !_disposed) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
     
     Future.delayed(const Duration(milliseconds: 800), () {
       if (_disposed || !mounted || !_playing) return;
       
-      _playbackStopwatch?.reset();
-      _playbackStopwatch?.start();
-      _errorRetryCount = 0;  // 重置错误计数
-      
-      debugPrint('📱 TTS [0ms] ▶️ LOOP PLAYBACK START');
-      
-      if (_sentences.isNotEmpty) {
-        widget.onCurrentParagraphChanged?.call(_sentences[0]);
+      if (_useSentenceMode) {
+        _playSentence(0);
+      } else {
+        _playFullText();
       }
-      
-      _startFallbackTimer();
-      _ttsManager.speak(_fullText, _ownerId);
     });
   }
 
@@ -439,7 +500,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     if (!_playing) return;
     debugPrint('📱 TTS TextContent: Stopping playback for $_ownerId');
     _playing = false;
+    _waitingForCompletion = false;
     _cancelFallbackTimer();
+    _cancelSentenceTimeout();
     _ttsManager.stop();
     _ttsManager.unregisterCallbacks(_ownerId);
   }
@@ -470,6 +533,8 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
       _parseContent();
       _currentSentenceIndex = 0;
       _currentWordIndex = -1;
+      _historicalMsPerChar.clear();  // 新内容，重置学习数据
+      _baseMsPerChar = 140.0;
       if (widget.isVisible && _sentences.isNotEmpty) {
         Future.microtask(() {
           if (mounted && !_disposed && widget.isVisible) {
@@ -485,6 +550,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     debugPrint('📱 TTS TextContent: Disposing $_ownerId');
     _disposed = true;
     _cancelFallbackTimer();
+    _cancelSentenceTimeout();
     _pulseController?.dispose();
     _stopPlayback();
     super.dispose();
