@@ -1,10 +1,13 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'audio_background_keep_alive_service.dart';
 
 /// Android 前台服务管理器
 /// 负责管理前台服务的启动、停止和通知更新
+/// 支持音频播放状态显示和静音控制
 class ForegroundServiceManager {
   static final ForegroundServiceManager _instance = ForegroundServiceManager._internal();
   factory ForegroundServiceManager() => _instance;
@@ -13,6 +16,19 @@ class ForegroundServiceManager {
   bool _isServiceRunning = false;
   bool _isInitialized = false;
   bool get isServiceRunning => _isServiceRunning;
+  
+  // 音频保活服务引用
+  final AudioBackgroundKeepAliveService _audioKeepAlive = AudioBackgroundKeepAliveService();
+  
+  // 当前显示状态
+  String _currentTitle = '';
+  String _currentText = '';
+  bool _isAudioMuted = true;
+  
+  // 静音状态变化的回调
+  static VoidCallback? onMuteToggleRequested;
+  // 停止发送的回调
+  static VoidCallback? onStopSendingRequested;
 
   /// 请求通知权限 (Android 13+ 需要)
   Future<bool> requestNotificationPermission() async {
@@ -75,10 +91,11 @@ class ForegroundServiceManager {
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'global_dharma_sending',
         channelName: '全球法布施发送',
-        channelDescription: '显示全球法布施发送进度',
+        channelDescription: '显示全球法布施发送进度和经文播放状态',
         channelImportance: NotificationChannelImportance.HIGH,
         priority: NotificationPriority.HIGH,
         visibility: NotificationVisibility.VISIBILITY_PUBLIC,
+        playSound: false,  // 不播放通知声音
       ),
       iosNotificationOptions: const IOSNotificationOptions(
         showNotification: false,
@@ -91,9 +108,30 @@ class ForegroundServiceManager {
         allowWifiLock: true,
       ),
     );
+    
+    // 初始化跨 Isolate 通信端口
+    FlutterForegroundTask.initCommunicationPort();
+    
+    // 监听来自后台 Isolate 的消息
+    FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
 
     _isInitialized = true;
     debugPrint('✅ Android 前台服务已初始化');
+  }
+  
+  /// 处理来自后台 Isolate 的消息
+  void _onReceiveTaskData(Object data) {
+    debugPrint('📨 收到后台消息: $data');
+    
+    if (data is String) {
+      if (data == 'toggle_mute') {
+        debugPrint('🔇 用户请求切换静音状态');
+        onMuteToggleRequested?.call();
+      } else if (data == 'stop_sending') {
+        debugPrint('⏹ 用户请求停止发送');
+        onStopSendingRequested?.call();
+      }
+    }
   }
 
 
@@ -112,21 +150,31 @@ class ForegroundServiceManager {
       return true;
     }
 
+    _isAudioMuted = _audioKeepAlive.isMuted;
+
     try {
       final ServiceRequestResult result = await FlutterForegroundTask.startService(
         serviceId: 256,
-        notificationTitle: '正在发送经文',
-        notificationText: '准备向全球发送: $fileName',
+        notificationTitle: '🔔 正在发送经文',
+        notificationText: _buildNotificationText(
+          sendingInfo: '准备向全球发送: $fileName',
+          audioInfo: '🔇 静音播放陀罗尼中...',
+        ),
         notificationButtons: [
+          NotificationButton(
+            id: 'toggle_mute',
+            text: _isAudioMuted ? '🔊 取消静音' : '🔇 静音',
+          ),
           const NotificationButton(
             id: 'stop_sending',
-            text: '停止发送',
+            text: '⏹ 停止',
           ),
         ],
         callback: startCallback,
       );
 
       _isServiceRunning = true;
+      _currentTitle = '🔔 正在发送经文';
       debugPrint('✅ Android 前台服务已启动: $result');
       return true;
     } catch (e) {
@@ -135,27 +183,86 @@ class ForegroundServiceManager {
     }
   }
 
+  /// 构建通知文本（融合发送进度和音频状态）
+  String _buildNotificationText({
+    required String sendingInfo,
+    required String audioInfo,
+  }) {
+    return '$sendingInfo\n$audioInfo';
+  }
+
   /// 更新通知进度
   Future<void> updateProgress({
     required int sentCount,
     required int totalCount,
     required String currentCountry,
     int? loopCount,
+    String? audioStatus,
   }) async {
     if (!Platform.isAndroid || !_isServiceRunning) return;
 
     try {
-      String title = '正在发送经文';
+      String title = '🔔 正在发送经文';
       if (loopCount != null && loopCount > 0) {
-        title = '循环发送中 (第 $loopCount 轮)';
+        title = '🔄 循环发送中 (第 $loopCount 轮)';
       }
+
+      // 获取音频状态
+      _isAudioMuted = _audioKeepAlive.isMuted;
+      final audioPlaying = _audioKeepAlive.isPlaying;
+      
+      String audioInfo;
+      if (audioPlaying) {
+        if (_isAudioMuted) {
+          audioInfo = '🔇 静音播放陀罗尼中...';
+        } else {
+          audioInfo = '🔊 播放陀罗尼中...';
+        }
+      } else {
+        audioInfo = '⏸ 音频未运行';
+      }
+
+      final sendingInfo = '📍 发送到: $currentCountry ($sentCount/$totalCount)';
+      
+      _currentTitle = title;
+      _currentText = _buildNotificationText(
+        sendingInfo: sendingInfo,
+        audioInfo: audioInfo,
+      );
 
       await FlutterForegroundTask.updateService(
         notificationTitle: title,
-        notificationText: '发送到: $currentCountry ($sentCount/$totalCount)',
+        notificationText: _currentText,
       );
     } catch (e) {
       debugPrint('❌ 更新通知进度失败: $e');
+    }
+  }
+
+  /// 更新音频静音状态（外部调用）
+  Future<void> updateMuteStatus(bool isMuted) async {
+    if (!Platform.isAndroid || !_isServiceRunning) return;
+    
+    _isAudioMuted = isMuted;
+    
+    try {
+      // 重新构建通知以更新按钮文字
+      final audioPlaying = _audioKeepAlive.isPlaying;
+      String audioInfo;
+      if (audioPlaying) {
+        audioInfo = isMuted ? '🔇 静音播放陀罗尼中...' : '🔊 播放陀罗尼中...';
+      } else {
+        audioInfo = '⏸ 音频未运行';
+      }
+
+      await FlutterForegroundTask.updateService(
+        notificationTitle: _currentTitle.isNotEmpty ? _currentTitle : '🔔 正在发送经文',
+        notificationText: audioInfo,
+      );
+      
+      debugPrint('🔇 通知栏静音状态已更新: $isMuted');
+    } catch (e) {
+      debugPrint('❌ 更新静音状态失败: $e');
     }
   }
 
@@ -171,6 +278,8 @@ class ForegroundServiceManager {
     try {
       final ServiceRequestResult result = await FlutterForegroundTask.stopService();
       _isServiceRunning = false;
+      _currentTitle = '';
+      _currentText = '';
       debugPrint('✅ Android 前台服务已停止: $result');
       return true;
     } catch (e) {
@@ -202,6 +311,15 @@ class ForegroundServiceManager {
     } catch (e) {
       debugPrint('❌ 显示完成通知失败: $e');
     }
+  }
+  
+  /// 处理通知按钮点击（供 TaskHandler 调用）
+  /// 注意：这个方法在后台 Isolate 中运行，需要通过 sendDataToMain 发送消息到主 Isolate
+  static void handleButtonPress(String id) {
+    debugPrint('🔘 通知按钮被点击: $id');
+    
+    // 通过跨 Isolate 通信发送消息到主 Isolate
+    FlutterForegroundTask.sendDataToMain(id);
   }
 }
 
@@ -238,14 +356,10 @@ class ForegroundTaskHandler extends TaskHandler {
     debugPrint('🛑 前台任务已销毁: $timestamp');
   }
 
-  void onButtonPressed(String id) {
-    debugPrint('🔘 通知按钮被点击: $id');
-    
-    if (id == 'stop_sending') {
-      // 用户点击了停止发送按钮
-      // 这里可以通过事件总线或其他机制通知应用停止发送
-      debugPrint('用户请求停止发送');
-    }
+  @override
+  void onNotificationButtonPressed(String id) {
+    // 委托给 ForegroundServiceManager 处理
+    ForegroundServiceManager.handleButtonPress(id);
   }
 
   @override
@@ -255,3 +369,4 @@ class ForegroundTaskHandler extends TaskHandler {
     FlutterForegroundTask.launchApp('/');
   }
 }
+

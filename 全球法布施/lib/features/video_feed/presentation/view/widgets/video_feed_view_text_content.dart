@@ -267,12 +267,13 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     
     // 计算这句的预期速度
     _currentMsPerChar = _calculateMsPerChar(_words.length);
-    final expectedDuration = (_words.length * _currentMsPerChar).round();
+    // 使用考虑加速曲线的预期时长
+    final expectedDuration = _calculateExpectedSentenceDuration(_words.length).round();
     
     debugPrint('📱 TTS 📖 Playing sentence $sentenceIndex | '
         'chars=${_words.length} | '
         'speed=${_currentMsPerChar.toStringAsFixed(1)}ms/char | '
-        'expected=${expectedDuration}ms');
+        'expected=${expectedDuration}ms (with acceleration)');
     
     // 重置句子计时器
     _sentenceStopwatch = Stopwatch()..start();
@@ -304,31 +305,52 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _scheduleFallbackWord(0);
   }
   
-  /// 调度下一个字的高亮
+  /// 调度下一个字的高亮（使用非线性速度曲线）
+  /// 
+  /// TTS 引擎特性：长句子后半部分会自然加速
+  /// 速度曲线设计：
+  /// - 前 30% 的字：正常速度 (1.0x)
+  /// - 中间 40% 的字：逐渐加速 (1.0x -> 1.4x)
+  /// - 最后 30% 的字：最快速度 (1.4x -> 1.6x)
   void _scheduleFallbackWord(int wordIndex) {
     if (!_playing || _disposed) return;
-    // 如果已经收到进度回调，不再使用 fallback
     if (_progressCallbackReceived) return;
     
-    final elapsed = _sentenceStopwatch?.elapsedMilliseconds ?? 0;
     final wordsRemaining = _words.length - wordIndex - 1;
     
-    // 计算下一个字的延迟
-    int delayMs;
     if (wordsRemaining <= 0) {
       // 最后一个字，等待 completion
       return;
+    }
+    
+    // 计算当前字在句子中的位置比例 (0.0 - 1.0)
+    final progress = wordIndex / _words.length;
+    
+    // 计算速度因子（模拟TTS加速曲线）
+    final speedFactor = _calculateSpeedFactor(progress, _words.length);
+    
+    // 基础延迟时间（考虑速度因子）
+    final baseDelay = _currentMsPerChar / speedFactor;
+    
+    // 应用动态校准（确保能在预期时间内完成）
+    final elapsed = _sentenceStopwatch?.elapsedMilliseconds ?? 0;
+    final expectedTotal = _calculateExpectedSentenceDuration(_words.length);
+    final remainingTime = expectedTotal - elapsed;
+    
+    int delayMs;
+    if (remainingTime > 0 && wordsRemaining > 0) {
+      // 计算剩余字需要的平均时间
+      final avgRemainingDelay = remainingTime / wordsRemaining;
+      // 使用曲线速度和剩余时间的加权平均
+      // 前期更信任曲线速度，后期更信任剩余时间
+      final trustRemainingFactor = progress.clamp(0.0, 0.8);
+      delayMs = (baseDelay * (1 - trustRemainingFactor) + avgRemainingDelay * trustRemainingFactor)
+          .clamp(40.0, 300.0).round();
+    } else if (remainingTime <= 0) {
+      // 已经落后，快速追赶
+      delayMs = 40;
     } else {
-      // 动态计算延迟，确保匀速完成
-      final expectedTotal = _words.length * _currentMsPerChar;
-      final remainingTime = expectedTotal - elapsed;
-      
-      if (remainingTime > 0) {
-        delayMs = (remainingTime / wordsRemaining).clamp(50.0, 300.0).round();
-      } else {
-        // 已经落后，快速追赶
-        delayMs = 50;
-      }
+      delayMs = baseDelay.clamp(40.0, 300.0).round();
     }
     
     _fallbackTimer = Timer(Duration(milliseconds: delayMs), () {
@@ -343,8 +365,65 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
         
         _scheduleFallbackWord(nextWordIndex);
       }
-      // 不处理最后一个字之后的情况，等待 completion
     });
+  }
+  
+  /// 计算速度因子（非线性曲线）
+  /// 
+  /// progress: 0.0 (句子开始) -> 1.0 (句子结束)
+  /// charCount: 句子字数，用于调整曲线
+  /// 
+  /// 返回速度因子：1.0 = 正常速度，>1.0 = 加速
+  double _calculateSpeedFactor(double progress, int charCount) {
+    // 短句子（<8字）不需要加速
+    if (charCount < 8) {
+      return 1.0;
+    }
+    
+    // 中等句子（8-15字）轻微加速
+    if (charCount <= 15) {
+      if (progress < 0.4) {
+        return 1.0;
+      } else if (progress < 0.7) {
+        // 线性加速：1.0 -> 1.2
+        return 1.0 + (progress - 0.4) / 0.3 * 0.2;
+      } else {
+        return 1.2;
+      }
+    }
+    
+    // 长句子（>15字）明显加速曲线
+    if (progress < 0.25) {
+      // 前25%：正常速度
+      return 1.0;
+    } else if (progress < 0.5) {
+      // 25%-50%：开始加速 (1.0 -> 1.3)
+      final localProgress = (progress - 0.25) / 0.25;
+      return 1.0 + localProgress * 0.3;
+    } else if (progress < 0.75) {
+      // 50%-75%：继续加速 (1.3 -> 1.5)
+      final localProgress = (progress - 0.5) / 0.25;
+      return 1.3 + localProgress * 0.2;
+    } else {
+      // 最后25%：最快速度 (1.5 -> 1.7)
+      final localProgress = (progress - 0.75) / 0.25;
+      return 1.5 + localProgress * 0.2;
+    }
+  }
+  
+  /// 计算预期句子总时长（考虑加速曲线）
+  double _calculateExpectedSentenceDuration(int charCount) {
+    // 简单估算：由于后期加速，总时间比匀速少约 15-25%
+    double reductionFactor;
+    if (charCount < 8) {
+      reductionFactor = 1.0;  // 短句不加速
+    } else if (charCount <= 15) {
+      reductionFactor = 0.92;  // 中等句减少 8%
+    } else {
+      reductionFactor = 0.82;  // 长句减少 18%
+    }
+    
+    return charCount * _currentMsPerChar * reductionFactor;
   }
   
   /// 设置句子超时保护
