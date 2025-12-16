@@ -93,6 +93,9 @@ dependencies:
   # 网络信息
   network_info_plus: ^7.0.0
 
+  # 设备信息
+  device_info_plus: ^11.1.0
+
   # 平台相关
   universal_html: ^2.2.4
   js: ^0.7.2
