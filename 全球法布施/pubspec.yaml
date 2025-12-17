@@ -128,7 +128,8 @@ flutter:
   assets:
     - assets/images/
     - assets/data/
-    - assets/built_in/
+    # assets/built_in/ 已移除 - 素材通过 CDN 下载，不打包进 APK/IPA
+    # Web 端素材在 web/assets/built_in/，独立提供服务
     - assets/models/
     - assets/earth_texture.jpg
     - assets/ip_data/
