@@ -818,23 +818,45 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     );
   }
   
-  /// 构建歌词风格布局 - 垂直滚动，像音乐软件歌词
+  /// 构建歌词风格布局 - 当前句子固定在中央
   Widget _buildLyricsStyleLayout() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // 上方：已读句子（每句独立3D旋转）
-          ..._buildPastSentencesLyrics(),
-          
-          // 中间：当前正在读的句子（最大，高亮）
-          _buildCurrentSentenceLyrics(),
-          
-          // 下方：未读句子
-          ..._buildUpcomingSentencesLyrics(),
-        ],
-      ),
+    return Stack(
+      children: [
+        // 上半部分：已读句子（从下往上排列）
+        Positioned(
+          top: 40,
+          left: 20,
+          right: 20,
+          bottom: MediaQuery.of(context).size.height * 0.45,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: _buildPastSentencesLyrics(),
+          ),
+        ),
+        
+        // 中间固定位置：当前正在读的句子
+        Positioned(
+          left: 20,
+          right: 20,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: _buildCurrentSentenceLyrics(),
+          ),
+        ),
+        
+        // 下半部分：未读句子（从上往下排列）
+        Positioned(
+          top: MediaQuery.of(context).size.height * 0.55,
+          left: 20,
+          right: 20,
+          bottom: 40,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: _buildUpcomingSentencesLyrics(),
+          ),
+        ),
+      ],
     );
   }
   
