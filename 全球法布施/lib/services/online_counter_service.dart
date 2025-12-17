@@ -55,8 +55,8 @@ class OnlineCounterService {
   /// 建立 WebSocket 连接
   Future<bool> _connectWebSocket(String activityType) async {
     try {
-      final uri = Uri.parse('$wsUrl/api/online/ws')
-          .replace(queryParameters: {'activityType': activityType});
+      // 直接使用字符串拼接构建 URI，避免 Uri.replace() 导致端口变成 0 的问题
+      final uri = Uri.parse('$wsUrl/api/online/ws?activityType=${Uri.encodeComponent(activityType)}');
       
       print('🔌 准备连接 WebSocket: $uri');
       

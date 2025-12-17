@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:global_dharma_sharing/services/tts_manager.dart';
@@ -74,12 +73,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   // 动画控制器
   AnimationController? _pulseController;
   Animation<double>? _pulseAnimation;
-  
-  // 3D 旋转动画控制器
-  AnimationController? _rotationController;
-  
-  // 已读句子列表（用于上方3D旋转显示）
-  final List<String> _pastSentences = [];
   
   // TTS管理器
   final TtsManager _ttsManager = TtsManager();
@@ -189,12 +182,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
       CurvedAnimation(parent: _pulseController!, curve: Curves.easeInOut),
     );
-    
-    // 3D 旋转动画：8秒一圈，持续旋转
-    _rotationController = AnimationController(
-      duration: const Duration(seconds: 8),
-      vsync: this,
-    )..repeat();
   }
 
   /// 解析内容：分句
@@ -329,18 +316,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     if (_words.isNotEmpty) {
       _currentWordIndex = _words.length - 1;
       if (mounted) setState(() {});
-    }
-    
-    // 将已读句子添加到 past 列表（用于上方3D旋转显示）
-    if (_currentSentenceIndex < _sentences.length) {
-      final completedSentence = _sentences[_currentSentenceIndex];
-      if (!_pastSentences.contains(completedSentence)) {
-        _pastSentences.insert(0, completedSentence);
-        // 只保留最近 5 条
-        if (_pastSentences.length > 5) {
-          _pastSentences.removeLast();
-        }
-      }
     }
     
     // 播放下一句
@@ -778,7 +753,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _cancelFallbackTimer();
     _cancelSentenceTimeout();
     _pulseController?.dispose();
-    _rotationController?.dispose();
     _stopPlayback();
     super.dispose();
   }
@@ -808,221 +782,83 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
         color: Colors.black,
         width: double.infinity,
         height: double.infinity,
-        child: AnimatedBuilder(
-          animation: Listenable.merge([_pulseAnimation!, _rotationController!]),
-          builder: (context, child) {
-            return _buildLyricsStyleLayout();
-          },
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: AnimatedBuilder(
+              animation: _pulseAnimation!,
+              builder: (context, child) {
+                return _buildKaraokeText();
+              },
+            ),
+          ),
         ),
       ),
     );
   }
   
-  /// 构建歌词风格布局 - 当前句子固定在中央
-  Widget _buildLyricsStyleLayout() {
-    return Stack(
-      children: [
-        // 上半部分：已读句子（从下往上排列）
-        Positioned(
-          top: 40,
-          left: 20,
-          right: 20,
-          bottom: MediaQuery.of(context).size.height * 0.45,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: _buildPastSentencesLyrics(),
-          ),
-        ),
-        
-        // 中间固定位置：当前正在读的句子
-        Positioned(
-          left: 20,
-          right: 20,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: _buildCurrentSentenceLyrics(),
-          ),
-        ),
-        
-        // 下半部分：未读句子（从上往下排列）
-        Positioned(
-          top: MediaQuery.of(context).size.height * 0.55,
-          left: 20,
-          right: 20,
-          bottom: 40,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: _buildUpcomingSentencesLyrics(),
-          ),
-        ),
-      ],
-    );
-  }
-  
-  /// 构建已读句子列表 - 每句独立3D旋转
-  List<Widget> _buildPastSentencesLyrics() {
-    if (_pastSentences.isEmpty) {
-      return [];
-    }
-    
-    final rotationValue = _rotationController?.value ?? 0.0;
-    
-    return _pastSentences.reversed.map((sentence) {
-      final index = _pastSentences.indexOf(sentence);
-      // 每个句子有不同的旋转相位
-      final phase = index * 0.5;
-      final angle = (rotationValue * 2 * math.pi) + phase;
-      
-      // 3D旋转效果 - 每个句子单独绕Y轴旋转
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.identity()
-            ..setEntry(3, 2, 0.001)  // 透视
-            ..rotateY(math.sin(angle) * 0.3),  // Y轴来回旋转
-          child: Opacity(
-            opacity: 0.5,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.purple.withValues(alpha: 0.2),
-                    Colors.blue.withValues(alpha: 0.15),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                sentence,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white54,
-                  shadows: [
-                    Shadow(color: Colors.black38, blurRadius: 4, offset: Offset(1, 1)),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }).toList();
-  }
-  
-  /// 构建当前句子 - 最大，金色高亮，卡拉OK效果
-  Widget _buildCurrentSentenceLyrics() {
+  Widget _buildKaraokeText() {
     if (_words.isEmpty) {
       final safeIndex = _currentSentenceIndex.clamp(0, _sentences.length - 1);
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Text(
-          _sentences.isNotEmpty ? _sentences[safeIndex] : '',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.w900,
-            color: Colors.white,
-            shadows: [
-              Shadow(color: Colors.black, blurRadius: 8, offset: Offset(2, 2)),
-            ],
-          ),
+      return Text(
+        _sentences[safeIndex],
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 42,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+          shadows: [
+            Shadow(color: Colors.black, blurRadius: 8, offset: Offset(2, 2)),
+          ],
         ),
       );
     }
     
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: List.generate(_words.length, (index) {
-          final isHighlighted = index == _currentWordIndex;
-          final isPast = index < _currentWordIndex;
-          final word = _words[index];
-          
-          double scale = 1.0;
-          Color color = Colors.white60;
-          
-          if (isHighlighted) {
-            scale = _pulseAnimation?.value ?? 1.15;
-            color = const Color(0xFFFFD700);  // 金色高亮
-          } else if (isPast) {
-            color = Colors.white;
-          }
-          
-          return Transform.scale(
-            scale: scale,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 2),
-              child: Text(
-                word,
-                style: TextStyle(
-                  fontSize: isHighlighted ? 30 : 26,
-                  fontWeight: FontWeight.w900,
-                  color: color,
-                  shadows: [
-                    Shadow(
-                      color: isHighlighted ? Colors.orange.withValues(alpha: 0.8) : Colors.black,
-                      blurRadius: isHighlighted ? 15 : 6,
-                      offset: const Offset(1, 1),
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: List.generate(_words.length, (index) {
+        final isHighlighted = index == _currentWordIndex;
+        final isPast = index < _currentWordIndex;
+        final word = _words[index];
+        
+        double scale = 1.0;
+        Color color = Colors.white60;
+        
+        if (isHighlighted) {
+          scale = _pulseAnimation?.value ?? 1.15;
+          color = const Color(0xFFFFD700);
+        } else if (isPast) {
+          color = Colors.white;
+        }
+        
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+            child: Text(
+              word,
+              style: TextStyle(
+                fontSize: isHighlighted ? 48 : 42,
+                fontWeight: FontWeight.w900,
+                color: color,
+                shadows: [
+                  Shadow(
+                    color: isHighlighted ? Colors.orange.withValues(alpha: 0.8) : Colors.black,
+                    blurRadius: isHighlighted ? 20 : 8,
+                    offset: const Offset(2, 2),
+                  ),
+                  if (isHighlighted)
+                    const Shadow(
+                      color: Colors.yellow,
+                      blurRadius: 30,
                     ),
-                    if (isHighlighted)
-                      const Shadow(
-                        color: Colors.yellow,
-                        blurRadius: 20,
-                      ),
-                  ],
-                ),
+                ],
               ),
             ),
-          );
-        }),
-      ),
+          ),
+        );
+      }),
     );
   }
-  
-  /// 构建未读句子列表
-  List<Widget> _buildUpcomingSentencesLyrics() {
-    final upcoming = <String>[];
-    
-    // 获取接下来的 3 个句子
-    for (int i = _currentSentenceIndex + 1; 
-         i < _sentences.length && upcoming.length < 3; 
-         i++) {
-      upcoming.add(_sentences[i]);
-    }
-    
-    if (upcoming.isEmpty) {
-      return [];
-    }
-    
-    return upcoming.asMap().entries.map((entry) {
-      final index = entry.key;
-      final sentence = entry.value;
-      final opacity = 0.4 - (index * 0.1);
-      final fontSize = 18.0 - (index * 2);
-      
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Text(
-          sentence,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: fontSize,
-            fontWeight: FontWeight.w500,
-            color: Colors.white.withValues(alpha: opacity.clamp(0.15, 0.4)),
-            shadows: const [
-              Shadow(color: Colors.black26, blurRadius: 3, offset: Offset(1, 1)),
-            ],
-          ),
-        ),
-      );
-    }).toList();
-  }
 }
-

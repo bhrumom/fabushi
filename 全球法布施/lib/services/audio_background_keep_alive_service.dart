@@ -114,25 +114,44 @@ class AudioBackgroundKeepAliveService {
     _loopCount = 0;
     _currentCountry = '';
     
-    try {
-      // 设置音频源
-      final url = audioUrl ?? defaultAudioUrl;
-      debugPrint('🔇 音频保活启动: $_audioName');
-      debugPrint('📥 加载音频: $url');
-      
-      await _audioPlayer!.setUrl(url);
-      
-      // 确保音量正确
-      await _audioPlayer!.setVolume(_isMuted ? 0.0 : 0.3);
-      
-      // 开始播放
-      await _audioPlayer!.play();
-      _isPlaying = true;
-      
-      debugPrint('✅ 音频保活已启动');
-    } catch (e) {
-      debugPrint('❌ 启动音频保活失败: $e');
-    }
+    // 设置音频源
+    final url = audioUrl ?? defaultAudioUrl;
+    debugPrint('🔇 音频保活启动: $_audioName');
+    debugPrint('📥 加载音频: $url');
+    
+    // 使用非阻塞方式启动音频，不阻塞主发送流程
+    _startAudioAsync(url);
+    
+    // 立即标记为已启动，让发送流程继续
+    _isPlaying = true;
+    debugPrint('✅ 音频保活已启动（异步加载中）');
+  }
+  
+  /// 异步启动音频播放（不阻塞调用者）
+  void _startAudioAsync(String url) {
+    Future(() async {
+      try {
+        // 设置 5 秒超时
+        await _audioPlayer!.setUrl(url).timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            debugPrint('⚠️ 音频加载超时，将重试本地资源');
+            throw TimeoutException('音频加载超时');
+          },
+        );
+        
+        // 确保音量正确
+        await _audioPlayer!.setVolume(_isMuted ? 0.0 : 0.3);
+        
+        // 开始播放
+        await _audioPlayer!.play();
+        
+        debugPrint('✅ 音频保活已开始播放');
+      } catch (e) {
+        debugPrint('⚠️ 音频保活加载失败: $e（不影响发送）');
+        // 失败不影响发送流程，只是没有后台保活音频
+      }
+    });
   }
 
   /// 更新发送进度（用于通知栏显示）

@@ -515,9 +515,12 @@ class FileTransferModel extends ChangeNotifier {
         }
       }
 
+      debugPrint('🔧 准备初始化平台全球发送服务...');
       await _initializePlatformGlobalSendService();
+      debugPrint('🔧 平台服务初始化完成，准备开始发送...');
       // 传递循环参数给底层服务，让底层服务处理循环逻辑
       await _platformGlobalSendService?.startSending(files: _selectedFiles, isLoop: _isLooping);
+      debugPrint('🔧 发送方法执行完毕，准备上传数据...');
       await _uploadPendingData();
       
       debugPrint('✅ 传输完成，循环模式: $_isLooping, 轮次: $_loopCount');
