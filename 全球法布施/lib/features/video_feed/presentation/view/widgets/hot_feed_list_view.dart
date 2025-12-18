@@ -77,7 +77,16 @@ class _HotFeedListViewState extends State<HotFeedListView>
       
       debugPrint('获取到 ${hotContentList.length} 条热门内容');
 
-      if (hotContentList.isEmpty) {
+      // 🔥 过滤：只保留有点赞或评论的内容
+      final filteredContentList = hotContentList.where((item) {
+        final likeCount = item['like_count'] as int? ?? 0;
+        final commentCount = item['comment_count'] as int? ?? 0;
+        return likeCount > 0 || commentCount > 0;
+      }).toList();
+      
+      debugPrint('🔥 过滤后剩余 ${filteredContentList.length} 条有互动的内容');
+
+      if (filteredContentList.isEmpty) {
         if (mounted) {
           setState(() {
             _hotVideos = [];
@@ -88,41 +97,38 @@ class _HotFeedListViewState extends State<HotFeedListView>
         return;
       }
 
-      // 2. 为每个热门内容加载完整数据
-      final List<VideoEntity> videos = [];
+      // 🚀 渐进加载：加载一个显示一个，不等待全部完成
+      _hasLoadedOnce = true;
       
-      for (final hotItem in hotContentList) {
+      for (final hotItem in filteredContentList) {
+        if (!mounted) break;
+        
         final contentId = hotItem['id'] as String;
         final contentType = hotItem['content_type'] as String? ?? 'text';
         final title = hotItem['title'] as String?;
         final filePath = hotItem['file_path'] as String?;
         final likeCount = hotItem['like_count'] as int? ?? 0;
-        final commentCount = hotItem['comment_count'] as int? ?? 0; // 从统一API获取
+        final commentCount = hotItem['comment_count'] as int? ?? 0;
         
         debugPrint('🔥 处理热门内容: id=$contentId, title=$title, filePath=$filePath, likeCount=$likeCount');
 
+        VideoEntity? video;
+        
         if (contentType == 'text') {
-          // 文本内容：根据 filePath 加载，或者使用随机内容
+          // 文本内容：根据 filePath 加载，优先本地缓存
           String? textContent;
           String displayTitle = title ?? '热门内容';
           
           if (filePath != null && filePath.isNotEmpty) {
             debugPrint('🔥 有 filePath，尝试加载: $filePath');
-            // 有 filePath，从云端加载对应的文本
+            // 使用 CloudflareTextService，它会优先从本地缓存加载
             textContent = await _loadTextFromFilePath(filePath);
             debugPrint('🔥 加载结果: ${textContent != null ? "成功 ${textContent.length}字符" : "失败"}');
-            if (textContent == null) {
-              debugPrint('🔥 加载失败，使用随机内容');
-              // 加载失败，使用随机内容
-              final randomContent = await _textService.getRandomTextContent();
-              if (randomContent != null) {
-                textContent = randomContent['content'];
-                displayTitle = randomContent['title'] ?? displayTitle;
-              }
-            }
-          } else {
-            debugPrint('🔥 没有 filePath，使用随机内容');
-            // 没有 filePath，使用随机内容
+          }
+          
+          // 如果没有 filePath 或加载失败，使用随机内容（也会优先缓存）
+          if (textContent == null) {
+            debugPrint('🔥 使用随机内容（优先缓存）');
             final randomContent = await _textService.getRandomTextContent();
             if (randomContent != null) {
               textContent = randomContent['content'];
@@ -131,51 +137,53 @@ class _HotFeedListViewState extends State<HotFeedListView>
           }
           
           if (textContent != null) {
-            videos.add(VideoEntity(
+            video = VideoEntity(
               id: contentId,
               username: displayTitle,
               description: '点击头像阅读全文',
               videoUrl: '',
               profileImageUrl: '',
               likeCount: likeCount,
-              commentCount: commentCount, // 使用统一API返回的评论数
+              commentCount: commentCount,
               shareCount: 0,
               timestamp: DateTime.now(),
               contentType: ContentType.text,
               textContent: textContent,
-            ));
+              filePath: filePath,
+            );
           }
         } else {
           // 视频内容
-          videos.add(VideoEntity(
+          video = VideoEntity(
             id: contentId,
             username: title ?? '热门视频',
             description: '',
-            videoUrl: '', // 需要从其他地方获取视频URL
+            videoUrl: '',
             profileImageUrl: '',
             likeCount: likeCount,
-            commentCount: commentCount, // 使用统一API返回的评论数
+            commentCount: commentCount,
             shareCount: 0,
             timestamp: DateTime.now(),
             contentType: ContentType.video,
-          ));
+          );
+        }
+        
+        // 🚀 渐进加载：每加载完一个内容就立即显示
+        if (video != null && mounted) {
+          setState(() {
+            _hotVideos.add(video!);
+            _isLoading = false; // 有第一个内容后立即结束loading状态
+          });
+          
+          // 初始化第一个视频
+          if (_hotVideos.length == 1 && video.contentType == ContentType.video) {
+            await _initAndPlayVideo(0);
+          }
         }
       }
-
-      // 评论数已从统一的 content_metadata API 获取，无需再单独获取
-
-      if (mounted) {
-        setState(() {
-          _hotVideos = videos;
-          _isLoading = false;
-          _hasLoadedOnce = true;
-        });
-
-        // 初始化第一个视频
-        if (_hotVideos.isNotEmpty && _hotVideos[0].contentType == ContentType.video) {
-          await _initAndPlayVideo(0);
-        }
-      }
+      
+      debugPrint('🔥 热门内容加载完成，共 ${_hotVideos.length} 条');
+      
     } catch (e) {
       debugPrint('加载热门内容失败: $e');
       if (mounted) {
@@ -299,7 +307,10 @@ class _HotFeedListViewState extends State<HotFeedListView>
   }
 
   Future<void> _handlePageChange(int newPage) async {
-    _currentPage = newPage;
+    debugPrint('🔊 热门页面切换: $_currentPage -> $newPage');
+    setState(() {
+      _currentPage = newPage; // 触发rebuild，更新isVisible
+    });
     await _pauseAllControllers();
     await _initAndPlayVideo(newPage);
   }
@@ -382,6 +393,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
               key: ValueKey(_hotVideos[index].id),
               controller: _getController(_hotVideos[index].id),
               videoItem: _hotVideos[index],
+              isVisible: index == _currentPage, // 🔊 TTS只对当前页面播放
             ),
           );
         },

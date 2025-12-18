@@ -240,7 +240,7 @@ class CloudflareTextService {
         print('Loaded local manifest with ${_cachedManifest!.length} items');
       }
 
-      // 筛选txt文件，优先选择较小的文件以减少超时
+      // 筛选txt文件
       final txtFiles = _cachedManifest!
           .where((item) => item['key']?.toString().endsWith('.txt') == true)
           .map((item) => item['key'].toString())
@@ -251,20 +251,47 @@ class CloudflareTextService {
         return null;
       }
 
-      // 优先选择单卷或较小的文件
-      final preferredFiles = txtFiles.where((file) => 
-          file.contains('一卷') || 
-          file.contains('二卷') || 
-          file.contains('三卷') ||
-          file.contains('心经') ||
-          file.contains('咒语')
-      ).toList();
+      // 🚀 优先选择已缓存的文件（本地优先策略）
+      final cachedFiles = <String>[];
+      final preferredFiles = <String>[];
       
-      selectedFile = preferredFiles.isNotEmpty 
-          ? preferredFiles[_random.nextInt(preferredFiles.length)]
-          : txtFiles[_random.nextInt(txtFiles.length)];
-      print('Selected file from local manifest: $selectedFile');
-      print('File size estimate: ${selectedFile.contains('一卷') ? 'Small' : selectedFile.contains('十卷') ? 'Large' : 'Medium'}');
+      for (final file in txtFiles) {
+        String requestPath = file;
+        if (!file.contains('built_in') && file.startsWith('assets/')) {
+          requestPath = file.replaceFirst('assets/', 'assets/built_in/');
+        }
+        
+        // 检查是否已缓存
+        if (_sharedAssetManager.isAssetDownloaded(requestPath)) {
+          cachedFiles.add(file);
+        }
+        
+        // 同时检查是否是优先文件（小文件）
+        if (file.contains('一卷') || 
+            file.contains('二卷') || 
+            file.contains('三卷') ||
+            file.contains('心经') ||
+            file.contains('咒语')) {
+          preferredFiles.add(file);
+        }
+      }
+      
+      print('📊 缓存文件数量: ${cachedFiles.length}/${txtFiles.length}');
+      
+      // 选择策略：已缓存 > 优先小文件 > 随机
+      if (cachedFiles.isNotEmpty) {
+        // 从已缓存文件中随机选择
+        selectedFile = cachedFiles[_random.nextInt(cachedFiles.length)];
+        print('🚀 优先加载已缓存文件: $selectedFile');
+      } else if (preferredFiles.isNotEmpty) {
+        // 没有缓存，从小文件中选择
+        selectedFile = preferredFiles[_random.nextInt(preferredFiles.length)];
+        print('📁 选择小文件加载: $selectedFile');
+      } else {
+        // 随机选择
+        selectedFile = txtFiles[_random.nextInt(txtFiles.length)];
+        print('🎲 随机选择文件: $selectedFile');
+      }
 
       // 修正路径：如果路径不包含built_in，则添加
       String requestPath = selectedFile;
