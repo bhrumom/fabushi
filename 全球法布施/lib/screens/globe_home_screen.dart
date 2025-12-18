@@ -8,6 +8,7 @@ import 'leaderboard_screen.dart';
 import '../core/design_system/app_theme.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/online_counter_widget.dart';
+import '../core/utils/auth_guard.dart';
 
 class GlobeHomeScreen extends StatefulWidget {
   const GlobeHomeScreen({super.key});
@@ -797,6 +798,10 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   void _startSending(FileTransferModel model) async {
+    // 抖音风格：所有同步云端的活跃操作都需要登录
+    final hasAuth = await AuthGuard.check(context);
+    if (!hasAuth) return;
+
     _globeKey.currentState?.clearBeams();
 
     // 加入在线活动，增加在线人数

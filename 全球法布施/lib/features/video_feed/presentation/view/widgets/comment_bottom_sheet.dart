@@ -5,6 +5,7 @@ import '../../../../../../models/comment_model.dart';
 import '../../../../../../services/comment_service.dart';
 import '../../../../../../services/video_title_service.dart';
 import '../../../../../../core/design_system/app_theme.dart';
+import '../../../../../../core/utils/auth_guard.dart';
 
 class CommentBottomSheet extends StatefulWidget {
   final String videoId;
@@ -53,13 +54,9 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
     final content = _commentController.text.trim();
     if (content.isEmpty) return;
 
-    final authModel = context.read<AuthModel>();
-    if (!authModel.isLoggedIn) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先登录后再发表评论')),
-      );
-      return;
-    }
+    // 抖音风格：发表评论前检查登录
+    final hasAuth = await AuthGuard.check(context);
+    if (!hasAuth) return;
 
     setState(() => _isSending = true);
     

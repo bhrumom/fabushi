@@ -11,6 +11,7 @@ import 'buddha_model_screen.dart';
 import 'asset_screen.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/online_counter_widget.dart';
+import '../core/utils/auth_guard.dart';
 
 // 香已集成到佛像3D场景中
 
@@ -103,12 +104,16 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen> with Ticker
   bool _isProcessingMeditation = false;
   Future<void>? _joinFuture;
 
-  void _toggleMeditation() {
+  void _toggleMeditation() async {
     if (_isProcessingMeditation) return; // 防止快速连续点击
     
     if (_isMeditating) {
       _stopMeditation();
     } else {
+      // 抖音风格：同步云端的操作需要登录
+      final hasAuth = await AuthGuard.check(context);
+      if (!hasAuth) return;
+      
       _startMeditation();
     }
   }

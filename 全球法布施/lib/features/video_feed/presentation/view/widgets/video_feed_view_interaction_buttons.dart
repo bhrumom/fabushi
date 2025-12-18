@@ -5,6 +5,7 @@ import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_interaction_button.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_full_text_reader.dart';
 import 'package:global_dharma_sharing/providers/tts_mute_notifier.dart';
+import 'package:global_dharma_sharing/core/utils/auth_guard.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 class VideoFeedViewInteractionButtons extends StatefulWidget {
@@ -191,7 +192,11 @@ class _VideoFeedViewInteractionButtonsState
               Positioned(
                 bottom: 0,
                 child: GestureDetector(
-                  onTap: () {
+                  onTap: () async {
+                    // 检查登录
+                    final hasAuth = await AuthGuard.check(context);
+                    if (!hasAuth) return;
+
                     setState(() => _isFollowing = true);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(

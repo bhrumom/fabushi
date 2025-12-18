@@ -551,8 +551,8 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         alipayAvatar,
       );
 
-      if (success && mounted) {
-        Navigator.of(context).pop();
+        if (success && mounted) {
+          Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('支付宝登录成功！'), backgroundColor: Colors.green),
         );
@@ -627,7 +627,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         }
 
         if (success && mounted) {
-          Navigator.of(context).pop();
+          Navigator.of(context).pop(true);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('支付宝登录成功！欢迎 ${authModel.currentUser?.username}'),
