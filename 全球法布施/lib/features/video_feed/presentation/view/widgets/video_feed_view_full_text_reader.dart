@@ -13,6 +13,7 @@ class BuddhistPinyinDictionary {
   static const Map<String, List<String>> phraseMap = {
     // ===== 常见佛教专用词 =====
     '南无': ['nā', 'mó'],
+    '南無': ['nā', 'mó'],
     '般若': ['bō', 'rě'],
     '伽蓝': ['qié', 'lán'],
     '伽藍': ['qié', 'lán'],
@@ -45,6 +46,8 @@ class BuddhistPinyinDictionary {
     '彌勒': ['mí', 'lè'],
     '药师': ['yào', 'shī'],
     '藥師': ['yào', 'shī'],
+    '香云盖菩萨摩诃萨': ['xiāng', 'yún', 'gài', 'pú', 'sà', 'mó', 'hē', 'sà'],
+    '本师释迦牟尼佛': ['běn', 'shī', 'shì', 'jiā', 'móu', 'ní', 'fó'],
     
     // ===== 经典名称 =====
     '华严': ['huā', 'yán'],
@@ -115,6 +118,28 @@ class BuddhistPinyinDictionary {
     '怛侄他': ['dá', 'zhí', 'tuō'],
     '揭谛': ['jiē', 'dì'],
     '揭諦': ['jiē', 'dì'],
+    
+    // ===== 诵经前仪式 =====
+    '炉香乍爇': ['lú', 'xiāng', 'zhà', 'ruò'],
+    '法界蒙薰': ['fǎ', 'jiè', 'méng', 'xūn'],
+    '诸佛海会悉遥闻': ['zhū', 'fó', 'hǎi', 'huì', 'xī', 'yáo', 'wén'],
+    '随处结祥云': ['suí', 'chù', 'jié', 'xiáng', 'yún'],
+    '诚意方殷': ['chéng', 'yì', 'fāng', 'yīn'],
+    '诸佛现全身': ['zhū', 'fó', 'xiàn', 'quán', 'shēn'],
+    '修唎修唎': ['xiū', 'lì', 'xiū', 'lì'],
+    '摩诃修唎': ['mó', 'hē', 'xiū', 'lì'],
+    '修修唎': ['xiū', 'xiū', 'lì'],
+    '萨婆诃': ['sà', 'pó', 'hē'],
+    '婆嚩秫驮': ['pó', 'wā', 'shú', 'tuó'],
+    '婆嚩达摩婆嚩': ['pó', 'wā', 'dá', 'mó', 'pó', 'wā'],
+    '婆嚩秫度憾': ['pó', 'wā', 'shú', 'dù', 'hàn'],
+    '三满哆': ['sān', 'mǎn', 'duō'],
+    '母驮喃': ['mǔ', 'tuó', 'nán'],
+    '唵度噜度噜': ['ōng', 'dù', 'lū', 'dù', 'lū'],
+    '地尾': ['dì', 'wěi'],
+    '誐誐曩': ['yé', 'yé', 'nǎng'],
+    '三婆嚩': ['sān', 'pó', 'wā'],
+    '嚩日啰斛': ['fá', 'zì', 'la', 'hòng'],
   };
 
   /// 单字特殊读音映射（在特定佛教语境中）
@@ -154,6 +179,90 @@ class BuddhistPinyinDictionary {
     '耨': 'nòu',     // "阿耨多罗"中读 nòu
     '昧': 'mèi',     // "三昧"中读 mèi
     '婆': 'pó',      // 常见梵音
+    '爇': 'ruò',     // 香赞中"乍爇"
+    '薰': 'xūn',     // 香赞中"蒙薰"
+    '殷': 'yīn',     // 香赞中"方殷"
+    '唎': 'lì',      // 真言中
+    '驮': 'tuó',     // 真言中
+    '喃': 'nán',     // 真言中
+    '噜': 'lū',      // 真言中
+    '嗡': 'ōng',     // 真言中
+    '曩': 'nǎng',    // 真言中
+    '斛': 'hòng',    // 真言中
+    '誐': 'yé',      // 真言中
+  };
+}
+
+/// 诵经前仪式内容数据
+class SutraPreludeData {
+  /// 诵经警文
+  static const List<String> jingWen = [
+    '1、未诵前，漱口，濯手。当净三业，若三业无亏，则百福俱集。三业者，身、口、意也。端身正坐，如对圣容，则身业净也。口无杂言，断诸嬉笑，则口业净也。意不散乱，屏息万缘，则意业净也。',
+    '2、未诵前，已诵后，俱要对圣像前合掌三礼。如无佛像，对经、对空礼拜亦可。',
+  ];
+
+  /// 香赞
+  static const Map<String, String> xiangZan = {
+    'title': '香赞',
+    'pinyin': 'xiāng zàn',
+    'times': '一遍',
+    'content': '炉香乍爇．法界蒙薰．诸佛海会悉遥闻．随处结祥云．诚意方殷．诸佛现全身。',
+    'ending': '南無香云盖菩萨摩诃萨',
+    'endingNote': '合掌三称',
+  };
+
+  /// 净口业真言
+  static const Map<String, String> jingKouYeZhenYan = {
+    'title': '净口业真言',
+    'pinyin': 'jìng kǒu yè zhēn yán',
+    'times': '三遍',
+    'content': '唵．修唎修唎．摩诃修唎．修修唎．萨婆诃。',
+  };
+
+  /// 净三业真言
+  static const Map<String, String> jingSanYeZhenYan = {
+    'title': '净三业真言',
+    'pinyin': 'jìng sān yè zhēn yán',
+    'times': '三遍',
+    'content': '唵．娑嚩．婆嚩秫驮．娑嚩达摩娑嚩．婆嚩秫度憾。',
+  };
+
+  /// 安土地真言
+  static const Map<String, String> anTuDiZhenYan = {
+    'title': '安土地真言',
+    'pinyin': 'ān tǔ dì zhēn yán',
+    'times': '三遍',
+    'content': '南無三满哆．母驮喃．唵度噜度噜．地尾．娑婆诃。',
+  };
+
+  /// 普供养真言
+  static const Map<String, String> puGongYangZhenYan = {
+    'title': '普供养真言',
+    'pinyin': 'pǔ gòng yǎng zhēn yán',
+    'times': '三遍',
+    'content': '唵．誐誐曩．三婆嚩．嚩日啰斛。',
+  };
+
+  /// 南無本师释迦牟尼佛
+  static const Map<String, String> naMoBenShiFo = {
+    'title': '南無本师释迦牟尼佛',
+    'pinyin': 'ná mó běn shī shì jiā móu ní fó',
+    'note': '合掌三称',
+  };
+
+  /// 开经偈
+  static const Map<String, String> kaiJingJi = {
+    'title': '开经偈',
+    'pinyin': 'kāi jīng jì',
+    'times': '一遍',
+    'line1': '无上甚深微妙法',
+    'line1Pinyin': 'wú shàng shèn shēn wēi miào fǎ',
+    'line2': '百千万劫难遭遇',
+    'line2Pinyin': 'bǎi qiān wàn jié nán zāo yù',
+    'line3': '我今见闻得受持',
+    'line3Pinyin': 'wǒ jīn jiàn wén dé shòu chí',
+    'line4': '愿解如来真实义',
+    'line4Pinyin': 'yuàn jiě rú lái zhēn shí yì',
   };
 }
 
@@ -206,9 +315,401 @@ class VideoFeedViewFullTextReader extends StatelessWidget {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
-          child: _buildPinyinText(fullText),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // === 诵经前仪式 (Sutra Reading Prelude) ===
+              _buildSutraPrelude(),
+              const SizedBox(height: 32),
+              // 分隔线
+              Container(
+                height: 2,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      Colors.amber.withValues(alpha: 0.5),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              // === 经文正文 ===
+              const Center(
+                child: Text(
+                  '—— 经文正文 ——',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white54,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              _buildPinyinText(fullText),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  /// 构建诵经前仪式完整内容
+  Widget _buildSutraPrelude() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. 诵经警文
+        _buildPreludeSectionTitle('诵经警文', 'sòng jīng jǐng wén'),
+        const SizedBox(height: 16),
+        ...SutraPreludeData.jingWen.map((text) => _buildJingWenParagraph(text)),
+        const SizedBox(height: 32),
+
+        // 2. 香赞
+        _buildPreludeSectionWithContent(
+          SutraPreludeData.xiangZan['title']!,
+          SutraPreludeData.xiangZan['pinyin']!,
+          SutraPreludeData.xiangZan['times']!,
+          SutraPreludeData.xiangZan['content']!,
+          ending: SutraPreludeData.xiangZan['ending'],
+          endingNote: SutraPreludeData.xiangZan['endingNote'],
+        ),
+        const SizedBox(height: 32),
+
+        // 3. 净口业真言
+        _buildPreludeSectionWithContent(
+          SutraPreludeData.jingKouYeZhenYan['title']!,
+          SutraPreludeData.jingKouYeZhenYan['pinyin']!,
+          SutraPreludeData.jingKouYeZhenYan['times']!,
+          SutraPreludeData.jingKouYeZhenYan['content']!,
+        ),
+        const SizedBox(height: 32),
+
+        // 4. 净三业真言
+        _buildPreludeSectionWithContent(
+          SutraPreludeData.jingSanYeZhenYan['title']!,
+          SutraPreludeData.jingSanYeZhenYan['pinyin']!,
+          SutraPreludeData.jingSanYeZhenYan['times']!,
+          SutraPreludeData.jingSanYeZhenYan['content']!,
+        ),
+        const SizedBox(height: 32),
+
+        // 5. 安土地真言
+        _buildPreludeSectionWithContent(
+          SutraPreludeData.anTuDiZhenYan['title']!,
+          SutraPreludeData.anTuDiZhenYan['pinyin']!,
+          SutraPreludeData.anTuDiZhenYan['times']!,
+          SutraPreludeData.anTuDiZhenYan['content']!,
+        ),
+        const SizedBox(height: 32),
+
+        // 6. 普供养真言
+        _buildPreludeSectionWithContent(
+          SutraPreludeData.puGongYangZhenYan['title']!,
+          SutraPreludeData.puGongYangZhenYan['pinyin']!,
+          SutraPreludeData.puGongYangZhenYan['times']!,
+          SutraPreludeData.puGongYangZhenYan['content']!,
+        ),
+        const SizedBox(height: 32),
+
+        // 7. 南無本师释迦牟尼佛
+        _buildNaMoSection(),
+        const SizedBox(height: 32),
+
+        // 8. 开经偈
+        _buildKaiJingJi(),
+      ],
+    );
+  }
+
+  /// 构建诵经警文段落（说明文字用紫色）
+  Widget _buildJingWenParagraph(String text) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 16,
+          color: Color(0xFF9370DB), // 紫色说明文字
+          height: 1.8,
+        ),
+      ),
+    );
+  }
+
+  /// 构建仪式标题（红色标题 + 拼音）
+  Widget _buildPreludeSectionTitle(String title, String pinyin) {
+    return Center(
+      child: Column(
+        children: [
+          Text(
+            pinyin,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Color(0xFF9370DB), // 紫色拼音
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 24,
+              color: Color(0xFFDC143C), // 红色标题
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建带内容的仪式区块
+  Widget _buildPreludeSectionWithContent(
+    String title,
+    String titlePinyin,
+    String times,
+    String content, {
+    String? ending,
+    String? endingNote,
+  }) {
+    return Column(
+      children: [
+        // 标题区
+        _buildPreludeSectionTitle(title, titlePinyin),
+        const SizedBox(height: 8),
+        // 次数说明
+        Text(
+          '（$times）',
+          style: const TextStyle(
+            fontSize: 14,
+            color: Color(0xFF9370DB), // 紫色
+          ),
+        ),
+        const SizedBox(height: 16),
+        // 内容 - 带拼音的汉字
+        _buildPreludeContentWithPinyin(content),
+        // 结尾语（如有）
+        if (ending != null) ...[
+          const SizedBox(height: 20),
+          _buildPreludeEndingWithPinyin(ending, endingNote),
+        ],
+      ],
+    );
+  }
+
+  /// 构建仪式内容的拼音文本
+  Widget _buildPreludeContentWithPinyin(String text) {
+    final List<Widget> charWidgets = [];
+    int i = 0;
+
+    while (i < text.length) {
+      final char = text[i];
+
+      // 尝试匹配佛教专用词组
+      final matchResult = _matchBuddhistPhrase(text, i);
+
+      if (matchResult != null) {
+        final phrase = matchResult['phrase'] as String;
+        final pinyinList = matchResult['pinyin'] as List<String>;
+        for (int j = 0; j < phrase.length; j++) {
+          charWidgets.add(_buildPreludeCharWithPinyin(phrase[j], pinyinList[j]));
+        }
+        i += phrase.length;
+      } else if (_isChinese(char)) {
+        String pinyin = BuddhistPinyinDictionary.singleCharOverride[char] ??
+            PinyinHelper.getPinyin(char, separator: '', format: PinyinFormat.WITH_TONE_MARK);
+        charWidgets.add(_buildPreludeCharWithPinyin(char, pinyin));
+        i++;
+      } else if (char == '．' || char == '。' || char == '，') {
+        charWidgets.add(_buildPreludePunctuation(char));
+        i++;
+      } else if (char == ' ' || char == '\t') {
+        charWidgets.add(const SizedBox(width: 8));
+        i++;
+      } else if (_isPunctuation(char)) {
+        charWidgets.add(_buildPreludePunctuation(char));
+        i++;
+      } else {
+        charWidgets.add(_buildPreludeNonChineseChar(char));
+        i++;
+      }
+    }
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.end,
+      runSpacing: 28,
+      children: charWidgets,
+    );
+  }
+
+  /// 构建仪式汉字 - 紫色拼音 + 深红色汉字
+  Widget _buildPreludeCharWithPinyin(String char, String pinyin) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            pinyin,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF9370DB), // 紫色拼音
+              fontWeight: FontWeight.w500,
+              height: 1.2,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            char,
+            style: const TextStyle(
+              fontSize: 26,
+              color: Color(0xFFB22222), // 深红色汉字
+              fontWeight: FontWeight.w600,
+              height: 1.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建仪式标点
+  Widget _buildPreludePunctuation(String char) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: Text(
+        char,
+        style: const TextStyle(
+          fontSize: 26,
+          color: Color(0xFFB22222), // 深红色
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+    );
+  }
+
+  /// 构建仪式非中文字符
+  Widget _buildPreludeNonChineseChar(String char) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: Text(
+        char,
+        style: const TextStyle(
+          fontSize: 22,
+          color: Color(0xFFB22222),
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  /// 构建仪式结尾语（如"南無香云盖菩萨摩诃萨"）
+  Widget _buildPreludeEndingWithPinyin(String ending, String? note) {
+    return Column(
+      children: [
+        _buildPreludeContentWithPinyin(ending),
+        if (note != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            '（$note）',
+            style: const TextStyle(
+              fontSize: 14,
+              color: Color(0xFFDC143C), // 红色
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// 构建南無本师释迦牟尼佛区块
+  Widget _buildNaMoSection() {
+    final data = SutraPreludeData.naMoBenShiFo;
+    return Column(
+      children: [
+        // 拼音
+        Text(
+          data['pinyin']!,
+          style: const TextStyle(
+            fontSize: 14,
+            color: Color(0xFF9370DB), // 紫色
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        // 汉字 - 大红色
+        _buildPreludeContentWithPinyin(data['title']!),
+        const SizedBox(height: 8),
+        Text(
+          '（${data['note']}）',
+          style: const TextStyle(
+            fontSize: 14,
+            color: Color(0xFFDC143C), // 红色
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建开经偈
+  Widget _buildKaiJingJi() {
+    final data = SutraPreludeData.kaiJingJi;
+    return Column(
+      children: [
+        _buildPreludeSectionTitle(data['title']!, data['pinyin']!),
+        const SizedBox(height: 8),
+        Text(
+          '（${data['times']}）',
+          style: const TextStyle(
+            fontSize: 14,
+            color: Color(0xFF9370DB),
+          ),
+        ),
+        const SizedBox(height: 20),
+        // 四句偈
+        _buildKaiJingLine(data['line1']!, data['line1Pinyin']!),
+        const SizedBox(height: 16),
+        _buildKaiJingLine(data['line2']!, data['line2Pinyin']!),
+        const SizedBox(height: 16),
+        _buildKaiJingLine(data['line3']!, data['line3Pinyin']!),
+        const SizedBox(height: 16),
+        _buildKaiJingLine(data['line4']!, data['line4Pinyin']!),
+      ],
+    );
+  }
+
+  /// 构建开经偈单行
+  Widget _buildKaiJingLine(String text, String pinyin) {
+    return Column(
+      children: [
+        Text(
+          pinyin,
+          style: const TextStyle(
+            fontSize: 13,
+            color: Color(0xFF9370DB), // 紫色拼音
+            fontWeight: FontWeight.w500,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 24,
+            color: Color(0xFFB22222), // 深红色
+            fontWeight: FontWeight.bold,
+            letterSpacing: 4,
+          ),
+        ),
+      ],
     );
   }
 
