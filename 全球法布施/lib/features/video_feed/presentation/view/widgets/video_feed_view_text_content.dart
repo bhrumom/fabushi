@@ -190,17 +190,36 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     
     if (widget.textContent.isEmpty) return;
     
-    // 使用标点分句
-    final parts = widget.textContent.split(RegExp(r'[，。！？、；：\n]+'));
+    // 使用标点分句（包含中英文引号、书名号等）
+    final parts = widget.textContent.split(RegExp(r'[，。！？、；：""''「」『』【】《》〈〉\n]+'));
     for (final p in parts) {
       final t = p.trim();
-      if (t.isNotEmpty) _sentences.add(t);
+      // 过滤掉空白和只包含标点符号的句子
+      if (t.isNotEmpty && _hasActualContent(t)) _sentences.add(t);
     }
     
     debugPrint('TTS MV: Parsed ${_sentences.length} sentences');
     if (_sentences.isNotEmpty) {
       _parseWordsForSentence(0);
     }
+  }
+  
+  /// 检查字符串是否包含实际可读内容（第一性原理：正面定义什么是有效内容）
+  /// 
+  /// 有效内容包括：
+  /// - 中文字符（CJK统一表意文字）
+  /// - 英文字母
+  /// - 数字
+  /// 
+  /// 这样无论出现什么奇怪的标点都会被过滤，比"排除法"更可靠
+  bool _hasActualContent(String text) {
+    // 正则匹配有效内容：中文字符 + 字母 + 数字
+    // \u4e00-\u9fff: CJK基本统一汉字
+    // \u3400-\u4dbf: CJK扩展A
+    // a-zA-Z: 英文字母
+    // 0-9: 数字
+    final validContentRegex = RegExp(r'[\u4e00-\u9fff\u3400-\u4dbfa-zA-Z0-9]');
+    return validContentRegex.hasMatch(text);
   }
   
   void _parseWordsForSentence(int sentenceIndex) {
