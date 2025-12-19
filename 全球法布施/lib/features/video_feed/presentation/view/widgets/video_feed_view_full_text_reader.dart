@@ -352,6 +352,75 @@ class SutraPreludeData {
 }
 
 // ============================================================================
+// 诵经结束仪式内容数据（回向）
+// ============================================================================
+
+class SutraEpilogueData {
+  /// 补阙真言
+  static const Map<String, String> buQueZhenYan = {
+    'title': '补阙真言',
+    'pinyin': 'bǔ quē zhēn yán',
+    'times': '三遍',
+    'content': '南無喝啰怛那．哆啰夜耶．佉啰佉啰．俱住俱住．摩啰摩啰．虎啰．吽．贺贺．苏怛拏．吽．泼抹拏．娑婆诃。',
+  };
+
+  /// 补阙圆满真言
+  static const Map<String, String> buQueYuanManZhenYan = {
+    'title': '补阙圆满真言',
+    'pinyin': 'bǔ quē yuán mǎn zhēn yán',
+    'times': '三遍',
+    'content': '唵．呼嚧呼嚧．社曳穆契．莎诃。',
+  };
+
+  /// 普回向真言
+  static const Map<String, String> puHuiXiangZhenYan = {
+    'title': '普回向真言',
+    'pinyin': 'pǔ huí xiàng zhēn yán',
+    'times': '三遍',
+    'content': '唵．娑摩啰．娑摩啰．弥摩曩．萨哈啰．摩诃咱哈啰吽。',
+  };
+
+  /// 回向偈
+  static const Map<String, String> huiXiangJi = {
+    'title': '回向偈',
+    'pinyin': 'huí xiàng jì',
+    'times': '一遍',
+    'line1': '愿以此功德',
+    'line1Pinyin': 'yuàn yǐ cǐ gōng dé',
+    'line2': '庄严佛净土',
+    'line2Pinyin': 'zhuāng yán fó jìng tǔ',
+    'line3': '上报四重恩',
+    'line3Pinyin': 'shàng bào sì chóng ēn',
+    'line4': '下济三途苦',
+    'line4Pinyin': 'xià jì sān tú kǔ',
+    'line5': '若有见闻者',
+    'line5Pinyin': 'ruò yǒu jiàn wén zhě',
+    'line6': '悉发菩提心',
+    'line6Pinyin': 'xī fā pú tí xīn',
+    'line7': '尽此一报身',
+    'line7Pinyin': 'jìn cǐ yī bào shēn',
+    'line8': '同生极乐国',
+    'line8Pinyin': 'tóng shēng jí lè guó',
+  };
+
+  /// 三皈依
+  static const Map<String, String> sanGuiYi = {
+    'title': '三皈依',
+    'pinyin': 'sān guī yī',
+    'times': '一遍',
+    'content1': '自皈依佛．当愿众生．体解大道．发无上心。',
+    'content1Pinyin': 'zì guī yī fó．dāng yuàn zhòng shēng．tǐ jiě dà dào．fā wú shàng xīn。',
+    'content2': '自皈依法．当愿众生．深入经藏．智慧如海。',
+    'content2Pinyin': 'zì guī yī fǎ．dāng yuàn zhòng shēng．shēn rù jīng zàng．zhì huì rú hǎi。',
+    'content3': '自皈依僧．当愿众生．统理大众．一切无碍．和南圣众。',
+    'content3Pinyin': 'zì guī yī sēng．dāng yuàn zhòng shēng．tǒng lǐ dà zhòng．yī qiè wú ài．hé nán shèng zhòng。',
+  };
+
+  /// 结束说明
+  static const String endingNote = '（发愿文。回向偈。当对佛跪念。念毕。起身三礼而退。）';
+}
+
+// ============================================================================
 // 文本预处理器 - 在 isolate 中运行
 // ============================================================================
 
@@ -501,6 +570,10 @@ class VideoFeedViewFullTextReader extends StatefulWidget {
 class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReader> {
   ProcessedTextData? _processedData;
   bool _isLoading = true;
+  
+  // 可折叠区块状态（默认收起）
+  bool _isPreludeExpanded = false;
+  bool _isEpilogueExpanded = false;
 
   @override
   void initState() {
@@ -573,14 +646,20 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   Widget _buildContent() {
     return CustomScrollView(
       slivers: [
-        // 固定头部：诵经前仪式
+        // 固定头部：诵经前仪式（可折叠）
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildSutraPrelude(),
+                _buildCollapsibleSection(
+                  title: '诵经前仪式',
+                  subtitle: '香赞・真言・开经偈',
+                  isExpanded: _isPreludeExpanded,
+                  onToggle: () => setState(() => _isPreludeExpanded = !_isPreludeExpanded),
+                  content: _buildSutraPrelude(),
+                ),
                 const SizedBox(height: 32),
                 Container(
                   height: 2,
@@ -623,9 +702,128 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             childCount: _processedData!.paragraphs.length,
           ),
         ),
+        // 诵经结束仪式（可折叠）
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                const SizedBox(height: 32),
+                Container(
+                  height: 2,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        Colors.amber.withValues(alpha: 0.5),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 32),
+                _buildCollapsibleSection(
+                  title: '诵经结束仪式',
+                  subtitle: '补阙真言・回向偈・三皈依',
+                  isExpanded: _isEpilogueExpanded,
+                  onToggle: () => setState(() => _isEpilogueExpanded = !_isEpilogueExpanded),
+                  content: _buildSutraEpilogue(),
+                ),
+              ],
+            ),
+          ),
+        ),
         // 底部留白
         const SliverToBoxAdapter(
           child: SizedBox(height: 40),
+        ),
+      ],
+    );
+  }
+
+  /// 构建可折叠区块
+  Widget _buildCollapsibleSection({
+    required String title,
+    required String subtitle,
+    required bool isExpanded,
+    required VoidCallback onToggle,
+    required Widget content,
+  }) {
+    return Column(
+      children: [
+        // 可点击的折叠标题栏
+        GestureDetector(
+          onTap: onToggle,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.amber.withValues(alpha: 0.3),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                // 展开/收起图标
+                AnimatedRotation(
+                  turns: isExpanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Icon(
+                    Icons.chevron_right,
+                    color: Colors.amber,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // 标题和副标题
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          color: Color(0xFFDC143C), // 红色标题
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.white.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // 展开/收起提示文字
+                Text(
+                  isExpanded ? '收起' : '展开',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.amber.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // 内容区域（动画展开/收起）
+        AnimatedCrossFade(
+          firstChild: const SizedBox.shrink(),
+          secondChild: Padding(
+            padding: const EdgeInsets.only(top: 20),
+            child: content,
+          ),
+          crossFadeState: isExpanded 
+              ? CrossFadeState.showSecond 
+              : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 300),
         ),
       ],
     );
@@ -979,6 +1177,152 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             letterSpacing: 4,
           ),
         ),
+      ],
+    );
+  }
+
+  // ============================================================================
+  // 诵经结束仪式构建（回向）
+  // ============================================================================
+
+  Widget _buildSutraEpilogue() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. 补阙真言
+        _buildPreludeSectionWithContent(
+          SutraEpilogueData.buQueZhenYan['title']!,
+          SutraEpilogueData.buQueZhenYan['pinyin']!,
+          SutraEpilogueData.buQueZhenYan['times']!,
+          SutraEpilogueData.buQueZhenYan['content']!,
+        ),
+        const SizedBox(height: 32),
+
+        // 2. 补阙圆满真言
+        _buildPreludeSectionWithContent(
+          SutraEpilogueData.buQueYuanManZhenYan['title']!,
+          SutraEpilogueData.buQueYuanManZhenYan['pinyin']!,
+          SutraEpilogueData.buQueYuanManZhenYan['times']!,
+          SutraEpilogueData.buQueYuanManZhenYan['content']!,
+        ),
+        const SizedBox(height: 32),
+
+        // 3. 普回向真言
+        _buildPreludeSectionWithContent(
+          SutraEpilogueData.puHuiXiangZhenYan['title']!,
+          SutraEpilogueData.puHuiXiangZhenYan['pinyin']!,
+          SutraEpilogueData.puHuiXiangZhenYan['times']!,
+          SutraEpilogueData.puHuiXiangZhenYan['content']!,
+        ),
+        const SizedBox(height: 32),
+
+        // 4. 回向偈
+        _buildHuiXiangJi(),
+        const SizedBox(height: 32),
+
+        // 5. 三皈依
+        _buildSanGuiYi(),
+        const SizedBox(height: 24),
+
+        // 结束说明
+        Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              SutraEpilogueData.endingNote,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Color(0xFF9370DB),
+                height: 1.6,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建回向偈
+  Widget _buildHuiXiangJi() {
+    final data = SutraEpilogueData.huiXiangJi;
+    return Column(
+      children: [
+        _buildPreludeSectionTitle(data['title']!, data['pinyin']!),
+        const SizedBox(height: 8),
+        Text(
+          '（${data['times']}）',
+          style: const TextStyle(fontSize: 14, color: Color(0xFF9370DB)),
+        ),
+        const SizedBox(height: 20),
+        // 八句偈 - 四列两两排列
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildEpilogueVersePair(data['line1']!, data['line1Pinyin']!, data['line2']!, data['line2Pinyin']!),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildEpilogueVersePair(data['line3']!, data['line3Pinyin']!, data['line4']!, data['line4Pinyin']!),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildEpilogueVersePair(data['line5']!, data['line5Pinyin']!, data['line6']!, data['line6Pinyin']!),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildEpilogueVersePair(data['line7']!, data['line7Pinyin']!, data['line8']!, data['line8Pinyin']!),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 构建偈子成对显示（两句并排）
+  Widget _buildEpilogueVersePair(String text1, String pinyin1, String text2, String pinyin2) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildKaiJingLine(text1, pinyin1),
+        const SizedBox(width: 24),
+        _buildKaiJingLine(text2, pinyin2),
+      ],
+    );
+  }
+
+  /// 构建三皈依
+  Widget _buildSanGuiYi() {
+    final data = SutraEpilogueData.sanGuiYi;
+    return Column(
+      children: [
+        _buildPreludeSectionTitle(data['title']!, data['pinyin']!),
+        const SizedBox(height: 8),
+        Text(
+          '（${data['times']}）',
+          style: const TextStyle(fontSize: 14, color: Color(0xFF9370DB)),
+        ),
+        const SizedBox(height: 20),
+        // 三皈依佛
+        _buildPreludeContentWithPinyin(data['content1']!),
+        const SizedBox(height: 16),
+        // 三皈依法
+        _buildPreludeContentWithPinyin(data['content2']!),
+        const SizedBox(height: 16),
+        // 三皈依僧
+        _buildPreludeContentWithPinyin(data['content3']!),
       ],
     );
   }
