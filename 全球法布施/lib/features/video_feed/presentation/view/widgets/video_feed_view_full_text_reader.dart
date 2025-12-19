@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lpinyin/lpinyin.dart';
 
 // ============================================================================
@@ -567,13 +568,28 @@ class VideoFeedViewFullTextReader extends StatefulWidget {
   State<VideoFeedViewFullTextReader> createState() => _VideoFeedViewFullTextReaderState();
 }
 
-class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReader> {
+class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReader> 
+    with SingleTickerProviderStateMixin {
   ProcessedTextData? _processedData;
   bool _isLoading = true;
   
   // 可折叠区块状态（默认收起）
   bool _isPreludeExpanded = false;
   bool _isEpilogueExpanded = false;
+  
+  // 延迟缓存的仪式内容（避免重复构建）
+  Widget? _cachedPreludeContent;
+  Widget? _cachedEpilogueContent;
+  
+  /// 获取缓存的诵经前仪式内容
+  Widget get _preludeContent => _cachedPreludeContent ??= RepaintBoundary(
+    child: _buildSutraPrelude(),
+  );
+  
+  /// 获取缓存的结束仪式内容
+  Widget get _epilogueContent => _cachedEpilogueContent ??= RepaintBoundary(
+    child: _buildSutraEpilogue(),
+  );
 
   @override
   void initState() {
@@ -658,7 +674,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                   subtitle: '香赞・真言・开经偈',
                   isExpanded: _isPreludeExpanded,
                   onToggle: () => setState(() => _isPreludeExpanded = !_isPreludeExpanded),
-                  content: _buildSutraPrelude(),
+                  content: _preludeContent, // 使用缓存的内容
                 ),
                 const SizedBox(height: 32),
                 Container(
@@ -727,7 +743,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                   subtitle: '补阙真言・回向偈・三皈依',
                   isExpanded: _isEpilogueExpanded,
                   onToggle: () => setState(() => _isEpilogueExpanded = !_isEpilogueExpanded),
-                  content: _buildSutraEpilogue(),
+                  content: _epilogueContent,
                 ),
               ],
             ),
@@ -741,7 +757,13 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
     );
   }
 
-  /// 构建可折叠区块
+  /// 构建可折叠区块（极致优化版）
+  /// 
+  /// 优化点：
+  /// - AnimatedSize: 仅展开时构建内容，收起时不占用内存
+  /// - HapticFeedback: 点击时提供触觉反馈
+  /// - Curves.easeOutCubic: 更自然的动画曲线
+  /// - ClipRect: 防止动画过程中内容溢出
   Widget _buildCollapsibleSection({
     required String title,
     required String subtitle,
@@ -753,26 +775,35 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
       children: [
         // 可点击的折叠标题栏
         GestureDetector(
-          onTap: onToggle,
-          child: Container(
+          onTap: () {
+            HapticFeedback.lightImpact(); // 触觉反馈
+            onToggle();
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
+              color: isExpanded 
+                  ? Colors.white.withValues(alpha: 0.12) 
+                  : Colors.white.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: Colors.amber.withValues(alpha: 0.3),
-                width: 1,
+                color: isExpanded 
+                    ? Colors.amber.withValues(alpha: 0.5) 
+                    : Colors.amber.withValues(alpha: 0.3),
+                width: isExpanded ? 1.5 : 1,
               ),
             ),
             child: Row(
               children: [
-                // 展开/收起图标
+                // 展开/收起图标（旋转动画）
                 AnimatedRotation(
                   turns: isExpanded ? 0.25 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: const Icon(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutCubic,
+                  child: Icon(
                     Icons.chevron_right,
-                    color: Colors.amber,
+                    color: isExpanded ? Colors.amber : Colors.amber.withValues(alpha: 0.8),
                     size: 28,
                   ),
                 ),
@@ -786,7 +817,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                         title,
                         style: const TextStyle(
                           fontSize: 18,
-                          color: Color(0xFFDC143C), // 红色标题
+                          color: Color(0xFFDC143C),
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -801,29 +832,36 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                     ],
                   ),
                 ),
-                // 展开/收起提示文字
-                Text(
-                  isExpanded ? '收起' : '展开',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.amber.withValues(alpha: 0.8),
+                // 展开/收起提示文字（带动画）
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: Text(
+                    isExpanded ? '收起' : '展开',
+                    key: ValueKey(isExpanded),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.amber.withValues(alpha: 0.8),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ),
-        // 内容区域（动画展开/收起）
-        AnimatedCrossFade(
-          firstChild: const SizedBox.shrink(),
-          secondChild: Padding(
-            padding: const EdgeInsets.only(top: 20),
-            child: content,
+        // 内容区域（使用 AnimatedSize 优化性能）
+        // 只有展开时才构建内容，收起时只是一个空的 SizedBox
+        ClipRect(
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: isExpanded 
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 20),
+                    child: content,
+                  )
+                : const SizedBox.shrink(),
           ),
-          crossFadeState: isExpanded 
-              ? CrossFadeState.showSecond 
-              : CrossFadeState.showFirst,
-          duration: const Duration(milliseconds: 300),
         ),
       ],
     );
