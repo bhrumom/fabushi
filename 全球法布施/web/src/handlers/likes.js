@@ -22,7 +22,7 @@ export async function handleToggleLike(request, env, db) {
         if (action === 'like') {
             // 点赞时保存内容元数据（标题和文件路径）
             await db.prepare(
-                'INSERT OR IGNORE INTO content_likes (content_id, content_type, user_id, title, file_path, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+                'INSERT OR IGNORE INTO content_likes (content_id, content_type, username, title, file_path, created_at, sync_version) VALUES (?, ?, ?, ?, ?, ?, 1)'
             ).bind(contentId, contentType, userId, title || null, filePath || null, new Date().toISOString()).run();
 
             // 同步更新统一的 content_metadata 表
@@ -36,10 +36,10 @@ export async function handleToggleLike(request, env, db) {
             `).bind(contentId, contentType, title || null, filePath || null).run();
         } else if (action === 'unlike') {
             if (userId) {
-                await db.prepare('DELETE FROM content_likes WHERE content_id = ? AND user_id = ?')
+                await db.prepare('DELETE FROM content_likes WHERE content_id = ? AND username = ?')
                     .bind(contentId, userId).run();
             } else {
-                await db.prepare('DELETE FROM content_likes WHERE content_id = ? AND user_id IS NULL')
+                await db.prepare('DELETE FROM content_likes WHERE content_id = ? AND username IS NULL')
                     .bind(contentId).run();
             }
 
@@ -120,7 +120,7 @@ export async function handleGetMyLikes(request, env, db) {
         }
 
         const results = await db.prepare(
-            'SELECT content_id as id, content_type as contentType, title, file_path as filePath, created_at as likedAt FROM content_likes WHERE user_id = ? ORDER BY created_at DESC'
+            'SELECT content_id as id, content_type as contentType, title, file_path as filePath, created_at as likedAt FROM content_likes WHERE username = ? ORDER BY created_at DESC'
         ).bind(decoded.username).all();
 
         return jsonResponse({ success: true, likes: results.results });

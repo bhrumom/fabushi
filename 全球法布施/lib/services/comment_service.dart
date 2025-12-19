@@ -4,25 +4,29 @@ import '../core/config/app_config.dart';
 import '../models/comment_model.dart';
 import 'http_service.dart';
 
+/// 评论服务 - 管理内容评论
+/// 
+/// 使用统一的 contentId 标识内容（替代原来的 videoId）
+
 class CommentService {
   static final CommentService _instance = CommentService._internal();
   factory CommentService() => _instance;
   CommentService._internal();
 
-  // 评论数缓存
+  // 评论数缓存（使用 contentId 作为 key）
   final Map<String, int> _commentCounts = {};
 
   // 获取缓存的评论数
-  int getCommentCount(String videoId) => _commentCounts[videoId] ?? 0;
+  int getCommentCount(String contentId) => _commentCounts[contentId] ?? 0;
 
-  // 批量获取评论数
-  Future<void> fetchCommentCounts(List<String> videoIds) async {
-    if (videoIds.isEmpty) return;
+  // 批量获取评论数（使用 contentId）
+  Future<void> fetchCommentCounts(List<String> contentIds) async {
+    if (contentIds.isEmpty) return;
     
     try {
       final response = await HttpService.post(
         '${AppConfig.apiUrl}/api/comments/batch-counts',
-        body: {'videoIds': videoIds},
+        body: {'videoIds': contentIds},  // 后端兼容 videoIds 参数名
       );
 
       if (response.statusCode == 200) {
@@ -38,11 +42,11 @@ class CommentService {
     }
   }
 
-  // 获取评论列表
-  Future<List<CommentModel>> getComments(String videoId, {int page = 1, int pageSize = 20}) async {
+  // 获取评论列表（使用 contentId）
+  Future<List<CommentModel>> getComments(String contentId, {int page = 1, int pageSize = 20}) async {
     try {
       final response = await HttpService.get(
-        '${AppConfig.apiUrl}/api/comments?videoId=$videoId&page=$page&pageSize=$pageSize',
+        '${AppConfig.apiUrl}/api/comments?contentId=$contentId&page=$page&pageSize=$pageSize',
       );
 
       if (response.statusCode == 200) {
@@ -59,19 +63,32 @@ class CommentService {
     }
   }
 
-  // 发布评论（支持标签：ganying/fayuan，支持视频标题和文件路径）
-  Future<Map<String, dynamic>> postComment(String videoId, String content, {int? parentId, String? tag, String? videoTitle, String? filePath}) async {
+  // 发布评论（支持标签：ganying/fayuan，支持内容标题和文件路径）
+  /// [contentId] 统一内容标识符
+  /// [content] 评论内容
+  /// [parentId] 父评论ID（回复时使用）
+  /// [tag] 标签（ganying/fayuan）
+  /// [contentTitle] 关联内容的标题
+  /// [filePath] 文件路径
+  Future<Map<String, dynamic>> postComment(
+    String contentId,
+    String content, {
+    int? parentId,
+    String? tag,
+    String? contentTitle,
+    String? filePath,
+  }) async {
     try {
       final body = <String, dynamic>{
-        'videoId': videoId,
+        'contentId': contentId,
         'content': content,
         'parentId': parentId,
       };
       if (tag != null) {
         body['tag'] = tag;
       }
-      if (videoTitle != null) {
-        body['videoTitle'] = videoTitle;
+      if (contentTitle != null) {
+        body['videoTitle'] = contentTitle;  // 后端兼容 videoTitle 参数名
       }
       if (filePath != null) {
         body['filePath'] = filePath;

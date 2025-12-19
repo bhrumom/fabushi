@@ -41,7 +41,9 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
 
   Future<void> _loadComments() async {
     setState(() => _isLoading = true);
-    final comments = await _commentService.getComments(widget.videoId);
+    // 使用 filePath 作为统一的 contentId，如果没有则回退到 videoId
+    final contentId = widget.filePath ?? widget.videoId;
+    final comments = await _commentService.getComments(contentId);
     if (mounted) {
       setState(() {
         _comments = comments;
@@ -66,12 +68,15 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
       videoTitle = VideoTitleService().getVideoTitle(widget.videoId);
     }
     
+    // 使用 filePath 作为统一的 contentId
+    final contentId = widget.filePath ?? widget.videoId;
+    
     final result = await _commentService.postComment(
-      widget.videoId, 
+      contentId, 
       content, 
       tag: _selectedTag,
-      videoTitle: _selectedTag != null ? videoTitle : null, // 只在有标签时传标题
-      filePath: widget.filePath ?? widget.videoId, // 使用 filePath 或 videoId 作为统一ID
+      contentTitle: _selectedTag != null ? videoTitle : null, // 只在有标签时传标题
+      filePath: contentId, // 使用 contentId 作为文件路径
     );
     
     if (mounted) {

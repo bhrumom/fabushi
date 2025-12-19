@@ -15,8 +15,10 @@ import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts, handleG
 import { handleBatchGetContentStats } from './handlers/content-stats.js';
 import { handleOnlineJoin, handleOnlineHeartbeat, handleOnlineLeave, handleOnlineCount } from './handlers/online.js';
 import { handleSyncRecord, handleGetRecords, handleGetStats, handleGetWeeklyStats, handleGetMonthlyStats, handleSetGoal, handleGetGoals, handleMeditationSettings } from './handlers/meditation.js';
+import { handleGetSyncData, handlePushSyncData, handleGetSyncState } from './handlers/sync.js';
 import { handleBuiltinMigration, handleFullTextSearch, handleGetCategories as handleBuiltinCategories } from '../migrate-builtin-handler-fixed.js';
 import { jsonResponse } from './utils/response.js';
+
 
 export async function route(request, env, db, ctx) {
   const url = new URL(request.url);
@@ -126,6 +128,11 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/meditation/goal' && method === 'POST') return await handleSetGoal(request, env, db);
   if (pathname === '/api/meditation/goal' && method === 'GET') return await handleGetGoals(request, env, db);
   if (pathname === '/api/meditation/settings' && (method === 'GET' || method === 'POST')) return await handleMeditationSettings(request, env, db);
+
+  // 同步API（增量同步）
+  if (pathname === '/api/sync' && method === 'GET') return await handleGetSyncData(request, env, db);
+  if (pathname === '/api/sync' && method === 'POST') return await handlePushSyncData(request, env, db);
+  if (pathname === '/api/sync/state' && method === 'GET') return await handleGetSyncState(request, env, db);
 
   // 迁移API（管理员专用）
   if (pathname === '/api/admin/migrate-kv-to-d1' && method === 'POST') return await handleMigrateKvToD1(request, env, db);

@@ -5,32 +5,33 @@ import { verifyToken } from '../../auth-utils.js';
 export async function handleGetComments(request, env, db) {
     try {
         const url = new URL(request.url);
-        const videoId = url.searchParams.get('videoId');
+        // 支持 contentId 和 videoId（向后兼容）
+        const contentId = url.searchParams.get('contentId') || url.searchParams.get('videoId');
         const page = parseInt(url.searchParams.get('page') || '1');
         const pageSize = parseInt(url.searchParams.get('pageSize') || '20');
         const offset = (page - 1) * pageSize;
 
-        if (!videoId) {
-            return jsonResponse({ error: '视频ID不能为空' }, 400);
+        if (!contentId) {
+            return jsonResponse({ error: '内容ID不能为空' }, 400);
         }
 
         // 获取评论列表，包含用户信息
-        // 使用LEFT JOIN关联users表获取头像和昵称
+        // 使用content_id统一标识（替代原来的video_id）
         const comments = await db.db.prepare(`
       SELECT 
-        c.id, c.video_id, c.user_id, c.content, c.created_at, c.parent_id, c.like_count, c.tag,
+        c.id, c.content_id, c.username as user_id, c.content, c.created_at, c.parent_id, c.like_count, c.tag,
         u.username, u.nickname, u.avatar
       FROM comments c
-      LEFT JOIN users u ON c.user_id = u.username
-      WHERE c.video_id = ?
+      LEFT JOIN users u ON c.username = u.username
+      WHERE c.content_id = ?
       ORDER BY c.created_at DESC
       LIMIT ? OFFSET ?
-    `).bind(videoId, pageSize, offset).all();
+    `).bind(contentId, pageSize, offset).all();
 
         // 获取总评论数
         const totalResult = await db.db.prepare(`
-      SELECT COUNT(*) as count FROM comments WHERE video_id = ?
-    `).bind(videoId).first();
+      SELECT COUNT(*) as count FROM comments WHERE content_id = ?
+    `).bind(contentId).first();
 
         return jsonResponse({
             comments: comments.results,
@@ -58,10 +59,12 @@ export async function handlePostComment(request, env, db) {
             return jsonResponse({ error: '认证失败' }, 401);
         }
 
-        const { videoId, content, parentId, tag, videoTitle, filePath } = await request.json();
+        // 支持 contentId 和 videoId（向后兼容）
+        const { videoId, contentId: requestContentId, content, parentId, tag, videoTitle, filePath } = await request.json();
+        const contentId = requestContentId || filePath || videoId;
 
-        if (!videoId || !content) {
-            return jsonResponse({ error: '视频ID和内容不能为空' }, 400);
+        if (!contentId || !content) {
+            return jsonResponse({ error: '内容ID和评论内容不能为空' }, 400);
         }
 
         // 验证标签值
@@ -72,13 +75,10 @@ export async function handlePostComment(request, env, db) {
 
         const now = new Date().toISOString();
 
-        // 使用 filePath 或 videoId 作为统一内容ID
-        const contentId = filePath || videoId;
-
-        // 插入评论（包含标签和视频标题）- 使用统一的 contentId
+        // 插入评论（使用统一的 content_id）
         const result = await db.db.prepare(`
-      INSERT INTO comments (video_id, user_id, content, created_at, parent_id, tag, video_title)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO comments (content_id, username, content, created_at, parent_id, tag, content_title, sync_version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
     `).bind(contentId, tokenData.username, content, now, parentId || null, tag || null, videoTitle || null).run();
 
         // 同步更新 content_metadata 的 comment_count
@@ -91,13 +91,13 @@ export async function handlePostComment(request, env, db) {
               comment_count = comment_count + 1
         `).bind(contentId, videoTitle || null, filePath || null).run();
 
-        // 获取新插入的评论详情（包含用户信息、标签、视频标题）
+        // 获取新插入的评论详情（包含用户信息、标签、内容标题）
         const newComment = await db.db.prepare(`
       SELECT 
-        c.id, c.video_id, c.user_id, c.content, c.created_at, c.parent_id, c.like_count, c.tag, c.video_title,
+        c.id, c.content_id, c.username as user_id, c.content, c.created_at, c.parent_id, c.like_count, c.tag, c.content_title,
         u.username, u.nickname, u.avatar
       FROM comments c
-      LEFT JOIN users u ON c.user_id = u.username
+      LEFT JOIN users u ON c.username = u.username
       WHERE c.id = ?
     `).bind(result.meta.last_row_id).first();
 
@@ -134,7 +134,7 @@ export async function handleDeleteComment(request, env, db) {
 
         // 检查评论是否存在以及是否属于当前用户
         const comment = await db.db.prepare(`
-      SELECT user_id FROM comments WHERE id = ?
+      SELECT username FROM comments WHERE id = ?
     `).bind(commentId).first();
 
         if (!comment) {
@@ -142,7 +142,7 @@ export async function handleDeleteComment(request, env, db) {
         }
 
         // 只有作者可以删除评论 (后续可添加管理员权限)
-        if (comment.user_id !== tokenData.username) {
+        if (comment.username !== tokenData.username) {
             return jsonResponse({ error: '无权删除此评论' }, 403);
         }
 
@@ -170,34 +170,34 @@ export async function handleGetTaggedPosts(request, env, db) {
             return jsonResponse({ error: '标签类型无效，必须是 ganying 或 fayuan' }, 400);
         }
 
-        // 获取带标签的帖子，包含用户信息、点赞数和视频标题
+        // 获取带标签的帖子，包含用户信息、点赞数和内容标题
         const posts = await db.db.prepare(`
       SELECT 
-        c.id, c.video_id, c.user_id, c.content, c.created_at, c.tag, c.like_count, c.video_title,
+        c.id, c.content_id, c.username as user_id, c.content, c.created_at, c.tag, c.like_count, c.content_title,
         u.username, u.nickname, u.avatar
       FROM comments c
-      LEFT JOIN users u ON c.user_id = u.username
+      LEFT JOIN users u ON c.username = u.username
       WHERE c.tag = ?
       ORDER BY c.created_at DESC
       LIMIT ? OFFSET ?
     `).bind(tag, pageSize, offset).all();
 
-        // 为每个帖子处理 video_title（优先使用数据库存储的标题，否则从 video_id 提取）
+        // 为每个帖子处理 content_title（优先使用数据库存储的标题，否则从 content_id 提取）
         const postsWithTitle = posts.results.map(post => {
             // 如果数据库有存储的标题，直接使用
-            if (post.video_title && post.video_title.trim()) {
+            if (post.content_title && post.content_title.trim()) {
                 return post;
             }
 
-            // 否则尝试从 video_id 提取（兼容旧数据）
-            let videoTitle = '';
-            if (post.video_id) {
-                const parts = post.video_id.split('/');
+            // 否则尝试从 content_id 提取（兼容旧数据）
+            let contentTitle = '';
+            if (post.content_id) {
+                const parts = post.content_id.split('/');
                 const filename = parts[parts.length - 1];
-                videoTitle = filename.replace(/\.[^/.]+$/, '');
-                videoTitle = videoTitle.replace(/[_-]/g, ' ');
+                contentTitle = filename.replace(/\.[^/.]+$/, '');
+                contentTitle = contentTitle.replace(/[_-]/g, ' ');
             }
-            return { ...post, video_title: videoTitle };
+            return { ...post, content_title: contentTitle };
         });
 
         // 获取总数
@@ -270,10 +270,10 @@ export async function handleGetPostDetail(request, env, db) {
         // 获取帖子详情
         const post = await db.db.prepare(`
       SELECT 
-        c.id, c.video_id, c.user_id, c.content, c.created_at, c.tag, c.like_count,
+        c.id, c.content_id, c.username as user_id, c.content, c.created_at, c.tag, c.like_count,
         u.username, u.nickname, u.avatar
       FROM comments c
-      LEFT JOIN users u ON c.user_id = u.username
+      LEFT JOIN users u ON c.username = u.username
       WHERE c.id = ? AND c.tag IS NOT NULL
     `).bind(postId).first();
 
@@ -300,19 +300,19 @@ export async function handleBatchGetCommentCounts(request, env, db) {
         // 限制一次最多查询100个
         const limitedIds = videoIds.slice(0, 100);
 
-        // 构建查询
+        // 构建查询 - 使用 content_id 统一标识
         const placeholders = limitedIds.map(() => '?').join(',');
         const results = await db.db.prepare(`
-            SELECT video_id, COUNT(*) as comment_count
+            SELECT content_id, COUNT(*) as comment_count
             FROM comments
-            WHERE video_id IN (${placeholders})
-            GROUP BY video_id
+            WHERE content_id IN (${placeholders})
+            GROUP BY content_id
         `).bind(...limitedIds).all();
 
         // 构建映射
         const counts = {};
         for (const row of results.results) {
-            counts[row.video_id] = row.comment_count;
+            counts[row.content_id] = row.comment_count;
         }
 
         // 确保所有请求的ID都有值（没有评论的返回0）

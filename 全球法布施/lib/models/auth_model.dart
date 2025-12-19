@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/like_service.dart';
 import '../services/membership_service.dart';
 import '../services/alipay_auth_service.dart';
+import '../services/sync_service.dart';
 import 'user_model.dart';
 
 class User {
@@ -131,6 +132,10 @@ class AuthModel extends ChangeNotifier {
         await _authService.setAuth(token, basicUserModel);
         LikeService().setAuthToken(token);
         await LikeService().initialize(userId: _currentUser!.username);
+        
+        // 初始化同步服务并拉取最新数据
+        await SyncService().initialize();
+        SyncService().pullFromCloud();  // 后台异步同步
 
         notifyListeners(); // 立即更新UI显示登录状态
 
@@ -176,6 +181,10 @@ class AuthModel extends ChangeNotifier {
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
+        
+        // 初始化同步服务并进行全量同步
+        await SyncService().initialize();
+        SyncService().fullSync();  // 后台全量同步
 
         _setLoading(false);
         notifyListeners();
@@ -748,6 +757,7 @@ class AuthModel extends ChangeNotifier {
       _clearError();
       LikeService().setAuthToken(null);
       await LikeService().clearUserData();
+      await SyncService().clearSyncState();  // 清除同步状态
 
       // 清除存储的认证信息
       final prefs = await SharedPreferences.getInstance();
