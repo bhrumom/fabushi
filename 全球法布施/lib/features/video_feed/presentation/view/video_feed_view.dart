@@ -12,7 +12,13 @@ import 'package:preload_page_view/preload_page_view.dart' hide PageScrollPhysics
 import 'package:video_player/video_player.dart';
 
 class VideoFeedView extends StatefulWidget {
-  const VideoFeedView({super.key});
+  const VideoFeedView({
+    super.key,
+    this.isTabActive = true,
+  });
+  
+  /// 当前 tab 是否激活（用于控制 TTS 播放）
+  final bool isTabActive;
 
   @override
   State<VideoFeedView> createState() => _VideoFeedViewState();
@@ -367,7 +373,7 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
                 key: ValueKey(_videos[index].id),
                 controller: _getController(_videos[index].id),
                 videoItem: _videos[index],
-                isVisible: index == _currentPage,
+                isVisible: widget.isTabActive && index == _currentPage,
               ),
             );
           },

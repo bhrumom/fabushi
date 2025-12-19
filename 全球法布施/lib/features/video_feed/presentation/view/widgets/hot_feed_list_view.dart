@@ -9,7 +9,13 @@ import '../../../../../features/video_feed/presentation/view/widgets/video_feed_
 
 /// 热门内容列表（从后端获取热门内容，根据 file_path 加载完整内容）
 class HotFeedListView extends StatefulWidget {
-  const HotFeedListView({super.key});
+  const HotFeedListView({
+    super.key,
+    this.isTabActive = true,
+  });
+  
+  /// 当前 tab 是否激活（用于控制 TTS 播放）
+  final bool isTabActive;
 
   @override
   State<HotFeedListView> createState() => _HotFeedListViewState();
@@ -393,7 +399,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
               key: ValueKey(_hotVideos[index].id),
               controller: _getController(_hotVideos[index].id),
               videoItem: _hotVideos[index],
-              isVisible: index == _currentPage, // 🔊 TTS只对当前页面播放
+              isVisible: widget.isTabActive && index == _currentPage, // 🔊 TTS只对当前页面且tab激活时播放
             ),
           );
         },

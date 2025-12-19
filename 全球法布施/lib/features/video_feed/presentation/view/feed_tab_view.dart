@@ -48,21 +48,21 @@ class _FeedTabViewState extends State<FeedTabView> {
             child: PageView(
               controller: _pageController,
               onPageChanged: _onPageChanged,
-              children: const [
+              children: [
                 // 法流 - 原有的垂直滚动视频/文本流
-                VideoFeedView(),
+                VideoFeedView(isTabActive: _selectedTabIndex == 0),
                 
                 // 热门 - 只显示有点赞量的内容
-                HotFeedListView(),
+                HotFeedListView(isTabActive: _selectedTabIndex == 1),
                 
                 // 感应 - 朋友圈式列表
-                FeedPostListView(tag: 'ganying'),
+                const FeedPostListView(tag: 'ganying'),
                 
                 // 发愿 - 朋友圈式列表
-                FeedPostListView(tag: 'fayuan'),
+                const FeedPostListView(tag: 'fayuan'),
                 
                 // 商城 - 抖音风格商城
-                ShopMallListView(),
+                const ShopMallListView(),
               ],
             ),
           ),
