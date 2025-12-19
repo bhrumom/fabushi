@@ -17,7 +17,7 @@ import '../services/platform_global_send_service.dart';
 import '../services/ip_location_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/foreground_service_manager.dart';
-import '../services/ios_background_audio_handler.dart';
+// iOS 现在使用统一的 KeepAliveService，不再需要单独的 IOSBackgroundAudioHandler
 import '../services/wifi_field_broadcast_service.dart';
 import '../services/hotspot_manager_service.dart';
 import '../services/keep_alive_service.dart';
@@ -61,7 +61,7 @@ class FileTransferModel extends ChangeNotifier {
   
   // 后台服务管理器
   final ForegroundServiceManager _foregroundService = ForegroundServiceManager();
-  IOSBackgroundAudioHandler? _iosAudioHandler;
+  // iOS 现在使用 _keepAliveService，不再需要单独的 handler
   
   // 场能广播服务
   WiFiFieldBroadcastService? _fieldBroadcastService;
@@ -643,13 +643,13 @@ class FileTransferModel extends ChangeNotifier {
         // 启动音频保活（仅 Android，因为 iOS 已有后台音频）
         await _startAudioKeepAlive(fileName);
       } else if (Platform.isIOS) {
-        // iOS 后台音频
-        _iosAudioHandler ??= await initIOSBackgroundAudio();
-        await _iosAudioHandler?.startBackgroundAudio(
-          fileName: fileName,
+        // iOS 后台音频 - 使用统一的 KeepAliveService（已在 app_initializer 中初始化）
+        // 注意：audio_service 只允许一次初始化，所以 iOS 和 Android 都使用 KeepAliveService
+        await _keepAliveService.start(
+          audioName: fileName,
           totalCountries: _countryStatuses.length,
         );
-        debugPrint('✅ iOS 后台音频已启动');
+        debugPrint('✅ iOS 后台保活服务已启动');
       }
     } catch (e) {
       debugPrint('⚠️ 启动后台服务失败: $e');
@@ -690,12 +690,8 @@ class FileTransferModel extends ChangeNotifier {
           totalSent: _globalSentCount,
           loopCount: _loopCount,
         );
-      } else if (Platform.isIOS) {
-        await _iosAudioHandler?.showCompletion(
-          totalSent: _globalSentCount,
-          loopCount: _loopCount,
-        );
       }
+      // iOS 也使用 KeepAliveService，已在上面统一调用 _keepAliveService.stop()
       debugPrint('✅ 后台服务已停止');
     } catch (e) {
       debugPrint('⚠️ 停止后台服务失败: $e');
@@ -704,7 +700,7 @@ class FileTransferModel extends ChangeNotifier {
 
   /// 更新后台服务进度
   void _updateBackgroundServiceProgress(String country, int sent, int total) {
-    // 更新统一保活服务进度
+    // 更新统一保活服务进度（同时支持 Android 和 iOS）
     _keepAliveService.updateProgress(
       sentCount: sent,
       totalCount: total,
@@ -712,15 +708,9 @@ class FileTransferModel extends ChangeNotifier {
       loopCount: _loopCount,
     );
     
+    // Android 额外更新前台服务通知
     if (Platform.isAndroid) {
       _foregroundService.updateProgress(
-        sentCount: sent,
-        totalCount: total,
-        currentCountry: country,
-        loopCount: _loopCount,
-      );
-    } else if (Platform.isIOS) {
-      _iosAudioHandler?.updateProgress(
         sentCount: sent,
         totalCount: total,
         currentCountry: country,

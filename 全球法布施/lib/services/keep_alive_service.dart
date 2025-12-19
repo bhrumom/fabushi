@@ -45,7 +45,13 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
   Timer? _heartbeatTimer;
   int _heartbeatCount = 0;
   
+  /// 是否服务正在运行（包括音频加载中）
+  /// 这个标志在 startKeepAlive 调用后立即为 true
   bool get isPlaying => _isPlaying;
+  
+  /// 音频是否真正在播放中（检查实际播放器状态）
+  bool get isActuallyPlaying => _audioPlayer.playing;
+  
   bool get isMuted => _isMuted;
   
   /// 默认保活音频URL - 大孔雀明王结界缚魔陀罗尼
@@ -448,6 +454,10 @@ class KeepAliveService {
   static KeepAliveService? _instance;
   static KeepAliveAudioHandler? _audioHandler;
   
+  // 初始化锁，防止竞态条件
+  static Completer<void>? _initCompleter;
+  static bool _isInitializing = false;
+  
   KeepAliveService._();
   
   static KeepAliveService get instance {
@@ -463,10 +473,19 @@ class KeepAliveService {
   
   /// 初始化保活服务
   /// 
-  /// 必须在应用启动时调用一次
+  /// 必须在应用启动时调用一次。
+  /// 使用锁机制防止并发初始化导致的 AudioService 重复初始化错误。
   Future<void> initialize() async {
+    // 如果已经初始化完成，直接返回
     if (_audioHandler != null) {
       debugPrint('⚠️ KeepAliveService 已初始化');
+      return;
+    }
+    
+    // 如果正在初始化中，等待初始化完成
+    if (_isInitializing && _initCompleter != null) {
+      debugPrint('⏳ KeepAliveService 初始化中，等待完成...');
+      await _initCompleter!.future;
       return;
     }
     
@@ -475,6 +494,10 @@ class KeepAliveService {
       return;
     }
     
+    // 标记开始初始化，防止并发
+    _isInitializing = true;
+    _initCompleter = Completer<void>();
+    
     try {
       _audioHandler = await AudioService.init(
         builder: () => KeepAliveAudioHandler(),
@@ -482,7 +505,10 @@ class KeepAliveService {
           androidNotificationChannelId: 'com.ombhrum.fabushi.keep_alive',
           androidNotificationChannelName: '全球法布施后台保活',
           androidNotificationChannelDescription: '保持应用在后台运行，确保全球发送不中断',
-          androidNotificationOngoing: true,
+          // 注意：androidNotificationOngoing 和 androidStopForegroundOnPause 配置冲突
+          // 如果 androidNotificationOngoing = true，则 androidStopForegroundOnPause 必须也为 true
+          // 否则会触发断言错误
+          androidNotificationOngoing: false, // 允许用户滑动关闭通知
           androidStopForegroundOnPause: false, // 暂停时不停止前台服务
           androidResumeOnClick: true,
         ),
@@ -491,6 +517,17 @@ class KeepAliveService {
       debugPrint('✅ KeepAliveService 已初始化');
     } catch (e) {
       debugPrint('❌ KeepAliveService 初始化失败: $e');
+      
+      // 热重载或重复初始化场景：尝试创建新的 audio handler 实例
+      // AudioService 已经初始化过了，我们直接创建一个本地的 handler 使用
+      if (e.toString().contains('_cacheManager == null')) {
+        debugPrint('🔄 检测到 AudioService 已初始化，创建本地音频处理器...');
+        _audioHandler = KeepAliveAudioHandler();
+        debugPrint('✅ 本地音频处理器已创建（降级模式）');
+      }
+    } finally {
+      _isInitializing = false;
+      _initCompleter?.complete();
     }
   }
   
@@ -541,8 +578,11 @@ class KeepAliveService {
     await _audioHandler?.toggleMute();
   }
   
-  /// 是否正在播放
+  /// 是否正在播放（服务已启动）
   bool get isPlaying => _audioHandler?.isPlaying ?? false;
+  
+  /// 音频是否真正在播放中
+  bool get isActuallyPlaying => _audioHandler?.isActuallyPlaying ?? false;
   
   /// 是否静音
   bool get isMuted => _audioHandler?.isMuted ?? true;

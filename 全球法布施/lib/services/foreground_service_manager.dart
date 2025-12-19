@@ -208,15 +208,19 @@ class ForegroundServiceManager {
       }
 
       // 获取音频状态
+      // 使用 isPlaying（服务运行状态）而非 isActuallyPlaying（实际播放器状态）
+      // 这样在音频加载期间也会显示正确的状态
       _isAudioMuted = _keepAliveService.isMuted;
-      final audioPlaying = _keepAliveService.isPlaying;
+      final serviceRunning = _keepAliveService.isPlaying;
+      final actuallyPlaying = _keepAliveService.isActuallyPlaying;
       
       String audioInfo;
-      if (audioPlaying) {
-        if (_isAudioMuted) {
-          audioInfo = '🔇 静音播放陀罗尼中...';
+      if (serviceRunning) {
+        if (actuallyPlaying) {
+          audioInfo = _isAudioMuted ? '🔇 静音播放陀罗尼中...' : '🔊 播放陀罗尼中...';
         } else {
-          audioInfo = '🔊 播放陀罗尼中...';
+          // 服务运行但音频还在加载中
+          audioInfo = '⏳ 加载陀罗尼中...';
         }
       } else {
         audioInfo = '⏸ 音频未运行';
@@ -246,11 +250,17 @@ class ForegroundServiceManager {
     _isAudioMuted = isMuted;
     
     try {
-      // 重新构建通知以更新按钮文字
-      final audioPlaying = _keepAliveService.isPlaying;
+      // 使用与 updateProgress 相同的逻辑
+      final serviceRunning = _keepAliveService.isPlaying;
+      final actuallyPlaying = _keepAliveService.isActuallyPlaying;
+      
       String audioInfo;
-      if (audioPlaying) {
-        audioInfo = isMuted ? '🔇 静音播放陀罗尼中...' : '🔊 播放陀罗尼中...';
+      if (serviceRunning) {
+        if (actuallyPlaying) {
+          audioInfo = isMuted ? '🔇 静音播放陀罗尼中...' : '🔊 播放陀罗尼中...';
+        } else {
+          audioInfo = '⏳ 加载陀罗尼中...';
+        }
       } else {
         audioInfo = '⏸ 音频未运行';
       }
