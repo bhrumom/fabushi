@@ -20,7 +20,7 @@ import '../services/foreground_service_manager.dart';
 import '../services/ios_background_audio_handler.dart';
 import '../services/wifi_field_broadcast_service.dart';
 import '../services/hotspot_manager_service.dart';
-import '../services/audio_background_keep_alive_service.dart';
+import '../services/keep_alive_service.dart';
 import '../widgets/download_progress_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_html/html.dart' as html;
@@ -68,8 +68,8 @@ class FileTransferModel extends ChangeNotifier {
   final HotspotManagerService _hotspotManager = HotspotManagerService();
   String _hotspotMessage = '';  // 热点状态消息
   
-  // 音频后台保活服务
-  final AudioBackgroundKeepAliveService _audioKeepAlive = AudioBackgroundKeepAliveService();
+  // 统一保活服务（基于 audio_service + MediaSession）
+  final KeepAliveService _keepAliveService = KeepAliveService.instance;
   bool _needsHotspotGuide = false;  // 是否需要显示热点指导
 
   bool _isDisposed = false;
@@ -659,31 +659,31 @@ class FileTransferModel extends ChangeNotifier {
   /// 切换音频静音状态（通知栏按钮回调）
   void _onToggleAudioMute() {
     debugPrint('🔇 收到静音切换请求');
-    _audioKeepAlive.toggleMute().then((_) {
+    _keepAliveService.toggleMute().then((_) {
       // 更新通知栏状态
-      _foregroundService.updateMuteStatus(_audioKeepAlive.isMuted);
+      _foregroundService.updateMuteStatus(_keepAliveService.isMuted);
     });
   }
   
-  /// 启动音频保活
+  /// 启动统一保活服务
   Future<void> _startAudioKeepAlive(String fileName) async {
     try {
-      await _audioKeepAlive.start(
+      await _keepAliveService.start(
         audioName: fileName,
         totalCountries: _countryStatuses.length,
       );
-      debugPrint('✅ 音频保活已启动: $fileName');
+      debugPrint('✅ 统一保活服务已启动: $fileName');
     } catch (e) {
-      debugPrint('⚠️ 启动音频保活失败: $e');
+      debugPrint('⚠️ 启动保活服务失败: $e');
     }
   }
 
   /// 停止后台服务
   Future<void> _stopBackgroundService() async {
     try {
-      // 停止音频保活
-      await _audioKeepAlive.stop();
-      debugPrint('✅ 音频保活已停止');
+      // 停止统一保活服务
+      await _keepAliveService.stop();
+      debugPrint('✅ 统一保活服务已停止');
       
       if (Platform.isAndroid) {
         await _foregroundService.showCompletionNotification(
@@ -704,8 +704,8 @@ class FileTransferModel extends ChangeNotifier {
 
   /// 更新后台服务进度
   void _updateBackgroundServiceProgress(String country, int sent, int total) {
-    // 更新音频保活进度
-    _audioKeepAlive.updateProgress(
+    // 更新统一保活服务进度
+    _keepAliveService.updateProgress(
       sentCount: sent,
       totalCount: total,
       currentCountry: country,

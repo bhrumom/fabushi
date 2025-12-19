@@ -8,6 +8,7 @@ import 'unified_api_service.dart';
 import 'app_settings.dart';
 import '../models/file_transfer_model.dart';
 import 'like_service.dart';
+import 'keep_alive_service.dart';
 
 class AppInitializer {
   static bool _isInitialized = false;
@@ -43,6 +44,12 @@ class AppInitializer {
       optimizer.addInitTask(() async {
         await LikeService().initialize();
         debugPrint('✅ 点赞服务初始化完成');
+      });
+      
+      // 初始化统一保活服务（基于 audio_service + MediaSession）
+      optimizer.addInitTask(() async {
+        await KeepAliveService.instance.initialize();
+        debugPrint('✅ 统一保活服务初始化完成');
       });
       
       // 开始分批初始化

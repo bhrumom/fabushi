@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'audio_background_keep_alive_service.dart';
+import 'keep_alive_service.dart';
 
 /// Android 前台服务管理器
 /// 负责管理前台服务的启动、停止和通知更新
@@ -17,8 +17,8 @@ class ForegroundServiceManager {
   bool _isInitialized = false;
   bool get isServiceRunning => _isServiceRunning;
   
-  // 音频保活服务引用
-  final AudioBackgroundKeepAliveService _audioKeepAlive = AudioBackgroundKeepAliveService();
+  // 使用统一保活服务（KeepAliveService）
+  KeepAliveService get _keepAliveService => KeepAliveService.instance;
   
   // 当前显示状态
   String _currentTitle = '';
@@ -150,7 +150,7 @@ class ForegroundServiceManager {
       return true;
     }
 
-    _isAudioMuted = _audioKeepAlive.isMuted;
+    _isAudioMuted = _keepAliveService.isMuted;
 
     try {
       final ServiceRequestResult result = await FlutterForegroundTask.startService(
@@ -208,8 +208,8 @@ class ForegroundServiceManager {
       }
 
       // 获取音频状态
-      _isAudioMuted = _audioKeepAlive.isMuted;
-      final audioPlaying = _audioKeepAlive.isPlaying;
+      _isAudioMuted = _keepAliveService.isMuted;
+      final audioPlaying = _keepAliveService.isPlaying;
       
       String audioInfo;
       if (audioPlaying) {
@@ -247,7 +247,7 @@ class ForegroundServiceManager {
     
     try {
       // 重新构建通知以更新按钮文字
-      final audioPlaying = _audioKeepAlive.isPlaying;
+      final audioPlaying = _keepAliveService.isPlaying;
       String audioInfo;
       if (audioPlaying) {
         audioInfo = isMuted ? '🔇 静音播放陀罗尼中...' : '🔊 播放陀罗尼中...';
@@ -337,13 +337,11 @@ class ForegroundTaskHandler extends TaskHandler {
   }
 
   int _heartbeatCount = 0;
-  DateTime? _lastHeartbeat;
 
   @override
   void onRepeatEvent(DateTime timestamp) {
     // 心跳机制：保持服务活跃，防止被系统杀掉
     _heartbeatCount++;
-    _lastHeartbeat = timestamp;
     
     // 每60秒输出一次心跳日志（避免日志过多）
     if (_heartbeatCount % 60 == 0) {
