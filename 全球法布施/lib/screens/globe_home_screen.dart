@@ -198,7 +198,6 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
     // 性能优化：仅在回调未设置时才在 postFrameCallback 中设置
     if (!_isCallbackSetup) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        debugPrint('🔄 页面 build 完成，准备设置回调');
         _setupTransferBeamCallback();
       });
     }
@@ -212,11 +211,10 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
             child: _isGlobeLoaded
                 ? LayoutBuilder(
                     builder: (context, constraints) {
-                      debugPrint('🎭 Globe 渲染区域: ${constraints.maxWidth}x${constraints.maxHeight}');
+                      // 保存 Globe 静态引用（移除调试日志以提升性能）
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (_globeKey.currentState != null && _globeState == null) {
                           _globeState = _globeKey.currentState;
-                          debugPrint('💾 首次保存 Globe 静态引用');
                         }
                       });
                       

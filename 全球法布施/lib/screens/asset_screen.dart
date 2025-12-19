@@ -6,6 +6,7 @@ import 'dart:convert' as convert;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:async';
+import 'package:flutter/scheduler.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../core/config/app_config.dart';
@@ -40,6 +41,9 @@ class _AssetScreenState extends State<AssetScreen> {
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
   
+  // 搜索防抖定时器
+  Timer? _debounceTimer;
+  
   // 展开状态缓存
   final Set<String> _expandedGroups = {};
 
@@ -56,18 +60,22 @@ class _AssetScreenState extends State<AssetScreen> {
   }
 
   void _onSearchChanged() {
-    final query = _searchController.text.trim();
-    if (query != _searchQuery) {
-      setState(() {
-        _searchQuery = query;
-        _isSearching = query.isNotEmpty;
-        if (_isSearching) {
-          _performSearch(query);
-        } else {
-          _searchResults.clear();
-        }
-      });
-    }
+    // 防抖优化：300ms 内的连续输入只触发最后一次搜索
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      final query = _searchController.text.trim();
+      if (query != _searchQuery) {
+        setState(() {
+          _searchQuery = query;
+          _isSearching = query.isNotEmpty;
+          if (_isSearching) {
+            _performSearch(query);
+          } else {
+            _searchResults.clear();
+          }
+        });
+      }
+    });
   }
 
   /// 执行搜索 - 只搜索标题
@@ -555,6 +563,7 @@ class _AssetScreenState extends State<AssetScreen> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _downloadSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -775,66 +784,71 @@ class _AssetScreenState extends State<AssetScreen> {
     final bool isDownloaded = _downloadedAssetsService.isAssetDownloaded(assetPath);
     final bool isDownloading = _downloadingAssets.contains(assetPath);
 
-    return Column(
-      children: [
-        CheckboxListTile(
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  fileName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (isDownloaded)
-                const Icon(Icons.check_circle, color: Colors.green, size: 20),
-            ],
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (isDownloaded)
-                const Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12)),
-              if (description != null && description.isNotEmpty)
-                Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-            ],
-          ),
-          value: isSelected,
-          onChanged: (bool? value) {
-            setState(() {
-              if (value == true) {
-                _selectedAssets.add(assetPath);
-              } else {
-                _selectedAssets.remove(assetPath);
-              }
-            });
-          },
-        ),
-        if (isDownloading)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Row(
+    // 性能优化：RepaintBoundary 隔离重绘区域
+    // 当选择状态变化时，只重绘当前项，不影响其他项
+    return RepaintBoundary(
+      key: ValueKey('asset_$assetPath'),
+      child: Column(
+        children: [
+          CheckboxListTile(
+            title: Row(
               children: [
                 Expanded(
-                  child: LinearProgressIndicator(
-                    value: _downloadProgress[assetPath] ?? 0.0,
-                    minHeight: 4,
-                    backgroundColor: Colors.grey[300],
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Theme.of(context).primaryColor,
-                    ),
+                  child: Text(
+                    fileName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '${((_downloadProgress[assetPath] ?? 0.0) * 100).toStringAsFixed(0)}%',
-                  style: const TextStyle(fontSize: 12),
-                ),
+                if (isDownloaded)
+                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
               ],
             ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (isDownloaded)
+                  const Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12)),
+                if (description != null && description.isNotEmpty)
+                  Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+              ],
+            ),
+            value: isSelected,
+            onChanged: (bool? value) {
+              setState(() {
+                if (value == true) {
+                  _selectedAssets.add(assetPath);
+                } else {
+                  _selectedAssets.remove(assetPath);
+                }
+              });
+            },
           ),
-      ],
+          if (isDownloading)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: LinearProgressIndicator(
+                      value: _downloadProgress[assetPath] ?? 0.0,
+                      minHeight: 4,
+                      backgroundColor: Colors.grey[300],
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Theme.of(context).primaryColor,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${((_downloadProgress[assetPath] ?? 0.0) * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -976,7 +990,7 @@ class _LazyChildrenBuilder extends StatefulWidget {
 
 class _LazyChildrenBuilderState extends State<_LazyChildrenBuilder> {
   int _loadedCount = 0;
-  static const int _batchSize = 10; // 每批加载10个
+  static const int _batchSize = 20; // 性能优化：增加批次大小
 
   @override
   void initState() {
@@ -992,7 +1006,8 @@ class _LazyChildrenBuilderState extends State<_LazyChildrenBuilder> {
   void _loadMore() {
     if (_loadedCount >= widget.children.length) return;
     
-    Future.delayed(const Duration(milliseconds: 16), () {
+    // 性能优化：使用帧回调替代固定延迟，更精准地在下一帧渲染
+    SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted && _loadedCount < widget.children.length) {
         setState(() {
           _loadedCount = (_loadedCount + _batchSize).clamp(0, widget.children.length);
