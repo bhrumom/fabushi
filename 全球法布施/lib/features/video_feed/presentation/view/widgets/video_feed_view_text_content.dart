@@ -67,6 +67,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   // ========= 播放会话跟踪 =========
   int _playbackSessionId = 0;
   
+  // ========= 句子级别ID跟踪（防止旧回调影响新句子）=========
+  int _currentSentenceId = 0;
+  
   // 时间追踪
   Stopwatch? _sentenceStopwatch;
   
@@ -346,15 +349,27 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
         if (_disposed || !mounted || !_playing) return;
         
         final currentSessionId = _playbackSessionId;
+        final capturedSentenceId = _currentSentenceId;
         final elapsed = _sentenceStopwatch?.elapsedMilliseconds ?? 0;
         _debugLog('📱 TTS 🔔 Completion callback received | '
             'sentence=$_currentSentenceIndex | elapsed=${elapsed}ms | '
-            'sessionId=$currentSessionId');
+            'sessionId=$currentSessionId | sentenceId=$capturedSentenceId');
         
         Future.microtask(() {
           if (_disposed || !mounted || !_playing) return;
           if (_playbackSessionId != currentSessionId) {
-            _debugLog('📱 TTS ⚠️ Stale completion callback, ignoring');
+            _debugLog('📱 TTS ⚠️ Stale session completion callback, ignoring');
+            return;
+          }
+          // 关键：验证句子ID，防止旧句子的completion影响新句子
+          if (_currentSentenceId != capturedSentenceId) {
+            _debugLog('📱 TTS ⚠️ Stale sentence completion callback (expected=$_currentSentenceId, got=$capturedSentenceId), ignoring');
+            return;
+          }
+          
+          // Mac平台额外验证：确保至少经过了合理的时间
+          if (_ttsManager.isMacOS && elapsed < 100) {
+            _debugLog('📱 TTS ⚠️ Mac: Suspiciously fast completion (${elapsed}ms), likely from stop(), ignoring');
             return;
           }
           
@@ -531,6 +546,11 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _sentenceCompleteLock = false;
     _progressCallbackReceived = false;  // 重置，等待新句子的Progress回调
     
+    // 生成新的句子ID，用于验证completion callback
+    _currentSentenceId++;
+    final sentenceId = _currentSentenceId;
+    _debugLog('📱 TTS 📖 New sentenceId=$sentenceId for sentence $sentenceIndex');
+    
     final sentence = _sentences[sentenceIndex];
     _debugLog('📱 TTS 📖 Playing sentence $sentenceIndex: "${sentence.substring(0, sentence.length.clamp(0, 20))}..."');
     
@@ -676,7 +696,8 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     if (_disposed || !mounted) return;
     if (_playing || _sentences.isEmpty) return;
     if (!_ttsInitialized) {
-      Future.delayed(const Duration(milliseconds: 300), _tryStart);
+      // 更快的初始化检查循环，减少启动延迟
+      Future.delayed(const Duration(milliseconds: 100), _tryStart);
       return;
     }
     

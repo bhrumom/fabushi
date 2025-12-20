@@ -14,6 +14,7 @@ class TtsManager {
   FlutterTts? _tts;
   bool _isInitialized = false;
   bool _isSpeaking = false;
+  bool _isStopping = false;  // 防止stop()触发completion callback
   String _deviceBrand = '';
   bool _useFallbackOnly = false;
   double _speechRate = 0.55;  // 当前语速，用于高亮同步计算
@@ -84,6 +85,12 @@ class TtsManager {
       });
       
       _tts!.setCompletionHandler(() {
+        // 如果是因为stop()触发的，忽略completion回调
+        if (_isStopping) {
+          debugPrint('📱 TTS Manager: Ignoring completion callback triggered by stop()');
+          _isStopping = false;
+          return;
+        }
         debugPrint('📱 TTS Manager: Playback COMPLETE');
         _isSpeaking = false;
         _completionCallback?.call();
@@ -178,6 +185,7 @@ class TtsManager {
     try {
       debugPrint('📱 TTS Manager: Starting speech for owner $ownerId (${text.length} chars)');
       _isSpeaking = true;
+      _isStopping = false;  // 重置停止标记
       final result = await _tts?.speak(text);
       if (result == 0) {
         // 0 表示失败
@@ -198,11 +206,13 @@ class TtsManager {
     if (!_isInitialized) return;
     
     try {
-      debugPrint('📱 TTS Manager: Stopping speech');
+      _isStopping = true;  // 设置停止标记，阻止completion callback
+      debugPrint('📱 TTS Manager: Stopping speech (isStopping=true)');
       await _tts?.stop();
       _isSpeaking = false;
     } catch (e) {
       debugPrint('📱 TTS Manager: Stop error: $e');
+      _isStopping = false;
     }
   }
 
