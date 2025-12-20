@@ -265,20 +265,28 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     return validContentRegex.hasMatch(text);
   }
   
+  // 字符位置映射（用于重复字符的精确匹配）
+  Map<String, List<int>> _wordPositions = {};
+  int _lastMatchedPosition = -1;  // 上次匹配的位置，用于处理重复字符
+  
   void _parseWordsForSentence(int sentenceIndex) {
     if (sentenceIndex < 0 || sentenceIndex >= _sentences.length) return;
     
     final sentence = _sentences[sentenceIndex];
     _words = [];
+    _wordPositions = {};  // 重置映射表
+    _lastMatchedPosition = -1;  // 重置位置
     
     for (int i = 0; i < sentence.length; i++) {
       final char = sentence[i];
       if (char.trim().isNotEmpty) {
         _words.add(char);
+        // 记录每个字符出现的所有位置
+        _wordPositions.putIfAbsent(char, () => []).add(_words.length - 1);
       }
     }
     
-    debugPrint('TTS MV: Sentence $sentenceIndex has ${_words.length} chars: "${sentence.substring(0, sentence.length.clamp(0, 15))}..."');
+    debugPrint('TTS MV: Sentence $sentenceIndex has ${_words.length} chars');
   }
 
   Future<void> _initTts() async {
@@ -386,25 +394,53 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     );
   }
   
-  /// 使用进度回调更新高亮（支持进度回调的设备）
+  /// 使用进度回调更新高亮（第一性原理：直接匹配当前朗读的字）
   void _updateHighlightFromProgress(int end, String word) {
-    // 在当前句子中找到对应的字
-    if (_words.isEmpty) return;
+    if (_words.isEmpty || word.isEmpty) return;
     
-    // 简单实现：根据位置估算当前字
-    final estimatedIndex = (end / 2).clamp(0, _words.length - 1).toInt();
+    // 第一性原理：使用 word 参数直接匹配，而非估算 end 位置
+    // word 是TTS当前正在朗读的字符，精确度100%
+    final cleanWord = word.trim();
+    if (cleanWord.isEmpty) return;
     
-    if (estimatedIndex != _currentWordIndex && estimatedIndex >= 0) {
-      // 锁定到 Progress 模式，停止 AnimationController 驱动
-      _activeHighlightSource = HighlightSource.progress;
-      _lastProgressWordIndex = estimatedIndex;
+    // 获取该字符在句子中出现的所有位置
+    final positions = _wordPositions[cleanWord];
+    if (positions == null || positions.isEmpty) {
+      // 字符不在映射表中，可能是标点或空格，忽略
+      return;
+    }
+    
+    // 找到下一个有效位置（必须大于上次匹配位置）
+    int matchIndex = -1;
+    for (final pos in positions) {
+      if (pos > _lastMatchedPosition) {
+        matchIndex = pos;
+        break;
+      }
+    }
+    
+    // 如果没找到（可能是循环播放），从头开始
+    if (matchIndex == -1 && _lastMatchedPosition > _words.length / 2) {
+      matchIndex = positions.first;
+      _lastMatchedPosition = -1;  // 重置
+    }
+    
+    if (matchIndex >= 0 && matchIndex != _currentWordIndex) {
+      // 更新上次匹配位置
+      _lastMatchedPosition = matchIndex;
       
-      // 停止动画控制器以避免竞争
+      // 锁定到 Progress 模式
+      _activeHighlightSource = HighlightSource.progress;
+      _lastProgressWordIndex = matchIndex;
+      
+      // 停止动画控制器
       _highlightController?.stop();
       
-      _currentWordIndex = estimatedIndex;
+      _currentWordIndex = matchIndex;
       _pulseController?.forward(from: 0);
       if (mounted) setState(() {});
+      
+      debugPrint('📱 TTS 🎯 Highlight matched: "$cleanWord" at index $matchIndex');
     }
   }
   

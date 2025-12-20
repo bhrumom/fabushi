@@ -79,6 +79,7 @@ class TtsManager {
       await _tts!.awaitSpeakCompletion(true);
       
       _tts!.setProgressHandler((text, start, end, word) {
+        debugPrint('📱 TTS Progress: word="$word" start=$start end=$end');
         _progressCallback?.call(text, start, end, word);
       });
       
