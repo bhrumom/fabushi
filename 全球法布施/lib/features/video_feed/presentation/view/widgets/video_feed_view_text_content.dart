@@ -333,18 +333,32 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
       onCompletion: () {
         if (_disposed || !mounted || !_playing) return;
         
+        // 捕获当前sessionId用于验证（防止切换视频后旧回调执行）
+        final currentSessionId = _playbackSessionId;
+        
         final elapsed = _sentenceStopwatch?.elapsedMilliseconds ?? 0;
         debugPrint('📱 TTS 🔔 [${DateTime.now().millisecondsSinceEpoch}] Completion callback received | '
             'sentence=$_currentSentenceIndex | elapsed=${elapsed}ms | '
-            'locked=$_sentenceCompleteLock | waiting=$_waitingForCompletion');
+            'locked=$_sentenceCompleteLock | waiting=$_waitingForCompletion | '
+            'sessionId=$currentSessionId');
         
-        if (_useSentenceMode) {
-          // 逐句模式：句子播放完成
-          _onSentenceComplete();
-        } else {
-          // 全文模式：全部播放完成
-          _onPlaybackComplete();
-        }
+        // 延迟一个微任务执行，获取最新的 sessionId 状态
+        Future.microtask(() {
+          if (_disposed || !mounted || !_playing) return;
+          // 验证 sessionId，防止旧的 completion 回调影响新内容
+          if (_playbackSessionId != currentSessionId) {
+            debugPrint('📱 TTS ⚠️ Stale completion callback (session $currentSessionId != current $_playbackSessionId), ignoring');
+            return;
+          }
+          
+          if (_useSentenceMode) {
+            // 逐句模式：句子播放完成
+            _onSentenceComplete();
+          } else {
+            // 全文模式：全部播放完成
+            _onPlaybackComplete();
+          }
+        });
       },
       onError: (msg) {
         debugPrint('📱 TTS ❌ Error: $msg');
@@ -477,13 +491,29 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     
     if (mounted) setState(() {});
     
-    // 启动平滑高亮动画（替代Timer fallback）
-    _startHighlightAnimation();
-    
     // 设置超时保护（预期时间的 1.5 倍）
     _startSentenceTimeout(expectedDuration);
     
+    // 捕获会话ID用于延迟回调验证
+    final sessionId = _playbackSessionId;
+    
+    // 先调用speak，等待TTS启动后再开始高亮动画
+    // Mac TTS启动需要约200-300ms
     await _ttsManager.speak(sentence, _ownerId);
+    
+    // TTS已开始，延迟一小段时间后启动高亮动画
+    // 这确保高亮与实际语音同步
+    if (_ttsManager.isMacOS) {
+      // Mac平台：等待TTS实际开始后再启动动画
+      Future.delayed(const Duration(milliseconds: 150), () {
+        if (_disposed || !mounted || !_playing) return;
+        if (_playbackSessionId != sessionId) return;
+        _startHighlightAnimation();
+      });
+    } else {
+      // 其他平台：立即启动
+      _startHighlightAnimation();
+    }
   }
   
   /// 启动平滑高亮动画（第一性原理：时间驱动，60fps平滑）
@@ -513,19 +543,18 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   // 已用 AnimationController 线性动画替代
   // 第一性原理：使用平滑连续动画替代离散Timer调度
   
-  /// 计算预期句子总时长（考虑加速曲线）
+  /// 计算预期句子总时长
+  /// Mac平台：TTS实际时间通常比预估长，需要增加缓冲
   double _calculateExpectedSentenceDuration(int charCount) {
-    // 简单估算：由于后期加速，总时间比匀速少约 15-25%
-    double reductionFactor;
-    if (charCount < 8) {
-      reductionFactor = 1.0;  // 短句不加速
-    } else if (charCount <= 15) {
-      reductionFactor = 0.92;  // 中等句减少 8%
-    } else {
-      reductionFactor = 0.82;  // 长句减少 18%
+    double baseDuration = charCount * _currentMsPerChar;
+    
+    // Mac平台：增加1.3x的时长缓冲，确保高亮动画能完整覆盖TTS朗读
+    // 第一性原理：宁可高亮稍慢（等待TTS），也不能高亮过快（提前结束）
+    if (_ttsManager.isMacOS) {
+      baseDuration *= 1.3;
     }
     
-    return charCount * _currentMsPerChar * reductionFactor;
+    return baseDuration;
   }
   
   /// 设置句子超时保护
@@ -667,6 +696,11 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _currentSentenceIndex = 0;
     _currentWordIndex = -1;
     
+    // 重置句子完成锁状态（防止旧状态影响新播放）
+    _sentenceCompleteLock = false;
+    _lastCompletedSentenceIndex = -1;
+    _waitingForCompletion = false;
+    
     if (mounted) setState(() {});
     
     // 注册回调
@@ -753,15 +787,27 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     }
     
     if (old.textContent != widget.textContent) {
-      debugPrint('TTS MV: Content changed');
+      debugPrint('TTS MV: Content changed, invalidating session $_playbackSessionId');
+      
+      // 先增加 sessionId，使得所有旧的延迟回调失效
+      _playbackSessionId++;
+      debugPrint('📱 TTS 🔄 Session invalidated, new session: $_playbackSessionId');
+      
       _stopPlayback();
       _parseContent();
       _currentSentenceIndex = 0;
       _currentWordIndex = -1;
+      
+      // 重置所有状态，确保新内容从干净状态开始
+      _sentenceCompleteLock = false;
+      _lastCompletedSentenceIndex = -1;
+      _waitingForCompletion = false;
+      
       _historicalMsPerChar.clear();  // 新内容，重置学习数据
       _baseMsPerChar = _ttsManager.calculateMsPerChar();  // 使用语速计算值
       if (widget.isVisible && _sentences.isNotEmpty) {
-        Future.microtask(() {
+        // 延迟更长时间，确保旧的 TTS 完全停止
+        Future.delayed(const Duration(milliseconds: 100), () {
           if (mounted && !_disposed && widget.isVisible) {
             _tryStart();
           }

@@ -46,8 +46,13 @@ class TtsManager {
   /// 根据语速计算每字毫秒数（智能自适应核心）
   /// 
   /// 第一性原理：TTS语速决定朗读速度，高亮应同步
-  /// msPerChar = 基准值 / speechRate
+  /// Mac平台：实际TTS速度比其他平台慢，需要使用更大的基准值
   double calculateMsPerChar() {
+    // Mac平台使用更大的基准值，因为Mac TTS实际朗读速度较慢
+    if (Platform.isMacOS) {
+      // Mac TTS 在 speechRate=0.55 时，实测约 200-250ms/字
+      return 220.0;
+    }
     return _baseMsPerCharAt1x / _speechRate;
   }
 
