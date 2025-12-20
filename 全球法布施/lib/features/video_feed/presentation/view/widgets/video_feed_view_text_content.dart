@@ -484,10 +484,11 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     debugPrint('📱 TTS 🎬 Started highlight animation: ${duration}ms for ${_words.length} chars');
   }
   
-  /// 停止高亮动画
+  /// 停止高亮动画（不重置，保持当前位置）
   void _stopHighlightAnimation() {
     _highlightController?.stop();
-    _highlightController?.reset();
+    // 不调用 reset()，避免高亮跳回第一个字
+    // reset 只在 _startHighlightAnimation 中通过 forward(from: 0.0) 隐式完成
   }
   
   // 已删除：_scheduleFallbackWord 方法
