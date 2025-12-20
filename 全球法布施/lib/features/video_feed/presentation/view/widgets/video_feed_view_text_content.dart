@@ -51,8 +51,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   bool _useSentenceMode = true;  // 使用逐句播放模式
   bool _waitingForCompletion = false;  // 是否在等待TTS完成
   
-  // Fallback 机制
-  Timer? _fallbackTimer;
+  // ========= 平滑高亮动画（第一性原理重构）=========
+  // 使用AnimationController替代Timer，提供60fps平滑动画
+  AnimationController? _highlightController;
   Timer? _sentenceTimeoutTimer;  // 句子超时计时器
   bool _progressCallbackReceived = false;
   
@@ -64,8 +65,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   Stopwatch? _sentenceStopwatch;  // 当前句子的计时器
   
   // ========= 智能同步算法参数 =========
-  // 基础语速参数（毫秒/字符）- 会根据实际TTS回调动态调整
-  double _baseMsPerChar = 140.0;  // 默认值略保守
+  // 基础语速参数（毫秒/字符）- 根据TTS语速动态计算
+  // 第一性原理：语速决定朗读速度，高亮应同步
+  late double _baseMsPerChar;  // 由TtsManager根据语速计算
   // 当前句子的动态速度
   double _currentMsPerChar = 140.0;
   // 句子间停顿时间
@@ -77,6 +79,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   // 动画控制器
   AnimationController? _pulseController;
   Animation<double>? _pulseAnimation;
+  
+  // Mac平台额外延迟（第一性原理：确保TTS完全读完再切换）
+  static const int _macExtraDelayMs = 300;
   
   // TTS管理器
   final TtsManager _ttsManager = TtsManager();
@@ -186,6 +191,18 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
       CurvedAnimation(parent: _pulseController!, curve: Curves.easeInOut),
     );
+    
+    // 平滑高亮动画控制器 - 驱动整个句子的字符高亮
+    // 从0.0到1.0线性变化，用于计算当前高亮位置
+    _highlightController = AnimationController(vsync: this);
+  }
+  
+  /// 根据动画进度计算当前高亮字符索引（第一性原理：时间驱动而非回调驱动）
+  int _calculateCurrentWordIndex() {
+    if (_highlightController == null || _words.isEmpty) return 0;
+    final progress = _highlightController!.value;
+    final index = (progress * _words.length).floor();
+    return index.clamp(0, _words.length - 1);
   }
 
   /// 解析内容：分句
@@ -249,6 +266,10 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
       await _ttsManager.initialize();
       _ttsInitialized = true;
       
+      // 智能自适应：根据TTS语速计算高亮速度（第一性原理）
+      _baseMsPerChar = _ttsManager.calculateMsPerChar();
+      _currentMsPerChar = _baseMsPerChar;
+      
       // 检测是否需要使用逐句模式
       // Mac平台强制使用逐句模式，因为completion回调不可靠
       if (_ttsManager.isMacOS) {
@@ -257,12 +278,17 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
         _useSentenceMode = _ttsManager.useFallbackOnly;
       }
       
-      debugPrint('📱 TTS TextContent: TTS ready | SentenceMode=$_useSentenceMode | ownerId=$_ownerId');
+      debugPrint('📱 TTS TextContent: TTS ready | speechRate=${_ttsManager.speechRate} | '
+          'msPerChar=${_baseMsPerChar.toStringAsFixed(1)} | '
+          'SentenceMode=$_useSentenceMode | ownerId=$_ownerId');
       
       // 不再在初始化后自动开始播放，等待可见性和静音状态检查
       // TTS播放由 _tryStart 方法控制，该方法会检查页面可见性和静音状态
     } catch (e) {
-      debugPrint('📱 TTS TextContent: Init error: $e');
+      // 失败时使用保守的默认值
+      _baseMsPerChar = 200.0;
+      _currentMsPerChar = _baseMsPerChar;
+      debugPrint('📱 TTS TextContent: Init error: $e, using default msPerChar=$_baseMsPerChar');
     }
   }
   
@@ -358,7 +384,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _lastCompletedSentenceIndex = _currentSentenceIndex;
     
     final sentenceElapsed = _sentenceStopwatch?.elapsedMilliseconds ?? 0;
-    _cancelFallbackTimer();
+    _stopHighlightAnimation();
     _cancelSentenceTimeout();
     _waitingForCompletion = false;
     
@@ -382,9 +408,11 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     // 播放下一句
     final nextSentence = _currentSentenceIndex + 1;
     if (nextSentence < _sentences.length) {
-      debugPrint('📱 TTS ⏸️ Pause ${_sentencePauseMs}ms before sentence $nextSentence');
+      // Mac平台额外延迟确保TTS完全读完最后几个字（第一性原理）
+      final totalPause = _sentencePauseMs + (_ttsManager.isMacOS ? _macExtraDelayMs : 0);
+      debugPrint('📱 TTS ⏸️ Pause ${totalPause}ms before sentence $nextSentence');
       
-      Future.delayed(Duration(milliseconds: _sentencePauseMs), () {
+      Future.delayed(Duration(milliseconds: totalPause), () {
         if (_disposed || !mounted || !_playing) return;
         _playSentence(nextSentence);
       });
@@ -432,8 +460,8 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     
     if (mounted) setState(() {});
     
-    // 启动句内高亮 fallback
-    _startSentenceFallback();
+    // 启动平滑高亮动画（替代Timer fallback）
+    _startHighlightAnimation();
     
     // 设置超时保护（预期时间的 1.5 倍）
     _startSentenceTimeout(expectedDuration);
@@ -441,123 +469,31 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     await _ttsManager.speak(sentence, _ownerId);
   }
   
-  /// 启动句内高亮 fallback
-  void _startSentenceFallback() {
-    _cancelFallbackTimer();
+  /// 启动平滑高亮动画（第一性原理：时间驱动，60fps平滑）
+  void _startHighlightAnimation() {
+    _stopHighlightAnimation();
     
     if (_words.isEmpty) return;
     
-    _currentWordIndex = 0;
-    _pulseController?.forward(from: 0);
+    // 计算动画时长（使用预期句子时长）
+    final duration = _calculateExpectedSentenceDuration(_words.length).round();
     
-    _scheduleFallbackWord(0);
+    _highlightController?.duration = Duration(milliseconds: duration);
+    _highlightController?.forward(from: 0.0);
+    
+    debugPrint('📱 TTS 🎬 Started highlight animation: ${duration}ms for ${_words.length} chars');
   }
   
-  /// 调度下一个字的高亮（使用非线性速度曲线）
-  /// 
-  /// TTS 引擎特性：长句子后半部分会自然加速
-  /// 速度曲线设计：
-  /// - 前 30% 的字：正常速度 (1.0x)
-  /// - 中间 40% 的字：逐渐加速 (1.0x -> 1.4x)
-  /// - 最后 30% 的字：最快速度 (1.4x -> 1.6x)
-  void _scheduleFallbackWord(int wordIndex) {
-    if (!_playing || _disposed) return;
-    if (_progressCallbackReceived) return;
-    
-    final wordsRemaining = _words.length - wordIndex - 1;
-    
-    if (wordsRemaining <= 0) {
-      // 最后一个字，等待 completion
-      return;
-    }
-    
-    // 计算当前字在句子中的位置比例 (0.0 - 1.0)
-    final progress = wordIndex / _words.length;
-    
-    // 计算速度因子（模拟TTS加速曲线）
-    final speedFactor = _calculateSpeedFactor(progress, _words.length);
-    
-    // 基础延迟时间（考虑速度因子）
-    final baseDelay = _currentMsPerChar / speedFactor;
-    
-    // 应用动态校准（确保能在预期时间内完成）
-    final elapsed = _sentenceStopwatch?.elapsedMilliseconds ?? 0;
-    final expectedTotal = _calculateExpectedSentenceDuration(_words.length);
-    final remainingTime = expectedTotal - elapsed;
-    
-    int delayMs;
-    if (remainingTime > 0 && wordsRemaining > 0) {
-      // 计算剩余字需要的平均时间
-      final avgRemainingDelay = remainingTime / wordsRemaining;
-      // 使用曲线速度和剩余时间的加权平均
-      // 前期更信任曲线速度，后期更信任剩余时间
-      final trustRemainingFactor = progress.clamp(0.0, 0.8);
-      delayMs = (baseDelay * (1 - trustRemainingFactor) + avgRemainingDelay * trustRemainingFactor)
-          .clamp(40.0, 300.0).round();
-    } else if (remainingTime <= 0) {
-      // 已经落后，快速追赶
-      delayMs = 40;
-    } else {
-      delayMs = baseDelay.clamp(40.0, 300.0).round();
-    }
-    
-    _fallbackTimer = Timer(Duration(milliseconds: delayMs), () {
-      if (_disposed || !mounted || !_playing) return;
-      if (_progressCallbackReceived) return;
-      
-      final nextWordIndex = wordIndex + 1;
-      if (nextWordIndex < _words.length) {
-        _currentWordIndex = nextWordIndex;
-        _pulseController?.forward(from: 0);
-        if (mounted) setState(() {});
-        
-        _scheduleFallbackWord(nextWordIndex);
-      }
-    });
+  /// 停止高亮动画
+  void _stopHighlightAnimation() {
+    _highlightController?.stop();
+    _highlightController?.reset();
   }
   
-  /// 计算速度因子（非线性曲线）
-  /// 
-  /// progress: 0.0 (句子开始) -> 1.0 (句子结束)
-  /// charCount: 句子字数，用于调整曲线
-  /// 
-  /// 返回速度因子：1.0 = 正常速度，>1.0 = 加速
-  double _calculateSpeedFactor(double progress, int charCount) {
-    // 短句子（<8字）不需要加速
-    if (charCount < 8) {
-      return 1.0;
-    }
-    
-    // 中等句子（8-15字）轻微加速
-    if (charCount <= 15) {
-      if (progress < 0.4) {
-        return 1.0;
-      } else if (progress < 0.7) {
-        // 线性加速：1.0 -> 1.2
-        return 1.0 + (progress - 0.4) / 0.3 * 0.2;
-      } else {
-        return 1.2;
-      }
-    }
-    
-    // 长句子（>15字）明显加速曲线
-    if (progress < 0.25) {
-      // 前25%：正常速度
-      return 1.0;
-    } else if (progress < 0.5) {
-      // 25%-50%：开始加速 (1.0 -> 1.3)
-      final localProgress = (progress - 0.25) / 0.25;
-      return 1.0 + localProgress * 0.3;
-    } else if (progress < 0.75) {
-      // 50%-75%：继续加速 (1.3 -> 1.5)
-      final localProgress = (progress - 0.5) / 0.25;
-      return 1.3 + localProgress * 0.2;
-    } else {
-      // 最后25%：最快速度 (1.5 -> 1.7)
-      final localProgress = (progress - 0.75) / 0.25;
-      return 1.5 + localProgress * 0.2;
-    }
-  }
+  // 已删除：_scheduleFallbackWord 方法
+  // 已删除：_calculateSpeedFactor 方法
+  // 已用 AnimationController 线性动画替代
+  // 第一性原理：使用平滑连续动画替代离散Timer调度
   
   /// 计算预期句子总时长（考虑加速曲线）
   double _calculateExpectedSentenceDuration(int charCount) {
@@ -648,9 +584,10 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     }
   }
   
+  // _cancelFallbackTimer 已经被 _stopHighlightAnimation 替代
+  // 保留空方法以保持向后兼容
   void _cancelFallbackTimer() {
-    _fallbackTimer?.cancel();
-    _fallbackTimer = null;
+    // 已迁移到 _stopHighlightAnimation()
   }
 
   /// 检查是否应该播放TTS
@@ -766,7 +703,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     debugPrint('📱 TTS TextContent: Stopping playback for $_ownerId');
     _playing = false;
     _waitingForCompletion = false;
-    _cancelFallbackTimer();
+    _stopHighlightAnimation();
     _cancelSentenceTimeout();
     _ttsManager.stop();
     _ttsManager.unregisterCallbacks(_ownerId);
@@ -799,7 +736,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
       _currentSentenceIndex = 0;
       _currentWordIndex = -1;
       _historicalMsPerChar.clear();  // 新内容，重置学习数据
-      _baseMsPerChar = 140.0;
+      _baseMsPerChar = _ttsManager.calculateMsPerChar();  // 使用语速计算值
       if (widget.isVisible && _sentences.isNotEmpty) {
         Future.microtask(() {
           if (mounted && !_disposed && widget.isVisible) {
@@ -815,8 +752,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     debugPrint('📱 TTS TextContent: Disposing $_ownerId');
     _disposed = true;
     _removeListeners();
-    _cancelFallbackTimer();
+    _stopHighlightAnimation();
     _cancelSentenceTimeout();
+    _highlightController?.dispose();
     _pulseController?.dispose();
     _stopPlayback();
     super.dispose();
@@ -851,8 +789,11 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: AnimatedBuilder(
-              animation: _pulseAnimation!,
+              // 第一性原理：合并监听动画，减少重建次数
+              animation: Listenable.merge([_pulseAnimation!, _highlightController!]),
               builder: (context, child) {
+                // 基于动画进度计算当前高亮位置，无需额外setState
+                _currentWordIndex = _calculateCurrentWordIndex();
                 return _buildKaraokeText();
               },
             ),

@@ -16,6 +16,10 @@ class TtsManager {
   bool _isSpeaking = false;
   String _deviceBrand = '';
   bool _useFallbackOnly = false;
+  double _speechRate = 0.55;  // 当前语速，用于高亮同步计算
+  
+  // 基准毫秒/字 - 语速1.0时的参考值
+  static const double _baseMsPerCharAt1x = 120.0;
   
   // 当前活跃的朗读者ID（用于区分不同的 TextContent 实例）
   String? _activeOwnerId;
@@ -36,6 +40,17 @@ class TtsManager {
   /// Helper to check if running on macOS
   bool get isMacOS => Platform.isMacOS;
 
+  /// 当前语速
+  double get speechRate => _speechRate;
+
+  /// 根据语速计算每字毫秒数（智能自适应核心）
+  /// 
+  /// 第一性原理：TTS语速决定朗读速度，高亮应同步
+  /// msPerChar = 基准值 / speechRate
+  double calculateMsPerChar() {
+    return _baseMsPerCharAt1x / _speechRate;
+  }
+
   /// 初始化 TTS（只需调用一次）
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -50,10 +65,11 @@ class TtsManager {
       // 根据平台设置语速
       // Android通常需要较快(0.9)，iOS/Mac通常0.5是标准语速
       if (Platform.isAndroid) {
-        await _tts!.setSpeechRate(0.9);
+        _speechRate = 0.9;
       } else {
-        await _tts!.setSpeechRate(0.55);
+        _speechRate = 0.55;
       }
+      await _tts!.setSpeechRate(_speechRate);
       await _tts!.setVolume(1.0);
       await _tts!.awaitSpeakCompletion(true);
       
