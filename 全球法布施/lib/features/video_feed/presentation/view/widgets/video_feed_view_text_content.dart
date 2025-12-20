@@ -5,6 +5,14 @@ import 'package:global_dharma_sharing/services/tts_manager.dart';
 import 'package:global_dharma_sharing/providers/video_feed_visibility_notifier.dart';
 import 'package:global_dharma_sharing/providers/tts_mute_notifier.dart';
 
+/// 高亮状态源枚举（第一性原理：单一状态源 + 明确优先级）
+/// Progress 回调 > AnimationController > 手动设置
+enum HighlightSource {
+  animation,  // AnimationController 驱动
+  progress,   // TTS Progress 回调驱动  
+  manual,     // 手动设置（如句子完成时）
+}
+
 /// 文字视频内容组件 - MV卡拉OK风格逐字高亮
 /// 
 /// 特点：
@@ -60,6 +68,10 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   // 句子完成锁定（防止重复触发）
   bool _sentenceCompleteLock = false;
   int _lastCompletedSentenceIndex = -1;
+  
+  // ========= 状态源锁定（第一性原理：防止多源竞争）=========
+  HighlightSource _activeHighlightSource = HighlightSource.animation;
+  int _lastProgressWordIndex = -1;  // Progress 回调最后设置的索引
   
   // ========= 播放会话跟踪（第一性原理：防止旧回调影响新内容）=========
   // 每次开始播放生成新ID，所有延迟回调检查ID是否有效
@@ -204,6 +216,12 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   /// 根据动画进度计算当前高亮字符索引（第一性原理：时间驱动而非回调驱动）
   int _calculateCurrentWordIndex() {
     if (_highlightController == null || _words.isEmpty) return 0;
+    
+    // 第一性原理：如果 Progress 回调正在工作，信任它的数据
+    if (_activeHighlightSource == HighlightSource.progress && _lastProgressWordIndex >= 0) {
+      return _lastProgressWordIndex.clamp(0, _words.length - 1);
+    }
+    
     final progress = _highlightController!.value;
     final index = (progress * _words.length).floor();
     return index.clamp(0, _words.length - 1);
@@ -377,6 +395,13 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     final estimatedIndex = (end / 2).clamp(0, _words.length - 1).toInt();
     
     if (estimatedIndex != _currentWordIndex && estimatedIndex >= 0) {
+      // 锁定到 Progress 模式，停止 AnimationController 驱动
+      _activeHighlightSource = HighlightSource.progress;
+      _lastProgressWordIndex = estimatedIndex;
+      
+      // 停止动画控制器以避免竞争
+      _highlightController?.stop();
+      
       _currentWordIndex = estimatedIndex;
       _pulseController?.forward(from: 0);
       if (mounted) setState(() {});
@@ -483,6 +508,10 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _currentWordIndex = 0;
     _waitingForCompletion = true;
     _sentenceCompleteLock = false;  // 新句子开始，解锁完成事件
+    
+    // 重置状态源（第一性原理：新句子从动画模式开始）
+    _activeHighlightSource = HighlightSource.animation;
+    _lastProgressWordIndex = -1;
     
     // 播放这个句子
     final sentence = _sentences[sentenceIndex];
@@ -861,8 +890,14 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
               // 第一性原理：合并监听动画，减少重建次数
               animation: Listenable.merge([_pulseAnimation!, _highlightController!]),
               builder: (context, child) {
-                // 基于动画进度计算当前高亮位置，无需额外setState
-                _currentWordIndex = _calculateCurrentWordIndex();
+                // 仅在动画模式时使用动画进度更新高亮（第一性原理：单一状态源）
+                if (_activeHighlightSource == HighlightSource.animation) {
+                  final newIndex = _calculateCurrentWordIndex();
+                  // 只允许前进，不允许后退（防止乱跳）
+                  if (newIndex > _currentWordIndex) {
+                    _currentWordIndex = newIndex;
+                  }
+                }
                 return _buildKaraokeText();
               },
             ),
