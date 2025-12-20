@@ -20,6 +20,7 @@ import 'core/video_feed_di/video_feed_injector.dart';
 import 'core/design_system/app_theme.dart';
 import 'providers/video_feed_visibility_notifier.dart';
 import 'providers/tts_mute_notifier.dart';
+import 'services/cloudflare_text_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,9 +52,17 @@ void main() async {
     AppInitializer.initialize().catchError((e) => debugPrint('初始化失败: $e'));
   });
 
-  // 延迟Video Feed依赖初始化
-  Future.delayed(const Duration(milliseconds: 200), () {
-    setupVideoFeedDependencies();
+  // 🚀 立即初始化Video Feed依赖（不阻塞）
+  setupVideoFeedDependencies();
+  
+  // 🚀 后台预加载法流内容，实现秒加载
+  Future.microtask(() async {
+    try {
+      final textService = videoFeedGetIt<CloudflareTextService>();
+      await textService.preloadOnAppStart();
+    } catch (e) {
+      debugPrint('⚠️ 预加载启动失败: $e');
+    }
   });
 
   runApp(const MyApp());

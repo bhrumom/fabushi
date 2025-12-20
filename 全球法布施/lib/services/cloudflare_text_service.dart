@@ -90,26 +90,40 @@ class CloudflareTextService {
   ];
 
   /// 获取随机文本内容（用于信息流）
+  /// 🚀 极致优化：队列有内容秒返回，队列空时返回内置样本
   Future<Map<String, dynamic>?> getRandomTextContent() async {
     try {
-      // 启动后台预加载
-      if (_preloadQueue.isEmpty && !_isPreloading) {
-        _fillPreloadQueue();
-      }
-
-      // 从队列获取
+      // 🚀 极速返回：队列有内容时秒返回
       if (_preloadQueue.isNotEmpty) {
         final content = _preloadQueue.removeAt(0);
         _refillQueue();
+        print('🚀 队列有内容，秒返回 (剩余: ${_preloadQueue.length})');
         return content;
       }
 
-      // 队列为空，立即加载一个
-      print('队列为空，立即加载...');
-      return await _getCloudTextFromLocalManifest();
+      // 📱 后备：立即返回内置样本，无需等待网络
+      print('🚀 队列为空，使用内置样本秒返回');
+      final sampleText = _sampleTexts[_random.nextInt(_sampleTexts.length)];
+      final result = {
+        'title': sampleText['title']!,
+        'content': sampleText['content']!,
+        'filePath': 'sample_${sampleText['title']}'
+      };
+      
+      // 后台继续填充队列
+      if (!_isPreloading) {
+        _fillPreloadQueue();
+      }
+      
+      return result;
     } catch (e) {
       print('Failed to load cloud text: $e');
-      return null;
+      // 最后的后备
+      return {
+        'title': '心经',
+        'content': _sampleTexts[0]['content']!,
+        'filePath': 'sample_fallback'
+      };
     }
   }
 
@@ -185,12 +199,39 @@ class CloudflareTextService {
     }
   }
 
+  /// App启动时调用的预加载方法
+  /// 🚀 极致优化：尽早加载manifest并开始填充队列
+  Future<void> preloadOnAppStart() async {
+    print('🚀 App启动预加载开始...');
+    
+    // 1. 立即加载manifest到内存
+    await _ensureManifestLoaded();
+    
+    // 2. 后台填充预加载队列
+    _fillPreloadQueue();
+  }
+  
+  /// 确保manifest已加载到内存
+  Future<void> _ensureManifestLoaded() async {
+    if (_cachedManifest != null) return;
+    
+    try {
+      await Future.delayed(Duration.zero);
+      final manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
+      final List<dynamic> manifestData = await compute(_parseManifestJson, manifestString);
+      _cachedManifest = manifestData.cast<Map<String, dynamic>>();
+      print('🚀 Manifest预加载完成: ${_cachedManifest!.length} 项');
+    } catch (e) {
+      print('⚠️ Manifest预加载失败: $e');
+    }
+  }
+
   /// 填充预加载队列（异步后台加载）
   Future<void> _fillPreloadQueue() async {
     if (_isPreloading) return;
     _isPreloading = true;
 
-    print('开始后台预加载 $_queueSize 个文本...');
+    print('🚀 开始后台预加载 $_queueSize 个文本...');
 
     // 关键修复：使用真正的异步后台加载，不阻塞主线程
     Future.delayed(Duration.zero, () async {
@@ -206,17 +247,19 @@ class CloudflareTextService {
         if (content != null) {
           _preloadQueue.add(content);
           loaded++;
-          print('预加载进度: $loaded/$_queueSize');
+          if (loaded % 5 == 0) {
+            print('🚀 预加载进度: $loaded/$_queueSize');
+          }
         }
         attempts++;
         
         // 关键修复：每加载一个内容后短暂延迟，确保UI响应性
         if (loaded % 3 == 0) {
-          await Future.delayed(Duration(milliseconds: 10));
+          await Future.delayed(const Duration(milliseconds: 10));
         }
       }
 
-      print('预加载完成: ${_preloadQueue.length} 个文本');
+      print('✅ 预加载完成: ${_preloadQueue.length} 个文本');
       _isPreloading = false;
     });
   }

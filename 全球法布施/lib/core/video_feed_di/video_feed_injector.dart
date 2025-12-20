@@ -13,8 +13,9 @@ void setupVideoFeedDependencies() {
   // Firebase
   videoFeedGetIt.registerLazySingleton<FirebaseFirestore>(() => FirebaseFirestore.instance);
 
-  // Services
-  videoFeedGetIt.registerLazySingleton<CloudflareTextService>(() => CloudflareTextService());
+  // Services - Eager singleton for immediate preloading
+  final textService = CloudflareTextService();
+  videoFeedGetIt.registerSingleton<CloudflareTextService>(textService);
 
   // Repositories
   videoFeedGetIt.registerLazySingleton<VideoFeedRepository>(
