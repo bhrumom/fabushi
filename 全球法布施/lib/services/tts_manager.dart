@@ -30,6 +30,11 @@ class TtsManager {
   bool get useFallbackOnly => _useFallbackOnly;
   String get deviceBrand => _deviceBrand;
   String? get activeOwnerId => _activeOwnerId;
+  /// 是否有活跃的 owner
+  bool get hasActiveOwner => _activeOwnerId != null;
+
+  /// Helper to check if running on macOS
+  bool get isMacOS => Platform.isMacOS;
 
   /// 初始化 TTS（只需调用一次）
   Future<void> initialize() async {
@@ -41,7 +46,14 @@ class TtsManager {
       _tts = FlutterTts();
       
       await _tts!.setLanguage('zh-CN');
-      await _tts!.setSpeechRate(0.9);
+      
+      // 根据平台设置语速
+      // Android通常需要较快(0.9)，iOS/Mac通常0.5是标准语速
+      if (Platform.isAndroid) {
+        await _tts!.setSpeechRate(0.9);
+      } else {
+        await _tts!.setSpeechRate(0.55);
+      }
       await _tts!.setVolume(1.0);
       await _tts!.awaitSpeakCompletion(true);
       

@@ -56,6 +56,10 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   Timer? _sentenceTimeoutTimer;  // 句子超时计时器
   bool _progressCallbackReceived = false;
   
+  // 句子完成锁定（防止重复触发）
+  bool _sentenceCompleteLock = false;
+  int _lastCompletedSentenceIndex = -1;
+  
   // 时间追踪
   Stopwatch? _sentenceStopwatch;  // 当前句子的计时器
   
@@ -246,7 +250,12 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
       _ttsInitialized = true;
       
       // 检测是否需要使用逐句模式
-      _useSentenceMode = _ttsManager.useFallbackOnly;
+      // Mac平台强制使用逐句模式，因为completion回调不可靠
+      if (_ttsManager.isMacOS) {
+        _useSentenceMode = true;
+      } else {
+        _useSentenceMode = _ttsManager.useFallbackOnly;
+      }
       
       debugPrint('📱 TTS TextContent: TTS ready | SentenceMode=$_useSentenceMode | ownerId=$_ownerId');
       
@@ -268,17 +277,36 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
           _cancelFallbackTimer();
           _cancelSentenceTimeout();
           debugPrint('📱 TTS ✅ Progress callback WORKING! Switching to progress mode');
-          // 进度回调工作，不再使用逐句模式
-          _useSentenceMode = false;
+          // 进度回调工作，不再使用逐句模式 (Mac除外，Mac强制保留逐句模式以获得停顿)
+          if (!_ttsManager.isMacOS) {
+            _useSentenceMode = false;
+          }
         }
         
         // 使用进度回调更新高亮
         _updateHighlightFromProgress(end, word);
+        
+        // Mac平台智能检测句子完成：利用Progress回调检测是否读完
+        // 注意：依赖原生completion回调，这里只做辅助日志记录
+        // 原先这里的智能检测会过早切换下一句，因为：
+        // 1. end位置可能在TTS实际读完前就接近文本末尾
+        // 2. TTS需要时间完成最后几个字的发音
+        // 现在改为等待原生completion回调或超时，不在这里触发切换
+        if (_ttsManager.isMacOS && _useSentenceMode && _playing) {
+           final currentText = _sentences[_currentSentenceIndex];
+           // 仅记录进度，不主动触发完成
+           if (end >= currentText.length - 1) {
+             debugPrint('📱 TTS (Mac): Progress near end (end=$end, len=${currentText.length}), waiting for completion callback');
+           }
+        }
       },
       onCompletion: () {
         if (_disposed || !mounted || !_playing) return;
         
-        debugPrint('📱 TTS 🔔 Completion callback received');
+        final elapsed = _sentenceStopwatch?.elapsedMilliseconds ?? 0;
+        debugPrint('📱 TTS 🔔 [${DateTime.now().millisecondsSinceEpoch}] Completion callback received | '
+            'sentence=$_currentSentenceIndex | elapsed=${elapsed}ms | '
+            'locked=$_sentenceCompleteLock | waiting=$_waitingForCompletion');
         
         if (_useSentenceMode) {
           // 逐句模式：句子播放完成
@@ -314,6 +342,20 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   /// 句子播放完成（逐句模式核心逻辑）
   void _onSentenceComplete() {
     if (_disposed || !mounted || !_playing) return;
+    
+    // 检查是否已经处理过这句话的完成事件（防止重复触发）
+    if (_sentenceCompleteLock) {
+      debugPrint('📱 TTS ⚠️ Sentence $_currentSentenceIndex completion already locked, skipping');
+      return;
+    }
+    if (_lastCompletedSentenceIndex == _currentSentenceIndex) {
+      debugPrint('📱 TTS ⚠️ Sentence $_currentSentenceIndex already completed, skipping duplicate');
+      return;
+    }
+    
+    // 锁定，防止重复触发
+    _sentenceCompleteLock = true;
+    _lastCompletedSentenceIndex = _currentSentenceIndex;
     
     final sentenceElapsed = _sentenceStopwatch?.elapsedMilliseconds ?? 0;
     _cancelFallbackTimer();
@@ -377,10 +419,16 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
         'speed=${_currentMsPerChar.toStringAsFixed(1)}ms/char | '
         'expected=${expectedDuration}ms (with acceleration)');
     
-    // 重置句子计时器
+    // 重置句子计时器和锁定状态
     _sentenceStopwatch = Stopwatch()..start();
     _currentWordIndex = 0;
     _waitingForCompletion = true;
+    _sentenceCompleteLock = false;  // 新句子开始，解锁完成事件
+    
+    // 播放这个句子
+    final sentence = _sentences[sentenceIndex];
+    
+    debugPrint('📱 TTS 📖 [${DateTime.now().millisecondsSinceEpoch}] Starting sentence $sentenceIndex: "${sentence.substring(0, sentence.length.clamp(0, 20))}..."');
     
     if (mounted) setState(() {});
     
@@ -390,8 +438,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     // 设置超时保护（预期时间的 1.5 倍）
     _startSentenceTimeout(expectedDuration);
     
-    // 播放这个句子
-    final sentence = _sentences[sentenceIndex];
     await _ttsManager.speak(sentence, _ownerId);
   }
   
