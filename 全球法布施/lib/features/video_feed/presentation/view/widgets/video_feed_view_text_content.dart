@@ -61,6 +61,10 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   bool _sentenceCompleteLock = false;
   int _lastCompletedSentenceIndex = -1;
   
+  // ========= 播放会话跟踪（第一性原理：防止旧回调影响新内容）=========
+  // 每次开始播放生成新ID，所有延迟回调检查ID是否有效
+  int _playbackSessionId = 0;
+  
   // 时间追踪
   Stopwatch? _sentenceStopwatch;  // 当前句子的计时器
   
@@ -407,20 +411,33 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     
     // 播放下一句
     final nextSentence = _currentSentenceIndex + 1;
+    // 捕获当前会话ID，延迟回调中验证（防止切换视频后旧回调执行）
+    final sessionId = _playbackSessionId;
+    
     if (nextSentence < _sentences.length) {
       // Mac平台额外延迟确保TTS完全读完最后几个字（第一性原理）
       final totalPause = _sentencePauseMs + (_ttsManager.isMacOS ? _macExtraDelayMs : 0);
-      debugPrint('📱 TTS ⏸️ Pause ${totalPause}ms before sentence $nextSentence');
+      debugPrint('📱 TTS ⏸️ Pause ${totalPause}ms before sentence $nextSentence (session=$sessionId)');
       
       Future.delayed(Duration(milliseconds: totalPause), () {
+        // 验证会话ID，防止切换视频后旧回调执行
         if (_disposed || !mounted || !_playing) return;
+        if (_playbackSessionId != sessionId) {
+          debugPrint('📱 TTS ⚠️ Stale callback (session $sessionId != current $_playbackSessionId), ignoring');
+          return;
+        }
         _playSentence(nextSentence);
       });
     } else {
       // 全部播放完成，循环
-      debugPrint('📱 TTS 🔁 All sentences complete, restarting in 800ms');
+      debugPrint('📱 TTS 🔁 All sentences complete, restarting in 800ms (session=$sessionId)');
       Future.delayed(const Duration(milliseconds: 800), () {
+        // 验证会话ID，防止切换视频后旧回调执行
         if (_disposed || !mounted || !_playing) return;
+        if (_playbackSessionId != sessionId) {
+          debugPrint('📱 TTS ⚠️ Stale callback (session $sessionId != current $_playbackSessionId), ignoring');
+          return;
+        }
         _playSentence(0);
       });
     }
@@ -639,6 +656,11 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     }
     
     debugPrint('📱 TTS TextContent: _tryStart called for $_ownerId');
+    
+    // 生成新的播放会话ID（防止旧回调影响新内容）
+    _playbackSessionId++;
+    final currentSession = _playbackSessionId;
+    debugPrint('📱 TTS 🎬 New playback session: $currentSession');
     
     _playing = true;
     _progressCallbackReceived = false;
