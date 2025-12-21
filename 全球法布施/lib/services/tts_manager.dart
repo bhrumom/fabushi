@@ -48,12 +48,22 @@ class TtsManager {
   /// 
   /// 第一性原理：TTS语速决定朗读速度，高亮应同步
   /// Mac平台：实际TTS速度比其他平台慢，需要使用更大的基准值
+  /// 高语速非线性校正：语速越快，实际朗读相对更快
   double calculateMsPerChar() {
     // Mac平台使用更大的基准值，因为Mac TTS实际朗读速度较慢
     if (Platform.isMacOS) {
       // Mac TTS 在 speechRate=0.55 时，实测约 200-250ms/字
-      return 220.0;
+      // 语速变化时需要相应调整
+      return 220.0 / (_speechRate / 0.55);
     }
+    
+    // Android/iOS 高语速非线性校正
+    // 当语速 > 0.8 时，实际朗读速度比线性预测更快
+    if (_speechRate > 0.8) {
+      // 添加10%的加速因子
+      return _baseMsPerCharAt1x / (_speechRate * 1.1);
+    }
+    
     return _baseMsPerCharAt1x / _speechRate;
   }
 

@@ -58,7 +58,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   // ========= 动画控制 =========
   AnimationController? _highlightController;
   Timer? _sentenceTimeoutTimer;
-  bool _progressCallbackReceived = false;
   
   // 句子完成锁定（防止重复触发）
   bool _sentenceCompleteLock = false;
@@ -69,6 +68,11 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   
   // ========= 句子级别ID跟踪（防止旧回调影响新句子）=========
   int _currentSentenceId = 0;
+  
+  // ========= 第一性原理：预测性高亮核心参数 =========
+  // AnimationController始终作为主驱动，Progress回调仅做校准
+  double _calibrationOffset = 0.0;  // 累计校准偏移量 (-0.15 ~ 0.15)
+  int _progressCallbackCount = 0;    // 回调计数，用于稳定性判断
   
   // 时间追踪
   Stopwatch? _sentenceStopwatch;
@@ -98,15 +102,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   // ========= 第一性原理优化：预构建Widget缓存 =========
   // 句子开始时构建一次，而非每帧构建
   List<Widget>? _cachedWordWidgets;
-  
-  // 字符位置映射（用于重复字符的精确匹配）
-  Map<String, List<int>> _wordPositions = {};
-  int _lastMatchedPosition = -1;
-  
-  // ========= 第一性原理优化：多字符词处理队列 =========
-  // 处理TTS返回双字词时的逐字高亮
-  final List<int> _pendingHighlightIndices = [];
-  Timer? _multiCharHighlightTimer;
 
   @override
   void initState() {
@@ -214,19 +209,19 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _highlightController!.addListener(_onHighlightAnimationTick);
   }
   
-  /// 第一性原理：动画tick时计算当前应该高亮的字符
+  /// 第一性原理：预测性高亮 - 动画始终作为主驱动源
+  /// 核心公式：高亮索引 = (动画进度 + 校准偏移) × 字符数
   void _onHighlightAnimationTick() {
     if (_disposed || !_playing || _words.isEmpty) return;
     
-    // 如果Progress回调已接管，不使用动画驱动
-    if (_progressCallbackReceived) return;
+    // 预测性高亮：动画进度 + 实时校准偏移
+    final rawProgress = _highlightController!.value;
+    final calibratedProgress = (rawProgress + _calibrationOffset).clamp(0.0, 1.0);
+    final targetIndex = (calibratedProgress * _words.length).floor().clamp(0, _words.length - 1);
     
-    final progress = _highlightController!.value;
-    final newIndex = (progress * _words.length).floor().clamp(0, _words.length - 1);
-    
-    // 只允许前进，不允许后退（防止乱跳）
-    if (newIndex > _highlightIndex.value) {
-      _highlightIndex.value = newIndex;
+    // 只允许前进（防止校准导致回跳）
+    if (targetIndex > _highlightIndex.value) {
+      _highlightIndex.value = targetIndex;
       _pulseController?.forward(from: 0);
     }
   }
@@ -258,16 +253,15 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     
     final sentence = _sentences[sentenceIndex];
     _words = [];
-    _wordPositions = {};
-    _lastMatchedPosition = -1;
-    _pendingHighlightIndices.clear();
-    _multiCharHighlightTimer?.cancel();
+    // 重置校准参数
+    _calibrationOffset = 0.0;
+    _progressCallbackCount = 0;
     
+    // 第一性原理：只需要按字符拆分，动画驱动高亮
     for (int i = 0; i < sentence.length; i++) {
       final char = sentence[i];
       if (char.trim().isNotEmpty) {
         _words.add(char);
-        _wordPositions.putIfAbsent(char, () => []).add(_words.length - 1);
       }
     }
     
@@ -323,25 +317,23 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
       onProgress: (text, start, end, word) {
         if (_disposed || !mounted || !_playing) return;
         
-        if (!_progressCallbackReceived) {
-          _progressCallbackReceived = true;
-          _cancelSentenceTimeout();
-          _debugLog('📱 TTS ✅ Progress callback WORKING! Switching to progress mode');
-          if (!_ttsManager.isMacOS) {
-            _useSentenceMode = false;
-          }
-          // 停止动画驱动，改用Progress回调驱动
-          _highlightController?.stop();
-        }
+        _progressCallbackCount++;
         
-        // 使用进度回调更新高亮
-        _updateHighlightFromProgress(end, word);
+        // 第一性原理：Progress回调作为校准源，而非驱动源
+        // 动画始终运行，这里只做微调校准
+        _calibrateFromProgress(end);
+        
+        // 首次收到回调时取消超时（证明TTS正在工作）
+        if (_progressCallbackCount == 1) {
+          _cancelSentenceTimeout();
+          _debugLog('📱 TTS ✅ Progress callback working, calibration mode active');
+        }
         
         // Mac平台检测句子接近完成
         if (_ttsManager.isMacOS && _useSentenceMode && _playing) {
           final currentText = _sentences[_currentSentenceIndex];
           if (end >= currentText.length - 1) {
-            _debugLog('📱 TTS (Mac): Progress near end (end=$end, len=${currentText.length}), waiting for completion callback');
+            _debugLog('📱 TTS (Mac): Progress near end (end=$end, len=${currentText.length})');
           }
         }
       },
@@ -388,95 +380,32 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     );
   }
   
-  /// 第一性原理优化：处理多字符词的逐字高亮
-  /// 解决TTS返回"大小"等双字词导致跳字的问题
-  void _updateHighlightFromProgress(int end, String word) {
-    if (_words.isEmpty || word.isEmpty) return;
+  /// 第一性原理：Progress回调作为校准源
+  /// 实时计算动画预测与TTS实际位置的偏差，渐进式校准
+  void _calibrateFromProgress(int end) {
+    if (_words.isEmpty || _highlightController == null) return;
+    if (_currentSentenceIndex >= _sentences.length) return;
     
-    final cleanWord = word.trim();
-    if (cleanWord.isEmpty) return;
+    final sentenceLength = _sentences[_currentSentenceIndex].length;
+    if (sentenceLength == 0) return;
     
-    // 第一性原理：处理多字符词，逐字高亮
-    if (cleanWord.length > 1) {
-      // 多字符词：找到每个字符的位置，逐个高亮
-      _processMultiCharWord(cleanWord);
-      return;
-    }
+    // TTS实际位置对应的归一化进度
+    final actualProgress = end / sentenceLength;
+    // 动画当前进度
+    final animationProgress = _highlightController!.value;
     
-    // 单字符：直接匹配
-    _highlightSingleChar(cleanWord);
-  }
-  
-  /// 处理多字符词的逐字高亮
-  void _processMultiCharWord(String word) {
-    _pendingHighlightIndices.clear();
+    // 计算偏差
+    final error = actualProgress - animationProgress;
     
-    for (int i = 0; i < word.length; i++) {
-      final char = word[i];
-      final positions = _wordPositions[char];
-      if (positions == null || positions.isEmpty) continue;
-      
-      // 找到下一个有效位置
-      for (final pos in positions) {
-        if (pos > _lastMatchedPosition && !_pendingHighlightIndices.contains(pos)) {
-          _pendingHighlightIndices.add(pos);
-          _lastMatchedPosition = pos;
-          break;
-        }
-      }
-    }
+    // 渐进式校准（避免剧烈跳动）
+    // 使用0.25的平滑因子：快速响应但不会过度抖动
+    _calibrationOffset += error * 0.25;
     
-    // 快速逐字高亮（每30ms一个字）
-    _startMultiCharHighlight();
-  }
-  
-  void _startMultiCharHighlight() {
-    if (_pendingHighlightIndices.isEmpty) return;
+    // 限制校准范围，防止异常值导致大幅跳动
+    _calibrationOffset = _calibrationOffset.clamp(-0.15, 0.15);
     
-    _multiCharHighlightTimer?.cancel();
-    
-    int currentIndex = 0;
-    void highlightNext() {
-      if (_disposed || !mounted || !_playing) return;
-      if (currentIndex >= _pendingHighlightIndices.length) return;
-      
-      final targetIndex = _pendingHighlightIndices[currentIndex];
-      if (targetIndex > _highlightIndex.value) {
-        _highlightIndex.value = targetIndex;
-        _pulseController?.forward(from: 0);
-      }
-      
-      currentIndex++;
-      if (currentIndex < _pendingHighlightIndices.length) {
-        _multiCharHighlightTimer = Timer(const Duration(milliseconds: 30), highlightNext);
-      }
-    }
-    
-    highlightNext();
-  }
-  
-  void _highlightSingleChar(String char) {
-    final positions = _wordPositions[char];
-    if (positions == null || positions.isEmpty) return;
-    
-    int matchIndex = -1;
-    for (final pos in positions) {
-      if (pos > _lastMatchedPosition) {
-        matchIndex = pos;
-        break;
-      }
-    }
-    
-    // 如果没找到（可能是循环播放），从头开始
-    if (matchIndex == -1 && _lastMatchedPosition > _words.length / 2) {
-      matchIndex = positions.first;
-      _lastMatchedPosition = -1;
-    }
-    
-    if (matchIndex >= 0 && matchIndex != _highlightIndex.value) {
-      _lastMatchedPosition = matchIndex;
-      _highlightIndex.value = matchIndex;
-      _pulseController?.forward(from: 0);
+    if (_progressCallbackCount % 5 == 0) {
+      _debugLog('📱 TTS 🎯 Calibration: error=${error.toStringAsFixed(3)}, offset=${_calibrationOffset.toStringAsFixed(3)}');
     }
   }
   
@@ -544,7 +473,10 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _highlightIndex.value = 0;
     _waitingForCompletion = true;
     _sentenceCompleteLock = false;
-    _progressCallbackReceived = false;  // 重置，等待新句子的Progress回调
+    
+    // 重置校准参数
+    _calibrationOffset = 0.0;
+    _progressCallbackCount = 0;
     
     // 生成新的句子ID，用于验证completion callback
     _currentSentenceId++;
@@ -556,24 +488,11 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     
     _startSentenceTimeout(expectedDuration);
     
-    final sessionId = _playbackSessionId;
+    // 第一性原理：先启动动画（预测性高亮），再开始TTS
+    // 动画始终作为主驱动，不等待Progress回调
+    _startHighlightAnimation();
     
     await _ttsManager.speak(sentence, _ownerId);
-    
-    // 启动高亮动画作为后备
-    if (_ttsManager.isMacOS) {
-      Future.delayed(const Duration(milliseconds: 150), () {
-        if (_disposed || !mounted || !_playing) return;
-        if (_playbackSessionId != sessionId) return;
-        if (!_progressCallbackReceived) {
-          _startHighlightAnimation();
-        }
-      });
-    } else {
-      if (!_progressCallbackReceived) {
-        _startHighlightAnimation();
-      }
-    }
   }
   
   void _startHighlightAnimation() {
@@ -591,7 +510,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   
   void _stopHighlightAnimation() {
     _highlightController?.stop();
-    _multiCharHighlightTimer?.cancel();
   }
   
   double _calculateExpectedSentenceDuration(int charCount) {
@@ -709,7 +627,8 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     _debugLog('📱 TTS 🎬 New playback session: $_playbackSessionId');
     
     _playing = true;
-    _progressCallbackReceived = false;
+    _calibrationOffset = 0.0;
+    _progressCallbackCount = 0;
     _currentSentenceIndex = 0;
     _highlightIndex.value = -1;
     
