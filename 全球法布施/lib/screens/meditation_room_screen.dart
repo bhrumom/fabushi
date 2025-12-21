@@ -24,12 +24,16 @@ class MeditationRoomScreen extends StatefulWidget {
   const MeditationRoomScreen({Key? key}) : super(key: key);
 
   @override
-  State<MeditationRoomScreen> createState() => _MeditationRoomScreenState();
+  State<MeditationRoomScreen> createState() => MeditationRoomScreenState();
 }
 
-class _MeditationRoomScreenState extends State<MeditationRoomScreen> 
+class MeditationRoomScreenState extends State<MeditationRoomScreen> 
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  
+  /// 公开方法：设置页面可见性（由主导航调用）
+  void setVisible(bool visible) {
+    _onVisibilityChanged(visible);
+  }
+
   // ========== 核心服务 ==========
   final _sessionManager = MeditationSessionManager();
   final _achievementSystem = AchievementSystem();
@@ -38,6 +42,8 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen>
   // ========== 状态变量 ==========
   bool _isCircumambulating = false;
   bool _isInitialized = false;
+  bool _isPageVisible = false;  // 追踪页面是否可见
+  bool _hasAutoStarted = false;  // 追踪是否已经自动开始过
   
   // ========== 动画控制器 ==========
   late AnimationController _incenseController;
@@ -101,16 +107,49 @@ class _MeditationRoomScreenState extends State<MeditationRoomScreen>
     
     setState(() => _isInitialized = true);
     
-    // 🌟 零摩擦核心：自动开始修行
-    _autoStartMeditation();
+    // 注意：不再在这里自动开始修行
+    // 只有当页面真正可见时才开始（见 _onVisibilityChanged）
+  }
+
+  /// 当页面可见性变化时调用
+  void _onVisibilityChanged(bool visible) {
+    if (_isPageVisible == visible) return;
+    
+    _isPageVisible = visible;
+    debugPrint('🧘 禅室页面可见性变化: $visible');
+    
+    if (visible && _isInitialized && !_hasAutoStarted) {
+      // 首次进入禅室页面时自动开始修行
+      _autoStartMeditation();
+    } else if (!visible && _sessionManager.isInSession) {
+      // 离开禅室页面时暂停计时（但不结束）
+      _sessionManager.pauseSession();
+    } else if (visible && _sessionManager.isInSession) {
+      // 重新进入禅室页面时恢复计时
+      _sessionManager.resumeSession();
+    }
   }
 
   /// 自动开始修行（零摩擦入口的核心）
   Future<void> _autoStartMeditation() async {
+    // 防止重复开始
+    if (_hasAutoStarted || _sessionManager.isInSession) {
+      debugPrint('🧘 已经开始修行，跳过自动开始');
+      return;
+    }
+    
+    // 确保页面可见
+    if (!_isPageVisible) {
+      debugPrint('🧘 页面不可见，跳过自动开始');
+      return;
+    }
+    
+    _hasAutoStarted = true;
+    
     // 稍等一下让UI完成渲染
     await Future.delayed(const Duration(milliseconds: 500));
     
-    if (!mounted) return;
+    if (!mounted || !_isPageVisible) return;
     
     // 自动使用上次功课开始
     await _sessionManager.instantStart();

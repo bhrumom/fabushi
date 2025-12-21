@@ -19,6 +19,9 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
   bool _isGlobeReady = false;
+  
+  // 禅室屏幕的 GlobalKey，用于通知可见性变化
+  final GlobalKey<MeditationRoomScreenState> _meditationKey = GlobalKey();
 
   @override
   void initState() {
@@ -40,6 +43,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final notifier = context.read<VideoFeedVisibilityNotifier>();
     notifier.setVisible(_currentIndex == 1); // index 1 是法流页面
   }
+  
+  /// 更新禅室页面可见性状态
+  void _updateMeditationRoomVisibility() {
+    final isZenRoomVisible = _currentIndex == 2;  // index 2 是禅室页面
+    // 使用 GlobalKey 通知禅室页面可见性变化
+    _meditationKey.currentState?.setVisible(isZenRoomVisible);
+  }
 
   // 保持所有页面实例，避免重建
   List<Widget> get _screens => [
@@ -52,7 +62,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             ),
           ),
     const VideoFeedScreen(),
-    const MeditationRoomScreen(),
+    MeditationRoomScreen(key: _meditationKey),  // 使用 GlobalKey
     const MyProfileScreen(),
   ];
 
@@ -92,6 +102,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               onDestinationSelected: (index) {
                 setState(() => _currentIndex = index);
                 _updateVideoFeedVisibility();
+                _updateMeditationRoomVisibility();  // 通知禅室页面可见性变化
               },
               backgroundColor: Colors.transparent,
               elevation: 0,
