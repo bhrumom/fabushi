@@ -2,6 +2,10 @@
 
 echo "🔧 修复 iOS 构建问题..."
 
+# 确保 Flutter 依赖和生成的配置是最新的
+echo "📥 运行 flutter pub get..."
+flutter pub get
+
 # 设置 UTF-8 编码
 export LANG=en_US.UTF-8
 

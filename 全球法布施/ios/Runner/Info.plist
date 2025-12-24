@@ -46,6 +46,14 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	
+	<!-- 应用查询 schemes（检测其他应用是否安装）-->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>alipay</string>
+		<string>alipays</string>
+		<string>alipayshare</string>
+	</array>
+	
 	<!-- 后台音频模式 -->
 	<key>UIBackgroundModes</key>
 	<array>

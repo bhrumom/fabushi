@@ -321,9 +321,9 @@ class CloudflareTextService {
       
       print('📊 缓存文件数量: ${cachedFiles.length}/${txtFiles.length}');
       
-      // 选择策略：已缓存 > 优先小文件 > 随机
-      if (cachedFiles.isNotEmpty) {
-        // 从已缓存文件中随机选择
+      // 选择策略优化：缓存足够多(>=5)才优先使用，否则增加多样性
+      if (cachedFiles.length >= 5) {
+        // 缓存足够多，从已缓存文件中随机选择
         selectedFile = cachedFiles[_random.nextInt(cachedFiles.length)];
         print('🚀 优先加载已缓存文件: $selectedFile');
       } else if (preferredFiles.isNotEmpty) {
