@@ -14,7 +14,11 @@ class CloudflareTextService {
   static List<Map<String, dynamic>>? _cachedManifest;
   static final List<Map<String, dynamic>> _preloadQueue = [];
   static bool _isPreloading = false;
-  static const int _queueSize = 21;
+  
+  /// 🚀 第一性原理优化：减少预加载队列大小
+  /// 每个文本内容约 20-100KB，从 21 减少到 10 节省约 1MB 内存
+  static const int _queueSize = 10;
+  
   final SharedAssetManager _sharedAssetManager = SharedAssetManager();
 
   // 硬编码的佛经文本内容

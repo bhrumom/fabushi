@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -25,8 +26,12 @@ class VideoFeedView extends StatefulWidget {
 }
 
 class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserver {
-  /// Maximum number of controllers to keep in cache
-  final int _maxCacheSize = 3;
+  /// 🚀 24小时优化：最大控制器缓存数量
+  /// 减少到 2 个以确保极低内存占用（只保留当前和下一个）
+  final int _maxCacheSize = 2;
+  
+  /// 🧹 周期性内存清理定时器（每5分钟执行一次）
+  Timer? _periodicCleanupTimer;
 
   /// The current videos to display
   List<VideoEntity> _videos = [];
@@ -54,11 +59,47 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeFirstVideo();
+    _startPeriodicCleanup();
+  }
+  
+  /// 🧹 启动周期性内存清理
+  void _startPeriodicCleanup() {
+    _periodicCleanupTimer?.cancel();
+    // 每5分钟执行一次深度清理
+    _periodicCleanupTimer = Timer.periodic(
+      const Duration(minutes: 5),
+      (_) => _performPeriodicCleanup(),
+    );
+    debugPrint('🧹 24小时优化: 周期性清理已启动');
+  }
+  
+  /// 🧹 执行周期性清理
+  void _performPeriodicCleanup() {
+    if (!mounted) return;
+    
+    debugPrint('🧹 执行周期性内存清理...');
+    
+    // 清理除当前视频外的所有控制器
+    final currentVideoId = _videos.isNotEmpty && _currentPage < _videos.length 
+        ? _videos[_currentPage].id 
+        : null;
+    
+    final idsToDispose = _controllerCache.keys
+        .where((id) => id != currentVideoId)
+        .toList();
+    
+    for (final id in idsToDispose) {
+      _removeController(id);
+    }
+    
+    debugPrint('🧹 清理完成: 释放 ${idsToDispose.length} 个控制器, 保留 ${_controllerCache.length} 个');
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _periodicCleanupTimer?.cancel();
+    _periodicCleanupTimer = null;
     _disposeAllControllers();
     super.dispose();
   }

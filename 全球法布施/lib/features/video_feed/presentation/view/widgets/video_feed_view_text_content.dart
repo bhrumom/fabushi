@@ -295,11 +295,10 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
       _baseMsPerChar = _ttsManager.calculateMsPerChar();
       _currentMsPerChar = _baseMsPerChar;
       
-      if (_ttsManager.isMacOS) {
-        _useSentenceMode = true;
-      } else {
-        _useSentenceMode = _ttsManager.useFallbackOnly;
-      }
+      // 第一性原理修复：始终使用 SENTENCE 模式
+      // FULL 模式在 iOS 上有问题（缺少高亮动画启动，TTS 状态管理不稳定）
+      // SENTENCE 模式更可控、更可靠
+      _useSentenceMode = true;
       
       _debugLog('📱 TTS TextContent: TTS ready | speechRate=${_ttsManager.speechRate} | '
           'msPerChar=${_baseMsPerChar.toStringAsFixed(1)} | '
@@ -683,7 +682,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
 
   void _stopPlayback() {
     if (!_playing) return;
+    // 添加调用栈跟踪，帮助定位停止的触发源
     _debugLog('📱 TTS TextContent: Stopping playback for $_ownerId');
+    _debugLog('📱 TTS TextContent: Stop triggered - stack: ${StackTrace.current.toString().split('\n').take(5).join(' | ')}');
     _playing = false;
     _waitingForCompletion = false;
     _stopHighlightAnimation();
@@ -712,8 +713,10 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
       });
     }
     
+    // Dart String 的 != 是值比较，可以直接使用
     if (old.textContent != widget.textContent) {
-      _debugLog('TTS MV: Content changed, invalidating session $_playbackSessionId');
+      _debugLog('TTS MV: Content actually changed, invalidating session $_playbackSessionId');
+      _debugLog('TTS MV: Old content length=${old.textContent.length}, New=${widget.textContent.length}');
       
       _playbackSessionId++;
       
