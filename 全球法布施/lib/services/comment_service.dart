@@ -78,6 +78,18 @@ class CommentService {
     String? contentTitle,
     String? filePath,
   }) async {
+    // 前端验证：确保 contentId 和 content 不为空
+    if (contentId.isEmpty) {
+      debugPrint('❌ 发布评论失败: contentId 为空');
+      return {'success': false, 'error': '内容ID不能为空，请刷新页面重试'};
+    }
+    if (content.trim().isEmpty) {
+      debugPrint('❌ 发布评论失败: content 为空');
+      return {'success': false, 'error': '评论内容不能为空'};
+    }
+    
+    debugPrint('📝 发布评论: contentId=$contentId, content长度=${content.length}, tag=$tag, filePath=$filePath');
+    
     try {
       final body = <String, dynamic>{
         'contentId': contentId,

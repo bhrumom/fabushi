@@ -11,12 +11,18 @@ class BuddhaModelScreen extends StatefulWidget {
   final bool autoRotate;
   final bool isBurning; // 是否正在燃烧（开始念经后）
   final double incenseProgress; // 香燃烧进度 0.0-1.0
+  final bool showBook; // 是否显示经书
+  final String? bookTitle; // 经书标题
+  final VoidCallback? onBookTap; // 点击经书回调
   
   const BuddhaModelScreen({
     super.key, 
     this.autoRotate = false,
     this.isBurning = false,
     this.incenseProgress = 0.0,
+    this.showBook = false,
+    this.bookTitle,
+    this.onBookTap,
   });
 
   @override
@@ -45,11 +51,20 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
   Timer? _smokeTimer;
   bool _isBurning = false; // Whether it is burning
   
+  // 经书相关
+  three.Mesh? _bookMesh;
+  bool _showBook = false;
+  
   // 香的基准位置
   static const double _incenseBaseX = 0.0;
   static const double _incenseBaseY = -60.0;
   static const double _incenseBaseZ = 80.0;
   static const double _incenseFullHeight = 40.0;
+  
+  // 经书位置（佛像和香之间）
+  static const double _bookBaseX = 0.0;
+  static const double _bookBaseY = -55.0;
+  static const double _bookBaseZ = 50.0;
 
   /// 获取当前是否正在自动旋转
   bool get isAutoRotating => _isAutoRotating;
@@ -117,6 +132,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
     // 更新香的燃烧进度
     if (oldWidget.incenseProgress != widget.incenseProgress) {
       _updateIncenseProgress(widget.incenseProgress);
+    }
+    
+    // 更新经书显示状态
+    if (oldWidget.showBook != widget.showBook) {
+      _updateBookState(widget.showBook);
     }
   }
 
@@ -239,6 +259,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
     
     // 创建香（初始隐藏）
     _createIncense();
+    
+    // 创建经书
+    _createBook();
   }
   
   /// Create 3D Incense - Improved Realism
@@ -318,6 +341,43 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
     _smokeParticles = three.Points(geometry, material);
     _smokeParticles!.visible = false;
     threeJs.scene.add(_smokeParticles!);
+  }
+  
+  /// 创建3D经书模型
+  void _createBook() {
+    // 书本主体 - 使用 BoxGeometry 创建长方体
+    // 书的尺寸：宽12 x 高2 x 深8
+    final bookGeometry = three_full.BoxGeometry(12, 2, 8);
+    
+    // 古朴的红木色书封
+    final bookMaterial = three.MeshStandardMaterial.fromMap({
+      'color': 0x8B0000, // 深红色（类似古书）
+      'roughness': 0.8,
+      'metalness': 0.1,
+    });
+    
+    _bookMesh = three.Mesh(bookGeometry, bookMaterial);
+    _bookMesh!.position.setValues(_bookBaseX, _bookBaseY, _bookBaseZ);
+    // 微微倾斜，更有立体感
+    _bookMesh!.rotation.x = -0.2;
+    _bookMesh!.visible = widget.showBook;
+    threeJs.scene.add(_bookMesh!);
+    
+    _showBook = widget.showBook;
+  }
+  
+  /// 设置经书显示状态（供外部调用）
+  void setBookVisible(bool visible) {
+    _showBook = visible;
+    _bookMesh?.visible = visible;
+  }
+  
+  /// 更新经书状态
+  void _updateBookState(bool showBook) {
+    if (_showBook != showBook) {
+      _showBook = showBook;
+      _bookMesh?.visible = showBook;
+    }
   }
   
   /// 更新香的燃烧状态

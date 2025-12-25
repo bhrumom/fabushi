@@ -9,9 +9,12 @@ import '../services/practice_stats_service.dart';
 import '../services/meditation_session_manager.dart';
 import '../services/achievement_system.dart';
 import 'buddha_model_screen.dart';
+import 'sutra_reader_screen.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/online_counter_widget.dart';
 import '../widgets/achievement_popup.dart';
+import '../widgets/practice_selection_sheet.dart';
+import '../widgets/reflection_dialog.dart';
 
 /// 禅室修行界面 - 零摩擦版本
 /// 
@@ -107,8 +110,38 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     
     setState(() => _isInitialized = true);
     
-    // 注意：不再在这里自动开始修行
-    // 只有当页面真正可见时才开始（见 _onVisibilityChanged）
+    // 检查是否需要选择功课
+    _checkPracticeSelection();
+  }
+  
+  /// 检查是否需要选择功课
+  void _checkPracticeSelection() {
+    if (!_sessionManager.isPracticeLocked && mounted) {
+      // 未选择功课，显示必选功课弹窗
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_sessionManager.isPracticeLocked) {
+          showPracticeSelectionSheet(
+            context,
+            onSelected: () {
+              // 功课选择完成，刷新界面
+              if (mounted) setState(() {});
+            },
+          );
+        }
+      });
+    }
+  }
+  
+  /// 打开经文阅读界面
+  void _openSutraReader() {
+    final practice = _sessionManager.lockedPractice;
+    if (practice != null) {
+      openSutraReader(
+        context,
+        title: practice.title,
+        filePath: practice.filePath,
+      );
+    }
   }
 
   /// 当页面可见性变化时调用
@@ -118,10 +151,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     _isPageVisible = visible;
     debugPrint('🧘 禅室页面可见性变化: $visible');
     
-    if (visible && _isInitialized && !_hasAutoStarted) {
-      // 首次进入禅室页面时自动开始修行
-      _autoStartMeditation();
-    } else if (!visible && _sessionManager.isInSession) {
+    // 不再自动开始修行，需要用户手动点击"开始修行"按钮
+    if (!visible && _sessionManager.isInSession) {
       // 离开禅室页面时暂停计时（但不结束）
       _sessionManager.pauseSession();
     } else if (visible && _sessionManager.isInSession) {
@@ -133,8 +164,30 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   /// 自动开始修行（零摩擦入口的核心）
   Future<void> _autoStartMeditation() async {
     // 防止重复开始
-    if (_hasAutoStarted || _sessionManager.isInSession) {
-      debugPrint('🧘 已经开始修行，跳过自动开始');
+    if (_sessionManager.isInSession) {
+      debugPrint('🧘 已经开始修行，跳过');
+      return;
+    }
+    
+    // 检查是否已选择功课
+    if (!_sessionManager.isPracticeLocked) {
+      // 未选择功课，弹出选择界面并提醒
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('请先选择一门深入的修行功课'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        showPracticeSelectionSheet(
+          context,
+          onSelected: () {
+            // 功课选择完成后刷新界面
+            if (mounted) setState(() {});
+          },
+        );
+      }
       return;
     }
     
@@ -147,12 +200,12 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     _hasAutoStarted = true;
     
     // 稍等一下让UI完成渲染
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 300));
     
     if (!mounted || !_isPageVisible) return;
     
-    // 自动使用上次功课开始
-    await _sessionManager.instantStart();
+    // 使用锁定的功课开始
+    await _sessionManager.instantStart(sutra: _sessionManager.lockedPractice?.title);
     
     // 触发开始成就
     await _achievementSystem.onSessionStart();
@@ -236,9 +289,21 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       // 尝试同步到云端（静默进行）
       _syncToCloud(result);
       
-      // 显示完成提示
+      // 显示心得填写弹窗（替代简单完成提示）
       if (mounted) {
-        _showCompletionDialog(result);
+        final practice = _sessionManager.lockedPractice;
+        if (practice != null) {
+          showReflectionDialog(
+            context,
+            duration: result.duration,
+            chantCount: result.chantCount,
+            sutraTitle: practice.title,
+            filePath: practice.filePath,
+          );
+        } else {
+          // 未锁定功课时使用原来的完成对话框
+          _showCompletionDialog(result);
+        }
       }
     }
     
@@ -505,6 +570,9 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   autoRotate: _isCircumambulating,
                   isBurning: _sessionManager.isInSession,
                   incenseProgress: _incenseController.value,
+                  showBook: _sessionManager.isPracticeLocked,
+                  bookTitle: _sessionManager.lockedPractice?.title,
+                  onBookTap: _openSutraReader,
                 ),
               ),
             ),
@@ -521,13 +589,15 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                 children: [
                   _buildTopBar(),
                   
-                  // 中央区域 - 显示念诵计数
+                  // 中央区域 - 显示念诵计数或经书按钮
                   if (_sessionManager.isInSession)
                     Expanded(
                       child: _buildCenterContent(),
                     )
                   else
-                    const Spacer(),
+                    Expanded(
+                      child: _buildBookButton(),
+                    ),
 
                   // 底部控制区
                   _buildBottomControls(),
@@ -664,6 +734,73 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+  
+  /// 构建经书点击按钮（非修行状态显示）
+  Widget _buildBookButton() {
+    final practice = _sessionManager.lockedPractice;
+    if (practice == null) {
+      // 未选择功课时不显示
+      return const SizedBox.shrink();
+    }
+    
+    return Center(
+      child: GestureDetector(
+        onTap: _openSutraReader,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF8B0000).withOpacity(0.9),
+                const Color(0xFF5C0000).withOpacity(0.9),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFD4AF37).withOpacity(0.3),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
+            ],
+            border: Border.all(
+              color: const Color(0xFFD4AF37).withOpacity(0.5),
+              width: 2,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.auto_stories,
+                color: Color(0xFFD4AF37),
+                size: 36,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                practice.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                '点击阅读经文',
+                style: TextStyle(
+                  color: Colors.white60,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

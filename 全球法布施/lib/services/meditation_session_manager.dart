@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/meditation_practice_model.dart';
 
 /// 禅室会话管理器 - 零摩擦修行核心
 /// 
@@ -25,15 +27,28 @@ class MeditationSessionManager extends ChangeNotifier {
   String? _lastSutra;
   int _preferredDurationMinutes = 30; // 软性建议，非强制
   bool _preferencesLoaded = false;
+  
+  // ========== 锁定功课 ==========
+  MeditationPractice? _lockedPractice;
 
   // ========== Getters ==========
   bool get isInSession => _isInSession;
   Duration get currentDuration => _currentDuration;
-  String get currentSutra => _currentSutra ?? _lastSutra ?? '默认功课';
+  String get currentSutra => _currentSutra ?? _lockedPractice?.title ?? _lastSutra ?? '默认功课';
   int get chantCount => _chantCount;
   String? get lastSutra => _lastSutra;
   int get preferredDurationMinutes => _preferredDurationMinutes;
   bool get hasLastSutra => _lastSutra != null && _lastSutra!.isNotEmpty;
+  
+  // ========== 锁定功课 Getters ==========
+  /// 是否已锁定功课
+  bool get isPracticeLocked => _lockedPractice != null && _lockedPractice!.isLocked;
+  
+  /// 获取锁定的功课
+  MeditationPractice? get lockedPractice => _lockedPractice;
+  
+  /// 是否可以开始修行（需要已锁定功课）
+  bool get canStartSession => isPracticeLocked;
 
   // 进度百分比（基于软性目标）
   double get progressPercent {
@@ -51,8 +66,20 @@ class MeditationSessionManager extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _lastSutra = prefs.getString('zen_last_sutra');
       _preferredDurationMinutes = prefs.getInt('zen_preferred_duration') ?? 30;
+      
+      // 加载锁定的功课
+      final practiceJson = prefs.getString('zen_locked_practice');
+      if (practiceJson != null) {
+        try {
+          _lockedPractice = MeditationPractice.fromJson(jsonDecode(practiceJson));
+          debugPrint('🧘 已加载锁定功课: ${_lockedPractice?.title}');
+        } catch (e) {
+          debugPrint('⚠️ 解析锁定功课失败: $e');
+        }
+      }
+      
       _preferencesLoaded = true;
-      debugPrint('🧘 禅室偏好加载: 上次功课=$_lastSutra, 建议时长=$_preferredDurationMinutes分钟');
+      debugPrint('🧘 禅室偏好加载: 上次功课=$_lastSutra, 锁定功课=${_lockedPractice?.title}, 建议时长=$_preferredDurationMinutes分钟');
       notifyListeners();
     } catch (e) {
       debugPrint('⚠️ 加载禅室偏好失败: $e');
@@ -68,10 +95,36 @@ class MeditationSessionManager extends ChangeNotifier {
         _lastSutra = _currentSutra;
       }
       await prefs.setInt('zen_preferred_duration', _preferredDurationMinutes);
+      
+      // 保存锁定的功课
+      if (_lockedPractice != null) {
+        await prefs.setString('zen_locked_practice', jsonEncode(_lockedPractice!.toJson()));
+      }
+      
       debugPrint('🧘 禅室偏好已保存');
     } catch (e) {
       debugPrint('⚠️ 保存禅室偏好失败: $e');
     }
+  }
+  
+  /// 选择并锁定功课（一旦锁定不可更改）
+  Future<bool> selectAndLockPractice(String title, String filePath) async {
+    if (_lockedPractice != null) {
+      debugPrint('🧘 功课已锁定，无法更改: ${_lockedPractice!.title}');
+      return false;
+    }
+    
+    _lockedPractice = MeditationPractice(
+      title: title,
+      filePath: filePath,
+      selectedAt: DateTime.now(),
+      isLocked: true,
+    );
+    
+    await _savePreferences();
+    debugPrint('🧘 功课已锁定: $title ($filePath)');
+    notifyListeners();
+    return true;
   }
 
   // ========== 核心操作 ==========
