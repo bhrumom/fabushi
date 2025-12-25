@@ -3,6 +3,7 @@ import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_optimized_video_player.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_overlay_section.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_text_content.dart';
+import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/recitation_game_widget.dart';
 import 'package:global_dharma_sharing/models/liked_item.dart';
 import 'package:global_dharma_sharing/services/like_service.dart';
 import 'package:global_dharma_sharing/services/content_stats_service.dart';
@@ -105,6 +106,19 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
     }
   }
 
+  void _handleStartRecitation() {
+    // 使用当前段落或完整文本
+    final sentence = _currentParagraph ?? widget.videoItem.textContent ?? '';
+    if (sentence.isEmpty) return;
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RecitationGameWidget(sentence: sentence),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -137,6 +151,9 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
           currentParagraph: _currentParagraph,
           onLikeTap: _handleLikeTap,
           onCommentTap: _handleCommentTap,
+          onStartRecitation: widget.videoItem.contentType == ContentType.text
+              ? _handleStartRecitation
+              : null,
         ),
       ],
     );
@@ -170,3 +187,4 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
     );
   }
 }
+

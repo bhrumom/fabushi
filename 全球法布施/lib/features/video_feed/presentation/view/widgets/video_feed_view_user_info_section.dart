@@ -10,6 +10,7 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
     this.contentType = ContentType.video,
     this.textContent,
     this.currentParagraph,
+    this.onStartRecitation,
     super.key,
   });
 
@@ -18,6 +19,7 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
   final ContentType contentType;
   final String? textContent;
   final String? currentParagraph;
+  final VoidCallback? onStartRecitation;
 
   @override
   Widget build(BuildContext context) {
@@ -31,16 +33,65 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // @用户名 - 支持换行显示
-          Text(
-            '@$username',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: white,
-              fontWeight: FontWeight.bold,
-              fontSize: isMobile ? 15 : 18,
-            ),
+          // @用户名 + 背诵按钮
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  '@$username',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: isMobile ? 15 : 18,
+                  ),
+                ),
+              ),
+              // 背诵按钮（仅文字内容显示）
+              if (contentType == ContentType.text && onStartRecitation != null) ...[
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: onStartRecitation,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF8E2DE2), Color(0xFF4A00E0)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.purple.withValues(alpha: 0.3),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.school,
+                          color: Colors.white,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '背诵',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: isMobile ? 12 : 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 8),
           VideoFeedViewDescriptionText(text: description),
@@ -49,3 +100,4 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
     );
   }
 }
+
