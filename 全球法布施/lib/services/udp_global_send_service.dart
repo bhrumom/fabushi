@@ -114,6 +114,25 @@ class UDPGlobalSendService {
           
           // 确保文件有字节数据
           Uint8List? fileBytes = file.bytes;
+          
+          // 内存优化：大文件不加载全部内容
+          const int largeFileThreshold = 10 * 1024 * 1024; // 10MB
+          
+          if (file.size >= largeFileThreshold) {
+            // 大文件：只发送元数据，不加载完整内容
+            onLog('📦 大文件模式: ${file.name} (${(file.size / 1024 / 1024).toStringAsFixed(1)}MB) - 流式发送');
+            
+            // 使用流式发送
+            final countriesSent = await _sendLargeFileToAllCountries(
+              socket, file, countryCodes);
+            
+            final fileSizeMB = file.size / (1024 * 1024);
+            _dataSentInMB += fileSizeMB * countriesSent;
+            onDataSent(_dataSentInMB);
+            
+            continue; // 跳过下面的小文件处理逻辑
+          }
+          
           if (fileBytes == null || fileBytes.isEmpty) {
             // 如果 bytes 为空，尝试从路径读取
             if (file.path != null) {
@@ -232,6 +251,218 @@ class UDPGlobalSendService {
     }
 
     return successCount;
+  }
+  
+  /// 大文件流式发送到所有国家
+  /// 
+  /// 真正的流式发送版本：
+  /// - 从磁盘分块读取文件（每块 1MB）
+  /// - 每次只保留一个块在内存中
+  /// - 发送完一个块后才读取下一个块
+  Future<int> _sendLargeFileToAllCountries(
+    RawDatagramSocket socket,
+    PlatformFile file,
+    List<String> countryCodes,
+  ) async {
+    int successCount = 0;
+    
+    final fileSizeMB = (file.size / 1024 / 1024).toStringAsFixed(1);
+    onLog('📤 大文件流式发送: ${file.name}, ${fileSizeMB}MB 到 ${countryCodes.length} 个国家');
+    
+    // 确保有文件路径
+    if (file.path == null) {
+      onLog('❌ 大文件必须有文件路径才能流式发送');
+      return 0;
+    }
+    
+    final fileObj = File(file.path!);
+    if (!await fileObj.exists()) {
+      onLog('❌ 文件不存在: ${file.path}');
+      return 0;
+    }
+
+    for (int i = 0; i < countryCodes.length; i++) {
+      if (!_isRunning) break;
+
+      final countryCode = countryCodes[i];
+      final countryName = _getCountryName(countryCode);
+
+      await Future.delayed(Duration.zero);
+
+      // 触发地球轨迹动画
+      _triggerBeamAnimation(countryCode, countryName);
+
+      // 获取该国家的 IP 地址
+      final ips = _geoIPService.getIPsForCountry(countryCode);
+      if (ips.isEmpty) {
+        continue;
+      }
+
+      // 流式发送文件到该国家
+      final success = await _streamSendFileToCountry(
+        socket, fileObj, file.name, file.size, 
+        ips.first, countryCode, countryName);
+
+      if (success) {
+        successCount++;
+        _sentCount++;
+        onProgress(_sentCount);
+        
+        if (onCountrySent != null) {
+          onCountrySent!(file.size);
+        }
+      }
+      
+      // 每 5 个国家后让出控制权
+      if (i % 5 == 0 && i > 0) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+    }
+
+    onLog('✅ 大文件 ${file.name} 流式发送完成 - 成功: $successCount 个国家');
+    return successCount;
+  }
+  
+  /// 流式发送文件到单个国家
+  /// 
+  /// 每次只读取并发送 1MB 数据块，避免内存溢出
+  Future<bool> _streamSendFileToCountry(
+    RawDatagramSocket socket,
+    File file,
+    String fileName,
+    int fileSize,
+    String targetIP,
+    String countryCode,
+    String countryName,
+  ) async {
+    try {
+      final address = InternetAddress(targetIP);
+      
+      // 发送文件头信息
+      final header = {
+        'type': 'dharma_stream_start',
+        'fileName': fileName,
+        'fileSize': fileSize,
+        'countryCode': countryCode,
+        'countryName': countryName,
+        'timestamp': DateTime.now().toIso8601String(),
+        'chunkSize': _streamChunkSize,
+        'totalChunks': (fileSize / _streamChunkSize).ceil(),
+      };
+      
+      final headerBytes = utf8.encode(jsonEncode(header));
+      socket.send(headerBytes, address, _udpPort);
+      
+      // 流式读取并发送文件
+      final stream = file.openRead();
+      int chunkIndex = 0;
+      int totalBytesSent = headerBytes.length;
+      
+      await for (var chunk in stream) {
+        if (!_isRunning) break;
+        
+        // 分割成 UDP 可发送的小包（最大 1400 字节）
+        int offset = 0;
+        while (offset < chunk.length) {
+          final end = (offset + _maxPacketSize).clamp(0, chunk.length);
+          final packet = _buildStreamPacket(
+            chunkIndex, 
+            Uint8List.fromList(chunk.sublist(offset, end)), 
+            countryCode
+          );
+          
+          final sent = socket.send(packet, address, _udpPort);
+          totalBytesSent += sent;
+          offset = end;
+        }
+        
+        chunkIndex++;
+        
+        // 每发送 10 个块后让出控制权，避免阻塞 UI
+        if (chunkIndex % 10 == 0) {
+          await Future.delayed(Duration.zero);
+        }
+        
+        // 每发送 100 个块后稍作延迟，控制发送速率
+        if (chunkIndex % 100 == 0) {
+          await Future.delayed(const Duration(milliseconds: 10));
+        }
+      }
+      
+      // 发送文件结束标记
+      final footer = {
+        'type': 'dharma_stream_end',
+        'fileName': fileName,
+        'totalChunks': chunkIndex,
+        'totalBytes': totalBytesSent,
+        'countryCode': countryCode,
+      };
+      
+      socket.send(utf8.encode(jsonEncode(footer)), address, _udpPort);
+      
+      debugPrint('✅ 流式发送完成: $countryName - $chunkIndex 块, $totalBytesSent 字节');
+      return true;
+    } catch (e) {
+      debugPrint('❌ 流式发送到 $targetIP 失败: $e');
+      return false;
+    }
+  }
+  
+  /// 构建流式数据包
+  Uint8List _buildStreamPacket(int index, Uint8List data, String countryCode) {
+    // 简单的数据包格式: [4字节索引][2字节国家代码长度][国家代码][数据]
+    final countryBytes = utf8.encode(countryCode);
+    final packet = BytesBuilder();
+    
+    // 包索引 (4 字节)
+    packet.add(_intToBytes(index));
+    
+    // 国家代码长度 (2 字节)
+    packet.addByte((countryBytes.length >> 8) & 0xFF);
+    packet.addByte(countryBytes.length & 0xFF);
+    
+    // 国家代码
+    packet.add(countryBytes);
+    
+    // 数据
+    packet.add(data);
+    
+    return packet.toBytes();
+  }
+  
+  // 流式发送块大小（1MB）
+  static const int _streamChunkSize = 1024 * 1024;
+  
+  /// 发送元数据 UDP 包（不包含文件内容）- 保留作为备用
+  Future<bool> _sendMetadataPacket(
+    RawDatagramSocket socket,
+    String fileName,
+    int fileSize,
+    String targetIP,
+    String countryCode,
+    String countryName,
+  ) async {
+    try {
+      final address = InternetAddress(targetIP);
+      
+      // 只发送元数据，不包含文件内容
+      final metadata = {
+        'type': 'dharma_metadata',
+        'fileName': fileName,
+        'fileSize': fileSize,
+        'countryCode': countryCode,
+        'countryName': countryName,
+        'timestamp': DateTime.now().toIso8601String(),
+        'mode': 'streaming', // 标识为流式模式
+      };
+      
+      final metadataBytes = utf8.encode(jsonEncode(metadata));
+      final sent = socket.send(metadataBytes, address, _udpPort);
+      
+      return sent > 0;
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<bool> _sendUDPPacketWithBytes(

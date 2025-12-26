@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:isolate';
+import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:crypto/crypto.dart' as crypto;
 import 'global_server_config_loader.dart';
 import 'global_country_servers.dart';
 import 'country_coordinates_service.dart';
@@ -243,6 +245,11 @@ class RealGlobalSendService {
     return successCount; // 返回成功发送的国家数
   }
 
+  /// 发送文件到服务器
+  /// 
+  /// 内存优化：
+  /// - 小文件（< 10MB）：直接 base64 发送
+  /// - 大文件（>= 10MB）：流式分块发送，每次只加载 1MB 到内存
   Future<void> _sendToServer(
     PlatformFile file,
     String serverUrl,
@@ -253,52 +260,221 @@ class RealGlobalSendService {
       // 关键修复：在网络请求前让出主线程控制权
       await Future.delayed(Duration.zero);
       
-      // 准备发送数据
-      final requestData = {
-        'fileName': file.name,
-        'fileSize': file.size,
-        'countryCode': countryCode,
-        'countryName': countryName,
-        'timestamp': DateTime.now().toIso8601String(),
-        'data': base64Encode(file.bytes ?? Uint8List(0)),
-      };
-
-      // 根据服务器URL选择合适的请求方式
-      if (serverUrl.contains('httpbin.org')) {
-        // 使用 httpbin.org 测试服务
-        final response = await http
-            .post(
-              Uri.parse(serverUrl),
-              headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
-              body: jsonEncode(requestData),
-            )
-            .timeout(Duration(seconds: 5)); // 减少超时时间，提高响应性
-
-        if (response.statusCode != 200) {
-          throw Exception('HTTP ${response.statusCode}');
-        }
-      } else if (serverUrl.contains('jsonplaceholder.typicode.com')) {
-        // 使用 JSONPlaceholder 测试服务
-        final response = await http
-            .post(
-              Uri.parse(serverUrl),
-              headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
-              body: jsonEncode({
-                'title': 'Global Dharma Send - ${file.name}',
-                'body': 'File sent from $countryName ($countryCode)',
-                'userId': 1,
-              }),
-            )
-            .timeout(Duration(seconds: 5)); // 减少超时时间，提高响应性
-
-        if (response.statusCode != 201) {
-          throw Exception('HTTP ${response.statusCode}');
-        }
+      // 内存优化：大文件使用流式发送
+      const int largeFileThreshold = 10 * 1024 * 1024; // 10MB
+      
+      if (file.size >= largeFileThreshold && file.path != null) {
+        // 大文件：流式分块发送
+        await _streamSendLargeFile(file, serverUrl, countryCode, countryName);
+      } else {
+        // 小文件：发送完整内容
+        final requestData = {
+          'fileName': file.name,
+          'fileSize': file.size,
+          'countryCode': countryCode,
+          'countryName': countryName,
+          'timestamp': DateTime.now().toIso8601String(),
+          'data': base64Encode(file.bytes ?? Uint8List(0)),
+        };
+        
+        await _sendSmallFile(requestData, serverUrl, countryCode, countryName);
       }
 
       onLog('✅ 成功发送到 $countryName ($countryCode) - $serverUrl');
     } catch (e) {
       throw Exception('发送失败: $e');
+    }
+  }
+  
+  /// 流式发送大文件（分块读取，分块上传）
+  /// 
+  /// 每次只从磁盘读取 1MB，发送后释放内存，再读取下一块
+  Future<void> _streamSendLargeFile(
+    PlatformFile file,
+    String serverUrl,
+    String countryCode,
+    String countryName,
+  ) async {
+    const int chunkSize = 1024 * 1024; // 1MB per chunk
+    
+    final fileObj = File(file.path!);
+    if (!await fileObj.exists()) {
+      throw Exception('文件不存在: ${file.path}');
+    }
+    
+    final totalChunks = (file.size / chunkSize).ceil();
+    onLog('📦 大文件流式发送: ${file.name} (${(file.size / 1024 / 1024).toStringAsFixed(1)}MB) - $totalChunks 块');
+    
+    // 发送起始标记
+    final startPayload = {
+      'type': 'stream_start',
+      'fileName': file.name,
+      'fileSize': file.size,
+      'totalChunks': totalChunks,
+      'countryCode': countryCode,
+      'countryName': countryName,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    
+    await _sendChunk(serverUrl, startPayload);
+    
+    // 流式读取并发送每一块
+    final stream = fileObj.openRead();
+    int chunkIndex = 0;
+    final buffer = BytesBuilder();
+    
+    await for (var data in stream) {
+      if (!_isRunning) break;
+      
+      buffer.add(data);
+      
+      // 当缓冲区达到块大小时发送
+      while (buffer.length >= chunkSize) {
+        final chunk = buffer.takeBytes();
+        final chunkToSend = chunk.sublist(0, chunkSize);
+        final remaining = chunk.sublist(chunkSize);
+        
+        // 发送当前块
+        final chunkPayload = {
+          'type': 'stream_chunk',
+          'fileName': file.name,
+          'chunkIndex': chunkIndex,
+          'chunkData': base64Encode(chunkToSend),
+          'countryCode': countryCode,
+        };
+        
+        await _sendChunk(serverUrl, chunkPayload);
+        chunkIndex++;
+        
+        // 将剩余数据放回缓冲区
+        buffer.add(remaining);
+        
+        // 每发送一块后让出控制权
+        await Future.delayed(Duration.zero);
+      }
+    }
+    
+    // 发送最后一块（如果有剩余）
+    if (buffer.isNotEmpty) {
+      final chunkPayload = {
+        'type': 'stream_chunk',
+        'fileName': file.name,
+        'chunkIndex': chunkIndex,
+        'chunkData': base64Encode(buffer.takeBytes()),
+        'countryCode': countryCode,
+      };
+      
+      await _sendChunk(serverUrl, chunkPayload);
+      chunkIndex++;
+    }
+    
+    // 发送结束标记
+    final endPayload = {
+      'type': 'stream_end',
+      'fileName': file.name,
+      'totalChunksSent': chunkIndex,
+      'countryCode': countryCode,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    
+    await _sendChunk(serverUrl, endPayload);
+    onLog('✅ 大文件流式发送完成: $chunkIndex 块');
+  }
+  
+  /// 发送单个数据块
+  Future<void> _sendChunk(String serverUrl, Map<String, dynamic> payload) async {
+    if (serverUrl.contains('httpbin.org')) {
+      await http
+          .post(
+            Uri.parse(serverUrl),
+            headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 10));
+    } else if (serverUrl.contains('jsonplaceholder.typicode.com')) {
+      await http
+          .post(
+            Uri.parse(serverUrl),
+            headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
+            body: jsonEncode({
+              'title': 'Dharma Chunk - ${payload['fileName']}',
+              'body': 'Chunk ${payload['chunkIndex'] ?? 'meta'}',
+              'userId': 1,
+            }),
+          )
+          .timeout(const Duration(seconds: 5));
+    }
+  }
+  
+  /// 发送小文件（完整内容）
+  Future<void> _sendSmallFile(
+    Map<String, dynamic> requestData,
+    String serverUrl,
+    String countryCode,
+    String countryName,
+  ) async {
+    if (serverUrl.contains('httpbin.org')) {
+      final response = await http
+          .post(
+            Uri.parse(serverUrl),
+            headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
+            body: jsonEncode(requestData),
+          )
+          .timeout(const Duration(seconds: 5));
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+    } else if (serverUrl.contains('jsonplaceholder.typicode.com')) {
+      final response = await http
+          .post(
+            Uri.parse(serverUrl),
+            headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
+            body: jsonEncode({
+              'title': 'Global Dharma Send - ${requestData['fileName']}',
+              'body': 'File sent from $countryName ($countryCode)',
+              'userId': 1,
+            }),
+          )
+          .timeout(const Duration(seconds: 5));
+
+      if (response.statusCode != 201) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+    }
+  }
+  
+  /// 计算文件哈希（流式读取，不占用大量内存）
+  Future<String> _calculateFileHash(PlatformFile file) async {
+    try {
+      if (file.path != null) {
+        // 有文件路径：流式读取计算哈希
+        final fileObj = File(file.path!);
+        final stream = fileObj.openRead();
+        
+        var output = AccumulatorSink<crypto.Digest>();
+        var input = crypto.sha256.startChunkedConversion(output);
+        
+        await for (var chunk in stream) {
+          input.add(chunk);
+        }
+        
+        input.close();
+        return output.events.single.toString();
+      } else if (file.bytes != null && file.bytes!.length < 10 * 1024 * 1024) {
+        // 有内存数据且不太大
+        return crypto.sha256.convert(file.bytes!).toString();
+      } else {
+        // 无法计算，返回基于文件名和大小的伪哈希
+        return crypto.sha256.convert(
+          utf8.encode('${file.name}-${file.size}-${DateTime.now().millisecondsSinceEpoch}')
+        ).toString();
+      }
+    } catch (e) {
+      // 哈希计算失败，返回伪哈希
+      return crypto.sha256.convert(
+        utf8.encode('${file.name}-${file.size}')
+      ).toString();
     }
   }
 

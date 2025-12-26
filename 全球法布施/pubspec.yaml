@@ -112,6 +112,7 @@ dependencies:
   web_socket_channel: ^3.0.1
   app_links: ^7.0.0
   lpinyin: ^2.0.3
+  crypto: ^3.0.3  # 用于流式计算文件哈希
 
 # Tobias 配置
 tobias:

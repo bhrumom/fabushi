@@ -243,15 +243,26 @@ class FileTransferModel extends ChangeNotifier {
 
   Future<void> selectFiles() async {
     try {
+      // 内存优化：不使用 withData: true，避免大文件加载到内存
+      // 而是使用 withReadStream: true（如果支持）或只获取路径
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
         type: FileType.any,
-        withData: true,
+        // 不设置 withData: true，这样大文件不会加载到内存
+        // 本地平台会返回 file.path，可以流式读取
+        // 只有 Web 平台需要 withData，但 Web 平台不支持大文件流式发送
+        withData: kIsWeb,  // 只在 Web 平台加载数据
+        withReadStream: !kIsWeb,  // 本地平台使用流式读取
       );
 
       if (result != null) {
         _selectedFiles.addAll(result.files);
         notifyListeners();
+        
+        // 打印文件信息用于调试
+        for (final file in result.files) {
+          debugPrint('已选择文件: ${file.name}, 大小: ${(file.size / 1024 / 1024).toStringAsFixed(1)}MB, 路径: ${file.path ?? "无"}');
+        }
         debugPrint('已选择 ${result.files.length} 个文件');
       }
     } catch (e) {
