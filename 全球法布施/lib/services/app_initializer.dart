@@ -9,6 +9,8 @@ import 'app_settings.dart';
 import '../models/file_transfer_model.dart';
 import 'like_service.dart';
 import 'keep_alive_service.dart';
+import 'workmanager_keep_alive.dart';
+import 'memory_manager.dart';
 
 class AppInitializer {
   static bool _isInitialized = false;
@@ -46,10 +48,28 @@ class AppInitializer {
         debugPrint('✅ 点赞服务初始化完成');
       });
       
+      // 初始化内存管理器
+      optimizer.addInitTask(() async {
+        await MemoryManager.instance.initialize();
+        debugPrint('✅ 内存管理器初始化完成');
+      });
+      
       // 初始化统一保活服务（基于 audio_service + MediaSession）
       optimizer.addInitTask(() async {
         await KeepAliveService.instance.initialize();
         debugPrint('✅ 统一保活服务初始化完成');
+      });
+      
+      // 初始化 WorkManager 恢复机制（仅 Android）
+      optimizer.addInitTask(() async {
+        await WorkManagerKeepAlive.initialize();
+        debugPrint('✅ WorkManager 初始化完成');
+      });
+      
+      // 检查是否需要恢复发送任务
+      optimizer.addInitTask(() async {
+        await _checkAndRecoverSendingTask();
+        debugPrint('✅ 发送任务恢复检查完成');
       });
       
       // 开始分批初始化
@@ -63,6 +83,23 @@ class AppInitializer {
       rethrow;
     } finally {
       _isInitializing = false;
+    }
+  }
+  
+  // 检查并恢复发送任务
+  static Future<void> _checkAndRecoverSendingTask() async {
+    try {
+      final snapshot = await WorkManagerKeepAlive.checkNeedsRecovery();
+      if (snapshot != null) {
+        debugPrint('🔄 检测到需要恢复的发送任务');
+        debugPrint('   轮次: ${snapshot.loopCount}');
+        debugPrint('   文件: ${snapshot.filePaths.length} 个');
+        debugPrint('   上次活跃: ${snapshot.lastActiveTime}');
+        // 注意：实际恢复发送的逻辑需要在 FileTransferModel 中实现
+        // 这里只是记录检测结果
+      }
+    } catch (e) {
+      debugPrint('⚠️ 恢复检查失败: $e');
     }
   }
 

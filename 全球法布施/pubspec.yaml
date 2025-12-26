@@ -85,6 +85,7 @@ dependencies:
   audio_service: ^0.18.15  # iOS 后台音频服务
   just_audio: ^0.9.40  # 音频播放器
   flutter_tts: ^4.2.0  # 文字转语音
+  workmanager: ^0.6.0  # 后台任务恢复（应用被杀后自动重启）
 
 
   # 权限

@@ -6,6 +6,8 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import '../core/config/app_config.dart';
+import 'workmanager_keep_alive.dart';
+import 'memory_manager.dart';
 
 /// 统一保活服务
 /// 
@@ -320,9 +322,15 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
       // 定期更新媒体项信息，让系统知道服务仍在运行
       _updateMediaItemForHeartbeat();
       
-      // 每60秒输出一次心跳日志
+      // 每 12 次心跳（60秒）执行一次状态持久化和内存清理
       if (_heartbeatCount % 12 == 0) {
         debugPrint('💓 保活心跳 #$_heartbeatCount - 播放中: ${_audioPlayer.playing}');
+        
+        // 更新 WorkManager 状态时间戳
+        WorkManagerKeepAlive.updateLastActiveTime();
+        
+        // 触发内存清理检查
+        MemoryManager.instance.trimCacheIfNeeded();
       }
     });
   }

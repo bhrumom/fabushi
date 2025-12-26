@@ -27,69 +27,6 @@ class RecitationGameWidget extends StatefulWidget {
 
   /// 要背诵的句子
   final String sentence;
-  
-  /// 从完整文本中提取正文（跳过经名、译者、品名）
-  /// 格式示例：
-  /// 大方广佛华严经卷第一
-  /// 于阗国三藏实叉难陀奉制译
-  /// 世主妙严品第一之一
-  /// [正文开始...]
-  static String extractMainText(String fullText) {
-    if (fullText.isEmpty) return fullText;
-    
-    // 按换行符分割
-    final lines = fullText.split(RegExp(r'[\n\r]+'));
-    if (lines.length <= 1) {
-      // 如果没有换行符，尝试按标点分割找正文
-      return _extractFromSingleLine(fullText);
-    }
-    
-    // 查找包含"译"字的行
-    int startIndex = 0;
-    for (int i = 0; i < lines.length && i < 5; i++) {
-      final line = lines[i].trim();
-      if (line.contains('译')) {
-        // 找到译者行，正文从下一行或下下行开始
-        startIndex = i + 1;
-        // 检查下一行是否是品名（如"世主妙严品第一之一"）
-        if (startIndex < lines.length && 
-            lines[startIndex].contains('品') && 
-            lines[startIndex].contains('第')) {
-          startIndex++;
-        }
-        break;
-      }
-    }
-    
-    // 合并剩余行作为正文
-    if (startIndex >= lines.length) {
-      // 如果找不到正文，返回最后一部分
-      return lines.last.trim();
-    }
-    
-    return lines.skip(startIndex).join('\n').trim();
-  }
-  
-  /// 从单行文本中提取正文（没有换行符的情况）
-  static String _extractFromSingleLine(String text) {
-    // 尝试找到"译"字后的内容
-    final translateIndex = text.indexOf('译');
-    if (translateIndex != -1 && translateIndex < text.length - 10) {
-      // 跳过"译"字后可能的品名
-      String remaining = text.substring(translateIndex + 1).trim();
-      // 如果以"品"开头，尝试跳过品名
-      if (remaining.contains('品') && remaining.contains('第')) {
-        final match = RegExp(r'^.+?品第.+?之.+?\s*').firstMatch(remaining);
-        if (match != null) {
-          remaining = remaining.substring(match.end);
-        }
-      }
-      if (remaining.isNotEmpty) {
-        return remaining;
-      }
-    }
-    return text;
-  }
 
   @override
   State<RecitationGameWidget> createState() => _RecitationGameWidgetState();
@@ -103,20 +40,20 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
   /// 原始词列表（正确顺序）
   List<String> _originalWords = [];
   
-  /// 打乱后的词列表（带索引）
-  List<_WordItem> _shuffledWords = [];
+  /// 打乱后的词列表
+  List<String> _shuffledWords = [];
   
-  /// 下一个需要选择的正确索引
-  int _nextCorrectIndex = 0;
+  /// 用户已选择的词列表
+  List<String> _selectedWords = [];
+  
+  /// 已选择词的索引（用于隐藏已选项）
+  Set<int> _selectedIndices = {};
   
   /// 剩余错误机会
   int _remainingChances = 3;
   
   /// 剩余时间（秒）
   int _remainingTime = 15;
-  
-  /// 实际用于背诵的句子（提取后的正文）
-  late String _actualSentence;
   
   /// 倒计时Timer
   Timer? _countdownTimer;
@@ -132,8 +69,6 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
   @override
   void initState() {
     super.initState();
-    // 提取正文
-    _actualSentence = RecitationGameWidget.extractMainText(widget.sentence);
     _parseWords();
     _initAnimations();
     // 自动开始闪现
@@ -171,25 +106,20 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
   void _parseWords() {
     _originalWords = [];
     // 按字符拆分（中文逐字）
-    for (int i = 0; i < _actualSentence.length; i++) {
-      final char = _actualSentence[i];
-      if (char.trim().isNotEmpty && !_isPunctuation(char)) {
+    for (int i = 0; i < widget.sentence.length; i++) {
+      final char = widget.sentence[i];
+      if (char.trim().isNotEmpty) {
         _originalWords.add(char);
       }
     }
-  }
-  
-  /// 判断是否为标点符号
-  bool _isPunctuation(String char) {
-    const punctuations = '，。！？、；：""\'\'（）【】《》…—·．,.:;!?\'"()[]{}';
-    return punctuations.contains(char);
   }
 
   /// 开始闪现阶段
   void _startFlashing() {
     setState(() {
       _state = RecitationState.flashing;
-      _nextCorrectIndex = 0;
+      _selectedWords = [];
+      _selectedIndices = {};
       _remainingTime = 15;
     });
     
@@ -205,17 +135,13 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
 
   /// 开始游戏阶段
   void _startPlaying() {
-    // 创建带原始索引的词列表并打乱
-    _shuffledWords = List.generate(
-      _originalWords.length, 
-      (i) => _WordItem(word: _originalWords[i], originalIndex: i, isSelected: false),
-    );
+    // 打乱词序
+    _shuffledWords = List.from(_originalWords);
     _shuffledWords.shuffle(Random());
     
     setState(() {
       _state = RecitationState.playing;
       _remainingTime = 15;
-      _nextCorrectIndex = 0;
     });
     
     // 开始倒计时
@@ -263,20 +189,22 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
   /// 处理用户点击词
   void _onWordTap(int shuffledIndex) {
     if (_state != RecitationState.playing) return;
+    if (_selectedIndices.contains(shuffledIndex)) return;
     
-    final item = _shuffledWords[shuffledIndex];
-    if (item.isSelected) return;
+    final tappedWord = _shuffledWords[shuffledIndex];
+    final expectedIndex = _selectedWords.length;
+    final expectedWord = _originalWords[expectedIndex];
     
-    if (item.originalIndex == _nextCorrectIndex) {
-      // 正确选择 - 标记为已选择（消失）
+    if (tappedWord == expectedWord) {
+      // 正确选择
       HapticFeedback.lightImpact();
       setState(() {
-        _shuffledWords[shuffledIndex] = item.copyWith(isSelected: true);
-        _nextCorrectIndex++;
+        _selectedWords.add(tappedWord);
+        _selectedIndices.add(shuffledIndex);
       });
       
       // 检查是否完成
-      if (_nextCorrectIndex >= _originalWords.length) {
+      if (_selectedWords.length == _originalWords.length) {
         _onSuccess();
       }
     } else {
@@ -380,7 +308,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: Text(
-                _actualSentence,
+                widget.sentence,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 36,
@@ -396,30 +324,19 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     );
   }
 
-  /// 游戏视图 - 简化版：只有中间的乱序词
+  /// 游戏视图
   Widget _buildPlayingView() {
     return Column(
       children: [
         const SizedBox(height: 20),
         // 倒计时和机会显示
         _buildStatusBar(),
-        // 进度提示
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: Text(
-            '已完成 $_nextCorrectIndex / ${_originalWords.length}',
-            style: const TextStyle(
-              color: Colors.white54,
-              fontSize: 14,
-            ),
-          ),
-        ),
-        // 乱序词显示在中间
-        Expanded(
-          child: Center(
-            child: _buildCandidateWords(),
-          ),
-        ),
+        const SizedBox(height: 24),
+        // 已选择的词（正确顺序）
+        _buildSelectedWords(),
+        const Spacer(),
+        // 候选词按钮
+        _buildCandidateWords(),
         const SizedBox(height: 40),
       ],
     );
@@ -480,7 +397,36 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     );
   }
 
-  /// 候选词按钮 - 点击正确的消失
+  /// 已选择的词
+  Widget _buildSelectedWords() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.all(16),
+      constraints: const BoxConstraints(minHeight: 100),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.amber.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          ..._selectedWords.map((word) => _buildWordChip(word, isSelected: true)),
+          // 占位符显示剩余需要选择的词数
+          ...List.generate(
+            _originalWords.length - _selectedWords.length,
+            (index) => _buildPlaceholder(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 候选词按钮
   Widget _buildCandidateWords() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24),
@@ -489,14 +435,14 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
         runSpacing: 12,
         alignment: WrapAlignment.center,
         children: List.generate(_shuffledWords.length, (index) {
-          final item = _shuffledWords[index];
-          if (item.isSelected) {
-            // 已选择的词消失（用透明占位保持布局稳定）
-            return const SizedBox.shrink();
-          }
+          final isSelected = _selectedIndices.contains(index);
           return GestureDetector(
-            onTap: () => _onWordTap(index),
-            child: _buildWordButton(item.word),
+            onTap: isSelected ? null : () => _onWordTap(index),
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 200),
+              opacity: isSelected ? 0.3 : 1.0,
+              child: _buildWordButton(_shuffledWords[index], isSelected: isSelected),
+            ),
           );
         }),
       ),
@@ -504,29 +450,77 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
   }
 
   /// 词按钮样式
-  Widget _buildWordButton(String word) {
+  Widget _buildWordButton(String word, {bool isSelected = false}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF4A00E0), Color(0xFF8E2DE2)],
-        ),
+        gradient: isSelected
+            ? null
+            : const LinearGradient(
+                colors: [Color(0xFF4A00E0), Color(0xFF8E2DE2)],
+              ),
+        color: isSelected ? Colors.grey[800] : null,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.purple.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: isSelected
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.purple.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+      ),
+      child: Text(
+        word,
+        style: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+          color: isSelected ? Colors.grey : Colors.white,
+        ),
+      ),
+    );
+  }
+
+  /// 已选择词的样式
+  Widget _buildWordChip(String word, {bool isSelected = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.amber.withValues(alpha: 0.5),
+          width: 1,
+        ),
       ),
       child: Text(
         word,
         style: const TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+          color: Colors.amber,
         ),
+      ),
+    );
+  }
+
+  /// 占位符
+  Widget _buildPlaceholder() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.2),
+          width: 1,
+          style: BorderStyle.solid,
+        ),
+      ),
+      child: const Text(
+        '　',  // 全角空格占位
+        style: TextStyle(fontSize: 20),
       ),
     );
   }
@@ -647,25 +641,3 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     );
   }
 }
-
-/// 词条目数据类
-class _WordItem {
-  final String word;
-  final int originalIndex;
-  final bool isSelected;
-  
-  const _WordItem({
-    required this.word,
-    required this.originalIndex,
-    required this.isSelected,
-  });
-  
-  _WordItem copyWith({bool? isSelected}) {
-    return _WordItem(
-      word: word,
-      originalIndex: originalIndex,
-      isSelected: isSelected ?? this.isSelected,
-    );
-  }
-}
-

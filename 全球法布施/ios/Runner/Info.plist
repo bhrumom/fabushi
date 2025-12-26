@@ -54,10 +54,18 @@
 		<string>alipayshare</string>
 	</array>
 	
-	<!-- 后台音频模式 -->
+	<!-- 后台模式 - 音频、后台获取、后台处理 -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
+	
+	<!-- BGTaskScheduler 任务标识符 (iOS 13+) -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.ombhrum.fabushi.keepalive</string>
 	</array>
 	
 	<!-- 通知权限说明 -->

@@ -1,10 +1,12 @@
 package com.ombhrum.fabushi
 
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -13,6 +15,13 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.fabushi.app/hotspot"
     private val DEVICE_INFO_CHANNEL = "com.ombhrum.fabushi/device_info"
+    private val MEMORY_CHANNEL = "com.ombhrum.fabushi/memory"
+    
+    private var memoryChannel: MethodChannel? = null
+    
+    companion object {
+        private const val TAG = "MainActivity"
+    }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -53,6 +62,60 @@ class MainActivity : FlutterActivity() {
                     result.notImplemented()
                 }
             }
+        }
+        
+        // 内存管理 Method Channel
+        memoryChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, MEMORY_CHANNEL)
+    }
+    
+    /**
+     * 系统内存压力回调
+     * 
+     * 当系统内存不足时，通知 Flutter 层释放缓存
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        
+        Log.d(TAG, "onTrimMemory: level=$level")
+        
+        when (level) {
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL,
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
+                // 内存紧张，通知 Flutter 层释放缓存
+                Log.w(TAG, "内存紧张，通知 Flutter 释放缓存")
+                notifyFlutterLowMemory(level)
+            }
+            ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> {
+                // UI 不可见，可以释放一些资源
+                Log.d(TAG, "UI 不可见")
+            }
+            ComponentCallbacks2.TRIM_MEMORY_BACKGROUND,
+            ComponentCallbacks2.TRIM_MEMORY_MODERATE,
+            ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> {
+                // 后台内存压力
+                Log.w(TAG, "后台内存压力，level=$level")
+                notifyFlutterLowMemory(level)
+            }
+        }
+    }
+    
+    /**
+     * 低内存回调
+     */
+    override fun onLowMemory() {
+        super.onLowMemory()
+        Log.e(TAG, "系统低内存警告")
+        notifyFlutterLowMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+    }
+    
+    /**
+     * 通知 Flutter 层释放内存
+     */
+    private fun notifyFlutterLowMemory(level: Int) {
+        try {
+            memoryChannel?.invokeMethod("onLowMemory", level)
+        } catch (e: Exception) {
+            Log.e(TAG, "通知 Flutter 失败: ${e.message}")
         }
     }
 
@@ -116,3 +179,4 @@ class MainActivity : FlutterActivity() {
         }
     }
 }
+
