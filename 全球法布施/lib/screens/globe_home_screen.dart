@@ -9,6 +9,7 @@ import '../core/design_system/app_theme.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/online_counter_widget.dart';
 import '../core/utils/auth_guard.dart';
+import '../widgets/auto_start_guide_dialog.dart';
 
 class GlobeHomeScreen extends StatefulWidget {
   const GlobeHomeScreen({super.key});
@@ -799,6 +800,11 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
     // 抖音风格：所有同步云端的活跃操作都需要登录
     final hasAuth = await AuthGuard.check(context);
     if (!hasAuth) return;
+
+    // Android 平台：首次使用时显示自启动设置引导
+    if (Platform.isAndroid && mounted) {
+      await AutoStartGuideDialog.showIfNeeded(context);
+    }
 
     _globeKey.currentState?.clearBeams();
 

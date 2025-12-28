@@ -1,8 +1,10 @@
 package com.ombhrum.fabushi
 
 import android.content.ComponentCallbacks2
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.provider.Settings
@@ -57,6 +59,18 @@ class MainActivity : FlutterActivity() {
                 }
                 "getDeviceManufacturer" -> {
                     result.success(Build.MANUFACTURER)
+                }
+                "openAutoStartSettings" -> {
+                    openAutoStartSettings()
+                    result.success(true)
+                }
+                "openBatteryOptimization" -> {
+                    openBatteryOptimization()
+                    result.success(true)
+                }
+                "openAppSettings" -> {
+                    openAppSettings()
+                    result.success(true)
                 }
                 else -> {
                     result.notImplemented()
@@ -170,6 +184,126 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             try {
                 // 备用：打开设置主页
+                val intent = Intent(Settings.ACTION_SETTINGS)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                startActivity(intent)
+            } catch (e2: Exception) {
+                e2.printStackTrace()
+            }
+        }
+    }
+
+    /**
+     * 打开厂商自启动设置页面
+     * 
+     * 支持：小米/Redmi、华为/荣耀、OPPO/Realme、vivo、三星、联想等
+     */
+    private fun openAutoStartSettings() {
+        val manufacturer = Build.MANUFACTURER.lowercase()
+        Log.d(TAG, "设备厂商: $manufacturer")
+        
+        val intent = when {
+            manufacturer.contains("xiaomi") || manufacturer.contains("redmi") -> {
+                // 小米 MIUI
+                Intent().apply {
+                    component = ComponentName(
+                        "com.miui.securitycenter",
+                        "com.miui.permcenter.autostart.AutoStartManagementActivity"
+                    )
+                }
+            }
+            manufacturer.contains("huawei") || manufacturer.contains("honor") -> {
+                // 华为 EMUI / 荣耀
+                Intent().apply {
+                    component = ComponentName(
+                        "com.huawei.systemmanager",
+                        "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
+                    )
+                }
+            }
+            manufacturer.contains("oppo") || manufacturer.contains("realme") -> {
+                // OPPO ColorOS / Realme
+                Intent().apply {
+                    component = ComponentName(
+                        "com.coloros.safecenter",
+                        "com.coloros.safecenter.startupapp.StartupAppListActivity"
+                    )
+                }
+            }
+            manufacturer.contains("vivo") -> {
+                // vivo OriginOS / FuntouchOS
+                Intent().apply {
+                    component = ComponentName(
+                        "com.vivo.permissionmanager",
+                        "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"
+                    )
+                }
+            }
+            manufacturer.contains("samsung") -> {
+                // 三星 One UI - 跳转到电池优化页面
+                Intent().apply {
+                    action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                    data = Uri.parse("package:$packageName")
+                }
+            }
+            manufacturer.contains("lenovo") || manufacturer.contains("zte") || manufacturer.contains("meizu") -> {
+                // 联想、中兴、魅族
+                Intent().apply {
+                    action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                    data = Uri.parse("package:$packageName")
+                }
+            }
+            else -> {
+                // 其他品牌 - 跳转到应用详情页
+                Intent().apply {
+                    action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                    data = Uri.parse("package:$packageName")
+                }
+            }
+        }
+        
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        
+        try {
+            startActivity(intent)
+            Log.d(TAG, "成功打开自启动设置页面")
+        } catch (e: Exception) {
+            Log.w(TAG, "打开自启动设置失败，尝试备用方案: ${e.message}")
+            // 备用方案：尝试打开应用详情页
+            openAppSettings()
+        }
+    }
+
+    /**
+     * 打开电池优化设置页面
+     */
+    private fun openBatteryOptimization() {
+        try {
+            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            startActivity(intent)
+            Log.d(TAG, "成功打开电池优化设置页面")
+        } catch (e: Exception) {
+            Log.w(TAG, "打开电池优化设置失败: ${e.message}")
+            // 备用：跳转到应用设置
+            openAppSettings()
+        }
+    }
+
+    /**
+     * 打开应用详情设置页面
+     */
+    private fun openAppSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            intent.data = Uri.parse("package:$packageName")
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            startActivity(intent)
+            Log.d(TAG, "成功打开应用设置页面")
+        } catch (e: Exception) {
+            Log.e(TAG, "打开应用设置失败: ${e.message}")
+            // 最后备用：打开设置主页
+            try {
                 val intent = Intent(Settings.ACTION_SETTINGS)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 startActivity(intent)
