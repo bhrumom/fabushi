@@ -28,9 +28,10 @@ class CommentModel {
   factory CommentModel.fromJson(Map<String, dynamic> json) {
     return CommentModel(
       id: json['id'],
-      videoId: json['video_id'],
-      userId: json['user_id'],
-      content: json['content'],
+      // 兼容 content_id 和 video_id
+      videoId: json['content_id'] ?? json['video_id'] ?? '',
+      userId: json['user_id'] ?? '',
+      content: json['content'] ?? '',
       createdAt: DateTime.parse(json['created_at']),
       parentId: json['parent_id'],
       likeCount: json['like_count'] ?? 0,

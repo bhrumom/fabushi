@@ -68,18 +68,18 @@ export async function handlePostComment(request, env, db) {
         }
 
         // 验证标签值
-        const validTags = ['ganying', 'fayuan', null];
+        const validTags = ['ganying', 'fayuan', 'practice', null];
         if (tag && !validTags.includes(tag)) {
             return jsonResponse({ error: '无效的标签类型' }, 400);
         }
 
         const now = new Date().toISOString();
 
-        // 插入评论（使用统一的 content_id）
+        // 插入评论（使用统一的 content_id，同时填充 video_id 和 user_id 保持向后兼容）
         const result = await db.db.prepare(`
-      INSERT INTO comments (content_id, username, content, created_at, parent_id, tag, content_title, sync_version)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-    `).bind(contentId, tokenData.username, content, now, parentId || null, tag || null, videoTitle || null).run();
+      INSERT INTO comments (content_id, video_id, username, user_id, content, created_at, parent_id, tag, content_title, sync_version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    `).bind(contentId, contentId, tokenData.username, tokenData.username, content, now, parentId || null, tag || null, videoTitle || null).run();
 
         // 同步更新 content_metadata 的 comment_count
         await db.db.prepare(`

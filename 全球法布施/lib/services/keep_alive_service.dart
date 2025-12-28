@@ -509,16 +509,21 @@ class KeepAliveService {
     try {
       _audioHandler = await AudioService.init(
         builder: () => KeepAliveAudioHandler(),
-        config: AudioServiceConfig(
+        config: const AudioServiceConfig(
           androidNotificationChannelId: 'com.ombhrum.fabushi.keep_alive',
-          androidNotificationChannelName: '全球法布施后台保活',
+          androidNotificationChannelName: '全球法布施',
           androidNotificationChannelDescription: '保持应用在后台运行，确保全球发送不中断',
-          // 注意：androidNotificationOngoing 和 androidStopForegroundOnPause 配置冲突
-          // 如果 androidNotificationOngoing = true，则 androidStopForegroundOnPause 必须也为 true
-          // 否则会触发断言错误
-          androidNotificationOngoing: false, // 允许用户滑动关闭通知
-          androidStopForegroundOnPause: false, // 暂停时不停止前台服务
-          androidResumeOnClick: true,
+          // Android 通知配置 - 显示音乐播放器风格通知
+          // 设置 ongoing=false, stopOnPause=false 确保通知始终显示
+          androidNotificationOngoing: false,  // 允许滑动关闭（但我们会持续播放所以不会消失）
+          androidStopForegroundOnPause: false, // 暂停时保持前台服务和通知
+          androidResumeOnClick: true,  // 点击通知返回应用
+          androidShowNotificationBadge: true,  // 显示角标
+          // 通知图标
+          androidNotificationIcon: 'mipmap/ic_launcher',
+          // 封面图压缩
+          artDownscaleWidth: 300,
+          artDownscaleHeight: 300,
         ),
       );
       

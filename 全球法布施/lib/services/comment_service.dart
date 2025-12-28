@@ -124,9 +124,10 @@ class CommentService {
           return {'success': false, 'error': '发布失败: ${response.statusCode}'};
         }
       }
-    } catch (e) {
-      debugPrint('发布评论异常: $e');
-      return {'success': false, 'error': '网络错误，请检查网络连接'};
+    } catch (e, stackTrace) {
+      debugPrint('❌ 发布评论异常: $e');
+      debugPrint('❌ 堆栈: $stackTrace');
+      return {'success': false, 'error': '发布评论失败：$e'};
     }
   }
 

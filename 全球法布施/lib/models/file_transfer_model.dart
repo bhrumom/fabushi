@@ -16,8 +16,7 @@ import '../services/real_global_send_service.dart';
 import '../services/platform_global_send_service.dart';
 import '../services/ip_location_service.dart';
 import '../services/leaderboard_service.dart';
-import '../services/foreground_service_manager.dart';
-// iOS 现在使用统一的 KeepAliveService，不再需要单独的 IOSBackgroundAudioHandler
+// Android 和 iOS 统一使用 audio_service MediaSession
 import '../services/wifi_field_broadcast_service.dart';
 import '../services/hotspot_manager_service.dart';
 import '../services/keep_alive_service.dart';
@@ -58,10 +57,6 @@ class FileTransferModel extends ChangeNotifier {
 
   final SharedAssetManager _sharedAssetManager = SharedAssetManager();
   final IPLocationService _ipLocationService = IPLocationService();
-  
-  // 后台服务管理器
-  final ForegroundServiceManager _foregroundService = ForegroundServiceManager();
-  // iOS 现在使用 _keepAliveService，不再需要单独的 handler
   
   // 场能广播服务
   WiFiFieldBroadcastService? _fieldBroadcastService;
@@ -632,102 +627,50 @@ class FileTransferModel extends ChangeNotifier {
     _scheduleNotify();
   }
 
-  /// 启动后台服务（Android 前台服务或 iOS 后台音频）
+  /// 启动后台服务（统一使用 audio_service MediaSession 音乐播放器通知）
+  /// 
+  /// Android 和 iOS 统一使用系统媒体播放器通知风格
   Future<void> _startBackgroundService() async {
     try {
       final fileName = _selectedFiles.isNotEmpty ? _selectedFiles.first.name : '未知文件';
       
-      if (Platform.isAndroid) {
-        // Android 前台服务
-        await _foregroundService.initialize();
-        await _foregroundService.start(
-          fileName: fileName,
-          totalCountries: _countryStatuses.length,
-        );
-        debugPrint('✅ Android 前台服务已启动');
-        
-        // 设置静音切换回调
-        ForegroundServiceManager.onMuteToggleRequested = _onToggleAudioMute;
-        // 设置停止发送回调
-        ForegroundServiceManager.onStopSendingRequested = stopTransfer;
-        
-        // 启动音频保活（仅 Android，因为 iOS 已有后台音频）
-        await _startAudioKeepAlive(fileName);
-      } else if (Platform.isIOS) {
-        // iOS 后台音频 - 使用统一的 KeepAliveService（已在 app_initializer 中初始化）
-        // 注意：audio_service 只允许一次初始化，所以 iOS 和 Android 都使用 KeepAliveService
-        await _keepAliveService.start(
-          audioName: fileName,
-          totalCountries: _countryStatuses.length,
-        );
-        debugPrint('✅ iOS 后台保活服务已启动');
-      }
+      // Android 和 iOS 统一使用 KeepAliveService (audio_service)
+      // 这会在系统媒体控制中心显示音乐播放器风格的通知
+      await _keepAliveService.start(
+        audioName: fileName,
+        totalCountries: _countryStatuses.length,
+      );
+      
+      debugPrint('✅ MediaSession 后台服务已启动 (${Platform.isAndroid ? "Android" : "iOS"})');
     } catch (e) {
       debugPrint('⚠️ 启动后台服务失败: $e');
     }
   }
   
-  /// 切换音频静音状态（通知栏按钮回调）
+  /// 切换音频静音状态
   void _onToggleAudioMute() {
     debugPrint('🔇 收到静音切换请求');
-    _keepAliveService.toggleMute().then((_) {
-      // 更新通知栏状态
-      _foregroundService.updateMuteStatus(_keepAliveService.isMuted);
-    });
-  }
-  
-  /// 启动统一保活服务
-  Future<void> _startAudioKeepAlive(String fileName) async {
-    try {
-      await _keepAliveService.start(
-        audioName: fileName,
-        totalCountries: _countryStatuses.length,
-      );
-      debugPrint('✅ 统一保活服务已启动: $fileName');
-    } catch (e) {
-      debugPrint('⚠️ 启动保活服务失败: $e');
-    }
+    _keepAliveService.toggleMute();
   }
 
   /// 停止后台服务
   Future<void> _stopBackgroundService() async {
     try {
-      // 停止统一保活服务
       await _keepAliveService.stop();
-      debugPrint('✅ 统一保活服务已停止');
-      
-      if (Platform.isAndroid) {
-        await _foregroundService.showCompletionNotification(
-          totalSent: _globalSentCount,
-          loopCount: _loopCount,
-        );
-      }
-      // iOS 也使用 KeepAliveService，已在上面统一调用 _keepAliveService.stop()
-      debugPrint('✅ 后台服务已停止');
+      debugPrint('✅ MediaSession 后台服务已停止');
     } catch (e) {
       debugPrint('⚠️ 停止后台服务失败: $e');
     }
   }
 
-  /// 更新后台服务进度
+  /// 更新后台服务进度（显示在 MediaSession 音乐播放器通知中）
   void _updateBackgroundServiceProgress(String country, int sent, int total) {
-    // 更新统一保活服务进度（同时支持 Android 和 iOS）
     _keepAliveService.updateProgress(
       sentCount: sent,
       totalCount: total,
       currentCountry: country,
       loopCount: _loopCount,
     );
-    
-    // Android 额外更新前台服务通知
-    if (Platform.isAndroid) {
-      _foregroundService.updateProgress(
-        sentCount: sent,
-        totalCount: total,
-        currentCountry: country,
-        loopCount: _loopCount,
-      );
-    }
   }
 
   /// 初始化平台自适应全球发送服务
