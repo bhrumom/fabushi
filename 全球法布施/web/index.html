@@ -39,15 +39,21 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
 
-  <!-- 🚀 预加载关键脚本 -->
-  <link rel="preload" href="flutter_bootstrap.js" as="script">
+  <!-- 🔤 预加载关键字体（子集化后仅~4.5MB） -->
+  <link rel="preload" href="assets/fonts/subset/NotoSansSC-Regular-subset.woff2" as="font" type="font/woff2"
+    crossorigin>
+  <link rel="preload" href="assets/fonts/subset/NotoSerifSC-Regular-subset.woff2" as="font" type="font/woff2"
+    crossorigin>
 
-  <!-- Flutter Angle for WebGL2 -->
+  <!-- 🚀 预加载关键脚本 -->
+  <link rel="preload" href="flutter_bootstrap.js" as="script" fetchpriority="high">
+  <link rel="preload" href="main.dart.js" as="script" fetchpriority="high">
+
+  <!-- Flutter Angle for WebGL2 - 非关键，延迟加载 -->
   <script src="https://cdn.jsdelivr.net/gh/Knightro63/flutter_angle/assets/gles_bindings.js" defer></script>
 
-  <!-- ❌ 移除同步 Three.js 加载 - 改为延迟加载 -->
-  <!-- Three.js 现在通过 lazy-three.js 按需加载 -->
-  <script src="lazy-three.js"></script>
+  <!-- Three.js 延迟加载 - 仅在需要时加载 -->
+  <script src="lazy-three.js" defer></script>
 
   <!-- sql.js for drift -->
   <script>

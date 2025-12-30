@@ -17,6 +17,7 @@ class AppInitializer {
   static bool _isInitializing = false;
 
   // 初始化应用 - 优化版本，避免阻塞
+  // Web平台：跳过非必要的原生服务初始化
   static Future<void> initialize() async {
     if (_isInitialized || _isInitializing) {
       return;
@@ -27,7 +28,7 @@ class AppInitializer {
     try {
       final optimizer = StartupOptimizer();
       
-      // 添加初始化任务到队列
+      // ✅ 核心服务初始化（所有平台）
       optimizer.addInitTask(() async {
         UnifiedApiService().initialize();
         debugPrint('✅ API服务初始化完成');
@@ -39,38 +40,43 @@ class AppInitializer {
       });
       
       optimizer.addInitTask(() async {
-        await _retryPendingUploads();
-        debugPrint('✅ 待上传数据重试完成');
-      });
-      
-      optimizer.addInitTask(() async {
         await LikeService().initialize();
         debugPrint('✅ 点赞服务初始化完成');
       });
       
-      // 初始化内存管理器
-      optimizer.addInitTask(() async {
-        await MemoryManager.instance.initialize();
-        debugPrint('✅ 内存管理器初始化完成');
-      });
-      
-      // 初始化统一保活服务（基于 audio_service + MediaSession）
-      optimizer.addInitTask(() async {
-        await KeepAliveService.instance.initialize();
-        debugPrint('✅ 统一保活服务初始化完成');
-      });
-      
-      // 初始化 WorkManager 恢复机制（仅 Android）
-      optimizer.addInitTask(() async {
-        await WorkManagerKeepAlive.initialize();
-        debugPrint('✅ WorkManager 初始化完成');
-      });
-      
-      // 检查是否需要恢复发送任务
-      optimizer.addInitTask(() async {
-        await _checkAndRecoverSendingTask();
-        debugPrint('✅ 发送任务恢复检查完成');
-      });
+      // ⚠️ 以下服务仅在非Web平台初始化
+      if (!kIsWeb) {
+        optimizer.addInitTask(() async {
+          await _retryPendingUploads();
+          debugPrint('✅ 待上传数据重试完成');
+        });
+        
+        // 初始化内存管理器
+        optimizer.addInitTask(() async {
+          await MemoryManager.instance.initialize();
+          debugPrint('✅ 内存管理器初始化完成');
+        });
+        
+        // 初始化统一保活服务（基于 audio_service + MediaSession）
+        optimizer.addInitTask(() async {
+          await KeepAliveService.instance.initialize();
+          debugPrint('✅ 统一保活服务初始化完成');
+        });
+        
+        // 初始化 WorkManager 恢复机制（仅 Android）
+        optimizer.addInitTask(() async {
+          await WorkManagerKeepAlive.initialize();
+          debugPrint('✅ WorkManager 初始化完成');
+        });
+        
+        // 检查是否需要恢复发送任务
+        optimizer.addInitTask(() async {
+          await _checkAndRecoverSendingTask();
+          debugPrint('✅ 发送任务恢复检查完成');
+        });
+      } else {
+        debugPrint('🌐 Web平台：跳过原生服务初始化');
+      }
       
       // 开始分批初始化
       await optimizer.startInitialization();

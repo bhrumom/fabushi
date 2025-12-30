@@ -28,10 +28,12 @@ void main() async {
   // 初始化依赖注入
   setupDependencies();
 
-  // 打印配置信息
-  AppConfig.printConfigInfo();
+  // 打印配置信息（仅调试模式）
+  if (kDebugMode) {
+    AppConfig.printConfigInfo();
+  }
 
-  // 桌面平台设置
+  // 桌面平台设置（Web跳过）
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     await windowManager.ensureInitialized();
     await windowManager.setMaximizable(false);
@@ -39,12 +41,24 @@ void main() async {
     await windowManager.maximize();
   }
 
-  // Firebase初始化
-  try {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    debugPrint('✅ Firebase初始化成功');
-  } catch (e) {
-    debugPrint('⚠️ Firebase初始化失败: $e');
+  // Firebase初始化（Web平台延迟初始化以优化首屏速度）
+  if (!kIsWeb) {
+    try {
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+      debugPrint('✅ Firebase初始化成功');
+    } catch (e) {
+      debugPrint('⚠️ Firebase初始化失败: $e');
+    }
+  } else {
+    // Web平台：延迟Firebase初始化到用户交互后
+    Future.delayed(const Duration(seconds: 2), () async {
+      try {
+        await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+        debugPrint('✅ Firebase初始化成功（Web延迟）');
+      } catch (e) {
+        debugPrint('⚠️ Firebase初始化失败: $e');
+      }
+    });
   }
 
   // 延迟异步初始化，避免阻塞启动

@@ -138,13 +138,16 @@ flutter:
     - assets/ip_data/
   
   fonts:
+    # 使用子集化后的字体（从80MB压缩至~4.5MB）
+    # 原始字体保留在 fonts/ 目录以备后用
     - family: NotoSansSC
       fonts:
-        - asset: fonts/NotoSansSC-Regular.otf
-        - asset: fonts/NotoSansSC-Bold.otf
+        - asset: fonts/subset/NotoSansSC-Regular-subset.woff2
+        - asset: fonts/subset/NotoSansSC-Bold-subset.woff2
           weight: 700
     - family: NotoSerifSC
       fonts:
-        - asset: fonts/NotoSerifSC-Regular.otf
-        - asset: fonts/NotoSerifSC-Bold.otf
+        - asset: fonts/subset/NotoSerifSC-Regular-subset.woff2
+        - asset: fonts/subset/NotoSerifSC-Bold-subset.woff2
           weight: 700
+
