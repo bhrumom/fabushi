@@ -13,28 +13,27 @@ export async function handleSearch(request, env, db) {
       return jsonResponse({ query: '', total: 0, results: [] });
     }
 
-    // 构建SQL查询
-    const searchPattern = `%${query}%`;
+    // 使用 FTS5 进行极端性能搜索
     let sql = `
-      SELECT id, title, content, file_path, category,
-             CASE 
-               WHEN title LIKE ? THEN 1
-               ELSE 0
-             END as title_match
-      FROM text_contents
-      WHERE title LIKE ? OR content LIKE ?
+      SELECT 
+        f.id, f.title, 
+        tc.file_path, tc.category,
+        snippet(text_contents_fts, 1, '<b>', '</b>', '...', 64) as snippet
+      FROM text_contents_fts f
+      JOIN text_contents tc ON f.rowid = tc.id
+      WHERE text_contents_fts MATCH ?
     `;
 
-    const params = [searchPattern, searchPattern, searchPattern];
+    const params = [query];
 
     // 添加分类筛选
     if (category) {
-      sql += ' AND category = ?';
+      sql += ' AND tc.category = ?';
       params.push(category);
     }
 
-    // 排序：标题匹配优先
-    sql += ' ORDER BY title_match DESC, id ASC';
+    // 排序：使用 FTS5 默认排名
+    sql += ' ORDER BY rank';
 
     // 分页
     sql += ' LIMIT ? OFFSET ?';
@@ -42,39 +41,28 @@ export async function handleSearch(request, env, db) {
 
     const { results } = await db.prepare(sql).bind(...params).all();
 
-    // 生成预览
+    // 格式化结果
     const formattedResults = results.map(row => {
-      const queryLower = query.toLowerCase();
-      const contentLower = row.content.toLowerCase();
-      const index = contentLower.indexOf(queryLower);
-
-      let preview = row.content;
-      if (index !== -1) {
-        const start = Math.max(0, index - 50);
-        const end = Math.min(row.content.length, index + query.length + 150);
-        preview = (start > 0 ? '...' : '') +
-          row.content.substring(start, end) +
-          (end < row.content.length ? '...' : '');
-      } else {
-        preview = row.content.substring(0, 200);
-      }
-
       return {
         id: row.file_path,
         title: row.title,
         path: row.file_path,
         category: row.category,
-        preview,
-        contentLength: row.content.length,
-        titleMatch: row.title_match === 1
+        preview: row.snippet,
+        titleMatch: false // FTS5 已经自动处理了排名
       };
     });
 
     // 获取总数
-    let countSql = 'SELECT COUNT(*) as total FROM text_contents WHERE title LIKE ? OR content LIKE ?';
-    const countParams = [searchPattern, searchPattern];
+    let countSql = 'SELECT COUNT(*) as total FROM text_contents_fts WHERE text_contents_fts MATCH ?';
+    const countParams = [query];
     if (category) {
-      countSql += ' AND category = ?';
+      countSql = `
+        SELECT COUNT(*) as total 
+        FROM text_contents_fts f
+        JOIN text_contents tc ON f.rowid = tc.id
+        WHERE text_contents_fts MATCH ? AND tc.category = ?
+      `;
       countParams.push(category);
     }
     const { total } = await db.prepare(countSql).bind(...countParams).first();

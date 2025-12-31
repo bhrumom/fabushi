@@ -39,13 +39,13 @@ async function ensureTablesExist(env) {
     try {
         // 分别执行每个CREATE语句
         const statements = CREATE_TABLES_SQL.split(';').filter(s => s.trim());
-        
+
         for (const statement of statements) {
             if (statement.trim()) {
                 await env.DB.prepare(statement.trim()).run();
             }
         }
-        
+
         console.log('✅ 数据库表结构检查完成');
         return true;
     } catch (error) {
@@ -69,7 +69,7 @@ export async function handleBuiltinMigration(request, env) {
         }
 
         const { texts } = await request.json();
-        
+
         if (!texts || !Array.isArray(texts)) {
             return new Response(JSON.stringify({
                 success: false,
@@ -133,7 +133,7 @@ export async function handleBuiltinMigration(request, env) {
 
     } catch (error) {
         console.error('❌ 迁移失败:', error);
-        
+
         return new Response(JSON.stringify({
             success: false,
             error: error.message
@@ -172,33 +172,24 @@ export async function handleFullTextSearch(request, env) {
 
         console.log(`🔍 全文搜索: "${query}" 分类: ${category || '全部'}`);
 
-        // 简化的搜索查询
+        // 使用 FTS5 进行极端性能搜索
         let searchQuery = `
             SELECT 
-                id, title, content, file_path, category, 
-                file_name, word_count, source, created_at
-            FROM texts
-            WHERE (title LIKE ? OR content LIKE ?)
+                f.id, f.title, f.category, f.file_path, f.word_count,
+                snippet(texts_fts, 1, '<b>', '</b>', '...', 64) as snippet
+            FROM texts_fts f
+            WHERE texts_fts MATCH ?
         `;
 
-        let params = [`%${query}%`, `%${query}%`];
+        let params = [query];
 
-        // 添加分类过滤
         if (category && category !== 'all') {
             searchQuery += ` AND category = ?`;
             params.push(category);
         }
 
-        // 添加排序和分页
-        searchQuery += ` ORDER BY 
-            CASE 
-                WHEN title LIKE ? THEN 1 
-                ELSE 2 
-            END,
-            word_count DESC 
-            LIMIT ? OFFSET ?`;
-        
-        params.push(`%${query}%`, limit, offset);
+        searchQuery += ` ORDER BY rank LIMIT ? OFFSET ?`;
+        params.push(limit, offset);
 
         // 执行搜索
         const searchResults = await env.DB.prepare(searchQuery)
@@ -206,13 +197,8 @@ export async function handleFullTextSearch(request, env) {
             .all();
 
         // 获取总数
-        let countQuery = `
-            SELECT COUNT(*) as total
-            FROM texts
-            WHERE (title LIKE ? OR content LIKE ?)
-        `;
-
-        let countParams = [`%${query}%`, `%${query}%`];
+        let countQuery = `SELECT COUNT(*) as total FROM texts_fts WHERE texts_fts MATCH ?`;
+        let countParams = [query];
         if (category && category !== 'all') {
             countQuery += ` AND category = ?`;
             countParams.push(category);
@@ -224,12 +210,15 @@ export async function handleFullTextSearch(request, env) {
 
         const total = countResult?.total || 0;
 
-        console.log(`📊 搜索结果: ${searchResults.results?.length || 0} 条，总计: ${total} 条`);
+        console.log(`📊 FTS5 搜索结果: ${searchResults.results?.length || 0} 条，总计: ${total} 条`);
 
         return new Response(JSON.stringify({
             success: true,
             data: {
-                results: searchResults.results || [],
+                results: (searchResults.results || []).map(r => ({
+                    ...r,
+                    content: r.snippet // 用高亮片段作为预览内容
+                })),
                 pagination: {
                     total,
                     limit,
@@ -251,7 +240,7 @@ export async function handleFullTextSearch(request, env) {
 
     } catch (error) {
         console.error('❌ 搜索失败:', error);
-        
+
         return new Response(JSON.stringify({
             success: false,
             error: error.message
@@ -295,7 +284,7 @@ export async function handleGetCategories(request, env) {
 
     } catch (error) {
         console.error('❌ 获取分类失败:', error);
-        
+
         return new Response(JSON.stringify({
             success: false,
             error: error.message

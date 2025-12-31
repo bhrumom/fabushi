@@ -106,9 +106,11 @@ class _HotFeedListViewState extends State<HotFeedListView>
       // 🚀 渐进加载：加载一个显示一个，不等待全部完成
       _hasLoadedOnce = true;
       
-      for (final hotItem in filteredContentList) {
-        if (!mounted) break;
-        
+      // 🚀 渐进加载：使用 Future.wait 并行处理内容，提高加载速度
+      _hasLoadedOnce = true;
+      
+      // 平行处理所有热门内容
+      final videoFutures = filteredContentList.map((hotItem) async {
         final contentId = hotItem['id'] as String;
         final contentType = hotItem['content_type'] as String? ?? 'text';
         final title = hotItem['title'] as String?;
@@ -116,25 +118,18 @@ class _HotFeedListViewState extends State<HotFeedListView>
         final likeCount = hotItem['like_count'] as int? ?? 0;
         final commentCount = hotItem['comment_count'] as int? ?? 0;
         
-        debugPrint('🔥 处理热门内容: id=$contentId, title=$title, filePath=$filePath, likeCount=$likeCount');
+        debugPrint('🔥 并行处理热门内容: id=$contentId, title=$title');
 
-        VideoEntity? video;
-        
         if (contentType == 'text') {
-          // 文本内容：根据 filePath 加载，优先本地缓存
+          // 文本内容：并行加载，优先本地缓存
           String? textContent;
           String displayTitle = title ?? '热门内容';
           
           if (filePath != null && filePath.isNotEmpty) {
-            debugPrint('🔥 有 filePath，尝试加载: $filePath');
-            // 使用 CloudflareTextService，它会优先从本地缓存加载
             textContent = await _loadTextFromFilePath(filePath);
-            debugPrint('🔥 加载结果: ${textContent != null ? "成功 ${textContent.length}字符" : "失败"}');
           }
           
-          // 如果没有 filePath 或加载失败，使用随机内容（也会优先缓存）
           if (textContent == null) {
-            debugPrint('🔥 使用随机内容（优先缓存）');
             final randomContent = await _textService.getRandomTextContent();
             if (randomContent != null) {
               textContent = randomContent['content'];
@@ -143,7 +138,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
           }
           
           if (textContent != null) {
-            video = VideoEntity(
+            return VideoEntity(
               id: contentId,
               username: displayTitle,
               description: '点击头像阅读全文',
@@ -160,7 +155,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
           }
         } else {
           // 视频内容
-          video = VideoEntity(
+          return VideoEntity(
             id: contentId,
             username: title ?? '热门视频',
             description: '',
@@ -173,18 +168,22 @@ class _HotFeedListViewState extends State<HotFeedListView>
             contentType: ContentType.video,
           );
         }
+        return null;
+      }).toList();
+
+      // 等待所有内容加载完成
+      final results = await Future.wait(videoFutures);
+      final validVideos = results.whereType<VideoEntity>().toList();
+
+      if (mounted) {
+        setState(() {
+          _hotVideos = validVideos;
+          _isLoading = false;
+        });
         
-        // 🚀 渐进加载：每加载完一个内容就立即显示
-        if (video != null && mounted) {
-          setState(() {
-            _hotVideos.add(video!);
-            _isLoading = false; // 有第一个内容后立即结束loading状态
-          });
-          
-          // 初始化第一个视频
-          if (_hotVideos.length == 1 && video.contentType == ContentType.video) {
-            await _initAndPlayVideo(0);
-          }
+        // 如果第一条是视频，初始化它
+        if (_hotVideos.isNotEmpty && _hotVideos[0].contentType == ContentType.video) {
+          _initAndPlayVideo(0);
         }
       }
       
