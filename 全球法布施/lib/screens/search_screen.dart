@@ -88,87 +88,61 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('全文搜索'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(120),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _controller,
-                  decoration: InputDecoration(
-                    hintText: '搜索经文内容...',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _controller.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _controller.clear();
-                              _search('');
-                            },
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onSubmitted: _search,
-                  onChanged: (value) {
-                    if (value.isEmpty) {
-                      _search('');
-                    }
-                  },
-                ),
-                const SizedBox(height: 8),
-                if (_categories.isNotEmpty)
-                  SizedBox(
-                    height: 40,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _categories.length + 1,
-                      itemBuilder: (context, index) {
-                        if (index == 0) {
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: FilterChip(
-                              label: const Text('全部'),
-                              selected: _selectedCategory == null,
-                              onSelected: (selected) {
-                                setState(() {
-                                  _selectedCategory = null;
-                                });
-                                if (_query.isNotEmpty) {
-                                  _search(_query);
-                                }
-                              },
-                            ),
-                          );
-                        }
-                        final category = _categories[index - 1];
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: FilterChip(
-                            label: Text(category),
-                            selected: _selectedCategory == category,
-                            onSelected: (selected) {
-                              setState(() {
-                                _selectedCategory = selected ? category : null;
-                              });
-                              if (_query.isNotEmpty) {
-                                _search(_query);
-                              }
-                            },
-                          ),
-                        );
+        backgroundColor: Colors.black,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        titleSpacing: 0,
+        title: Container(
+          height: 40,
+          margin: const EdgeInsets.only(right: 16),
+          decoration: BoxDecoration(
+            color: Colors.grey[900],
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: TextField(
+            controller: _controller,
+            style: const TextStyle(color: Colors.white, fontSize: 15),
+            decoration: InputDecoration(
+              hintText: '搜索经文内容',
+              hintStyle: TextStyle(color: Colors.grey[600], fontSize: 15),
+              prefixIcon: Icon(Icons.search, color: Colors.grey[600], size: 20),
+              suffixIcon: _controller.text.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(Icons.cancel, color: Colors.grey[600], size: 20),
+                      onPressed: () {
+                        _controller.clear();
+                        _search('');
                       },
-                    ),
-                  ),
-              ],
+                    )
+                  : null,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
             ),
+            textInputAction: TextInputAction.search,
+            onSubmitted: _search,
+            onChanged: (value) {
+              if (value.isEmpty) {
+                _search('');
+              }
+              setState(() {}); // Update suffix icon visibility
+            },
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => _search(_controller.text),
+            child: const Text(
+              '搜索',
+              style: TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: _buildBody(),
     );
@@ -177,20 +151,20 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(
-        child: CircularProgressIndicator(),
+        child: CircularProgressIndicator(color: Colors.redAccent),
       );
     }
 
     if (_query.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
+            Icon(Icons.search, size: 80, color: Colors.grey[800]),
+            const SizedBox(height: 16),
             Text(
-              '输入关键词搜索经文内容',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+              '搜索你感兴趣的内容',
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
           ],
         ),
@@ -202,54 +176,50 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.search_off, size: 64, color: Colors.grey),
+            Icon(Icons.sentiment_dissatisfied, size: 80, color: Colors.grey[800]),
             const SizedBox(height: 16),
             Text(
-              '未找到包含"$_query"的内容',
-              style: const TextStyle(fontSize: 16, color: Colors.grey),
+              '暂无内容，换个词试试',
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
           ],
         ),
       );
     }
 
-    return Container(
-      color: Colors.black,
-      child: PreloadPageView.builder(
-        scrollDirection: Axis.vertical,
-        controller: _pageController,
-        itemCount: _results.length,
-        onPageChanged: (index) {
-          setState(() {
-            _currentPage = index;
-          });
-        },
-        itemBuilder: (context, index) {
-          final item = _results[index];
-          // 将 TextItem 转换为 VideoEntity 以便重用 VideoFeedViewItem
-          final videoEntity = VideoEntity(
-            id: item.filePath, // 使用 filePath 作为统一 ID
-            username: item.title,
-            description: item.preview ?? '点击头像阅读全文',
-            videoUrl: '',
-            profileImageUrl: '', // 可以根据需要设置默认头像
-            likeCount: 0,
-            commentCount: 0,
-            shareCount: 0,
-            timestamp: DateTime.now(),
-            contentType: ContentType.text,
-            textContent: item.content,
-            filePath: item.filePath,
-          );
+    return PreloadPageView.builder(
+      scrollDirection: Axis.vertical,
+      controller: _pageController,
+      itemCount: _results.length,
+      onPageChanged: (index) {
+        setState(() {
+          _currentPage = index;
+        });
+      },
+      itemBuilder: (context, index) {
+        final item = _results[index];
+        final videoEntity = VideoEntity(
+          id: item.filePath,
+          username: item.title,
+          description: item.preview ?? '点击头像阅读全文',
+          videoUrl: '',
+          profileImageUrl: '',
+          likeCount: ContentStatsService().getLikeCount(item.filePath),
+          commentCount: ContentStatsService().getCommentCount(item.filePath),
+          shareCount: 0,
+          timestamp: DateTime.now(),
+          contentType: ContentType.text,
+          textContent: item.content,
+          filePath: item.filePath,
+        );
 
-          return VideoFeedViewItem(
-            key: ValueKey(item.filePath),
-            videoItem: videoEntity,
-            controller: null, // 文本类型不需要视频控制器
-            isVisible: index == _currentPage,
-          );
-        },
-      ),
+        return VideoFeedViewItem(
+          key: ValueKey(item.filePath),
+          videoItem: videoEntity,
+          controller: null,
+          isVisible: index == _currentPage,
+        );
+      },
     );
   }
 

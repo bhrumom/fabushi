@@ -136,10 +136,9 @@ class TextSearchService {
       
       print('🔍 搜索请求: $url');
       
-      final response = await http.get(Uri.parse(url));
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
       
       print('📊 响应状态码: ${response.statusCode}');
-      print('📝 响应内容: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -175,7 +174,9 @@ class TextSearchService {
 
     // 如果远程搜索失败，使用本地搜索
     print('💻 尝试本地搜索...');
-    await indexAssets();
+    if (!_isIndexed) {
+      await indexAssets();
+    }
     return searchLocal(query);
   }
 
