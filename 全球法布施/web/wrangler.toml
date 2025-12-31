@@ -62,7 +62,7 @@ FLUTTER_WEB = "true"
 # 默认环境资源绑定
 [assets]
 binding = "ASSETS"
-directory = "/Users/gloriachan/Documents/全球发送/全球法布施/build/web"
+directory = "../build/web"
 
 # 生产环境配置
 [env.production]
@@ -119,7 +119,7 @@ ALIPAY_RETURN_URL = "https://flutter.ombhrum.com/payment-success.html"
 
 [env.production.assets]
 binding = "ASSETS"
-directory = "/Users/gloriachan/Documents/全球发送/全球法布施/build/web"
+directory = "../build/web"
 
 # 开发环境配置
 [env.development]
@@ -166,7 +166,7 @@ WORKER_URL = "https://flutter.ombhrum.com"
 
 [env.development.assets]
 binding = "ASSETS"
-directory = "/Users/gloriachan/Documents/全球发送/全球法布施/build/web"
+directory = "../build/web"
 
 [observability.logs]
 enabled = true

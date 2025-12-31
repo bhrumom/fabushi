@@ -172,7 +172,10 @@ export async function handleFullTextSearch(request, env) {
 
         console.log(`🔍 全文搜索: "${query}" 分类: ${category || '全部'}`);
 
-        // 使用 FTS5 进行极端性能搜索
+        // 使用 FTS5 进行极端性能搜索，添加通配符支持
+        const ftsQuery = query.split('').filter(c => c.trim()).join(' ') + '*';
+        console.log(`🔎 转换 FTS 查询: "${ftsQuery}"`);
+
         let searchQuery = `
             SELECT 
                 f.id, f.title, f.category, f.file_path, f.word_count,
@@ -181,7 +184,7 @@ export async function handleFullTextSearch(request, env) {
             WHERE texts_fts MATCH ?
         `;
 
-        let params = [query];
+        let params = [ftsQuery];
 
         if (category && category !== 'all') {
             searchQuery += ` AND category = ?`;
@@ -192,23 +195,67 @@ export async function handleFullTextSearch(request, env) {
         params.push(limit, offset);
 
         // 执行搜索
-        const searchResults = await env.DB.prepare(searchQuery)
+        let searchResults = await env.DB.prepare(searchQuery)
             .bind(...params)
             .all();
 
-        // 获取总数
-        let countQuery = `SELECT COUNT(*) as total FROM texts_fts WHERE texts_fts MATCH ?`;
-        let countParams = [query];
-        if (category && category !== 'all') {
-            countQuery += ` AND category = ?`;
-            countParams.push(category);
+        // 如果 FTS5 没有结果，回退到普通的 LIKE 搜索以支持更模糊的匹配
+        if (!searchResults.results || searchResults.results.length === 0) {
+            console.log('⚠️ FTS5 无结果，回退到 LIKE 搜索');
+            let likeQuery = `
+                SELECT 
+                    id, title, category, file_path, word_count,
+                    SUBSTR(content, 1, 100) as snippet
+                FROM texts
+                WHERE (title LIKE ? OR content LIKE ?)
+            `;
+            let likeParams = [`%${query}%`, `%${query}%`];
+
+            if (category && category !== 'all') {
+                likeQuery += ` AND category = ?`;
+                likeParams.push(category);
+            }
+
+            likeQuery += ` ORDER BY title LIKE ? DESC, word_count DESC LIMIT ? OFFSET ?`;
+            likeParams.push(`%${query}%`, limit, offset);
+
+            searchResults = await env.DB.prepare(likeQuery)
+                .bind(...likeParams)
+                .all();
         }
 
-        const countResult = await env.DB.prepare(countQuery)
-            .bind(...countParams)
-            .first();
+        // 获取总数
+        let total = 0;
+        try {
+            let countQuery = `SELECT COUNT(*) as total FROM texts_fts WHERE texts_fts MATCH ?`;
+            let countParams = [ftsQuery];
+            if (category && category !== 'all') {
+                countQuery += ` AND category = ?`;
+                countParams.push(category);
+            }
 
-        const total = countResult?.total || 0;
+            const countResult = await env.DB.prepare(countQuery)
+                .bind(...countParams)
+                .first();
+
+            total = countResult?.total || 0;
+
+            // 如果 FTS 总数为 0，尝试获取 LIKE 的总数
+            if (total === 0) {
+                let likeCountQuery = `SELECT COUNT(*) as total FROM texts WHERE (title LIKE ? OR content LIKE ?)`;
+                let likeCountParams = [`%${query}%`, `%${query}%`];
+                if (category && category !== 'all') {
+                    likeCountQuery += ` AND category = ?`;
+                    likeCountParams.push(category);
+                }
+                const likeCountResult = await env.DB.prepare(likeCountQuery)
+                    .bind(...likeCountParams)
+                    .first();
+                total = likeCountResult?.total || 0;
+            }
+        } catch (e) {
+            console.error('获取总数失败:', e);
+        }
 
         console.log(`📊 FTS5 搜索结果: ${searchResults.results?.length || 0} 条，总计: ${total} 条`);
 

@@ -60,16 +60,20 @@ class _SearchScreenState extends State<SearchScreen> {
         category: _selectedCategory,
       );
 
-      // 预加载点赞和评论数据
-      if (results.isNotEmpty) {
-        final contentIds = results.map((item) => item.filePath).toList();
-        await ContentStatsService().fetchContentStats(contentIds);
-      }
-
       setState(() {
         _results = results;
         _currentPage = 0;
       });
+
+      // 异步获取点赞和评论数据，不阻塞搜索结果显示
+      if (results.isNotEmpty) {
+        final contentIds = results.map((item) => item.filePath).toList();
+        ContentStatsService().fetchContentStats(contentIds).then((_) {
+          if (mounted) {
+            setState(() {}); // 统计数据加载完成后刷新UI
+          }
+        });
+      }
       // 搜索后重置 PageView 到第一页
       if (_pageController.hasClients) {
         _pageController.jumpToPage(0);

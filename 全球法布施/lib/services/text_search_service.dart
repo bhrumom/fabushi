@@ -54,26 +54,31 @@ class TextSearchService {
   Future<void> indexAssets() async {
     if (_isIndexed) return;
 
-    final manifestContent = await rootBundle.loadString('AssetManifest.json');
+    try {
+      final manifestContent = await rootBundle.loadString('AssetManifest.json');
+      final Map<String, dynamic> manifest = json.decode(manifestContent);
+      
+      final entries = manifest.keys
+          .where((s) => s.contains('assets/built_in/') && s.endsWith('.txt'))
+          .toList();
 
-    final entries = manifestContent
-        .split('"')
-        .where((s) => s.contains('assets/built_in/'))
-        .toList();
+      for (final path in entries) {
+        final title = path.split('/').last.replaceAll('.txt', '');
+        final parts = path.split('/');
+        final category = parts.length > 2 ? parts[2] : '其他';
 
-    for (final path in entries) {
-      if (path.endsWith('.txt')) {
-        try {
-          final content = await rootBundle.loadString(path);
-          final title = path.split('/').last.replaceAll('.txt', '');
-          final parts = path.split('/');
-          final category = parts.length > 2 ? parts[2] : '其他';
-
-          _items.add(TextItem(title: title, content: content, filePath: path, category: category));
-        } catch (e) {
-          // Skip files that can't be loaded
-        }
+        // 🚀 第一性原理优化：暂时不加载内容，仅索引标题
+        _items.add(TextItem(
+          title: title, 
+          content: '', // 搜索时主要针对标题，内容推迟加载
+          filePath: path, 
+          category: category
+        ));
       }
+      
+      print('✅ 本地索引完成: ${_items.length} 个项目');
+    } catch (e) {
+      print('❌ 本地索引失败: $e');
     }
 
     _isIndexed = true;

@@ -37,7 +37,6 @@ class FileTransferModel extends ChangeNotifier {
   double _sendRateMB = 1.0;
   int _loopCount = 0;  // 循环发送计数
   int _fieldBroadcastCount = 0;  // 场能广播次数
-  int _localLoopbackCount = 0;  // 本地回环计数
 
   // 文件相关
   List<PlatformFile> _selectedFiles = [];
@@ -116,7 +115,6 @@ class FileTransferModel extends ChangeNotifier {
   bool get isFieldEnergyMode => _isFieldEnergyMode;
   int get loopCount => _loopCount;
   int get fieldBroadcastCount => _fieldBroadcastCount;
-  int get localLoopbackCount => _localLoopbackCount;
   String get hotspotMessage => _hotspotMessage;
   bool get needsHotspotGuide => _needsHotspotGuide;
   
@@ -624,27 +622,17 @@ class FileTransferModel extends ChangeNotifier {
 
     try {
       _localLoopbackService = LocalLoopbackService(
-        onLoopCountChanged: (count) {
-          _localLoopbackCount = count;
-          _scheduleNotify();
-        },
         onLog: (msg) => debugPrint('[Loopback] $msg'),
       );
 
-      await _localLoopbackService!.initialize();
-
       final file = _selectedFiles.first;
-      Uint8List? fileBytes = file.bytes;
-      if (fileBytes == null && file.path != null) {
-        fileBytes = await File(file.path!).readAsBytes();
-      }
-
-      if (fileBytes != null) {
-        await _localLoopbackService!.start(
-          data: fileBytes,
-          fileName: file.name,
-        );
-      }
+      
+      // 直接使用文件路径或内存数据进行流式回环
+      await _localLoopbackService!.start(
+        data: file.bytes,
+        filePath: file.path,
+        fileName: file.name,
+      );
     } catch (e) {
       debugPrint('⚠️ 启动本地回环失败: $e');
     }
@@ -655,7 +643,6 @@ class FileTransferModel extends ChangeNotifier {
     _localLoopbackService?.stop();
     _localLoopbackService?.dispose();
     _localLoopbackService = null;
-    _localLoopbackCount = 0;
     _scheduleNotify();
   }
 

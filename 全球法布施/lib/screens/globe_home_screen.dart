@@ -448,33 +448,8 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                             ],
                           ),
                         ],
-                        // 本地回环状态显示
-                        if (model.localLoopbackCount > 0) ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(Icons.sync_alt, color: Colors.cyanAccent, size: 16),
-                              const SizedBox(width: 6),
-                              Text(
-                                '本地回环: ${model.localLoopbackCount} 次',
-                                style: const TextStyle(
-                                  color: Colors.cyanAccent,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                '极速进行中',
-                                style: TextStyle(
-                                  color: Colors.white54,
-                                  fontSize: 10,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                        // 本地回环开启时，显示极速进行中（可选，用户说移除状态计数，我这里把整个状态行移除或保留纯状态）
+                        // 根据用户要求“把本地回环的状态计数移除”，我将整个相关的 UI 块移除
                         const SizedBox(height: 10),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
