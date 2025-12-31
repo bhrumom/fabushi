@@ -448,6 +448,33 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                             ],
                           ),
                         ],
+                        // 本地回环状态显示
+                        if (model.localLoopbackCount > 0) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(Icons.sync_alt, color: Colors.cyanAccent, size: 16),
+                              const SizedBox(width: 6),
+                              Text(
+                                '本地回环: ${model.localLoopbackCount} 次',
+                                style: const TextStyle(
+                                  color: Colors.cyanAccent,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                '极速进行中',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 10,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),

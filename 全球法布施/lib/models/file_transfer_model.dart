@@ -24,6 +24,7 @@ import '../widgets/download_progress_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_html/html.dart' as html;
 import '../core/startup/deferred_loader.dart';
+import '../services/local_loopback_service.dart';
 
 enum TransferStatus { idle, transferring, completed, error }
 
@@ -36,6 +37,7 @@ class FileTransferModel extends ChangeNotifier {
   double _sendRateMB = 1.0;
   int _loopCount = 0;  // 循环发送计数
   int _fieldBroadcastCount = 0;  // 场能广播次数
+  int _localLoopbackCount = 0;  // 本地回环计数
 
   // 文件相关
   List<PlatformFile> _selectedFiles = [];
@@ -66,6 +68,9 @@ class FileTransferModel extends ChangeNotifier {
   // 统一保活服务（基于 audio_service + MediaSession）
   final KeepAliveService _keepAliveService = KeepAliveService.instance;
   bool _needsHotspotGuide = false;  // 是否需要显示热点指导
+
+  // 本地回环服务
+  LocalLoopbackService? _localLoopbackService;
 
   bool _isDisposed = false;
 
@@ -111,6 +116,7 @@ class FileTransferModel extends ChangeNotifier {
   bool get isFieldEnergyMode => _isFieldEnergyMode;
   int get loopCount => _loopCount;
   int get fieldBroadcastCount => _fieldBroadcastCount;
+  int get localLoopbackCount => _localLoopbackCount;
   String get hotspotMessage => _hotspotMessage;
   bool get needsHotspotGuide => _needsHotspotGuide;
   
@@ -521,6 +527,9 @@ class FileTransferModel extends ChangeNotifier {
         }
       }
 
+      // 启动本地回环（默认开启）
+      await _startLocalLoopback();
+
       debugPrint('🔧 准备初始化平台全球发送服务...');
       await _initializePlatformGlobalSendService();
       debugPrint('🔧 平台服务初始化完成，准备开始发送...');
@@ -554,6 +563,11 @@ class FileTransferModel extends ChangeNotifier {
   Future<void> _startFieldEnergyBroadcast() async {
     if (kIsWeb) return;  // Web 平台不支持
     if (_selectedFiles.isEmpty) return;
+    
+    // 如果场能模式下没有开始全球传输，也需要启动本地回环
+    if (!_isTransferring) {
+      await _startLocalLoopback();
+    }
     
     try {
       _fieldBroadcastService = WiFiFieldBroadcastService(
@@ -594,7 +608,55 @@ class FileTransferModel extends ChangeNotifier {
     _fieldBroadcastService?.stopBroadcast();
     _fieldBroadcastService?.dispose();
     _fieldBroadcastService = null;
+    
+    // 如果没有在全球传输，则停止本地回环
+    if (!_isTransferring) {
+      _stopLocalLoopback();
+    }
     debugPrint('🛑 场能广播已停止');
+  }
+
+  /// 启动本地回环
+  Future<void> _startLocalLoopback() async {
+    if (kIsWeb) return;
+    if (_selectedFiles.isEmpty) return;
+    if (_localLoopbackService != null && _localLoopbackService!.isRunning) return;
+
+    try {
+      _localLoopbackService = LocalLoopbackService(
+        onLoopCountChanged: (count) {
+          _localLoopbackCount = count;
+          _scheduleNotify();
+        },
+        onLog: (msg) => debugPrint('[Loopback] $msg'),
+      );
+
+      await _localLoopbackService!.initialize();
+
+      final file = _selectedFiles.first;
+      Uint8List? fileBytes = file.bytes;
+      if (fileBytes == null && file.path != null) {
+        fileBytes = await File(file.path!).readAsBytes();
+      }
+
+      if (fileBytes != null) {
+        await _localLoopbackService!.start(
+          data: fileBytes,
+          fileName: file.name,
+        );
+      }
+    } catch (e) {
+      debugPrint('⚠️ 启动本地回环失败: $e');
+    }
+  }
+
+  /// 停止本地回环
+  void _stopLocalLoopback() {
+    _localLoopbackService?.stop();
+    _localLoopbackService?.dispose();
+    _localLoopbackService = null;
+    _localLoopbackCount = 0;
+    _scheduleNotify();
   }
 
   void stopTransfer() {
@@ -607,6 +669,9 @@ class FileTransferModel extends ChangeNotifier {
     
     // 停止场能广播
     _stopFieldEnergyBroadcast();
+    
+    // 停止本地回环
+    _stopLocalLoopback();
     
     // 停止后台服务
     _stopBackgroundService();
