@@ -25,6 +25,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_html/html.dart' as html;
 import '../core/startup/deferred_loader.dart';
 import '../services/local_loopback_service.dart';
+import '../services/foreground_service_manager.dart';
 
 enum TransferStatus { idle, transferring, completed, error }
 

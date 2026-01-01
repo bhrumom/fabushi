@@ -524,7 +524,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
       );
       if (mounted) setState(() => _isLoading = false);
       final loader = GLTFLoader();
-      final gltf = await loader.parse(modelData.buffer.asUint8List());
+      final gltf = await loader.fromBytes(modelData.buffer.asUint8List());
       debugPrint('GLTF 解析结果: ${gltf != null ? "成功" : "失败"}');
 
       if (gltf?.scene != null) {
