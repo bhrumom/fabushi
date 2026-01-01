@@ -28,6 +28,9 @@
     <!-- 振动权限（通知增强） -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Android 14 特殊用途权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
     
     <application
         android:label="global_dharma_sharing"
@@ -37,8 +40,12 @@
         <!-- 前台服务声明 - 使用多种类型以获得更高保活优先级 -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="mediaPlayback|dataSync"
-            android:exported="false" />
+            android:foregroundServiceType="mediaPlayback|dataSync|specialUse"
+            android:exported="false">
+            <meta-data
+                android:name="android.app.foreground_service_type"
+                android:value="mediaPlayback|dataSync|specialUse" />
+        </service>
         
         <!-- audio_service 音频服务 - 用于系统级MediaSession保活 -->
         <service

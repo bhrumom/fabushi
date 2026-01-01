@@ -679,45 +679,67 @@ class FileTransferModel extends ChangeNotifier {
     _scheduleNotify();
   }
 
-  /// 启动后台服务（统一使用 audio_service MediaSession 音乐播放器通知）
-  /// 
-  /// Android 和 iOS 统一使用系统媒体播放器通知风格
+  /// 综合使用 audio_service 和 flutter_foreground_task
   Future<void> _startBackgroundService() async {
     try {
       final fileName = _selectedFiles.isNotEmpty ? _selectedFiles.first.name : '未知文件';
       
-      // Android 和 iOS 统一使用 KeepAliveService (audio_service)
-      // 这会在系统媒体控制中心显示音乐播放器风格的通知
+      // 1. 启动 KeepAliveService (audio_service)
       await _keepAliveService.start(
         audioName: fileName,
         totalCountries: _countryStatuses.length,
       );
       
-      debugPrint('✅ MediaSession 后台服务已启动 (${Platform.isAndroid ? "Android" : "iOS"})');
+      // 2. 启动专用前台服务 (flutter_foreground_task)
+      // 这会显示一个更高优先级的系统通知，在 Android 13+ 上更稳定
+      final foregroundManager = ForegroundServiceManager();
+      await foregroundManager.initialize();
+      await foregroundManager.start(
+        fileName: fileName,
+        totalCountries: _countryStatuses.length,
+      );
+      
+      // 设置前台服务按钮回调
+      ForegroundServiceManager.onMuteToggleRequested = _onToggleAudioMute;
+      ForegroundServiceManager.onStopSendingRequested = stopTransfer;
+      
+      debugPrint('✅ 综合后台服务已启动');
     } catch (e) {
       debugPrint('⚠️ 启动后台服务失败: $e');
     }
   }
   
   /// 切换音频静音状态
-  void _onToggleAudioMute() {
+  void _onToggleAudioMute() async {
     debugPrint('🔇 收到静音切换请求');
-    _keepAliveService.toggleMute();
+    await _keepAliveService.toggleMute();
+    // 同步更新前台服务通知
+    await ForegroundServiceManager().updateMuteStatus(_keepAliveService.isMuted);
   }
 
   /// 停止后台服务
   Future<void> _stopBackgroundService() async {
     try {
       await _keepAliveService.stop();
-      debugPrint('✅ MediaSession 后台服务已停止');
+      await ForegroundServiceManager().stop();
+      debugPrint('✅ 综合后台服务已停止');
     } catch (e) {
       debugPrint('⚠️ 停止后台服务失败: $e');
     }
   }
 
-  /// 更新后台服务进度（显示在 MediaSession 音乐播放器通知中）
+  /// 更新后台服务进度
   void _updateBackgroundServiceProgress(String country, int sent, int total) {
+    // 更新 audio_service 状态
     _keepAliveService.updateProgress(
+      sentCount: sent,
+      totalCount: total,
+      currentCountry: country,
+      loopCount: _loopCount,
+    );
+    
+    // 更新 flutter_foreground_task 通知
+    ForegroundServiceManager().updateProgress(
       sentCount: sent,
       totalCount: total,
       currentCountry: country,
@@ -878,19 +900,21 @@ class FileTransferModel extends ChangeNotifier {
 
   void updateProgress(int count) {
     _globalSentCount = count;
-    // 关键修复：减少持久化频率，避免过度阻塞UI
-    if (count % 10 == 0) {
-      _schedulePersist(_persistTransferState);
+    
+    // 获取当前正在发送的国家名称
+    String currentCountry = '全球';
+    if (_countryStatuses.isNotEmpty && count > 0 && count <= _countryStatuses.length) {
+      currentCountry = _countryStatuses[count - 1].countryName;
     }
     
-    // 更新后台服务进度
-    if (_countryStatuses.isNotEmpty && count > 0 && count <= _countryStatuses.length) {
-      final currentCountry = _countryStatuses[count - 1].countryName;
-      _updateBackgroundServiceProgress(currentCountry, count, _countryStatuses.length);
-    }
+    // 同步更新后台服务进度通知
+    _updateBackgroundServiceProgress(currentCountry, count, _totalCountriesCount);
     
     _scheduleNotify();
   }
+  
+  // 辅助获取总国家数
+  int get _totalCountriesCount => _countryStatuses.isNotEmpty ? _countryStatuses.length : 249;
 
   void updateDataSent(double dataMB) {
     _globalDataSentMB = dataMB;
