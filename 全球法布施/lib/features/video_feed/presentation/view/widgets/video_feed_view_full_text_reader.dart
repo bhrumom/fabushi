@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lpinyin/lpinyin.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../../../../models/sutra_table_of_contents.dart';
 import '../../../../../widgets/sutra_toc_bottom_sheet.dart';
 
@@ -585,8 +586,11 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   
   // 目录相关状态
   SutraTableOfContents? _tableOfContents;
-  final ScrollController _scrollController = ScrollController();
   int _currentParagraphIndex = 0;
+  
+  // ScrollablePositionedList 控制器
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
   
   /// 获取缓存的诵经前仪式内容
   Widget get _preludeContent => _cachedPreludeContent ??= RepaintBoundary(
@@ -602,12 +606,41 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   void initState() {
     super.initState();
     _preprocessText();
+    // 监听滚动位置变化
+    _itemPositionsListener.itemPositions.addListener(_onPositionsChanged);
   }
   
   @override
   void dispose() {
-    _scrollController.dispose();
+    _itemPositionsListener.itemPositions.removeListener(_onPositionsChanged);
     super.dispose();
+  }
+  
+  /// 根据可见项目更新当前段落索引
+  void _onPositionsChanged() {
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isEmpty) return;
+    
+    // 找到第一个完全可见或部分可见的段落项
+    // 跳过 index=0（诵经前仪式）
+    final visibleParagraphs = positions
+        .where((pos) => pos.index > 0 && pos.index <= (_processedData?.paragraphs.length ?? 0))
+        .toList();
+    
+    if (visibleParagraphs.isEmpty) return;
+    
+    // 取最靠近顶部的可见段落
+    visibleParagraphs.sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
+    final topVisible = visibleParagraphs.first;
+    
+    // index - 1 是因为 index=0 是诵经前仪式
+    final newIndex = topVisible.index - 1;
+    
+    if (newIndex != _currentParagraphIndex && newIndex >= 0) {
+      setState(() {
+        _currentParagraphIndex = newIndex;
+      });
+    }
   }
 
   Future<void> _preprocessText() async {
@@ -680,7 +713,8 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
       ),
     );
   }
-  
+
+
   /// 构建底部工具栏（微信读书风格）
   Widget _buildBottomToolbar() {
     return Container(
@@ -799,32 +833,39 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
     );
   }
   
-  /// 滚动到指定章节
+  /// 滚动到指定章节（精确跳转）
   void _scrollToChapter(SutraChapter chapter) {
-    // 计算目标段落的大致位置
-    // 每个段落大约200像素高度（估算）
-    final targetOffset = chapter.paragraphIndex * 200.0;
+    HapticFeedback.lightImpact();
+    final paragraphIndex = chapter.paragraphIndex;
+    if (paragraphIndex >= (_processedData?.paragraphs.length ?? 0)) return;
     
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        targetOffset.clamp(0, _scrollController.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeOutCubic,
+    // 精确跳转：index + 1 是因为列表中 index=0 是诵经前仪式
+    // 经文段落从 index=1 开始
+    if (_itemScrollController.isAttached) {
+      _itemScrollController.jumpTo(
+        index: paragraphIndex + 1,
+        alignment: 0.0, // 对齐到顶部
       );
     }
     
     setState(() {
-      _currentParagraphIndex = chapter.paragraphIndex;
+      _currentParagraphIndex = paragraphIndex;
     });
   }
 
   Widget _buildContent() {
-    return CustomScrollView(
-      controller: _scrollController,
-      slivers: [
-        // 固定头部：诵经前仪式（可折叠）
-        SliverToBoxAdapter(
-          child: Padding(
+    // 列表总项数 = 1（诵经前仪式） + 经文段落数 + 1（诵经结束仪式）
+    final paragraphCount = _processedData!.paragraphs.length;
+    final totalItems = 1 + paragraphCount + 1;
+    
+    return ScrollablePositionedList.builder(
+      itemScrollController: _itemScrollController,
+      itemPositionsListener: _itemPositionsListener,
+      itemCount: totalItems,
+      itemBuilder: (context, index) {
+        // index 0: 诵经前仪式
+        if (index == 0) {
+          return Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -834,7 +875,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                   subtitle: '香赞・真言・开经偈',
                   isExpanded: _isPreludeExpanded,
                   onToggle: () => setState(() => _isPreludeExpanded = !_isPreludeExpanded),
-                  content: _preludeContent, // 使用缓存的内容
+                  content: _preludeContent,
                 ),
                 const SizedBox(height: 32),
                 Container(
@@ -863,57 +904,50 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                 const SizedBox(height: 24),
               ],
             ),
-          ),
-        ),
-        // 虚拟滚动：经文段落
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final paragraph = _processedData!.paragraphs[index];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _buildParagraphWidget(paragraph),
-              );
-            },
-            childCount: _processedData!.paragraphs.length,
-          ),
-        ),
-        // 诵经结束仪式（可折叠）
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
-                const SizedBox(height: 32),
-                Container(
-                  height: 2,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        Colors.amber.withValues(alpha: 0.5),
-                        Colors.transparent,
-                      ],
-                    ),
+          );
+        }
+        
+        // index 1 ~ paragraphCount: 经文段落
+        if (index <= paragraphCount) {
+          final paragraphIndex = index - 1;
+          final paragraph = _processedData!.paragraphs[paragraphIndex];
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _buildParagraphWidget(paragraph),
+          );
+        }
+        
+        // 最后一项: 诵经结束仪式
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              const SizedBox(height: 32),
+              Container(
+                height: 2,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      Colors.amber.withValues(alpha: 0.5),
+                      Colors.transparent,
+                    ],
                   ),
                 ),
-                const SizedBox(height: 32),
-                _buildCollapsibleSection(
-                  title: '诵经结束仪式',
-                  subtitle: '补阙真言・回向偈・三皈依',
-                  isExpanded: _isEpilogueExpanded,
-                  onToggle: () => setState(() => _isEpilogueExpanded = !_isEpilogueExpanded),
-                  content: _epilogueContent,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 32),
+              _buildCollapsibleSection(
+                title: '诵经结束仪式',
+                subtitle: '补阙真言・回向偈・三皓依',
+                isExpanded: _isEpilogueExpanded,
+                onToggle: () => setState(() => _isEpilogueExpanded = !_isEpilogueExpanded),
+                content: _epilogueContent,
+              ),
+              const SizedBox(height: 40),
+            ],
           ),
-        ),
-        // 底部留白
-        const SliverToBoxAdapter(
-          child: SizedBox(height: 40),
-        ),
-      ],
+        );
+      },
     );
   }
 
