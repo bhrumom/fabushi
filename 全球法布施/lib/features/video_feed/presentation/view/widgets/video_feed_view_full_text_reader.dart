@@ -603,8 +603,17 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
     super.initState();
     _preprocessText();
   }
+  
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   Future<void> _preprocessText() async {
+    // 异步解析目录
+    final toc = SutraTableOfContents.parse(widget.fullText, widget.bookTitle);
+    
     // 异步预处理，不阻塞 UI
     final data = await TextPreprocessor.processAsync(
       widget.fullText,
@@ -614,6 +623,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
     if (mounted) {
       setState(() {
         _processedData = data;
+        _tableOfContents = toc;
         _isLoading = false;
       });
     }
@@ -661,13 +671,156 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                   ],
                 ),
               )
-            : _buildContent(),
+            : Column(
+                children: [
+                  Expanded(child: _buildContent()),
+                  _buildBottomToolbar(),
+                ],
+              ),
       ),
     );
+  }
+  
+  /// 构建底部工具栏（微信读书风格）
+  Widget _buildBottomToolbar() {
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E),
+        border: Border(
+          top: BorderSide(
+            color: Colors.white.withValues(alpha: 0.1),
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          // 目录按钮
+          _buildToolbarButton(
+            icon: Icons.menu,
+            label: '目录',
+            onTap: _showTableOfContents,
+          ),
+          // 书签按钮
+          _buildToolbarButton(
+            icon: Icons.bookmark_border,
+            label: '书签',
+            onTap: () {
+              HapticFeedback.lightImpact();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('书签功能即将上线')),
+              );
+            },
+          ),
+          // 进度按钮
+          _buildToolbarButton(
+            icon: Icons.linear_scale,
+            label: '进度',
+            onTap: () {
+              HapticFeedback.lightImpact();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('进度功能即将上线')),
+              );
+            },
+          ),
+          // 亮度按钮
+          _buildToolbarButton(
+            icon: Icons.brightness_6,
+            label: '亮度',
+            onTap: () {
+              HapticFeedback.lightImpact();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('亮度设置即将上线')),
+              );
+            },
+          ),
+          // 字体按钮
+          _buildToolbarButton(
+            icon: Icons.text_fields,
+            label: '字体',
+            onTap: () {
+              HapticFeedback.lightImpact();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('字体设置即将上线')),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildToolbarButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white70, size: 22),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  /// 显示目录面板
+  void _showTableOfContents() {
+    HapticFeedback.lightImpact();
+    
+    if (_tableOfContents == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('目录加载中...')),
+      );
+      return;
+    }
+    
+    SutraTocBottomSheet.show(
+      context,
+      tableOfContents: _tableOfContents!,
+      currentParagraphIndex: _currentParagraphIndex,
+      onChapterTap: _scrollToChapter,
+    );
+  }
+  
+  /// 滚动到指定章节
+  void _scrollToChapter(SutraChapter chapter) {
+    // 计算目标段落的大致位置
+    // 每个段落大约200像素高度（估算）
+    final targetOffset = chapter.paragraphIndex * 200.0;
+    
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        targetOffset.clamp(0, _scrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    
+    setState(() {
+      _currentParagraphIndex = chapter.paragraphIndex;
+    });
   }
 
   Widget _buildContent() {
     return CustomScrollView(
+      controller: _scrollController,
       slivers: [
         // 固定头部：诵经前仪式（可折叠）
         SliverToBoxAdapter(
