@@ -6,6 +6,7 @@ import 'package:three_js_math/three_js_math.dart' as tmath;
 import 'package:three_js_advanced_loaders/three_js_advanced_loaders.dart';
 import 'dart:async';
 import 'dart:math' as math;
+import '../services/asset_loader_service.dart';
 
 class BuddhaModelScreen extends StatefulWidget {
   final bool autoRotate;
@@ -507,11 +508,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
     try {
       // 统一使用相同路径，Web 版本的模型放在 web/assets/models/ 目录
       // 原生平台的模型放在 assets/models/ 目录
-      const modelPath = 'assets/models/佛像模型.glb';
-      debugPrint('开始加载佛像模型: $modelPath (kIsWeb: $kIsWeb)');
+      debugPrint('开始从 AssetLoaderService 加载佛像模型 (kIsWeb: $kIsWeb)');
+      final modelData = await AssetLoaderService.loadBuddhaModel();
       final loader = GLTFLoader();
-      final gltf = await loader.fromAsset(modelPath);
-      debugPrint('GLTF 加载结果: ${gltf != null ? "成功" : "失败"}');
+      final gltf = await loader.parse(modelData.buffer.asUint8List());
+      debugPrint('GLTF 解析结果: ${gltf != null ? "成功" : "失败"}');
 
       if (gltf?.scene != null) {
         debugPrint('场景存在，添加到 threeJs.scene');

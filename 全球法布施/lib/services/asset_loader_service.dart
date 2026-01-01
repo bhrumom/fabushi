@@ -9,9 +9,8 @@ import 'dart:io';
 /// 用于从 CDN 加载大型 3D 模型等资源,避免打包到应用中
 /// 实现缓存机制以提高后续加载速度
 class AssetLoaderService {
-  static const String defaultCdnBaseUrl = 'https://your-cdn.com/models/';
+  static const String defaultCdnBaseUrl = 'https://flutter.ombhrum.com/r2?file=';
   
-  // TODO: 配置实际的 CDN 地址 (Cloudflare R2 或其他)
   static String cdnBaseUrl = defaultCdnBaseUrl;
   
   static final Map<String, Uint8List> _memoryCache = {};
@@ -23,7 +22,7 @@ class AssetLoaderService {
     void Function(double progress)? onProgress
   }) async {
     return await _loadAsset(
-      'buddha_model.glb',
+      'models/buddha_model.glb',
       onProgress: onProgress,
     );
   }
