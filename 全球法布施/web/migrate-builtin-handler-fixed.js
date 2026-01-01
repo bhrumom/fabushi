@@ -176,18 +176,21 @@ export async function handleFullTextSearch(request, env) {
         const ftsQuery = query.split('').filter(c => c.trim()).join(' ') + '*';
         console.log(`🔎 转换 FTS 查询: "${ftsQuery}"`);
 
+        // FTS5 虚拟表只有 title, content, category 列
+        // 需要通过 rowid JOIN texts 表获取完整信息
         let searchQuery = `
             SELECT 
-                f.id, f.title, f.category, f.file_path, f.word_count,
+                t.id, t.title, t.category, t.file_path, t.word_count,
                 snippet(texts_fts, 1, '<b>', '</b>', '...', 64) as snippet
-            FROM texts_fts f
+            FROM texts_fts
+            JOIN texts t ON texts_fts.rowid = t.rowid
             WHERE texts_fts MATCH ?
         `;
 
         let params = [ftsQuery];
 
         if (category && category !== 'all') {
-            searchQuery += ` AND category = ?`;
+            searchQuery += ` AND t.category = ?`;
             params.push(category);
         }
 
