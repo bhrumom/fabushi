@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lpinyin/lpinyin.dart';
+import '../../../../../models/sutra_table_of_contents.dart';
+import '../../../../../widgets/sutra_toc_bottom_sheet.dart';
 
 // ============================================================================
 // 第一性原理极致优化版本
@@ -580,6 +582,11 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   // 延迟缓存的仪式内容（避免重复构建）
   Widget? _cachedPreludeContent;
   Widget? _cachedEpilogueContent;
+  
+  // 目录相关状态
+  SutraTableOfContents? _tableOfContents;
+  final ScrollController _scrollController = ScrollController();
+  int _currentParagraphIndex = 0;
   
   /// 获取缓存的诵经前仪式内容
   Widget get _preludeContent => _cachedPreludeContent ??= RepaintBoundary(
