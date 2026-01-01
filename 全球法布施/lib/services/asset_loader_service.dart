@@ -72,12 +72,27 @@ class AssetLoaderService {
     final url = '$cdnBaseUrl$fileName';
     
     try {
-      final response = await http.get(Uri.parse(url));
+      final client = http.Client();
+      final request = http.Request('GET', Uri.parse(url));
+      final response = await client.send(request);
       
       if (response.statusCode == 200) {
-        onProgress?.call(1.0);
-        return response.bodyBytes;
+        final total = response.contentLength ?? 0;
+        int received = 0;
+        final bytes = <int>[];
+        
+        await for (final chunk in response.stream) {
+          bytes.addAll(chunk);
+          received += chunk.length;
+          if (total > 0) {
+            onProgress?.call(received / total);
+          }
+        }
+        
+        client.close();
+        return Uint8List.fromList(bytes);
       } else {
+        client.close();
         throw Exception('下载失败: HTTP ${response.statusCode}');
       }
     } catch (e) {
@@ -89,6 +104,7 @@ class AssetLoaderService {
         final fallbackUrl = '$defaultCdnBaseUrl$fileName';
         final response = await http.get(Uri.parse(fallbackUrl));
         if (response.statusCode == 200) {
+          onProgress?.call(1.0);
           return response.bodyBytes;
         }
       }

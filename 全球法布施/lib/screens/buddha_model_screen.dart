@@ -41,6 +41,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
   int _renderErrorCount = 0; // 渲染错误计数
   DateTime? _lastSuccessfulRender; // 上次成功渲染时间
   
+  bool _isLoading = true;
+  double _loadingProgress = 0.0;
+  
   // 香相关
   three.Mesh? _incenseStick;
   three.Mesh? _burningTip;
@@ -509,7 +512,17 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
       // 统一使用相同路径，Web 版本的模型放在 web/assets/models/ 目录
       // 原生平台的模型放在 assets/models/ 目录
       debugPrint('开始从 AssetLoaderService 加载佛像模型 (kIsWeb: $kIsWeb)');
-      final modelData = await AssetLoaderService.loadBuddhaModel();
+      if (mounted) setState(() => _isLoading = true);
+      final modelData = await AssetLoaderService.loadBuddhaModel(
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _loadingProgress = progress;
+            });
+          }
+        },
+      );
+      if (mounted) setState(() => _isLoading = false);
       final loader = GLTFLoader();
       final gltf = await loader.parse(modelData.buffer.asUint8List());
       debugPrint('GLTF 解析结果: ${gltf != null ? "成功" : "失败"}');
@@ -615,9 +628,38 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
         _isUserDragging = false;
         _lastPointerX = null;
       },
-      child: Container(
-        color: const Color(0xFF0B0E14), // 深蓝色背景作为后备
-        child: threeJs.build(),
+      child: Stack(
+        children: [
+          Container(
+            color: const Color(0xFF0B0E14), // 深蓝色背景作为后备
+            child: threeJs.build(),
+          ),
+          if (_isLoading)
+            Positioned.fill(
+              child: Container(
+                color: const Color(0xFF0B0E14).withOpacity(0.8),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(
+                        color: Color(0xFFFFD700), // 金色
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '恭请佛像... ${(_loadingProgress * 100).toInt()}%',
+                        style: const TextStyle(
+                          color: Color(0xFFFFD700),
+                          fontSize: 14,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
