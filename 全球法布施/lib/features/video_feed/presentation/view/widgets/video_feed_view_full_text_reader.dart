@@ -842,9 +842,11 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
     // 精确跳转：index + 1 是因为列表中 index=0 是诵经前仪式
     // 经文段落从 index=1 开始
     if (_itemScrollController.isAttached) {
-      _itemScrollController.jumpTo(
+      _itemScrollController.scrollTo(
         index: paragraphIndex + 1,
         alignment: 0.0, // 对齐到顶部
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
       );
     }
     

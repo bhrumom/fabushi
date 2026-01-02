@@ -103,7 +103,18 @@ class SutraTableOfContents {
   /// - 品：`XX品第X`、`第X品`
   static SutraTableOfContents parse(String content, String sutraTitle) {
     final chapters = <SutraChapter>[];
-    final paragraphs = content.split(RegExp(r'[\n]+'));
+    final rawParagraphs = content.split(RegExp(r'[\n]+'));
+    
+    // 过滤空段落，与 TextPreprocessor 保持一致
+    final paragraphs = <String>[];
+    final rawToProcessedIndex = <int, int>{}; // 原始索引 -> 处理后索引的映射
+    
+    for (int i = 0; i < rawParagraphs.length; i++) {
+      if (rawParagraphs[i].trim().isNotEmpty) {
+        rawToProcessedIndex[i] = paragraphs.length;
+        paragraphs.add(rawParagraphs[i]);
+      }
+    }
     
     // 中文数字映射
     const chineseNumbers = '一二三四五六七八九十百千';
@@ -124,12 +135,15 @@ class SutraTableOfContents {
     
     int currentPosition = 0;
     
-    for (int i = 0; i < paragraphs.length; i++) {
-      final paragraph = paragraphs[i].trim();
+    for (int rawIndex = 0; rawIndex < rawParagraphs.length; rawIndex++) {
+      final paragraph = rawParagraphs[rawIndex].trim();
       if (paragraph.isEmpty) {
-        currentPosition += paragraphs[i].length + 1; // +1 for newline
+        currentPosition += rawParagraphs[rawIndex].length + 1; // +1 for newline
         continue;
       }
+      
+      // 获取处理后的段落索引
+      final processedIndex = rawToProcessedIndex[rawIndex]!;
       
       // 检测卷
       for (final pattern in volumePatterns) {
@@ -142,7 +156,7 @@ class SutraTableOfContents {
               title: title,
               type: ChapterType.volume,
               startPosition: currentPosition,
-              paragraphIndex: i,
+              paragraphIndex: processedIndex,
               level: 0,
             ));
             break; // 找到一个卷就跳过
@@ -158,13 +172,13 @@ class SutraTableOfContents {
           if (_isValidChapterTitle(paragraph, title)) {
             // 避免与卷重复添加
             final isDuplicate = chapters.any((c) => 
-                c.paragraphIndex == i && c.title == title);
+                c.paragraphIndex == processedIndex && c.title == title);
             if (!isDuplicate) {
               chapters.add(SutraChapter(
                 title: title,
                 type: ChapterType.chapter,
                 startPosition: currentPosition,
-                paragraphIndex: i,
+                paragraphIndex: processedIndex,
                 level: 1,
               ));
             }
@@ -173,7 +187,7 @@ class SutraTableOfContents {
         }
       }
       
-      currentPosition += paragraphs[i].length + 1;
+      currentPosition += rawParagraphs[rawIndex].length + 1;
     }
     
     // 按位置排序
