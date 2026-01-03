@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../utils/search_utils.dart';
 
 class TextItem {
   final int? id;
@@ -67,10 +68,18 @@ class TextSearchService {
         final parts = path.split('/');
         final category = parts.length > 2 ? parts[2] : '其他';
 
-        // 🚀 第一性原理优化：暂时不加载内容，仅索引标题
+
+
+        String content = '';
+        try {
+          content = await rootBundle.loadString(path);
+        } catch (e) {
+          print('加载内容失败: $path');
+        }
+
         _items.add(TextItem(
           title: title, 
-          content: '', // 搜索时主要针对标题，内容推迟加载
+          content: content,
           filePath: path, 
           category: category
         ));
@@ -88,14 +97,19 @@ class TextSearchService {
   List<TextItem> searchLocal(String query) {
     if (query.isEmpty) return [];
 
-    final lowerQuery = query.toLowerCase();
-    return _items
-        .where(
-          (item) =>
-              item.title.toLowerCase().contains(lowerQuery) ||
-              item.content.toLowerCase().contains(lowerQuery),
-        )
-        .toList();
+    // 1. 优先匹配标题
+    final titleMatches = _items.where((item) {
+      return SearchUtils.fuzzyMatch(item.title, query);
+    }).toList();
+
+    if (titleMatches.isNotEmpty) {
+      return titleMatches;
+    }
+
+    // 2. 如果标题没有匹配，再匹配内容
+    return _items.where((item) {
+      return SearchUtils.fuzzyMatch(item.content, query);
+    }).toList();
   }
 
   // 远程搜索（使用D1数据库）
@@ -159,6 +173,15 @@ class TextSearchService {
             print('📊 分页信息: total=${pagination['total']}, limit=${pagination['limit']}, offset=${pagination['offset']}');
           }
           
+          // 如果远程搜索没有结果，尝试本地搜索
+          if (results.isEmpty) {
+            print('⚠️ 远程搜索无结果，转为本地搜索...');
+            if (!_isIndexed) {
+              await indexAssets();
+            }
+            return searchLocal(query);
+          }
+
           return results.map((json) => TextItem(
             id: _parseId(json['id']),
             title: json['title'] ?? '',

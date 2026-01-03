@@ -85,7 +85,6 @@ void main() async {
     } catch (e) {
       debugPrint('⚠️ 预加载启动失败: $e');
     }
-    }
   });
 
   // 🚀 初始化语义NLP服务（轻量级，不阻塞）

@@ -53,6 +53,23 @@ void main() {
       expect(sorted1, sorted2);
     });
 
+    test('processAndSortLargeText should split and sort correctly', () async {
+      const rawText = '如是我闻。读诵此经，功德无量。尔时世尊。';
+      
+      final sorted = await service.processAndSortLargeText(rawText);
+      
+      // 验证：
+      // 1. 分句是否正确（3句：如是我闻, 读诵此经，功德无量（整句）, 尔时世尊）
+      // "读诵此经，功德无量。" 现在作为一个整体，因为中间是逗号
+      
+      expect(sorted.length, 3);
+      // 第一句应该是包含"功德无量"的那句整句
+      expect(sorted[0], contains('功德无量')); 
+      expect(sorted[0], contains('读诵此经')); // 确认逗号没切断
+      expect(sorted.any((s) => s.contains('尔时世尊')), true); // 次高分
+      expect(sorted.contains('如是我闻'), true);
+    });
+
     test('getPrioritySentences should return limited top sentences', () async {
       final sentences = [
         'Sentence A (功德)',

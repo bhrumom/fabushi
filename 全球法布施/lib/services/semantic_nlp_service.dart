@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:tflite_flutter_helper/tflite_flutter_helper.dart'; 
 
 /// 语义优先服务 - 极致性能 + 精确语义
 /// 
@@ -16,6 +20,7 @@ class SemanticNlpService {
   // TFLite 模型状态
   bool _isModelLoaded = false;
   bool _isInitializing = false;
+  // BertNLClassifier? _classifier; // BERT分类器
 
   // LRU缓存 - 基于文本哈希快速查找
   final _cache = <int, List<_ScoredSentence>>{};
@@ -75,15 +80,22 @@ class SemanticNlpService {
     _isInitializing = true;
 
     try {
-      // TODO: 未来可加载TFLite模型
-      // _interpreter = await Interpreter.fromAsset('assets/models/text_classifier.tflite');
-      // _isModelLoaded = true;
-      
-      // 目前使用快速路径（正则匹配）
-      debugPrint('📖 SemanticNlpService: 初始化完成，使用快速路径模式');
-      _isModelLoaded = false; // 暂未加载模型
+      // 尝试加载 MobileBERT 模型
+      // 检查 asset 是否存在（通过异常捕获）
+      try {
+        final options = BertNLClassifierOptions();
+        _classifier = await BertNLClassifier.createFromFile(
+          'assets/models/mobilebert_quant_chinese.tflite', 
+          options: options,
+        );
+        _isModelLoaded = true;
+        debugPrint('📖 SemanticNlpService: MobileBERT 模型加载成功，启用真·NLP模式');
+      } catch (e) {
+        debugPrint('📖 SemanticNlpService: 未找到内置模型文件，降级为规则引擎模式');
+        _isModelLoaded = false;
+      }
     } catch (e) {
-      debugPrint('📖 SemanticNlpService: 初始化失败: $e');
+      debugPrint('📖 SemanticNlpService: 模型初始化异常: $e');
       _isModelLoaded = false;
     } finally {
       _isInitializing = false;
@@ -114,6 +126,40 @@ class SemanticNlpService {
     _updateCache(hash, scored);
 
     debugPrint('📖 SemanticNlpService: 排序完成，高优先句数: ${scored.where((s) => s.score > 1.0).length}/${scored.length}');
+
+    return scored.map((s) => s.text).toList();
+  }
+
+  /// 处理并排序超长文本（全后台执行）
+  /// 
+  /// 针对5万字以上大文本优化：
+  /// 1. 分句 (Split)
+  /// 2. 清洗 (Trim)
+  /// 3. 打分 (Score)
+  /// 4. 排序 (Sort)
+  /// 
+  /// 全链路在后台Isolate执行，主线程零卡顿
+  Future<List<String>> processAndSortLargeText(String rawText) async {
+    if (rawText.isEmpty) return [];
+
+    // 计算缓存键（基于原始文本哈希）
+    final hash = rawText.hashCode;
+
+    // 缓存命中 - 直接返回
+    if (_cache.containsKey(hash)) {
+      debugPrint('📖 SemanticNlpService: 缓存命中 (大文本)');
+      return _cache[hash]!.map((s) => s.text).toList();
+    }
+
+    debugPrint('📖 SemanticNlpService: 开始处理大文本 (${rawText.length} chars)...');
+    
+    // 后台Isolate执行 - 不阻塞UI
+    final scored = await compute(_processTextInIsolate, rawText);
+
+    // 更新缓存
+    _updateCache(hash, scored);
+
+    debugPrint('📖 SemanticNlpService: 大文本处理完成，生成 ${scored.length} 个句子');
 
     return scored.map((s) => s.text).toList();
   }
@@ -151,6 +197,26 @@ class _ScoredSentence {
     required this.score,
     required this.originalIndex,
   });
+}
+
+/// 顶层函数：在后台Isolate中执行完整处理流程（分句+分析）
+List<_ScoredSentence> _processTextInIsolate(String rawText) {
+  // 1. 分句 (Isolate内执行)
+  // [NEW] 升级为整句切分：仅按句号、问号、感叹号、换行符切分
+  // 保留逗号在句子内部，提供完整语义上下文
+  final parts = rawText.split(RegExp(r'[。！？\n]+'));
+  final sentences = <String>[];
+  
+  for (final p in parts) {
+    final t = p.trim();
+    // 简单的内容检查
+    if (t.isNotEmpty && RegExp(r'[\u4e00-\u9fff\u3400-\u4dbfa-zA-Z0-9]').hasMatch(t)) {
+      sentences.add(t);
+    }
+  }
+
+  // 2. 分析与排序复用已有逻辑
+  return _analyzeSentencesInIsolate(sentences);
 }
 
 /// 顶层函数：在后台Isolate中执行语义分析
