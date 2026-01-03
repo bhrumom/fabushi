@@ -15,9 +15,30 @@ class CloudflareTextService {
   static final List<Map<String, dynamic>> _preloadQueue = [];
   static bool _isPreloading = false;
   
+  /// 🚀 记录最近已使用的素材，避免重复
+  static final Set<String> _recentlyUsedPaths = {};
+  static const int _maxRecentlyUsed = 30;  // 最多记录30个最近使用的
+  
   /// 🚀 第一性原理优化：减少预加载队列大小
   /// 每个文本内容约 20-100KB，从 21 减少到 10 节省约 1MB 内存
   static const int _queueSize = 10;
+  
+  /// 标记素材为最近已使用
+  static void _markAsRecentlyUsed(String path) {
+    _recentlyUsedPaths.add(path);
+    // 超过最大数量时，移除最早的（但Set没有顺序，所以只保留限制）
+    if (_recentlyUsedPaths.length > _maxRecentlyUsed) {
+      // 清除一半，保持最近的
+      final toKeep = _recentlyUsedPaths.toList().sublist(_recentlyUsedPaths.length ~/ 2);
+      _recentlyUsedPaths.clear();
+      _recentlyUsedPaths.addAll(toKeep);
+    }
+  }
+  
+  /// 检查素材是否最近使用过
+  static bool _isRecentlyUsed(String path) {
+    return _recentlyUsedPaths.contains(path);
+  }
   
   final SharedAssetManager _sharedAssetManager = SharedAssetManager();
 
@@ -104,6 +125,11 @@ class CloudflareTextService {
       // 🚀 极速返回：队列有内容时秒返回
       if (_preloadQueue.isNotEmpty) {
         final content = _preloadQueue.removeAt(0);
+        // 记录已使用的素材
+        final filePath = content['filePath'] as String?;
+        if (filePath != null) {
+          _markAsRecentlyUsed(filePath);
+        }
         _refillQueue();
         print('🚀 队列有内容，秒返回 (剩余: ${_preloadQueue.length})');
         return content;
@@ -329,19 +355,36 @@ class CloudflareTextService {
       
       print('📊 缓存文件数量: ${cachedFiles.length}/${txtFiles.length}');
       
-      // 选择策略优化：缓存足够多(>=5)才优先使用，否则增加多样性
-      if (cachedFiles.length >= 5) {
-        // 缓存足够多，从已缓存文件中随机选择
+      // 🔧 排除最近使用过的文件，增加多样性
+      final availableCached = cachedFiles.where((f) => !_isRecentlyUsed(f)).toList();
+      final availablePreferred = preferredFiles.where((f) => !_isRecentlyUsed(f)).toList();
+      final availableTxt = txtFiles.where((f) => !_isRecentlyUsed(f)).toList();
+      
+      print('📊 排除最近使用后：缓存=${availableCached.length}, 小文件=${availablePreferred.length}, 总可用=${availableTxt.length}');
+      
+      // 选择策略优化：优先选择未使用过的缓存文件
+      if (availableCached.isNotEmpty) {
+        // 从未使用过的缓存文件中随机选择
+        selectedFile = availableCached[_random.nextInt(availableCached.length)];
+        print('🚀 优先加载未使用缓存: $selectedFile');
+      } else if (cachedFiles.isNotEmpty) {
+        // 如果所有缓存都用过了，清空记录并重新选择
+        _recentlyUsedPaths.clear();
         selectedFile = cachedFiles[_random.nextInt(cachedFiles.length)];
-        print('🚀 优先加载已缓存文件: $selectedFile');
-      } else if (preferredFiles.isNotEmpty) {
-        // 没有缓存，从小文件中选择
-        selectedFile = preferredFiles[_random.nextInt(preferredFiles.length)];
-        print('📁 选择小文件加载: $selectedFile');
+        print('🔄 所有缓存已用过,清空记录后选择: $selectedFile');
+      } else if (availablePreferred.isNotEmpty) {
+        // 没有缓存，从未使用过的小文件中选择
+        selectedFile = availablePreferred[_random.nextInt(availablePreferred.length)];
+        print('📁 选择未使用小文件: $selectedFile');
+      } else if (availableTxt.isNotEmpty) {
+        // 从未使用过的所有文件中随机选择
+        selectedFile = availableTxt[_random.nextInt(availableTxt.length)];
+        print('🎲 随机选择未使用文件: $selectedFile');
       } else {
-        // 随机选择
+        // 所有文件都用过了，清空记录
+        _recentlyUsedPaths.clear();
         selectedFile = txtFiles[_random.nextInt(txtFiles.length)];
-        print('🎲 随机选择文件: $selectedFile');
+        print('🔄 所有文件已用过,清空后随机: $selectedFile');
       }
 
       // 修正路径：如果路径不包含built_in，则添加

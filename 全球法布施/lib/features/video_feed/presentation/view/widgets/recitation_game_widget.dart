@@ -10,6 +10,7 @@ enum RecitationState {
   playing,   // 游戏中
   success,   // 成功
   failed,    // 失败
+  completed, // 全部完成
 }
 
 /// 背诵游戏组件
@@ -19,14 +20,15 @@ enum RecitationState {
 /// 2. 打乱词序让用户按正确顺序点击
 /// 3. 3次错误机会，全错重新闪现
 /// 4. 15秒倒计时，超时重新闪现
+/// 5. 支持多句连续背诵
 class RecitationGameWidget extends StatefulWidget {
   const RecitationGameWidget({
-    required this.sentence,
+    required this.sentences,
     super.key,
   });
 
-  /// 要背诵的句子
-  final String sentence;
+  /// 要背诵的句子列表（每句不超过21个字）
+  final List<String> sentences;
 
   @override
   State<RecitationGameWidget> createState() => _RecitationGameWidgetState();
@@ -36,6 +38,15 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     with TickerProviderStateMixin {
   /// 游戏状态
   RecitationState _state = RecitationState.idle;
+  
+  /// 当前句子索引
+  int _currentSentenceIndex = 0;
+  
+  /// 当前要背诵的句子
+  String get _currentSentence => 
+      _currentSentenceIndex < widget.sentences.length 
+          ? widget.sentences[_currentSentenceIndex] 
+          : '';
   
   /// 原始词列表（正确顺序）
   List<String> _originalWords = [];
@@ -69,7 +80,6 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
   @override
   void initState() {
     super.initState();
-    _parseWords();
     _initAnimations();
     // 自动开始闪现
     Future.delayed(const Duration(milliseconds: 500), _startFlashing);
@@ -106,8 +116,8 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
   void _parseWords() {
     _originalWords = [];
     // 按字符拆分（中文逐字）
-    for (int i = 0; i < widget.sentence.length; i++) {
-      final char = widget.sentence[i];
+    for (int i = 0; i < _currentSentence.length; i++) {
+      final char = _currentSentence[i];
       if (char.trim().isNotEmpty) {
         _originalWords.add(char);
       }
@@ -116,6 +126,8 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
 
   /// 开始闪现阶段
   void _startFlashing() {
+    _parseWords();
+    
     setState(() {
       _state = RecitationState.flashing;
       _selectedWords = [];
@@ -177,7 +189,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     
     _resultController?.forward(from: 0.0);
     
-    // 2秒后重新开始
+    // 2秒后重新开始当前句子
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
         _remainingChances = 3;
@@ -203,9 +215,9 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
         _selectedIndices.add(shuffledIndex);
       });
       
-      // 检查是否完成
+      // 检查是否完成当前句子
       if (_selectedWords.length == _originalWords.length) {
-        _onSuccess();
+        _onSentenceSuccess();
       }
     } else {
       // 错误选择
@@ -220,8 +232,8 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     }
   }
 
-  /// 成功完成
-  void _onSuccess() {
+  /// 当前句子背诵成功
+  void _onSentenceSuccess() {
     _countdownTimer?.cancel();
     setState(() {
       _state = RecitationState.success;
@@ -229,10 +241,28 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     
     _resultController?.forward(from: 0.0);
     
-    // 2秒后返回
-    Future.delayed(const Duration(seconds: 2), () {
+    // 1.5秒后检查是否还有下一句
+    Future.delayed(const Duration(milliseconds: 1500), () {
       if (mounted) {
-        Navigator.pop(context);
+        if (_currentSentenceIndex < widget.sentences.length - 1) {
+          // 进入下一句
+          setState(() {
+            _currentSentenceIndex++;
+            _remainingChances = 3;
+          });
+          _startFlashing();
+        } else {
+          // 全部完成
+          setState(() {
+            _state = RecitationState.completed;
+          });
+          // 2秒后返回
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted) {
+              Navigator.pop(context);
+            }
+          });
+        }
       }
     });
   }
@@ -246,7 +276,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     
     _resultController?.forward(from: 0.0);
     
-    // 2秒后重新开始
+    // 2秒后重新开始当前句子
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
         _remainingChances = 3;
@@ -271,6 +301,19 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
           style: TextStyle(color: Colors.white, fontSize: 18),
         ),
         centerTitle: true,
+        actions: [
+          // 进度指示
+          if (widget.sentences.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(
+                child: Text(
+                  '${_currentSentenceIndex + 1}/${widget.sentences.length}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ),
+            ),
+        ],
       ),
       body: SafeArea(
         child: _buildBody(),
@@ -292,6 +335,8 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
         return _buildSuccessView();
       case RecitationState.failed:
         return _buildFailedView();
+      case RecitationState.completed:
+        return _buildCompletedView();
     }
   }
 
@@ -305,16 +350,28 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
             opacity: _flashAnimation!.value > 0.5 
                 ? 2 * (1 - _flashAnimation!.value)
                 : 2 * _flashAnimation!.value,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                widget.sentence,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.amber,
-                  height: 1.5,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.all(24),
+              constraints: const BoxConstraints(maxHeight: 300),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.amber.withValues(alpha: 0.3),
+                  width: 2,
+                ),
+              ),
+              child: SingleChildScrollView(
+                child: Text(
+                  _currentSentence,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.amber,
+                    height: 1.5,
+                  ),
                 ),
               ),
             ),
@@ -402,7 +459,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24),
       padding: const EdgeInsets.all(16),
-      constraints: const BoxConstraints(minHeight: 100),
+      constraints: const BoxConstraints(minHeight: 100, maxHeight: 200),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(16),
@@ -411,17 +468,19 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
           width: 1,
         ),
       ),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          ..._selectedWords.map((word) => _buildWordChip(word, isSelected: true)),
-          // 占位符显示剩余需要选择的词数
-          ...List.generate(
-            _originalWords.length - _selectedWords.length,
-            (index) => _buildPlaceholder(),
-          ),
-        ],
+      child: SingleChildScrollView(
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ..._selectedWords.map((word) => _buildWordChip(word, isSelected: true)),
+            // 占位符显示剩余需要选择的词数
+            ...List.generate(
+              _originalWords.length - _selectedWords.length,
+              (index) => _buildPlaceholder(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -430,21 +489,24 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
   Widget _buildCandidateWords() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        alignment: WrapAlignment.center,
-        children: List.generate(_shuffledWords.length, (index) {
-          final isSelected = _selectedIndices.contains(index);
-          return GestureDetector(
-            onTap: isSelected ? null : () => _onWordTap(index),
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 200),
-              opacity: isSelected ? 0.3 : 1.0,
-              child: _buildWordButton(_shuffledWords[index], isSelected: isSelected),
-            ),
-          );
-        }),
+      constraints: const BoxConstraints(maxHeight: 250),
+      child: SingleChildScrollView(
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          alignment: WrapAlignment.center,
+          children: List.generate(_shuffledWords.length, (index) {
+            final isSelected = _selectedIndices.contains(index);
+            return GestureDetector(
+              onTap: isSelected ? null : () => _onWordTap(index),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 200),
+                opacity: isSelected ? 0.3 : 1.0,
+                child: _buildWordButton(_shuffledWords[index], isSelected: isSelected),
+              ),
+            );
+          }),
+        ),
       ),
     );
   }
@@ -525,8 +587,10 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     );
   }
 
-  /// 成功视图
+  /// 成功视图（单句成功）
   Widget _buildSuccessView() {
+    final hasMoreSentences = _currentSentenceIndex < widget.sentences.length - 1;
+    
     return AnimatedBuilder(
       animation: _resultAnimation!,
       builder: (context, child) {
@@ -567,9 +631,9 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  '背诵成功',
-                  style: TextStyle(
+                Text(
+                  hasMoreSentences ? '继续下一句...' : '背诵成功',
+                  style: const TextStyle(
                     fontSize: 16,
                     color: Colors.white70,
                   ),
@@ -638,6 +702,55 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
           ),
         );
       },
+    );
+  }
+
+  /// 全部完成视图
+  Widget _buildCompletedView() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.amber.withValues(alpha: 0.4),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.emoji_events,
+              size: 64,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            '🎉 全部完成！',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '共背诵 ${widget.sentences.length} 句',
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.white70,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

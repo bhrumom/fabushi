@@ -87,6 +87,14 @@ dependencies:
   flutter_tts: ^4.2.0  # 文字转语音
   workmanager: ^0.6.0  # 后台任务恢复（应用被杀后自动重启）
 
+  # 语音识别与录音（使用 Sherpa-ONNX 离线识别 + flutter_sound 音频流）
+  sherpa_onnx: ^1.12.20       # Sherpa-ONNX 离线语音识别（开源、支持中文流式识别）
+  flutter_sound: ^9.16.3      # 音频流捕获和录音
+  audio_session: ^0.1.21      # 音频会话管理（iOS 需要）
+
+  # TensorFlow Lite - 轻量级NLP语义分析
+  tflite_flutter: ^0.11.0     # TFLite Flutter插件
+
 
   # 权限
   permission_handler: ^12.0.1

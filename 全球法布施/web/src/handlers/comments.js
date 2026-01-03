@@ -19,7 +19,7 @@ export async function handleGetComments(request, env, db) {
         // 使用content_id统一标识（替代原来的video_id）
         const comments = await db.db.prepare(`
       SELECT 
-        c.id, c.content_id, c.username as user_id, c.content, c.created_at, c.parent_id, c.like_count, c.tag,
+        c.id, c.content_id, c.username as user_id, c.content, c.created_at, c.parent_id, c.like_count, c.tag, c.main_practice,
         u.username, u.nickname, u.avatar
       FROM comments c
       LEFT JOIN users u ON c.username = u.username
@@ -60,7 +60,7 @@ export async function handlePostComment(request, env, db) {
         }
 
         // 支持 contentId 和 videoId（向后兼容）
-        const { videoId, contentId: requestContentId, content, parentId, tag, videoTitle, filePath } = await request.json();
+        const { videoId, contentId: requestContentId, content, parentId, tag, videoTitle, filePath, mainPractice } = await request.json();
         const contentId = requestContentId || filePath || videoId;
 
         if (!contentId || !content) {
@@ -77,9 +77,9 @@ export async function handlePostComment(request, env, db) {
 
         // 插入评论（使用统一的 content_id，同时填充 video_id 和 user_id 保持向后兼容）
         const result = await db.db.prepare(`
-      INSERT INTO comments (content_id, video_id, username, user_id, content, created_at, parent_id, tag, content_title, sync_version)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-    `).bind(contentId, contentId, tokenData.username, tokenData.username, content, now, parentId || null, tag || null, videoTitle || null).run();
+      INSERT INTO comments (content_id, video_id, username, user_id, content, created_at, parent_id, tag, content_title, main_practice, sync_version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    `).bind(contentId, contentId, tokenData.username, tokenData.username, content, now, parentId || null, tag || null, videoTitle || null, mainPractice || null).run();
 
         // 同步更新 content_metadata 的 comment_count
         await db.db.prepare(`
@@ -91,10 +91,10 @@ export async function handlePostComment(request, env, db) {
               comment_count = comment_count + 1
         `).bind(contentId, videoTitle || null, filePath || null).run();
 
-        // 获取新插入的评论详情（包含用户信息、标签、内容标题）
+        // 获取新插入的评论详情（包含用户信息、标签、内容标题、主修功课）
         const newComment = await db.db.prepare(`
       SELECT 
-        c.id, c.content_id, c.username as user_id, c.content, c.created_at, c.parent_id, c.like_count, c.tag, c.content_title,
+        c.id, c.content_id, c.username as user_id, c.content, c.created_at, c.parent_id, c.like_count, c.tag, c.content_title, c.main_practice,
         u.username, u.nickname, u.avatar
       FROM comments c
       LEFT JOIN users u ON c.username = u.username

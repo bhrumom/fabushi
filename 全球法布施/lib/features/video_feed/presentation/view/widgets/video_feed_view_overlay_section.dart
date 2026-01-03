@@ -19,6 +19,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
     this.onLikeTap,
     this.onCommentTap,
     this.onStartRecitation,
+    this.onStartReading,
     super.key,
   });
 
@@ -36,6 +37,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
   final VoidCallback? onLikeTap;
   final VoidCallback? onCommentTap;
   final VoidCallback? onStartRecitation;
+  final VoidCallback? onStartReading;
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +59,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
               textContent: textContent,
               currentParagraph: currentParagraph,
               onStartRecitation: onStartRecitation,
+              onStartReading: onStartReading,
             ),
           ),
           // 右侧：头像 + 交互按钮

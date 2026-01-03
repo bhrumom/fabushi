@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
 import '../services/auth_service.dart';
 import '../core/design_system/app_theme.dart';
+import '../services/meditation_session_manager.dart';
 
 /// 抖音风格编辑资料页面
 class EditProfileScreen extends StatefulWidget {
@@ -205,10 +206,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
           ),
           const Divider(color: Colors.white10, height: 1, indent: 16, endIndent: 16),
-          // 抖音号
+          // 一门深入（锁定功课）
           _buildInfoItem(
-            label: '抖音号',
-            value: user?.username ?? '',
+            label: '一门深入',
+            value: MeditationSessionManager().lockedPractice?.title ?? '未选择',
             showArrow: false,
           ),
           const Divider(color: Colors.white10, height: 1, indent: 16, endIndent: 16),

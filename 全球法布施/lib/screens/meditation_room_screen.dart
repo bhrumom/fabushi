@@ -589,15 +589,13 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                 children: [
                   _buildTopBar(),
                   
-                  // 中央区域 - 显示念诵计数或经书按钮
+                  // 中央区域 - 修行时显示计数，非修行时为空（3D经书模型在背景层显示）
                   if (_sessionManager.isInSession)
                     Expanded(
                       child: _buildCenterContent(),
                     )
                   else
-                    Expanded(
-                      child: _buildBookButton(),
-                    ),
+                    const Spacer(),
 
                   // 底部控制区
                   _buildBottomControls(),
@@ -737,73 +735,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       ),
     );
   }
-  
-  /// 构建经书点击按钮（非修行状态显示）
-  Widget _buildBookButton() {
-    final practice = _sessionManager.lockedPractice;
-    if (practice == null) {
-      // 未选择功课时不显示
-      return const SizedBox.shrink();
-    }
-    
-    return Center(
-      child: GestureDetector(
-        onTap: _openSutraReader,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                const Color(0xFF8B0000).withOpacity(0.9),
-                const Color(0xFF5C0000).withOpacity(0.9),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFD4AF37).withOpacity(0.3),
-                blurRadius: 20,
-                spreadRadius: 2,
-              ),
-            ],
-            border: Border.all(
-              color: const Color(0xFFD4AF37).withOpacity(0.5),
-              width: 2,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.auto_stories,
-                color: Color(0xFFD4AF37),
-                size: 36,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                practice.title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                '点击阅读经文',
-                style: TextStyle(
-                  color: Colors.white60,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+
 
   Widget _buildBottomControls() {
     return Padding(

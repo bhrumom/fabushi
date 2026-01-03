@@ -11,6 +11,7 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
     this.textContent,
     this.currentParagraph,
     this.onStartRecitation,
+    this.onStartReading,
     super.key,
   });
 
@@ -20,6 +21,7 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
   final String? textContent;
   final String? currentParagraph;
   final VoidCallback? onStartRecitation;
+  final VoidCallback? onStartReading;
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +35,7 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // @用户名 + 背诵按钮
+          // @用户名 + 背诵/读诵按钮
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -91,6 +93,48 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
                   ),
                 ),
               ],
+              // 读诵按钮（仅文字内容显示）
+              if (contentType == ContentType.text && onStartReading != null) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onStartReading,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFF6B6B), Color(0xFFEE5A24)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.orange.withValues(alpha: 0.3),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.mic,
+                          color: Colors.white,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '读诵',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: isMobile ? 12 : 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
@@ -100,4 +144,3 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
     );
   }
 }
-

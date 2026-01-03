@@ -634,6 +634,65 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
             color: const Color(0xFF0B0E14), // 深蓝色背景作为后备
             child: threeJs.build(),
           ),
+          // 经书名称和点击区域（覆盖在3D经书模型上方）
+          if (widget.showBook && widget.bookTitle != null && !_isLoading)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: MediaQuery.of(context).size.height * 0.28, // 定位在3D经书模型附近
+              child: GestureDetector(
+                onTap: widget.onBookTap,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFF8B0000).withOpacity(0.85),
+                          const Color(0xFF5C0000).withOpacity(0.85),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFFD4AF37).withOpacity(0.6),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFD4AF37).withOpacity(0.2),
+                          blurRadius: 12,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.bookTitle!,
+                          style: const TextStyle(
+                            color: Color(0xFFD4AF37),
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          '点击阅读',
+                          style: TextStyle(
+                            color: Colors.white60,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (_isLoading)
             Positioned.fill(
               child: Container(

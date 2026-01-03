@@ -10,6 +10,7 @@ class CommentModel {
   final String? nickname;
   final String? avatar;
   final String? tag; // 'ganying' | 'fayuan' | null
+  final String? mainPractice; // 用户的主修功课
 
   CommentModel({
     required this.id,
@@ -23,6 +24,7 @@ class CommentModel {
     this.nickname,
     this.avatar,
     this.tag,
+    this.mainPractice,
   });
 
   factory CommentModel.fromJson(Map<String, dynamic> json) {
@@ -39,6 +41,7 @@ class CommentModel {
       nickname: json['nickname'],
       avatar: json['avatar'],
       tag: json['tag'],
+      mainPractice: json['main_practice'],
     );
   }
 
@@ -55,6 +58,7 @@ class CommentModel {
       'nickname': nickname,
       'avatar': avatar,
       'tag': tag,
+      'main_practice': mainPractice,
     };
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:global_dharma_sharing/services/tts_manager.dart';
+import 'package:global_dharma_sharing/services/semantic_nlp_service.dart';
 import 'package:global_dharma_sharing/providers/video_feed_visibility_notifier.dart';
 import 'package:global_dharma_sharing/providers/tts_mute_notifier.dart';
 
@@ -238,8 +239,32 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
     }
     
     _debugLog('TTS MV: Parsed ${_sentences.length} sentences');
+    
+    // 异步语义优先排序 - 后台执行不阻塞UI
+    if (_sentences.length > 1) {
+      _applySemanticsSort();
+    }
+    
     if (_sentences.isNotEmpty) {
       _parseWordsForSentence(0);
+    }
+  }
+  
+  /// 应用语义优先排序
+  /// 将功德利益、赞扬类句子排到前面优先朗读
+  Future<void> _applySemanticsSort() async {
+    if (_disposed || _sentences.length <= 1) return;
+    
+    try {
+      final sorted = await SemanticNlpService.instance
+          .sortBySemanticPriority(_sentences);
+      
+      if (mounted && !_disposed && sorted.isNotEmpty) {
+        _debugLog('📖 TTS: 语义排序完成，优先句子已调整');
+        _sentences = sorted;
+      }
+    } catch (e) {
+      _debugLog('📖 TTS: 语义排序失败: $e');
     }
   }
   

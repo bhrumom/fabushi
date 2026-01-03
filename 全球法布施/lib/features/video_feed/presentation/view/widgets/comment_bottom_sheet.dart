@@ -254,6 +254,14 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
                       comment.displayName,
                       style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
                     ),
+                    // 显示主修功课
+                    if (comment.mainPractice != null && comment.mainPractice!.isNotEmpty) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        '@${comment.mainPractice}',
+                        style: const TextStyle(color: Colors.tealAccent, fontSize: 11),
+                      ),
+                    ],
                     // 显示感应/发愿标签
                     if (comment.tag != null) ...[
                       const SizedBox(width: 8),

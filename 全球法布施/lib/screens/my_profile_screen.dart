@@ -10,8 +10,9 @@ import 'edit_profile_screen.dart';
 import 'douyin_login_screen.dart';
 import 'settings_screen.dart';
 import '../core/design_system/app_theme.dart';
-import '../widgets/practice_stats_card.dart';
-import '../widgets/practice_dialogs.dart';
+import '../widgets/practice_entry_card.dart';
+import '../services/meditation_session_manager.dart';
+import 'practice_record_screen.dart';
 
 /// 抖音风格个人中心页面
 class MyProfileScreen extends StatelessWidget {
@@ -68,29 +69,13 @@ class MyProfileScreen extends StatelessWidget {
     );
   }
 
-  /// 修行统计卡片
+  /// 修行记录入口卡片
   Widget _buildPracticeStatsCard(BuildContext context) {
-    return PracticeStatsCard(
-      onTapRecord: () {
-        showDialog(
-          context: context,
-          builder: (context) => const AddPracticeRecordDialog(),
-        );
-      },
-      onTapHistory: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('修行记录功能完善中')),
-        );
-      },
-      onTapDedication: () {
-        showDialog(
-          context: context,
-          builder: (context) => const SetGoalDialog(),
-        );
-      },
-      onTapSettings: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('功课设置功能完善中')),
+    return PracticeEntryCard(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const PracticeRecordScreen()),
         );
       },
     );
@@ -209,7 +194,7 @@ class MyProfileScreen extends StatelessWidget {
                                 Row(
                                   children: [
                                     Text(
-                                      '抖音号: ${user.username}',
+                                      '一门深入: ${MeditationSessionManager().lockedPractice?.title ?? '未选择'}',
                                       style: const TextStyle(color: Colors.white60, fontSize: 13),
                                     ),
                                     const SizedBox(width: 8),

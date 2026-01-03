@@ -242,6 +242,7 @@ CREATE TABLE IF NOT EXISTS comments (
   -- 评论类型与标签
   tag TEXT,  -- 'ganying', 'fayuan', NULL
   content_title TEXT,  -- 关联内容的标题
+  main_practice TEXT,  -- 评论用户的主修功课
   
   -- 统计
   like_count INTEGER DEFAULT 0,

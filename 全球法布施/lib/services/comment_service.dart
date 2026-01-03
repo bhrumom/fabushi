@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../core/config/app_config.dart';
 import '../models/comment_model.dart';
 import 'http_service.dart';
+import 'meditation_session_manager.dart';
 
 /// 评论服务 - 管理内容评论
 /// 
@@ -104,6 +105,12 @@ class CommentService {
       }
       if (filePath != null) {
         body['filePath'] = filePath;
+      }
+      
+      // 自动附带当前用户的主修功课
+      final mainPractice = MeditationSessionManager().lockedPractice?.title;
+      if (mainPractice != null) {
+        body['mainPractice'] = mainPractice;
       }
       
       final response = await HttpService.post(

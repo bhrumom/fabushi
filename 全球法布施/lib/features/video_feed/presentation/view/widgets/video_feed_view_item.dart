@@ -4,6 +4,7 @@ import 'package:global_dharma_sharing/features/video_feed/presentation/view/widg
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_overlay_section.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_text_content.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/recitation_game_widget.dart';
+import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/reading_game_widget.dart';
 import 'package:global_dharma_sharing/models/liked_item.dart';
 import 'package:global_dharma_sharing/services/like_service.dart';
 import 'package:global_dharma_sharing/services/content_stats_service.dart';
@@ -106,15 +107,126 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
     }
   }
 
+  /// 将文本分割成不超过指定字数的片段
+  /// 优先在标点符号处分割，否则在指定长度处强制分割
+  List<String> _splitTextForRecitation(String text, {int maxLength = 21}) {
+    if (text.isEmpty) return [];
+    
+    // 移除空白字符
+    text = text.trim();
+    
+    // 如果文本短于最大长度，直接返回
+    if (text.length <= maxLength) {
+      return [text];
+    }
+    
+    final sentences = <String>[];
+    int start = 0;
+    
+    while (start < text.length) {
+      int end = start + maxLength;
+      
+      if (end >= text.length) {
+        // 剩余部分不足最大长度
+        sentences.add(text.substring(start).trim());
+        break;
+      }
+      
+      // 在区间内寻找最佳分割点（标点符号）
+      int bestSplit = -1;
+      for (int i = end; i > start; i--) {
+        final char = text[i - 1];
+        // 优先在句号、叹号、问号处分割
+        if ('。！？；'.contains(char)) {
+          bestSplit = i;
+          break;
+        }
+        // 其次在逗号、顿号处分割
+        if ('，、：'.contains(char) && bestSplit == -1) {
+          bestSplit = i;
+        }
+      }
+      
+      if (bestSplit > start) {
+        sentences.add(text.substring(start, bestSplit).trim());
+        start = bestSplit;
+      } else {
+        // 没找到标点，强制在最大长度处分割
+        sentences.add(text.substring(start, end).trim());
+        start = end;
+      }
+    }
+    
+    // 过滤空字符串
+    return sentences.where((s) => s.isNotEmpty).toList();
+  }
+
   void _handleStartRecitation() {
     // 使用当前段落或完整文本
-    final sentence = _currentParagraph ?? widget.videoItem.textContent ?? '';
-    if (sentence.isEmpty) return;
+    final text = _currentParagraph ?? widget.videoItem.textContent ?? '';
+    if (text.isEmpty) return;
+    
+    // 将文本分割成不超过21个字的句子列表
+    final sentences = _splitTextForRecitation(text);
+    if (sentences.isEmpty) return;
     
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => RecitationGameWidget(sentence: sentence),
+        builder: (context) => RecitationGameWidget(sentences: sentences),
+      ),
+    );
+  }
+
+  /// 解析文本为句子列表
+  List<String> _parseSentences(String text) {
+    if (text.isEmpty) return [];
+    
+    // 按标点符号分割句子
+    final sentences = <String>[];
+    final buffer = StringBuffer();
+    
+    for (int i = 0; i < text.length; i++) {
+      final char = text[i];
+      buffer.write(char);
+      
+      // 识别句子结束标点
+      if ('。！？；'.contains(char)) {
+        final sentence = buffer.toString().trim();
+        if (sentence.isNotEmpty) {
+          sentences.add(sentence);
+        }
+        buffer.clear();
+      }
+    }
+    
+    // 处理最后可能没有标点的部分
+    final remaining = buffer.toString().trim();
+    if (remaining.isNotEmpty) {
+      sentences.add(remaining);
+    }
+    
+    return sentences;
+  }
+
+  void _handleStartReading() {
+    final textContent = widget.videoItem.textContent ?? '';
+    if (textContent.isEmpty) return;
+    
+    final sentences = _parseSentences(textContent);
+    if (sentences.isEmpty) return;
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ReadingGameWidget(
+          sentences: sentences,
+          contentId: widget.videoItem.id,
+          onComplete: (result) {
+            // TODO: 实现发布到评论的功能
+            debugPrint('读诵完成: 音频路径=${result.audioPath}, 时间戳=${result.markers.length}个');
+          },
+        ),
       ),
     );
   }
@@ -153,6 +265,9 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
           onCommentTap: _handleCommentTap,
           onStartRecitation: widget.videoItem.contentType == ContentType.text
               ? _handleStartRecitation
+              : null,
+          onStartReading: widget.videoItem.contentType == ContentType.text
+              ? _handleStartReading
               : null,
         ),
       ],
