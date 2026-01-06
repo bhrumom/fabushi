@@ -11,7 +11,8 @@ import { handleCheckAdminStatus, handleListRedeemCodes, handleDeleteRedeemCode, 
 import { handleGetAssetsList, handleR2List, handleR2Proxy } from './handlers/assets.js';
 import { handleSearch, handleGetTextContent, handleGetCategories } from './handlers/search.js';
 import { handleGetLeaderboard, handleUpdateTransferData } from './handlers/leaderboard.js';
-import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts, handleGetMyLikes } from './handlers/likes.js';
+import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts, handleGetMyLikes, handleGetReceivedLikeCount } from './handlers/likes.js';
+import { handleToggleFavorite, handleGetMyFavorites, handleBatchCheckFavorites } from './handlers/favorites.js';
 import { handleBatchGetContentStats } from './handlers/content-stats.js';
 import { handleOnlineJoin, handleOnlineHeartbeat, handleOnlineLeave, handleOnlineCount } from './handlers/online.js';
 import { handleSyncRecord, handleGetRecords, handleGetStats, handleGetWeeklyStats, handleGetMonthlyStats, handleSetGoal, handleGetGoals, handleMeditationSettings } from './handlers/meditation.js';
@@ -109,6 +110,12 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/likes/count' && method === 'GET') return await handleGetLikeCount(request, env, db);
   if (pathname === '/api/likes/batch-counts' && method === 'POST') return await handleBatchGetLikeCounts(request, env, db);
   if (pathname === '/api/likes/my-likes' && method === 'GET') return await handleGetMyLikes(request, env, db);
+  if (pathname === '/api/likes/received-count' && method === 'GET') return await handleGetReceivedLikeCount(request, env, db);
+
+  // 收藏API
+  if (pathname === '/api/favorites/toggle' && method === 'POST') return await handleToggleFavorite(request, env, db);
+  if (pathname === '/api/favorites/my-favorites' && method === 'GET') return await handleGetMyFavorites(request, env, db);
+  if (pathname === '/api/favorites/batch-check' && method === 'POST') return await handleBatchCheckFavorites(request, env, db);
 
   // 内容统计API（合并点赞数+评论数）
   if (pathname === '/api/content/batch-stats' && method === 'POST') return await handleBatchGetContentStats(request, env, db);

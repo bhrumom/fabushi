@@ -18,6 +18,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
     this.currentParagraph,
     this.onLikeTap,
     this.onCommentTap,
+    this.onBookmarkTap,
     this.onStartRecitation,
     this.onStartReading,
     super.key,
@@ -36,6 +37,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
   final String? currentParagraph;
   final VoidCallback? onLikeTap;
   final VoidCallback? onCommentTap;
+  final VoidCallback? onBookmarkTap;
   final VoidCallback? onStartRecitation;
   final VoidCallback? onStartReading;
 
@@ -76,6 +78,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
               shareCount: shareCount,
               onLikeTap: onLikeTap,
               onCommentTap: onCommentTap,
+              onBookmarkTap: onBookmarkTap,
               contentType: contentType,
               textContent: textContent,
               username: username,

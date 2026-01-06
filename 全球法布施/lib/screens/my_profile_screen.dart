@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'dart:ui';
 import '../models/auth_model.dart';
 import '../services/like_service.dart';
+import '../services/favorite_service.dart';
 import '../services/practice_stats_service.dart';
 import 'liked_content_screen.dart';
 import 'membership_screen.dart';
@@ -79,8 +80,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
                             _buildMembershipCard(context, user),
                             const SizedBox(height: 20),
                             _buildFeatureGrid(context),
-                            const SizedBox(height: 20),
-                            _buildMenuSection(context, authModel),
                           ] else ...[
                             const SizedBox(height: 20),
                             _buildGuestCard(context),
@@ -114,8 +113,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
                       children: [
                         // Works Tab
                         _buildWorksTab(),
-                        // Likes/Collections Tab
-                        const LikedContentScreen(embed: true), 
+                        // Favorites Tab
+                        _buildFavoritesTab(), 
                       ],
                     )
                   : const Center(child: Text('请先登录', style: TextStyle(color: Colors.white54))),
@@ -152,6 +151,95 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
     );
   }
 
+  Widget _buildFavoritesTab() {
+    final favoriteService = FavoriteService();
+    return ListenableBuilder(
+      listenable: favoriteService,
+      builder: (context, _) {
+        final items = favoriteService.getFavoritedItems();
+        
+        if (items.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.bookmark_border, size: 80, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                Text(
+                  '还没有收藏的内容',
+                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '在法流页面点击收藏按钮后会显示在这里',
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                ),
+              ],
+            ),
+          );
+        }
+        
+        return ListView.builder(
+          padding: EdgeInsets.zero,
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return Card(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: ListTile(
+                leading: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    item.contentType == 'video' ? Icons.videocam : Icons.article,
+                    color: Colors.amber.shade700,
+                  ),
+                ),
+                title: Text(
+                  item.title.isNotEmpty ? item.title : '未命名内容',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  _formatFavoriteTime(item.favoritedAt),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                trailing: IconButton(
+                  icon: const Icon(Icons.bookmark, color: Colors.amber),
+                  onPressed: () async {
+                    await favoriteService.toggleFavorite(item);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('已取消收藏'), duration: Duration(seconds: 1)),
+                      );
+                    }
+                  },
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _formatFavoriteTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+    if (diff.inDays > 0) {
+      return '${diff.inDays}天前';
+    } else if (diff.inHours > 0) {
+      return '${diff.inHours}小时前';
+    } else if (diff.inMinutes > 0) {
+      return '${diff.inMinutes}分钟前';
+    } else {
+      return '刚刚';
+    }
+  }
 
   /// 修行记录入口卡片
   Widget _buildPracticeStatsCard(BuildContext context) {
@@ -355,13 +443,19 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
   /// 抖音风格统计栏 - 获赞/关注/粉丝
   Widget _buildStatsRow(BuildContext context, User user) {
     final likeService = LikeService();
+    final favoriteService = FavoriteService();
     final authModel = Provider.of<AuthModel>(context, listen: false);
     // 先设置 authToken，再初始化，确保能从云端同步
     if (authModel.authToken != null) {
       likeService.setAuthToken(authModel.authToken);
+      favoriteService.setAuthToken(authModel.authToken);
     }
     if (!likeService.isInitialized) {
       likeService.initialize(userId: user.username);
+      likeService.fetchReceivedLikeCount(); // 获取被点赞数
+    }
+    if (!favoriteService.isInitialized) {
+      favoriteService.initialize(userId: user.username);
     }
 
     return ListenableBuilder(
@@ -376,8 +470,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildStatItem('${likeService.likedCount}', '获赞', onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const LikedContentScreen()));
+              _buildStatItem('${likeService.receivedLikeCount}', '获赞', onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('获赞统计：您发布的评论被点赞的总数')));
               }),
               Container(width: 1, height: 30, color: Colors.white12),
               _buildStatItem('0', '关注', onTap: () {
@@ -537,86 +631,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
           ),
         ],
       ),
-    );
-  }
-
-  /// 菜单列表
-  Widget _buildMenuSection(BuildContext context, AuthModel authModel) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          _buildMenuItem(
-            icon: Icons.refresh,
-            title: '刷新数据',
-            onTap: () async {
-              await authModel.refreshUserInfo();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('数据已刷新'), backgroundColor: Colors.green));
-              }
-            },
-          ),
-          const Divider(color: Colors.white10, height: 1, indent: 56),
-          _buildMenuItem(
-            icon: Icons.help_outline,
-            title: '帮助与反馈',
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('帮助功能开发中'))),
-          ),
-          const Divider(color: Colors.white10, height: 1, indent: 56),
-          _buildMenuItem(
-            icon: Icons.info_outline,
-            title: '关于',
-            onTap: () => showAboutDialog(
-              context: context,
-              applicationName: '全球法布施',
-              applicationVersion: '1.0.0',
-              children: [const Text('传播佛法，利益众生')],
-            ),
-          ),
-          const Divider(color: Colors.white10, height: 1, indent: 56),
-          _buildMenuItem(
-            icon: Icons.logout,
-            title: '退出登录',
-            isDestructive: true,
-            onTap: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  backgroundColor: const Color(0xFF1E1E1E),
-                  title: const Text('确认退出', style: TextStyle(color: Colors.white)),
-                  content: const Text('确定要退出登录吗？', style: TextStyle(color: Colors.white70)),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('退出', style: TextStyle(color: Colors.redAccent)),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                await authModel.logout();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已退出登录')));
-                }
-              }
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMenuItem({required IconData icon, required String title, required VoidCallback onTap, bool isDestructive = false}) {
-    return ListTile(
-      leading: Icon(icon, color: isDestructive ? Colors.redAccent : Colors.white54, size: 22),
-      title: Text(title, style: TextStyle(color: isDestructive ? Colors.redAccent : Colors.white, fontSize: 15)),
-      trailing: const Icon(Icons.chevron_right, color: Colors.white24, size: 20),
-      onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
     );
   }
 

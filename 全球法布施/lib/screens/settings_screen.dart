@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'keep_alive_guide_screen.dart';
 import '../services/app_settings.dart';
+import '../models/auth_model.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -70,6 +72,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                   _buildSettingItem(
                     context,
+                    icon: Icons.refresh,
+                    iconColor: Colors.cyan,
+                    title: '刷新数据',
+                    subtitle: '重新同步账户信息',
+                    onTap: () async {
+                      final authModel = Provider.of<AuthModel>(context, listen: false);
+                      await authModel.refreshUserInfo();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('数据已刷新'), backgroundColor: Colors.green),
+                        );
+                      }
+                    },
+                  ),
+
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.help_outline,
+                    iconColor: Colors.orange,
+                    title: '帮助与反馈',
+                    subtitle: '常见问题与意见反馈',
+                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('帮助功能开发中')),
+                    ),
+                  ),
+
+                  _buildSettingItem(
+                    context,
                     icon: Icons.info_outline,
                     iconColor: Colors.blue,
                     title: '关于',
@@ -81,6 +111,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       children: [const Text('传播佛法，利益众生')],
                     ),
                   ),
+
+                  _buildLogoutItem(context),
                 ],
               ),
             ),
@@ -156,6 +188,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         trailing: const Icon(Icons.chevron_right, color: Colors.white24),
         onTap: onTap,
+      ),
+    );
+  }
+
+  /// 退出登录按钮
+  Widget _buildLogoutItem(BuildContext context) {
+    return Card(
+      color: const Color(0xFF1E1E1E),
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.redAccent.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(Icons.logout, color: Colors.redAccent, size: 24),
+        ),
+        title: const Text(
+          '退出登录',
+          style: TextStyle(
+            color: Colors.redAccent,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        subtitle: const Text(
+          '退出当前账号',
+          style: TextStyle(color: Colors.white54, fontSize: 13),
+        ),
+        trailing: const Icon(Icons.chevron_right, color: Colors.white24),
+        onTap: () async {
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: const Color(0xFF1E1E1E),
+              title: const Text('确认退出', style: TextStyle(color: Colors.white)),
+              content: const Text('确定要退出登录吗？', style: TextStyle(color: Colors.white70)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('退出', style: TextStyle(color: Colors.redAccent)),
+                ),
+              ],
+            ),
+          );
+          if (confirm == true) {
+            final authModel = Provider.of<AuthModel>(context, listen: false);
+            await authModel.logout();
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已退出登录')),
+              );
+              Navigator.pop(context); // 返回上一页
+            }
+          }
+        },
       ),
     );
   }

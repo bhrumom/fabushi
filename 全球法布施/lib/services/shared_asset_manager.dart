@@ -163,6 +163,11 @@ class SharedAssetManager {
     _assetToTaskMap.remove(assetPath);
   }
 
+  /// 移除素材的下载记录（当文件实际不存在时使用）
+  Future<void> removeAssetDownloadRecord(String assetPath) async {
+    await _downloadedAssetsService.removeAsset(assetPath);
+  }
+
   Future<List<int>?> _getFileFromWebStorage(String fileName) async {
     try {
       if (!kIsWeb) return null;

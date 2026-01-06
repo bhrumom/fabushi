@@ -231,6 +231,28 @@ CREATE INDEX IF NOT EXISTS idx_content_likes_content_id ON content_likes(content
 CREATE INDEX IF NOT EXISTS idx_content_likes_username ON content_likes(username);
 CREATE INDEX IF NOT EXISTS idx_content_likes_sync_version ON content_likes(sync_version);
 
+-- 收藏表
+CREATE TABLE IF NOT EXISTS content_favorites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  content_id TEXT NOT NULL,
+  content_type TEXT NOT NULL DEFAULT 'text',
+  username TEXT NOT NULL,
+  title TEXT,
+  file_path TEXT,
+  description TEXT,
+  created_at TEXT NOT NULL,
+  
+  -- 同步字段
+  sync_version INTEGER DEFAULT 1,
+  
+  UNIQUE(content_id, username),
+  FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_favorites_content_id ON content_favorites(content_id);
+CREATE INDEX IF NOT EXISTS idx_content_favorites_username ON content_favorites(username);
+CREATE INDEX IF NOT EXISTS idx_content_favorites_sync_version ON content_favorites(sync_version);
+
 -- 评论表
 CREATE TABLE IF NOT EXISTS comments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

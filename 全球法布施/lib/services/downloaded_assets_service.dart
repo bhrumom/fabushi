@@ -27,12 +27,27 @@ class DownloadedAssetsService {
         await _loadDownloadedAssetsFromWeb();
       } else {
         await _loadDownloadedAssetsFromLocal();
+        // 缓存下载目录路径，用于同步检查文件是否存在
+        await _cacheDownloadDirectory();
       }
       _isInitialized = true;
       debugPrint('已加载 ${_downloadedAssets.length} 个已下载素材');
     } catch (e) {
       debugPrint('加载已下载素材失败: $e');
       _downloadedAssets = {};
+    }
+  }
+
+  /// 缓存下载目录路径
+  Future<void> _cacheDownloadDirectory() async {
+    try {
+      if (Platform.isAndroid) {
+        _cachedDownloadDir = await getExternalStorageDirectory();
+      } else {
+        _cachedDownloadDir = await getApplicationDocumentsDirectory();
+      }
+    } catch (e) {
+      debugPrint('缓存下载目录失败: $e');
     }
   }
 
@@ -72,10 +87,41 @@ class DownloadedAssetsService {
     }
   }
 
-  /// 检查素材是否已下载
+  /// 检查素材是否已下载（同时验证文件确实存在）
   bool isAssetDownloaded(String assetPath) {
-    return _downloadedAssets.contains(assetPath);
+    // 首先检查记录
+    if (!_downloadedAssets.contains(assetPath)) {
+      return false;
+    }
+    // 从根源解决：同步检查文件是否存在
+    // 注意：这里使用同步检查，对于本地平台使用缓存
+    final fileName = assetPath.split('/').last;
+    return _verifyFileExistsSync(fileName);
   }
+
+  /// 同步验证文件是否存在（用于UI显示）
+  bool _verifyFileExistsSync(String fileName) {
+    if (kIsWeb) {
+      return _isFileExistsOnWeb(fileName);
+    }
+    // 本地平台：使用同步检查
+    return _isFileExistsOnLocalSync(fileName);
+  }
+
+  /// 本地平台：同步检查文件是否存在
+  bool _isFileExistsOnLocalSync(String fileName) {
+    try {
+      // 使用缓存的目录路径（在初始化时获取）
+      if (_cachedDownloadDir == null) return false;
+      final file = File('${_cachedDownloadDir!.path}/$fileName');
+      return file.existsSync();
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 缓存的下载目录路径
+  Directory? _cachedDownloadDir;
 
   /// 标记素材为已下载
   Future<void> markAssetAsDownloaded(String assetPath) async {
@@ -86,6 +132,13 @@ class DownloadedAssetsService {
   /// 获取所有已下载素材
   Set<String> getDownloadedAssets() {
     return Set.from(_downloadedAssets);
+  }
+
+  /// 移除单个素材的下载记录（当文件实际不存在时使用）
+  Future<void> removeAsset(String assetPath) async {
+    _downloadedAssets.remove(assetPath);
+    await _saveDownloadedAssets();
+    debugPrint('🗑️ 已移除无效下载记录: $assetPath');
   }
 
   /// 清除所有已下载素材记录

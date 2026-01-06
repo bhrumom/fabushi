@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:lpinyin/lpinyin.dart';
 import '../../../../../services/audio_stream_service.dart';
 import '../../../../../services/audio_merger_service.dart';
 import '../../../../../services/local_work_service.dart';
@@ -13,6 +14,7 @@ import '../../../../../models/auth_model.dart';
 import '../../../../../services/sherpa_stt_service.dart';
 import '../../../../../services/sentence_matching_service.dart';
 import 'package:provider/provider.dart';
+import 'video_feed_view_full_text_reader.dart';
 
 /// 读诵游戏状态
 enum ReadingState {
@@ -124,8 +126,8 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   /// K歌风格歌词滚动控制器
   late ScrollController _lyricsScrollController;
   
-  /// 每行歌词的高度（用于计算滚动位置）
-  static const double _lyricLineHeight = 72.0;
+  /// 每行歌词的高度（用于计算滚动位置，增加高度以容纳拼音）
+  static const double _lyricLineHeight = 100.0;
 
   @override
   void initState() {
@@ -1019,45 +1021,181 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
     }
     
     // 字体大小：当前句子最大
-    final fontSize = isCurrent ? 26.0 : 18.0;
+    final fontSize = isCurrent ? 24.0 : 16.0;
+    final pinyinFontSize = isCurrent ? 11.0 : 9.0;
     
     // 颜色
     Color textColor;
+    Color pinyinColor;
     if (isCurrent) {
       if (isRecording && _matchProgress >= 0.50) {
         textColor = Colors.green;
+        pinyinColor = Colors.green.withValues(alpha: 0.8);
       } else if (isRecording) {
         textColor = Colors.white;
+        pinyinColor = const Color(0xFF88C0D0);
       } else {
         textColor = Colors.amber;
+        pinyinColor = Colors.amber.withValues(alpha: 0.8);
       }
     } else if (isPast) {
       textColor = Colors.green.withValues(alpha: opacity * 0.8);
+      pinyinColor = Colors.green.withValues(alpha: opacity * 0.5);
     } else {
       textColor = Colors.white.withValues(alpha: opacity);
+      pinyinColor = Colors.white.withValues(alpha: opacity * 0.6);
     }
     
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       height: _lyricLineHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       alignment: Alignment.center,
-      child: AnimatedDefaultTextStyle(
-        duration: const Duration(milliseconds: 300),
-        style: TextStyle(
-          fontSize: fontSize,
-          fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-          color: textColor,
-          height: 1.4,
-        ),
-        child: Text(
-          widget.sentences[index],
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
+      child: isCurrent
+          ? _buildSentenceWithPinyin(
+              widget.sentences[index],
+              fontSize: fontSize,
+              pinyinFontSize: pinyinFontSize,
+              textColor: textColor,
+              pinyinColor: pinyinColor,
+              fontWeight: FontWeight.bold,
+            )
+          : _buildSentenceWithPinyin(
+              widget.sentences[index],
+              fontSize: fontSize,
+              pinyinFontSize: pinyinFontSize,
+              textColor: textColor,
+              pinyinColor: pinyinColor,
+              fontWeight: FontWeight.normal,
+            ),
+    );
+  }
+  
+  /// 构建带拼音的句子（复用阅读器的拼音逻辑）
+  Widget _buildSentenceWithPinyin(
+    String sentence, {
+    required double fontSize,
+    required double pinyinFontSize,
+    required Color textColor,
+    required Color pinyinColor,
+    required FontWeight fontWeight,
+  }) {
+    final chars = _processSentenceToPinyin(sentence);
+    
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: chars.map((charData) {
+          if (charData.type == CharType.chinese) {
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 1),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    charData.pinyin ?? '',
+                    style: TextStyle(
+                      fontSize: pinyinFontSize,
+                      color: pinyinColor,
+                      fontWeight: FontWeight.w500,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    charData.char,
+                    style: TextStyle(
+                      fontSize: fontSize,
+                      color: textColor,
+                      fontWeight: fontWeight,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          } else if (charData.type == CharType.punctuation) {
+            return Padding(
+              padding: EdgeInsets.only(top: pinyinFontSize + 4),
+              child: Text(
+                charData.char,
+                style: TextStyle(
+                  fontSize: fontSize,
+                  color: textColor.withValues(alpha: 0.7),
+                  fontWeight: fontWeight,
+                ),
+              ),
+            );
+          } else if (charData.type == CharType.space) {
+            return const SizedBox(width: 8);
+          } else {
+            return Padding(
+              padding: EdgeInsets.only(top: pinyinFontSize + 4),
+              child: Text(
+                charData.char,
+                style: TextStyle(
+                  fontSize: fontSize,
+                  color: textColor,
+                  fontWeight: fontWeight,
+                ),
+              ),
+            );
+          }
+        }).toList(),
       ),
     );
+  }
+  
+  /// 处理句子生成拼音数据（复用阅读器的逻辑）
+  List<CharData> _processSentenceToPinyin(String sentence) {
+    final chars = <CharData>[];
+    final trie = PhraseTrie.instance;
+    int i = 0;
+    
+    while (i < sentence.length) {
+      final char = sentence[i];
+      
+      // 使用 Trie 树匹配词组
+      final match = trie.matchLongest(sentence, i);
+      
+      if (match != null) {
+        for (int j = 0; j < match.phrase.length; j++) {
+          chars.add(CharData(match.phrase[j], match.pinyin[j], CharType.chinese));
+        }
+        i += match.phrase.length;
+      } else if (_isChinese(char)) {
+        final pinyin = BuddhistPinyinDictionary.singleCharOverride[char] ??
+            PinyinHelper.getPinyin(char, separator: '', format: PinyinFormat.WITH_TONE_MARK);
+        chars.add(CharData(char, pinyin, CharType.chinese));
+        i++;
+      } else if (char == ' ' || char == '\t') {
+        chars.add(CharData(char, null, CharType.space));
+        i++;
+      } else if (_isPunctuation(char)) {
+        chars.add(CharData(char, null, CharType.punctuation));
+        i++;
+      } else {
+        chars.add(CharData(char, null, CharType.other));
+        i++;
+      }
+    }
+    
+    return chars;
+  }
+  
+  /// 判断是否为中文字符
+  bool _isChinese(String char) {
+    if (char.isEmpty) return false;
+    final code = char.codeUnitAt(0);
+    return (code >= 0x4E00 && code <= 0x9FFF) || (code >= 0x3400 && code <= 0x4DBF);
+  }
+  
+  /// 判断是否为标点符号
+  bool _isPunctuation(String char) {
+    const punctuations = '，。！？、；：""''（）【】《》…—·．';
+    return punctuations.contains(char);
   }
   
   /// 底部按钮

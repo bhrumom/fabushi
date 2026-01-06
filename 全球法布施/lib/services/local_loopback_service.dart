@@ -13,6 +13,16 @@ enum LoopbackRunMode {
   mainThread,
 }
 
+/// 本地回环速度级别
+enum LoopbackSpeedLevel {
+  /// 极致速度 - 无延迟，持续满载发送
+  extreme,
+  /// 高速 - 微延迟(1ms)，平衡性能与资源
+  high,
+  /// 普通 - 适中延迟(5ms)，节省资源
+  normal,
+}
+
 /// 本地回环服务
 /// 以极速不间断地向 127.0.0.1 发送 UDP 数据包
 /// 
@@ -23,9 +33,17 @@ class LocalLoopbackService {
   static const int _loopbackPort = 9998;
   static const String _loopbackAddress = '127.0.0.1';
   
+  /// 极致优化：最大UDP包大小 (本地回环可使用更大包体)
+  /// 本地回环MTU无限制，使用接近最大UDP包大小
+  static const int _maxChunkSize = 8192;
+  
+  /// 批量发送次数 - 每轮发送多个完整文件循环
+  static const int _batchCount = 10;
+  
   bool _isRunning = false;
   int _loopCount = 0;
   LoopbackRunMode _currentMode = LoopbackRunMode.isolate;
+  LoopbackSpeedLevel _speedLevel = LoopbackSpeedLevel.extreme;
   
   // Isolate 模式资源
   Isolate? _workerIsolate;
@@ -40,6 +58,9 @@ class LocalLoopbackService {
   String? _cachedFilePath;
   String? _cachedFileName;
   Uint8List? _cachedHeaderPacket;
+  
+  // 极致优化：预构建的数据包缓存
+  List<Uint8List>? _prebuiltPackets;
 
   final void Function(String)? onLog;
   final void Function(int loopCount)? onHeartbeat;
@@ -52,8 +73,17 @@ class LocalLoopbackService {
   /// 当前运行模式
   LoopbackRunMode get currentMode => _currentMode;
   
+  /// 当前速度级别
+  LoopbackSpeedLevel get speedLevel => _speedLevel;
+  
   /// 当前循环计数
   int get loopCount => _loopCount;
+  
+  /// 设置速度级别
+  void setSpeedLevel(LoopbackSpeedLevel level) {
+    _speedLevel = level;
+    _log('⚡ 速度级别设置为: $level');
+  }
   
   /// 开始高速回环（默认使用 Isolate 模式）
   Future<void> start({
@@ -61,6 +91,7 @@ class LocalLoopbackService {
     String? filePath,
     required String fileName,
     LoopbackRunMode mode = LoopbackRunMode.isolate,
+    LoopbackSpeedLevel speedLevel = LoopbackSpeedLevel.extreme,
   }) async {
     if (_isRunning) return;
     
@@ -69,6 +100,10 @@ class LocalLoopbackService {
     _cachedFilePath = filePath;
     _cachedFileName = fileName;
     _cachedHeaderPacket = _buildHeader(fileName);
+    _speedLevel = speedLevel;
+    
+    // 极致优化：预构建数据包
+    await _prebuildPackets();
     
     _isRunning = true;
     _currentMode = mode;
@@ -78,6 +113,59 @@ class LocalLoopbackService {
     } else {
       await _startMainThreadMode();
     }
+  }
+  
+  /// 极致优化：预构建所有数据包，避免运行时动态分配
+  Future<void> _prebuildPackets() async {
+    if (_cachedHeaderPacket == null) return;
+    
+    final packets = <Uint8List>[];
+    final header = _cachedHeaderPacket!;
+    
+    if (_cachedData != null) {
+      // 内存数据预构建
+      final data = _cachedData!;
+      int offset = 0;
+      
+      while (offset < data.length) {
+        final end = (offset + _maxChunkSize < data.length) ? offset + _maxChunkSize : data.length;
+        final packetSize = header.length + (end - offset);
+        final packet = Uint8List(packetSize);
+        
+        // 零拷贝：直接写入目标buffer
+        packet.setRange(0, header.length, header);
+        packet.setRange(header.length, packetSize, data, offset);
+        
+        packets.add(packet);
+        offset = end;
+      }
+      
+      _log('📦 预构建 ${packets.length} 个数据包 (每包最大 $_maxChunkSize 字节)');
+    } else if (_cachedFilePath != null) {
+      // 文件数据：读入内存并预构建
+      final file = File(_cachedFilePath!);
+      if (await file.exists()) {
+        final fileData = await file.readAsBytes();
+        _cachedData = fileData; // 缓存到内存
+        
+        int offset = 0;
+        while (offset < fileData.length) {
+          final end = (offset + _maxChunkSize < fileData.length) ? offset + _maxChunkSize : fileData.length;
+          final packetSize = header.length + (end - offset);
+          final packet = Uint8List(packetSize);
+          
+          packet.setRange(0, header.length, header);
+          packet.setRange(header.length, packetSize, fileData, offset);
+          
+          packets.add(packet);
+          offset = end;
+        }
+        
+        _log('📦 文件 ${file.lengthSync()} 字节 -> ${packets.length} 个预构建包');
+      }
+    }
+    
+    _prebuiltPackets = packets;
   }
   
   /// 切换运行模式
@@ -121,7 +209,7 @@ class LocalLoopbackService {
       return;
     }
     
-    _log('🚀 [Isolate] 准备启动高速流式本地回环: $_cachedFileName');
+    _log('🚀 [Isolate] 准备启动极速本地回环: $_cachedFileName (速度级别: $_speedLevel)');
     
     // 初始化接收端口
     _receivePort = ReceivePort();
@@ -143,11 +231,12 @@ class LocalLoopbackService {
         _IsolateParams(
           sendPort: _receivePort!.sendPort,
           headerPacket: _cachedHeaderPacket!,
-          data: _cachedData,
-          filePath: _cachedFilePath,
+          prebuiltPackets: _prebuiltPackets,
           address: _loopbackAddress,
           port: _loopbackPort,
           initialLoopCount: _loopCount,
+          speedLevel: _speedLevel,
+          batchCount: _batchCount,
         ),
       );
     } catch (e) {
@@ -183,35 +272,38 @@ class LocalLoopbackService {
       DateTime lastHeartbeat = DateTime.now();
       const heartbeatInterval = Duration(seconds: 2);
       
+      // 根据速度级别调整发送间隔
+      final intervalMs = switch (_speedLevel) {
+        LoopbackSpeedLevel.extreme => 1,  // 1ms - 极致速度
+        LoopbackSpeedLevel.high => 10,    // 10ms
+        LoopbackSpeedLevel.normal => 50,  // 50ms
+      };
+      
       // 使用 Timer.periodic 在主线程执行
-      // 注意：这里使用较长的间隔(50ms)，确保不会阻塞UI太久
-      // 每次只发送一个完整文件循环，然后让出主线程
-      _mainThreadTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) async {
+      _mainThreadTimer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
         if (!_isRunning || _currentMode != LoopbackRunMode.mainThread) {
           timer.cancel();
           return;
         }
         
         try {
-          _loopCount++;
+          // 批量发送
+          for (int batch = 0; batch < _batchCount; batch++) {
+            _loopCount++;
+            
+            // 使用预构建包发送
+            if (_prebuiltPackets != null && _prebuiltPackets!.isNotEmpty) {
+              for (final packet in _prebuiltPackets!) {
+                _mainThreadSocket?.send(packet, address, _loopbackPort);
+              }
+            }
+          }
           
           // 发送心跳
           final now = DateTime.now();
           if (now.difference(lastHeartbeat) >= heartbeatInterval) {
             onHeartbeat?.call(_loopCount);
             lastHeartbeat = now;
-            
-            // 每30秒输出日志
-            if (_loopCount % 15 == 0) {
-              _log('💓 [MainThread] 本地回环循环次数: $_loopCount');
-            }
-          }
-          
-          // 发送数据
-          if (_cachedData != null) {
-            _sendMemoryData(_mainThreadSocket!, address, _loopbackPort, _cachedHeaderPacket!, _cachedData!);
-          } else if (_cachedFilePath != null) {
-            await _sendFileData(_mainThreadSocket!, address, _loopbackPort, _cachedHeaderPacket!, _cachedFilePath!);
           }
         } catch (e) {
           _log('⚠️ [MainThread] 发送异常: $e');
@@ -219,44 +311,6 @@ class LocalLoopbackService {
       });
     } catch (e) {
       _log('❌ 启动主线程模式失败: $e');
-    }
-  }
-  
-  /// 发送内存数据
-  void _sendMemoryData(RawDatagramSocket socket, InternetAddress address, int port, Uint8List header, Uint8List data) {
-    const chunkSize = 1300;
-    int offset = 0;
-    
-    while (offset < data.length) {
-      final end = (offset + chunkSize < data.length) ? offset + chunkSize : data.length;
-      final packet = BytesBuilder();
-      packet.add(header);
-      packet.add(data.sublist(offset, end));
-      socket.send(packet.toBytes(), address, port);
-      offset = end;
-    }
-  }
-  
-  /// 发送文件数据
-  Future<void> _sendFileData(RawDatagramSocket socket, InternetAddress address, int port, Uint8List header, String filePath) async {
-    final file = File(filePath);
-    if (!await file.exists()) return;
-    
-    const chunkSize = 1300;
-    final raf = await file.open(mode: FileMode.read);
-    
-    try {
-      while (true) {
-        final bytes = await raf.read(chunkSize);
-        if (bytes.isEmpty) break;
-        
-        final packet = BytesBuilder();
-        packet.add(header);
-        packet.add(bytes);
-        socket.send(packet.toBytes(), address, port);
-      }
-    } finally {
-      await raf.close();
     }
   }
   
@@ -273,21 +327,50 @@ class LocalLoopbackService {
     final sendPort = params.sendPort;
     final address = InternetAddress(params.address);
     final port = params.port;
+    final prebuiltPackets = params.prebuiltPackets;
+    final batchCount = params.batchCount;
     
     // Heartbeat tracking - 从传入的初始值开始
     int loopCount = params.initialLoopCount;
     DateTime lastHeartbeat = DateTime.now();
     const heartbeatInterval = Duration(seconds: 2);
     
+    // 根据速度级别确定延迟
+    final delayMicroseconds = switch (params.speedLevel) {
+      LoopbackSpeedLevel.extreme => 0,    // 极致：无延迟
+      LoopbackSpeedLevel.high => 100,     // 高速：100微秒
+      LoopbackSpeedLevel.normal => 1000,  // 普通：1毫秒
+    };
+    
     RawDatagramSocket? socket;
     try {
       socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       socket.broadcastEnabled = true;
-      sendPort.send('✨ [Worker] 数据发送引擎初始化完成');
       
-      // 极速流式回环发送
+      // 极致优化：设置发送缓冲区大小
+      // socket.setOption(SocketOption(O_SO_SNDBUF), 1024 * 1024); // 1MB发送缓冲区
+      
+      sendPort.send('✨ [Worker] 极速发送引擎初始化完成 (速度级别: ${params.speedLevel})');
+      
+      // 检查是否有预构建包
+      if (prebuiltPackets == null || prebuiltPackets.isEmpty) {
+        sendPort.send('⚠️ [Worker] 无预构建数据包');
+        return;
+      }
+      
+      sendPort.send('🔥 [Worker] 开始极速回环: ${prebuiltPackets.length} 包/轮 x $batchCount 批');
+      
+      // 极速流式回环发送 - 无延迟版本
       while (true) {
-        loopCount++;
+        // 批量发送多轮
+        for (int batch = 0; batch < batchCount; batch++) {
+          loopCount++;
+          
+          // 发送所有预构建包
+          for (int i = 0; i < prebuiltPackets.length; i++) {
+            socket.send(prebuiltPackets[i], address, port);
+          }
+        }
         
         // Send heartbeat to main thread every 2 seconds
         final now = DateTime.now();
@@ -296,42 +379,14 @@ class LocalLoopbackService {
           lastHeartbeat = now;
         }
         
-        if (params.data != null) {
-          // 如果是内存数据
-          final data = params.data!;
-          int offset = 0;
-          final chunkSize = 1300;
-          
-          while (offset < data.length) {
-            final end = (offset + chunkSize < data.length) ? offset + chunkSize : data.length;
-            final packet = BytesBuilder();
-            packet.add(params.headerPacket);
-            packet.add(data.sublist(offset, end));
-            socket.send(packet.toBytes(), address, port);
-            offset = end;
-          }
-        } else if (params.filePath != null) {
-          // 如果是文件路径，逐步流式读取发送
-          final file = File(params.filePath!);
-          if (await file.exists()) {
-            final raf = await file.open(mode: FileMode.read);
-            final chunkSize = 1300;
-            
-            while (true) {
-              final bytes = await raf.read(chunkSize);
-              if (bytes.isEmpty) break;
-              
-              final packet = BytesBuilder();
-              packet.add(params.headerPacket);
-              packet.add(bytes);
-              socket.send(packet.toBytes(), address, port);
-            }
-            await raf.close();
-          }
+        // 根据速度级别决定是否延迟
+        if (delayMicroseconds > 0) {
+          // 使用微秒级延迟
+          await Future.delayed(Duration(microseconds: delayMicroseconds));
+        } else {
+          // 极致模式：让出CPU一个调度周期，避免完全卡死
+          await Future.delayed(Duration.zero);
         }
-
-        // 完成一次全量文件回环后极小延迟
-        await Future.delayed(const Duration(milliseconds: 10));
       }
     } catch (e) {
       sendPort.send('⚠️ [Worker] 发送循环异常: $e');
@@ -359,6 +414,7 @@ class LocalLoopbackService {
     _cachedFilePath = null;
     _cachedFileName = null;
     _cachedHeaderPacket = null;
+    _prebuiltPackets = null;
     
     _log('🛑 本地回环已停止');
   }
@@ -373,7 +429,7 @@ class LocalLoopbackService {
       'type': 'dharma_local_loop',
       'fileName': fileName,
       'timestamp': DateTime.now().toIso8601String(),
-      'mode': 'streaming',
+      'mode': 'extreme_speed',
     };
     
     final headerBytes = utf8.encode(jsonEncode(header));
@@ -400,19 +456,21 @@ class LocalLoopbackService {
 class _IsolateParams {
   final SendPort sendPort;
   final Uint8List headerPacket;
-  final Uint8List? data;
-  final String? filePath;
+  final List<Uint8List>? prebuiltPackets;
   final String address;
   final int port;
   final int initialLoopCount;
+  final LoopbackSpeedLevel speedLevel;
+  final int batchCount;
 
   _IsolateParams({
     required this.sendPort,
     required this.headerPacket,
-    this.data,
-    this.filePath,
+    this.prebuiltPackets,
     required this.address,
     required this.port,
     this.initialLoopCount = 0,
+    this.speedLevel = LoopbackSpeedLevel.extreme,
+    this.batchCount = 10,
   });
 }

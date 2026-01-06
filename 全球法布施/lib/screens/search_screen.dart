@@ -66,9 +66,9 @@ class _SearchScreenState extends State<SearchScreen> {
       });
 
       // 异步获取点赞和评论数据，不阻塞搜索结果显示
-      // 使用 title 作为 contentId，与法流视频页面保持一致，确保点赞评论数据同步
+      // 使用 filePath 作为 contentId，与法流视频页面保持一致，确保点赞评论数据同步
       if (results.isNotEmpty) {
-        final contentIds = results.map((item) => item.title).toList();
+        final contentIds = results.map((item) => item.filePath.isNotEmpty ? item.filePath : item.title).toList();
         ContentStatsService().fetchContentStats(contentIds).then((_) {
           if (mounted) {
             setState(() {}); // 统计数据加载完成后刷新UI
@@ -203,15 +203,16 @@ class _SearchScreenState extends State<SearchScreen> {
       },
       itemBuilder: (context, index) {
         final item = _results[index];
-        // 使用 title 作为 id，与 ContentStatsService 的 contentId 保持一致
+        // 使用 filePath 作为 id，与 ContentStatsService 的 contentId 保持一致
+        final contentId = item.filePath.isNotEmpty ? item.filePath : item.title;
         final videoEntity = VideoEntity(
-          id: item.title,  // 使用 title 作为 contentId，与法流视频一致
+          id: contentId,  // 使用 filePath 作为 contentId，与法流视频一致
           username: item.title,
           description: item.preview ?? '点击头像阅读全文',
           videoUrl: '',
           profileImageUrl: '',
-          likeCount: ContentStatsService().getLikeCount(item.title),
-          commentCount: ContentStatsService().getCommentCount(item.title),
+          likeCount: ContentStatsService().getLikeCount(contentId),
+          commentCount: ContentStatsService().getCommentCount(contentId),
           shareCount: 0,
           timestamp: DateTime.now(),
           contentType: ContentType.text,

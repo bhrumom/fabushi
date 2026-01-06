@@ -198,4 +198,29 @@ class LikeService extends ChangeNotifier {
   int get likedCount => _likedItems.length;
 
   LikedItem? getLikedItem(String id) => _likedItems[id];
+
+  // 获取用户评论被点赞的总数（用于"获赞"统计）
+  int _receivedLikeCount = 0;
+  int get receivedLikeCount => _receivedLikeCount;
+
+  Future<void> fetchReceivedLikeCount() async {
+    if (_authToken == null) return;
+    
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConfig.apiUrl}/api/likes/received-count'),
+        headers: {'Authorization': 'Bearer $_authToken'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          _receivedLikeCount = data['receivedLikeCount'] ?? 0;
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('获取被点赞数失败: $e');
+    }
+  }
 }

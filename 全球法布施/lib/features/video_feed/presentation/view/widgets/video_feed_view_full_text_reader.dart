@@ -830,8 +830,29 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
       tableOfContents: _tableOfContents!,
       currentParagraphIndex: _currentParagraphIndex,
       onChapterTap: _scrollToChapter,
+      fullText: widget.fullText,
+      onMeritSentenceTap: _scrollToParagraph,
     );
   }
+  
+  /// 滚动到指定段落（用于功德利益句点击跳转）
+  void _scrollToParagraph(int paragraphIndex) {
+    if (paragraphIndex >= (_processedData?.paragraphs.length ?? 0)) return;
+    
+    if (_itemScrollController.isAttached) {
+      _itemScrollController.scrollTo(
+        index: paragraphIndex + 1,
+        alignment: 0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    
+    setState(() {
+      _currentParagraphIndex = paragraphIndex;
+    });
+  }
+
   
   /// 滚动到指定章节（精确跳转）
   void _scrollToChapter(SutraChapter chapter) {

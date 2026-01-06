@@ -348,7 +348,13 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 
       if (alreadyDownloadedAssets.isNotEmpty) {
-        await _reuseDownloadedAssets(context, alreadyDownloadedAssets);
+        // 获取复用失败（文件不存在）的素材列表
+        final failedAssets = await _reuseDownloadedAssets(context, alreadyDownloadedAssets);
+        // 把获取失败的素材加入需要下载的列表
+        if (failedAssets.isNotEmpty) {
+          needDownloadAssets.addAll(failedAssets);
+          debugPrint('⚠️ ${failedAssets.length} 个素材需要重新下载');
+        }
       }
 
       if (needDownloadAssets.isNotEmpty) {
@@ -365,19 +371,27 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _reuseDownloadedAssets(BuildContext context, List<String> assetPaths) async {
+  /// 复用已下载的素材，返回获取失败的素材列表（需要重新下载）
+  Future<List<String>> _reuseDownloadedAssets(BuildContext context, List<String> assetPaths) async {
+    final List<String> failedAssets = [];
     try {
       for (String assetPath in assetPaths) {
         final file = await _sharedAssetManager.getDownloadedAsset(assetPath);
         if (file != null) {
           addFiles([file]);
-          debugPrint('复用已下载素材: ${file.name}');
+          debugPrint('✅ 复用已下载素材: ${file.name}');
+        } else {
+          // 文件不存在，移除无效的下载记录并标记为需要重新下载
+          debugPrint('⚠️ 已下载素材文件不存在，需要重新下载: $assetPath');
+          await _sharedAssetManager.removeAssetDownloadRecord(assetPath);
+          failedAssets.add(assetPath);
         }
       }
     } catch (e) {
       debugPrint('复用已下载素材失败: $e');
       rethrow;
     }
+    return failedAssets;
   }
 
 

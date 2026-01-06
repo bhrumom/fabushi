@@ -129,3 +129,34 @@ export async function handleGetMyLikes(request, env, db) {
         return jsonResponse({ error: '获取失败' }, 500);
     }
 }
+
+// 获取用户评论被点赞的总数（用于"获赞"统计）
+export async function handleGetReceivedLikeCount(request, env, db) {
+    try {
+        const authHeader = request.headers.get('Authorization');
+        const token = authHeader?.replace('Bearer ', '');
+
+        if (!token) {
+            return jsonResponse({ error: '未登录' }, 401);
+        }
+
+        const decoded = await verifyToken(token, env);
+        if (!decoded?.username) {
+            return jsonResponse({ error: '无效的token' }, 401);
+        }
+
+        // 统计用户发表的评论被点赞的总数
+        const result = await db.prepare(
+            'SELECT COALESCE(SUM(like_count), 0) as totalLikes FROM comments WHERE username = ?'
+        ).bind(decoded.username).first();
+
+        return jsonResponse({
+            success: true,
+            receivedLikeCount: result?.totalLikes || 0
+        });
+    } catch (error) {
+        console.error('Get received like count error:', error);
+        return jsonResponse({ error: '获取失败' }, 500);
+    }
+}
+

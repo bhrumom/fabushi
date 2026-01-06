@@ -18,6 +18,7 @@ class VideoFeedViewInteractionButtons extends StatefulWidget {
     this.profileImageUrl = '',
     this.onLikeTap,
     this.onCommentTap,
+    this.onBookmarkTap,
     this.contentType = ContentType.video,
     this.textContent,
     this.username = '',
@@ -33,6 +34,7 @@ class VideoFeedViewInteractionButtons extends StatefulWidget {
   final int shareCount;
   final VoidCallback? onLikeTap;
   final VoidCallback? onCommentTap;
+  final VoidCallback? onBookmarkTap;
   final ContentType contentType;
   final String? textContent;
   final String username;
@@ -97,10 +99,13 @@ class _VideoFeedViewInteractionButtonsState
           ),
           SizedBox(height: isMobile ? 12 : 16),
           // 收藏
-          Icon(
-            widget.isBookmarked ? Icons.bookmark : Icons.bookmark_border,
-            color: white,
-            size: iconSize,
+          GestureDetector(
+            onTap: widget.onBookmarkTap,
+            child: Icon(
+              widget.isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+              color: widget.isBookmarked ? Colors.amber : white,
+              size: iconSize,
+            ),
           ),
           // TTS静音按钮 - 只在文字内容时显示
           if (widget.contentType == ContentType.text) ...[  

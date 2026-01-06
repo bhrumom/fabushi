@@ -6,7 +6,9 @@ import 'package:global_dharma_sharing/features/video_feed/presentation/view/widg
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/recitation_game_widget.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/reading_game_widget.dart';
 import 'package:global_dharma_sharing/models/liked_item.dart';
+import 'package:global_dharma_sharing/models/favorite_item.dart';
 import 'package:global_dharma_sharing/services/like_service.dart';
+import 'package:global_dharma_sharing/services/favorite_service.dart';
 import 'package:global_dharma_sharing/services/content_stats_service.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/comment_bottom_sheet.dart';
 import 'package:global_dharma_sharing/core/utils/auth_guard.dart';
@@ -31,7 +33,9 @@ class VideoFeedViewItem extends StatefulWidget {
 class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
   String? _currentParagraph;
   final LikeService _likeService = LikeService();
+  final FavoriteService _favoriteService = FavoriteService();
   bool _isLiked = false;
+  bool _isFavorited = false;
   int _likeCount = 0;
   int _commentCount = 0;
 
@@ -57,12 +61,26 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
     }
     
     _likeService.addListener(_updateLikeState);
+    
+    // 初始化收藏服务并获取收藏状态
+    _favoriteService.initialize();
+    _isFavorited = _favoriteService.isFavorited(widget.videoItem.id);
+    _favoriteService.addListener(_updateFavoriteState);
   }
 
   @override
   void dispose() {
     _likeService.removeListener(_updateLikeState);
+    _favoriteService.removeListener(_updateFavoriteState);
     super.dispose();
+  }
+
+  void _updateFavoriteState() {
+    if (mounted) {
+      setState(() {
+        _isFavorited = _favoriteService.isFavorited(widget.videoItem.id);
+      });
+    }
   }
 
   void _updateLikeState() {
@@ -99,6 +117,36 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_isLiked ? '已添加到喜欢' : '已取消喜欢'),
+          duration: const Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(bottom: 100, left: 20, right: 20),
+        ),
+      );
+    }
+  }
+
+  void _handleFavoriteTap() async {
+    // 检查登录状态
+    final hasAuth = await AuthGuard.check(context);
+    if (!hasAuth) return;
+
+    final item = FavoriteItem(
+      id: widget.videoItem.id,
+      title: widget.videoItem.username, // username 字段存储的是标题
+      description: widget.videoItem.description,
+      textContent: widget.videoItem.textContent,
+      filePath: widget.videoItem.filePath,
+      favoritedAt: DateTime.now(),
+      contentType: widget.videoItem.contentType == ContentType.video ? 'video' : 'text',
+    );
+
+    final wasFavorited = _isFavorited;
+    await _favoriteService.toggleFavorite(item);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(wasFavorited ? '已取消收藏' : '已收藏'),
           duration: const Duration(seconds: 1),
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.only(bottom: 100, left: 20, right: 20),
@@ -254,7 +302,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
           profileImageUrl: widget.videoItem.profileImageUrl,
           username: widget.videoItem.username,
           description: widget.videoItem.description,
-          isBookmarked: false,
+          isBookmarked: _isFavorited,
           isLiked: _isLiked,
           likeCount: _likeCount,
           commentCount: _commentCount,
@@ -264,6 +312,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
           currentParagraph: _currentParagraph,
           onLikeTap: _handleLikeTap,
           onCommentTap: _handleCommentTap,
+          onBookmarkTap: _handleFavoriteTap,
           onStartRecitation: widget.videoItem.contentType == ContentType.text
               ? _handleStartRecitation
               : null,
