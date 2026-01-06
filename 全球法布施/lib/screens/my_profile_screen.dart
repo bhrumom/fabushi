@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'dart:ui';
 import '../models/auth_model.dart';
@@ -19,8 +20,31 @@ import '../services/local_work_service.dart';
 import '../models/local_work_model.dart';
 
 /// 抖音风格个人中心页面
-class MyProfileScreen extends StatelessWidget {
+class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key});
+
+  @override
+  State<MyProfileScreen> createState() => _MyProfileScreenState();
+}
+
+class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
+  // 用于强制刷新 FutureBuilder 的 key
+  Key _worksKey = UniqueKey();
+
+  void refreshWorks() {
+    setState(() {
+      _worksKey = UniqueKey();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 每次页面变为可见时刷新作品列表
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      refreshWorks();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -104,22 +128,30 @@ class MyProfileScreen extends StatelessWidget {
 
   Widget _buildWorksTab() {
     return FutureBuilder<List<LocalWorkModel>>(
+      key: _worksKey,
       future: LocalWorkService.instance.getWorks(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: Colors.amber));
         }
+        if (snapshot.hasError) {
+          debugPrint('[MyProfileScreen] 加载作品失败: ${snapshot.error}');
+          return Center(
+            child: Text('加载失败: ${snapshot.error}', style: const TextStyle(color: Colors.redAccent)),
+          );
+        }
         final works = snapshot.data ?? [];
+        debugPrint('[MyProfileScreen] 加载到 ${works.length} 个作品');
         return WorksGridView(
           works: works, 
           onDelete: () {
-            // Trigger refresh/rebuild if needed, currently FutureBuilder will need setState to refresh.
-            // For simplicity, we assume WorksGridView handles state or we might need to convert MyProfileScreen to StatefulWidget to force refresh.
+            refreshWorks();
           }
         );
       },
     );
   }
+
 
   /// 修行记录入口卡片
   Widget _buildPracticeStatsCard(BuildContext context) {

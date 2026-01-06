@@ -10,6 +10,8 @@ import '../../../../../services/local_work_service.dart';
 import '../../../../../models/local_work_model.dart';
 import '../../../../../services/comment_service.dart';
 import '../../../../../models/auth_model.dart';
+import '../../../../../services/sherpa_stt_service.dart';
+import '../../../../../services/sentence_matching_service.dart';
 import 'package:provider/provider.dart';
 
 /// 读诵游戏状态
@@ -82,6 +84,12 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   /// 音频合并服务
   final AudioMergerService _mergerService = AudioMergerService.instance;
   
+  /// 语音识别服务
+  final SherpaSTTService _sttService = SherpaSTTService.instance;
+  
+  /// 智能句子匹配服务
+  final SentenceMatchingService _matchingService = SentenceMatchingService();
+  
   /// 每个句子的 PCM 文件路径
   final List<String> _pcmPaths = [];
   
@@ -106,6 +114,12 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   /// 动画控制器
   AnimationController? _pulseController;
   Animation<double>? _pulseAnimation;
+  
+  /// 智能识别相关状态
+  bool _isAutoModeEnabled = true;  // 是否启用自动模式
+  double _matchProgress = 0.0;     // 当前句子的匹配进度
+  String _recognizedText = '';     // 当前识别到的文本
+  StreamSubscription<Uint8List>? _audioStreamSubscription;  // 音频流订阅
 
   @override
   void initState() {
@@ -179,6 +193,28 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
         return;
       }
       
+      // 3. 初始化语音识别服务（用于智能识别）
+      if (_isAutoModeEnabled) {
+        setState(() {
+          _initMessage = '正在初始化智能识别...';
+        });
+        debugPrint('[ReadingGame] 步骤3: 初始化语音识别服务...');
+        _sttService.onProgress = (message) {
+          if (mounted) {
+            setState(() {
+              _initMessage = message;
+            });
+          }
+        };
+        // 设置识别结果回调
+        _sttService.onResult = _onSpeechResult;
+        final sttSuccess = await _sttService.initialize();
+        if (!sttSuccess) {
+          debugPrint('[ReadingGame] 语音识别初始化失败，禁用自动模式');
+          _isAutoModeEnabled = false;
+        }
+      }
+      
       debugPrint('[ReadingGame] === 初始化完成 ===');
       if (mounted) {
         setState(() {
@@ -196,6 +232,38 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
         });
       }
     }
+  }
+  
+  /// 语音识别结果回调
+  void _onSpeechResult(String text, bool isFinal) {
+    if (!mounted || _state != ReadingState.recording) return;
+    
+    final currentSentence = widget.sentences[_currentIndex];
+    
+    // 更新识别文本
+    setState(() {
+      _recognizedText = text;
+      _matchProgress = _matchingService.getProgress(text, currentSentence);
+    });
+    
+    // 检查是否应该自动切换
+    if (_isAutoModeEnabled && 
+        _matchingService.shouldAdvanceToNext(text, currentSentence, isFinal)) {
+      debugPrint('[ReadingGame] 智能识别触发自动切换');
+      _autoAdvanceToNext();
+    }
+  }
+  
+  /// 自动切换到下一句（由智能识别触发）
+  Future<void> _autoAdvanceToNext() async {
+    // 防止重复触发
+    if (_state != ReadingState.recording) return;
+    
+    // 播放震动反馈
+    HapticFeedback.heavyImpact();
+    
+    // 切换到下一句
+    await _nextSentence();
   }
 
   /// 开始录音（第一句）
@@ -215,6 +283,13 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   /// 开始当前句子的录音
   Future<void> _startSentenceRecording() async {
     try {
+      // 重置匹配服务状态
+      _matchingService.reset();
+      setState(() {
+        _matchProgress = 0.0;
+        _recognizedText = '';
+      });
+      
       // 生成当前句子的 PCM 文件路径
       final tempDir = await getTemporaryDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -233,6 +308,15 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
       _currentSentenceStartMs = _totalRecordingMs;
       _sentenceRecordStartTime = DateTime.now();
       
+      // 如果启用自动模式，同时启动语音识别
+      if (_isAutoModeEnabled && _sttService.isInitialized) {
+        await _sttService.startRecognizing();
+        // 监听音频流并发送给语音识别
+        _audioStreamSubscription = stream.listen((audioData) {
+          _sttService.processAudio(audioData);
+        });
+      }
+      
       setState(() {
         _state = ReadingState.recording;
       });
@@ -250,6 +334,15 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
     if (_state != ReadingState.recording) return;
     
     HapticFeedback.mediumImpact();
+    
+    // 停止语音识别流订阅
+    await _audioStreamSubscription?.cancel();
+    _audioStreamSubscription = null;
+    
+    // 停止语音识别
+    if (_sttService.isRecognizing) {
+      await _sttService.stopRecognizing();
+    }
     
     // 停止当前录音
     await _audioService.stopRecording();
@@ -400,11 +493,21 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   }
 
   Future<void> _handlePublish(BuildContext dialogContext, ReadingResult result) async {
-    if (result.audioPath == null) return;
+    if (result.audioPath == null) {
+      debugPrint('[ReadingGame] 错误: audioPath 为空');
+      return;
+    }
+    
+    debugPrint('[ReadingGame] === 开始发布 ===');
+    debugPrint('[ReadingGame] audioPath: ${result.audioPath}');
+    debugPrint('[ReadingGame] contentId: ${widget.contentId}');
+    debugPrint('[ReadingGame] contentTitle: ${widget.contentTitle}');
+    debugPrint('[ReadingGame] durationMs: ${result.totalDuration.inMilliseconds}');
     
     // Check auth
     final authModel = Provider.of<AuthModel>(context, listen: false);
     if (authModel.currentUser == null) {
+      debugPrint('[ReadingGame] 错误: 用户未登录');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先登录后发布')),
       );
@@ -412,24 +515,38 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
     }
 
     try {
-      // 1. Save locally
+      // 1. Save locally (音频保存在本地)
+      debugPrint('[ReadingGame] 步骤1: 保存音频到本地数据库...');
       final work = LocalWorkModel.create(
         contentId: widget.contentId,
         title: widget.contentTitle,
         filePath: result.audioPath!,
         durationMs: result.totalDuration.inMilliseconds,
       );
-      await LocalWorkService.instance.saveWork(work);
+      debugPrint('[ReadingGame] 创建 LocalWorkModel: id=${work.id}, title=${work.title}');
       
-      // 2. Post comment with attachment
+      await LocalWorkService.instance.saveWork(work);
+      debugPrint('[ReadingGame] ✓ 本地音频保存成功');
+      
+      // 验证保存
+      final savedWorks = await LocalWorkService.instance.getWorks();
+      debugPrint('[ReadingGame] 当前本地作品数量: ${savedWorks.length}');
+      
+      // 2. Post comment to backend (评论文本上传后端，不传音频附件)
+      debugPrint('[ReadingGame] 步骤2: 发布评论到后端（不含音频附件）...');
       final commentService = CommentService();
-      await commentService.postComment(
+      final commentResult = await commentService.postComment(
         widget.contentId,
         '我在读诵练习中完成了《${widget.contentTitle}》的录制，快来听听吧！',
         contentTitle: widget.contentTitle,
-        attachmentPath: result.audioPath,
-        attachmentType: 'audio',
+        // 注：音频附件暂不上传，只保存在本地
       );
+      
+      if (commentResult['success'] == true) {
+        debugPrint('[ReadingGame] ✓ 评论发布成功');
+      } else {
+        debugPrint('[ReadingGame] ⚠ 评论发布失败: ${commentResult['error']}');
+      }
       
       if (mounted) {
         Navigator.of(dialogContext).pop(); // Close dialog
@@ -437,9 +554,11 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
         ScaffoldMessenger.of(dialogContext).showSnackBar(
           const SnackBar(content: Text('发布成功！已保存到"作品"和评论区')),
         );
+        debugPrint('[ReadingGame] === 发布完成 ===');
       }
-    } catch (e) {
-      debugPrint('Publish failed: $e');
+    } catch (e, stackTrace) {
+      debugPrint('[ReadingGame] ❌ 发布失败: $e');
+      debugPrint('[ReadingGame] 堆栈: $stackTrace');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('发布失败: $e')),
@@ -447,6 +566,8 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
       }
     }
   }
+
+
 
 
   /// 格式化时长
@@ -459,6 +580,15 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   /// 停止录音
   Future<void> _stopRecording() async {
     try {
+      // 停止音频流订阅
+      await _audioStreamSubscription?.cancel();
+      _audioStreamSubscription = null;
+      
+      // 停止语音识别
+      if (_sttService.isRecognizing) {
+        await _sttService.stopRecognizing();
+      }
+      
       await _audioService.stopRecording();
     } catch (e) {
       debugPrint('[ReadingGame] 停止录音异常: $e');
@@ -564,9 +694,27 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
           style: const TextStyle(color: Colors.white70, fontSize: 16),
         ),
         const SizedBox(height: 8),
-        const Text(
-          '朗读完每句后点击"下一句"',
-          style: TextStyle(color: Colors.green, fontSize: 14),
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 32),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.green.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.auto_awesome, color: Colors.green, size: 18),
+              SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  '智能识别：念完后自动切换下一句',
+                  style: TextStyle(color: Colors.green, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 48),
         ElevatedButton.icon(
@@ -592,9 +740,64 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
     
     return Column(
       children: [
-        // 进度条
+        // 顶部模式切换
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // 自动/手动模式切换
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isAutoModeEnabled = !_isAutoModeEnabled;
+                  });
+                  HapticFeedback.selectionClick();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _isAutoModeEnabled 
+                        ? Colors.green.withValues(alpha: 0.2) 
+                        : Colors.grey.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _isAutoModeEnabled ? Colors.green : Colors.grey,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isAutoModeEnabled ? Icons.auto_awesome : Icons.touch_app,
+                        size: 16,
+                        color: _isAutoModeEnabled ? Colors.green : Colors.grey,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _isAutoModeEnabled ? '智能识别' : '手动模式',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _isAutoModeEnabled ? Colors.green : Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // 进度指示
+              Text(
+                '${_currentIndex + 1}/${widget.sentences.length}',
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+        
+        // 句子进度条
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: LinearProgressIndicator(
@@ -605,6 +808,51 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
             ),
           ),
         ),
+        
+        // 智能识别进度条（仅在自动模式下显示）
+        if (_isAutoModeEnabled && isRecording)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _matchingService.getProgressHint(_matchProgress),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _matchProgress >= 0.75 ? Colors.green : Colors.white54,
+                      ),
+                    ),
+                    Text(
+                      '${(_matchProgress * 100).toStringAsFixed(0)}%',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _matchProgress >= 0.75 ? Colors.green : Colors.white54,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: _matchProgress,
+                    minHeight: 4,
+                    backgroundColor: Colors.grey[800],
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      _matchProgress >= 0.90 ? Colors.green 
+                          : _matchProgress >= 0.75 ? Colors.lightGreen 
+                          : Colors.blue,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         
         // 当前句子
         Expanded(
@@ -617,12 +865,16 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
                 constraints: const BoxConstraints(maxHeight: 400),
                 decoration: BoxDecoration(
                   color: isRecording 
-                      ? Colors.red.withValues(alpha: 0.1)
+                      ? (_matchProgress >= 0.75 
+                          ? Colors.green.withValues(alpha: 0.1)
+                          : Colors.red.withValues(alpha: 0.1))
                       : Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: isRecording 
-                        ? Colors.red.withValues(alpha: 0.5)
+                        ? (_matchProgress >= 0.75 
+                            ? Colors.green.withValues(alpha: 0.5)
+                            : Colors.red.withValues(alpha: 0.5))
                         : Colors.amber.withValues(alpha: 0.3),
                     width: 2,
                   ),
@@ -636,13 +888,22 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
                           animation: _pulseAnimation!,
                           builder: (context, child) => Transform.scale(
                             scale: _pulseAnimation!.value,
-                            child: const Icon(Icons.mic, color: Colors.red, size: 40),
+                            child: Icon(
+                              _matchProgress >= 0.75 ? Icons.check_circle : Icons.mic,
+                              color: _matchProgress >= 0.75 ? Colors.green : Colors.red,
+                              size: 40,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
-                          '正在录音...',
-                          style: TextStyle(color: Colors.red, fontSize: 14),
+                        Text(
+                          _matchProgress >= 0.90 ? '念完了！' 
+                              : _matchProgress >= 0.75 ? '即将切换...' 
+                              : '正在录音...',
+                          style: TextStyle(
+                            color: _matchProgress >= 0.75 ? Colors.green : Colors.red,
+                            fontSize: 14,
+                          ),
                         ),
                       ] else ...[
                         const Icon(Icons.mic_off, color: Colors.white38, size: 40),
@@ -659,10 +920,40 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
                         style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
-                          color: isRecording ? Colors.white : Colors.amber,
+                          color: isRecording 
+                              ? (_matchProgress >= 0.75 ? Colors.green : Colors.white)
+                              : Colors.amber,
                           height: 1.5,
                         ),
                       ),
+                      // 显示识别到的文本（调试用，可选）
+                      if (_isAutoModeEnabled && isRecording && _recognizedText.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.black26,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
+                              const Text(
+                                '识别结果:',
+                                style: TextStyle(color: Colors.white38, fontSize: 10),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _recognizedText,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
