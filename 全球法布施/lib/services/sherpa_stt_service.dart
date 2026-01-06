@@ -104,13 +104,22 @@ class SherpaSTTService {
       final appDir = await getApplicationDocumentsDirectory();
       final modelDir = Directory('${appDir.path}/sherpa-onnx-models/streaming-paraformer-zh-en');
       
-      // 检查模型是否已存在
+      // 检查模型是否已存在且完整
       if (await modelDir.exists()) {
         final encoderFile = File('${modelDir.path}/encoder.int8.onnx');
-        // 简单校验文件是否存在
+        // 校验文件是否存在且大小正确（encoder 应该 > 100MB）
         if (await encoderFile.exists()) {
-          debugPrint('[SherpaSTT] 使用已存在的模型: ${modelDir.path}');
-          return modelDir.path;
+          final fileSize = await encoderFile.length();
+          // 如果文件大于 1MB，认为是有效的模型文件
+          if (fileSize > 1024 * 1024) {
+            debugPrint('[SherpaSTT] 使用已存在的模型: ${modelDir.path} (大小: ${fileSize ~/ 1024 ~/ 1024}MB)');
+            return modelDir.path;
+          } else {
+            // 文件太小，可能是损坏的缓存，删除重新复制
+            debugPrint('[SherpaSTT] 检测到损坏的模型缓存 (大小: $fileSize bytes)，正在删除...');
+            await modelDir.delete(recursive: true);
+            await modelDir.create(recursive: true);
+          }
         }
       }
       

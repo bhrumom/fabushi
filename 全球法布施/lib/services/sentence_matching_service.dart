@@ -8,10 +8,10 @@ import 'package:lpinyin/lpinyin.dart';
 class SentenceMatchingService {
   /// 匹配阈值：识别文本拼音覆盖目标句子拼音的百分比
   /// 达到此阈值且检测到静音端点时，判定为念完
-  static const double matchThreshold = 0.75;
+  static const double matchThreshold = 0.50;
   
   /// 快速切换阈值：当匹配度非常高时可以更快切换
-  static const double fastMatchThreshold = 0.90;
+  static const double fastMatchThreshold = 0.70;
   
   /// 最小静音时长（毫秒）：检测到端点后需要等待的静音时长
   static const int minSilenceDurationMs = 300;
@@ -173,11 +173,11 @@ class SentenceMatchingService {
   String getProgressHint(double progress) {
     if (progress < 0.1) {
       return '请开始朗读...';
-    } else if (progress < 0.4) {
+    } else if (progress < 0.3) {
       return '继续念...';
-    } else if (progress < 0.7) {
+    } else if (progress < 0.5) {
       return '很好，继续...';
-    } else if (progress < 0.9) {
+    } else if (progress < 0.7) {
       return '即将完成...';
     } else {
       return '念完了！';

@@ -120,10 +120,17 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   double _matchProgress = 0.0;     // 当前句子的匹配进度
   String _recognizedText = '';     // 当前识别到的文本
   StreamSubscription<Uint8List>? _audioStreamSubscription;  // 音频流订阅
+  
+  /// K歌风格歌词滚动控制器
+  late ScrollController _lyricsScrollController;
+  
+  /// 每行歌词的高度（用于计算滚动位置）
+  static const double _lyricLineHeight = 72.0;
 
   @override
   void initState() {
     super.initState();
+    _lyricsScrollController = ScrollController();
     _initAnimations();
     _initServices();
   }
@@ -132,6 +139,7 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   void dispose() {
     _stopRecording();
     _pulseController?.dispose();
+    _lyricsScrollController.dispose();
     super.dispose();
   }
 
@@ -374,6 +382,9 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
       setState(() {
         _state = ReadingState.ready;
       });
+      
+      // 滚动到新的当前句子
+      _scrollToCurrentSentence();
       
       // 延迟后开始下一句录音
       await Future.delayed(const Duration(milliseconds: 500));
@@ -732,18 +743,49 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
     );
   }
 
-  /// 读诵视图
+  /// 滚动到当前句子（K歌效果）
+  void _scrollToCurrentSentence() {
+    if (!_lyricsScrollController.hasClients) return;
+    
+    // 计算目标滚动位置：让当前句子居中
+    final targetOffset = _currentIndex * _lyricLineHeight;
+    
+    _lyricsScrollController.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  /// 读诵视图 - K歌风格歌词滚动
   Widget _buildReadingView() {
-    final currentSentence = widget.sentences[_currentIndex];
     final isRecording = _state == ReadingState.recording;
     final isLastSentence = _currentIndex == widget.sentences.length - 1;
     
     return Column(
       children: [
-        // 顶部模式切换
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-          child: Row(
+        // 顶部状态栏
+        _buildTopStatusBar(isRecording),
+        
+        // K歌风格歌词列表
+        Expanded(
+          child: _buildKaraokeLyrics(isRecording),
+        ),
+        
+        // 底部按钮
+        _buildBottomButton(isRecording, isLastSentence),
+      ],
+    );
+  }
+  
+  /// 顶部状态栏
+  Widget _buildTopStatusBar(bool isRecording) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      child: Column(
+        children: [
+          // 模式切换 + 进度
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               // 自动/手动模式切换
@@ -786,204 +828,258 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
                   ),
                 ),
               ),
-              // 进度指示
+              // 录音状态指示
+              if (isRecording)
+                Row(
+                  children: [
+                    AnimatedBuilder(
+                      animation: _pulseAnimation!,
+                      builder: (context, child) => Icon(
+                        Icons.fiber_manual_record,
+                        color: Colors.red,
+                        size: 12 * _pulseAnimation!.value,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'REC',
+                      style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              // 进度
               Text(
                 '${_currentIndex + 1}/${widget.sentences.length}',
                 style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
             ],
           ),
-        ),
-        
-        // 句子进度条
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+          const SizedBox(height: 8),
+          // 进度条
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: (_currentIndex + 1) / widget.sentences.length,
-              minHeight: 8,
+              minHeight: 4,
               backgroundColor: Colors.grey[800],
               valueColor: const AlwaysStoppedAnimation<Color>(Colors.amber),
             ),
           ),
-        ),
-        
-        // 智能识别进度条（仅在自动模式下显示）
-        if (_isAutoModeEnabled && isRecording)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          // 智能识别进度
+          if (_isAutoModeEnabled && isRecording) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _matchingService.getProgressHint(_matchProgress),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _matchProgress >= 0.75 ? Colors.green : Colors.white54,
-                      ),
-                    ),
-                    Text(
-                      '${(_matchProgress * 100).toStringAsFixed(0)}%',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _matchProgress >= 0.75 ? Colors.green : Colors.white54,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+                Text(
+                  _matchingService.getProgressHint(_matchProgress),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _matchProgress >= 0.50 ? Colors.green : Colors.white38,
+                  ),
                 ),
-                const SizedBox(height: 4),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: _matchProgress,
-                    minHeight: 4,
-                    backgroundColor: Colors.grey[800],
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      _matchProgress >= 0.90 ? Colors.green 
-                          : _matchProgress >= 0.75 ? Colors.lightGreen 
-                          : Colors.blue,
-                    ),
+                Text(
+                  '${(_matchProgress * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _matchProgress >= 0.50 ? Colors.green : Colors.white38,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
             ),
-          ),
-        
-        // 当前句子
-        Expanded(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                padding: const EdgeInsets.all(24),
-                constraints: const BoxConstraints(maxHeight: 400),
-                decoration: BoxDecoration(
-                  color: isRecording 
-                      ? (_matchProgress >= 0.75 
-                          ? Colors.green.withValues(alpha: 0.1)
-                          : Colors.red.withValues(alpha: 0.1))
-                      : Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isRecording 
-                        ? (_matchProgress >= 0.75 
-                            ? Colors.green.withValues(alpha: 0.5)
-                            : Colors.red.withValues(alpha: 0.5))
-                        : Colors.amber.withValues(alpha: 0.3),
-                    width: 2,
-                  ),
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isRecording) ...[
-                        AnimatedBuilder(
-                          animation: _pulseAnimation!,
-                          builder: (context, child) => Transform.scale(
-                            scale: _pulseAnimation!.value,
-                            child: Icon(
-                              _matchProgress >= 0.75 ? Icons.check_circle : Icons.mic,
-                              color: _matchProgress >= 0.75 ? Colors.green : Colors.red,
-                              size: 40,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _matchProgress >= 0.90 ? '念完了！' 
-                              : _matchProgress >= 0.75 ? '即将切换...' 
-                              : '正在录音...',
-                          style: TextStyle(
-                            color: _matchProgress >= 0.75 ? Colors.green : Colors.red,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ] else ...[
-                        const Icon(Icons.mic_off, color: Colors.white38, size: 40),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '准备录音',
-                          style: TextStyle(color: Colors.white54, fontSize: 14),
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      Text(
-                        currentSentence,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: isRecording 
-                              ? (_matchProgress >= 0.75 ? Colors.green : Colors.white)
-                              : Colors.amber,
-                          height: 1.5,
-                        ),
-                      ),
-                      // 显示识别到的文本（调试用，可选）
-                      if (_isAutoModeEnabled && isRecording && _recognizedText.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.black26,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Column(
-                            children: [
-                              const Text(
-                                '识别结果:',
-                                style: TextStyle(color: Colors.white38, fontSize: 10),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _recognizedText,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
+            const SizedBox(height: 4),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: _matchProgress,
+                minHeight: 3,
+                backgroundColor: Colors.grey[900],
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  _matchProgress >= 0.70 ? Colors.green 
+                      : _matchProgress >= 0.50 ? Colors.lightGreen 
+                      : Colors.blue,
                 ),
               ),
             ),
-          ),
-        ),
+          ],
+        ],
+      ),
+    );
+  }
+  
+  /// K歌风格歌词列表
+  Widget _buildKaraokeLyrics(bool isRecording) {
+    // 计算可见区域能容纳的行数
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewportHeight = constraints.maxHeight;
+        // 顶部留白，让当前句子居中
+        final topPadding = (viewportHeight - _lyricLineHeight) / 2;
+        final bottomPadding = topPadding;
         
-        // 底部按钮
-        Padding(
-          padding: const EdgeInsets.all(24),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // 下一句/完成按钮
-              ElevatedButton.icon(
-                onPressed: isRecording ? _nextSentence : null,
-                icon: Icon(isLastSentence ? Icons.check : Icons.skip_next),
-                label: Text(isLastSentence ? '完成录音' : '下一句'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isLastSentence ? Colors.green : Colors.amber,
-                  foregroundColor: isLastSentence ? Colors.white : Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
+        return GestureDetector(
+          // 垂直拖动切换句子
+          onVerticalDragEnd: (details) {
+            if (_state != ReadingState.recording) return;
+            
+            final velocity = details.primaryVelocity ?? 0;
+            // 上滑 (负速度) -> 下一句
+            if (velocity < -200) {
+              HapticFeedback.lightImpact();
+              _nextSentence();
+            }
+            // 下滑 (正速度) -> 上一句
+            else if (velocity > 200 && _currentIndex > 0) {
+              HapticFeedback.lightImpact();
+              _goToPreviousSentence();
+            }
+          },
+          child: ShaderMask(
+            // 顶部和底部渐变遮罩
+            shaderCallback: (Rect bounds) {
+              return LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.white,
+                  Colors.white,
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.15, 0.85, 1.0],
+              ).createShader(bounds);
+            },
+            blendMode: BlendMode.dstIn,
+            child: ListView.builder(
+              controller: _lyricsScrollController,
+              physics: const NeverScrollableScrollPhysics(), // 禁止自由滚动，只响应手势
+              padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
+              itemCount: widget.sentences.length,
+              itemBuilder: (context, index) {
+                return _buildLyricLine(index, isRecording);
+              },
+            ),
           ),
+        );
+      },
+    );
+  }
+  
+  /// 切换到上一句
+  Future<void> _goToPreviousSentence() async {
+    if (_currentIndex <= 0) return;
+    
+    // 停止当前录音
+    await _audioStreamSubscription?.cancel();
+    _audioStreamSubscription = null;
+    if (_sttService.isRecognizing) {
+      await _sttService.stopRecognizing();
+    }
+    await _audioService.stopRecording();
+    
+    // 移除最后一个 PCM 文件记录（如果有）
+    if (_pcmPaths.isNotEmpty) {
+      _pcmPaths.removeLast();
+    }
+    
+    // 切换到上一句
+    _currentIndex--;
+    
+    setState(() {
+      _state = ReadingState.ready;
+    });
+    
+    // 滚动到新位置
+    _scrollToCurrentSentence();
+    
+    // 延迟后开始录音
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (mounted) {
+      await _startSentenceRecording();
+    }
+  }
+  
+  /// 构建单行歌词
+  Widget _buildLyricLine(int index, bool isRecording) {
+    final isCurrent = index == _currentIndex;
+    final isPast = index < _currentIndex;
+    final distance = (index - _currentIndex).abs();
+    
+    // 透明度：当前句子最亮，距离越远越淡
+    double opacity;
+    if (isCurrent) {
+      opacity = 1.0;
+    } else if (distance == 1) {
+      opacity = 0.5;
+    } else if (distance == 2) {
+      opacity = 0.3;
+    } else {
+      opacity = 0.15;
+    }
+    
+    // 字体大小：当前句子最大
+    final fontSize = isCurrent ? 26.0 : 18.0;
+    
+    // 颜色
+    Color textColor;
+    if (isCurrent) {
+      if (isRecording && _matchProgress >= 0.50) {
+        textColor = Colors.green;
+      } else if (isRecording) {
+        textColor = Colors.white;
+      } else {
+        textColor = Colors.amber;
+      }
+    } else if (isPast) {
+      textColor = Colors.green.withValues(alpha: opacity * 0.8);
+    } else {
+      textColor = Colors.white.withValues(alpha: opacity);
+    }
+    
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      height: _lyricLineHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      alignment: Alignment.center,
+      child: AnimatedDefaultTextStyle(
+        duration: const Duration(milliseconds: 300),
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+          color: textColor,
+          height: 1.4,
         ),
-      ],
+        child: Text(
+          widget.sentences[index],
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
+  
+  /// 底部按钮
+  Widget _buildBottomButton(bool isRecording, bool isLastSentence) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ElevatedButton.icon(
+            onPressed: isRecording ? _nextSentence : null,
+            icon: Icon(isLastSentence ? Icons.check : Icons.skip_next),
+            label: Text(isLastSentence ? '完成录音' : '下一句'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isLastSentence ? Colors.green : Colors.amber,
+              foregroundColor: isLastSentence ? Colors.white : Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
