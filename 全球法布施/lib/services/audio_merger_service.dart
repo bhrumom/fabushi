@@ -175,10 +175,17 @@ class AudioMergerService {
     // -f s16le: 输入格式为 16-bit little-endian signed integer
     // -ar 16000: 采样率 16kHz
     // -ac 1: 单声道
+    // 音频滤波器链:
+    //   - aresample=44100: 重采样到 44.1kHz（AAC 标准采样率，兼容性更好）
+    //   - lowpass=f=7500: 低通滤波器，移除高频噪声（原始16kHz最高只有8kHz频率）
+    //   - dynaudnorm: 动态音量标准化，平滑音量变化
+    //   - afftdn=nf=-25: FFT降噪，移除背景噪音
     // -c:a aac: 使用 AAC 编码器
+    // -profile:a aac_low: 使用 AAC-LC 档案（兼容性最好）
     // -b:a 128k: 比特率 128kbps
     final command = '-y -f s16le -ar 16000 -ac 1 -i "$pcmPath" '
-                    '-c:a aac -b:a 128k "$outputPath"';
+                    '-af "aresample=44100,lowpass=f=7500,dynaudnorm=f=150:g=15,afftdn=nf=-25" '
+                    '-c:a aac -profile:a aac_low -b:a 128k "$outputPath"';
     
     debugPrint('[AudioMerger] 执行 FFmpeg: $command');
     

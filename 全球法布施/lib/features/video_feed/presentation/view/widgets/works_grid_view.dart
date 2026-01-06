@@ -1,7 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../../../models/local_work_model.dart';
 import '../../../../../services/audio_stream_service.dart';
+import '../../../../../screens/work_player_screen.dart';
 
 class WorksGridView extends StatefulWidget {
   final List<LocalWorkModel> works;
@@ -18,36 +18,11 @@ class WorksGridView extends StatefulWidget {
 }
 
 class _WorksGridViewState extends State<WorksGridView> {
-  String? _playingId;
 
   @override
   void dispose() {
     AudioStreamService.instance.stopPlayer();
     super.dispose();
-  }
-
-  Future<void> _playWork(LocalWorkModel work) async {
-    if (_playingId == work.id) {
-      await AudioStreamService.instance.stopPlayer();
-      setState(() {
-        _playingId = null;
-      });
-    } else {
-      await AudioStreamService.instance.stopPlayer();
-      final File file = File(work.filePath);
-      if (await file.exists()) {
-        await AudioStreamService.instance.playAudio(work.filePath);
-        setState(() {
-          _playingId = work.id;
-        });
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('文件不存在')),
-          );
-        }
-      }
-    }
   }
 
   String _formatDuration(int ms) {
@@ -91,10 +66,15 @@ class _WorksGridViewState extends State<WorksGridView> {
       itemCount: widget.works.length,
       itemBuilder: (context, index) {
         final work = widget.works[index];
-        final isPlaying = _playingId == work.id;
 
         return GestureDetector(
-          onTap: () => _playWork(work),
+          onTap: () {
+            // 导航到全屏播放页面
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => WorkPlayerScreen(work: work)),
+            );
+          },
           child: Container(
             decoration: BoxDecoration(
               color: const Color(0xFF1E1E1E),
@@ -126,15 +106,6 @@ class _WorksGridViewState extends State<WorksGridView> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
-                  ),
-
-                // Playback overlay
-                if (isPlaying)
-                  Container(
-                    color: Colors.black45,
-                    child: const Center(
-                      child: Icon(Icons.pause_circle_filled, color: Colors.white, size: 40),
                     ),
                   ),
 
