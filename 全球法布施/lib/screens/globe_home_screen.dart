@@ -379,41 +379,40 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
                     ),
                     child: Column(
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.send, color: AppTheme.primaryColor, size: 18),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '已发送: ${model.globalSentCount} 个国家',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (model.loopCount > 0)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.primaryColor.withOpacity(0.3),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '第 ${model.loopCount} 轮',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                        // 动态杨升激活次数显示
+                        if (model.loopbackCount > 0) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(Icons.sync, color: Colors.cyanAccent, size: 16),
+                              const SizedBox(width: 6),
+                              Text(
+                                '动态杨升激活: ${model.loopbackCount} 次',
+                                style: TextStyle(
+                                  color: Colors.cyanAccent.withOpacity(0.9),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
-                          ],
-                        ),
+                              const SizedBox(width: 8),
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: Colors.cyanAccent,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.cyanAccent.withOpacity(0.5),
+                                      blurRadius: 4,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         // 场能广播状态显示
                         if (model.isFieldEnergyMode && model.fieldBroadcastCount > 0) ...[
                           const SizedBox(height: 8),

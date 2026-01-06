@@ -1,43 +1,24 @@
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../../../../../services/sherpa_stt_service.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../../../services/audio_stream_service.dart';
-
-/// 音频时间戳标记（用于播放时文本同步）
-class AudioMarker {
-  final int sentenceIndex;
-  final int startMs;
-  final int endMs;
-
-  AudioMarker({
-    required this.sentenceIndex,
-    required this.startMs,
-    required this.endMs,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'sentenceIndex': sentenceIndex,
-    'startMs': startMs,
-    'endMs': endMs,
-  };
-
-  factory AudioMarker.fromJson(Map<String, dynamic> json) => AudioMarker(
-    sentenceIndex: json['sentenceIndex'] as int,
-    startMs: json['startMs'] as int,
-    endMs: json['endMs'] as int,
-  );
-}
+import '../../../../../services/audio_merger_service.dart';
+import '../../../../../services/local_work_service.dart';
+import '../../../../../models/local_work_model.dart';
+import '../../../../../services/comment_service.dart';
+import '../../../../../models/auth_model.dart';
+import 'package:provider/provider.dart';
 
 /// 读诵游戏状态
 enum ReadingState {
   idle,          // 空闲，等待开始
   initializing,  // 正在初始化
-  listening,     // 正在录音和识别
-  processing,    // 处理识别结果
-  switching,     // 切换到下一句
+  ready,         // 准备就绪，等待开始录音
+  recording,     // 正在录音
+  merging,       // 正在合并音频
   completed,     // 全部完成
   error,         // 错误
 }
@@ -58,14 +39,15 @@ class ReadingResult {
 /// 读诵游戏组件
 /// 
 /// 功能：
-/// 1. 逐句显示经文，高亮当前句
-/// 2. 使用 Vosk 离线语音识别，智能检测念诵进度
-/// 3. 念完自动切换下一句（秒级响应）
-/// 4. 全程录音，支持导出
+/// 1. 逐句显示经文
+/// 2. 用户手动录音每个句子
+/// 3. 点击"下一句"切换
+/// 4. 最后合并所有音频并嵌入字幕
 class ReadingGameWidget extends StatefulWidget {
   const ReadingGameWidget({
     required this.sentences,
     required this.contentId,
+    required this.contentTitle,
     this.onComplete,
     super.key,
   });
@@ -75,6 +57,9 @@ class ReadingGameWidget extends StatefulWidget {
   
   /// 内容ID（用于评论关联）
   final String contentId;
+  
+  /// 内容标题（用于作品展示）
+  final String contentTitle;
   
   /// 完成回调
   final void Function(ReadingResult result)? onComplete;
@@ -94,26 +79,23 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   /// 音频流服务
   final AudioStreamService _audioService = AudioStreamService.instance;
   
-  /// 语音识别服务
-  final SherpaSTTService _sttService = SherpaSTTService.instance;
+  /// 音频合并服务
+  final AudioMergerService _mergerService = AudioMergerService.instance;
   
-  /// 音频流订阅
-  StreamSubscription<Uint8List>? _audioSubscription;
-  
-  /// 录音文件路径
-  String? _audioPath;
+  /// 每个句子的 PCM 文件路径
+  final List<String> _pcmPaths = [];
   
   /// 时间戳标记
   final List<AudioMarker> _markers = [];
   
-  /// 当前句子开始时间
-  DateTime? _sentenceStartTime;
+  /// 当前句子开始时间（相对于总录音）
+  int _currentSentenceStartMs = 0;
   
-  /// 录音开始时间
-  DateTime? _recordingStartTime;
+  /// 总录音时长（毫秒）
+  int _totalRecordingMs = 0;
   
-  /// 识别到的文本
-  String _recognizedText = '';
+  /// 当前句子录音开始时间
+  DateTime? _sentenceRecordStartTime;
   
   /// 错误信息
   String? _errorMessage;
@@ -124,9 +106,6 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   /// 动画控制器
   AnimationController? _pulseController;
   Animation<double>? _pulseAnimation;
-  
-  /// 进度动画控制器
-  AnimationController? _progressController;
 
   @override
   void initState() {
@@ -137,9 +116,8 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
 
   @override
   void dispose() {
-    _stopAll();
+    _stopRecording();
     _pulseController?.dispose();
-    _progressController?.dispose();
     super.dispose();
   }
 
@@ -152,11 +130,6 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
     
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
       CurvedAnimation(parent: _pulseController!, curve: Curves.easeInOut),
-    );
-    
-    _progressController = AnimationController(
-      duration: const Duration(milliseconds: 500),
-      vsync: this,
     );
   }
 
@@ -206,29 +179,6 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
         return;
       }
       
-      // 3. 初始化语音识别服务
-      setState(() {
-        _initMessage = '正在加载语音识别模型...\n（首次使用需下载约50MB模型）';
-      });
-      debugPrint('[ReadingGame] 步骤3: 初始化 Vosk 语音识别...');
-      
-      // 设置识别回调
-      _sttService.onResult = _onRecognitionResult;
-      _sttService.onError = (error) {
-        debugPrint('[ReadingGame] 识别错误: $error');
-      };
-      
-      final sttSuccess = await _sttService.initialize();
-      if (!sttSuccess) {
-        if (mounted) {
-          setState(() {
-            _state = ReadingState.error;
-            _errorMessage = '语音识别初始化失败\n请检查网络连接后重试';
-          });
-        }
-        return;
-      }
-      
       debugPrint('[ReadingGame] === 初始化完成 ===');
       if (mounted) {
         setState(() {
@@ -248,153 +198,123 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
     }
   }
 
-  /// 开始读诵
+  /// 开始录音（第一句）
   Future<void> _startReading() async {
+    setState(() {
+      _state = ReadingState.ready;
+      _currentIndex = 0;
+      _pcmPaths.clear();
+      _markers.clear();
+      _totalRecordingMs = 0;
+    });
+    
+    // 自动开始第一句的录音
+    await _startSentenceRecording();
+  }
+
+  /// 开始当前句子的录音
+  Future<void> _startSentenceRecording() async {
     try {
-      // 开始录音并获取音频流
+      // 生成当前句子的 PCM 文件路径
+      final tempDir = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final pcmPath = '${tempDir.path}/sentence_${_currentIndex}_$timestamp.pcm';
+      
+      // 开始录音
       final stream = await _audioService.startRecording(saveToFile: true);
       if (stream == null) {
         _showError('开始录音失败');
         return;
       }
       
-      _recordingStartTime = DateTime.now();
-      _audioPath = _audioService.currentRecordingPath;
+      // 保存当前录音路径
+      _pcmPaths.add(_audioService.currentRecordingPath ?? pcmPath);
       
-      // 启动语音识别
-      await _sttService.startRecognizing();
-      
-      // 订阅音频流，发送到识别器
-      _audioSubscription = stream.listen((audioData) {
-        _sttService.processAudio(audioData);
-      });
+      _currentSentenceStartMs = _totalRecordingMs;
+      _sentenceRecordStartTime = DateTime.now();
       
       setState(() {
-        _state = ReadingState.listening;
-        _currentIndex = 0;
-        _recognizedText = '';
-        _markers.clear();
+        _state = ReadingState.recording;
       });
       
-      _sentenceStartTime = DateTime.now();
       HapticFeedback.lightImpact();
-      
-      debugPrint('[ReadingGame] 开始监听第 1 句: "${widget.sentences[0]}"');
+      debugPrint('[ReadingGame] 开始录音第 ${_currentIndex + 1} 句: "${widget.sentences[_currentIndex]}"');
     } catch (e) {
-      debugPrint('[ReadingGame] 开始读诵异常: $e');
-      _showError('开始读诵失败: $e');
+      debugPrint('[ReadingGame] 开始录音异常: $e');
+      _showError('开始录音失败: $e');
     }
   }
 
-  /// 语音识别结果回调
-  void _onRecognitionResult(String text, bool isFinal) {
-    if (!mounted || _state != ReadingState.listening) return;
+  /// 切换到下一句
+  Future<void> _nextSentence() async {
+    if (_state != ReadingState.recording) return;
     
-    debugPrint('[ReadingGame] 识别结果: "$text" (final: $isFinal)');
-    
-    setState(() {
-      _recognizedText = text;
-    });
-    
-    // 检查是否念完当前句子
-    if (_checkSentenceCompleted(text)) {
-      debugPrint('[ReadingGame] 句子匹配成功！');
-      _onSentenceCompleted();
-    }
-  }
-
-  /// 检查是否念完当前句子
-  /// 使用模糊匹配，允许一定程度的识别误差
-  bool _checkSentenceCompleted(String recognized) {
-    if (recognized.isEmpty) return false;
-    
-    final currentSentence = widget.sentences[_currentIndex];
-    
-    // 移除标点符号进行比较
-    final cleanRecognized = _cleanText(recognized);
-    final cleanSentence = _cleanText(currentSentence);
-    
-    if (cleanSentence.isEmpty) return true;
-    
-    // 计算相似度
-    final similarity = _calculateSimilarity(cleanRecognized, cleanSentence);
-    
-    // 相似度超过 70% 认为念完
-    // 或者识别文本长度接近目标长度
-    final lengthRatio = cleanRecognized.length / cleanSentence.length;
-    
-    return similarity > 0.7 || (lengthRatio >= 0.8 && similarity > 0.5);
-  }
-
-  /// 清理文本（移除标点和空格）
-  String _cleanText(String text) {
-    return text.replaceAll(RegExp(r'[，。！？、；：""''（）【】《》…\s]'), '');
-  }
-
-  /// 计算字符串相似度（简单的字符匹配）
-  double _calculateSimilarity(String a, String b) {
-    if (a.isEmpty || b.isEmpty) return 0.0;
-    
-    int matches = 0;
-    final shorter = a.length < b.length ? a : b;
-    final longer = a.length < b.length ? b : a;
-    
-    for (int i = 0; i < shorter.length; i++) {
-      if (longer.contains(shorter[i])) {
-        matches++;
-      }
-    }
-    
-    return matches / shorter.length;
-  }
-
-  /// 当前句子念完
-  void _onSentenceCompleted() async {
     HapticFeedback.mediumImpact();
     
-    // 重置识别器
-    _sttService.reset();
+    // 停止当前录音
+    await _audioService.stopRecording();
+    
+    // 计算当前句子的时长
+    final sentenceDurationMs = _sentenceRecordStartTime != null
+        ? DateTime.now().difference(_sentenceRecordStartTime!).inMilliseconds
+        : 0;
     
     // 记录时间戳标记
-    final now = DateTime.now();
-    final startMs = _sentenceStartTime!.difference(_recordingStartTime!).inMilliseconds;
-    final endMs = now.difference(_recordingStartTime!).inMilliseconds;
-    
     _markers.add(AudioMarker(
       sentenceIndex: _currentIndex,
-      startMs: startMs,
-      endMs: endMs,
+      startMs: _currentSentenceStartMs,
+      endMs: _currentSentenceStartMs + sentenceDurationMs,
     ));
     
-    setState(() {
-      _state = ReadingState.switching;
-      _currentIndex++;
-    });
+    _totalRecordingMs = _currentSentenceStartMs + sentenceDurationMs;
     
-    // 短暂延迟后切换到下一句
-    await Future.delayed(const Duration(milliseconds: 800));
+    debugPrint('[ReadingGame] 第 ${_currentIndex + 1} 句完成，时长: ${sentenceDurationMs}ms');
+    
+    // 切换到下一句
+    _currentIndex++;
     
     if (_currentIndex >= widget.sentences.length) {
-      _completeReading();
-    } else if (mounted) {
+      // 全部完成，合并音频
+      await _completeReading();
+    } else {
+      // 继续下一句
       setState(() {
-        _state = ReadingState.listening;
-        _recognizedText = '';
+        _state = ReadingState.ready;
       });
-      _sentenceStartTime = DateTime.now();
-      debugPrint('[ReadingGame] 开始监听第 ${_currentIndex + 1} 句: "${widget.sentences[_currentIndex]}"');
+      
+      // 延迟后开始下一句录音
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) {
+        await _startSentenceRecording();
+      }
     }
   }
 
   /// 完成读诵
   Future<void> _completeReading() async {
+    setState(() {
+      _state = ReadingState.merging;
+    });
+    
     try {
-      // 停止识别和录音
-      await _sttService.stopRecognizing();
-      await _audioSubscription?.cancel();
-      _audioSubscription = null;
+      // 合并音频并嵌入字幕
+      final outputPath = await _mergerService.mergeWithSubtitle(
+        pcmPaths: _pcmPaths,
+        sentences: widget.sentences,
+        markers: _markers,
+      );
       
-      final path = await _audioService.stopRecording();
+      // 清理临时 PCM 文件
+      for (final path in _pcmPaths) {
+        try {
+          final file = File(path);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (e) {
+          debugPrint('[ReadingGame] 清理临时文件失败: $e');
+        }
+      }
       
       setState(() {
         _state = ReadingState.completed;
@@ -406,9 +326,9 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
       await Future.delayed(const Duration(seconds: 1));
       
       if (mounted) {
-        final totalDuration = DateTime.now().difference(_recordingStartTime!);
+        final totalDuration = Duration(milliseconds: _totalRecordingMs);
         final result = ReadingResult(
-          audioPath: path,
+          audioPath: outputPath,
           markers: _markers,
           totalDuration: totalDuration,
         );
@@ -416,7 +336,8 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
         _showCompletionDialog(result);
       }
     } catch (e) {
-      debugPrint('完成读诵异常: $e');
+      debugPrint('[ReadingGame] 完成读诵异常: $e');
+      _showError('合并音频失败: $e');
     }
   }
 
@@ -451,7 +372,7 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
             if (result.audioPath != null) ...[
               const SizedBox(height: 8),
               const Text(
-                '录音已保存 ✓',
+                '录音已保存（含字幕轨道） ✓',
                 style: TextStyle(color: Colors.green),
               ),
             ],
@@ -466,11 +387,7 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
             child: const Text('完成', style: TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.of(this.context).pop();
-              widget.onComplete?.call(result);
-            },
+            onPressed: () => _handlePublish(context, result),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.amber,
               foregroundColor: Colors.black,
@@ -482,6 +399,56 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
     );
   }
 
+  Future<void> _handlePublish(BuildContext dialogContext, ReadingResult result) async {
+    if (result.audioPath == null) return;
+    
+    // Check auth
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    if (authModel.currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先登录后发布')),
+      );
+      return;
+    }
+
+    try {
+      // 1. Save locally
+      final work = LocalWorkModel.create(
+        contentId: widget.contentId,
+        title: widget.contentTitle,
+        filePath: result.audioPath!,
+        durationMs: result.totalDuration.inMilliseconds,
+      );
+      await LocalWorkService.instance.saveWork(work);
+      
+      // 2. Post comment with attachment
+      final commentService = CommentService();
+      await commentService.postComment(
+        widget.contentId,
+        '我在读诵练习中完成了《${widget.contentTitle}》的录制，快来听听吧！',
+        contentTitle: widget.contentTitle,
+        attachmentPath: result.audioPath,
+        attachmentType: 'audio',
+      );
+      
+      if (mounted) {
+        Navigator.of(dialogContext).pop(); // Close dialog
+        Navigator.of(context).pop(); // Close game
+        ScaffoldMessenger.of(dialogContext).showSnackBar(
+          const SnackBar(content: Text('发布成功！已保存到"作品"和评论区')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Publish failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('发布失败: $e')),
+        );
+      }
+    }
+  }
+
+
   /// 格式化时长
   String _formatDuration(Duration duration) {
     final minutes = duration.inMinutes;
@@ -489,16 +456,12 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
     return '$minutes 分 $seconds 秒';
   }
 
-  /// 停止所有
-  Future<void> _stopAll() async {
+  /// 停止录音
+  Future<void> _stopRecording() async {
     try {
-      await _audioSubscription?.cancel();
-      _audioSubscription = null;
-      
-      await _sttService.stopRecognizing();
       await _audioService.stopRecording();
     } catch (e) {
-      debugPrint('停止异常: $e');
+      debugPrint('[ReadingGame] 停止录音异常: $e');
     }
   }
 
@@ -508,13 +471,6 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
       _state = ReadingState.error;
       _errorMessage = message;
     });
-  }
-
-  /// 手动跳过当前句子
-  void _skipCurrentSentence() {
-    if (_state == ReadingState.listening) {
-      _onSentenceCompleted();
-    }
   }
 
   @override
@@ -528,7 +484,7 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
           icon: const Icon(Icons.close, color: Colors.white),
           onPressed: () async {
             final navigator = Navigator.of(context);
-            await _stopAll();
+            await _stopRecording();
             if (!mounted) return;
             navigator.pop();
           },
@@ -563,15 +519,15 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
         return _buildIdleView();
       case ReadingState.initializing:
         return _buildInitializingView();
-      case ReadingState.listening:
-      case ReadingState.switching:
+      case ReadingState.ready:
+      case ReadingState.recording:
         return _buildReadingView();
+      case ReadingState.merging:
+        return _buildMergingView();
       case ReadingState.completed:
         return _buildCompletedView();
       case ReadingState.error:
         return _buildErrorView();
-      default:
-        return const Center(child: CircularProgressIndicator());
     }
   }
 
@@ -609,7 +565,7 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
         ),
         const SizedBox(height: 8),
         const Text(
-          '使用离线语音识别（无需网络）',
+          '朗读完每句后点击"下一句"',
           style: TextStyle(color: Colors.green, fontSize: 14),
         ),
         const SizedBox(height: 48),
@@ -631,7 +587,8 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   /// 读诵视图
   Widget _buildReadingView() {
     final currentSentence = widget.sentences[_currentIndex];
-    final isCompleting = _state == ReadingState.switching;
+    final isRecording = _state == ReadingState.recording;
+    final isLastSentence = _currentIndex == widget.sentences.length - 1;
     
     return Column(
       children: [
@@ -659,13 +616,13 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
                 padding: const EdgeInsets.all(24),
                 constraints: const BoxConstraints(maxHeight: 400),
                 decoration: BoxDecoration(
-                  color: isCompleting 
-                      ? Colors.green.withValues(alpha: 0.2)
+                  color: isRecording 
+                      ? Colors.red.withValues(alpha: 0.1)
                       : Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: isCompleting 
-                        ? Colors.green.withValues(alpha: 0.5)
+                    color: isRecording 
+                        ? Colors.red.withValues(alpha: 0.5)
                         : Colors.amber.withValues(alpha: 0.3),
                     width: 2,
                   ),
@@ -674,9 +631,7 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (isCompleting)
-                        const Icon(Icons.check_circle, color: Colors.green, size: 40),
-                      if (!isCompleting) ...[
+                      if (isRecording) ...[
                         AnimatedBuilder(
                           animation: _pulseAnimation!,
                           builder: (context, child) => Transform.scale(
@@ -686,7 +641,14 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          '请朗读以下经文',
+                          '正在录音...',
+                          style: TextStyle(color: Colors.red, fontSize: 14),
+                        ),
+                      ] else ...[
+                        const Icon(Icons.mic_off, color: Colors.white38, size: 40),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '准备录音',
                           style: TextStyle(color: Colors.white54, fontSize: 14),
                         ),
                       ],
@@ -697,28 +659,10 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
                         style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
-                          color: isCompleting ? Colors.green : Colors.amber,
+                          color: isRecording ? Colors.white : Colors.amber,
                           height: 1.5,
                         ),
                       ),
-                      if (_recognizedText.isNotEmpty && !isCompleting) ...[
-                        const SizedBox(height: 24),
-                        const Divider(color: Colors.white24),
-                        const SizedBox(height: 12),
-                        const Text(
-                          '识别到:',
-                          style: TextStyle(color: Colors.white38, fontSize: 12),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _recognizedText,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -731,20 +675,37 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
         Padding(
           padding: const EdgeInsets.all(24),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 跳过按钮
-              OutlinedButton.icon(
-                onPressed: _state == ReadingState.listening ? _skipCurrentSentence : null,
-                icon: const Icon(Icons.skip_next, color: Colors.white54),
-                label: const Text('跳过', style: TextStyle(color: Colors.white54)),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.white24),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              // 下一句/完成按钮
+              ElevatedButton.icon(
+                onPressed: isRecording ? _nextSentence : null,
+                icon: Icon(isLastSentence ? Icons.check : Icons.skip_next),
+                label: Text(isLastSentence ? '完成录音' : '下一句'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isLastSentence ? Colors.green : Colors.amber,
+                  foregroundColor: isLastSentence ? Colors.white : Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+
+  /// 合并中视图
+  Widget _buildMergingView() {
+    return const Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        CircularProgressIndicator(color: Colors.amber),
+        SizedBox(height: 24),
+        Text(
+          '正在合并音频并生成字幕...',
+          style: TextStyle(color: Colors.white70, fontSize: 16),
         ),
       ],
     );

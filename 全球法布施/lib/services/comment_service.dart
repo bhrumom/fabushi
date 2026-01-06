@@ -78,6 +78,8 @@ class CommentService {
     String? tag,
     String? contentTitle,
     String? filePath,
+    String? attachmentPath,
+    String? attachmentType,
   }) async {
     // 前端验证：确保 contentId 和 content 不为空
     if (contentId.isEmpty) {
@@ -105,6 +107,12 @@ class CommentService {
       }
       if (filePath != null) {
         body['filePath'] = filePath;
+      }
+      if (attachmentPath != null) {
+        body['attachment_path'] = attachmentPath;
+      }
+      if (attachmentType != null) {
+        body['attachment_type'] = attachmentType;
       }
       
       // 自动附带当前用户的主修功课

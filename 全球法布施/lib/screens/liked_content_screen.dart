@@ -4,7 +4,8 @@ import '../services/like_service.dart';
 import 'content_detail_screen.dart';
 
 class LikedContentScreen extends StatefulWidget {
-  const LikedContentScreen({super.key});
+  final bool embed;
+  const LikedContentScreen({this.embed = false, super.key});
 
   @override
   State<LikedContentScreen> createState() => _LikedContentScreenState();
@@ -15,46 +16,53 @@ class _LikedContentScreenState extends State<LikedContentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final content = ListenableBuilder(
+      listenable: _likeService,
+      builder: (context, _) {
+        final likedItems = _likeService.getLikedItems();
+
+        if (likedItems.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.favorite_border, size: 80, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                Text(
+                  '还没有喜欢的内容',
+                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '在法流页面点赞后会显示在这里',
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: EdgeInsets.zero, // Remove default padding for tab view
+          itemCount: likedItems.length,
+          itemBuilder: (context, index) {
+            final item = likedItems[index];
+            return _buildLikedItemCard(item);
+          },
+        );
+      },
+    );
+
+    if (widget.embed) {
+      return content;
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('我的喜欢'),
         centerTitle: true,
       ),
-      body: ListenableBuilder(
-        listenable: _likeService,
-        builder: (context, _) {
-          final likedItems = _likeService.getLikedItems();
-
-          if (likedItems.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.favorite_border, size: 80, color: Colors.grey.shade400),
-                  const SizedBox(height: 16),
-                  Text(
-                    '还没有喜欢的内容',
-                    style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '在法流页面点赞后会显示在这里',
-                    style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.builder(
-            itemCount: likedItems.length,
-            itemBuilder: (context, index) {
-              final item = likedItems[index];
-              return _buildLikedItemCard(item);
-            },
-          );
-        },
-      ),
+      body: content,
     );
   }
 

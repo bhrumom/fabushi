@@ -35,7 +35,8 @@ class LikedItem {
 
   factory LikedItem.fromJson(Map<String, dynamic> json) => LikedItem(
         id: json['id'] as String,
-        username: json['username'] as String? ?? '',
+        // 后端返回 title，本地存储用 username，兼容两者
+        username: json['username'] as String? ?? json['title'] as String? ?? '',
         description: json['description'] as String? ?? '',
         videoUrl: json['videoUrl'] as String?,
         textContent: json['textContent'] as String?,

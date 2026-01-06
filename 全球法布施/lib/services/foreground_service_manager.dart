@@ -139,6 +139,8 @@ class ForegroundServiceManager {
   Future<bool> start({
     required String fileName,
     int totalCountries = 0,
+    bool isLoopbackActive = false,
+    int loopbackCount = 0,
   }) async {
     if (!Platform.isAndroid) {
       debugPrint('⚠️ 当前平台不支持 Android 前台服务');
@@ -159,6 +161,8 @@ class ForegroundServiceManager {
         notificationText: _buildNotificationText(
           sendingInfo: '准备向全球发送: $fileName',
           audioInfo: '🔇 静音播放陀罗尼中...',
+          isLoopbackActive: isLoopbackActive,
+          loopbackCount: loopbackCount,
         ),
         notificationButtons: [
           NotificationButton(
@@ -187,8 +191,14 @@ class ForegroundServiceManager {
   String _buildNotificationText({
     required String sendingInfo,
     required String audioInfo,
+    bool isLoopbackActive = false,
+    int loopbackCount = 0,
   }) {
-    return '$sendingInfo\n$audioInfo';
+    String text = '$sendingInfo\n$audioInfo';
+    if (isLoopbackActive) {
+      text += '\n🟢 动态杨升激活: $loopbackCount 次';
+    }
+    return text;
   }
 
   /// 更新通知进度
@@ -198,6 +208,8 @@ class ForegroundServiceManager {
     required String currentCountry,
     int? loopCount,
     String? audioStatus,
+    bool isLoopbackActive = false,
+    int loopbackCount = 0,
   }) async {
     if (!Platform.isAndroid || !_isServiceRunning) return;
 
@@ -232,6 +244,8 @@ class ForegroundServiceManager {
       _currentText = _buildNotificationText(
         sendingInfo: sendingInfo,
         audioInfo: audioInfo,
+        isLoopbackActive: isLoopbackActive,
+        loopbackCount: loopbackCount,
       );
 
       await FlutterForegroundTask.updateService(

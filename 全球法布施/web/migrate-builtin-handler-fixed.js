@@ -3,6 +3,96 @@
  * 支持全文搜索和批量插入，自动创建表结构
  */
 
+// 阿拉伯数字转中文数字 (0-99)
+const CHINESE_NUMS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+
+function numberToChinese(num) {
+    if (num < 0 || num >= 100) return num.toString();
+    if (num < 10) return CHINESE_NUMS[num];
+    if (num === 10) return '十';
+    if (num < 20) return '十' + CHINESE_NUMS[num % 10];
+    const ten = Math.floor(num / 10);
+    const unit = num % 10;
+    return CHINESE_NUMS[ten] + '十' + (unit === 0 ? '' : CHINESE_NUMS[unit]);
+}
+
+// 将搜索词中的阿拉伯数字转换为中文数字
+function normalizeQuery(text) {
+    return text.replace(/\d+/g, (match) => {
+        const num = parseInt(match, 10);
+        if (isNaN(num) || num >= 100) return match;
+        return numberToChinese(num);
+    });
+}
+
+// 智能分词：识别经文名称和卷数
+// 例如: "华严经三十一卷" -> ["华严经", "三十一卷"]
+// 例如: "心经" -> ["心经"]
+// 例如: "金刚经第三十一品" -> ["金刚经", "第三十一品"]
+function extractKeywords(text) {
+    const keywords = [];
+
+    // 匹配模式：
+    // 1. 以"经"结尾的经文名（如"华严经"、"心经"、"金刚经"）
+    // 2. 卷数（如"三十一卷"、"第三十一卷"）
+    // 3. 品数（如"第三十一品"）
+
+    // 尝试匹配 "XXX经" 格式
+    const sutraMatch = text.match(/^(.+?经)/);
+    if (sutraMatch) {
+        keywords.push(sutraMatch[1]);
+        const remaining = text.substring(sutraMatch[1].length);
+        if (remaining.trim()) {
+            keywords.push(remaining.trim());
+        }
+    } else {
+        // 如果没有匹配到经名，尝试按"第"分割
+        if (text.includes('第')) {
+            const parts = text.split(/(第.+)/);
+            parts.forEach(p => {
+                if (p.trim()) keywords.push(p.trim());
+            });
+        } else {
+            // 尝试按中文数字+量词分割 (如 "三十一卷")
+            const numUnitMatch = text.match(/^(.+?)([一二三四五六七八九十百千万]+[卷品章节集部篇回]+)$/);
+            if (numUnitMatch) {
+                keywords.push(numUnitMatch[1]);
+                keywords.push(numUnitMatch[2]);
+            } else {
+                // 回退：整体作为一个关键词
+                keywords.push(text);
+            }
+        }
+    }
+
+    // 过滤空关键词
+    return keywords.filter(k => k && k.length > 0);
+}
+
+// 扩展卷数关键词：为不带"第"的卷数添加带"第"的版本
+// 例如: "三十一卷" -> ["三十一卷", "第三十一卷"]
+function expandVolumeKeyword(keyword) {
+    const volumePattern = /^([一二三四五六七八九十百千万]+)(卷|品|章|节|集|部|篇|回)$/;
+    const match = keyword.match(volumePattern);
+    if (match && !keyword.startsWith('第')) {
+        return [keyword, '第' + keyword];
+    }
+    return [keyword];
+}
+
+// 扩展所有关键词
+function expandKeywords(keywords) {
+    const expanded = [];
+    keywords.forEach(kw => {
+        expandVolumeKeyword(kw).forEach(ek => {
+            if (!expanded.includes(ek)) {
+                expanded.push(ek);
+            }
+        });
+    });
+    return expanded;
+}
+
 // 创建表的SQL语句
 const CREATE_TABLES_SQL = `
 -- 创建texts表存储文本内容
@@ -172,81 +262,146 @@ export async function handleFullTextSearch(request, env) {
 
         console.log(`🔍 全文搜索: "${query}" 分类: ${category || '全部'}`);
 
-        // 使用 FTS5 进行极端性能搜索，添加通配符支持
-        const ftsQuery = query.split('').filter(c => c.trim()).join(' ') + '*';
-        console.log(`🔎 转换 FTS 查询: "${ftsQuery}"`);
+        // 转换数字（如 "31" -> "三十一"）
+        const normalizedQuery = normalizeQuery(query);
+        const hasNumber = /\d/.test(query);
 
-        // FTS5 虚拟表只有 title, content, category 列
-        // 需要通过 rowid JOIN texts 表获取完整信息
-        let searchQuery = `
-            SELECT 
-                t.id, t.title, t.category, t.file_path, t.word_count,
-                snippet(texts_fts, 1, '<b>', '</b>', '...', 64) as snippet
-            FROM texts_fts
-            JOIN texts t ON texts_fts.rowid = t.rowid
-            WHERE texts_fts MATCH ?
-        `;
-
-        let params = [ftsQuery];
-
-        if (category && category !== 'all') {
-            searchQuery += ` AND t.category = ?`;
-            params.push(category);
+        if (hasNumber) {
+            console.log(`🔄 检测到数字，使用增强搜索: "${query}" -> "${normalizedQuery}"`);
         }
 
-        searchQuery += ` ORDER BY rank LIMIT ? OFFSET ?`;
-        params.push(limit, offset);
+        let searchResults;
 
-        // 执行搜索
-        let searchResults = await env.DB.prepare(searchQuery)
-            .bind(...params)
-            .all();
+        // 如果查询包含数字，直接使用LIKE搜索（支持数字转换和分词匹配）
+        if (hasNumber) {
+            console.log('📌 使用LIKE搜索（支持数字转中文+分词匹配）');
 
-        // 如果 FTS5 没有结果，回退到普通的 LIKE 搜索以支持更模糊的匹配
-        if (!searchResults.results || searchResults.results.length === 0) {
-            console.log('⚠️ FTS5 无结果，回退到 LIKE 搜索');
-            let likeQuery = `
+            // 智能分词：识别"卷"、"经"等关键词边界
+            // 例如: "华严经31卷" -> "华严经三十一卷" -> ["华严经", "三十一卷"]
+            const keywords = extractKeywords(normalizedQuery);
+            console.log(`🔤 分词结果: ${JSON.stringify(keywords)}`);
+
+            if (keywords.length > 1) {
+                // 多关键词AND匹配，每个关键词支持扩展（如"三十一卷" -> "三十一卷"或"第三十一卷"）
+                let conditions = keywords.map(kw => {
+                    const expanded = expandVolumeKeyword(kw);
+                    if (expanded.length > 1) {
+                        // 扩展的关键词用OR连接
+                        return `(${expanded.map(() => 'title LIKE ? OR content LIKE ?').join(' OR ')})`;
+                    }
+                    return '(title LIKE ? OR content LIKE ?)';
+                }).join(' AND ');
+
+                let likeQuery = `
+                    SELECT 
+                        id, title, category, file_path, word_count,
+                        SUBSTR(content, 1, 100) as snippet
+                    FROM texts
+                    WHERE ${conditions}
+                `;
+                let likeParams = [];
+                keywords.forEach(kw => {
+                    const expanded = expandVolumeKeyword(kw);
+                    expanded.forEach(ek => {
+                        likeParams.push(`%${ek}%`, `%${ek}%`);
+                    });
+                });
+
+                if (category && category !== 'all') {
+                    likeQuery += ` AND category = ?`;
+                    likeParams.push(category);
+                }
+
+                likeQuery += ` ORDER BY word_count DESC LIMIT ? OFFSET ?`;
+                likeParams.push(limit, offset);
+
+                searchResults = await env.DB.prepare(likeQuery)
+                    .bind(...likeParams)
+                    .all();
+            } else {
+                // 单关键词匹配（回退到原逻辑）
+                let likeQuery = `
+                    SELECT 
+                        id, title, category, file_path, word_count,
+                        SUBSTR(content, 1, 100) as snippet
+                    FROM texts
+                    WHERE (title LIKE ? OR title LIKE ? OR content LIKE ? OR content LIKE ?)
+                `;
+                let likeParams = [`%${query}%`, `%${normalizedQuery}%`, `%${query}%`, `%${normalizedQuery}%`];
+
+                if (category && category !== 'all') {
+                    likeQuery += ` AND category = ?`;
+                    likeParams.push(category);
+                }
+
+                likeQuery += ` ORDER BY title LIKE ? DESC, title LIKE ? DESC, word_count DESC LIMIT ? OFFSET ?`;
+                likeParams.push(`%${query}%`, `%${normalizedQuery}%`, limit, offset);
+
+                searchResults = await env.DB.prepare(likeQuery)
+                    .bind(...likeParams)
+                    .all();
+            }
+        } else {
+            // 纯中文查询使用FTS5
+            const ftsQuery = query.split('').filter(c => c.trim()).join(' ') + '*';
+            console.log(`🔎 使用FTS5查询: "${ftsQuery}"`);
+
+            let searchQuery = `
                 SELECT 
-                    id, title, category, file_path, word_count,
-                    SUBSTR(content, 1, 100) as snippet
-                FROM texts
-                WHERE (title LIKE ? OR content LIKE ?)
+                    t.id, t.title, t.category, t.file_path, t.word_count,
+                    snippet(texts_fts, 1, '<b>', '</b>', '...', 64) as snippet
+                FROM texts_fts
+                JOIN texts t ON texts_fts.rowid = t.rowid
+                WHERE texts_fts MATCH ?
             `;
-            let likeParams = [`%${query}%`, `%${query}%`];
+
+            let params = [ftsQuery];
 
             if (category && category !== 'all') {
-                likeQuery += ` AND category = ?`;
-                likeParams.push(category);
+                searchQuery += ` AND t.category = ?`;
+                params.push(category);
             }
 
-            likeQuery += ` ORDER BY title LIKE ? DESC, word_count DESC LIMIT ? OFFSET ?`;
-            likeParams.push(`%${query}%`, limit, offset);
+            searchQuery += ` ORDER BY rank LIMIT ? OFFSET ?`;
+            params.push(limit, offset);
 
-            searchResults = await env.DB.prepare(likeQuery)
-                .bind(...likeParams)
+            searchResults = await env.DB.prepare(searchQuery)
+                .bind(...params)
                 .all();
+
+            // 如果 FTS5 没有结果，回退到 LIKE 搜索
+            if (!searchResults.results || searchResults.results.length === 0) {
+                console.log('⚠️ FTS5 无结果，回退到 LIKE 搜索');
+                let likeQuery = `
+                    SELECT 
+                        id, title, category, file_path, word_count,
+                        SUBSTR(content, 1, 100) as snippet
+                    FROM texts
+                    WHERE (title LIKE ? OR content LIKE ?)
+                `;
+                let likeParams = [`%${query}%`, `%${query}%`];
+
+                if (category && category !== 'all') {
+                    likeQuery += ` AND category = ?`;
+                    likeParams.push(category);
+                }
+
+                likeQuery += ` ORDER BY title LIKE ? DESC, word_count DESC LIMIT ? OFFSET ?`;
+                likeParams.push(`%${query}%`, limit, offset);
+
+                searchResults = await env.DB.prepare(likeQuery)
+                    .bind(...likeParams)
+                    .all();
+            }
         }
 
         // 获取总数
         let total = 0;
         try {
-            let countQuery = `SELECT COUNT(*) as total FROM texts_fts WHERE texts_fts MATCH ?`;
-            let countParams = [ftsQuery];
-            if (category && category !== 'all') {
-                countQuery += ` AND category = ?`;
-                countParams.push(category);
-            }
-
-            const countResult = await env.DB.prepare(countQuery)
-                .bind(...countParams)
-                .first();
-
-            total = countResult?.total || 0;
-
-            // 如果 FTS 总数为 0，尝试获取 LIKE 的总数
-            if (total === 0) {
-                let likeCountQuery = `SELECT COUNT(*) as total FROM texts WHERE (title LIKE ? OR content LIKE ?)`;
-                let likeCountParams = [`%${query}%`, `%${query}%`];
+            if (hasNumber) {
+                // 数字查询使用LIKE统计
+                let likeCountQuery = `SELECT COUNT(*) as total FROM texts WHERE (title LIKE ? OR title LIKE ? OR content LIKE ? OR content LIKE ?)`;
+                let likeCountParams = [`%${query}%`, `%${normalizedQuery}%`, `%${query}%`, `%${normalizedQuery}%`];
                 if (category && category !== 'all') {
                     likeCountQuery += ` AND category = ?`;
                     likeCountParams.push(category);
@@ -255,6 +410,35 @@ export async function handleFullTextSearch(request, env) {
                     .bind(...likeCountParams)
                     .first();
                 total = likeCountResult?.total || 0;
+            } else {
+                // 纯中文查询使用FTS5统计
+                const ftsQuery = query.split('').filter(c => c.trim()).join(' ') + '*';
+                let countQuery = `SELECT COUNT(*) as total FROM texts_fts WHERE texts_fts MATCH ?`;
+                let countParams = [ftsQuery];
+                if (category && category !== 'all') {
+                    countQuery += ` AND category = ?`;
+                    countParams.push(category);
+                }
+
+                const countResult = await env.DB.prepare(countQuery)
+                    .bind(...countParams)
+                    .first();
+
+                total = countResult?.total || 0;
+
+                // 如果 FTS 总数为 0，尝试获取 LIKE 的总数
+                if (total === 0) {
+                    let likeCountQuery = `SELECT COUNT(*) as total FROM texts WHERE (title LIKE ? OR content LIKE ?)`;
+                    let likeCountParams = [`%${query}%`, `%${query}%`];
+                    if (category && category !== 'all') {
+                        likeCountQuery += ` AND category = ?`;
+                        likeCountParams.push(category);
+                    }
+                    const likeCountResult = await env.DB.prepare(likeCountQuery)
+                        .bind(...likeCountParams)
+                        .first();
+                    total = likeCountResult?.total || 0;
+                }
             }
         } catch (e) {
             console.error('获取总数失败:', e);

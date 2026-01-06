@@ -39,6 +39,8 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
   int _totalCount = 0;
   String _currentCountry = '';
   int _loopCount = 0;
+  bool _isLoopbackActive = false;
+  int _loopbackCount = 0;
   
   // 缓存相关
   static const String _cacheFileName = 'keep_alive_dharani.mp3';
@@ -350,6 +352,10 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
       subtitle = '第 $_loopCount 轮 · $subtitle';
     }
     
+    if (_isLoopbackActive) {
+      subtitle += ' | 🟢 杨升: $_loopbackCount次';
+    }
+    
     mediaItem.add(MediaItem(
       id: 'keep_alive_dharani',
       title: '全球法布施',
@@ -365,6 +371,8 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
     required int totalCount,
     required String currentCountry,
     int? loopCount,
+    bool isLoopbackActive = false,
+    int loopbackCount = 0,
   }) {
     _sentCount = sentCount;
     _totalCount = totalCount;
@@ -372,6 +380,8 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
     if (loopCount != null) {
       _loopCount = loopCount;
     }
+    _isLoopbackActive = isLoopbackActive;
+    _loopbackCount = loopbackCount;
     
     // 立即更新媒体项
     _updateMediaItemForHeartbeat();
@@ -572,12 +582,16 @@ class KeepAliveService {
     required int totalCount,
     required String currentCountry,
     int? loopCount,
+    bool isLoopbackActive = false,
+    int loopbackCount = 0,
   }) {
     _audioHandler?.updateProgress(
       sentCount: sentCount,
       totalCount: totalCount,
       currentCountry: currentCountry,
       loopCount: loopCount,
+      isLoopbackActive: isLoopbackActive,
+      loopbackCount: loopbackCount,
     );
   }
   

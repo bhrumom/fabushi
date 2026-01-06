@@ -95,6 +95,8 @@ dependencies:
   # TensorFlow Lite - 轻量级NLP语义分析
   tflite_flutter: ^0.11.0     # TFLite Flutter插件
 
+  # FFmpeg - 音频合并与字幕嵌入
+  ffmpeg_kit_flutter_new_audio: ^2.0.0  # FFmpeg 纯音频版本（体积小）
 
   # 权限
   permission_handler: ^12.0.1

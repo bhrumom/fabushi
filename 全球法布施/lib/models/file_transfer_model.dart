@@ -26,17 +26,22 @@ import 'package:universal_html/html.dart' as html;
 import '../core/startup/deferred_loader.dart';
 import '../services/local_loopback_service.dart';
 import '../services/foreground_service_manager.dart';
+import '../services/workmanager_keep_alive.dart';
 
 enum TransferStatus { idle, transferring, completed, error }
 
 /// 优化的文件传输模型 - 极致性能版本
-class FileTransferModel extends ChangeNotifier {
+/// 
+/// 实现 WidgetsBindingObserver 以监听应用生命周期变化，
+/// 在前后台切换时智能调整本地回环的运行模式。
+class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   // 传输模式状态
   bool _isGlobalSendEnabled = true;
   bool _isLooping = false;
   bool _isFieldEnergyMode = false;  // 无网场能模式
   double _sendRateMB = 1.0;
   int _loopCount = 0;  // 循环发送计数
+  int _loopbackCount = 0; // 本地回环激活次数
   int _fieldBroadcastCount = 0;  // 场能广播次数
 
   // 文件相关
@@ -98,6 +103,9 @@ class FileTransferModel extends ChangeNotifier {
 
   Future<void> _initializeModel() async {
     try {
+      // 注册生命周期观察者
+      WidgetsBinding.instance.addObserver(this);
+      
       await _loadPersistedState();
       if (_isTransferring) {
         _isTransferring = false;
@@ -109,12 +117,43 @@ class FileTransferModel extends ChangeNotifier {
       debugPrint('❌ FileTransferModel初始化失败: $e');
     }
   }
+  
+  /// 应用生命周期变化回调
+  /// 
+  /// 根据应用状态动态切换本地回环的运行模式：
+  /// - 后台/锁屏时：切换到主线程模式，保持应用活跃
+  /// - 前台时：切换到 Isolate 模式，避免阻塞 UI
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_localLoopbackService == null || !_localLoopbackService!.isRunning) {
+      return;
+    }
+    
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        // 应用进入后台，切换到主线程模式保持活跃
+        debugPrint('📱 应用进入后台，切换本地回环到主线程模式');
+        _localLoopbackService?.switchMode(LoopbackRunMode.mainThread);
+        break;
+      case AppLifecycleState.resumed:
+        // 应用回到前台，切换到 Isolate 模式避免卡 UI
+        debugPrint('📱 应用回到前台，切换本地回环到 Isolate 模式');
+        _localLoopbackService?.switchMode(LoopbackRunMode.isolate);
+        break;
+      case AppLifecycleState.detached:
+        // 应用即将销毁，不做处理
+        break;
+    }
+  }
 
   // Getters
   bool get isGlobalSendEnabled => _isGlobalSendEnabled;
   bool get isLooping => _isLooping;
   bool get isFieldEnergyMode => _isFieldEnergyMode;
   int get loopCount => _loopCount;
+  int get loopbackCount => _loopbackCount;
   int get fieldBroadcastCount => _fieldBroadcastCount;
   String get hotspotMessage => _hotspotMessage;
   bool get needsHotspotGuide => _needsHotspotGuide;
@@ -509,6 +548,7 @@ class FileTransferModel extends ChangeNotifier {
     
     // 重置发送计数（每轮重新开始）
     _globalSentCount = 0;
+    _loopbackCount = 0;
     
     _schedulePersist(_persistTransferState);
     _scheduleNotify();
@@ -624,6 +664,46 @@ class FileTransferModel extends ChangeNotifier {
     try {
       _localLoopbackService = LocalLoopbackService(
         onLog: (msg) => debugPrint('[Loopback] $msg'),
+        onHeartbeat: (loopCount) {
+          // loopCount is cumulative within the service isolate life
+          _loopbackCount = loopCount;
+          _scheduleNotify();
+          
+          // 实时更新通知栏计数（即使应用不在前台）
+          if (_isTransferring) {
+            final currentCountry = _countryStatuses.isNotEmpty && _globalSentCount > 0 && _globalSentCount <= _countryStatuses.length
+                ? _countryStatuses[_globalSentCount - 1].countryName
+                : '全球';
+            
+            // 更新前台服务通知
+            ForegroundServiceManager().updateProgress(
+              sentCount: _globalSentCount,
+              totalCount: _totalCountriesCount,
+              currentCountry: currentCountry,
+              loopCount: _loopCount,
+              isLoopbackActive: true,
+              loopbackCount: _loopbackCount,
+            );
+            
+            // 更新系统媒体控制中心
+            _keepAliveService.updateProgress(
+              sentCount: _globalSentCount,
+              totalCount: _totalCountriesCount,
+              currentCountry: currentCountry,
+              loopCount: _loopCount,
+              isLoopbackActive: true,
+              loopbackCount: _loopbackCount,
+            );
+          }
+          
+          // This callback runs on main thread, keeping it active
+          // Log periodically to avoid flooding (every ~30 seconds = 15 heartbeats at 2s interval)
+          if (loopCount % 15 == 0) {
+            debugPrint('💓 Main Thread Pulse - 本地回环循环次数: $loopCount');
+          }
+          // Update keep-alive service timestamp to signal activity
+          WorkManagerKeepAlive.updateLastActiveTime();
+        },
       );
 
       final file = _selectedFiles.first;
@@ -666,6 +746,7 @@ class FileTransferModel extends ChangeNotifier {
     
     // 重置循环计数
     _loopCount = 0;
+    _loopbackCount = 0;
     _fieldBroadcastCount = 0;
 
     _schedulePersist(_persistTransferState);
@@ -698,6 +779,8 @@ class FileTransferModel extends ChangeNotifier {
       await foregroundManager.start(
         fileName: fileName,
         totalCountries: _countryStatuses.length,
+        isLoopbackActive: _localLoopbackService?.isRunning ?? false,
+        loopbackCount: _loopbackCount,
       );
       
       // 设置前台服务按钮回调
@@ -731,12 +814,13 @@ class FileTransferModel extends ChangeNotifier {
 
   /// 更新后台服务进度
   void _updateBackgroundServiceProgress(String country, int sent, int total) {
-    // 更新 audio_service 状态
     _keepAliveService.updateProgress(
       sentCount: sent,
       totalCount: total,
       currentCountry: country,
       loopCount: _loopCount,
+      isLoopbackActive: _localLoopbackService?.isRunning ?? false,
+      loopbackCount: _loopbackCount,
     );
     
     // 更新 flutter_foreground_task 通知
@@ -745,6 +829,8 @@ class FileTransferModel extends ChangeNotifier {
       totalCount: total,
       currentCountry: country,
       loopCount: _loopCount,
+      isLoopbackActive: _localLoopbackService?.isRunning ?? false,
+      loopbackCount: _loopbackCount,
     );
   }
 
@@ -1092,6 +1178,10 @@ class FileTransferModel extends ChangeNotifier {
     _batchUpdateTimer?.cancel();
     _platformGlobalSendService?.stopSending();
     stopTransfer();
+    
+    // 移除生命周期观察者
+    WidgetsBinding.instance.removeObserver(this);
+    
     super.dispose();
   }
 }

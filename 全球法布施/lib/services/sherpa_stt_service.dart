@@ -19,8 +19,12 @@ class SherpaSTTService {
   sherpa.OnlineStream? _stream;
   
   bool _isInitialized = false;
+  static bool _bindingsInitialized = false;
   bool _isRecognizing = false;
   String? _modelDir;
+  
+  /// 上次回调的文本（用于去重）
+  String _lastCallbackText = '';
   
   /// 识别结果回调
   void Function(String text, bool isFinal)? onResult;
@@ -44,6 +48,14 @@ class SherpaSTTService {
     if (_isInitialized) return true;
     
     try {
+      // 首先初始化 sherpa-onnx FFI 绑定
+      if (!_bindingsInitialized) {
+        debugPrint('[SherpaSTT] 初始化 FFI 绑定...');
+        sherpa.initBindings();
+        _bindingsInitialized = true;
+        debugPrint('[SherpaSTT] FFI 绑定初始化成功');
+      }
+      
       onProgress?.call('正在准备语音识别引擎...');
       
       // 获取模型目录
@@ -184,6 +196,7 @@ class SherpaSTTService {
     
     _stream = _recognizer!.createStream();
     _isRecognizing = true;
+    _lastCallbackText = ''; // 重置上次回调文本
     debugPrint('[SherpaSTT] 开始识别');
   }
   
@@ -197,6 +210,8 @@ class SherpaSTTService {
       // 将 16-bit PCM 转换为 Float32 样本
       final samples = _convertToFloat32(audioData);
       
+      if (samples.isEmpty) return;
+      
       // 发送到识别器
       _stream!.acceptWaveform(samples: samples, sampleRate: 16000);
       
@@ -209,13 +224,17 @@ class SherpaSTTService {
       final result = _recognizer!.getResult(_stream!);
       final text = result.text.trim();
       
-      if (text.isNotEmpty) {
+      if (text.isNotEmpty && text != _lastCallbackText) {
+        // 只在文本变化时回调（去重）
+        _lastCallbackText = text;
+        
         // 检查是否是端点（句子结束）
         final isEndpoint = _recognizer!.isEndpoint(_stream!);
         onResult?.call(text, isEndpoint);
         
         if (isEndpoint) {
           _recognizer!.reset(_stream!);
+          _lastCallbackText = ''; // 重置以便下一句
         }
       }
     } catch (e) {
@@ -223,13 +242,43 @@ class SherpaSTTService {
     }
   }
   
+  /// 调试计数器
+  static int _debugCounter = 0;
+  
   /// 将 16-bit PCM 转换为 Float32
   Float32List _convertToFloat32(Uint8List pcm16) {
-    final int16Data = Int16List.view(pcm16.buffer);
-    final float32Data = Float32List(int16Data.length);
+    // flutter_sound 的 toStream 返回的数据可能包含 food (Feed) 标记
+    // 需要正确处理字节顺序
     
-    for (int i = 0; i < int16Data.length; i++) {
-      float32Data[i] = int16Data[i] / 32768.0;
+    // 确保数据长度是偶数（16-bit = 2 bytes per sample）
+    final length = pcm16.length;
+    if (length < 2) return Float32List(0);
+    
+    // 每100次打印一次调试信息
+    _debugCounter++;
+    if (_debugCounter % 100 == 1) {
+      debugPrint('[SherpaSTT] 音频数据: ${length} bytes, 前10字节: ${pcm16.take(10).toList()}');
+    }
+    
+    // 手动解析 little-endian 16-bit PCM
+    final sampleCount = length ~/ 2;
+    final float32Data = Float32List(sampleCount);
+    
+    for (int i = 0; i < sampleCount; i++) {
+      final byteIndex = i * 2;
+      // Little-endian: low byte first, then high byte
+      final low = pcm16[byteIndex];
+      final high = pcm16[byteIndex + 1];
+      
+      // 组合成 16-bit signed integer
+      int sample = (high << 8) | low;
+      // 处理有符号数
+      if (sample >= 32768) {
+        sample -= 65536;
+      }
+      
+      // 归一化到 [-1.0, 1.0]
+      float32Data[i] = sample / 32768.0;
     }
     
     return float32Data;

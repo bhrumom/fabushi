@@ -11,6 +11,8 @@ class CommentModel {
   final String? avatar;
   final String? tag; // 'ganying' | 'fayuan' | null
   final String? mainPractice; // 用户的主修功课
+  final String? attachmentPath; // 附件路径
+  final String? attachmentType; // 'audio' | 'video' | null
 
   CommentModel({
     required this.id,
@@ -25,6 +27,8 @@ class CommentModel {
     this.avatar,
     this.tag,
     this.mainPractice,
+    this.attachmentPath,
+    this.attachmentType,
   });
 
   factory CommentModel.fromJson(Map<String, dynamic> json) {
@@ -42,6 +46,8 @@ class CommentModel {
       avatar: json['avatar'],
       tag: json['tag'],
       mainPractice: json['main_practice'],
+      attachmentPath: json['attachment_path'],
+      attachmentType: json['attachment_type'],
     );
   }
 
@@ -59,6 +65,8 @@ class CommentModel {
       'avatar': avatar,
       'tag': tag,
       'main_practice': mainPractice,
+      'attachment_path': attachmentPath,
+      'attachment_type': attachmentType,
     };
   }
 

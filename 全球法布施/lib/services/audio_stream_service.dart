@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:audio_session/audio_session.dart';
@@ -12,6 +12,7 @@ import 'package:permission_handler/permission_handler.dart';
 /// 使用 flutter_sound 捕获麦克风音频流，同时支持：
 /// 1. 写入本地文件进行录音
 /// 2. 流式发送到语音识别服务
+/// 3. 音频播放功能
 class AudioStreamService {
   static AudioStreamService? _instance;
   static AudioStreamService get instance => _instance ??= AudioStreamService._();
@@ -19,6 +20,7 @@ class AudioStreamService {
   AudioStreamService._();
   
   FlutterSoundRecorder? _recorder;
+  FlutterSoundPlayer? _player;
   StreamController<Uint8List>? _audioStreamController;
   StreamSubscription? _recordingSubscription;
   
@@ -60,6 +62,9 @@ class AudioStreamService {
       
       _recorder = FlutterSoundRecorder();
       await _recorder!.openRecorder();
+      
+      _player = FlutterSoundPlayer();
+      await _player!.openPlayer();
       
       // 设置采样率为 16kHz（Vosk 推荐）
       await _recorder!.setSubscriptionDuration(const Duration(milliseconds: 100));
@@ -159,6 +164,55 @@ class AudioStreamService {
       return null;
     }
   }
+
+  /// 播放音频
+  Future<void> playAudio(String path) async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+    
+    try {
+      await stopPlayer(); // 停止当前可能正在播放的音频
+      
+      // 检查文件是否存在
+      if (!File(path).existsSync()) {
+        // 如果不是本地文件，尝试作为 URL 播放
+        if (path.startsWith('http')) {
+          await _player!.startPlayer(
+            fromURI: path,
+            codec: Codec.mp3, // 假设网络音频是 MP3，或者根据后缀判断
+            whenFinished: () {
+              debugPrint('[AudioStream] 播放完成');
+            },
+          );
+          return;
+        }
+        debugPrint('[AudioStream] 音频文件不存在: $path');
+        return;
+      }
+
+      await _player!.startPlayer(
+        fromURI: path,
+        codec: Codec.aacADTS, // 默认假设是 m4a/aac，如果不是可能需要根据后缀判断
+        whenFinished: () {
+          debugPrint('[AudioStream] 播放完成');
+        },
+      );
+    } catch (e) {
+      debugPrint('[AudioStream] 播放失败: $e');
+    }
+  }
+
+  /// 停止播放
+  Future<void> stopPlayer() async {
+    try {
+      if (_player != null && _player!.isPlaying) {
+        await _player!.stopPlayer();
+      }
+    } catch (e) {
+      debugPrint('[AudioStream] 停止播放失败: $e');
+    }
+  }
   
   /// 清理资源
   Future<void> _cleanup() async {
@@ -177,9 +231,13 @@ class AudioStreamService {
   /// 释放服务
   Future<void> dispose() async {
     await _cleanup();
+    await stopPlayer();
     
     await _recorder?.closeRecorder();
     _recorder = null;
+    
+    await _player?.closePlayer();
+    _player = null;
     
     _isInitialized = false;
   }

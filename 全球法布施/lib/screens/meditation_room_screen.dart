@@ -495,6 +495,88 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     );
   }
 
+  /// 显示功课选择/信息
+  void _showPracticeSelection() {
+    if (_sessionManager.isPracticeLocked) {
+      // 已锁定功课，显示当前功课信息
+      final practice = _sessionManager.lockedPractice;
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.auto_stories, color: Color(0xFFD4AF37), size: 28),
+              SizedBox(width: 12),
+              Text('当前功课', style: TextStyle(color: Colors.white, fontSize: 20)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                practice?.title ?? '未选择',
+                style: const TextStyle(
+                  color: Color(0xFFD4AF37),
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.lock_outline, color: Colors.green, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '功课已锁定，一门深入，长时熏修',
+                        style: TextStyle(color: Colors.green, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('知道了', style: TextStyle(color: Color(0xFFD4AF37))),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _openSutraReader();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD4AF37),
+              ),
+              child: const Text('阅读经文', style: TextStyle(color: Colors.black)),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // 未选择功课，弹出必选弹窗（不可取消）
+      showPracticeSelectionSheet(
+        context,
+        required: true, // 不可取消
+        onSelected: () {
+          if (mounted) setState(() {});
+        },
+      );
+    }
+  }
+
   void _showManualInput() {
     final controller = TextEditingController(text: _sessionManager.currentSutra);
     
@@ -743,44 +825,15 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 当前功课显示（可点击更换）
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: GestureDetector(
-              onTap: _showSutraSelection,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.4)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.auto_stories, color: Color(0xFFD4AF37), size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      _sessionManager.currentSutra,
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.unfold_more, color: Colors.white38, size: 14),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          
           // 底部按钮行
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 左侧：功课选择按钮
+              // 左侧：功课选择/查看按钮
               _buildSideButton(
                 icon: Icons.auto_stories,
-                isActive: false,
-                onTap: _showSutraSelection,
+                isActive: _sessionManager.isPracticeLocked,
+                onTap: _showPracticeSelection,
               ),
               
               const SizedBox(width: 16),

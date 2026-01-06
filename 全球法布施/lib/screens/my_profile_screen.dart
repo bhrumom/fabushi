@@ -14,58 +14,110 @@ import '../widgets/practice_entry_card.dart';
 import '../services/meditation_session_manager.dart';
 import 'practice_record_screen.dart';
 
+import '../features/video_feed/presentation/view/widgets/works_grid_view.dart';
+import '../services/local_work_service.dart';
+import '../models/local_work_model.dart';
+
 /// 抖音风格个人中心页面
 class MyProfileScreen extends StatelessWidget {
   const MyProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF121212),
-      body: Consumer<AuthModel>(
-        builder: (context, authModel, _) {
-          final user = authModel.currentUser;
-          
-          // 设置统计服务的Token
-          if (user != null && authModel.authToken != null) {
-            PracticeStatsService().setAuthToken(authModel.authToken);
-          }
-          
-          return CustomScrollView(
-            slivers: [
-              _buildSliverAppBar(context, user, authModel),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: [
-                      if (user != null) ...[
-                        const SizedBox(height: 16),
-                        _buildStatsRow(context, user),
-                        const SizedBox(height: 20),
-                        // 修行统计卡片
-                        _buildPracticeStatsCard(context),
-                        const SizedBox(height: 20),
-                        _buildFeatureGrid(context),
-                        const SizedBox(height: 20),
-                        _buildMembershipCard(context, user),
-                        const SizedBox(height: 20),
-                        _buildMenuSection(context, authModel),
-                      ] else ...[
-                        const SizedBox(height: 20),
-                        _buildGuestCard(context),
-                        const SizedBox(height: 20),
-                        _buildLoginButton(context),
-                      ],
-                      const SizedBox(height: 40),
-                    ],
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF121212),
+        body: Consumer<AuthModel>(
+          builder: (context, authModel, _) {
+            final user = authModel.currentUser;
+            
+            // 设置统计服务的Token
+            if (user != null && authModel.authToken != null) {
+              PracticeStatsService().setAuthToken(authModel.authToken);
+            }
+            
+            return NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) {
+                return [
+                  _buildSliverAppBar(context, user, authModel),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        children: [
+                          if (user != null) ...[
+                            const SizedBox(height: 16),
+                            _buildStatsRow(context, user),
+                            const SizedBox(height: 20),
+                            _buildPracticeStatsCard(context),
+                            const SizedBox(height: 20),
+                            _buildMembershipCard(context, user),
+                            const SizedBox(height: 20),
+                            _buildFeatureGrid(context),
+                            const SizedBox(height: 20),
+                            _buildMenuSection(context, authModel),
+                          ] else ...[
+                            const SizedBox(height: 20),
+                            _buildGuestCard(context),
+                            const SizedBox(height: 20),
+                            _buildLoginButton(context),
+                          ],
+                          const SizedBox(height: 40), // Space before tabs
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ],
-          );
-        },
+                  if (user != null)
+                    SliverPersistentHeader(
+                      delegate: _SliverAppBarDelegate(
+                        TabBar(
+                          indicatorColor: Colors.amber,
+                          labelColor: Colors.white,
+                          unselectedLabelColor: Colors.white54,
+                          tabs: const [
+                            Tab(text: '作品'),
+                            Tab(text: '收藏'), // Using existing FeatureGrid functionality for now, but placeholder here
+                          ],
+                        ),
+                      ),
+                      pinned: true,
+                    ),
+                ];
+              },
+              body: user != null
+                  ? TabBarView(
+                      children: [
+                        // Works Tab
+                        _buildWorksTab(),
+                        // Likes/Collections Tab
+                        const LikedContentScreen(embed: true), 
+                      ],
+                    )
+                  : const Center(child: Text('请先登录', style: TextStyle(color: Colors.white54))),
+            );
+          },
+        ),
       ),
+    );
+  }
+
+  Widget _buildWorksTab() {
+    return FutureBuilder<List<LocalWorkModel>>(
+      future: LocalWorkService.instance.getWorks(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: Colors.amber));
+        }
+        final works = snapshot.data ?? [];
+        return WorksGridView(
+          works: works, 
+          onDelete: () {
+            // Trigger refresh/rebuild if needed, currently FutureBuilder will need setState to refresh.
+            // For simplicity, we assume WorksGridView handles state or we might need to convert MyProfileScreen to StatefulWidget to force refresh.
+          }
+        );
+      },
     );
   }
 
@@ -271,7 +323,14 @@ class MyProfileScreen extends StatelessWidget {
   /// 抖音风格统计栏 - 获赞/关注/粉丝
   Widget _buildStatsRow(BuildContext context, User user) {
     final likeService = LikeService();
-    if (!likeService.isInitialized) likeService.initialize();
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    // 先设置 authToken，再初始化，确保能从云端同步
+    if (authModel.authToken != null) {
+      likeService.setAuthToken(authModel.authToken);
+    }
+    if (!likeService.isInitialized) {
+      likeService.initialize(userId: user.username);
+    }
 
     return ListenableBuilder(
       listenable: likeService,
@@ -602,5 +661,31 @@ class MyProfileScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// TabBar 的 SliverPersistentHeaderDelegate
+class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
+  final TabBar _tabBar;
+
+  _SliverAppBarDelegate(this._tabBar);
+
+  @override
+  double get minExtent => _tabBar.preferredSize.height;
+
+  @override
+  double get maxExtent => _tabBar.preferredSize.height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: const Color(0xFF121212),
+      child: _tabBar,
+    );
+  }
+
+  @override
+  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
+    return false;
   }
 }

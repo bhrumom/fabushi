@@ -512,6 +512,36 @@ class CloudflareTextService {
     return content.trim();
   }
 
+  /// 清理“上一部”、“下一部”等导航信息
+  static String _cleanNavigationInfo(String content) {
+    // 移除位于文档末尾的导航信息
+    // 匹配模式：换行符 + (上一部|下一部) + 任意字符 + 结束
+    
+    // 移除“上一部”及其后续内容
+    content = content.replaceAll(
+      RegExp(r'\n+\s*上一部.*$', multiLine: true, dotAll: true), 
+      ''
+    );
+    
+    // 移除“下一部”及其后续内容
+    content = content.replaceAll(
+      RegExp(r'\n+\s*下一部.*$', multiLine: true, dotAll: true), 
+      ''
+    );
+    
+    // 也尝试移除单独成行的 “上一部：xxx” 或 “下一部：xxx”
+    content = content.replaceAll(
+      RegExp(r'\n+\s*上一部[：:].*(\n|$)', caseSensitive: false), 
+      '\n'
+    );
+    content = content.replaceAll(
+      RegExp(r'\n+\s*下一部[：:].*(\n|$)', caseSensitive: false), 
+      '\n'
+    );
+
+    return content.trim();
+  }
+
   /// 获取所有文本列表
   Future<List<Map<String, String>>> getAllTexts() async {
     return _sampleTexts;
@@ -540,6 +570,8 @@ Map<String, dynamic> _processTextContent(_TextProcessingParams params) {
 
   // 清理水印
   content = CloudflareTextService._cleanDecompilerWatermark(content);
+  // 清理导航信息
+  content = CloudflareTextService._cleanNavigationInfo(content);
   
   return {
     'title': params.fileName,

@@ -222,8 +222,9 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
         builder: (context) => ReadingGameWidget(
           sentences: sentences,
           contentId: widget.videoItem.id,
+          contentTitle: widget.videoItem.description, // Using description as title
           onComplete: (result) {
-            // TODO: 实现发布到评论的功能
+            // Callback kept for future use if needed
             debugPrint('读诵完成: 音频路径=${result.audioPath}, 时间戳=${result.markers.length}个');
           },
         ),

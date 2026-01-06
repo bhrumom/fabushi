@@ -11,10 +11,12 @@ import '../services/meditation_session_manager.dart';
 /// 支持搜索功能
 class PracticeSelectionSheet extends StatefulWidget {
   final VoidCallback? onSelected;
+  final bool isDismissible; // 是否可以取消/关闭
 
   const PracticeSelectionSheet({
     super.key,
     this.onSelected,
+    this.isDismissible = true, // 默认可关闭
   });
 
   @override
@@ -266,10 +268,13 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white54),
-                  onPressed: () => Navigator.pop(context),
-                ),
+                if (widget.isDismissible)
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white54),
+                    onPressed: () => Navigator.pop(context),
+                  )
+                else
+                  const SizedBox(width: 40), // 保持布局对称
               ],
             ),
           ),
@@ -553,14 +558,23 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
   }
 }
 
-/// 显示功课选择弹窗（可关闭）
-Future<void> showPracticeSelectionSheet(BuildContext context, {VoidCallback? onSelected}) {
+/// 显示功课选择弹窗
+/// 
+/// [required] 为 true 时表示必选，弹窗不可取消
+Future<void> showPracticeSelectionSheet(
+  BuildContext context, {
+  VoidCallback? onSelected,
+  bool required = false, // 是否为必选模式（不可取消）
+}) {
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    isDismissible: true,
-    enableDrag: true,
+    isDismissible: !required, // 必选时不可通过点击外部关闭
+    enableDrag: !required, // 必选时不可通过下拉关闭
     backgroundColor: Colors.transparent,
-    builder: (context) => PracticeSelectionSheet(onSelected: onSelected),
+    builder: (context) => PracticeSelectionSheet(
+      onSelected: onSelected,
+      isDismissible: !required,
+    ),
   );
 }
