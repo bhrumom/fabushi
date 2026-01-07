@@ -11,6 +11,17 @@ class AppDelegate: FlutterAppDelegate {
     return true
   }
   
+  override func applicationDidFinishLaunching(_ notification: Notification) {
+    // 注册语音识别插件
+    if let registrar = self.registrar(forPlugin: "SpeechRecognizerPlugin") {
+      SpeechRecognizerPlugin.register(with: registrar)
+    }
+    // 注册语义 NLP 插件
+    if let registrar = self.registrar(forPlugin: "SemanticNlpPlugin") {
+      SemanticNlpPlugin.register(with: registrar)
+    }
+  }
+  
   // 处理URL打开事件（用于支付宝回调）
   override func application(_ application: NSApplication, open urls: [URL]) {
     for url in urls {

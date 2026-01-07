@@ -2,25 +2,38 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_sound/flutter_sound.dart';
-import 'package:audio_session/audio_session.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+// 平台特定导入
+import 'package:audio_session/audio_session.dart';
+import 'package:just_audio/just_audio.dart' as ja;
+
+// 条件编译：移动端使用 flutter_sound，macOS 使用 record
+import 'package:flutter_sound/flutter_sound.dart';
+import 'package:record/record.dart';
+
 /// 音频流服务
 /// 
-/// 使用 flutter_sound 捕获麦克风音频流，同时支持：
-/// 1. 写入本地文件进行录音
-/// 2. 流式发送到语音识别服务
-/// 3. 音频播放功能
+/// 跨平台音频录制和播放服务：
+/// - iOS/Android: 使用 flutter_sound
+/// - macOS: 使用 record 包
 class AudioStreamService {
   static AudioStreamService? _instance;
   static AudioStreamService get instance => _instance ??= AudioStreamService._();
   
   AudioStreamService._();
   
-  FlutterSoundRecorder? _recorder;
-  FlutterSoundPlayer? _player;
+  // flutter_sound (iOS/Android)
+  FlutterSoundRecorder? _flutterSoundRecorder;
+  FlutterSoundPlayer? _flutterSoundPlayer;
+  
+  // record 包 (macOS)
+  AudioRecorder? _audioRecorder;
+  
+  // just_audio 播放器 (macOS)
+  ja.AudioPlayer? _justAudioPlayer;
+  
   StreamController<Uint8List>? _audioStreamController;
   StreamSubscription? _recordingSubscription;
   
@@ -28,6 +41,9 @@ class AudioStreamService {
   bool _isRecording = false;
   String? _currentRecordingPath;
   IOSink? _fileSink;
+  
+  /// 是否是 macOS 平台
+  bool get _isMacOS => !kIsWeb && Platform.isMacOS;
   
   /// 获取音频流（16kHz, 16-bit, mono PCM）
   Stream<Uint8List>? get audioStream => _audioStreamController?.stream;
@@ -50,24 +66,34 @@ class AudioStreamService {
         return false;
       }
       
-      // 配置音频会话（iOS 需要）
-      if (!kIsWeb && Platform.isIOS) {
-        final session = await AudioSession.instance;
-        await session.configure(const AudioSessionConfiguration(
-          avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-          avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.defaultToSpeaker,
-          avAudioSessionMode: AVAudioSessionMode.spokenAudio,
-        ));
+      if (_isMacOS) {
+        // macOS: 使用 record 包
+        _audioRecorder = AudioRecorder();
+        _justAudioPlayer = ja.AudioPlayer();
+        debugPrint('[AudioStream] macOS 模式初始化成功');
+      } else {
+        // iOS/Android: 使用 flutter_sound
+        // 配置音频会话（iOS 需要）
+        if (!kIsWeb && Platform.isIOS) {
+          final session = await AudioSession.instance;
+          await session.configure(const AudioSessionConfiguration(
+            avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+            avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.defaultToSpeaker,
+            avAudioSessionMode: AVAudioSessionMode.spokenAudio,
+          ));
+        }
+        
+        _flutterSoundRecorder = FlutterSoundRecorder();
+        await _flutterSoundRecorder!.openRecorder();
+        
+        _flutterSoundPlayer = FlutterSoundPlayer();
+        await _flutterSoundPlayer!.openPlayer();
+        
+        // 设置采样率为 16kHz
+        await _flutterSoundRecorder!.setSubscriptionDuration(const Duration(milliseconds: 100));
+        
+        debugPrint('[AudioStream] 移动端模式初始化成功');
       }
-      
-      _recorder = FlutterSoundRecorder();
-      await _recorder!.openRecorder();
-      
-      _player = FlutterSoundPlayer();
-      await _player!.openPlayer();
-      
-      // 设置采样率为 16kHz（Vosk 推荐）
-      await _recorder!.setSubscriptionDuration(const Duration(milliseconds: 100));
       
       _isInitialized = true;
       debugPrint('[AudioStream] 初始化成功');
@@ -95,30 +121,65 @@ class AudioStreamService {
     try {
       _audioStreamController = StreamController<Uint8List>.broadcast();
       
-      // 创建录音文件
-      if (saveToFile) {
-        final directory = await getTemporaryDirectory();
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
-        _currentRecordingPath = '${directory.path}/reading_$timestamp.pcm';
+      // 创建录音文件路径
+      final directory = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      
+      if (_isMacOS) {
+        // macOS: 使用 record 包，直接录制到文件
+        _currentRecordingPath = '${directory.path}/reading_$timestamp.wav';
         
-        final file = File(_currentRecordingPath!);
-        _fileSink = file.openWrite();
-      }
-      
-      // 开始录音到流
-      // 使用 16kHz, 16-bit, mono 格式（Vosk 推荐）
-      await _recorder!.startRecorder(
-        toStream: _audioStreamController!.sink,
-        codec: Codec.pcm16,
-        numChannels: 1,
-        sampleRate: 16000,
-      );
-      
-      // 同时写入文件
-      if (_fileSink != null) {
-        _recordingSubscription = _audioStreamController!.stream.listen((data) {
+        // record 包的配置
+        final config = RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+          bitRate: 256000,
+        );
+        
+        // 开始录音
+        final stream = await _audioRecorder!.startStream(config);
+        
+        // 打开文件写入
+        if (saveToFile) {
+          final file = File(_currentRecordingPath!);
+          _fileSink = file.openWrite();
+        }
+        
+        // 监听音频流
+        _recordingSubscription = stream.listen((data) {
+          // 将数据添加到流中
+          if (!_audioStreamController!.isClosed) {
+            _audioStreamController!.add(Uint8List.fromList(data));
+          }
+          // 同时写入文件
           _fileSink?.add(data);
+        }, onError: (e) {
+          debugPrint('[AudioStream] macOS 录音流错误: $e');
         });
+        
+      } else {
+        // iOS/Android: 使用 flutter_sound
+        if (saveToFile) {
+          _currentRecordingPath = '${directory.path}/reading_$timestamp.pcm';
+          final file = File(_currentRecordingPath!);
+          _fileSink = file.openWrite();
+        }
+        
+        // 开始录音到流
+        await _flutterSoundRecorder!.startRecorder(
+          toStream: _audioStreamController!.sink,
+          codec: Codec.pcm16,
+          numChannels: 1,
+          sampleRate: 16000,
+        );
+        
+        // 同时写入文件
+        if (_fileSink != null) {
+          _recordingSubscription = _audioStreamController!.stream.listen((data) {
+            _fileSink?.add(data);
+          });
+        }
       }
       
       _isRecording = true;
@@ -138,7 +199,13 @@ class AudioStreamService {
     if (!_isRecording) return null;
     
     try {
-      await _recorder?.stopRecorder();
+      if (_isMacOS) {
+        // macOS: 停止 record 包录音
+        await _audioRecorder?.stop();
+      } else {
+        // iOS/Android: 停止 flutter_sound 录音
+        await _flutterSoundRecorder?.stopRecorder();
+      }
       
       await _recordingSubscription?.cancel();
       _recordingSubscription = null;
@@ -155,8 +222,6 @@ class AudioStreamService {
       final path = _currentRecordingPath;
       debugPrint('[AudioStream] 录音完成: $path');
       
-      // 如果需要，可以将 PCM 转换为其他格式（如 WAV）
-      // 这里暂时返回 PCM 文件
       return path;
     } catch (e) {
       debugPrint('[AudioStream] 停止录音失败: $e');
@@ -174,30 +239,40 @@ class AudioStreamService {
     try {
       await stopPlayer(); // 停止当前可能正在播放的音频
       
-      // 检查文件是否存在
-      if (!File(path).existsSync()) {
-        // 如果不是本地文件，尝试作为 URL 播放
+      if (_isMacOS) {
+        // macOS: 使用 just_audio 播放
         if (path.startsWith('http')) {
-          await _player!.startPlayer(
-            fromURI: path,
-            codec: Codec.mp3, // 假设网络音频是 MP3，或者根据后缀判断
-            whenFinished: () {
-              debugPrint('[AudioStream] 播放完成');
-            },
-          );
+          await _justAudioPlayer!.setUrl(path);
+        } else {
+          await _justAudioPlayer!.setFilePath(path);
+        }
+        await _justAudioPlayer!.play();
+      } else {
+        // iOS/Android: 使用 flutter_sound
+        // 检查文件是否存在
+        if (!File(path).existsSync()) {
+          if (path.startsWith('http')) {
+            await _flutterSoundPlayer!.startPlayer(
+              fromURI: path,
+              codec: Codec.mp3,
+              whenFinished: () {
+                debugPrint('[AudioStream] 播放完成');
+              },
+            );
+            return;
+          }
+          debugPrint('[AudioStream] 音频文件不存在: $path');
           return;
         }
-        debugPrint('[AudioStream] 音频文件不存在: $path');
-        return;
-      }
 
-      await _player!.startPlayer(
-        fromURI: path,
-        codec: Codec.aacADTS, // 默认假设是 m4a/aac，如果不是可能需要根据后缀判断
-        whenFinished: () {
-          debugPrint('[AudioStream] 播放完成');
-        },
-      );
+        await _flutterSoundPlayer!.startPlayer(
+          fromURI: path,
+          codec: Codec.aacADTS,
+          whenFinished: () {
+            debugPrint('[AudioStream] 播放完成');
+          },
+        );
+      }
     } catch (e) {
       debugPrint('[AudioStream] 播放失败: $e');
     }
@@ -206,8 +281,12 @@ class AudioStreamService {
   /// 停止播放
   Future<void> stopPlayer() async {
     try {
-      if (_player != null && _player!.isPlaying) {
-        await _player!.stopPlayer();
+      if (_isMacOS) {
+        await _justAudioPlayer?.stop();
+      } else {
+        if (_flutterSoundPlayer != null && _flutterSoundPlayer!.isPlaying) {
+          await _flutterSoundPlayer!.stopPlayer();
+        }
       }
     } catch (e) {
       debugPrint('[AudioStream] 停止播放失败: $e');
@@ -233,11 +312,17 @@ class AudioStreamService {
     await _cleanup();
     await stopPlayer();
     
-    await _recorder?.closeRecorder();
-    _recorder = null;
-    
-    await _player?.closePlayer();
-    _player = null;
+    if (_isMacOS) {
+      await _audioRecorder?.dispose();
+      _audioRecorder = null;
+      await _justAudioPlayer?.dispose();
+      _justAudioPlayer = null;
+    } else {
+      await _flutterSoundRecorder?.closeRecorder();
+      _flutterSoundRecorder = null;
+      await _flutterSoundPlayer?.closePlayer();
+      _flutterSoundPlayer = null;
+    }
     
     _isInitialized = false;
   }

@@ -42,10 +42,23 @@ android {
         }
     }
 
-    // 解决 flutter_angle 和 ffmpeg-kit-audio 的 libc++_shared.so 冲突
+    // 解决原生库冲突:
+    // - flutter_angle 和 ffmpeg-kit-audio 的 libc++_shared.so 冲突
+    // - onnxruntime 和 sherpa_onnx 的 libonnxruntime.so 冲突
     packaging {
         jniLibs {
-            pickFirsts += listOf("lib/arm64-v8a/libc++_shared.so", "lib/armeabi-v7a/libc++_shared.so", "lib/x86/libc++_shared.so", "lib/x86_64/libc++_shared.so")
+            pickFirsts += listOf(
+                // libc++_shared.so 冲突
+                "lib/arm64-v8a/libc++_shared.so", 
+                "lib/armeabi-v7a/libc++_shared.so", 
+                "lib/x86/libc++_shared.so", 
+                "lib/x86_64/libc++_shared.so",
+                // libonnxruntime.so 冲突 (onnxruntime vs sherpa_onnx)
+                "lib/arm64-v8a/libonnxruntime.so",
+                "lib/armeabi-v7a/libonnxruntime.so",
+                "lib/x86/libonnxruntime.so",
+                "lib/x86_64/libonnxruntime.so"
+            )
         }
     }
 }

@@ -87,13 +87,19 @@ dependencies:
   flutter_tts: ^4.2.0  # 文字转语音
   workmanager: ^0.6.0  # 后台任务恢复（应用被杀后自动重启）
 
-  # 语音识别与录音（使用 Sherpa-ONNX 离线识别 + flutter_sound 音频流）
-  sherpa_onnx: ^1.12.20       # Sherpa-ONNX 离线语音识别（开源、支持中文流式识别）
-  flutter_sound: ^9.16.3      # 音频流捕获和录音
+  # 语音识别与录音
+  # - 移动端使用 Sherpa-ONNX + flutter_sound
+  # - macOS 使用 record 包 + 原生 Speech 框架
+  sherpa_onnx: ^1.12.20       # Sherpa-ONNX 离线语音识别（iOS/Android）
+  flutter_sound: ^9.16.3      # 音频流捕获和录音（iOS/Android）
+  record: ^6.1.0              # 音频录制（macOS/iOS/Android）
   audio_session: ^0.1.21      # 音频会话管理（iOS 需要）
 
-  # TensorFlow Lite - 轻量级NLP语义分析
-  tflite_flutter: ^0.11.0     # TFLite Flutter插件
+  # NLP 语义分析
+  # - 移动端使用 TensorFlow Lite
+  # - macOS 使用原生 Natural Language 框架（通过 MethodChannel）
+  tflite_flutter: ^0.11.0     # TFLite Flutter插件（iOS/Android）
+  # onnxruntime 已移除 - 与 sherpa_onnx 的 libonnxruntime.so 版本冲突
 
   # FFmpeg - 音频合并与字幕嵌入
   ffmpeg_kit_flutter_new_audio: ^2.0.0  # FFmpeg 纯音频版本（体积小）

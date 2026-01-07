@@ -1,15 +1,22 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:global_dharma_sharing/services/nlp/bert_tokenizer.dart';
+
+// TFLite (iOS/Android)
+import 'package:tflite_flutter/tflite_flutter.dart';
 
 /// 语义优先服务 - 极致性能 + 精确语义
 /// 
+/// 跨平台架构：
+/// - iOS/Android: TFLite 模型推理 + 规则引擎
+/// - macOS: 原生 Natural Language 框架（通过 MethodChannel）+ 规则引擎
+/// 
 /// 混合架构：
 /// 1. 快速路径：预编译正则表达式 O(n) 匹配
-/// 2. 精确路径：TFLite NLP模型推理（语义相似度）
+/// 2. 精确路径：模型推理（语义相似度）
 /// 3. 后台Isolate：不阻塞UI线程
 /// 4. LRU缓存：避免重复计算
 class SemanticNlpService {
@@ -20,6 +27,13 @@ class SemanticNlpService {
   // 模型状态
   bool _useModel = false;
   bool _isInitializing = false;
+  
+  // macOS MethodChannel
+  static const _macOsChannel = MethodChannel('com.fabushi.app/semantic_nlp');
+  bool _macOsNlpInitialized = false;
+  
+  /// 是否是 macOS 平台
+  bool get _isMacOS => !kIsWeb && Platform.isMacOS;
   
   // LRU缓存
   final _cache = <int, List<_ScoredSentence>>{};
@@ -77,21 +91,45 @@ class SemanticNlpService {
     _isInitializing = true;
 
     try {
-      // 检查模型文件是否存在
-      try {
-        await rootBundle.load('assets/models/mobilebert_quant_chinese.tflite');
-        await rootBundle.load('assets/models/vocab.txt');
-        _useModel = true;
-        debugPrint('📖 SemanticNlpService: 模型文件检查通过，将在后台启用NLP语义分析');
-      } catch (e) {
-        debugPrint('📖 SemanticNlpService: 未找到完整模型文件，降级为规则引擎模式');
-        _useModel = false;
+      if (_isMacOS) {
+        // macOS: 使用原生 Natural Language 框架
+        await _initializeMacOsNlp();
+      } else {
+        // iOS/Android: 使用 TFLite
+        await _initializeTFLite();
       }
     } catch (e) {
       debugPrint('📖 SemanticNlpService: 初始化异常: $e');
       _useModel = false;
     } finally {
       _isInitializing = false;
+    }
+  }
+  
+  /// 初始化 macOS 原生 NLP
+  Future<void> _initializeMacOsNlp() async {
+    try {
+      final result = await _macOsChannel.invokeMethod<bool>('initialize');
+      _macOsNlpInitialized = result ?? false;
+      _useModel = _macOsNlpInitialized;
+      debugPrint('📖 SemanticNlpService: macOS 原生 NLP 初始化${_macOsNlpInitialized ? "成功" : "失败"}');
+    } catch (e) {
+      debugPrint('📖 SemanticNlpService: macOS NLP 初始化失败: $e');
+      _macOsNlpInitialized = false;
+      _useModel = false;
+    }
+  }
+  
+  /// 初始化 TFLite (iOS/Android)
+  Future<void> _initializeTFLite() async {
+    try {
+      await rootBundle.load('assets/models/mobilebert_quant_chinese.tflite');
+      await rootBundle.load('assets/models/vocab.txt');
+      _useModel = true;
+      debugPrint('📖 SemanticNlpService: TFLite 模型文件检查通过');
+    } catch (e) {
+      debugPrint('📖 SemanticNlpService: 未找到 TFLite 模型文件，降级为规则引擎模式');
+      _useModel = false;
     }
   }
 
@@ -106,19 +144,63 @@ class SemanticNlpService {
       return _cache[hash]!.map((s) => s.text).toList();
     }
 
-    // 传递参数到后台
-    final params = _ComputeParams(
-      sentences: sentences,
-      useModel: _useModel,
-    );
-
-    final scored = await compute(_analyzeSentencesInIsolate, params);
+    List<_ScoredSentence> scored;
+    
+    if (_isMacOS && _macOsNlpInitialized) {
+      // macOS: 使用原生 Natural Language 框架
+      scored = await _analyzeSentencesWithMacOsNlp(sentences);
+    } else {
+      // iOS/Android: 使用 Isolate + TFLite
+      final params = _ComputeParams(
+        sentences: sentences,
+        useModel: _useModel && !_isMacOS,
+      );
+      scored = await compute(_analyzeSentencesInIsolate, params);
+    }
 
     _updateCache(hash, scored);
 
     debugPrint('📖 SemanticNlpService: 排序完成，高优先句数: ${scored.where((s) => s.score > 2.0).length}/${scored.length}');
 
     return scored.map((s) => s.text).toList();
+  }
+  
+  /// 使用 macOS 原生 NLP 分析句子
+  Future<List<_ScoredSentence>> _analyzeSentencesWithMacOsNlp(List<String> sentences) async {
+    try {
+      final result = await _macOsChannel.invokeMethod<List>('analyzeSentences', {
+        'sentences': sentences,
+      });
+      
+      if (result != null) {
+        return result.map((item) {
+          final map = Map<String, dynamic>.from(item as Map);
+          return _ScoredSentence(
+            text: map['text'] as String,
+            score: (map['score'] as num).toDouble(),
+            originalIndex: map['originalIndex'] as int,
+          );
+        }).toList();
+      }
+    } catch (e) {
+      debugPrint('📖 SemanticNlpService: macOS NLP 分析失败: $e');
+    }
+    
+    // 降级：使用纯规则引擎
+    final scored = <_ScoredSentence>[];
+    for (int i = 0; i < sentences.length; i++) {
+      scored.add(_ScoredSentence(
+        text: sentences[i],
+        score: _calculateRuleScore(sentences[i]),
+        originalIndex: i,
+      ));
+    }
+    scored.sort((a, b) {
+      final scoreCompare = b.score.compareTo(a.score);
+      if (scoreCompare != 0) return scoreCompare;
+      return a.originalIndex.compareTo(b.originalIndex);
+    });
+    return scored;
   }
 
   /// 处理并排序超长文本
@@ -132,17 +214,17 @@ class SemanticNlpService {
 
     debugPrint('📖 SemanticNlpService: 开始处理大文本...');
     
-    // 大文本处理也使用相同参数结构，但需要先分句
-    final params = _ComputeParams(
-      rawText: rawText,
-      useModel: _useModel,
-    );
-
-    final scored = await compute(_processTextInIsolate, params);
-
-    _updateCache(hash, scored);
-
-    return scored.map((s) => s.text).toList();
+    // 分句
+    final parts = rawText.split(RegExp(r'[。！？\n]+'));
+    final sentences = <String>[];
+    for (final p in parts) {
+      final t = p.trim();
+      if (t.isNotEmpty && RegExp(r'[\u4e00-\u9fff\u3400-\u4dbfa-zA-Z0-9]').hasMatch(t)) {
+        sentences.add(t);
+      }
+    }
+    
+    return sortBySemanticPriority(sentences);
   }
 
   Future<List<String>> getPrioritySentences(List<String> sentences, {int limit = 5}) async {
@@ -160,6 +242,29 @@ class SemanticNlpService {
 
   void clearCache() {
     _cache.clear();
+  }
+  
+  /// 释放资源
+  void dispose() {
+    if (_isMacOS && _macOsNlpInitialized) {
+      _macOsChannel.invokeMethod('dispose');
+      _macOsNlpInitialized = false;
+    }
+  }
+  
+  /// 计算余弦相似度
+  double _cosineSimilarity(List<double> v1, List<double> v2) {
+    if (v1.length != v2.length) return 0.0;
+    double dot = 0.0;
+    double mag1 = 0.0;
+    double mag2 = 0.0;
+    for (int i = 0; i < v1.length; i++) {
+      dot += v1[i] * v2[i];
+      mag1 += v1[i] * v1[i];
+      mag2 += v2[i] * v2[i];
+    }
+    if (mag1 == 0 || mag2 == 0) return 0.0;
+    return dot / (math.sqrt(mag1) * math.sqrt(mag2));
   }
 }
 
@@ -184,27 +289,8 @@ class _ComputeParams {
 }
 
 // -----------------------------------------------------------
-// Isolate 逻辑
+// Isolate 逻辑 (仅用于 iOS/Android TFLite)
 // -----------------------------------------------------------
-
-Future<List<_ScoredSentence>> _processTextInIsolate(_ComputeParams params) async {
-  // 1. 分句
-  final rawText = params.rawText ?? '';
-  final parts = rawText.split(RegExp(r'[。！？\n]+'));
-  final sentences = <String>[];
-  
-  for (final p in parts) {
-    final t = p.trim();
-    if (t.isNotEmpty && RegExp(r'[\u4e00-\u9fff\u3400-\u4dbfa-zA-Z0-9]').hasMatch(t)) {
-      sentences.add(t);
-    }
-  }
-
-  // 2. 分析
-  // 重构参数以传递句子列表
-  final newParams = _ComputeParams(sentences: sentences, useModel: params.useModel);
-  return _analyzeSentencesInIsolate(newParams);
-}
 
 Future<List<_ScoredSentence>> _analyzeSentencesInIsolate(_ComputeParams params) async {
   final sentences = params.sentences ?? [];
@@ -220,8 +306,6 @@ Future<List<_ScoredSentence>> _analyzeSentencesInIsolate(_ComputeParams params) 
       interpreter = await Interpreter.fromAsset('assets/models/mobilebert_quant_chinese.tflite');
       tokenizer = await BertTokenizer.fromAsset('assets/models/vocab.txt');
       
-      // 生成锚点向量 (简单合成)
-      // "获得无量功德福报"
       if (interpreter != null && tokenizer != null) {
          meritAnchorEmbedding = _getEmbedding(interpreter, tokenizer, "获得无量功德福报，消除一切业障");
       }
@@ -241,11 +325,9 @@ Future<List<_ScoredSentence>> _analyzeSentencesInIsolate(_ComputeParams params) 
       try {
         final embedding = _getEmbedding(interpreter, tokenizer, sentence);
         if (embedding != null) {
-           final similarity = _cosineSimilarity(embedding, meritAnchorEmbedding);
-           // 相似度通常在 0.5 - 1.0 之间
+           final similarity = _cosineSimilarityStatic(embedding, meritAnchorEmbedding);
            if (similarity > 0.7) score += 2.0;
            if (similarity > 0.8) score += 1.0;
-           // debugPrint('Text: ${sentence.substring(0, math.min(10, sentence.length))}... Sim: $similarity');
         }
       } catch (e) {
         // ignore inference errors
@@ -275,54 +357,26 @@ Future<List<_ScoredSentence>> _analyzeSentencesInIsolate(_ComputeParams params) 
 List<double>? _getEmbedding(Interpreter interpreter, BertTokenizer tokenizer, String text) {
   try {
     final inputObj = tokenizer.encode(text, maxLen: 128);
-    // MobileBERT 输入: [input_ids, input_mask, segment_ids] (顺序可能不同，需检查)
-    // 通常 Input 0: ids, Input 1: mask, Input 2: segments 或者 ids, segments, mask
-    // 我们构造 3 个 inputs
-    // shape: [1, 128]
     
-    final inputIds = [inputObj]; // [1, 128]
-    // Mask: 1 for tokens, 0 for padding. Here we assume inputObj includes padding to 128 if fixed?
-    // Tokenizer encode doesn't pad to full 128 automatically usually, but let's pad it
-    
-    // Pad to 128 ? MobileBERT likely fixed or dynamic. Let's try to not pad if dynamic.
-    // TFLite tensors usually have fixed signature.
-    // Let's inspect signature if possible. But here we guess.
-    // Safe guess: Pad to 128 (standard)
+    final inputIds = [inputObj];
     
     while (inputIds[0].length < 128) {
       inputIds[0].add(0);
     }
     
     final inputMask = [List.filled(128, 0)];
-    for(int i=0; i<inputObj.length; i++) inputMask[0][i] = 1; // Unpadded parts
+    for(int i=0; i<inputObj.length; i++) inputMask[0][i] = 1;
     
     final segmentIds = [List.filled(128, 0)];
-
-    // Outputs
-    // Output 0: [1, 128, 512] (Sequence)
-    // Output 1: [1, 512] (Pooled) - maybe
     
-    // We need to match inputs to tensor indices.
-    // TFLite tensor indices aren't always 0,1,2.
-    // But tflite_flutter runForMultipleInputs takes List<Object>.
-    // Usually map inputs by index.
-    
-    // Try passing map if knowing names? No, tflite_flutter uses positional list or map.
-    // Let's use generic run.
-    
-    // We assume standard BERT export order: ids, mask, segments.
-    // If getting errors, we might need to swap.
     final inputs = [inputIds, inputMask, segmentIds]; 
     
     final output0 = List.filled(1 * 128 * 512, 0.0).reshape([1, 128, 512]);
-    final output1 = List.filled(1 * 512, 0.0).reshape([1, 512]); // Optimistic
+    final output1 = List.filled(1 * 512, 0.0).reshape([1, 512]);
     
     final outputs = {0: output0, 1: output1};
     
     interpreter.runForMultipleInputs(inputs, outputs);
-    
-    // Use pooled output (index 1) if available and non-zero, else mean of output 0
-    // MobileBERT TFLite often has 2 outputs.
     
     final out1 = outputs[1] as List;
     if (out1.isNotEmpty && out1[0][0] != 0.0) {
@@ -330,8 +384,8 @@ List<double>? _getEmbedding(Interpreter interpreter, BertTokenizer tokenizer, St
     }
     
     // Fallback: Mean pooling of output 0
-    final out0 = outputs[0] as List; // [1, 128, 512]
-    final seqLen = inputObj.length; // real length
+    final out0 = outputs[0] as List;
+    final seqLen = inputObj.length;
     final hiddenSize = 512;
     
     final embedding = List<double>.filled(hiddenSize, 0.0);
@@ -346,12 +400,11 @@ List<double>? _getEmbedding(Interpreter interpreter, BertTokenizer tokenizer, St
     return embedding;
     
   } catch (e) {
-    // debugPrint('Inference failed: $e');
     return null;
   }
 }
 
-double _cosineSimilarity(List<double> v1, List<double> v2) {
+double _cosineSimilarityStatic(List<double> v1, List<double> v2) {
   if (v1.length != v2.length) return 0.0;
   double dot = 0.0;
   double mag1 = 0.0;
