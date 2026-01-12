@@ -10,11 +10,12 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.annotation.NonNull
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+// 使用 FlutterFragmentActivity 以支持 audio_service 插件
+class MainActivity : FlutterFragmentActivity() {
     private val CHANNEL = "com.fabushi.app/hotspot"
     private val DEVICE_INFO_CHANNEL = "com.ombhrum.fabushi/device_info"
     private val MEMORY_CHANNEL = "com.ombhrum.fabushi/memory"

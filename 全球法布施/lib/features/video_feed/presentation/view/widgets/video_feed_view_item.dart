@@ -199,9 +199,24 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
         sentences.add(text.substring(start, bestSplit).trim());
         start = bestSplit;
       } else {
-        // 没找到标点，强制在最大长度处分割
-        sentences.add(text.substring(start, end).trim());
-        start = end;
+        // 没找到标点，向后扩展搜索直到找到标点
+        int forwardSplit = -1;
+        for (int i = end; i < text.length; i++) {
+          final char = text[i];
+          if ('。！？；，、：'.contains(char)) {
+            forwardSplit = i + 1;  // 包含标点
+            break;
+          }
+        }
+        
+        if (forwardSplit > start) {
+          sentences.add(text.substring(start, forwardSplit).trim());
+          start = forwardSplit;
+        } else {
+          // 整个剩余文本都没有标点，作为最后一段
+          sentences.add(text.substring(start).trim());
+          break;
+        }
       }
     }
     

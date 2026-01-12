@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:lpinyin/lpinyin.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../../../../models/sutra_table_of_contents.dart';
+import '../../../../../models/merit_benefit.dart';
+import '../../../../../services/merit_benefit_llm_service.dart';
 import '../../../../../widgets/sutra_toc_bottom_sheet.dart';
 
 // ============================================================================
@@ -601,6 +603,15 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   Widget get _epilogueContent => _cachedEpilogueContent ??= RepaintBoundary(
     child: _buildSutraEpilogue(),
   );
+  
+  // ========= 功德利益 LLM 识别与高亮 =========
+  final MeritBenefitLLMService _meritLLMService = MeritBenefitLLMService.instance;
+  // 每个段落的功德利益句高亮范围
+  final Map<int, List<MeritBenefitSentence>> _meritHighlights = {};
+  // 正在识别的段落索引
+  final Set<int> _recognizingParagraphs = {};
+  // 原始段落文本（用于 LLM 识别）
+  List<String> _rawParagraphs = [];
 
   @override
   void initState() {
@@ -641,11 +652,56 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
         _currentParagraphIndex = newIndex;
       });
     }
+    
+    // 触发可见段落的功德利益识别（懒加载）
+    for (final pos in visibleParagraphs) {
+      final paragraphIndex = pos.index - 1;
+      if (paragraphIndex >= 0) {
+        _recognizeParagraphMerit(paragraphIndex);
+      }
+    }
+  }
+  
+  /// 识别单个段落的功德利益句（懒加载）
+  Future<void> _recognizeParagraphMerit(int paragraphIndex) async {
+    // 已识别或正在识别则跳过
+    if (_meritHighlights.containsKey(paragraphIndex)) return;
+    if (_recognizingParagraphs.contains(paragraphIndex)) return;
+    if (paragraphIndex >= _rawParagraphs.length) return;
+    
+    // 检查模型状态
+    if (!_meritLLMService.isModelReady) return;
+    
+    _recognizingParagraphs.add(paragraphIndex);
+    
+    try {
+      final paragraph = _rawParagraphs[paragraphIndex];
+      final sentences = await _meritLLMService.recognizeParagraph(paragraph, paragraphIndex);
+      
+      if (mounted) {
+        setState(() {
+          _meritHighlights[paragraphIndex] = sentences;
+        });
+        
+        if (sentences.isNotEmpty) {
+          debugPrint('📿 Reader: 段落 $paragraphIndex 识别到 ${sentences.length} 个功德利益句');
+        }
+      }
+    } catch (e) {
+      debugPrint('📿 Reader: 段落 $paragraphIndex 识别失败: $e');
+    } finally {
+      _recognizingParagraphs.remove(paragraphIndex);
+    }
   }
 
   Future<void> _preprocessText() async {
     // 异步解析目录
     final toc = SutraTableOfContents.parse(widget.fullText, widget.bookTitle);
+    
+    // 保存原始段落文本（用于 LLM 识别）
+    _rawParagraphs = widget.fullText.split(RegExp(r'[\n]+'))
+        .where((p) => p.trim().isNotEmpty)
+        .toList();
     
     // 异步预处理，不阻塞 UI
     final data = await TextPreprocessor.processAsync(
@@ -659,6 +715,19 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
         _tableOfContents = toc;
         _isLoading = false;
       });
+      
+      // 首屏可见段落预加载功德利益识别
+      _prefetchVisibleMerit();
+    }
+  }
+  
+  /// 预加载首屏可见段落的功德利益识别
+  void _prefetchVisibleMerit() {
+    if (_rawParagraphs.isEmpty) return;
+    
+    // 预加载前3个段落
+    for (int i = 0; i < 3 && i < _rawParagraphs.length; i++) {
+      _recognizeParagraphMerit(i);
     }
   }
 
@@ -936,7 +1005,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
           final paragraph = _processedData!.paragraphs[paragraphIndex];
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: _buildParagraphWidget(paragraph),
+            child: _buildParagraphWidget(paragraph, paragraphIndex),
           );
         }
         
@@ -1084,7 +1153,18 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
     );
   }
 
-  Widget _buildParagraphWidget(ParagraphData paragraph) {
+  Widget _buildParagraphWidget(ParagraphData paragraph, int paragraphIndex) {
+    // 获取该段落的功德利益句高亮范围
+    final meritSentences = _meritHighlights[paragraphIndex] ?? [];
+    
+    // 构建高亮字符索引集合
+    final highlightedIndices = <int>{};
+    for (final sentence in meritSentences) {
+      for (int i = sentence.startOffset; i < sentence.endOffset && i < paragraph.chars.length; i++) {
+        highlightedIndices.add(i);
+      }
+    }
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
       padding: const EdgeInsets.all(16),
@@ -1101,12 +1181,36 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
         alignment: WrapAlignment.start,
         crossAxisAlignment: WrapCrossAlignment.end,
         runSpacing: 24,
-        children: paragraph.chars.map(_buildCharWidget).toList(),
+        children: List.generate(paragraph.chars.length, (charIndex) {
+          final isHighlighted = highlightedIndices.contains(charIndex);
+          return _buildCharWidget(paragraph.chars[charIndex], isHighlighted: isHighlighted);
+        }),
       ),
     );
   }
 
-  Widget _buildCharWidget(CharData data) {
+  Widget _buildCharWidget(CharData data, {bool isHighlighted = false}) {
+    // 功德利益句高亮样式（金色）
+    final highlightPinyinStyle = TextStyle(
+      fontSize: 12,
+      color: const Color(0xFFFFD700), // 金色
+      fontWeight: FontWeight.w600,
+      height: 1.2,
+    );
+    
+    final highlightCharStyle = TextStyle(
+      fontSize: 28,
+      color: const Color(0xFFFFD700), // 金色
+      fontWeight: FontWeight.w700,
+      height: 1.2,
+      shadows: const [
+        Shadow(
+          color: Color(0x66FFD700),
+          blurRadius: 8,
+        ),
+      ],
+    );
+    
     switch (data.type) {
       case CharType.chinese:
         return Container(
@@ -1114,9 +1218,15 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(data.pinyin ?? '', style: _CachedWidgets.pinyinStyle),
+              Text(
+                data.pinyin ?? '', 
+                style: isHighlighted ? highlightPinyinStyle : _CachedWidgets.pinyinStyle,
+              ),
               const SizedBox(height: 2),
-              Text(data.char, style: _CachedWidgets.charStyle),
+              Text(
+                data.char, 
+                style: isHighlighted ? highlightCharStyle : _CachedWidgets.charStyle,
+              ),
             ],
           ),
         );
@@ -1125,18 +1235,25 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
       case CharType.punctuation:
         return Padding(
           padding: const EdgeInsets.only(top: 20),
-          child: Text(data.char, style: _CachedWidgets.punctuationStyle),
+          child: Text(
+            data.char, 
+            style: isHighlighted 
+                ? highlightCharStyle.copyWith(fontSize: 28, shadows: null)
+                : _CachedWidgets.punctuationStyle,
+          ),
         );
       case CharType.other:
         return Padding(
           padding: const EdgeInsets.only(top: 20),
           child: Text(
             data.char,
-            style: const TextStyle(
-              fontSize: 24,
-              color: Colors.white,
-              fontWeight: FontWeight.w500,
-            ),
+            style: isHighlighted 
+                ? highlightCharStyle.copyWith(fontSize: 24)
+                : const TextStyle(
+                    fontSize: 24,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
           ),
         );
     }

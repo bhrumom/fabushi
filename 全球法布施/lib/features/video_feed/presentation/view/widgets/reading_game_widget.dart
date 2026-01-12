@@ -1049,9 +1049,15 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
       pinyinColor = Colors.white.withValues(alpha: opacity * 0.6);
     }
     
+    // 当前句子需要更多空间容纳可能的多行换行
+    final lineHeight = isCurrent ? _lyricLineHeight * 1.5 : _lyricLineHeight;
+    
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      height: _lyricLineHeight,
+      constraints: BoxConstraints(
+        minHeight: isCurrent ? _lyricLineHeight : _lyricLineHeight * 0.6,
+        maxHeight: lineHeight,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       alignment: Alignment.center,
       child: isCurrent
@@ -1085,69 +1091,70 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
   }) {
     final chars = _processSentenceToPinyin(sentence);
     
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: chars.map((charData) {
-          if (charData.type == CharType.chinese) {
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    charData.pinyin ?? '',
-                    style: TextStyle(
-                      fontSize: pinyinFontSize,
-                      color: pinyinColor,
-                      fontWeight: FontWeight.w500,
-                      height: 1.2,
-                    ),
+    // 使用 Wrap 自动换行，确保内容始终完整显示在屏幕内
+    return Wrap(
+      alignment: WrapAlignment.center,
+      runAlignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.end,
+      spacing: 2,  // 字符间距
+      runSpacing: 4,  // 行间距
+      children: chars.map((charData) {
+        if (charData.type == CharType.chinese) {
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 1),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  charData.pinyin ?? '',
+                  style: TextStyle(
+                    fontSize: pinyinFontSize,
+                    color: pinyinColor,
+                    fontWeight: FontWeight.w500,
+                    height: 1.2,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    charData.char,
-                    style: TextStyle(
-                      fontSize: fontSize,
-                      color: textColor,
-                      fontWeight: fontWeight,
-                      height: 1.2,
-                    ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  charData.char,
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    color: textColor,
+                    fontWeight: fontWeight,
+                    height: 1.2,
                   ),
-                ],
-              ),
-            );
-          } else if (charData.type == CharType.punctuation) {
-            return Padding(
-              padding: EdgeInsets.only(top: pinyinFontSize + 4),
-              child: Text(
-                charData.char,
-                style: TextStyle(
-                  fontSize: fontSize,
-                  color: textColor.withValues(alpha: 0.7),
-                  fontWeight: fontWeight,
                 ),
+              ],
+            ),
+          );
+        } else if (charData.type == CharType.punctuation) {
+          return Padding(
+            padding: EdgeInsets.only(top: pinyinFontSize + 4),
+            child: Text(
+              charData.char,
+              style: TextStyle(
+                fontSize: fontSize,
+                color: textColor.withValues(alpha: 0.7),
+                fontWeight: fontWeight,
               ),
-            );
-          } else if (charData.type == CharType.space) {
-            return const SizedBox(width: 8);
-          } else {
-            return Padding(
-              padding: EdgeInsets.only(top: pinyinFontSize + 4),
-              child: Text(
-                charData.char,
-                style: TextStyle(
-                  fontSize: fontSize,
-                  color: textColor,
-                  fontWeight: fontWeight,
-                ),
+            ),
+          );
+        } else if (charData.type == CharType.space) {
+          return const SizedBox(width: 8);
+        } else {
+          return Padding(
+            padding: EdgeInsets.only(top: pinyinFontSize + 4),
+            child: Text(
+              charData.char,
+              style: TextStyle(
+                fontSize: fontSize,
+                color: textColor,
+                fontWeight: fontWeight,
               ),
-            );
-          }
-        }).toList(),
-      ),
+            ),
+          );
+        }
+      }).toList(),
     );
   }
   

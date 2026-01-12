@@ -111,29 +111,71 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
       _selectedType = type;
     });
 
-    try {
-      await LLMModelManager.instance.downloadModel(
-        type,
-        onProgress: (progress, stage) {
-          if (mounted) {
-            setState(() {
-              _downloadProgress = progress;
-              _downloadStage = stage;
-            });
-          }
-        },
-      );
-      
-      // 下载完成，选择模型
-      await _selectModel(type);
-    } catch (e) {
+    // 使用 Future 开始下载，不等待完成（允许后台运行）
+    _startBackgroundDownload(type);
+  }
+  
+  /// 启动后台下载
+  void _startBackgroundDownload(LLMModelType type) {
+    LLMModelManager.instance.downloadModel(
+      type,
+      onProgress: (progress, stage) {
+        if (mounted) {
+          setState(() {
+            _downloadProgress = progress;
+            _downloadStage = stage;
+          });
+        }
+      },
+    ).then((_) async {
+      // 下载完成
+      if (mounted) {
+        await _selectModel(type);
+      } else {
+        // 对话框已关闭，显示全局通知
+        _showDownloadCompleteNotification(type);
+      }
+    }).catchError((e) {
       if (mounted) {
         setState(() {
           _error = '下载失败: $e';
           _isDownloading = false;
         });
+      } else {
+        // 对话框已关闭，显示全局错误通知
+        _showDownloadErrorNotification(e);
       }
-    }
+    });
+  }
+  
+  /// 显示下载完成通知（当对话框已关闭时）
+  static void _showDownloadCompleteNotification(LLMModelType type) {
+    final config = LLMModelConfig.getConfig(type);
+    // 保存选择
+    AppSettings.setSelectedModelName(type.name);
+    AppSettings.setModelSetupComplete(true);
+    LLMModelManager.instance.selectedModel = type;
+    
+    // 使用全局 OverlayEntry 显示通知
+    GlobalNotification.show(
+      message: '${config.displayName} 下载完成',
+      isError: false,
+    );
+  }
+  
+  /// 显示下载错误通知
+  static void _showDownloadErrorNotification(dynamic error) {
+    GlobalNotification.show(
+      message: '模型下载失败: $error',
+      isError: true,
+    );
+  }
+  
+  /// 隐藏对话框，继续后台下载
+  void _hideAndContinueDownload() {
+    // 保存 Overlay 引用以便后台下载完成后显示通知
+    GlobalNotification.saveOverlay(context);
+    Navigator.of(context).pop(); // 关闭对话框，下载继续在后台进行
   }
 
   Future<void> _selectModel(LLMModelType type) async {
@@ -227,9 +269,23 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
           style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 24),
-        TextButton(
-          onPressed: _cancelDownload,
-          child: const Text('取消下载', style: TextStyle(color: Colors.redAccent)),
+        // 按钮行：隐藏到后台 + 取消下载
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 16,
+          runSpacing: 8,
+          children: [
+            TextButton.icon(
+              onPressed: _hideAndContinueDownload,
+              icon: const Icon(Icons.minimize, color: Colors.white70, size: 18),
+              label: const Text('后台下载', style: TextStyle(color: Colors.white70)),
+            ),
+            TextButton.icon(
+              onPressed: _cancelDownload,
+              icon: const Icon(Icons.close, color: Colors.redAccent, size: 18),
+              label: const Text('取消', style: TextStyle(color: Colors.redAccent)),
+            ),
+          ],
         ),
       ],
     );
@@ -607,6 +663,164 @@ class _RecommendedBadge extends StatelessWidget {
           color: Colors.green,
           fontSize: 10,
           fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}
+
+/// 全局通知工具类
+/// 
+/// 用于在应用任何位置显示通知，即使当前页面已被 pop
+class GlobalNotification {
+  static OverlayEntry? _currentEntry;
+  static OverlayState? _savedOverlay;
+  
+  /// 保存 Overlay 引用（在关闭对话框前调用）
+  static void saveOverlay(BuildContext context) {
+    _savedOverlay = Overlay.of(context);
+  }
+  
+  /// 显示全局通知
+  static void show({
+    required String message,
+    bool isError = false,
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    final overlay = _savedOverlay;
+    if (overlay == null) return;
+    
+    // 移除现有通知
+    _currentEntry?.remove();
+    
+    _currentEntry = OverlayEntry(
+      builder: (context) => _NotificationWidget(
+        message: message,
+        isError: isError,
+        onDismiss: () {
+          _currentEntry?.remove();
+          _currentEntry = null;
+        },
+      ),
+    );
+    
+    overlay.insert(_currentEntry!);
+    
+    // 自动消失
+    Future.delayed(duration, () {
+      _currentEntry?.remove();
+      _currentEntry = null;
+    });
+  }
+}
+
+/// 通知 Widget
+class _NotificationWidget extends StatefulWidget {
+  final String message;
+  final bool isError;
+  final VoidCallback onDismiss;
+  
+  const _NotificationWidget({
+    required this.message,
+    required this.isError,
+    required this.onDismiss,
+  });
+  
+  @override
+  State<_NotificationWidget> createState() => _NotificationWidgetState();
+}
+
+class _NotificationWidgetState extends State<_NotificationWidget>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _fadeAnimation;
+  
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, -1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    ));
+    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(_controller);
+    _controller.forward();
+  }
+  
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 16,
+      left: 16,
+      right: 16,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: widget.isError 
+                    ? const Color(0xFF2D1F1F) 
+                    : const Color(0xFF1F2D1F),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: widget.isError ? Colors.redAccent : Colors.green,
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    widget.isError ? Icons.error_outline : Icons.check_circle_outline,
+                    color: widget.isError ? Colors.redAccent : Colors.green,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.message,
+                      style: TextStyle(
+                        color: widget.isError ? Colors.redAccent : Colors.green,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: widget.onDismiss,
+                    child: Icon(
+                      Icons.close,
+                      color: widget.isError ? Colors.redAccent : Colors.green,
+                      size: 20,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

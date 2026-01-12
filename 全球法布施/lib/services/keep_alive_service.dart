@@ -5,9 +5,14 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../core/config/app_config.dart';
 import 'workmanager_keep_alive.dart';
 import 'memory_manager.dart';
+
+/// 全局标记 - AudioService 是否已经初始化过
+/// 这个标记独立于 KeepAliveService 实例，用于检测热重载场景
+bool _audioServiceInitialized = false;
 
 /// 统一保活服务
 /// 
@@ -476,6 +481,13 @@ class KeepAliveService {
   static Completer<void>? _initCompleter;
   static bool _isInitializing = false;
   
+  // 降级模式标记 - 当 AudioService 无法初始化时使用本地通知
+  static bool _isDegradedMode = false;
+  
+  // 备用通知插件
+  static FlutterLocalNotificationsPlugin? _fallbackNotifications;
+  static const int _notificationId = 8888;
+  
   KeepAliveService._();
   
   static KeepAliveService get instance {
@@ -493,6 +505,10 @@ class KeepAliveService {
   /// 
   /// 必须在应用启动时调用一次。
   /// 使用锁机制防止并发初始化导致的 AudioService 重复初始化错误。
+  /// 
+  /// 当 AudioService 初始化失败时（如热重载场景），会进入降级模式：
+  /// - 使用本地音频处理器播放音频保活
+  /// - 使用 flutter_local_notifications 显示备用通知
   Future<void> initialize() async {
     // 如果已经初始化完成，直接返回
     if (_audioHandler != null) {
@@ -517,40 +533,130 @@ class KeepAliveService {
     _initCompleter = Completer<void>();
     
     try {
-      _audioHandler = await AudioService.init(
-        builder: () => KeepAliveAudioHandler(),
-        config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.ombhrum.fabushi.keep_alive',
-          androidNotificationChannelName: '全球法布施',
-          androidNotificationChannelDescription: '保持应用在后台运行，确保全球发送不中断',
-          // Android 通知配置 - 显示音乐播放器风格通知
-          // 设置 ongoing=false, stopOnPause=false 确保通知始终显示
-          androidNotificationOngoing: false,  // 允许滑动关闭（但我们会持续播放所以不会消失）
-          androidStopForegroundOnPause: false, // 暂停时保持前台服务和通知
-          androidResumeOnClick: true,  // 点击通知返回应用
-          androidShowNotificationBadge: true,  // 显示角标
-          // 通知图标
-          androidNotificationIcon: 'mipmap/ic_launcher',
-          // 封面图压缩
-          artDownscaleWidth: 300,
-          artDownscaleHeight: 300,
-        ),
-      );
-      
-      debugPrint('✅ KeepAliveService 已初始化');
+      // 检查是否已经初始化过 AudioService（热重载场景）
+      if (_audioServiceInitialized) {
+        debugPrint('⚠️ AudioService 已在之前初始化，进入降级模式');
+        await _initDegradedMode();
+      } else {
+        // 首次初始化 AudioService
+        _audioHandler = await AudioService.init(
+          builder: () => KeepAliveAudioHandler(),
+          config: const AudioServiceConfig(
+            androidNotificationChannelId: 'com.ombhrum.fabushi.keep_alive',
+            androidNotificationChannelName: '全球法布施',
+            androidNotificationChannelDescription: '保持应用在后台运行，确保全球发送不中断',
+            // Android 通知配置 - 显示音乐播放器风格通知
+            // 注意：androidNotificationOngoing=true 要求 androidStopForegroundOnPause=true
+            // 我们使用 ongoing=false 以保持前台服务持续运行
+            androidNotificationOngoing: false,
+            androidStopForegroundOnPause: false, // 暂停时保持前台服务和通知
+            androidResumeOnClick: true,  // 点击通知返回应用
+            androidShowNotificationBadge: true,  // 显示角标
+            // 通知图标
+            androidNotificationIcon: 'mipmap/ic_launcher',
+            // 封面图压缩
+            artDownscaleWidth: 300,
+            artDownscaleHeight: 300,
+          ),
+        );
+        
+        _audioServiceInitialized = true;
+        _isDegradedMode = false;
+        debugPrint('✅ KeepAliveService 已初始化（正常模式）');
+      }
     } catch (e) {
       debugPrint('❌ KeepAliveService 初始化失败: $e');
       
-      // 热重载或重复初始化场景：尝试创建新的 audio handler 实例
-      // AudioService 已经初始化过了，我们直接创建一个本地的 handler 使用
-      if (e.toString().contains('_cacheManager == null')) {
-        debugPrint('🔄 检测到 AudioService 已初始化，创建本地音频处理器...');
-        _audioHandler = KeepAliveAudioHandler();
-        debugPrint('✅ 本地音频处理器已创建（降级模式）');
-      }
+      // AudioService 初始化失败，进入降级模式
+      // 可能原因：热重载、重复初始化、原生层问题
+      await _initDegradedMode();
     } finally {
       _isInitializing = false;
       _initCompleter?.complete();
+    }
+  }
+  
+  /// 初始化降级模式
+  /// 
+  /// 在 AudioService 无法正常初始化时使用：
+  /// - 创建本地音频处理器（仅播放音频保活，无媒体通知）
+  /// - 初始化本地通知插件显示备用通知
+  Future<void> _initDegradedMode() async {
+    _isDegradedMode = true;
+    _audioHandler = KeepAliveAudioHandler();
+    debugPrint('🔄 创建本地音频处理器（降级模式）');
+    
+    // 初始化备用通知插件
+    if (_fallbackNotifications == null) {
+      _fallbackNotifications = FlutterLocalNotificationsPlugin();
+      
+      // Android 初始化设置
+      const androidSettings = AndroidInitializationSettings('mipmap/ic_launcher');
+      
+      // iOS 初始化设置
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
+      
+      const initSettings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
+      
+      await _fallbackNotifications!.initialize(initSettings);
+      debugPrint('✅ 备用通知插件已初始化');
+    }
+    
+    debugPrint('✅ 降级模式初始化完成');
+  }
+  
+  /// 显示备用通知（降级模式使用）
+  Future<void> _showFallbackNotification({
+    required String title,
+    required String body,
+  }) async {
+    if (!_isDegradedMode || _fallbackNotifications == null) return;
+    if (!Platform.isAndroid) return;
+    
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        'com.ombhrum.fabushi.keep_alive',
+        '全球法布施',
+        channelDescription: '全球发送进度通知',
+        importance: Importance.low,
+        priority: Priority.low,
+        ongoing: true,  // 持续显示，不可滑动关闭
+        autoCancel: false,
+        showWhen: false,
+        playSound: false,
+        enableVibration: false,
+        channelShowBadge: true,
+        category: AndroidNotificationCategory.progress,
+      );
+      
+      const notificationDetails = NotificationDetails(android: androidDetails);
+      
+      await _fallbackNotifications!.show(
+        _notificationId,
+        title,
+        body,
+        notificationDetails,
+      );
+    } catch (e) {
+      debugPrint('⚠️ 显示备用通知失败: $e');
+    }
+  }
+  
+  /// 取消备用通知
+  Future<void> _cancelFallbackNotification() async {
+    if (_fallbackNotifications == null) return;
+    
+    try {
+      await _fallbackNotifications!.cancel(_notificationId);
+    } catch (e) {
+      debugPrint('⚠️ 取消备用通知失败: $e');
     }
   }
   
@@ -569,11 +675,25 @@ class KeepAliveService {
       audioName: audioName,
       totalCountries: totalCountries,
     );
+    
+    // 降级模式：显示备用通知
+    if (_isDegradedMode) {
+      await _showFallbackNotification(
+        title: '全球法布施',
+        body: '${audioName ?? "准备中"} · 发送到 $totalCountries 个国家',
+      );
+      debugPrint('📢 已显示备用通知（降级模式）');
+    }
   }
   
   /// 停止保活
   Future<void> stop() async {
     await _audioHandler?.stop();
+    
+    // 降级模式：取消备用通知
+    if (_isDegradedMode) {
+      await _cancelFallbackNotification();
+    }
   }
   
   /// 更新进度
@@ -593,6 +713,22 @@ class KeepAliveService {
       isLoopbackActive: isLoopbackActive,
       loopbackCount: loopbackCount,
     );
+    
+    // 降级模式：更新备用通知
+    if (_isDegradedMode) {
+      String subtitle = '$currentCountry ($sentCount/$totalCount)';
+      if (loopCount != null && loopCount > 0) {
+        subtitle = '第 $loopCount 轮 · $subtitle';
+      }
+      if (isLoopbackActive) {
+        subtitle += ' | 🟢 杨升: $loopbackCount次';
+      }
+      
+      _showFallbackNotification(
+        title: '全球法布施',
+        body: subtitle,
+      );
+    }
   }
   
   /// 设置静音
