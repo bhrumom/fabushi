@@ -222,6 +222,9 @@ class _ReadingGameWidgetState extends State<ReadingGameWidget>
         if (!sttSuccess) {
           debugPrint('[ReadingGame] 语音识别初始化失败，禁用自动模式');
           _isAutoModeEnabled = false;
+        } else {
+          // 加载匹配服务的阈值配置
+          await _matchingService.loadConfig();
         }
       }
       

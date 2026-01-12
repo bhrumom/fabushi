@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
 import '../services/app_initializer.dart';
+import '../services/app_settings.dart';
 import '../screens/main_navigation_screen.dart';
 import '../services/platform_service.dart';
+import '../widgets/model_selection_dialog.dart';
 
 class AppWrapper extends StatefulWidget {
   const AppWrapper({Key? key}) : super(key: key);
@@ -17,6 +19,7 @@ class _AppWrapperState extends State<AppWrapper> {
   bool _isInitialized = false;
   bool _initStarted = false;
   String? _initError;
+  bool _needsModelSetup = false;
   final PlatformService _platformService = PlatformServiceFactory.create();
 
   @override
@@ -46,12 +49,22 @@ class _AppWrapperState extends State<AppWrapper> {
       if (!AppInitializer.isInitialized) {
         await AppInitializer.initialize();
       }
+      
+      // 4. 检查是否需要模型设置引导
+      final needsModelSetup = await AppSettings.isFirstLaunch() && 
+                              !await AppSettings.isModelSetupComplete();
 
       // If we are still mounted, update state to trigger rebuild to the main UI.
       if (mounted) {
         setState(() {
           _isInitialized = true;
+          _needsModelSetup = needsModelSetup;
         });
+        
+        // 首次启动显示模型选择引导
+        if (needsModelSetup) {
+          _showModelSetupDialog();
+        }
       }
     } catch (e) {
       debugPrint('Error during app initialization: $e');
@@ -61,6 +74,37 @@ class _AppWrapperState extends State<AppWrapper> {
           _isInitialized = true; // Mark as initialized to show the error screen.
         });
       }
+    }
+  }
+  
+  /// 显示首次启动模型选择引导
+  Future<void> _showModelSetupDialog() async {
+    // 延迟一下，确保 UI 已经完全渲染
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    if (!mounted) return;
+    
+    final result = await ModelSelectionDialog.show(
+      context,
+      isFirstLaunch: true,
+    );
+    
+    // 无论是否选择了模型，都标记首次启动已完成
+    await AppSettings.setFirstLaunchComplete();
+    
+    if (result != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('AI 模型设置完成'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+    
+    if (mounted) {
+      setState(() {
+        _needsModelSetup = false;
+      });
     }
   }
 

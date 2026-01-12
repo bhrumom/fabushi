@@ -81,8 +81,7 @@ dependencies:
   flutter_local_notifications: ^19.5.0
 
   # 后台服务
-  flutter_foreground_task: ^9.1.0  # Android 前台服务
-  audio_service: ^0.18.15  # iOS 后台音频服务
+  audio_service: ^0.18.15  # iOS/Android 后台音频服务（系统播放器通知）
   just_audio: ^0.9.40  # 音频播放器
   flutter_tts: ^4.2.0  # 文字转语音
   workmanager: ^0.6.0  # 后台任务恢复（应用被杀后自动重启）
@@ -95,11 +94,11 @@ dependencies:
   record: ^6.1.0              # 音频录制（macOS/iOS/Android）
   audio_session: ^0.1.21      # 音频会话管理（iOS 需要）
 
-  # NLP 语义分析
-  # - 移动端使用 TensorFlow Lite
-  # - macOS 使用原生 Natural Language 框架（通过 MethodChannel）
-  tflite_flutter: ^0.11.0     # TFLite Flutter插件（iOS/Android）
-  # onnxruntime 已移除 - 与 sherpa_onnx 的 libonnxruntime.so 版本冲突
+  # NLP 语义分析 - 本地 LLM 推理（llama.cpp Dart 绑定）
+  # - 所有平台统一使用 GGUF 格式模型
+  # - 支持多模态视觉（Qwen3-VL）
+  # - 模型首次使用时从 HuggingFace 下载到本地
+  llama_cpp_dart: ^0.2.2
 
   # FFmpeg - 音频合并与字幕嵌入
   ffmpeg_kit_flutter_new_audio: ^2.0.0  # FFmpeg 纯音频版本（体积小）
@@ -153,7 +152,7 @@ flutter:
     - assets/earth_texture.jpg
     - assets/ip_data/
     - assets/sherpa_models/streaming-paraformer-zh-en/
-    - assets/models/
+    # assets/models/ 已移除 - 模型文件（佛像、NLP模型等）通过网络按需下载
   
   fonts:
     # 使用子集化后的字体（从80MB压缩至~4.5MB）

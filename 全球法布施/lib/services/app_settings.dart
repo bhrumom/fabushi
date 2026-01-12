@@ -70,4 +70,80 @@ class AppSettings {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_defaultTtsMutedKey, muted);
   }
+
+  // ============ 读诵匹配阈值设置 ============
+  
+  static const String _fastMatchThresholdKey = 'fast_match_threshold';
+  static const String _matchThresholdKey = 'match_threshold';
+  
+  // 默认值（百分比形式，范围 0.0 ~ 1.0）
+  static const double _defaultFastMatchThreshold = 0.50;  // 快速切换阈值 50%
+  static const double _defaultMatchThreshold = 0.50;      // 普通匹配阈值 50%
+
+  /// 获取快速切换阈值（匹配度达到此值立即切换）
+  static Future<double> getFastMatchThreshold() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble(_fastMatchThresholdKey) ?? _defaultFastMatchThreshold;
+  }
+
+  /// 设置快速切换阈值
+  static Future<void> setFastMatchThreshold(double threshold) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_fastMatchThresholdKey, threshold.clamp(0.1, 1.0));
+  }
+
+  /// 获取普通匹配阈值（需配合静音端点检测）
+  static Future<double> getMatchThreshold() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble(_matchThresholdKey) ?? _defaultMatchThreshold;
+  }
+
+  /// 设置普通匹配阈值
+  static Future<void> setMatchThreshold(double threshold) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_matchThresholdKey, threshold.clamp(0.1, 1.0));
+  }
+
+  // ============ LLM 模型设置 ============
+  
+  static const String _selectedModelKey = 'selected_llm_model';
+  static const String _isFirstLaunchKey = 'is_first_launch_v2';
+  static const String _modelSetupCompleteKey = 'model_setup_complete';
+
+  /// 获取已选择的 LLM 模型类型（字符串形式存储）
+  static Future<String?> getSelectedModelName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_selectedModelKey);
+  }
+
+  /// 设置选择的 LLM 模型
+  static Future<void> setSelectedModelName(String modelName) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_selectedModelKey, modelName);
+  }
+
+  /// 是否首次启动（用于模型设置引导）
+  static Future<bool> isFirstLaunch() async {
+    final prefs = await SharedPreferences.getInstance();
+    return !prefs.containsKey(_isFirstLaunchKey);
+  }
+
+  /// 标记首次启动完成
+  static Future<void> setFirstLaunchComplete() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_isFirstLaunchKey, false);
+  }
+
+  /// 模型设置是否已完成
+  static Future<bool> isModelSetupComplete() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_modelSetupCompleteKey) ?? false;
+  }
+
+  /// 设置模型设置完成状态
+  static Future<void> setModelSetupComplete(bool complete) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_modelSetupCompleteKey, complete);
+  }
 }
+

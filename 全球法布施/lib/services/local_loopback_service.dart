@@ -90,7 +90,7 @@ class LocalLoopbackService {
     Uint8List? data,
     String? filePath,
     required String fileName,
-    LoopbackRunMode mode = LoopbackRunMode.isolate,
+    LoopbackRunMode mode = LoopbackRunMode.mainThread,
     LoopbackSpeedLevel speedLevel = LoopbackSpeedLevel.extreme,
   }) async {
     if (_isRunning) return;

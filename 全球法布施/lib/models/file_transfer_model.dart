@@ -25,7 +25,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_html/html.dart' as html;
 import '../core/startup/deferred_loader.dart';
 import '../services/local_loopback_service.dart';
-import '../services/foreground_service_manager.dart';
+
 import '../services/workmanager_keep_alive.dart';
 
 enum TransferStatus { idle, transferring, completed, error }
@@ -120,32 +120,11 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   
   /// 应用生命周期变化回调
   /// 
-  /// 根据应用状态动态切换本地回环的运行模式：
-  /// - 后台/锁屏时：切换到主线程模式，保持应用活跃
-  /// - 前台时：切换到 Isolate 模式，避免阻塞 UI
+  /// 本地回环始终保持主线程模式运行，不进行前后台切换
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_localLoopbackService == null || !_localLoopbackService!.isRunning) {
-      return;
-    }
-    
-    switch (state) {
-      case AppLifecycleState.paused:
-      case AppLifecycleState.inactive:
-      case AppLifecycleState.hidden:
-        // 应用进入后台，切换到主线程模式保持活跃
-        debugPrint('📱 应用进入后台，切换本地回环到主线程模式');
-        _localLoopbackService?.switchMode(LoopbackRunMode.mainThread);
-        break;
-      case AppLifecycleState.resumed:
-        // 应用回到前台，切换到 Isolate 模式避免卡 UI
-        debugPrint('📱 应用回到前台，切换本地回环到 Isolate 模式');
-        _localLoopbackService?.switchMode(LoopbackRunMode.isolate);
-        break;
-      case AppLifecycleState.detached:
-        // 应用即将销毁，不做处理
-        break;
-    }
+    // 本地回环默认使用主线程模式，不再进行模式切换
+    // 主线程模式可以保持应用活跃，避免被系统杀死
   }
 
   // Getters
@@ -689,17 +668,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
                 ? _countryStatuses[_globalSentCount - 1].countryName
                 : '全球';
             
-            // 更新前台服务通知
-            ForegroundServiceManager().updateProgress(
-              sentCount: _globalSentCount,
-              totalCount: _totalCountriesCount,
-              currentCountry: currentCountry,
-              loopCount: _loopCount,
-              isLoopbackActive: true,
-              loopbackCount: _loopbackCount,
-            );
-            
-            // 更新系统媒体控制中心
+            // 更新系统媒体控制中心（统一使用 audio_service）
             _keepAliveService.updateProgress(
               sentCount: _globalSentCount,
               totalCount: _totalCountriesCount,
@@ -786,22 +755,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
         totalCountries: _countryStatuses.length,
       );
       
-      // 2. 启动专用前台服务 (flutter_foreground_task)
-      // 这会显示一个更高优先级的系统通知，在 Android 13+ 上更稳定
-      final foregroundManager = ForegroundServiceManager();
-      await foregroundManager.initialize();
-      await foregroundManager.start(
-        fileName: fileName,
-        totalCountries: _countryStatuses.length,
-        isLoopbackActive: _localLoopbackService?.isRunning ?? false,
-        loopbackCount: _loopbackCount,
-      );
-      
-      // 设置前台服务按钮回调
-      ForegroundServiceManager.onMuteToggleRequested = _onToggleAudioMute;
-      ForegroundServiceManager.onStopSendingRequested = stopTransfer;
-      
-      debugPrint('✅ 综合后台服务已启动');
+      debugPrint('✅ 后台音频服务已启动');
     } catch (e) {
       debugPrint('⚠️ 启动后台服务失败: $e');
     }
@@ -811,16 +765,13 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   void _onToggleAudioMute() async {
     debugPrint('🔇 收到静音切换请求');
     await _keepAliveService.toggleMute();
-    // 同步更新前台服务通知
-    await ForegroundServiceManager().updateMuteStatus(_keepAliveService.isMuted);
   }
 
   /// 停止后台服务
   Future<void> _stopBackgroundService() async {
     try {
       await _keepAliveService.stop();
-      await ForegroundServiceManager().stop();
-      debugPrint('✅ 综合后台服务已停止');
+      debugPrint('✅ 后台音频服务已停止');
     } catch (e) {
       debugPrint('⚠️ 停止后台服务失败: $e');
     }
@@ -836,16 +787,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       isLoopbackActive: _localLoopbackService?.isRunning ?? false,
       loopbackCount: _loopbackCount,
     );
-    
-    // 更新 flutter_foreground_task 通知
-    ForegroundServiceManager().updateProgress(
-      sentCount: sent,
-      totalCount: total,
-      currentCountry: country,
-      loopCount: _loopCount,
-      isLoopbackActive: _localLoopbackService?.isRunning ?? false,
-      loopbackCount: _loopbackCount,
-    );
+
   }
 
   /// 初始化平台自适应全球发送服务

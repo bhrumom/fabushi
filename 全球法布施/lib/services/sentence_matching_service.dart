@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:lpinyin/lpinyin.dart';
+import 'app_settings.dart';
 
 /// 智能句子匹配服务
 /// 
@@ -8,10 +9,12 @@ import 'package:lpinyin/lpinyin.dart';
 class SentenceMatchingService {
   /// 匹配阈值：识别文本拼音覆盖目标句子拼音的百分比
   /// 达到此阈值且检测到静音端点时，判定为念完
-  static const double matchThreshold = 0.50;
+  /// 现在可以通过设置页面配置
+  double _matchThreshold = 0.50;
   
   /// 快速切换阈值：当匹配度非常高时可以更快切换
-  static const double fastMatchThreshold = 0.70;
+  /// 现在可以通过设置页面配置
+  double _fastMatchThreshold = 0.50;
   
   /// 最小静音时长（毫秒）：检测到端点后需要等待的静音时长
   static const int minSilenceDurationMs = 300;
@@ -21,6 +24,24 @@ class SentenceMatchingService {
   
   /// 当前累计的识别文本
   String _accumulatedText = '';
+  
+  /// 是否已加载配置
+  bool _configLoaded = false;
+  
+  /// 从设置加载阈值配置
+  Future<void> loadConfig() async {
+    _fastMatchThreshold = await AppSettings.getFastMatchThreshold();
+    _matchThreshold = await AppSettings.getMatchThreshold();
+    _configLoaded = true;
+    debugPrint('[SentenceMatching] 配置已加载: 快速切换=${(_fastMatchThreshold * 100).toInt()}%, 普通匹配=${(_matchThreshold * 100).toInt()}%');
+  }
+  
+  /// 确保配置已加载
+  Future<void> _ensureConfigLoaded() async {
+    if (!_configLoaded) {
+      await loadConfig();
+    }
+  }
   
   /// 重置状态（切换到新句子时调用）
   void reset() {
@@ -79,16 +100,17 @@ class SentenceMatchingService {
     final score = calculateMatchScore(_accumulatedText, targetSentence);
     
     debugPrint('[SentenceMatching] 匹配度: ${(score * 100).toStringAsFixed(1)}%, '
-        '识别: "$_accumulatedText", 目标: "$targetSentence", 端点: $isEndpoint');
+        '识别: "$_accumulatedText", 目标: "$targetSentence", 端点: $isEndpoint, '
+        '快速阈值: ${(_fastMatchThreshold * 100).toInt()}%, 普通阈值: ${(_matchThreshold * 100).toInt()}%');
     
-    // 情况1：匹配度非常高（≥90%），直接切换
-    if (score >= fastMatchThreshold) {
-      debugPrint('[SentenceMatching] 高匹配度触发切换');
+    // 情况1：匹配度达到快速切换阈值，直接切换
+    if (score >= _fastMatchThreshold) {
+      debugPrint('[SentenceMatching] 达到快速切换阈值，触发切换');
       return true;
     }
     
-    // 情况2：匹配度达到阈值（≥75%）且检测到静音端点
-    if (score >= matchThreshold && isEndpoint) {
+    // 情况2：匹配度达到普通阈值且检测到静音端点
+    if (score >= _matchThreshold && isEndpoint) {
       // 记录端点时间
       if (_lastEndpointTime == null) {
         _lastEndpointTime = DateTime.now();

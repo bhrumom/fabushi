@@ -550,14 +550,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.7"
-  flutter_foreground_task:
-    dependency: "direct main"
-    description:
-      name: flutter_foreground_task
-      sha256: "9f1b25a81db95d7119d2c5cffc654048cbdd49d4056183e1beadc1a6a38f3e29"
-      url: "https://pub.dev"
-    source: hosted
-    version: "9.1.0"
   flutter_inappwebview:
     dependency: "direct main"
     description:
@@ -1053,6 +1045,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.1"
+  llama_cpp_dart:
+    dependency: "direct main"
+    description:
+      name: llama_cpp_dart
+      sha256: "8bfc902fb6ef80ec0a2d06d5cdb499364271f9a6c6f11623ca9d7b4488fa7a98"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.2"
   logger:
     dependency: transitive
     description:
@@ -1373,14 +1373,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.5.0"
-  quiver:
-    dependency: transitive
-    description:
-      name: quiver
-      sha256: ea0b925899e64ecdfbf9c7becb60d5b50e706ade44a85b2363be2a22d88117d2
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.2.2"
   record:
     dependency: "direct main"
     description:
@@ -1762,14 +1754,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.7"
-  tflite_flutter:
-    dependency: "direct main"
-    description:
-      name: tflite_flutter
-      sha256: "48e6fde2ad97162bb66a16a142f4c4698add9e8cd397ce9d1cc7451b55537ac1"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.11.0"
   three_js:
     dependency: "direct main"
     description:
@@ -1906,6 +1890,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
+  typed_isolate:
+    dependency: transitive
+    description:
+      name: typed_isolate
+      sha256: e245b87368104f9da13a75268e0bce16a2a8d4c9a4194a5eb50bb569be680c65
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.0.0"
   unicode:
     dependency: transitive
     description:

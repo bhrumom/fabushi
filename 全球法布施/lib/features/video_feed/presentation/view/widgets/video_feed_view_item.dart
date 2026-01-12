@@ -261,7 +261,8 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
     final textContent = widget.videoItem.textContent ?? '';
     if (textContent.isEmpty) return;
     
-    final sentences = _parseSentences(textContent);
+    // 使用智能切分，与背诵功能和文本视频保持一致（最大21字，优先在标点处分割）
+    final sentences = _splitTextForRecitation(textContent);
     if (sentences.isEmpty) return;
     
     Navigator.push(
