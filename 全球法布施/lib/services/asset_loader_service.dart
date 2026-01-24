@@ -3,6 +3,44 @@ import 'package:http/http.dart' as http;
 import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import 'memory_manager.dart';
+
+/// 3D 模型资源缓存包装器
+/// 实现 ClearableCache 接口以便 MemoryManager 在内存警告时清理
+class _AssetCacheWrapper implements ClearableCache {
+  final Map<String, Uint8List> _cache;
+  
+  _AssetCacheWrapper(this._cache);
+  
+  @override
+  String get cacheName => 'AssetLoaderService';
+  
+  @override
+  int get priority => 3; // 较低优先级，容易被清理
+  
+  @override
+  int get currentSizeBytes {
+    int total = 0;
+    for (final data in _cache.values) {
+      total += data.length;
+    }
+    return total;
+  }
+  
+  @override
+  Future<void> trimToSize(int targetBytes) async {
+    while (currentSizeBytes > targetBytes && _cache.isNotEmpty) {
+      final key = _cache.keys.first;
+      _cache.remove(key);
+    }
+  }
+  
+  @override
+  Future<void> clearAll() async {
+    _cache.clear();
+    debugPrint('🗑️ [AssetLoader] 已清空内存缓存');
+  }
+}
 
 /// 大型资源动态加载服务
 /// 
@@ -16,12 +54,27 @@ class AssetLoaderService {
   // 内存缓存 (仅用于当前会话)
   static final Map<String, Uint8List> _memoryCache = {};
   
+  // 缓存包装器（用于 MemoryManager）
+  static _AssetCacheWrapper? _cacheWrapper;
+  
+  /// 初始化并注册到 MemoryManager
+  static void initialize() {
+    if (_cacheWrapper == null) {
+      _cacheWrapper = _AssetCacheWrapper(_memoryCache);
+      MemoryManager.instance.registerCache(_cacheWrapper!);
+      debugPrint('✅ [AssetLoader] 已注册到 MemoryManager');
+    }
+  }
+
   /// 加载佛像模型
   /// 
   /// 返回模型数据的 Uint8List,可以传递给 three_js 的 GLTFLoader
   static Future<Uint8List> loadBuddhaModel({
     void Function(double progress)? onProgress
   }) async {
+    // 确保已注册到 MemoryManager
+    initialize();
+    
     return await _loadAsset(
       'models/buddha_model.glb',
       onProgress: onProgress,

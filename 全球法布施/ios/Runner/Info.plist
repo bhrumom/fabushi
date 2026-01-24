@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Global Dharma Sharing</string>
+	<string>大乘</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -83,5 +83,9 @@
 	<!-- 语音识别权限说明 - 智能检测读诵进度 -->
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>需要语音识别权限以智能检测您的读诵进度</string>
+	
+	<!-- Firebase 配置 - 禁用 Method Swizzling 以避免 AppDelegate 代理冲突 -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 </dict>
 </plist>
