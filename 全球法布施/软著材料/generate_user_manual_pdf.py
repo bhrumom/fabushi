@@ -121,7 +121,7 @@ def generate_pdf():
             
             # 页眉
             c.setFont(font_name, 9)
-            c.drawString(margin_left, page_height - 1 * cm, "全球法布施软件 用户手册")
+            c.drawString(margin_left, page_height - 1 * cm, "大乘软件 用户手册")
             c.drawRightString(page_width - margin_right, page_height - 1 * cm, f"第 {page_idx + 1} 页")
             
             # 分隔线

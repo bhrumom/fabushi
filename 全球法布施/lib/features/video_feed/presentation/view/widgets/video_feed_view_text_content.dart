@@ -277,8 +277,9 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   Future<void> _initMeritBenefitRecognition(List<String> paragraphs) async {
     if (_disposed || paragraphs.isEmpty) return;
     
-    // 检查模型状态
-    if (!_meritLLMService.isModelReady) {
+    // 等待模型就绪（ensureInitialized 会触发初始化或等待已有初始化完成）
+    final modelReady = await _meritLLMService.ensureInitialized();
+    if (!modelReady) {
       _debugLog('💿 TTS: LLM 模型未就绪，使用降级模式（从头朗读）');
       _useFallbackMode = true;
       return;

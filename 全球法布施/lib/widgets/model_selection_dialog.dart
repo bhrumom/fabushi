@@ -30,7 +30,7 @@ class ModelSelectionDialog extends StatefulWidget {
   }) async {
     return showDialog<LLMModelType>(
       context: context,
-      barrierDismissible: !isFirstLaunch, // 首次启动不允许点击外部关闭
+      barrierDismissible: true, // 允许点击外部关闭
       builder: (context) => ModelSelectionDialog(
         isFirstLaunch: isFirstLaunch,
         filterCategory: filterCategory,
@@ -198,6 +198,52 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
       _downloadStage = '';
     });
   }
+  
+  /// 选中模型卡片（不自动下载）
+  void _selectModelCard(LLMModelType type) {
+    setState(() {
+      _selectedType = type;
+    });
+  }
+  
+  /// 构建操作按钮
+  Widget _buildActionButtons() {
+    final hasSelectedModel = _selectedType != null;
+    final status = hasSelectedModel ? (_modelStatus?[_selectedType!] ?? ModelStatus.notDownloaded) : null;
+    final isDownloaded = status == ModelStatus.downloaded;
+    
+    return Row(
+      children: [
+        // 暂不下载/关闭按钮
+        Expanded(
+          child: OutlinedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white54,
+              side: const BorderSide(color: Colors.white24),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            child: Text(widget.isFirstLaunch ? '暂不下载' : '取消'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        // 下载并使用/确定按钮
+        Expanded(
+          child: ElevatedButton(
+            onPressed: hasSelectedModel ? () => _downloadAndSelect(_selectedType!) : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber,
+              foregroundColor: Colors.black87,
+              disabledBackgroundColor: Colors.white12,
+              disabledForegroundColor: Colors.white24,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            child: Text(isDownloaded ? '使用此模型' : '下载并使用'),
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -347,17 +393,9 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
           ),
         ),
         
-        // 跳过按钮（仅非首次启动时显示）
-        if (!widget.isFirstLaunch) ...[
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('取消', style: TextStyle(color: Colors.white54)),
-            ),
-          ),
-        ],
+        // 操作按钮
+        const SizedBox(height: 16),
+        _buildActionButtons(),
       ],
     );
   }
@@ -506,7 +544,7 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
                    _deviceInfo!.ramMb >= config.minRamMb;
 
     return GestureDetector(
-      onTap: canRun ? () => _downloadAndSelect(type) : null,
+      onTap: canRun ? () => _selectModelCard(type) : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),

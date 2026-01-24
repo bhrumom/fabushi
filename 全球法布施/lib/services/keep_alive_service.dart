@@ -607,6 +607,17 @@ class KeepAliveService {
       
       await _fallbackNotifications!.initialize(initSettings);
       debugPrint('✅ 备用通知插件已初始化');
+      
+      // Android 13+ 需要请求通知权限
+      if (Platform.isAndroid) {
+        final androidPlugin = _fallbackNotifications!
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>();
+        if (androidPlugin != null) {
+          final granted = await androidPlugin.requestNotificationsPermission();
+          debugPrint('📢 通知权限请求结果: $granted');
+        }
+      }
     }
     
     debugPrint('✅ 降级模式初始化完成');

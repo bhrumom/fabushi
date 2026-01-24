@@ -1,4 +1,4 @@
-全球法布施 V1.0 源程序代码
+大乘软件 V3.0 源程序代码
 ========================================
 
 
@@ -1498,3 +1498,1003 @@ class ServerFailure extends Failure {
 class AuthFailure extends Failure {
   const AuthFailure([String message = '认证失败']) : super(message);
 }
+
+class ValidationFailure extends Failure {
+  const ValidationFailure([String message = '数据验证失败']) : super(message);
+}
+
+class CacheFailure extends Failure {
+  const CacheFailure([String message = '缓存错误']) : super(message);
+}
+
+
+// ========================================
+// 文件: lib/core/locations.dart
+// ========================================
+
+class Location {
+  final String name;
+  final double lat;
+  final double lon;
+
+  const Location(this.name, this.lat, this.lon);
+}
+
+const List<Location> globalLocations = [
+  // 亚洲
+  Location("中国", 39.9042, 116.4074),
+  Location("日本", 35.6895, 139.6917),
+  Location("韩国", 37.5665, 126.9780),
+  Location("印度", 28.6139, 77.2090),
+  Location("新加坡", 1.3521, 103.8198),
+  Location("马来西亚", 3.1390, 101.6869),
+  Location("泰国", 13.7563, 100.5018),
+  Location("越南", 21.0278, 105.8342),
+  Location("印度尼西亚", -6.2088, 106.8456),
+  Location("菲律宾", 14.5995, 120.9842),
+  Location("沙特阿拉伯", 24.7136, 46.6753),
+  Location("阿联酋", 25.276987, 55.296249),
+  Location("土耳其", 39.9334, 32.8600),
+  Location("以色列", 31.7683, 35.2137),
+  Location("巴基斯坦", 30.3753, 69.3451),
+
+  // 欧洲
+  Location("俄罗斯", 55.7558, 37.6173),
+  Location("德国", 52.5200, 13.4050),
+  Location("英国", 51.5074, -0.1278),
+  Location("法国", 48.8566, 2.3522),
+  Location("意大利", 41.9028, 12.4964),
+  Location("西班牙", 40.4168, -3.7038),
+  Location("乌克兰", 50.4501, 30.5234),
+  Location("波兰", 52.2297, 21.0122),
+  Location("荷兰", 52.3676, 4.9041),
+  Location("比利时", 50.8503, 4.3517),
+  Location("瑞典", 59.3293, 18.0686),
+  Location("瑞士", 46.8182, 8.2275),
+  Location("挪威", 59.9139, 10.7522),
+  Location("希腊", 37.9838, 23.7275),
+  Location("芬兰", 60.1699, 24.9384),
+
+  // 北美洲
+  Location("美国", 38.9637, -95.7129),
+  Location("加拿大", 56.1304, -106.3468),
+  Location("墨西哥", 23.6345, -102.5528),
+
+  // 南美洲
+  Location("巴西", -14.2350, -51.9253),
+  Location("阿根廷", -38.4161, -63.6167),
+  Location("哥伦比亚", 4.7110, -74.0721),
+  Location("智利", -35.6751, -71.5430),
+  Location("秘鲁", -9.1900, -75.0152),
+
+  // 非洲
+  Location("尼日利亚", 9.0820, 8.6753),
+  Location("埃及", 26.8206, 30.8025),
+  Location("南非", -30.5595, 22.9375),
+  Location("肯尼亚", -0.0236, 37.9062),
+  Location("埃塞俄比亚", 9.1450, 40.4897),
+  Location("摩洛哥", 31.7917, -7.0926),
+
+  // 大洋洲
+  Location("澳大利亚", -25.2744, 133.7751),
+  Location("新西兰", -40.9006, 174.8860),
+];
+
+// 国家代码到地理位置的映射
+final Map<String, String> countryLocations = {
+  'AF': '阿富汗',
+  'AL': '阿尔巴尼亚',
+  'DZ': '阿尔及利亚',
+  'AS': '美属萨摩亚',
+  'AD': '安道尔',
+  'AO': '安哥拉',
+  'AI': '安圭拉',
+  'AQ': '南极洲',
+  'AG': '安提瓜和巴布达',
+  'AR': '阿根廷',
+  'AM': '亚美尼亚',
+  'AW': '阿鲁巴',
+  'AU': '澳大利亚',
+  'AT': '奥地利',
+  'AZ': '阿塞拜疆',
+  'BS': '巴哈马',
+  'BH': '巴林',
+  'BD': '孟加拉国',
+  'BB': '巴巴多斯',
+  'BY': '白俄罗斯',
+  'BE': '比利时',
+  'BZ': '伯利兹',
+  'BJ': '贝宁',
+  'BM': '百慕大',
+  'BT': '不丹',
+  'BO': '玻利维亚',
+  'BA': '波斯尼亚和黑塞哥维那',
+  'BW': '博茨瓦纳',
+  'BV': '布维岛',
+  'BR': '巴西',
+  'IO': '英属印度洋领地',
+  'BN': '文莱',
+  'BG': '保加利亚',
+  'BF': '布基纳法索',
+  'BI': '布隆迪',
+  'KH': '柬埔寨',
+  'CM': '喀麦隆',
+  'CA': '加拿大',
+  'CV': '佛得角',
+  'KY': '开曼群岛',
+  'CF': '中非共和国',
+  'TD': '乍得',
+  'CL': '智利',
+  'CN': '中国',
+  'CO': '哥伦比亚',
+  'KM': '科摩罗',
+  'CG': '刚果（金）',
+  'CD': '刚果（金）',
+  'CK': '库克群岛',
+  'CR': '哥斯达黎加',
+  'CI': '科特迪瓦',
+  'HR': '克罗地亚',
+  'CU': '古巴',
+  'CY': '塞浦路斯',
+  'CZ': '捷克',
+  'DK': '丹麦',
+  'DJ': '吉布提',
+  'DM': '多米尼克',
+  'DO': '多米尼加共和国',
+  'TL': '东帝汶',
+  'EC': '厄瓜多尔',
+  'EG': '埃及',
+  'SV': '萨尔瓦多',
+  'GQ': '赤道几内亚',
+  'ER': '厄立特里亚',
+  'EE': '爱沙尼亚',
+  'ET': '埃塞俄比亚',
+  'FK': '福克兰群岛',
+  'FO': '法罗群岛',
+  'FJ': '斐济',
+  'FI': '芬兰',
+  'FR': '法国',
+  'GF': '法属圭亚那',
+  'PF': '法属波利尼西亚',
+  'TF': '法属南部领地',
+  'GA': '加蓬',
+  'GM': '冈比亚',
+  'GE': '格鲁吉亚',
+  'DE': '德国',
+  'GH': '加纳',
+  'GI': '直布罗陀',
+  'GR': '希腊',
+  'GL': '格陵兰',
+  'GD': '格林纳达',
+  'GP': '瓜德罗普',
+  'GU': '关岛',
+  'GT': '危地马拉',
+  'GN': '几内亚',
+  'GW': '几内亚比绍',
+  'GY': '圭亚那',
+  'HT': '海地',
+  'HM': '赫德岛和麦克唐纳群岛',
+  'HN': '洪都拉斯',
+  'HK': '中国香港',
+  'HU': '匈牙利',
+  'IS': '冰岛',
+  'IN': '印度',
+  'ID': '印度尼西亚',
+  'IR': '伊朗',
+  'IQ': '伊拉克',
+  'IE': '爱尔兰',
+  'IL': '以色列',
+  'IT': '意大利',
+  'JM': '牙买加',
+  'JP': '日本',
+  'JO': '约旦',
+  'KZ': '哈萨克斯坦',
+  'KE': '肯尼亚',
+  'KI': '基里巴斯',
+  'KP': '朝鲜',
+  'KR': '韩国',
+  'KW': '科威特',
+  'KG': '吉尔吉斯斯坦',
+  'LA': '老挝',
+  'LV': '拉脱维亚',
+  'LB': '黎巴嫩',
+  'LS': '莱索托',
+  'LR': '利比里亚',
+  'LY': '利比亚',
+  'LI': '列支敦士登',
+  'LT': '立陶宛',
+  'LU': '卢森堡',
+  'MO': '中国澳门',
+  'MK': '北马其顿',
+  'MG': '马达加斯加',
+  'MW': '马拉维',
+  'MY': '马来西亚',
+  'MV': '马尔代夫',
+  'ML': '马里',
+  'MT': '马耳他',
+  'MH': '马绍尔群岛',
+  'MQ': '马提尼克',
+  'MR': '毛里塔尼亚',
+  'MU': '毛里求斯',
+  'YT': '马约特',
+  'MX': '墨西哥',
+  'FM': '密克罗尼西亚联邦',
+  'MD': '摩尔多瓦',
+  'MC': '摩纳哥',
+  'MN': '蒙古',
+  'ME': '黑山',
+  'MS': '蒙特塞拉特',
+  'MA': '摩洛哥',
+  'MZ': '莫桑比克',
+  'MM': '缅甸',
+  'NA': '纳米比亚',
+  'NR': '瑙鲁',
+  'NP': '尼泊尔',
+  'NL': '荷兰',
+  'AN': '荷属安的列斯',
+  'NC': '新喀里多尼亚',
+  'NZ': '新西兰',
+  'NI': '尼加拉瓜',
+  'NE': '尼日尔',
+  'NG': '尼日利亚',
+  'NU': '纽埃',
+  'NF': '诺福克岛',
+  'MP': '北马里亚纳群岛',
+  'NO': '挪威',
+  'OM': '阿曼',
+  'PK': '巴基斯坦',
+  'PW': '帕劳',
+  'PS': '巴勒斯坦领土',
+  'PA': '巴拿马',
+  'PG': '巴布亚新几内亚',
+  'PY': '巴拉圭',
+  'PE': '秘鲁',
+  'PH': '菲律宾',
+  'PN': '皮特凯恩',
+  'PL': '波兰',
+  'PT': '葡萄牙',
+  'PR': '波多黎各',
+  'QA': '卡塔尔',
+  'RE': '留尼汪',
+  'RO': '罗马尼亚',
+  'RU': '俄罗斯',
+  'RW': '卢旺达',
+  'BL': '圣巴泰勒米',
+  'SH': '圣赫勒拿',
+  'KN': '圣基茨和尼维斯',
+  'LC': '圣卢西亚',
+  'MF': '圣马丁',
+  'PM': '圣皮埃尔和密克隆',
+  'VC': '圣文森特和格林纳丁斯',
+  'WS': '萨摩亚',
+  'SM': '圣马力诺',
+  'ST': '圣多美和普林西比',
+  'SA': '沙特阿拉伯',
+  'SN': '塞内加尔',
+  'RS': '塞尔维亚',
+  'SC': '塞舌尔',
+  'SL': '塞拉利昂',
+  'SG': '新加坡',
+  'SK': '斯洛伐克',
+  'SI': '斯洛文尼亚',
+  'SB': '所罗门群岛',
+  'SO': '索马里',
+  'ZA': '南非',
+  'GS': '南乔治亚和南桑威奇群岛',
+  'ES': '西班牙',
+  'LK': '斯里兰卡',
+  'SD': '苏丹',
+  'SR': '苏里南',
+  'SJ': '斯瓦尔巴和扬马延',
+  'SZ': '斯威士兰',
+  'SE': '瑞典',
+  'CH': '瑞士',
+  'SY': '叙利亚',
+  'TW': '中国台湾',
+  'TJ': '塔吉克斯坦',
+  'TZ': '坦桑尼亚',
+  'TH': '泰国',
+  'TG': '多哥',
+  'TK': '托克劳',
+  'TO': '汤加',
+  'TT': '特立尼达和多巴哥',
+  'TN': '突尼斯',
+  'TR': '土耳其',
+  'TM': '土库曼斯坦',
+  'TC': '特克斯和凯科斯群岛',
+  'TV': '图瓦卢',
+  'UG': '乌干达',
+  'UA': '乌克兰',
+  'AE': '阿拉伯联合酋长国',
+  'GB': '英国',
+  'US': '美国',
+  'UM': '美国本土外小岛屿',
+  'UY': '乌拉圭',
+  'UZ': '乌兹别克斯坦',
+  'VU': '瓦努阿图',
+  'VA': '梵蒂冈城',
+  'VE': '委内瑞拉',
+  'VN': '越南',
+  'VG': '英属维尔京群岛',
+  'VI': '美属维尔京群岛',
+  'WF': '瓦利斯和富图纳',
+  'EH': '西撒哈拉',
+  'YE': '也门',
+  'ZM': '赞比亚',
+  'ZW': '津巴布韦',
+};
+
+
+// ========================================
+// 文件: lib/core/network/api_client.dart
+// ========================================
+
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../config/app_config.dart';
+import '../constants/api_constants.dart';
+import '../errors/exceptions.dart';
+
+/// 统一的API客户端
+class ApiClient {
+  final http.Client _client;
+  String? _token;
+
+  ApiClient({http.Client? client}) : _client = client ?? http.Client();
+
+  void setToken(String? token) {
+    _token = token;
+  }
+
+  Map<String, String> get _headers => {
+    ApiConstants.headerContentType: ApiConstants.contentTypeJson,
+    ApiConstants.headerAccept: ApiConstants.contentTypeJson,
+    if (_token != null) ApiConstants.headerAuthorization: 'Bearer $_token',
+  };
+
+  Future<Map<String, dynamic>> get(String endpoint) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiUrl}$endpoint');
+      final response = await _client.get(url, headers: _headers).timeout(AppConfig.requestTimeout);
+      return _handleResponse(response);
+    } catch (e) {
+      throw NetworkException(e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> body) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiUrl}$endpoint');
+      final response = await _client
+          .post(url, headers: _headers, body: jsonEncode(body))
+          .timeout(AppConfig.requestTimeout);
+      return _handleResponse(response);
+    } catch (e) {
+      throw NetworkException(e.toString());
+    }
+  }
+
+  Map<String, dynamic> _handleResponse(http.Response response) {
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 401) {
+      throw AuthException('认证失败');
+    } else if (response.statusCode >= 500) {
+      throw ServerException('服务器错误');
+    } else {
+      throw AppException('请求失败: ${response.statusCode}');
+    }
+  }
+
+  void dispose() {
+    _client.close();
+  }
+}
+
+
+// ========================================
+// 文件: lib/core/startup/deferred_loader.dart
+// ========================================
+
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+
+/// 延迟加载器 - 避免启动时的资源竞争
+class DeferredLoader {
+  static final DeferredLoader _instance = DeferredLoader._internal();
+  factory DeferredLoader() => _instance;
+  DeferredLoader._internal();
+
+  final Map<String, Timer> _timers = {};
+  final Map<String, bool> _loadingStates = {};
+
+  /// 延迟执行任务，避免启动时的资源竞争
+  void scheduleTask(String taskId, Duration delay, Future<void> Function() task) {
+    // 取消之前的任务
+    _timers[taskId]?.cancel();
+    
+    _timers[taskId] = Timer(delay, () async {
+      if (_loadingStates[taskId] == true) return; // 防止重复执行
+      
+      _loadingStates[taskId] = true;
+      try {
+        await task();
+        debugPrint('✅ 延迟任务完成: $taskId');
+      } catch (e) {
+        debugPrint('❌ 延迟任务失败: $taskId - $e');
+      } finally {
+        _loadingStates[taskId] = false;
+        _timers.remove(taskId);
+      }
+    });
+  }
+
+  /// 取消指定任务
+  void cancelTask(String taskId) {
+    _timers[taskId]?.cancel();
+    _timers.remove(taskId);
+    _loadingStates.remove(taskId);
+  }
+
+  /// 清理所有任务
+  void dispose() {
+    for (final timer in _timers.values) {
+      timer.cancel();
+    }
+    _timers.clear();
+    _loadingStates.clear();
+  }
+}
+
+// ========================================
+// 文件: lib/core/startup/startup_optimizer.dart
+// ========================================
+
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+
+/// 启动优化器 - 避免进程发送冲突造成堵塞
+class StartupOptimizer {
+  static final StartupOptimizer _instance = StartupOptimizer._internal();
+  factory StartupOptimizer() => _instance;
+  StartupOptimizer._internal();
+
+  final List<Future<void> Function()> _initQueue = [];
+  bool _isInitializing = false;
+  final Completer<void> _initCompleter = Completer<void>();
+
+  /// 添加初始化任务到队列
+  void addInitTask(Future<void> Function() task) {
+    _initQueue.add(task);
+  }
+
+  /// 开始分批初始化，避免阻塞
+  Future<void> startInitialization() async {
+    if (_isInitializing) return _initCompleter.future;
+    
+    _isInitializing = true;
+    debugPrint('🚀 启动优化器开始分批初始化');
+
+    try {
+      // 分批处理，每批最多3个任务
+      const batchSize = 3;
+      for (int i = 0; i < _initQueue.length; i += batchSize) {
+        final batch = _initQueue.skip(i).take(batchSize).toList();
+        
+        // 并发执行当前批次
+        await Future.wait(batch.map((task) => task()));
+        
+        // 每批之间让出主线程控制权
+        await Future.delayed(const Duration(milliseconds: 16));
+        
+        debugPrint('✅ 完成第${(i ~/ batchSize) + 1}批初始化');
+      }
+      
+      debugPrint('🎉 所有初始化任务完成');
+      _initCompleter.complete();
+    } catch (e) {
+      debugPrint('❌ 初始化失败: $e');
+      _initCompleter.completeError(e);
+    }
+  }
+
+  /// 等待初始化完成
+  Future<void> waitForInitialization() => _initCompleter.future;
+}
+
+// ========================================
+// 文件: lib/core/utils/auth_guard.dart
+// ========================================
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../models/auth_model.dart';
+
+class AuthGuard {
+  /// 检查是否登录，如果未登录则跳转到登录页面
+  /// 返回 true 表示已登录或登录成功，返回 false 表示未登录且取消登录
+  static Future<bool> check(BuildContext context) async {
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    
+    if (authModel.isLoggedIn) {
+      return true;
+    }
+    
+    // 未登录，跳转到登录页面
+    // 这里的 '/login' 已经在 main.dart 中注册为 DouyinLoginScreen
+    final result = await Navigator.pushNamed(context, '/login');
+    
+    return result == true;
+  }
+
+  /// 抖音风格的登录提示：如果是未登录用户执行需要同步的操作，直接弹出登录
+  static Future<void> runWithGuard(BuildContext context, VoidCallback action) async {
+    final hasAuth = await check(context);
+    if (hasAuth) {
+      action();
+    }
+  }
+}
+
+
+// ========================================
+// 文件: lib/core/utils/extensions/context_size_extensions.dart
+// ========================================
+
+import 'package:flutter/material.dart';
+
+extension ContextSizeExtensions on BuildContext {
+  double get width => MediaQuery.of(this).size.width;
+  double get height => MediaQuery.of(this).size.height;
+
+  double h(double percentage) => height * (percentage / 100);
+  double w(double percentage) => width * (percentage / 100);
+  double sq(double size) => size;
+
+  double fontSize(double size) => size;
+
+  EdgeInsets paddingHorizontal(double padding) => EdgeInsets.symmetric(horizontal: padding);
+  EdgeInsets paddingLeft(double padding) => EdgeInsets.only(left: padding);
+  EdgeInsets paddingAll(double padding) => EdgeInsets.all(padding);
+  BorderRadius radiusAll(double radius) => BorderRadius.circular(radius);
+}
+
+
+// ========================================
+// 文件: lib/core/utils/helpers/date_helper.dart
+// ========================================
+
+class DateHelper {
+  static String formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  static String formatDateTime(DateTime date) {
+    return '${formatDate(date)} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  static String timeAgo(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+
+    if (diff.inDays > 365) return '${diff.inDays ~/ 365}年前';
+    if (diff.inDays > 30) return '${diff.inDays ~/ 30}个月前';
+    if (diff.inDays > 0) return '${diff.inDays}天前';
+    if (diff.inHours > 0) return '${diff.inHours}小时前';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}分钟前';
+    return '刚刚';
+  }
+}
+
+
+// ========================================
+// 文件: lib/core/utils/helpers/format_helper.dart
+// ========================================
+
+class FormatHelper {
+  static String formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(2)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  static String formatNumber(int number) {
+    if (number < 1000) return number.toString();
+    if (number < 1000000) return '${(number / 1000).toStringAsFixed(1)}K';
+    return '${(number / 1000000).toStringAsFixed(1)}M';
+  }
+
+  static String formatPrice(String price, String currency) {
+    if (currency == 'CNY') return '¥$price';
+    if (currency == 'USD') return '\$$price';
+    return '$price $currency';
+  }
+}
+
+
+// ========================================
+// 文件: lib/core/utils/validators/input_validators.dart
+// ========================================
+
+class InputValidators {
+  static String? validateEmail(String? value) {
+    if (value == null || value.isEmpty) return '请输入邮箱';
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(value)) return '邮箱格式不正确';
+    return null;
+  }
+
+  static String? validatePassword(String? value) {
+    if (value == null || value.isEmpty) return '请输入密码';
+    if (value.length < 6) return '密码至少6位';
+    return null;
+  }
+
+  static String? validateUsername(String? value) {
+    if (value == null || value.isEmpty) return '请输入用户名';
+    if (value.length < 3) return '用户名至少3位';
+    return null;
+  }
+
+  static String? validateRequired(String? value, String fieldName) {
+    if (value == null || value.isEmpty) return '请输入$fieldName';
+    return null;
+  }
+}
+
+
+// ========================================
+// 文件: lib/core/video_feed_di/video_feed_injector.dart
+// ========================================
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:global_dharma_sharing/features/video_feed/data/repository_impl/video_feed_repository_impl.dart';
+import 'package:global_dharma_sharing/features/video_feed/domain/repositories/video_feed_repository.dart';
+import 'package:global_dharma_sharing/features/video_feed/domain/usecases/fetch_more_videos_usecase.dart';
+import 'package:global_dharma_sharing/features/video_feed/domain/usecases/fetch_videos_usecase.dart';
+import 'package:global_dharma_sharing/features/video_feed/presentation/bloc/video_feed_cubit.dart';
+import 'package:global_dharma_sharing/services/cloudflare_text_service.dart';
+import 'package:get_it/get_it.dart';
+
+final videoFeedGetIt = GetIt.instance;
+
+void setupVideoFeedDependencies() {
+  // Firebase
+  videoFeedGetIt.registerLazySingleton<FirebaseFirestore>(() => FirebaseFirestore.instance);
+
+  // Services - Eager singleton for immediate preloading
+  final textService = CloudflareTextService();
+  videoFeedGetIt.registerSingleton<CloudflareTextService>(textService);
+
+  // Repositories
+  videoFeedGetIt.registerLazySingleton<VideoFeedRepository>(
+    () => VideoFeedRepositoryImpl(
+      firestore: videoFeedGetIt<FirebaseFirestore>(),
+      textService: videoFeedGetIt<CloudflareTextService>(),
+    ),
+  );
+
+  // UseCases
+  videoFeedGetIt.registerLazySingleton<FetchVideosUseCase>(
+    () => FetchVideosUseCase(repository: videoFeedGetIt<VideoFeedRepository>()),
+  );
+
+  videoFeedGetIt.registerLazySingleton<FetchMoreVideosUseCase>(
+    () => FetchMoreVideosUseCase(repository: videoFeedGetIt<VideoFeedRepository>()),
+  );
+
+  // Cubits
+  videoFeedGetIt.registerFactory<VideoFeedCubit>(
+    () => VideoFeedCubit(
+      fetchVideosUseCase: videoFeedGetIt<FetchVideosUseCase>(),
+      fetchMoreVideosUseCase: videoFeedGetIt<FetchMoreVideosUseCase>(),
+    ),
+  );
+}
+
+
+// ========================================
+// 文件: lib/database/search_database_stub.dart
+// ========================================
+
+// Web平台不支持drift，使用stub
+class SearchDatabase {
+  SearchDatabase() {
+    throw UnsupportedError('SearchDatabase not supported on web');
+  }
+}
+
+
+// ========================================
+// 文件: lib/database/search_database.dart
+// ========================================
+
+import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+import 'dart:io';
+
+part 'search_database.g.dart';
+
+class TextContents extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get title => text()();
+  TextColumn get content => text()();
+  TextColumn get filePath => text()();
+  TextColumn get category => text()();
+}
+
+@DriftDatabase(tables: [TextContents])
+class SearchDatabase extends _$SearchDatabase {
+  SearchDatabase() : super(_openConnection());
+
+  @override
+  int get schemaVersion => 1;
+
+  static LazyDatabase _openConnection() {
+    return LazyDatabase(() async {
+      final dbFolder = await getApplicationDocumentsDirectory();
+      final file = File(p.join(dbFolder.path, 'search_db.sqlite'));
+      return NativeDatabase(file);
+    });
+  }
+
+  Future<List<TextContent>> searchTexts(String query) async {
+    return (select(
+      textContents,
+    )..where((t) => t.title.like('%$query%') | t.content.like('%$query%'))).get();
+  }
+
+  Future<int> insertText(TextContentsCompanion entry) => into(textContents).insert(entry);
+
+  Future<void> clearAll() => delete(textContents).go();
+}
+
+
+// ========================================
+// 文件: lib/database/search_database.g.dart
+// ========================================
+
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
+part of 'search_database.dart';
+
+// ignore_for_file: type=lint
+class $TextContentsTable extends TextContents with TableInfo<$TextContentsTable, TextContent> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TextContentsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'),
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _contentMeta = const VerificationMeta('content');
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+    'content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _filePathMeta = const VerificationMeta('filePath');
+  @override
+  late final GeneratedColumn<String> filePath = GeneratedColumn<String>(
+    'file_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _categoryMeta = const VerificationMeta('category');
+  @override
+  late final GeneratedColumn<String> category = GeneratedColumn<String>(
+    'category',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, title, content, filePath, category];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'text_contents';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TextContent> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('title')) {
+      context.handle(_titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(_contentMeta, content.isAcceptableOrUnknown(data['content']!, _contentMeta));
+    } else if (isInserting) {
+      context.missing(_contentMeta);
+    }
+    if (data.containsKey('file_path')) {
+      context.handle(
+        _filePathMeta,
+        filePath.isAcceptableOrUnknown(data['file_path']!, _filePathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_filePathMeta);
+    }
+    if (data.containsKey('category')) {
+      context.handle(
+        _categoryMeta,
+        category.isAcceptableOrUnknown(data['category']!, _categoryMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_categoryMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TextContent map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TextContent(
+      id: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      content: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content'],
+      )!,
+      filePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_path'],
+      )!,
+      category: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}category'],
+      )!,
+    );
+  }
+
+  @override
+  $TextContentsTable createAlias(String alias) {
+    return $TextContentsTable(attachedDatabase, alias);
+  }
+}
+
+class TextContent extends DataClass implements Insertable<TextContent> {
+  final int id;
+  final String title;
+  final String content;
+  final String filePath;
+  final String category;
+  const TextContent({
+    required this.id,
+    required this.title,
+    required this.content,
+    required this.filePath,
+    required this.category,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['title'] = Variable<String>(title);
+    map['content'] = Variable<String>(content);
+    map['file_path'] = Variable<String>(filePath);
+    map['category'] = Variable<String>(category);
+    return map;
+  }
+
+  TextContentsCompanion toCompanion(bool nullToAbsent) {
+    return TextContentsCompanion(
+      id: Value(id),
+      title: Value(title),
+      content: Value(content),
+      filePath: Value(filePath),
+      category: Value(category),
+    );
+  }
+
+  factory TextContent.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TextContent(
+      id: serializer.fromJson<int>(json['id']),
+      title: serializer.fromJson<String>(json['title']),
+      content: serializer.fromJson<String>(json['content']),
+      filePath: serializer.fromJson<String>(json['filePath']),
+      category: serializer.fromJson<String>(json['category']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'title': serializer.toJson<String>(title),
+      'content': serializer.toJson<String>(content),
+      'filePath': serializer.toJson<String>(filePath),
+      'category': serializer.toJson<String>(category),
+    };
+  }
+
+  TextContent copyWith({
+    int? id,
+    String? title,
+    String? content,
+    String? filePath,
+    String? category,
+  }) => TextContent(
+    id: id ?? this.id,
+    title: title ?? this.title,
+    content: content ?? this.content,
+    filePath: filePath ?? this.filePath,
+    category: category ?? this.category,
+  );
+  TextContent copyWithCompanion(TextContentsCompanion data) {
+    return TextContent(
+      id: data.id.present ? data.id.value : this.id,
+      title: data.title.present ? data.title.value : this.title,
+      content: data.content.present ? data.content.value : this.content,
+      filePath: data.filePath.present ? data.filePath.value : this.filePath,
+      category: data.category.present ? data.category.value : this.category,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TextContent(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('content: $content, ')
+          ..write('filePath: $filePath, ')
+          ..write('category: $category')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, title, content, filePath, category);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TextContent &&
+          other.id == this.id &&
+          other.title == this.title &&
+          other.content == this.content &&
+          other.filePath == this.filePath &&
+          other.category == this.category);
+}
+
+class TextContentsCompanion extends UpdateCompanion<TextContent> {
+  final Value<int> id;

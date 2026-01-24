@@ -22,7 +22,10 @@ class QwenModelManager {
   static const int expectedSizeBytes = 986 * 1024 * 1024; // ~986 MB
   static const String modelVersion = '1.0.0';
 
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 30),
+    sendTimeout: const Duration(seconds: 30),
+  ));
   CancelToken? _cancelToken;
   bool _isDownloading = false;
 

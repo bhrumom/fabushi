@@ -11,16 +11,8 @@ class AppDelegate: FlutterAppDelegate {
     return true
   }
   
-  override func applicationDidFinishLaunching(_ notification: Notification) {
-    // 注册语音识别插件
-    if let registrar = self.registrar(forPlugin: "SpeechRecognizerPlugin") {
-      SpeechRecognizerPlugin.register(with: registrar)
-    }
-    // 注册语义 NLP 插件
-    if let registrar = self.registrar(forPlugin: "SemanticNlpPlugin") {
-      SemanticNlpPlugin.register(with: registrar)
-    }
-  }
+  // macOS 不需要手动注册语音识别和 NLP 插件
+  // 这些功能在移动端通过原生插件实现，macOS 端使用其他方式
   
   // 处理URL打开事件（用于支付宝回调）
   override func application(_ application: NSApplication, open urls: [URL]) {

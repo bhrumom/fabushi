@@ -868,8 +868,8 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: Colors.white70, size: 22),
-            const SizedBox(height: 4),
+            Icon(icon, color: Colors.white70, size: 20),
+            const SizedBox(height: 2),
             Text(
               label,
               style: const TextStyle(

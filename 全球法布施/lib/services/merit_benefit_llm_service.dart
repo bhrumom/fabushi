@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/merit_benefit.dart';
 import 'qwen_inference_service.dart';
+import 'semantic_nlp_service.dart';
 
 /// 功德利益 LLM 识别服务
 /// 
@@ -23,6 +24,10 @@ class MeritBenefitLLMService {
   // 结果缓存（基于段落哈希）
   final _cache = <int, List<MeritBenefitSentence>>{};
   static const _maxCacheSize = 200;
+  
+  // 初始化状态追踪
+  bool _initializationAttempted = false;
+  Completer<bool>? _initCompleter;
 
   /// 是否模型已就绪
   bool get isModelReady => _inference.isInitialized;
@@ -39,6 +44,41 @@ class MeritBenefitLLMService {
 示例输出: [[7,16]]
 
 只输出 JSON，不要其他文字。''';
+
+  /// 确保模型已初始化
+  /// 
+  /// 如果模型未就绪，尝试通过 SemanticNlpService 触发初始化
+  /// 返回模型是否就绪
+  Future<bool> ensureInitialized() async {
+    // 已就绪直接返回
+    if (_inference.isInitialized) return true;
+    
+    // 如果正在初始化，等待完成
+    if (_initCompleter != null && !_initCompleter!.isCompleted) {
+      return await _initCompleter!.future;
+    }
+    
+    // 已经尝试过初始化但失败
+    if (_initializationAttempted) return false;
+    
+    _initCompleter = Completer<bool>();
+    _initializationAttempted = true;
+    
+    debugPrint('📿 MeritBenefitLLM: 尝试初始化模型...');
+    
+    try {
+      // 通过 SemanticNlpService 触发模型初始化
+      await SemanticNlpService.instance.initialize();
+      final ready = _inference.isInitialized;
+      debugPrint('📿 MeritBenefitLLM: 模型初始化${ready ? "成功" : "失败"}');
+      _initCompleter!.complete(ready);
+      return ready;
+    } catch (e) {
+      debugPrint('📿 MeritBenefitLLM: 模型初始化异常: $e');
+      _initCompleter!.complete(false);
+      return false;
+    }
+  }
 
   /// 识别单个段落的功德利益句（带缓存）
   /// 
@@ -60,8 +100,9 @@ class MeritBenefitLLMService {
       return _cache[hash]!;
     }
     
-    // 检查模型状态
-    if (!_inference.isInitialized) {
+    // 确保模型已初始化
+    final ready = await ensureInitialized();
+    if (!ready) {
       debugPrint('📿 MeritBenefitLLM: 模型未就绪，跳过识别');
       return [];
     }

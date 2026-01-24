@@ -33,10 +33,10 @@ def make_transparent(image_path, output_png_path, Image):
 def main():
     fitz, Image = install_and_import()
     
-    pdf_path = "/Users/gloriachan/Documents/全球发送/全球法布施/软著材料/用户中心.pdf"
+    pdf_path = "/Users/gloriachan/Documents/全球发送/全球法布施/软著材料/申请表.pdf"
     image_path = "/Users/gloriachan/Documents/全球发送/全球法布施/软著材料/公司电子印章.jpg"
     temp_image_path = "/Users/gloriachan/Documents/全球发送/全球法布施/软著材料/公司电子印章_transparent.png"
-    output_path = "/Users/gloriachan/Documents/全球发送/全球法布施/软著材料/用户中心_已盖章_v2.pdf"
+    output_path = "/Users/gloriachan/Documents/全球发送/全球法布施/软著材料/申请表_已盖章.pdf"
     
     if not os.path.exists(pdf_path):
         print(f"Error: {pdf_path} not found")

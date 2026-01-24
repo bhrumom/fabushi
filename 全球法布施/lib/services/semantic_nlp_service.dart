@@ -29,6 +29,7 @@ class SemanticNlpService {
   // 模型状态
   bool _qwenModelReady = false;
   bool _isInitializing = false;
+  Completer<bool>? _initCompleter;
   
   /// 模型下载进度回调
   void Function(double progress)? onModelDownloadProgress;
@@ -38,6 +39,17 @@ class SemanticNlpService {
   
   /// 是否正在下载模型
   bool get isDownloadingModel => _modelManager.isDownloading;
+  
+  /// 等待模型就绪
+  /// 
+  /// 返回 true 表示模型已就绪，false 表示初始化失败
+  Future<bool> waitForReady() async {
+    if (_qwenModelReady) return true;
+    if (_initCompleter != null && !_initCompleter!.isCompleted) {
+      return await _initCompleter!.future;
+    }
+    return false;
+  }
   
   // LRU缓存
   final _cache = <int, List<_ScoredSentence>>{};
@@ -96,8 +108,15 @@ class SemanticNlpService {
   /// 
   /// [downloadModelIfNeeded] 是否在初始化时下载模型（默认 true）
   Future<void> initialize({bool downloadModelIfNeeded = true}) async {
-    if (_isInitializing) return;
+    if (_isInitializing) {
+      // 如果正在初始化，等待完成
+      if (_initCompleter != null && !_initCompleter!.isCompleted) {
+        await _initCompleter!.future;
+      }
+      return;
+    }
     _isInitializing = true;
+    _initCompleter = Completer<bool>();
 
     try {
       debugPrint('📖 SemanticNlpService: 开始初始化 Qwen 模型...');
@@ -108,18 +127,21 @@ class SemanticNlpService {
       if (modelAvailable) {
         // 模型已存在，直接加载
         await _loadQwenModel();
+        _initCompleter!.complete(_qwenModelReady);
       } else if (downloadModelIfNeeded) {
-        // 模型不存在，需要下载
-        debugPrint('📖 SemanticNlpService: 模型未下载，开始后台下载...');
-        // 注意：下载是异步的，不阻塞初始化
-        _downloadAndLoadModel();
+        // 模型不存在，需要下载并等待完成
+        debugPrint('📖 SemanticNlpService: 模型未下载，开始下载...');
+        await _downloadAndLoadModel();
+        _initCompleter!.complete(_qwenModelReady);
       } else {
         debugPrint('📖 SemanticNlpService: 模型未下载，使用规则引擎模式');
         _qwenModelReady = false;
+        _initCompleter!.complete(false);
       }
     } catch (e) {
       debugPrint('📖 SemanticNlpService: 初始化异常: $e');
       _qwenModelReady = false;
+      _initCompleter!.complete(false);
     } finally {
       _isInitializing = false;
     }
