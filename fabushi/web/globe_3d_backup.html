@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Globe</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #2d1b69 100%);
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+        
+        #globe-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #64b5f6;
+            font-size: 18px;
+            text-align: center;
+        }
+        
+        .loading::after {
+            content: '';
+            display: block;
+            width: 40px;
+            height: 40px;
+            margin: 20px auto;
+            border: 3px solid #64b5f6;
+            border-top: 3px solid transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .control-button {
+            background: rgba(100, 181, 246, 0.3);
+            border: 1px solid #64b5f6;
+            color: #64b5f6;
+            padding: 8px 12px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .control-button:hover {
+            background: rgba(100, 181, 246, 0.5);
+            transform: translateY(-1px);
+        }
+        
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            font-size: 12px;
+            backdrop-filter: blur(10px);
+            max-width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <div id="globe-container">
+        <div class="loading" id="loading">
+            正在加载3D地球...
+        </div>
+        
+        <div class="controls" id="controls" style="display: none;">
+            <div>3D地球控制</div>
+            <button class="control-button" onclick="toggleRotation()">旋转开关</button>
+            <button class="control-button" onclick="resetView()">重置视角</button>
+            <button class="control-button" onclick="toggleFlyLines()">飞线效果</button>
+        </div>
+        
+        <div class="info-panel" id="info-panel" style="display: none;">
+            <div><strong>全球法布施3D地球</strong></div>
+            <div>基于Three.js开发的交互式3D地球</div>
+            <div>支持鼠标拖拽、滚轮缩放、飞线动画</div>
+        </div>
+    </div>
+
+    <!-- 加载Three.js和GlobeStream3D库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+    
+    <script>
+        // 全局变量
+        let globeInstance = null;
+        let isRotating = true;
+        let showFlyLines = true;
+        
+        // 初始化函数
+        async function initGlobe() {
+            try {
+                // 模拟GlobeStream3D的初始化
+                // 在实际集成时，这里会调用真实的GlobeStream3D库
+                
+                // 创建基础场景
+                const scene = new THREE.Scene();
+                const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setClearColor(0x000000, 0);
+                document.getElementById('globe-container').appendChild(renderer.domElement);
+                
+                // 创建地球几何体
+                const geometry = new THREE.SphereGeometry(5, 64, 64);
+                
+                // 创建地球材质（使用基础颜色模拟）
+                const material = new THREE.MeshPhongMaterial({
+                    color: 0x2196f3,
+                    shininess: 100,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                
+                const earth = new THREE.Mesh(geometry, material);
+                scene.add(earth);
+                
+                // 添加光源
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+                scene.add(ambientLight);
+                
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(10, 10, 5);
+                scene.add(directionalLight);
+                
+                // 设置相机位置
+                camera.position.z = 15;
+                
+                // 添加星空背景
+                const starsGeometry = new THREE.BufferGeometry();
+                const starsCount = 10000;
+                const positions = new Float32Array(starsCount * 3);
+                
+                for (let i = 0; i < starsCount * 3; i++) {
+                    positions[i] = (Math.random() - 0.5) * 2000;
+                }
+                
+                starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 2 });
+                const stars = new THREE.Points(starsGeometry, starsMaterial);
+                scene.add(stars);
+                
+                // 添加飞线效果（模拟）
+                const flyLines = [];
+                for (let i = 0; i < 20; i++) {
+                    const lineGeometry = new THREE.BufferGeometry();
+                    const linePositions = new Float32Array(6); // 2个点，每个点3个坐标
+                    
+                    // 随机起点和终点（在球面上）
+                    const startLat = (Math.random() - 0.5) * 180;
+                    const startLon = (Math.random() - 0.5) * 360;
+                    const endLat = (Math.random() - 0.5) * 180;
+                    const endLon = (Math.random() - 0.5) * 360;
+                    
+                    // 转换为3D坐标（简化版）
+                    const startX = Math.cos(startLat * Math.PI / 180) * Math.cos(startLon * Math.PI / 180) * 5.1;
+                    const startY = Math.sin(startLat * Math.PI / 180) * 5.1;
+                    const startZ = Math.cos(startLat * Math.PI / 180) * Math.sin(startLon * Math.PI / 180) * 5.1;
+                    
+                    const endX = Math.cos(endLat * Math.PI / 180) * Math.cos(endLon * Math.PI / 180) * 5.1;
+                    const endY = Math.sin(endLat * Math.PI / 180) * 5.1;
+                    const endZ = Math.cos(endLat * Math.PI / 180) * Math.sin(endLon * Math.PI / 180) * 5.1;
+                    
+                    linePositions[0] = startX;
+                    linePositions[1] = startY;
+                    linePositions[2] = startZ;
+                    linePositions[3] = endX;
+                    linePositions[4] = endY;
+                    linePositions[5] = endZ;
+                    
+                    lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+                    
+                    const lineMaterial = new THREE.LineBasicMaterial({ 
+                        color: 0x64b5f6, 
+                        transparent: true, 
+                        opacity: 0.6 
+                    });
+                    
+                    const line = new THREE.Line(lineGeometry, lineMaterial);
+                    scene.add(line);
+                    flyLines.push(line);
+                }
+                
+                globeInstance = {
+                    scene,
+                    camera,
+                    renderer,
+                    earth,
+                    stars,
+                    flyLines
+                };
+                
+                // 隐藏加载界面，显示控制面板
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('controls').style.display = 'block';
+                document.getElementById('info-panel').style.display = 'block';
+                
+                // 开始渲染循环
+                animate();
+                
+            } catch (error) {
+                console.error('初始化3D地球失败:', error);
+                document.getElementById('loading').innerHTML = '加载失败，请刷新页面重试';
+            }
+        }
+        
+        // 动画循环
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (globeInstance) {
+                // 地球自转
+                if (isRotating) {
+                    globeInstance.earth.rotation.y += 0.005;
+                }
+                
+                // 星空旋转
+                globeInstance.stars.rotation.x += 0.0005;
+                globeInstance.stars.rotation.y += 0.0005;
+                
+                // 飞线动画
+                if (showFlyLines) {
+                    globeInstance.flyLines.forEach((line, index) => {
+                        const material = line.material;
+                        material.opacity = 0.3 + 0.3 * Math.sin(Date.now() * 0.001 + index);
+                    });
+                }
+                
+                globeInstance.renderer.render(globeInstance.scene, globeInstance.camera);
+            }
+        }
+        
+        // 控制函数
+        function toggleRotation() {
+            isRotating = !isRotating;
+        }
+        
+        function resetView() {
+            if (globeInstance) {
+                globeInstance.camera.position.set(0, 0, 15);
+                globeInstance.earth.rotation.set(0, 0, 0);
+            }
+        }
+        
+        function toggleFlyLines() {
+            showFlyLines = !showFlyLines;
+            if (globeInstance) {
+                globeInstance.flyLines.forEach(line => {
+                    line.visible = showFlyLines;
+                });
+            }
+        }
+        
+        // 窗口大小调整
+        window.addEventListener('resize', () => {
+            if (globeInstance) {
+                globeInstance.camera.aspect = window.innerWidth / window.innerHeight;
+                globeInstance.camera.updateProjectionMatrix();
+                globeInstance.renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
+        
+        // 鼠标控制（基础版）
+        let mouseDown = false;
+        let mouseX = 0;
+        let mouseY = 0;
+        
+        document.addEventListener('mousedown', (event) => {
+            mouseDown = true;
+            mouseX = event.clientX;
+            mouseY = event.clientY;
+        });
+        
+        document.addEventListener('mouseup', () => {
+            mouseDown = false;
+        });
+        
+        document.addEventListener('mousemove', (event) => {
+            if (mouseDown && globeInstance) {
+                const deltaX = event.clientX - mouseX;
+                const deltaY = event.clientY - mouseY;
+                
+                globeInstance.earth.rotation.y += deltaX * 0.01;
+                globeInstance.earth.rotation.x += deltaY * 0.01;
+                
+                mouseX = event.clientX;
+                mouseY = event.clientY;
+            }
+        });
+        
+        // 滚轮缩放
+        document.addEventListener('wheel', (event) => {
+            if (globeInstance) {
+                const scale = event.deltaY > 0 ? 1.1 : 0.9;
+                globeInstance.camera.position.multiplyScalar(scale);
+                
+                // 限制缩放范围
+                const distance = globeInstance.camera.position.length();
+                if (distance < 8) {
+                    globeInstance.camera.position.normalize().multiplyScalar(8);
+                } else if (distance > 50) {
+                    globeInstance.camera.position.normalize().multiplyScalar(50);
+                }
+            }
+        });
+        
+        // 页面加载完成后初始化
+        window.addEventListener('load', initGlobe);
+    </script>
+</body>
+</html>

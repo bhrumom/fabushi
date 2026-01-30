@@ -1,0 +1,8 @@
+﻿Building Windows application...                                    169ms
+flutter : Unable to generate build files
+所在位置 行:1 字符: 1
++ flutter build windows 2>&1 | Out-File -Encoding utf8 build_error.txt
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Unable to generate build files:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

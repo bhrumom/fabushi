@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>APP付款页生成器 / Payment Screenshot Generator</title>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #f0f0f0;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        .controls {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            width: 200px;
+        }
+
+        .controls button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-save {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-reset {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-upload {
+            background: #2196f3;
+            color: white;
+        }
+
+        /* Phone Container */
+        .phone-frame {
+            width: 375px;
+            /* iPhone width */
+            height: 667px;
+            background: #f5f5f5;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            border-radius: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Status Bar */
+        .status-bar {
+            height: 20px;
+            background: transparent;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 6px;
+            font-size: 12px;
+            color: #000;
+            z-index: 10;
+        }
+
+        .status-left {
+            font-weight: bold;
+        }
+
+        .status-right {
+            display: flex;
+            gap: 4px;
+        }
+
+        .signal-dots span {
+            display: inline-block;
+            width: 5px;
+            height: 5px;
+            background: #000;
+            border-radius: 50%;
+            margin-right: 1px;
+        }
+
+        .battery-icon {
+            width: 22px;
+            height: 10px;
+            border: 1px solid #000;
+            border-radius: 2px;
+            position: relative;
+        }
+
+        .battery-icon:after {
+            content: '';
+            position: absolute;
+            right: -3px;
+            top: 2px;
+            height: 4px;
+            width: 2px;
+            background: #000;
+        }
+
+        .battery-fill {
+            height: 100%;
+            background: #000;
+            width: 90%;
+        }
+
+        /* NavBar */
+        .navbar {
+            height: 44px;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-bottom: 1px solid #e5e5e5;
+            position: relative;
+            font-size: 17px;
+            font-weight: bold;
+        }
+
+        .nav-back {
+            position: absolute;
+            left: 15px;
+            font-size: 24px;
+            color: #333;
+            transform: scaleY(1.5);
+            cursor: pointer;
+        }
+
+        /* Content Scroll Area */
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 60px;
+        }
+
+        /* Digital Goods Account Card */
+        .card {
+            background: #fff;
+            margin-bottom: 10px;
+            padding: 15px;
+            /* Removed bottom stripe for digital goods */
+        }
+
+        .account-row {
+            font-size: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .account-label {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .account-val {
+            color: #666;
+            font-family: monospace;
+            font-size: 16px;
+        }
+
+        /* Product Card */
+        .shop-header {
+            padding: 12px 15px;
+            background: #fff;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #f5f5f5;
+        }
+
+        .shop-icon {
+            margin-right: 6px;
+            font-size: 16px;
+        }
+
+        .product-row {
+            padding: 15px;
+            background: #fff;
+            /* White background for cleaner look */
+            display: flex;
+            gap: 15px;
+            border-bottom: 1px solid #f9f9f9;
+        }
+
+        .prod-img-box {
+            width: 60px;
+            height: 60px;
+            background: #f0f0f0;
+            /* Placeholder color */
+            border-radius: 8px;
+            flex-shrink: 0;
+            position: relative;
+            cursor: pointer;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .prod-img-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .prod-img-placeholder {
+            font-size: 24px;
+            color: #ccc;
+        }
+
+        /* Membership specific icon style if no image */
+        .default-icon {
+            color: #d4af37;
+            /* Gold */
+            font-size: 30px;
+        }
+
+        .prod-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .prod-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .prod-spec {
+            font-size: 13px;
+            color: #999;
+        }
+
+        .prod-price {
+            margin-top: 5px;
+            color: #333;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        /* Cells */
+        .cell {
+            background: #fff;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            border-bottom: 1px solid #f5f5f5;
+        }
+
+        .cell-label {
+            color: #333;
+        }
+
+        .cell-val {
+            color: #333;
+            font-weight: 500;
+        }
+
+        .total-price {
+            color: #ff5000;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        /* Payment Popup Overlay */
+        .popup-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            z-index: 100;
+        }
+
+        .popup-box {
+            background: #fff;
+            border-radius: 12px 12px 0 0;
+            overflow: hidden;
+        }
+
+        .popup-header {
+            padding: 15px;
+            text-align: center;
+            font-size: 16px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            position: relative;
+            font-weight: bold;
+        }
+
+        .popup-close {
+            position: absolute;
+            left: 15px;
+            /* Common in iOS to have cancel on left or X on right */
+            top: 15px;
+            color: #999;
+            font-size: 20px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .popup-amount {
+            text-align: center;
+            padding: 30px 0;
+            font-size: 36px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .popup-amount small {
+            font-size: 20px;
+            font-weight: normal;
+            margin-right: 2px;
+        }
+
+        .pay-method-title {
+            padding: 10px 15px;
+            font-size: 12px;
+            color: #999;
+            background: #f9f9f9;
+        }
+
+        .pay-method-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #f5f5f5;
+            cursor: pointer;
+            background: #fff;
+        }
+
+        .pay-icon {
+            width: 28px;
+            height: 28px;
+            margin-right: 12px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+        }
+
+        .icon-wx {
+            background: #07c160;
+        }
+
+        .icon-ali {
+            background: #1677ff;
+        }
+
+        .pay-name {
+            flex: 1;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .pay-radio {
+            width: 22px;
+            height: 22px;
+            border: 1px solid #ccc;
+            border-radius: 50%;
+            position: relative;
+        }
+
+        .pay-radio.checked {
+            border-color: #1677ff;
+            background: #1677ff;
+        }
+
+        .pay-radio.checked:after {
+            content: '';
+            position: absolute;
+            width: 6px;
+            height: 10px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+            top: 4px;
+            left: 7px;
+        }
+
+        .pay-btn-container {
+            padding: 20px 15px;
+            background: #fff;
+        }
+
+        .pay-btn {
+            background: #1677ff;
+            color: white;
+            text-align: center;
+            padding: 14px;
+            border-radius: 8px;
+            /* Standard button radius */
+            font-size: 17px;
+            font-weight: bold;
+            display: block;
+        }
+
+        /* Editable highlight */
+        [contenteditable]:hover {
+            background: rgba(255, 235, 59, 0.1);
+            outline: 1px dashed #ccc;
+        }
+
+        [contenteditable]:focus {
+            background: rgba(255, 235, 59, 0.2);
+            outline: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="controls">
+        <h3>配置面板 / Controls</h3>
+        <button class="btn-upload" onclick="document.getElementById('imgUpload').click()">1. 上传图标 (Icon)</button>
+        <input type="file" id="imgUpload" hidden accept="image/*" onchange="loadProductImage(this)">
+
+        <button class="btn-save" onclick="generateScreenshot()">2. 保存截图 (Save)</button>
+        <button class="btn-reset" onclick="location.reload()">3. 重置 (Reset)</button>
+        <p style="font-size: 12px; color: #666;">支持图片粘贴 (Ctrl+V)</p>
+    </div>
+
+    <div class="phone-frame" id="phoneScreen">
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-left">
+                <span class="signal-dots"><span></span><span></span><span></span><span></span><span
+                        style="border: 1px solid #000; background: transparent;"></span></span>
+                <span style="font-weight: normal; margin-left: 5px;">5G</span>
+            </div>
+            <div style="font-weight: bold; transform: translateX(5px);" contenteditable="true">14:30</div>
+            <div class="status-right">
+                <span style="font-size: 10px;">90%</span>
+                <div class="battery-icon">
+                    <div class="battery-fill"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NavBar -->
+        <div class="navbar">
+            <div class="nav-back">✕</div>
+            <div contenteditable="true">收银台</div>
+            <div style="position: absolute; right: 15px; font-size: 14px; color: #666;"></div>
+        </div>
+
+        <!-- Content -->
+        <div class="content-area">
+
+            <!-- Account Info (Replaces Address for Digital Goods) -->
+            <div class="shop-header">
+                <span contenteditable="true">全球法布施 - 会员中心</span>
+            </div>
+
+            <div class="product-row">
+                <!-- Product Icon -->
+                <div class="prod-img-box" onclick="document.getElementById('imgUpload').click()">
+                    <div class="prod-img-placeholder" id="imgPlaceholder">
+                        <span class="default-icon">💎</span>
+                    </div>
+                    <img id="prodImg" src="" style="display:none;" alt="Product">
+                </div>
+                <!-- Product Text -->
+                <div class="prod-info">
+                    <div class="prod-title" contenteditable="true">年度VIP会员 (全球发送)</div>
+                    <div class="prod-spec" contenteditable="true">充值账号: 138****8888</div>
+                </div>
+                <div class="prod-price" style="align-self: center;">
+                    <span contenteditable="true">¥199.00</span>
+                </div>
+            </div>
+
+            <div class="cell">
+                <span class="cell-label">商品总价</span>
+                <span class="cell-val" contenteditable="true">¥199.00</span>
+            </div>
+
+            <div class="cell">
+                <span class="cell-label">优惠/抵扣</span>
+                <span class="cell-val" style="color: #ff5000;" contenteditable="true">-¥0.00</span>
+            </div>
+
+            <div class="cell" style="margin-top: 10px;">
+                <span class="cell-label">实付款</span>
+                <span class="total-price" contenteditable="true">¥199.00</span>
+            </div>
+
+        </div>
+
+        <!-- Payment Popup -->
+        <div class="popup-overlay">
+            <div class="popup-box">
+                <div class="popup-header">
+                    <div class="popup-close">✕</div>
+                    <span>确认付款</span>
+                </div>
+                <div class="popup-amount">
+                    <small>¥</small><span contenteditable="true">199.00</span>
+                </div>
+
+                <div class="pay-method-title">选择支付方式</div>
+
+                <div class="pay-method-item" onclick="selectPay('ali')">
+                    <div class="pay-icon icon-ali"><span>支</span></div>
+                    <div class="pay-name">支付宝 (Alipay)</div>
+                    <div class="pay-radio checked" id="radio-ali"></div>
+                </div>
+
+                <div class="pay-method-item" onclick="selectPay('wx')">
+                    <div class="pay-icon icon-wx"><span>💬</span></div>
+                    <div class="pay-name">微信支付 (WeChat)</div>
+                    <div class="pay-radio" id="radio-wx"></div>
+                </div>
+
+                <div class="pay-btn-container">
+                    <div class="pay-btn">立即付款</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const prodImg = document.getElementById('prodImg');
+        const imgPlaceholder = document.getElementById('imgPlaceholder');
+
+        function loadProductImage(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    prodImg.src = e.target.result;
+                    prodImg.style.display = 'block';
+                    imgPlaceholder.style.display = 'none';
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        // Paste support
+        document.addEventListener('paste', (e) => {
+            const items = e.clipboardData.items;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    const blob = items[i].getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = function (event) {
+                        prodImg.src = event.target.result;
+                        prodImg.style.display = 'block';
+                        imgPlaceholder.style.display = 'none';
+                    };
+                    reader.readAsDataURL(blob);
+                }
+            }
+        });
+
+        function selectPay(type) {
+            document.getElementById('radio-wx').classList.remove('checked');
+            document.getElementById('radio-ali').classList.remove('checked');
+
+            document.getElementById('radio-' + type).classList.add('checked');
+        }
+
+        function generateScreenshot() {
+            // Blur updates
+            if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+            }
+            // Hide pop-up close or any other specific controls if needed
+            // For screenshot, we usually want exactly what is seen.
+
+            const element = document.getElementById('phoneScreen');
+
+            html2canvas(element, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: "#f5f5f5"
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'Membership_Payment_' + new Date().getTime() + '.png';
+                link.href = canvas.toDataURL();
+                link.click();
+            });
+        }
+    </script>
+</body>
+
+</html>

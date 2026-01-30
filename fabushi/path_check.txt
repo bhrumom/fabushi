@@ -1,0 +1,54 @@
+D:\Anaconda
+D:\Anaconda\Library\mingw-w64\bin
+D:\Anaconda\Library\usr\bin
+D:\Anaconda\Library\bin
+D:\Anaconda\Scripts
+D:\Anaconda\bin
+D:\Anaconda\condabin
+C:\Program Files\PowerShell\7
+d:\Program Files\ShadowBot
+C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler
+C:\WINDOWS\system32
+C:\WINDOWS
+C:\WINDOWS\System32\Wbem
+C:\WINDOWS\System32\WindowsPowerShell\v1.0
+C:\WINDOWS\System32\OpenSSH
+C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps
+C:\Recovery\OEM\Backup
+C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common
+C:\Recovery\OEM\Backup
+D:\妗岄潰\pcsuite
+C:\Program Files\Git\cmd
+C:\Program Files\NVIDIA Corporation\NVIDIA app\NvDLISR
+C:\Program Files\nodejs
+D:\Anaconda
+D:\Anaconda\Scripts
+D:\Anaconda\Library
+D:\APP\ffmpeg-master-latest-win64-gpl-shared\bin
+C:\Program Files\Amazon\AWSCLI\bin
+C:\Program Files\Amazon\AWSCLI
+C:\Program Files\PowerShell\7
+d:\Program Files\ShadowBot
+C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler
+C:\WINDOWS\system32
+C:\WINDOWS
+C:\WINDOWS\System32\Wbem
+C:\WINDOWS\System32\WindowsPowerShell\v1.0
+C:\WINDOWS\System32\OpenSSH
+C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps
+.
+C:\Recovery\OEM\Backup
+C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common
+C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR
+D:\锟斤拷锟斤拷\pcsuite
+C:\Program Files (x86)\Microsoft\Edge\Application
+D:\????\pcsuite
+C:\Users\chen\AppData\Local\Microsoft\WindowsApps
+{0842C752-BDDB-4073-9A93-CEB6AF58335B}_9124
+C:\Users\chen\AppData\Local\Programs\Trae\bin
+d:\Users\chen\AppData\Local\Programs\Trae\bin
+C:\Users\chen\AppData\Roaming\npm
+d:\Users\chen\AppData\Local\Programs\Microsoft VS Code\bin
+d:\Users\chen\AppData\Local\Programs\CodeBuddy\bin
+d:\Users\chen\AppData\Local\Programs\Kiro\bin
+d:\Users\chen\AppData\Local\Programs\Antigravity\bin

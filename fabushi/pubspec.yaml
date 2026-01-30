@@ -1,0 +1,170 @@
+name: global_dharma_sharing
+description: 全球法布施 - 佛教经文全球传播应用
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # 核心依赖
+  cupertino_icons: ^1.0.6
+  intl: any
+
+  # 状态管理
+  provider: ^6.0.5
+  flutter_bloc: ^9.1.0
+  equatable: ^2.0.7
+  get_it: ^8.0.3
+
+  # 网络请求
+  http: ^1.2.0
+  dio: ^5.4.1
+  connectivity_plus: ^7.0.0
+
+  # 本地存储
+  shared_preferences: ^2.2.2
+  path_provider: ^2.0.15
+
+  # 文件处理
+  file_picker: ^10.3.3
+  path: ^1.8.3
+  archive: ^4.0.7
+  csv: ^6.0.0
+
+  # UI组件
+  flex_color_scheme: ^8.0.2
+  lucide_icons_flutter: ^3.1.5
+  searchfield: ^1.3.5
+
+  # 地图和地理位置
+  flutter_map: ^8.2.1
+  latlong2: ^0.9.1
+  geolocator: ^14.0.2
+  vector_math: ^2.1.4
+
+  # 3D渲染
+  flutter_earth_globe: ^1.0.7
+  three_js: ^0.2.5
+  three_js_core: ^0.2.5
+  three_js_math: ^0.2.4
+  three_js_objects: ^0.2.1
+  three_js_helpers: ^0.2.3
+  three_js_core_loaders: ^0.2.1
+  three_js_advanced_loaders: ^0.2.4
+
+  # Firebase - REMOVED for Windows compatibility
+  # firebase_core: ^4.4.0
+  # firebase_auth: ^6.1.4
+  # cloud_firestore: ^6.1.2
+  # google_sign_in: ^7.2.0
+
+  # 支付
+  tobias: ^5.3.0  # 支付宝
+
+  # WebView
+  webview_flutter: ^4.4.2
+  flutter_inappwebview: ^6.0.0
+  url_launcher: ^6.1.11
+
+  # 视频播放
+  video_player: ^2.9.5
+  flutter_cache_manager: ^3.4.1
+  preload_page_view: ^0.2.0
+
+  # 通知
+  flutter_local_notifications: ^19.5.0
+
+  # 后台服务
+  audio_service: ^0.18.15  # iOS/Android 后台音频服务（系统播放器通知）
+  just_audio: ^0.9.40  # 音频播放器
+  flutter_tts: ^4.2.0  # 文字转语音
+  workmanager: ^0.6.0  # 后台任务恢复（应用被杀后自动重启）
+
+  # 语音识别与录音
+  # - 移动端使用 Sherpa-ONNX + flutter_sound
+  # - macOS 使用 record 包 + 原生 Speech 框架
+  sherpa_onnx: ^1.12.20       # Sherpa-ONNX 离线语音识别（iOS/Android）
+  flutter_sound: ^9.16.3      # 音频流捕获和录音（iOS/Android）
+  record: ^6.1.0              # 音频录制（macOS/iOS/Android）
+  audio_session: ^0.1.21      # 音频会话管理（iOS 需要）
+
+  # NLP 语义分析 - 本地 LLM 推理（llama.cpp Dart 绑定）
+  # - 所有平台统一使用 GGUF 格式模型
+  # - 支持多模态视觉（Qwen3-VL）
+  # - 模型首次使用时从 HuggingFace 下载到本地
+  llama_cpp_dart: ^0.2.2
+
+  # FFmpeg - 音频合并与字幕嵌入
+  ffmpeg_kit_flutter_new_audio: ^2.0.0  # FFmpeg 纯音频版本（体积小）
+
+  # 权限
+  permission_handler: ^12.0.1
+
+  # 网络信息
+  network_info_plus: ^7.0.0
+
+  # 设备信息
+  device_info_plus: ^11.1.0
+
+  # 平台相关
+  universal_html: ^2.2.4
+  js: 0.7.1
+  window_manager: ^0.5.1
+
+  # 工具类
+  async: 2.11.0
+  fpdart: ^1.1.0
+  json_annotation: ^4.9.0
+  gbk_codec: ^0.4.0
+  flutter_volume_controller: ^1.3.4
+  uuid: ^4.5.1
+  web_socket_channel: ^3.0.1
+  app_links: ^6.0.0
+  lpinyin: ^2.0.3
+  crypto: ^3.0.3  # 用于流式计算文件哈希
+  scrollable_positioned_list: ^0.3.8  # 精确索引跳转
+
+# Tobias 配置
+tobias:
+  url_scheme: fabushi
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  build_runner: ^2.4.13
+  json_serializable: ^6.8.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/data/
+    # assets/built_in/ 已移除 - 素材通过 CDN 下载，不打包进 APK/IPA
+    # Web 端素材在 web/assets/built_in/，独立提供服务
+    - assets/earth_texture.jpg
+    - assets/ip_data/
+    - assets/sherpa_models/streaming-paraformer-zh-en/
+    # assets/models/ 已移除 - 模型文件（佛像、NLP模型等）通过网络按需下载
+  
+  fonts:
+    # 使用子集化后的字体（从80MB压缩至~4.5MB）
+    # 原始字体保留在 fonts/ 目录以备后用
+    - family: NotoSansSC
+      fonts:
+        - asset: fonts/subset/NotoSansSC-Regular-subset.woff2
+        - asset: fonts/subset/NotoSansSC-Bold-subset.woff2
+          weight: 700
+    - family: NotoSerifSC
+      fonts:
+        - asset: fonts/subset/NotoSerifSC-Regular-subset.woff2
+        - asset: fonts/subset/NotoSerifSC-Bold-subset.woff2
+          weight: 700
+

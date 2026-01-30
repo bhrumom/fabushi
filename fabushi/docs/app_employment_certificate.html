@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>在职证明 - Proof of Employment (Apple Developer Program)</title>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <style>
+        body {
+            font-family: "SimSun", "Songti SC", "Microsoft YaHei", serif;
+            line-height: 1.8;
+            color: #000;
+            background: #f0f0f0;
+            padding: 20px;
+        }
+
+        .page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 20mm 25mm;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            position: relative;
+            box-sizing: border-box;
+        }
+
+        @media print {
+            body {
+                background: none;
+                padding: 0;
+            }
+
+            .page {
+                box-shadow: none;
+                width: 100%;
+                height: auto;
+                margin: 0;
+                padding: 15mm 20mm;
+            }
+
+            .no-print,
+            .control-btn,
+            .seal-placeholder-text,
+            .logo-placeholder-text {
+                display: none !important;
+            }
+        }
+
+        /* 公司抬头区域 */
+        .letterhead {
+            text-align: center;
+            border-bottom: 2px solid #333;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+
+        .logo-area {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 10px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            overflow: hidden;
+            background: #fafafa;
+        }
+
+        .logo-area.has-image {
+            border: none;
+        }
+
+        .logo-area img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: none;
+        }
+
+        .logo-area.has-image img {
+            display: block;
+        }
+
+        .logo-area.has-image .logo-placeholder-text {
+            display: none;
+        }
+
+        .logo-placeholder-text {
+            font-size: 12px;
+            color: #999;
+            text-align: center;
+        }
+
+        .company-name {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .company-name-en {
+            font-size: 11pt;
+            color: #666;
+            font-family: Arial, sans-serif;
+            margin-bottom: 10px;
+        }
+
+        .company-info {
+            font-size: 10pt;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        /* 标题 */
+        h1 {
+            text-align: center;
+            font-size: 22pt;
+            margin: 30px 0;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+
+        h1 .en-title {
+            display: block;
+            font-size: 14pt;
+            font-weight: normal;
+            color: #666;
+            margin-top: 8px;
+            font-family: Arial, sans-serif;
+            letter-spacing: 0;
+        }
+
+        /* 正文内容 */
+        .content {
+            font-size: 12pt;
+            text-align: justify;
+            line-height: 2;
+        }
+
+        .content p {
+            margin-bottom: 20px;
+        }
+
+        .bilingual-section {
+            margin-bottom: 25px;
+        }
+
+        .zh-text {
+            margin-bottom: 10px;
+        }
+
+        .en-text {
+            color: #555;
+            font-family: Arial, sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+        }
+
+        /* 可编辑字段 */
+        .input-field {
+            border-bottom: 1px solid #000;
+            min-width: 120px;
+            display: inline-block;
+            text-align: center;
+            color: #d93025;
+            padding: 0 8px;
+            font-weight: bold;
+            outline: none;
+        }
+
+        .input-field:empty:before {
+            content: attr(data-placeholder);
+            color: #d93025;
+            opacity: 0.7;
+        }
+
+        /* 签署区域 */
+        .signature-section {
+            margin-top: 50px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .signature-box {
+            width: 400px;
+            line-height: 2.5;
+            position: relative;
+            text-align: left;
+        }
+
+        .signature-row {
+            display: flex;
+            align-items: flex-end;
+            margin-bottom: 10px;
+        }
+
+        .signature-label {
+            min-width: 180px;
+        }
+
+        .signature-line {
+            position: relative;
+            display: inline-block;
+            width: 180px;
+            border-bottom: 1px solid #000;
+            vertical-align: bottom;
+            height: 35px;
+        }
+
+        canvas.signature-canvas {
+            position: absolute;
+            bottom: -5px;
+            left: 0;
+            cursor: crosshair;
+            z-index: 10;
+        }
+
+        .control-btn {
+            font-size: 0.7em;
+            color: #1677ff;
+            cursor: pointer;
+            margin-left: 5px;
+            text-decoration: underline;
+            border: none;
+            background: none;
+        }
+
+        /* 公章区域 - 透明效果 */
+        .seal-area {
+            position: absolute;
+            width: 150px;
+            height: 150px;
+            right: 60px;
+            top: 20px;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .seal-area.active {
+            pointer-events: auto;
+            border: 1px dashed #ddd;
+        }
+
+        .seal-img {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            cursor: move;
+            display: none;
+            /* 关键：透明混合模式，红色印章不会遮挡黑色文字 */
+            mix-blend-mode: multiply;
+            opacity: 0.9;
+        }
+
+        .seal-placeholder-text {
+            text-align: center;
+            padding-top: 50px;
+            font-size: 12px;
+            color: #ccc;
+            cursor: pointer;
+        }
+
+        /* 备注说明区 */
+        .notes-section {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px dashed #ccc;
+        }
+
+        .note-item {
+            font-size: 10pt;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        /* 控制面板 */
+        .control-panel {
+            text-align: center;
+            margin-bottom: 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: #f0f0f0;
+            padding: 15px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .control-panel button {
+            padding: 10px 20px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            margin: 0 5px;
+        }
+
+        .btn-save {
+            background-color: #52c41a;
+            color: white;
+        }
+
+        .btn-print {
+            background-color: #1677ff;
+            color: white;
+        }
+
+        .btn-reset {
+            background-color: #fff;
+            color: #333;
+            border: 1px solid #ccc !important;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 控制面板 -->
+    <div class="control-panel no-print">
+        <button class="btn-save" onclick="saveAsImage()">💾 保存为图片 (Save Image)</button>
+        <button class="btn-print" onclick="window.print()">🖨️ 打印 (Print)</button>
+        <button class="btn-reset" onclick="resetForm()">🔄 重置 (Reset)</button>
+        <p style="font-size: 12px; color: #666; margin-top: 10px;">
+            点击文字可编辑 | 支持粘贴图片 (Ctrl+V) | 公章使用透明混合，不遮挡文字
+        </p>
+    </div>
+
+    <div class="page" id="page-content">
+        <!-- 公司抬头 -->
+        <div class="letterhead">
+            <div class="logo-area" id="logoArea" onclick="triggerLogoUpload()">
+                <div class="logo-placeholder-text">
+                    <p>+</p>
+                    <p>上传Logo</p>
+                </div>
+                <img id="logoImage" src="" alt="Company Logo">
+            </div>
+            <input type="file" id="logoInput" style="display: none;" accept="image/*" onchange="handleLogoUpload(this)">
+
+            <div class="company-name" contenteditable="true">大乘科技有限公司</div>
+            <div class="company-name-en" contenteditable="true">Mahayana Technology Co., Ltd.</div>
+            <div class="company-info">
+                <div contenteditable="true">地址 / Address: 广东省深圳市南山区科技园南区XX大厦XX层</div>
+                <div contenteditable="true">电话 / Tel: +86-755-12345678 | 邮箱 / Email: contact@mahayana.com</div>
+            </div>
+        </div>
+
+        <!-- 标题 -->
+        <h1>
+            在 职 证 明
+            <span class="en-title">Certificate of Employment</span>
+        </h1>
+
+        <!-- 正文内容 -->
+        <div class="content">
+            <!-- 致辞 -->
+            <div class="bilingual-section">
+                <div class="zh-text" style="text-indent: 0;">
+                    致：Apple Inc.
+                </div>
+                <div class="en-text">
+                    To: Apple Inc.
+                </div>
+            </div>
+
+            <!-- 员工信息 -->
+            <div class="bilingual-section">
+                <div class="zh-text" style="text-indent: 2em;">
+                    兹证明 <span class="input-field" contenteditable="true" data-placeholder="【申请人姓名】"></span>
+                    （身份证号码：<span class="input-field" contenteditable="true" data-placeholder="【身份证号码】"
+                        style="min-width: 180px;"></span>）
+                    为本公司正式员工，于 <span class="input-field" contenteditable="true" data-placeholder="【入职日期】"
+                        style="min-width: 100px;"></span> 入职，
+                    现担任 <span class="input-field" contenteditable="true" data-placeholder="【职位名称】"
+                        style="min-width: 150px;"></span> 一职。
+                </div>
+                <div class="en-text">
+                    This is to certify that <span class="input-field" contenteditable="true"
+                        data-placeholder="[Applicant Name]"></span>
+                    (ID Number: <span class="input-field" contenteditable="true" data-placeholder="[ID Number]"
+                        style="min-width: 180px;"></span>)
+                    is a full-time employee of our company, having joined on <span class="input-field"
+                        contenteditable="true" data-placeholder="[Date]" style="min-width: 100px;"></span>,
+                    and currently holds the position of <span class="input-field" contenteditable="true"
+                        data-placeholder="[Job Title]" style="min-width: 150px;"></span>.
+                </div>
+            </div>
+
+            <!-- 授权声明 -->
+            <div class="bilingual-section">
+                <div class="zh-text" style="text-indent: 2em;">
+                    <span class="input-field" contenteditable="true" data-placeholder="【申请人姓名】"></span>
+                    已获得本公司正式授权，代表 <span class="input-field" contenteditable="true" data-placeholder="【公司名称】"
+                        style="min-width: 180px;"></span>
+                    申请 Apple Developer Program（苹果开发者计划），并有权代表公司签署相关协议及具有法律约束力的文件。
+                </div>
+                <div class="en-text">
+                    <span class="input-field" contenteditable="true" data-placeholder="[Applicant Name]"></span>
+                    is hereby authorized by our company to apply for the Apple Developer Program on behalf of
+                    <span class="input-field" contenteditable="true" data-placeholder="[Company Name]"
+                        style="min-width: 180px;"></span>,
+                    and has the legal binding authority to sign agreements and legally binding documents on behalf of
+                    the company.
+                </div>
+            </div>
+
+            <!-- 声明有效性 -->
+            <div class="bilingual-section">
+                <div class="zh-text" style="text-indent: 2em;">
+                    本证明自签署之日起生效。如有任何疑问，请与本公司人力资源部联系。
+                </div>
+                <div class="en-text">
+                    This certificate is effective from the date of signing. Should you have any questions, please
+                    contact our Human Resources Department.
+                </div>
+            </div>
+
+            <!-- 结束语 -->
+            <div class="bilingual-section">
+                <div class="zh-text" style="text-indent: 2em;">
+                    特此证明。
+                </div>
+                <div class="en-text">
+                    This is to certify the above.
+                </div>
+            </div>
+        </div>
+
+        <!-- 签署区域 -->
+        <div class="signature-section">
+            <div class="signature-box">
+                <!-- 公章区域 -->
+                <div class="seal-area active" id="sealArea">
+                    <img id="sealImage" class="seal-img" src="" alt="Company Seal">
+                    <div class="seal-placeholder-text no-print" onclick="triggerSealUpload()">
+                        点击上传公章<br>
+                        (或Ctrl+V粘贴)<br>
+                        <small style="color:#aaa;">透明效果</small>
+                    </div>
+                </div>
+                <input type="file" id="sealInput" style="display: none;" accept="image/*"
+                    onchange="handleSealUpload(this)">
+
+                <div class="signature-row">
+                    <span class="signature-label">公司名称 / Company:</span>
+                    <span class="input-field" contenteditable="true" data-placeholder="【公司全称】"
+                        style="min-width: 200px;"></span>
+                </div>
+
+                <div class="signature-row">
+                    <span class="signature-label">法定代表人 / Legal Rep.:</span>
+                    <div class="signature-line">
+                        <canvas id="signatureCanvas" class="signature-canvas" width="180" height="80"></canvas>
+                    </div>
+                    <button class="control-btn no-print" onclick="clearSignature()">清除</button>
+                </div>
+
+                <div class="signature-row">
+                    <span class="signature-label">职务 / Title:</span>
+                    <span class="input-field" contenteditable="true" data-placeholder="【CEO/董事长】"></span>
+                </div>
+
+                <div class="signature-row">
+                    <span class="signature-label">日期 / Date:</span>
+                    <span class="auto-date"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 备注说明 -->
+        <div class="notes-section no-print">
+            <div class="note-item">📋 <strong>提示：</strong>本证明需由公司法定代表人或其他高级管理人员签署，并加盖公司公章。</div>
+            <div class="note-item">📋 <strong>Note:</strong> This certificate should be signed by the Legal
+                Representative or another senior executive, and stamped with the company seal.</div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        // 1. 自动填充日期
+        window.addEventListener('load', () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const dateStr = `${year}年${month}月${day}日 / ${year}-${month}-${day}`;
+
+            document.querySelectorAll('.auto-date').forEach(el => {
+                el.innerText = dateStr;
+            });
+        });
+
+        // 2. 保存为图片
+        function saveAsImage() {
+            const element = document.getElementById('page-content');
+
+            html2canvas(element, {
+                scale: 2,
+                backgroundColor: "#ffffff",
+                useCORS: true
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = '在职证明_Employment_Certificate_' + new Date().getTime() + '.png';
+                link.href = canvas.toDataURL();
+                link.click();
+            });
+        }
+
+        // 3. 签名画布
+        const canvas = document.getElementById('signatureCanvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+
+        // 鼠标事件
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        // 触摸事件
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            lastX = touch.clientX - rect.left;
+            lastY = touch.clientY - rect.top;
+            isDrawing = true;
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!isDrawing) return;
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            drawParams(x, y);
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', stopDrawing);
+
+        function startDrawing(e) {
+            isDrawing = true;
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            drawParams(e.offsetX, e.offsetY);
+        }
+
+        function drawParams(x, y) {
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            [lastX, lastY] = [x, y];
+        }
+
+        function stopDrawing() {
+            isDrawing = false;
+        }
+
+        function clearSignature() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // 4. Logo处理
+        const logoArea = document.getElementById('logoArea');
+        const logoImg = document.getElementById('logoImage');
+        const logoInput = document.getElementById('logoInput');
+
+        function triggerLogoUpload() {
+            logoInput.click();
+        }
+
+        function handleLogoUpload(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    setLogoImage(e.target.result);
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function setLogoImage(src) {
+            logoImg.src = src;
+            logoImg.style.display = 'block';
+            logoArea.classList.add('has-image');
+        }
+
+        // 5. 公章处理
+        const sealArea = document.getElementById('sealArea');
+        const sealImg = document.getElementById('sealImage');
+        const sealInput = document.getElementById('sealInput');
+        const sealControls = document.querySelector('.seal-placeholder-text');
+
+        function triggerSealUpload() {
+            sealInput.click();
+        }
+
+        function handleSealUpload(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    setSealImage(e.target.result);
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function setSealImage(src) {
+            sealImg.src = src;
+            sealImg.style.display = 'block';
+            if (sealControls) sealControls.style.display = 'none';
+        }
+
+        // 公章拖动
+        let isDraggingSeal = false;
+        let sealStartX, sealStartY, sealInitialLeft, sealInitialTop;
+
+        sealArea.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === 'IMG' || e.target.classList.contains('seal-placeholder-text') || e.target === sealArea) {
+                isDraggingSeal = true;
+                sealStartX = e.clientX;
+                sealStartY = e.clientY;
+                sealInitialLeft = sealArea.offsetLeft;
+                sealInitialTop = sealArea.offsetTop;
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isDraggingSeal) {
+                const dx = e.clientX - sealStartX;
+                const dy = e.clientY - sealStartY;
+                sealArea.style.left = (sealInitialLeft + dx) + 'px';
+                sealArea.style.top = (sealInitialTop + dy) + 'px';
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDraggingSeal = false;
+        });
+
+        // 6. 全局粘贴
+        let pasteTarget = 'seal'; // 默认粘贴到公章
+
+        document.addEventListener('paste', (e) => {
+            const items = e.clipboardData.items;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    const blob = items[i].getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = function (event) {
+                        // 优先填充公章，如果公章已有则填充Logo
+                        if (sealImg.style.display === 'none' || sealImg.style.display === '') {
+                            setSealImage(event.target.result);
+                        } else if (!logoArea.classList.contains('has-image')) {
+                            setLogoImage(event.target.result);
+                        }
+                    };
+                    reader.readAsDataURL(blob);
+                }
+            }
+        });
+
+        // 7. 重置表单
+        function resetForm() {
+            if (confirm('确定要重置所有内容吗？ / Are you sure you want to reset?')) {
+                location.reload();
+            }
+        }
+    </script>
+</body>
+
+</html>

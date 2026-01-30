@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>APP授权函 - 支付宝备案</title>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <style>
+        body {
+            font-family: "SimSun", "Songti SC", serif;
+            line-height: 1.5;
+            /* More compact line height */
+            color: #000;
+            background: #f0f0f0;
+            padding: 20px;
+        }
+
+        .page {
+            width: 210mm;
+            /* Remove fixed height to allow auto-fit, but keep min-height for visuals */
+            min-height: 250mm;
+            padding: 15mm 20mm;
+            /* Reduced padding */
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+            position: relative;
+            box-sizing: border-box;
+        }
+
+        @media print {
+            body {
+                background: none;
+                padding: 0;
+            }
+
+            .page {
+                box-shadow: none;
+                width: 100%;
+                height: auto;
+                margin: 0;
+                padding: 15mm 20mm;
+            }
+
+            .no-print,
+            .control-btn,
+            .seal-placeholder,
+            .id-placeholder-text {
+                display: none !important;
+            }
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 20pt;
+            /* Slightly smaller header */
+            margin-bottom: 20px;
+            /* Reduced margin */
+            font-weight: bold;
+        }
+
+        .header-note {
+            font-size: 10.5pt;
+            margin-bottom: 10px;
+        }
+
+        .content {
+            font-size: 12pt;
+            text-align: justify;
+        }
+
+        .content p {
+            margin-bottom: 15px;
+            /* Reduced paragraph spacing */
+        }
+
+        .input-field {
+            border-bottom: 1px solid #000;
+            min-width: 100px;
+            display: inline-block;
+            text-align: center;
+            color: #d93025;
+            padding: 0 5px;
+            font-weight: bold;
+            outline: none;
+        }
+
+        .input-field:empty:before {
+            content: attr(data-placeholder);
+            color: #d93025;
+            opacity: 0.8;
+        }
+
+        .footer {
+            margin-top: 30px;
+            /* Reduced footer margin */
+            font-size: 12pt;
+        }
+
+        .signature-section {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 30px;
+            padding-right: 20px;
+        }
+
+        .signature-box {
+            width: 400px;
+            line-height: 2.2;
+            position: relative;
+        }
+
+        .id-card-placeholder {
+            margin-top: 20px;
+            border: 2px dashed #ccc;
+            height: 200px;
+            /* Reduced height */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            flex-direction: column;
+            position: relative;
+            background-color: #fafafa;
+            cursor: pointer;
+            overflow: hidden;
+        }
+
+        .id-card-placeholder img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: none;
+        }
+
+        .id-card-placeholder.has-image img {
+            display: block;
+        }
+
+        .id-card-placeholder.has-image .id-placeholder-text {
+            display: none;
+        }
+
+        .note {
+            font-size: 11pt;
+            color: #d93025;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+
+        /* Signature Canvas Styles */
+        .signature-line {
+            position: relative;
+            display: inline-block;
+            width: 200px;
+            border-bottom: 1px solid #000;
+            vertical-align: bottom;
+            height: 30px;
+            /* Force height */
+        }
+
+        canvas.signature-canvas {
+            position: absolute;
+            bottom: -5px;
+            /* Adjust alignment */
+            left: 0;
+            cursor: crosshair;
+            z-index: 10;
+        }
+
+        .control-btn {
+            font-size: 0.7em;
+            color: #1677ff;
+            cursor: pointer;
+            margin-left: 5px;
+            text-decoration: underline;
+            border: none;
+            background: none;
+        }
+
+        /* Seal Styles */
+        .seal-area {
+            position: absolute;
+            /* Changed to absolute for easier overlay */
+            width: 140px;
+            height: 140px;
+            right: 50px;
+            /* Positioned relative to signature box */
+            top: 20px;
+            border: 1px dashed transparent;
+            z-index: 5;
+            /* Behind text but manageable */
+            pointer-events: none;
+            /* Let clicks pass through initially */
+        }
+
+        .seal-area.active {
+            pointer-events: auto;
+            border-color: #ddd;
+        }
+
+        .seal-img {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            cursor: move;
+            opacity: 0.85;
+            mix-blend-mode: multiply;
+            display: none;
+        }
+
+        /* New explicit seal upload button area next to controls */
+        .seal-controls {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="no-print"
+        style="text-align: center; margin-bottom: 20px; position: sticky; top: 0; z-index: 100; background: #f0f0f0; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <button onclick="saveAsImage()"
+            style="padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #52c41a; color: white; border: none; border-radius: 4px; margin-right: 10px;">💾
+            保存为图片 (Save Image)</button>
+        <button onclick="window.print()"
+            style="padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #1677ff; color: white; border: none; border-radius: 4px; margin-right: 10px;">🖨️
+            打印 (Print)</button>
+        <button onclick="resetForm()"
+            style="padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #fff; color: #333; border: 1px solid #ccc; border-radius: 4px;">重置
+            (Reset)</button>
+    </div>
+
+    <div class="page" id="page-content">
+        <div class="header-note">备案主体为个人：</div>
+
+        <h1>授权函</h1>
+
+        <div class="content">
+            <p>致：支付宝（中国）网络技术有限公司</p>
+            <p style="text-indent: 2em;">
+                授权人 <span class="input-field" contenteditable="true" data-placeholder="【请填写授权人】"></span> 为APP “<span
+                    class="input-field" contenteditable="true" data-placeholder="【请填写APP名称】"></span>”合法的主体，现授权人依法授权
+                <span class="input-field" contenteditable="true" data-placeholder="【请填写被授权公司】"></span>
+                （下称“被授权人”）使用上述APP开展业务。基于被授权人通过上述 APP进行收付款需要，被授权人可向贵司申请开通支付宝支付相关服务。
+            </p>
+            <p style="text-indent: 2em;">
+                任何基于本授权而产生的相关法律纠纷和责任均由授权人和被授权人自行解决和承担，与贵司无关。
+            </p>
+            <p style="text-indent: 2em;">
+                本授权书自授权人加盖公章之日起生效，除非授权人另行向贵司发出书面通知，本授权函件持续有效。
+            </p>
+        </div>
+
+        <div class="footer">
+            <div class="signature-section">
+                <div class="signature-box">
+
+                    <!-- Seal Container (Overlay) -->
+                    <div class="seal-area active" id="sealArea" title="点击粘贴/上传印章">
+                        <img id="sealImage" class="seal-img" src="" alt="Seal">
+                        <div class="seal-controls no-print" onclick="triggerSealUpload()"
+                            style="text-align: center; margin-top: 40%; cursor: pointer; color: #ccc; border: 1px dashed #ccc; padding: 5px;">
+                            点击上传印章<br>
+                            (或Ctrl+V粘贴)
+                        </div>
+                    </div>
+                    <input type="file" id="sealInput" style="display: none;" accept="image/*"
+                        onchange="handleSealUpload(this)">
+
+                    <!-- Lines -->
+                    <div>
+                        授权人（手写签名）：
+                        <div class="signature-line">
+                            <canvas id="signatureCanvas" class="signature-canvas" width="200" height="100"></canvas>
+                        </div>
+                        <button class="control-btn" onclick="clearSignature()">清除</button>
+                    </div>
+                    <div>时间：<span class="auto-date"></span></div>
+                    <br>
+                    <div>
+                        被授权人（盖章）： <span style="display:inline-block; width: 100px;"></span>
+                    </div>
+                    <div>时间：<span class="auto-date"></span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="note">请提供授权人的法定代表人身份证正面：</div>
+        <!-- ID Card Area -->
+        <div class="id-card-placeholder" id="idCardArea" onclick="triggerIdUpload()">
+            <div id="idCardText" class="id-placeholder-text">
+                <p style="font-size: 24px; margin: 0;">+</p>
+                <p>点击粘贴/上传身份证正面</p>
+            </div>
+            <img id="idCardImage" src="" alt="ID Card">
+            <input type="file" id="idCardInput" style="display: none;" accept="image/*" onchange="handleIdUpload(this)">
+        </div>
+        <div style="font-size: 0.9em; margin-top: 5px; text-align: center;" class="no-print">信息需真实有效、清晰完整</div>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        // 1. Auto Date
+        window.addEventListener('load', () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const dateStr = `${year}年${month}月${day}日`;
+
+            document.querySelectorAll('.auto-date').forEach(el => {
+                el.innerText = dateStr;
+            });
+        });
+
+        // 2. Save as Image
+        function saveAsImage() {
+            const element = document.getElementById('page-content');
+            // Hide controls / placeholders for cleaner image
+            const controls = document.querySelectorAll('.no-print, .control-btn, .seal-controls'); // Added seal controls
+
+            // Temporary hide placeholders if images exist
+            const idText = document.getElementById('idCardText');
+            // We rely on CSS .has-image for ID text, but let's be safe
+
+            // Use html2canvas
+            html2canvas(element, {
+                scale: 2, // Better resolution
+                backgroundColor: "#ffffff",
+                useCORS: true
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'APP授权函_' + new Date().getTime() + '.png';
+                link.href = canvas.toDataURL();
+                link.click();
+            });
+        }
+
+        // 3. Signature Canvas
+        const canvas = document.getElementById('signatureCanvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+
+        // Mouse Events
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        // Touch Events
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            lastX = touch.clientX - rect.left;
+            lastY = touch.clientY - rect.top;
+            isDrawing = true;
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!isDrawing) return;
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            drawParams(x, y);
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', stopDrawing);
+
+        function startDrawing(e) {
+            isDrawing = true;
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            drawParams(e.offsetX, e.offsetY);
+        }
+
+        function drawParams(x, y) {
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            [lastX, lastY] = [x, y];
+        }
+
+        function stopDrawing() {
+            isDrawing = false;
+        }
+
+        function clearSignature() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // 4. Seal Handling
+        const sealArea = document.getElementById('sealArea');
+        const sealImg = document.getElementById('sealImage');
+        const sealInput = document.getElementById('sealInput');
+        const sealControls = document.querySelector('.seal-controls');
+
+        function triggerSealUpload() {
+            sealInput.click();
+        }
+
+        function handleSealUpload(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    setSealImage(e.target.result);
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function setSealImage(src) {
+            sealImg.src = src;
+            sealImg.style.display = 'block';
+            sealControls.style.display = 'none'; // Hide the "Click to upload" text
+        }
+
+        // Draggable Seal
+        let isDraggingSeal = false;
+        let sealStartX, sealStartY, sealInitialLeft, sealInitialTop;
+
+        sealImg.addEventListener('mousedown', (e) => {
+            isDraggingSeal = true;
+            sealStartX = e.clientX;
+            sealStartY = e.clientY;
+            sealInitialLeft = sealImg.offsetLeft;
+            sealInitialTop = sealImg.offsetTop;
+            e.preventDefault();
+        });
+
+        // Allow dragging the container if needed or just the image. 
+        // Here we let the image move within the container or page if we change position context.
+        // Simplified: Let's move the SEAL AREA itself? 
+        // Actually, users want to move the seal OVER the text or name.
+        // So seal-area is absolute positioned in signature-box. 
+        // Let's make seal-area draggable.
+
+        sealArea.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === 'IMG' || e.target.classList.contains('seal-controls') || e.target === sealArea) {
+                isDraggingSeal = true;
+                sealStartX = e.clientX;
+                sealStartY = e.clientY;
+                sealInitialLeft = sealArea.offsetLeft;
+                sealInitialTop = sealArea.offsetTop;
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isDraggingSeal) {
+                const dx = e.clientX - sealStartX;
+                const dy = e.clientY - sealStartY;
+                sealArea.style.left = (sealInitialLeft + dx) + 'px';
+                sealArea.style.top = (sealInitialTop + dy) + 'px';
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDraggingSeal = false;
+        });
+
+
+        // 5. ID Card Handling
+        const idArea = document.getElementById('idCardArea');
+        const idImg = document.getElementById('idCardImage');
+        const idInput = document.getElementById('idCardInput');
+
+        function triggerIdUpload() {
+            idInput.click();
+        }
+
+        function handleIdUpload(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    setIdImage(e.target.result);
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function setIdImage(src) {
+            idImg.src = src;
+            idArea.classList.add('has-image');
+        }
+
+        // 6. Global Paste
+        document.addEventListener('paste', (e) => {
+            // Check if user is editing a text field - if so, don't intercept for images unless it's clearly an image paste
+            // But usually text fields handle text paste. Image paste is special.
+
+            const items = e.clipboardData.items;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    const blob = items[i].getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = function (event) {
+                        // Priority: Seal if empty, then ID ?
+                        // Or check hover?
+                        // Simple rule: If Seal is empty/hidden, fill Seal. Else fill ID.
+                        if (sealImg.style.display === 'none' || sealImg.style.display === '') {
+                            setSealImage(event.target.result);
+                        } else {
+                            setIdImage(event.target.result);
+                        }
+                    };
+                    reader.readAsDataURL(blob);
+                }
+            }
+        });
+
+        function resetForm() {
+            if (confirm('确定要重置所有内容吗？')) {
+                location.reload();
+            }
+        }
+    </script>
+</body>
+
+</html>
