@@ -1,0 +1,141 @@
+name: global_dharma_sharing
+description: 大乘 - 佛教经文全球传播应用
+publish_to: 'none'
+version: 1.1.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # 核心依赖
+  cupertino_icons: ^1.0.6
+  intl: any
+
+  # 状态管理
+  provider: ^6.0.5
+  flutter_bloc: ^9.1.0
+  equatable: ^2.0.7
+  get_it: ^8.0.3
+
+  # 网络请求
+  http: ^1.2.0
+  dio: ^5.4.1
+  connectivity_plus: ^7.0.0
+
+  # 本地存储
+  shared_preferences: ^2.2.2
+  path_provider: ^2.0.15
+
+  # 文件处理
+  file_picker: ^10.3.3
+  path: ^1.8.3
+  archive: ^4.0.7
+  csv: ^6.0.0
+
+  # UI组件
+  flex_color_scheme: ^8.0.2
+  lucide_icons_flutter: ^3.1.5
+  searchfield: ^1.3.5
+
+  # 地图和地理位置
+  flutter_map: ^8.2.1
+  latlong2: ^0.9.1
+  geolocator: ^14.0.2
+  vector_math: ^2.1.4
+
+  # 3D渲染
+  flutter_earth_globe: ^1.0.7
+  three_js: ^0.2.5
+  three_js_core: ^0.2.5
+  three_js_math: ^0.2.4
+  three_js_objects: ^0.2.1
+  three_js_helpers: ^0.2.3
+  three_js_core_loaders: ^0.2.1
+  three_js_advanced_loaders: ^0.2.4
+
+  # WebView
+  webview_flutter: ^4.4.2
+  flutter_inappwebview: ^6.0.0
+  url_launcher: ^6.1.11
+
+  # 视频播放
+  video_player: ^2.9.5
+  flutter_cache_manager: ^3.4.1
+  preload_page_view: ^0.2.0
+
+  # 通知
+  flutter_local_notifications: ^19.5.0
+
+  # 音频 (Windows兼容)
+  just_audio: ^0.9.40
+
+  # 权限
+  permission_handler: ^12.0.1
+
+  # 网络信息
+  network_info_plus: ^7.0.0
+
+  # 设备信息
+  device_info_plus: ^11.1.0
+
+  # 平台相关
+  universal_html: ^2.2.4
+  js: 0.7.1
+  window_manager: ^0.5.1
+
+  # 工具类
+  async: 2.11.0
+  fpdart: ^1.1.0
+  json_annotation: ^4.9.0
+  gbk_codec: ^0.4.0
+  flutter_volume_controller: ^1.3.4
+  uuid: ^4.5.1
+  web_socket_channel: ^3.0.1
+  app_links: ^6.0.0
+  lpinyin: ^2.0.3
+  crypto: ^3.0.3
+  scrollable_positioned_list: ^0.3.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  build_runner: ^2.4.13
+  json_serializable: ^6.8.0
+  msix: ^3.16.1
+
+msix_config:
+  display_name: 大乘
+  publisher_display_name: "Mahayana"
+  publisher: "CN=Mahayana"
+  identity_name: "com.mahayana.app"
+  msix_version: 1.1.0.0
+  logo_path: assets/images/logo.png
+  capabilities: internetClient,location,microphone
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/data/
+    - assets/earth_texture.jpg
+    - assets/ip_data/
+    - assets/privacy_policy.md
+  
+  fonts:
+    - family: NotoSansSC
+      fonts:
+        - asset: fonts/subset/NotoSansSC-Regular-subset.woff2
+        - asset: fonts/subset/NotoSansSC-Bold-subset.woff2
+          weight: 700
+    - family: NotoSerifSC
+      fonts:
+        - asset: fonts/subset/NotoSerifSC-Regular-subset.woff2
+        - asset: fonts/subset/NotoSerifSC-Bold-subset.woff2
+          weight: 700

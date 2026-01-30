@@ -26,6 +26,15 @@ jobs:
         with:
           channel: 'beta'
 
+      - name: Use Windows-compatible pubspec
+        shell: pwsh
+        run: |
+          # Backup original pubspec
+          Copy-Item "fabushi/pubspec.yaml" -Destination "fabushi/pubspec_original.yaml"
+          # Use Windows-compatible pubspec
+          Copy-Item "fabushi/pubspec_windows.yaml" -Destination "fabushi/pubspec.yaml"
+          Write-Host "Switched to Windows-compatible pubspec"
+
       - name: Install dependencies
         run: flutter pub get
         working-directory: fabushi
