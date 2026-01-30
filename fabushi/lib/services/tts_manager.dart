@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+
+// 条件导入：仅在移动端使用 flutter_tts
+import 'tts_manager_mobile.dart'
+    if (dart.library.html) 'tts_manager_stub.dart'
+    as platform;
 
 /// TTS 单例管理器
 /// 确保全局只有一个 TTS 实例，避免多个实例竞争系统资源
@@ -11,7 +15,7 @@ class TtsManager {
   factory TtsManager() => _instance;
   TtsManager._internal();
 
-  FlutterTts? _tts;
+  dynamic _tts;
   bool _isInitialized = false;
   bool _isSpeaking = false;
   bool _isStopping = false;  // 防止stop()触发completion callback
@@ -30,6 +34,9 @@ class TtsManager {
   VoidCallback? _completionCallback;
   Function(String msg)? _errorCallback;
   
+  /// 是否支持 TTS（移动端 + macOS）
+  bool get _isTtsSupported => !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+  
   bool get isInitialized => _isInitialized;
   bool get isSpeaking => _isSpeaking;
   bool get useFallbackOnly => _useFallbackOnly;
@@ -39,7 +46,7 @@ class TtsManager {
   bool get hasActiveOwner => _activeOwnerId != null;
 
   /// Helper to check if running on macOS
-  bool get isMacOS => Platform.isMacOS;
+  bool get isMacOS => !kIsWeb && Platform.isMacOS;
 
   /// 当前语速
   double get speechRate => _speechRate;
@@ -51,7 +58,7 @@ class TtsManager {
   /// 高语速非线性校正：语速越快，实际朗读相对更快
   double calculateMsPerChar() {
     // Mac平台使用更大的基准值，因为Mac TTS实际朗读速度较慢
-    if (Platform.isMacOS) {
+    if (isMacOS) {
       // Mac TTS 在 speechRate=0.55 时，实测约 200-250ms/字
       // 语速变化时需要相应调整
       return 220.0 / (_speechRate / 0.55);
@@ -71,30 +78,35 @@ class TtsManager {
   Future<void> initialize() async {
     if (_isInitialized) return;
     
+    if (!_isTtsSupported) {
+      debugPrint('📱 TTS Manager: 当前平台不支持 TTS');
+      return;
+    }
+    
     try {
       await _detectDevice();
       
-      _tts = FlutterTts();
+      _tts = await platform.initializeTts();
       
-      await _tts!.setLanguage('zh-CN');
+      await platform.setLanguage(_tts, 'zh-CN');
       
       // 根据平台设置语速
       // Android通常需要较快(0.9)，iOS/Mac通常0.5是标准语速
-      if (Platform.isAndroid) {
+      if (!kIsWeb && Platform.isAndroid) {
         _speechRate = 0.9;
       } else {
         _speechRate = 0.55;
       }
-      await _tts!.setSpeechRate(_speechRate);
-      await _tts!.setVolume(1.0);
-      await _tts!.awaitSpeakCompletion(true);
+      await platform.setSpeechRate(_tts, _speechRate);
+      await platform.setVolume(_tts, 1.0);
       
-      _tts!.setProgressHandler((text, start, end, word) {
+      // 设置回调
+      platform.setProgressHandler(_tts, (text, start, end, word) {
         debugPrint('📱 TTS Progress: word="$word" start=$start end=$end');
         _progressCallback?.call(text, start, end, word);
       });
       
-      _tts!.setCompletionHandler(() {
+      platform.setCompletionHandler(_tts, () {
         // 如果是因为stop()触发的，忽略completion回调
         if (_isStopping) {
           debugPrint('📱 TTS Manager: Ignoring completion callback triggered by stop()');
@@ -106,7 +118,7 @@ class TtsManager {
         _completionCallback?.call();
       });
       
-      _tts!.setErrorHandler((msg) {
+      platform.setErrorHandler(_tts, (msg) {
         debugPrint('📱 TTS Manager: Error: $msg');
         _isSpeaking = false;
         _errorCallback?.call(msg);
@@ -121,7 +133,7 @@ class TtsManager {
   
   Future<void> _detectDevice() async {
     try {
-      if (Platform.isAndroid) {
+      if (!kIsWeb && Platform.isAndroid) {
         final deviceInfo = DeviceInfoPlugin();
         final androidInfo = await deviceInfo.androidInfo;
         _deviceBrand = androidInfo.brand.toLowerCase();
@@ -133,7 +145,7 @@ class TtsManager {
         
         _useFallbackOnly = problematicBrands.any((brand) => _deviceBrand.contains(brand));
         debugPrint('📱 TTS Manager: Device brand="$_deviceBrand", useFallbackOnly=$_useFallbackOnly');
-      } else if (Platform.isIOS) {
+      } else if (!kIsWeb && Platform.isIOS) {
         _deviceBrand = 'apple';
         _useFallbackOnly = false;
       }
@@ -177,6 +189,11 @@ class TtsManager {
 
   /// 开始朗读
   Future<bool> speak(String text, String ownerId) async {
+    if (!_isTtsSupported) {
+      debugPrint('📱 TTS Manager: 当前平台不支持 TTS');
+      return false;
+    }
+    
     if (!_isInitialized) {
       await initialize();
     }
@@ -196,7 +213,7 @@ class TtsManager {
       debugPrint('📱 TTS Manager: Starting speech for owner $ownerId (${text.length} chars)');
       _isSpeaking = true;
       _isStopping = false;  // 重置停止标记
-      final result = await _tts?.speak(text);
+      final result = await platform.speak(_tts, text);
       if (result == 0) {
         // 0 表示失败
         debugPrint('📱 TTS Manager: Speak returned failure code');
@@ -213,12 +230,12 @@ class TtsManager {
 
   /// 停止朗读
   Future<void> stop() async {
-    if (!_isInitialized) return;
+    if (!_isInitialized || !_isTtsSupported) return;
     
     try {
       _isStopping = true;  // 设置停止标记，阻止completion callback
       debugPrint('📱 TTS Manager: Stopping speech (isStopping=true)');
-      await _tts?.stop();
+      await platform.stop(_tts);
       _isSpeaking = false;
     } catch (e) {
       debugPrint('📱 TTS Manager: Stop error: $e');
@@ -228,7 +245,9 @@ class TtsManager {
 
   /// 释放资源（通常在应用退出时调用）
   void dispose() {
-    _tts?.stop();
+    if (_tts != null) {
+      platform.stop(_tts);
+    }
     _tts = null;
     _isInitialized = false;
     _isSpeaking = false;

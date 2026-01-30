@@ -40,7 +40,7 @@ class AppConfig {
   static String get apiUrl => currentBackendUrl;
 
   // 应用信息
-  static const String appName = '全球法布施';
+  static const String appName = '大乘';
   static const String appVersion = '1.0.0';
   static const int appBuildNumber = 1;
 

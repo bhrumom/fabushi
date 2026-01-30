@@ -35,7 +35,7 @@
 
     
     <application
-        android:label="global_dharma_sharing"
+        android:label="大乘"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         

@@ -1,5 +1,0 @@
-# 静态资源不重定向
-/assets/* /assets/:splat 200
-
-# 其他所有请求重定向到index.html，但不包括已存在的文件
-/* /index.html 200

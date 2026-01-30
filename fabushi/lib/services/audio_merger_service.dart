@@ -2,9 +2,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
-// 条件编译：仅在非 macOS 平台使用 ffmpeg_kit
-import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
+// 条件编译：仅在移动端使用 ffmpeg_kit
+import 'audio_merger_service_mobile.dart'
+    if (dart.library.html) 'audio_merger_service_stub.dart'
+    as platform;
 
 /// 音频时间戳标记（用于字幕同步）
 class AudioMarker {
@@ -36,6 +37,7 @@ class AudioMarker {
 /// 跨平台实现：
 /// - iOS/Android: 使用 FFmpeg
 /// - macOS: 使用 afconvert 系统命令 + 纯 Dart
+/// - Windows: 使用纯 Dart WAV 处理
 class AudioMergerService {
   static AudioMergerService? _instance;
   static AudioMergerService get instance => _instance ??= AudioMergerService._();
@@ -44,6 +46,12 @@ class AudioMergerService {
   
   /// 是否是 macOS 平台
   bool get _isMacOS => !kIsWeb && Platform.isMacOS;
+  
+  /// 是否是移动端（支持 FFmpeg）
+  bool get _isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  
+  /// 是否是 Windows 平台
+  bool get _isWindows => !kIsWeb && Platform.isWindows;
 
   /// 合并 PCM 文件并嵌入字幕轨道，输出 M4A
   Future<String?> mergeWithSubtitle({
@@ -70,7 +78,14 @@ class AudioMergerService {
       
       // 3. 转换 PCM 为 音频格式
       String? audioPath;
-      if (_isMacOS) {
+      if (_isWindows) {
+        // Windows: 转为 WAV（无需外部工具）
+        audioPath = '${tempDir.path}/audio_$timestamp.wav';
+        await _pcmToWav(mergedPcmPath, audioPath);
+        await _cleanupTempFiles([mergedPcmPath]);
+        debugPrint('[AudioMerger] Windows 模式：返回 WAV 文件');
+        return audioPath;
+      } else if (_isMacOS) {
         // macOS: 先转 WAV，再用 afconvert 转 M4A
         final wavPath = '${tempDir.path}/audio_$timestamp.wav';
         await _pcmToWav(mergedPcmPath, wavPath);
@@ -89,7 +104,7 @@ class AudioMergerService {
       } else {
         // iOS/Android: 使用 FFmpeg
         audioPath = '${tempDir.path}/audio_$timestamp.m4a';
-        final success = await _pcmToAacFFmpeg(mergedPcmPath, audioPath);
+        final success = await platform.pcmToAacFFmpeg(mergedPcmPath, audioPath);
         if (!success) {
           debugPrint('[AudioMerger] FFmpeg PCM -> AAC 失败');
           return null;
@@ -100,16 +115,16 @@ class AudioMergerService {
       final outputPath = '${tempDir.path}/reading_$timestamp.m4a';
       bool embedSuccess = false;
       
-      if (!_isMacOS) {
-        embedSuccess = await _embedSubtitleFFmpeg(audioPath, srtPath, outputPath);
+      if (_isMobile) {
+        embedSuccess = await platform.embedSubtitleFFmpeg(audioPath!, srtPath, outputPath);
       }
       
       if (embedSuccess) {
         debugPrint('[AudioMerger] 成功生成带字幕的音频: $outputPath');
-        await _cleanupTempFiles([mergedPcmPath, srtPath, audioPath]);
+        await _cleanupTempFiles([mergedPcmPath, srtPath, audioPath!]);
         return outputPath;
       } else {
-        // macOS 或嵌入失败，返回纯音频 + 独立字幕文件
+        // macOS/Windows 或嵌入失败，返回纯音频 + 独立字幕文件
         debugPrint('[AudioMerger] 返回纯音频（字幕保存在独立文件）');
         await _cleanupTempFiles([mergedPcmPath]);
         return audioPath;
@@ -180,7 +195,7 @@ class AudioMergerService {
   }
 
   // =====================================================
-  // macOS 专用方法（使用系统命令）
+  // 纯 Dart 方法（所有平台可用）
   // =====================================================
 
   /// PCM 转 WAV（纯 Dart 实现）
@@ -264,51 +279,6 @@ class AudioMergerService {
       }
     } catch (e) {
       debugPrint('[AudioMerger] macOS afconvert 异常: $e');
-      return false;
-    }
-  }
-
-  // =====================================================
-  // iOS/Android 专用方法（使用 FFmpeg）
-  // =====================================================
-
-  /// PCM 转 AAC (FFmpeg)
-  Future<bool> _pcmToAacFFmpeg(String pcmPath, String outputPath) async {
-    final command = '-y -f s16le -ar 16000 -ac 1 -i "$pcmPath" '
-                    '-af "aresample=44100,lowpass=f=7500,dynaudnorm=f=150:g=15,afftdn=nf=-25" '
-                    '-c:a aac -profile:a aac_low -b:a 128k "$outputPath"';
-    
-    debugPrint('[AudioMerger] 执行 FFmpeg: $command');
-    
-    final session = await FFmpegKit.execute(command);
-    final returnCode = await session.getReturnCode();
-    
-    if (ReturnCode.isSuccess(returnCode)) {
-      debugPrint('[AudioMerger] FFmpeg PCM -> AAC 成功');
-      return true;
-    } else {
-      final logs = await session.getAllLogsAsString();
-      debugPrint('[AudioMerger] FFmpeg PCM -> AAC 失败: $logs');
-      return false;
-    }
-  }
-
-  /// 嵌入字幕轨道 (FFmpeg)
-  Future<bool> _embedSubtitleFFmpeg(String audioPath, String srtPath, String outputPath) async {
-    final command = '-y -i "$audioPath" -i "$srtPath" '
-                    '-c copy -c:s mov_text "$outputPath"';
-    
-    debugPrint('[AudioMerger] 执行 FFmpeg: $command');
-    
-    final session = await FFmpegKit.execute(command);
-    final returnCode = await session.getReturnCode();
-    
-    if (ReturnCode.isSuccess(returnCode)) {
-      debugPrint('[AudioMerger] 嵌入字幕成功');
-      return true;
-    } else {
-      final logs = await session.getAllLogsAsString();
-      debugPrint('[AudioMerger] 嵌入字幕失败: $logs');
       return false;
     }
   }

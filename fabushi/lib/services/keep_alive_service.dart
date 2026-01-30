@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
@@ -10,9 +9,17 @@ import '../core/config/app_config.dart';
 import 'workmanager_keep_alive.dart';
 import 'memory_manager.dart';
 
+// 条件导入：仅在移动端使用 audio_service
+import 'keep_alive_service_mobile.dart'
+    if (dart.library.html) 'keep_alive_service_stub.dart'
+    as mobile;
+
 /// 全局标记 - AudioService 是否已经初始化过
 /// 这个标记独立于 KeepAliveService 实例，用于检测热重载场景
 bool _audioServiceInitialized = false;
+
+/// 是否支持后台保活（仅 Android/iOS）
+bool get _supportsKeepAlive => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
 /// 统一保活服务
 /// 
@@ -29,7 +36,7 @@ bool _audioServiceInitialized = false;
 /// 【与原实现的区别】
 /// - 原实现：just_audio + flutter_foreground_task 分离运行
 /// - 新实现：audio_service + just_audio 集成，统一管理MediaSession
-class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
+class KeepAliveAudioHandler {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isInitialized = false;
   bool _isPlaying = false;
@@ -85,9 +92,9 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
       // 设置初始音量（静音）
       await _audioPlayer.setVolume(_isMuted ? 0.0 : 0.3);
       
-      // 监听播放状态变化，同步到 audio_service
+      // 监听播放状态变化
       _audioPlayer.playerStateStream.listen((state) {
-        _broadcastState();
+        // 状态更新
       });
       
       // 监听播放位置变化
@@ -217,15 +224,6 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
     _loopCount = 0;
     _currentCountry = '';
     
-    // 设置媒体项信息（显示在系统媒体控制中心）
-    mediaItem.add(MediaItem(
-      id: 'keep_alive_dharani',
-      title: '全球法布施',
-      artist: _audioName,
-      album: '后台保活中',
-      duration: Duration.zero,
-    ));
-    
     // 异步加载音频
     _loadAndPlayAsync(audioUrl ?? defaultAudioUrl);
     
@@ -264,57 +262,10 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
       // 开始播放
       await _audioPlayer.play();
       
-      // 广播播放状态
-      _broadcastState();
-      
       debugPrint('✅ 保活音频已开始播放 (静音: $_isMuted)');
     } catch (e) {
       debugPrint('⚠️ 保活音频加载失败: $e');
     }
-  }
-
-  /// 广播播放状态到系统
-  void _broadcastState() {
-    final playing = _audioPlayer.playing;
-    final processingState = _audioPlayer.processingState;
-    
-    AudioProcessingState audioProcessingState;
-    switch (processingState) {
-      case ProcessingState.idle:
-        audioProcessingState = AudioProcessingState.idle;
-        break;
-      case ProcessingState.loading:
-        audioProcessingState = AudioProcessingState.loading;
-        break;
-      case ProcessingState.buffering:
-        audioProcessingState = AudioProcessingState.buffering;
-        break;
-      case ProcessingState.ready:
-        audioProcessingState = AudioProcessingState.ready;
-        break;
-      case ProcessingState.completed:
-        // 循环播放时，completed 也视为 ready
-        audioProcessingState = AudioProcessingState.ready;
-        break;
-    }
-    
-    playbackState.add(PlaybackState(
-      controls: [
-        MediaControl.pause,
-        MediaControl.stop,
-      ],
-      systemActions: const {
-        MediaAction.seek,
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
-      },
-      androidCompactActionIndices: const [0],
-      processingState: audioProcessingState,
-      playing: playing,
-      updatePosition: _audioPlayer.position,
-      bufferedPosition: _audioPlayer.bufferedPosition,
-      speed: _audioPlayer.speed,
-    ));
   }
 
   /// 启动心跳定时器
@@ -361,13 +312,8 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
       subtitle += ' | 🟢 杨升: $_loopbackCount次';
     }
     
-    mediaItem.add(MediaItem(
-      id: 'keep_alive_dharani',
-      title: '全球法布施',
-      artist: subtitle,
-      album: _audioName,
-      duration: _audioPlayer.duration ?? Duration.zero,
-    ));
+    // 仅在移动端更新媒体项
+    // Windows/macOS 不需要系统媒体控制中心
   }
 
   /// 更新发送进度
@@ -393,7 +339,6 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   /// 停止保活
-  @override
   Future<void> stop() async {
     if (!_isPlaying) return;
     
@@ -403,12 +348,6 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
     
     try {
       await _audioPlayer.stop();
-      
-      // 更新播放状态为已停止
-      playbackState.add(PlaybackState(
-        processingState: AudioProcessingState.idle,
-        playing: false,
-      ));
       
       debugPrint('🔇 保活音频已停止');
     } catch (e) {
@@ -436,20 +375,14 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
     await setMuted(!_isMuted);
   }
 
-  // BaseAudioHandler 必须实现的方法
-  @override
   Future<void> play() async {
     await _audioPlayer.play();
-    _broadcastState();
   }
 
-  @override
   Future<void> pause() async {
     await _audioPlayer.pause();
-    _broadcastState();
   }
 
-  @override
   Future<void> seek(Duration position) async {
     await _audioPlayer.seek(position);
   }
@@ -523,8 +456,11 @@ class KeepAliveService {
       return;
     }
     
-    if (kIsWeb || !(Platform.isAndroid || Platform.isIOS)) {
+    // 仅支持 Android/iOS
+    if (!_supportsKeepAlive) {
       debugPrint('⚠️ 当前平台不支持后台保活');
+      // 创建一个简化的本地处理器
+      _audioHandler = KeepAliveAudioHandler();
       return;
     }
     
@@ -538,28 +474,8 @@ class KeepAliveService {
         debugPrint('⚠️ AudioService 已在之前初始化，进入降级模式');
         await _initDegradedMode();
       } else {
-        // 首次初始化 AudioService
-        _audioHandler = await AudioService.init(
-          builder: () => KeepAliveAudioHandler(),
-          config: const AudioServiceConfig(
-            androidNotificationChannelId: 'com.ombhrum.fabushi.keep_alive',
-            androidNotificationChannelName: '全球法布施',
-            androidNotificationChannelDescription: '保持应用在后台运行，确保全球发送不中断',
-            // Android 通知配置 - 显示音乐播放器风格通知
-            // 注意：androidNotificationOngoing=true 要求 androidStopForegroundOnPause=true
-            // 我们使用 ongoing=false 以保持前台服务持续运行
-            androidNotificationOngoing: false,
-            androidStopForegroundOnPause: false, // 暂停时保持前台服务和通知
-            androidResumeOnClick: true,  // 点击通知返回应用
-            androidShowNotificationBadge: true,  // 显示角标
-            // 通知图标
-            androidNotificationIcon: 'mipmap/ic_launcher',
-            // 封面图压缩
-            artDownscaleWidth: 300,
-            artDownscaleHeight: 300,
-          ),
-        );
-        
+        // 首次初始化 AudioService（仅移动端）
+        _audioHandler = await mobile.initializeAudioService();
         _audioServiceInitialized = true;
         _isDegradedMode = false;
         debugPrint('✅ KeepAliveService 已初始化（正常模式）');
@@ -586,8 +502,8 @@ class KeepAliveService {
     _audioHandler = KeepAliveAudioHandler();
     debugPrint('🔄 创建本地音频处理器（降级模式）');
     
-    // 初始化备用通知插件
-    if (_fallbackNotifications == null) {
+    // 仅在移动端初始化备用通知
+    if (_supportsKeepAlive && _fallbackNotifications == null) {
       _fallbackNotifications = FlutterLocalNotificationsPlugin();
       
       // Android 初始化设置

@@ -1,11 +1,11 @@
 {
-  "name": "全球法布施",
-  "short_name": "全球法布施",
+  "name": "大乘",
+  "short_name": "大乘",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#FFFFFF",
   "theme_color": "#667eea",
-  "description": "全球法布施文件传输应用",
+  "description": "大乘文件传输应用",
   "orientation": "portrait-primary",
   "prefer_related_applications": false,
   "icons": [

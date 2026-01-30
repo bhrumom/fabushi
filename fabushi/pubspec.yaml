@@ -1,7 +1,7 @@
 name: global_dharma_sharing
-description: 全球法布施 - 佛教经文全球传播应用
+description: 大乘 - 佛教经文全球传播应用
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+1
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
@@ -140,6 +140,17 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   build_runner: ^2.4.13
   json_serializable: ^6.8.0
+  msix: ^3.16.1
+
+msix_config:
+  display_name: 大乘
+  publisher_display_name: "Mahayana"
+  publisher: "CN=Mahayana"
+  identity_name: "com.mahayana.app"
+  msix_version: 1.1.0.0
+  logo_path: assets/images/logo.png
+  capabilities: internetClient,location,microphone
+  # For more options, visit: https://pub.dev/packages/msix
 
 flutter:
   uses-material-design: true
@@ -152,6 +163,7 @@ flutter:
     - assets/earth_texture.jpg
     - assets/ip_data/
     - assets/sherpa_models/streaming-paraformer-zh-en/
+    - assets/privacy_policy.md
     # assets/models/ 已移除 - 模型文件（佛像、NLP模型等）通过网络按需下载
   
   fonts:

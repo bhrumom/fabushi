@@ -5,34 +5,39 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
-// 条件导入：仅在非 macOS 平台使用 sherpa_onnx
-import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+// 条件导入：仅在移动端使用 sherpa_onnx
+import 'sherpa_stt_service_mobile.dart'
+    if (dart.library.html) 'sherpa_stt_service_stub.dart'
+    as platform;
 
 /// 语音识别服务
 /// 
 /// 跨平台语音识别：
 /// - iOS/Android: 使用 Sherpa-ONNX 离线识别
 /// - macOS: 使用原生 Speech 框架（通过 MethodChannel）
+/// - Windows: 不支持
 class SherpaSTTService {
   static SherpaSTTService? _instance;
   static SherpaSTTService get instance => _instance ??= SherpaSTTService._();
   
   SherpaSTTService._();
   
-  // Sherpa-ONNX (iOS/Android)
-  sherpa.OnlineRecognizer? _recognizer;
-  sherpa.OnlineStream? _stream;
+  // 平台特定的识别器
+  dynamic _recognizer;
+  dynamic _stream;
   
   // macOS Speech Framework (通过 MethodChannel)
   static const _macOSChannel = MethodChannel('com.fabushi.app/speech');
   
   bool _isInitialized = false;
-  static bool _bindingsInitialized = false;
   bool _isRecognizing = false;
   String? _modelDir;
   
   /// 是否是 macOS 平台
   bool get _isMacOS => !kIsWeb && Platform.isMacOS;
+  
+  /// 是否是移动端（支持 Sherpa-ONNX）
+  bool get _isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
   
   /// 上次回调的文本（用于去重）
   String _lastCallbackText = '';
@@ -56,13 +61,23 @@ class SherpaSTTService {
   Future<bool> initialize() async {
     if (_isInitialized) return true;
     
+    // Windows 不支持语音识别
+    if (!kIsWeb && Platform.isWindows) {
+      debugPrint('[SherpaSTT] Windows 平台不支持语音识别');
+      onError?.call('Windows 平台暂不支持语音识别');
+      return false;
+    }
+    
     try {
       if (_isMacOS) {
         // macOS: 使用原生 Speech 框架
         return await _initializeMacOS();
-      } else {
+      } else if (_isMobile) {
         // iOS/Android: 使用 Sherpa-ONNX
         return await _initializeSherpa();
+      } else {
+        debugPrint('[SherpaSTT] 当前平台不支持语音识别');
+        return false;
       }
     } catch (e) {
       debugPrint('[SherpaSTT] 初始化失败: $e');
@@ -122,12 +137,7 @@ class SherpaSTTService {
   Future<bool> _initializeSherpa() async {
     try {
       // 首先初始化 sherpa-onnx FFI 绑定
-      if (!_bindingsInitialized) {
-        debugPrint('[SherpaSTT] 初始化 FFI 绑定...');
-        sherpa.initBindings();
-        _bindingsInitialized = true;
-        debugPrint('[SherpaSTT] FFI 绑定初始化成功');
-      }
+      platform.initSherpaBindings();
       
       onProgress?.call('正在准备语音识别引擎...');
       
@@ -140,23 +150,8 @@ class SherpaSTTService {
       
       onProgress?.call('正在初始化识别器...');
       
-      // 创建在线识别器配置
-      final config = sherpa.OnlineRecognizerConfig(
-        model: sherpa.OnlineModelConfig(
-          paraformer: sherpa.OnlineParaformerModelConfig(
-            encoder: '$_modelDir/encoder.int8.onnx',
-            decoder: '$_modelDir/decoder.int8.onnx',
-          ),
-          tokens: '$_modelDir/tokens.txt',
-          modelType: 'paraformer',
-        ),
-        enableEndpoint: true,
-        rule1MinTrailingSilence: 2.4,
-        rule2MinTrailingSilence: 1.2,
-        rule3MinUtteranceLength: 20,
-      );
-      
-      _recognizer = sherpa.OnlineRecognizer(config);
+      // 创建识别器
+      _recognizer = platform.createRecognizer(_modelDir!);
       
       _isInitialized = true;
       debugPrint('[SherpaSTT] Sherpa-ONNX 初始化成功');
@@ -243,9 +238,9 @@ class SherpaSTTService {
         debugPrint('[SherpaSTT] macOS 开始识别失败: $e');
         onError?.call('macOS 语音识别启动失败');
       }
-    } else {
+    } else if (_isMobile) {
       // iOS/Android: 使用 Sherpa-ONNX
-      _stream = _recognizer!.createStream();
+      _stream = platform.createStream(_recognizer);
       _isRecognizing = true;
       _lastCallbackText = '';
       debugPrint('[SherpaSTT] Sherpa-ONNX 开始识别');
@@ -261,7 +256,7 @@ class SherpaSTTService {
     if (_isMacOS) {
       // macOS: 通过 MethodChannel 发送音频数据
       _macOSChannel.invokeMethod('processAudio', audioData);
-    } else {
+    } else if (_isMobile) {
       // iOS/Android: 使用 Sherpa-ONNX
       _processAudioSherpa(audioData);
     }
@@ -275,25 +270,17 @@ class SherpaSTTService {
       final samples = _convertToFloat32(audioData);
       if (samples.isEmpty) return;
       
-      _stream!.acceptWaveform(samples: samples, sampleRate: 16000);
-      
-      while (_recognizer!.isReady(_stream!)) {
-        _recognizer!.decode(_stream!);
-      }
-      
-      final result = _recognizer!.getResult(_stream!);
-      final text = result.text.trim();
-      
-      if (text.isNotEmpty && text != _lastCallbackText) {
-        _lastCallbackText = text;
-        final isEndpoint = _recognizer!.isEndpoint(_stream!);
-        onResult?.call(text, isEndpoint);
-        
-        if (isEndpoint) {
-          _recognizer!.reset(_stream!);
-          _lastCallbackText = '';
+      platform.processAudio(_recognizer, _stream, samples, (text, isEndpoint) {
+        if (text.isNotEmpty && text != _lastCallbackText) {
+          _lastCallbackText = text;
+          onResult?.call(text, isEndpoint);
+          
+          if (isEndpoint) {
+            platform.reset(_recognizer, _stream);
+            _lastCallbackText = '';
+          }
         }
-      }
+      });
     } catch (e) {
       debugPrint('[SherpaSTT] 音频处理错误: $e');
     }
@@ -335,10 +322,11 @@ class SherpaSTTService {
         debugPrint('[SherpaSTT] macOS 停止识别失败: $e');
         return '';
       }
-    } else {
+    } else if (_isMobile) {
       // iOS/Android: 使用 Sherpa-ONNX
-      return _stopRecognizingSherpa();
+      return await _stopRecognizingSherpa();
     }
+    return '';
   }
   
   /// Sherpa-ONNX 停止识别
@@ -346,16 +334,8 @@ class SherpaSTTService {
     if (_stream == null || _recognizer == null) return '';
     
     try {
-      _stream!.inputFinished();
-      
-      while (_recognizer!.isReady(_stream!)) {
-        _recognizer!.decode(_stream!);
-      }
-      
-      final result = _recognizer!.getResult(_stream!);
-      final text = result.text.trim();
-      
-      _stream!.free();
+      final text = platform.stopRecognizing(_recognizer, _stream);
+      platform.freeStream(_stream);
       _stream = null;
       
       debugPrint('[SherpaSTT] Sherpa-ONNX 停止识别，结果: $text');
@@ -370,8 +350,8 @@ class SherpaSTTService {
   void reset() {
     if (_isMacOS) {
       _macOSChannel.invokeMethod('reset');
-    } else if (_stream != null && _recognizer != null) {
-      _recognizer!.reset(_stream!);
+    } else if (_isMobile && _stream != null && _recognizer != null) {
+      platform.reset(_recognizer, _stream);
     }
     _lastCallbackText = '';
   }
@@ -383,11 +363,15 @@ class SherpaSTTService {
     
     if (_isMacOS) {
       _macOSChannel.invokeMethod('dispose');
-    } else {
-      _stream?.free();
-      _stream = null;
-      _recognizer?.free();
-      _recognizer = null;
+    } else if (_isMobile) {
+      if (_stream != null) {
+        platform.freeStream(_stream);
+        _stream = null;
+      }
+      if (_recognizer != null) {
+        platform.freeRecognizer(_recognizer);
+        _recognizer = null;
+      }
     }
   }
 }

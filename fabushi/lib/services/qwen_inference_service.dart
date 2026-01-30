@@ -2,7 +2,11 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
-import 'package:llama_cpp_dart/llama_cpp_dart.dart';
+
+// 条件导入：仅在支持的平台使用 llama_cpp_dart
+import 'qwen_inference_service_mobile.dart'
+    if (dart.library.html) 'qwen_inference_service_stub.dart'
+    as platform;
 
 /// Qwen 推理服务
 /// 
@@ -20,7 +24,12 @@ class QwenInferenceService {
 
   bool _isInitialized = false;
   String? _modelPath;
-  LlamaParent? _llamaParent;
+  
+  /// 平台特定的推理实现
+  dynamic _platformInference;
+
+  /// 是否支持本地推理（仅 Android/iOS）
+  bool get _isSupported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   /// 是否已初始化
   bool get isInitialized => _isInitialized;
@@ -36,14 +45,20 @@ class QwenInferenceService {
     String modelPath, {
     int nCtx = 2048,
   }) async {
+    if (!_isSupported) {
+      debugPrint('QwenInferenceService: 当前平台不支持本地推理');
+      return;
+    }
+
     if (_isInitialized && _modelPath == modelPath) {
       debugPrint('QwenInferenceService: 模型已加载，跳过重复初始化');
       return;
     }
 
     // 如果之前有模型，先释放
-    if (_llamaParent != null) {
-      await _disposeParent();
+    if (_platformInference != null) {
+      await platform.disposeInference(_platformInference);
+      _platformInference = null;
     }
 
     debugPrint('QwenInferenceService: 开始加载模型: $modelPath');
@@ -55,35 +70,14 @@ class QwenInferenceService {
     }
     
     try {
-      // 配置模型参数
-      final modelParams = ModelParams();
-      
-      // 配置上下文参数（使用级联操作符设置属性）
-      final contextParams = ContextParams()
-        ..nCtx = nCtx;
-      
-      // 配置采样参数（使用默认值）
-      final samplingParams = SamplerParams();
-      
-      // 创建加载命令
-      final loadCommand = LlamaLoad(
-        path: modelPath,
-        modelParams: modelParams,
-        contextParams: contextParams,
-        samplingParams: samplingParams,
-      );
-      
-      // 创建 LlamaParent（在 Isolate 中运行）
-      _llamaParent = LlamaParent(loadCommand);
-      await _llamaParent!.init();
-      
+      _platformInference = await platform.initializeModel(modelPath, nCtx);
       _modelPath = modelPath;
       _isInitialized = true;
       debugPrint('QwenInferenceService: 模型加载成功');
     } catch (e) {
       debugPrint('QwenInferenceService: 模型加载失败: $e');
       _isInitialized = false;
-      _llamaParent = null;
+      _platformInference = null;
       rethrow;
     }
   }
@@ -100,19 +94,7 @@ class QwenInferenceService {
     
     debugPrint('QwenInferenceService: 生成文本，prompt长度: ${prompt.length}');
     
-    // 如果需要流式回调，监听 stream
-    StreamSubscription<String>? subscription;
-    if (onToken != null) {
-      subscription = _llamaParent!.stream.listen(onToken);
-    }
-    
-    try {
-      // 发送提示并等待完成
-      final result = await _llamaParent!.sendPrompt(prompt);
-      return result ?? '';
-    } finally {
-      subscription?.cancel();
-    }
+    return await platform.generate(_platformInference, prompt, onToken);
   }
   
   /// 流式生成文本
@@ -123,17 +105,13 @@ class QwenInferenceService {
     
     debugPrint('QwenInferenceService: 流式生成，prompt长度: ${prompt.length}');
     
-    // 发送提示
-    _llamaParent!.sendPrompt(prompt);
-    
-    // 返回 token 流
-    return _llamaParent!.stream;
+    return platform.generateStream(_platformInference, prompt);
   }
   
   /// 停止当前生成
   Future<void> stopGeneration() async {
-    if (_llamaParent != null) {
-      await _llamaParent!.stop();
+    if (_platformInference != null) {
+      await platform.stopGeneration(_platformInference);
     }
   }
 
@@ -145,9 +123,11 @@ class QwenInferenceService {
   /// 
   /// 返回：嵌入向量
   Future<List<double>> getEmbedding(String text) async {
-    _ensureInitialized();
+    if (!_isSupported || !_isInitialized) {
+      // 使用占位实现
+      return _generatePlaceholderEmbedding(text);
+    }
     
-    // llama_cpp_dart 0.0.9 不支持嵌入功能，使用占位实现
     return _generatePlaceholderEmbedding(text);
   }
 
@@ -162,21 +142,20 @@ class QwenInferenceService {
 
   /// 释放资源
   Future<void> dispose() async {
-    await _disposeParent();
+    if (_platformInference != null) {
+      await platform.disposeInference(_platformInference);
+      _platformInference = null;
+    }
     _isInitialized = false;
     _modelPath = null;
     debugPrint('QwenInferenceService: 资源已释放');
   }
   
-  Future<void> _disposeParent() async {
-    if (_llamaParent != null) {
-      await _llamaParent!.dispose();
-      _llamaParent = null;
-    }
-  }
-  
   void _ensureInitialized() {
-    if (!_isInitialized || _llamaParent == null) {
+    if (!_isSupported) {
+      throw StateError('QwenInferenceService 当前平台不支持');
+    }
+    if (!_isInitialized || _platformInference == null) {
       throw StateError('QwenInferenceService 未初始化，请先调用 initialize()');
     }
   }

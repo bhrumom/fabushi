@@ -1,6 +1,11 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:tobias/tobias.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+// 条件导入：仅在移动端使用 tobias
+import 'alipay_service_mobile.dart'
+    if (dart.library.html) 'alipay_service_stub.dart'
+    as platform;
 
 class AlipayService {
   // 单例模式
@@ -8,14 +13,18 @@ class AlipayService {
   factory AlipayService() => _instance;
   AlipayService._internal();
 
-  // Tobias实例
-  final Tobias _tobias = Tobias();
+  /// 是否支持支付宝 SDK（仅 Android/iOS）
+  bool get _isSdkSupported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   /// 初始化支付宝SDK
   Future<Map<String, dynamic>> initAlipay() async {
     try {
       if (kIsWeb) {
         return {'success': false, 'message': '支付宝APP支付不支持Web平台'};
+      }
+
+      if (!_isSdkSupported) {
+        return {'success': false, 'message': '当前平台不支持支付宝APP支付'};
       }
 
       debugPrint('初始化支付宝SDK');
@@ -41,6 +50,10 @@ class AlipayService {
         return {'success': false, 'message': '支付宝SDK授权不支持Web平台'};
       }
 
+      if (!_isSdkSupported) {
+        return {'success': false, 'message': '当前平台不支持支付宝SDK授权'};
+      }
+
       // 检查支付宝是否安装
       bool isInstalled = await isAlipayInstalled();
       if (!isInstalled) {
@@ -49,8 +62,8 @@ class AlipayService {
 
       debugPrint('开始支付宝SDK授权登录');
 
-      // 调用支付宝SDK进行授权
-      final result = await _tobias.auth(authString);
+      // 调用平台特定的授权方法
+      final result = await platform.authWithTobias(authString);
 
       debugPrint('支付宝授权结果: $result');
 
@@ -138,6 +151,10 @@ class AlipayService {
         return {'success': false, 'message': '支付宝APP支付不支持Web平台'};
       }
 
+      if (!_isSdkSupported) {
+        return {'success': false, 'message': '当前平台不支持支付宝APP支付'};
+      }
+
       // 验证支付参数
       if (!validatePayParameters(orderString)) {
         return {'success': false, 'message': '支付参数验证失败'};
@@ -145,8 +162,8 @@ class AlipayService {
 
       debugPrint('发起支付宝APP支付，订单字符串: ${orderString.substring(0, 50)}...');
 
-      // 调用支付宝SDK进行支付
-      final result = await _tobias.pay(orderString);
+      // 调用平台特定的支付方法
+      final result = await platform.payWithTobias(orderString);
 
       debugPrint('支付宝支付结果: $result');
 
@@ -224,9 +241,9 @@ class AlipayService {
 
   /// 检查是否安装了支付宝
   Future<bool> isAlipayInstalled() async {
+    if (!_isSdkSupported) return false;
     try {
-      // 使用Tobias实例的检查安装属性（异步）
-      return await _tobias.isAliPayInstalled;
+      return await platform.isAlipayInstalled();
     } catch (e) {
       debugPrint('检查支付宝安装状态异常: $e');
       return false;
@@ -235,13 +252,16 @@ class AlipayService {
 
   /// 获取支付宝SDK版本
   Future<String> getAlipayVersion() async {
-    try {
-      if (kIsWeb) {
-        return 'Web平台不支持';
-      }
+    if (kIsWeb) {
+      return 'Web平台不支持';
+    }
 
-      // 使用Tobias实例的异步版本属性
-      return await _tobias.aliPayVersion;
+    if (!_isSdkSupported) {
+      return '当前平台不支持';
+    }
+
+    try {
+      return await platform.getAlipayVersion();
     } catch (e) {
       debugPrint('获取支付宝版本失败: $e');
       return '获取版本失败';
