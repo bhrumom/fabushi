@@ -34,8 +34,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          name: 大乘 (Mahayana) ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
           files: |
             build/windows/runner/Release/*.msix
-          generate_release_notes: true
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
