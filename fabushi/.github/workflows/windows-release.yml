@@ -29,6 +29,17 @@ jobs:
       - name: Flutter version
         run: flutter --version
       
+      - name: Use Windows-specific pubspec
+        shell: pwsh
+        run: |
+          # Use Windows-specific pubspec that excludes mobile-only packages
+          if (Test-Path "pubspec_windows.yaml") {
+            Copy-Item pubspec_windows.yaml pubspec.yaml -Force
+            Write-Host "Using pubspec_windows.yaml for Windows build"
+          } else {
+            Write-Host "pubspec_windows.yaml not found, using default pubspec.yaml"
+          }
+      
       - name: Get dependencies
         run: flutter pub get
       
