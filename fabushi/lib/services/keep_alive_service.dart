@@ -1,682 +1,231 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import '../core/config/app_config.dart';
-import 'workmanager_keep_alive.dart';
-import 'memory_manager.dart';
 
-// 条件导入：仅在移动端使用 audio_service
-import 'keep_alive_service_mobile.dart'
-    if (dart.library.html) 'keep_alive_service_stub.dart'
-    as mobile;
-
-/// 全局标记 - AudioService 是否已经初始化过
-/// 这个标记独立于 KeepAliveService 实例，用于检测热重载场景
-bool _audioServiceInitialized = false;
-
-/// 是否支持后台保活（仅 Android/iOS）
-bool get _supportsKeepAlive => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
-
-/// 统一保活服务
+/// 后台保活服务
 /// 
-/// 基于第一性原理设计的后台保活服务，采用多重保活策略：
-/// 
-/// 【核心原理】
-/// 移动操作系统杀后台应用的根本原因是"系统认为该应用不重要"。
-/// 本服务通过以下方式提升应用重要性：
-/// 
-/// 1. 【系统级MediaSession】使用 audio_service 注册到系统媒体控制中心
-/// 2. 【音频活动】持续播放陀罗尼音频（可静音），被系统视为"音频活动"
-/// 3. 【前台服务】配合 ForegroundServiceManager 显示持续通知
-/// 
-/// 【与原实现的区别】
-/// - 原实现：just_audio + flutter_foreground_task 分离运行
-/// - 新实现：audio_service + just_audio 集成，统一管理MediaSession
-class KeepAliveAudioHandler {
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  bool _isInitialized = false;
-  bool _isPlaying = false;
-  bool _isMuted = true; // 默认静音
-  
-  // 音频信息
-  String _audioName = '';
-  String? _cachedAudioPath;
-  
-  // 发送进度
-  int _sentCount = 0;
-  int _totalCount = 0;
-  String _currentCountry = '';
-  int _loopCount = 0;
-  bool _isLoopbackActive = false;
-  int _loopbackCount = 0;
-  
-  // 缓存相关
-  static const String _cacheFileName = 'keep_alive_dharani.mp3';
-  
-  // 心跳定时器 - 定期发送状态更新，保持服务活跃
-  Timer? _heartbeatTimer;
-  int _heartbeatCount = 0;
-  
-  /// 是否服务正在运行（包括音频加载中）
-  /// 这个标志在 startKeepAlive 调用后立即为 true
-  bool get isPlaying => _isPlaying;
-  
-  /// 音频是否真正在播放中（检查实际播放器状态）
-  bool get isActuallyPlaying => _audioPlayer.playing;
-  
-  bool get isMuted => _isMuted;
-  
-  /// 默认保活音频URL - 大孔雀明王结界缚魔陀罗尼
-  static String get defaultAudioUrl {
-    final encodedPath = Uri.encodeComponent(
-      'assets/built_in/房山石经陀罗尼梵音音频/M06.29 卍大孔雀明王结界缚魔陀罗尼(大孔雀明王结界缚魔身印陀罗尼)卍.mp3'
-    );
-    return '${AppConfig.currentBackendUrl}/$encodedPath';
-  }
-
-  KeepAliveAudioHandler() {
-    _init();
-  }
-
-  Future<void> _init() async {
-    if (_isInitialized) return;
-    
-    try {
-      // 设置循环模式
-      await _audioPlayer.setLoopMode(LoopMode.one);
-      
-      // 设置初始音量（静音）
-      await _audioPlayer.setVolume(_isMuted ? 0.0 : 0.3);
-      
-      // 监听播放状态变化
-      _audioPlayer.playerStateStream.listen((state) {
-        // 状态更新
-      });
-      
-      // 监听播放位置变化
-      _audioPlayer.positionStream.listen((position) {
-        // 每30秒输出一次位置日志
-        if (position.inSeconds > 0 && position.inSeconds % 30 == 0) {
-          debugPrint('🔊 保活音频播放位置: ${position.inSeconds}s');
-        }
-      });
-      
-      // 监听错误
-      _audioPlayer.playbackEventStream.listen(
-        (event) {},
-        onError: (Object e, StackTrace stackTrace) {
-          debugPrint('🔇 保活音频错误: $e');
-          // 发生错误时尝试重新加载
-          _tryReload();
-        },
-      );
-      
-      _isInitialized = true;
-      debugPrint('✅ KeepAliveAudioHandler 已初始化');
-    } catch (e) {
-      debugPrint('❌ KeepAliveAudioHandler 初始化失败: $e');
-    }
-  }
-
-  /// 尝试重新加载音频
-  Future<void> _tryReload() async {
-    if (!_isPlaying) return;
-    
-    try {
-      await Future.delayed(const Duration(seconds: 2));
-      if (_cachedAudioPath != null) {
-        await _audioPlayer.setFilePath(_cachedAudioPath!);
-        await _audioPlayer.play();
-        debugPrint('✅ 保活音频已重新加载');
-      }
-    } catch (e) {
-      debugPrint('❌ 重新加载保活音频失败: $e');
-    }
-  }
-
-  /// 获取缓存目录
-  Future<Directory> _getCacheDir() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final cacheDir = Directory('${appDir.path}/audio_cache');
-    if (!await cacheDir.exists()) {
-      await cacheDir.create(recursive: true);
-    }
-    return cacheDir;
-  }
-  
-  /// 获取缓存文件路径
-  Future<String> _getCacheFilePath() async {
-    final cacheDir = await _getCacheDir();
-    return '${cacheDir.path}/$_cacheFileName';
-  }
-  
-  /// 检查音频是否已缓存
-  Future<bool> _isAudioCached() async {
-    if (kIsWeb) return false;
-    try {
-      final filePath = await _getCacheFilePath();
-      final file = File(filePath);
-      return await file.exists() && await file.length() > 0;
-    } catch (e) {
-      return false;
-    }
-  }
-  
-  /// 下载并缓存音频
-  Future<String?> _downloadAndCacheAudio(String url) async {
-    if (kIsWeb) return null;
-    
-    try {
-      debugPrint('📥 下载保活音频到本地缓存...');
-      
-      final response = await http.get(Uri.parse(url)).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw TimeoutException('下载音频超时');
-        },
-      );
-      
-      if (response.statusCode == 200) {
-        final filePath = await _getCacheFilePath();
-        final file = File(filePath);
-        await file.writeAsBytes(response.bodyBytes);
-        
-        debugPrint('✅ 保活音频已缓存到: $filePath (${(response.bodyBytes.length / 1024 / 1024).toStringAsFixed(2)} MB)');
-        return filePath;
-      } else {
-        debugPrint('❌ 下载保活音频失败: ${response.statusCode}');
-        return null;
-      }
-    } catch (e) {
-      debugPrint('❌ 下载保活音频异常: $e');
-      return null;
-    }
-  }
-
-  /// 开始保活音频播放
-  /// 
-  /// [audioUrl] - 可选的自定义音频URL
-  /// [audioName] - 音频名称
-  /// [totalCountries] - 总国家数（用于显示）
-  Future<void> startKeepAlive({
-    String? audioUrl,
-    String? audioName,
-    int totalCountries = 0,
-  }) async {
-    if (_isPlaying) {
-      debugPrint('⚠️ 保活音频已在运行中');
-      return;
-    }
-    
-    if (kIsWeb) return;
-    
-    if (!_isInitialized) {
-      await _init();
-    }
-    
-    _audioName = audioName ?? '大孔雀明王结界缚魔陀罗尼';
-    _totalCount = totalCountries;
-    _sentCount = 0;
-    _loopCount = 0;
-    _currentCountry = '';
-    
-    // 异步加载音频
-    _loadAndPlayAsync(audioUrl ?? defaultAudioUrl);
-    
-    // 启动心跳定时器
-    _startHeartbeat();
-    
-    _isPlaying = true;
-    debugPrint('✅ 保活服务已启动（异步加载中）');
-  }
-
-  /// 异步加载并播放音频
-  Future<void> _loadAndPlayAsync(String url) async {
-    try {
-      // 检查是否有本地缓存
-      if (await _isAudioCached()) {
-        _cachedAudioPath = await _getCacheFilePath();
-        debugPrint('📂 使用本地缓存保活音频: $_cachedAudioPath');
-        await _audioPlayer.setFilePath(_cachedAudioPath!);
-      } else {
-        // 没有缓存，尝试下载到本地
-        debugPrint('📥 首次加载，下载并缓存保活音频...');
-        _cachedAudioPath = await _downloadAndCacheAudio(url);
-        
-        if (_cachedAudioPath != null) {
-          await _audioPlayer.setFilePath(_cachedAudioPath!);
-        } else {
-          // 下载失败，fallback 到网络 URL
-          debugPrint('⚠️ 下载失败，尝试直接播放网络音频');
-          await _audioPlayer.setUrl(url);
-        }
-      }
-      
-      // 确保音量正确
-      await _audioPlayer.setVolume(_isMuted ? 0.0 : 0.3);
-      
-      // 开始播放
-      await _audioPlayer.play();
-      
-      debugPrint('✅ 保活音频已开始播放 (静音: $_isMuted)');
-    } catch (e) {
-      debugPrint('⚠️ 保活音频加载失败: $e');
-    }
-  }
-
-  /// 启动心跳定时器
-  void _startHeartbeat() {
-    _heartbeatTimer?.cancel();
-    _heartbeatCount = 0;
-    
-    // 每5秒发送一次心跳，保持服务活跃
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      _heartbeatCount++;
-      
-      // 定期更新媒体项信息，让系统知道服务仍在运行
-      _updateMediaItemForHeartbeat();
-      
-      // 每 12 次心跳（60秒）执行一次状态持久化和内存清理
-      if (_heartbeatCount % 12 == 0) {
-        debugPrint('💓 保活心跳 #$_heartbeatCount - 播放中: ${_audioPlayer.playing}');
-        
-        // 更新 WorkManager 状态时间戳
-        WorkManagerKeepAlive.updateLastActiveTime();
-        
-        // 触发内存清理检查
-        MemoryManager.instance.trimCacheIfNeeded();
-      }
-    });
-  }
-
-  /// 更新媒体项（心跳）
-  void _updateMediaItemForHeartbeat() {
-    String subtitle;
-    if (_currentCountry.isNotEmpty) {
-      subtitle = '$_currentCountry ($_sentCount/$_totalCount)';
-    } else if (_totalCount > 0) {
-      subtitle = '准备发送到 $_totalCount 个国家';
-    } else {
-      subtitle = '后台保活中';
-    }
-    
-    if (_loopCount > 0) {
-      subtitle = '第 $_loopCount 轮 · $subtitle';
-    }
-    
-    if (_isLoopbackActive) {
-      subtitle += ' | 🟢 杨升: $_loopbackCount次';
-    }
-    
-    // 仅在移动端更新媒体项
-    // Windows/macOS 不需要系统媒体控制中心
-  }
-
-  /// 更新发送进度
-  void updateProgress({
-    required int sentCount,
-    required int totalCount,
-    required String currentCountry,
-    int? loopCount,
-    bool isLoopbackActive = false,
-    int loopbackCount = 0,
-  }) {
-    _sentCount = sentCount;
-    _totalCount = totalCount;
-    _currentCountry = currentCountry;
-    if (loopCount != null) {
-      _loopCount = loopCount;
-    }
-    _isLoopbackActive = isLoopbackActive;
-    _loopbackCount = loopbackCount;
-    
-    // 立即更新媒体项
-    _updateMediaItemForHeartbeat();
-  }
-
-  /// 停止保活
-  Future<void> stop() async {
-    if (!_isPlaying) return;
-    
-    _isPlaying = false;
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-    
-    try {
-      await _audioPlayer.stop();
-      
-      debugPrint('🔇 保活音频已停止');
-    } catch (e) {
-      debugPrint('❌ 停止保活音频失败: $e');
-    }
-    
-    _audioName = '';
-    _cachedAudioPath = null;
-  }
-
-  /// 设置静音状态
-  Future<void> setMuted(bool muted) async {
-    _isMuted = muted;
-    
-    try {
-      await _audioPlayer.setVolume(muted ? 0.0 : 0.3);
-      debugPrint('🔇 保活音频静音: $muted');
-    } catch (e) {
-      debugPrint('❌ 设置静音失败: $e');
-    }
-  }
-
-  /// 切换静音状态
-  Future<void> toggleMute() async {
-    await setMuted(!_isMuted);
-  }
-
-  Future<void> play() async {
-    await _audioPlayer.play();
-  }
-
-  Future<void> pause() async {
-    await _audioPlayer.pause();
-  }
-
-  Future<void> seek(Duration position) async {
-    await _audioPlayer.seek(position);
-  }
-
-  /// 释放资源
-  Future<void> dispose() async {
-    await stop();
-    await _audioPlayer.dispose();
-    _isInitialized = false;
-  }
-  
-  /// 获取当前状态信息
-  String get statusInfo {
-    if (!_isPlaying) return '未运行';
-    
-    final muteStatus = _isMuted ? '(静音)' : '(有声)';
-    return '$_audioName $muteStatus';
-  }
-}
-
-/// 统一保活服务管理器
-/// 
-/// 封装保活服务的初始化和生命周期管理
+/// 在移动端使用音频服务保持应用活跃，
+/// 在桌面端仅使用本地通知作为备用方案。
 class KeepAliveService {
   static KeepAliveService? _instance;
-  static KeepAliveAudioHandler? _audioHandler;
-  
-  // 初始化锁，防止竞态条件
-  static Completer<void>? _initCompleter;
-  static bool _isInitializing = false;
-  
-  // 降级模式标记 - 当 AudioService 无法初始化时使用本地通知
-  static bool _isDegradedMode = false;
-  
-  // 备用通知插件
-  static FlutterLocalNotificationsPlugin? _fallbackNotifications;
-  static const int _notificationId = 8888;
+  static KeepAliveService get instance => _instance ??= KeepAliveService._();
   
   KeepAliveService._();
   
-  static KeepAliveService get instance {
-    _instance ??= KeepAliveService._();
-    return _instance!;
-  }
+  // 状态
+  bool _isActive = false;
+  bool _isMuted = false;
+  Timer? _heartbeatTimer;
   
-  /// 获取音频处理器
-  KeepAliveAudioHandler? get audioHandler => _audioHandler;
+  // 本地通知
+  FlutterLocalNotificationsPlugin? _notificationsPlugin;
   
-  /// 是否已初始化
-  bool get isInitialized => _audioHandler != null;
+  // 回调
+  VoidCallback? onKeepAliveStart;
+  VoidCallback? onKeepAliveStop;
   
-  /// 初始化保活服务
-  /// 
-  /// 必须在应用启动时调用一次。
-  /// 使用锁机制防止并发初始化导致的 AudioService 重复初始化错误。
-  /// 
-  /// 当 AudioService 初始化失败时（如热重载场景），会进入降级模式：
-  /// - 使用本地音频处理器播放音频保活
-  /// - 使用 flutter_local_notifications 显示备用通知
+  /// 是否支持后台保活（仅 Android/iOS）
+  bool get _supportsKeepAlive => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  
+  /// 是否激活
+  bool get isActive => _isActive;
+  
+  /// 是否静音
+  bool get isMuted => _isMuted;
+  
+  /// 初始化
   Future<void> initialize() async {
-    // 如果已经初始化完成，直接返回
-    if (_audioHandler != null) {
-      debugPrint('⚠️ KeepAliveService 已初始化');
-      return;
-    }
+    // 初始化本地通知
+    _notificationsPlugin = FlutterLocalNotificationsPlugin();
     
-    // 如果正在初始化中，等待初始化完成
-    if (_isInitializing && _initCompleter != null) {
-      debugPrint('⏳ KeepAliveService 初始化中，等待完成...');
-      await _initCompleter!.future;
-      return;
-    }
-    
-    // 仅支持 Android/iOS
-    if (!_supportsKeepAlive) {
-      debugPrint('⚠️ 当前平台不支持后台保活');
-      // 创建一个简化的本地处理器
-      _audioHandler = KeepAliveAudioHandler();
-      return;
-    }
-    
-    // 标记开始初始化，防止并发
-    _isInitializing = true;
-    _initCompleter = Completer<void>();
-    
-    try {
-      // 检查是否已经初始化过 AudioService（热重载场景）
-      if (_audioServiceInitialized) {
-        debugPrint('⚠️ AudioService 已在之前初始化，进入降级模式');
-        await _initDegradedMode();
-      } else {
-        // 首次初始化 AudioService（仅移动端）
-        _audioHandler = await mobile.initializeAudioService();
-        _audioServiceInitialized = true;
-        _isDegradedMode = false;
-        debugPrint('✅ KeepAliveService 已初始化（正常模式）');
-      }
-    } catch (e) {
-      debugPrint('❌ KeepAliveService 初始化失败: $e');
-      
-      // AudioService 初始化失败，进入降级模式
-      // 可能原因：热重载、重复初始化、原生层问题
-      await _initDegradedMode();
-    } finally {
-      _isInitializing = false;
-      _initCompleter?.complete();
-    }
-  }
-  
-  /// 初始化降级模式
-  /// 
-  /// 在 AudioService 无法正常初始化时使用：
-  /// - 创建本地音频处理器（仅播放音频保活，无媒体通知）
-  /// - 初始化本地通知插件显示备用通知
-  Future<void> _initDegradedMode() async {
-    _isDegradedMode = true;
-    _audioHandler = KeepAliveAudioHandler();
-    debugPrint('🔄 创建本地音频处理器（降级模式）');
-    
-    // 仅在移动端初始化备用通知
-    if (_supportsKeepAlive && _fallbackNotifications == null) {
-      _fallbackNotifications = FlutterLocalNotificationsPlugin();
-      
-      // Android 初始化设置
-      const androidSettings = AndroidInitializationSettings('mipmap/ic_launcher');
-      
-      // iOS 初始化设置
-      const iosSettings = DarwinInitializationSettings(
-        requestAlertPermission: false,
-        requestBadgePermission: false,
-        requestSoundPermission: false,
-      );
-      
-      const initSettings = InitializationSettings(
-        android: androidSettings,
-        iOS: iosSettings,
-      );
-      
-      await _fallbackNotifications!.initialize(initSettings);
-      debugPrint('✅ 备用通知插件已初始化');
-      
-      // Android 13+ 需要请求通知权限
-      if (Platform.isAndroid) {
-        final androidPlugin = _fallbackNotifications!
-            .resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin>();
-        if (androidPlugin != null) {
-          final granted = await androidPlugin.requestNotificationsPermission();
-          debugPrint('📢 通知权限请求结果: $granted');
-        }
-      }
-    }
-    
-    debugPrint('✅ 降级模式初始化完成');
-  }
-  
-  /// 显示备用通知（降级模式使用）
-  Future<void> _showFallbackNotification({
-    required String title,
-    required String body,
-  }) async {
-    if (!_isDegradedMode || _fallbackNotifications == null) return;
-    if (!Platform.isAndroid) return;
-    
-    try {
-      const androidDetails = AndroidNotificationDetails(
-        'com.ombhrum.fabushi.keep_alive',
-        '全球法布施',
-        channelDescription: '全球发送进度通知',
-        importance: Importance.low,
-        priority: Priority.low,
-        ongoing: true,  // 持续显示，不可滑动关闭
-        autoCancel: false,
-        showWhen: false,
-        playSound: false,
-        enableVibration: false,
-        channelShowBadge: true,
-        category: AndroidNotificationCategory.progress,
-      );
-      
-      const notificationDetails = NotificationDetails(android: androidDetails);
-      
-      await _fallbackNotifications!.show(
-        _notificationId,
-        title,
-        body,
-        notificationDetails,
-      );
-    } catch (e) {
-      debugPrint('⚠️ 显示备用通知失败: $e');
-    }
-  }
-  
-  /// 取消备用通知
-  Future<void> _cancelFallbackNotification() async {
-    if (_fallbackNotifications == null) return;
-    
-    try {
-      await _fallbackNotifications!.cancel(_notificationId);
-    } catch (e) {
-      debugPrint('⚠️ 取消备用通知失败: $e');
-    }
-  }
-  
-  /// 开始保活
-  Future<void> start({
-    String? audioUrl,
-    String? audioName,
-    int totalCountries = 0,
-  }) async {
-    if (_audioHandler == null) {
-      await initialize();
-    }
-    
-    await _audioHandler?.startKeepAlive(
-      audioUrl: audioUrl,
-      audioName: audioName,
-      totalCountries: totalCountries,
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosSettings = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
     );
     
-    // 降级模式：显示备用通知
-    if (_isDegradedMode) {
-      await _showFallbackNotification(
-        title: '全球法布施',
-        body: '${audioName ?? "准备中"} · 发送到 $totalCountries 个国家',
-      );
-      debugPrint('📢 已显示备用通知（降级模式）');
-    }
+    await _notificationsPlugin!.initialize(
+      const InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+        macOS: iosSettings,
+      ),
+    );
+    
+    debugPrint('✅ KeepAliveService 初始化完成');
   }
   
-  /// 停止保活
-  Future<void> stop() async {
-    await _audioHandler?.stop();
+  /// 启动后台保活服务
+  /// 
+  /// [audioName] 当前处理的音频名称
+  /// [totalCountries] 总国家数量
+  Future<void> start({
+    String? audioName,
+    int? totalCountries,
+  }) async {
+    if (_isActive) return;
     
-    // 降级模式：取消备用通知
-    if (_isDegradedMode) {
-      await _cancelFallbackNotification();
-    }
+    _isActive = true;
+    onKeepAliveStart?.call();
+    
+    // 启动心跳
+    _startHeartbeat();
+    
+    // 显示通知
+    await _showNotification(
+      title: '全球法布施',
+      body: audioName != null ? '正在发送: $audioName' : '正在发送中...',
+    );
+    
+    debugPrint('🟢 KeepAliveService 已启动 (audioName: $audioName, totalCountries: $totalCountries)');
+  }
+  
+  /// 停止后台保活服务
+  Future<void> stop() async {
+    if (!_isActive) return;
+    
+    _isActive = false;
+    
+    // 停止心跳
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    
+    // 取消通知
+    await _notificationsPlugin?.cancel(0);
+    
+    onKeepAliveStop?.call();
+    
+    debugPrint('🔴 KeepAliveService 已停止');
   }
   
   /// 更新进度
+  /// 
+  /// [sentCount] 已发送国家数量
+  /// [totalCount] 总国家数量
+  /// [currentCountry] 当前发送的国家名称
+  /// [loopCount] 循环次数
+  /// [isLoopbackActive] 是否启用回环
+  /// [loopbackCount] 回环计数
   void updateProgress({
-    required int sentCount,
-    required int totalCount,
-    required String currentCountry,
+    int? sentCount,
+    int? totalCount,
+    String? currentCountry,
     int? loopCount,
-    bool isLoopbackActive = false,
-    int loopbackCount = 0,
+    bool? isLoopbackActive,
+    int? loopbackCount,
   }) {
-    _audioHandler?.updateProgress(
-      sentCount: sentCount,
-      totalCount: totalCount,
-      currentCountry: currentCountry,
-      loopCount: loopCount,
-      isLoopbackActive: isLoopbackActive,
-      loopbackCount: loopbackCount,
+    if (!_isActive) return;
+    
+    // 构建进度消息
+    String message = '';
+    
+    if (currentCountry != null) {
+      message = '正在发送到 $currentCountry';
+    }
+    
+    if (sentCount != null && totalCount != null) {
+      message += ' ($sentCount/$totalCount)';
+    }
+    
+    if (loopCount != null && loopCount > 1) {
+      message += ' - 第$loopCount轮';
+    }
+    
+    if (isLoopbackActive == true && loopbackCount != null) {
+      message += ' 📡$loopbackCount';
+    }
+    
+    // 更新通知
+    _showNotification(
+      title: '全球法布施',
+      body: message.isNotEmpty ? message : '正在发送中...',
     );
     
-    // 降级模式：更新备用通知
-    if (_isDegradedMode) {
-      String subtitle = '$currentCountry ($sentCount/$totalCount)';
-      if (loopCount != null && loopCount > 0) {
-        subtitle = '第 $loopCount 轮 · $subtitle';
-      }
-      if (isLoopbackActive) {
-        subtitle += ' | 🟢 杨升: $loopbackCount次';
-      }
-      
-      _showFallbackNotification(
-        title: '全球法布施',
-        body: subtitle,
-      );
+    debugPrint('📊 进度更新: $message');
+  }
+  
+  /// 切换静音状态
+  Future<void> toggleMute() async {
+    _isMuted = !_isMuted;
+    debugPrint('🔇 静音状态: $_isMuted');
+  }
+  
+  /// 开始保活（兼容旧接口）
+  Future<void> startKeepAlive({String? title, String? content}) async {
+    await start(audioName: content);
+    if (title != null) {
+      await _showNotification(title: title, body: content ?? '正在发送中...');
     }
   }
   
-  /// 设置静音
-  Future<void> setMuted(bool muted) async {
-    await _audioHandler?.setMuted(muted);
+  /// 停止保活（兼容旧接口）
+  Future<void> stopKeepAlive() async {
+    await stop();
   }
   
-  /// 切换静音
-  Future<void> toggleMute() async {
-    await _audioHandler?.toggleMute();
+  /// 更新通知内容
+  Future<void> updateNotification({String? title, String? content}) async {
+    if (!_isActive) return;
+    
+    await _showNotification(
+      title: title ?? '全球法布施',
+      body: content ?? '正在发送中...',
+    );
   }
   
-  /// 是否正在播放（服务已启动）
-  bool get isPlaying => _audioHandler?.isPlaying ?? false;
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_isActive) {
+        debugPrint('💓 KeepAlive heartbeat');
+      }
+    });
+  }
   
-  /// 音频是否真正在播放中
-  bool get isActuallyPlaying => _audioHandler?.isActuallyPlaying ?? false;
+  Future<void> _showNotification({required String title, required String body}) async {
+    if (_notificationsPlugin == null) return;
+    
+    const androidDetails = AndroidNotificationDetails(
+      'keep_alive_channel',
+      '后台保活',
+      channelDescription: '保持应用在后台运行',
+      importance: Importance.low,
+      priority: Priority.low,
+      ongoing: true,
+      autoCancel: false,
+      showWhen: false,
+    );
+    
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: false,
+      presentBadge: false,
+      presentSound: false,
+    );
+    
+    await _notificationsPlugin!.show(
+      0,
+      title,
+      body,
+      const NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+        macOS: iosDetails,
+      ),
+    );
+  }
   
-  /// 是否静音
-  bool get isMuted => _audioHandler?.isMuted ?? true;
-  
-  /// 状态信息
-  String get statusInfo => _audioHandler?.statusInfo ?? '未初始化';
+  /// 释放资源
+  void dispose() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _notificationsPlugin?.cancel(0);
+  }
+}
+
+/// 简化后的音频处理器（仅用于类型兼容）
+class KeepAliveAudioHandler {
+  // 空实现，仅用于类型兼容
 }

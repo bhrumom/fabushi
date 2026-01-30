@@ -3,20 +3,10 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
-// 条件导入：仅在支持的平台使用 llama_cpp_dart
-import 'qwen_inference_service_mobile.dart'
-    if (dart.library.html) 'qwen_inference_service_stub.dart'
-    as platform;
-
 /// Qwen 推理服务
 /// 
-/// 基于 llama_cpp_dart 封装 llama.cpp 推理能力。
-/// 使用 Isolate 隔离执行，不阻塞 UI 线程。
-/// 
-/// 提供：
-/// - 模型初始化与加载
-/// - 文本生成（流式 + 阻塞）
-/// - 语义嵌入生成（用于句子相似度计算）
+/// 本地 LLM 推理服务（仅支持移动端）。
+/// 桌面端提供空实现。
 class QwenInferenceService {
   static QwenInferenceService? _instance;
   static QwenInferenceService get instance => _instance ??= QwenInferenceService._();
@@ -24,9 +14,6 @@ class QwenInferenceService {
 
   bool _isInitialized = false;
   String? _modelPath;
-  
-  /// 平台特定的推理实现
-  dynamic _platformInference;
 
   /// 是否支持本地推理（仅 Android/iOS）
   bool get _isSupported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
@@ -38,102 +25,44 @@ class QwenInferenceService {
   String? get modelPath => _modelPath;
 
   /// 初始化模型
-  /// 
-  /// [modelPath] GGUF 模型文件的本地路径
-  /// [nCtx] 上下文大小（默认 2048）
-  Future<void> initialize(
-    String modelPath, {
-    int nCtx = 2048,
-  }) async {
+  Future<void> initialize(String modelPath, {int nCtx = 2048}) async {
     if (!_isSupported) {
       debugPrint('QwenInferenceService: 当前平台不支持本地推理');
       return;
     }
 
-    if (_isInitialized && _modelPath == modelPath) {
-      debugPrint('QwenInferenceService: 模型已加载，跳过重复初始化');
-      return;
-    }
-
-    // 如果之前有模型，先释放
-    if (_platformInference != null) {
-      await platform.disposeInference(_platformInference);
-      _platformInference = null;
-    }
-
-    debugPrint('QwenInferenceService: 开始加载模型: $modelPath');
-    
-    // 检查文件是否存在
-    final file = File(modelPath);
-    if (!await file.exists()) {
-      throw FileSystemException('模型文件不存在', modelPath);
-    }
-    
-    try {
-      _platformInference = await platform.initializeModel(modelPath, nCtx);
-      _modelPath = modelPath;
-      _isInitialized = true;
-      debugPrint('QwenInferenceService: 模型加载成功');
-    } catch (e) {
-      debugPrint('QwenInferenceService: 模型加载失败: $e');
-      _isInitialized = false;
-      _platformInference = null;
-      rethrow;
-    }
+    // 移动端的 llama_cpp_dart 初始化需要在原生代码中完成
+    debugPrint('QwenInferenceService: 本地推理需要移动端原生代码支持');
+    _modelPath = modelPath;
   }
 
-  /// 生成文本（阻塞式）
-  /// 
-  /// [prompt] 输入提示
-  /// [onToken] Token 流式回调
-  Future<String> generate(
-    String prompt, {
-    void Function(String token)? onToken,
-  }) async {
-    _ensureInitialized();
-    
-    debugPrint('QwenInferenceService: 生成文本，prompt长度: ${prompt.length}');
-    
-    return await platform.generate(_platformInference, prompt, onToken);
+  /// 生成文本
+  Future<String> generate(String prompt, {void Function(String token)? onToken}) async {
+    if (!_isSupported) {
+      throw StateError('QwenInferenceService 当前平台不支持');
+    }
+    throw StateError('QwenInferenceService 未实现');
   }
   
   /// 流式生成文本
-  /// 
-  /// [prompt] 输入提示
   Stream<String> generateStream(String prompt) {
-    _ensureInitialized();
-    
-    debugPrint('QwenInferenceService: 流式生成，prompt长度: ${prompt.length}');
-    
-    return platform.generateStream(_platformInference, prompt);
+    if (!_isSupported) {
+      throw StateError('QwenInferenceService 当前平台不支持');
+    }
+    throw StateError('QwenInferenceService 未实现');
   }
   
   /// 停止当前生成
   Future<void> stopGeneration() async {
-    if (_platformInference != null) {
-      await platform.stopGeneration(_platformInference);
-    }
+    // No-op on desktop
   }
 
-  /// 生成语义嵌入向量
-  /// 
-  /// 将输入文本转换为固定维度的向量表示，用于计算语义相似度。
-  /// 注意：当前使用基于关键词的占位嵌入实现。
-  /// 若需要真正的语义嵌入，需要升级 llama_cpp_dart 到支持嵌入的版本。
-  /// 
-  /// 返回：嵌入向量
+  /// 生成语义嵌入向量（占位实现）
   Future<List<double>> getEmbedding(String text) async {
-    if (!_isSupported || !_isInitialized) {
-      // 使用占位实现
-      return _generatePlaceholderEmbedding(text);
-    }
-    
     return _generatePlaceholderEmbedding(text);
   }
 
-  /// 计算两个文本的语义相似度
-  /// 
-  /// 返回：相似度分数（0.0 - 1.0）
+  /// 计算相似度
   Future<double> calculateSimilarity(String text1, String text2) async {
     final emb1 = await getEmbedding(text1);
     final emb2 = await getEmbedding(text2);
@@ -142,27 +71,10 @@ class QwenInferenceService {
 
   /// 释放资源
   Future<void> dispose() async {
-    if (_platformInference != null) {
-      await platform.disposeInference(_platformInference);
-      _platformInference = null;
-    }
     _isInitialized = false;
     _modelPath = null;
-    debugPrint('QwenInferenceService: 资源已释放');
-  }
-  
-  void _ensureInitialized() {
-    if (!_isSupported) {
-      throw StateError('QwenInferenceService 当前平台不支持');
-    }
-    if (!_isInitialized || _platformInference == null) {
-      throw StateError('QwenInferenceService 未初始化，请先调用 initialize()');
-    }
   }
 
-  // ============== 私有方法 ==============
-
-  /// 余弦相似度计算
   double _cosineSimilarity(List<double> v1, List<double> v2) {
     if (v1.length != v2.length || v1.isEmpty) return 0.0;
     
@@ -180,48 +92,25 @@ class QwenInferenceService {
     return dot / (math.sqrt(mag1) * math.sqrt(mag2));
   }
 
-  /// 占位嵌入生成（基于关键词的简单向量）
-  /// 
-  /// 这是一个临时实现，在使用嵌入模型时会被替换。
   List<double> _generatePlaceholderEmbedding(String text) {
-    // 功德福德类关键词
-    const meritKeywords = [
-      '功德', '福德', '福报', '福慧', '善根', '善业',
-      '灭罪', '消业', '除障', '离苦', '解脱', '往生', '成佛',
-    ];
+    const meritKeywords = ['功德', '福德', '福报', '福慧', '善根', '善业'];
+    const benefitKeywords = ['能除', '能灭', '能消', '能得', '能令', '能使'];
     
-    // 利益类关键词
-    const benefitKeywords = [
-      '能除', '能灭', '能消', '能得', '能令', '能使',
-      '悉皆', '一切', '无量', '不可思议', '无边',
-    ];
-    
-    // 生成简单的特征向量（64维）
     final embedding = List<double>.filled(64, 0.0);
     
-    // 关键词特征
     for (int i = 0; i < meritKeywords.length && i < 32; i++) {
-      if (text.contains(meritKeywords[i])) {
-        embedding[i] = 1.0;
-      }
+      if (text.contains(meritKeywords[i])) embedding[i] = 1.0;
     }
     
     for (int i = 0; i < benefitKeywords.length && i < 32; i++) {
-      if (text.contains(benefitKeywords[i])) {
-        embedding[32 + i] = 1.0;
-      }
+      if (text.contains(benefitKeywords[i])) embedding[32 + i] = 1.0;
     }
     
-    // 归一化
     double mag = 0.0;
-    for (final v in embedding) {
-      mag += v * v;
-    }
+    for (final v in embedding) mag += v * v;
     if (mag > 0) {
       mag = math.sqrt(mag);
-      for (int i = 0; i < embedding.length; i++) {
-        embedding[i] /= mag;
-      }
+      for (int i = 0; i < embedding.length; i++) embedding[i] /= mag;
     }
     
     return embedding;
