@@ -19,7 +19,7 @@ jobs:
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.38.8'
+          flutter-version: '3.27.0'
           channel: 'stable'
 
       - name: Install dependencies
@@ -37,13 +37,47 @@ jobs:
         run: dart run msix:create
         working-directory: fabushi
 
+      - name: List build output
+        shell: pwsh
+        run: |
+          Write-Host "Listing fabushi/build/windows contents:"
+          Get-ChildItem -Path fabushi/build/windows -Recurse -Include *.msix,*.exe | ForEach-Object { $_.FullName }
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          New-Item -ItemType Directory -Force -Path "release"
+          # Find the runner Release folder
+          $releasePath = "fabushi/build/windows/x64/runner/Release"
+          if (-not (Test-Path $releasePath)) {
+            $releasePath = "fabushi/build/windows/runner/Release"
+          }
+          if (Test-Path $releasePath) {
+            Compress-Archive -Path "$releasePath/*" -DestinationPath "release/Mahayana-$version-windows-portable.zip"
+          }
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           name: 大乘 (Mahayana) ${{ github.ref_name }}
-          body_path: fabushi/RELEASE_NOTES.md
+          body: |
+            ## 大乘 (Mahayana) ${{ github.ref_name }}
+            
+            ### Windows 安装包
+            
+            - **MSIX 安装包**: 双击安装，适用于 Windows 10/11
+            - **便携版 (Portable)**: 解压即用，无需安装
+            
+            ### 安装说明
+            
+            **MSIX 安装包**: 下载 `.msix` 文件后双击安装
+            **便携版**: 下载 `.zip` 文件，解压后运行 `global_dharma_sharing.exe`
           files: |
+            fabushi/build/windows/x64/runner/Release/*.msix
             fabushi/build/windows/runner/Release/*.msix
+            release/*.zip
           generate_release_notes: false
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
