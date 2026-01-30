@@ -150,6 +150,7 @@ msix_config:
   msix_version: 1.1.0.0
   logo_path: assets/images/logo.png
   capabilities: internetClient,location,microphone
+  install_certificate: false  # Skip interactive certificate prompt
   # For more options, visit: https://pub.dev/packages/msix
 
 flutter:
