@@ -1,0 +1,41 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.8' # Use the same version from flutter doctor
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Enable Windows support
+        run: flutter config --enable-windows-desktop
+
+      - name: Build Windows
+        run: flutter build windows --release
+
+      - name: Build MSIX
+        run: dart run msix:create
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/windows/runner/Release/*.msix
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
