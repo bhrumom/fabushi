@@ -16,8 +16,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          lfs: true
-          fetch-depth: 0
+          lfs: false
+          fetch-depth: 1
+        env:
+          GIT_LFS_SKIP_SMUDGE: 1
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
