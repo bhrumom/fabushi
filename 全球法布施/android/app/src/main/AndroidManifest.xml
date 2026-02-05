@@ -1,7 +1,7 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 前台服务权限 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- 前台服务权限 - 仅用于后台音频播放 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -30,8 +30,11 @@
     <!-- 振动权限（通知增强） -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Android 14 特殊用途权限 -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 广告ID权限（Android 13+ 必需声明） -->
+    <!-- 注意：我们的应用不使用广告ID，所以使用 usesPermissionFlags="neverForApp" 来声明不使用 -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
+
+
 
     
     <application
@@ -42,11 +45,8 @@
         <!-- 前台服务声明 - 使用多种类型以获得更高保活优先级 -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="mediaPlayback|dataSync|specialUse"
+            android:foregroundServiceType="mediaPlayback"
             android:exported="false">
-            <meta-data
-                android:name="android.app.foreground_service_type"
-                android:value="mediaPlayback|dataSync|specialUse" />
         </service>
         
         <!-- audio_service 音频服务 - 用于系统级MediaSession保活 -->

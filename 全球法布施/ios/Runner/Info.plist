@@ -84,6 +84,16 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>需要语音识别权限以智能检测您的读诵进度</string>
 	
+	<!-- 位置权限说明 - 某些第三方库可能需要 -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>应用可能需要访问您的位置以提供本地化服务</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>应用可能需要访问您的位置以提供本地化服务</string>
+	
+	<!-- 相册权限说明 - 用于保存或选择图片 -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>应用需要访问您的相册以保存或选择图片</string>
+	
 	<!-- Firebase 配置 - 禁用 Method Swizzling 以避免 AppDelegate 代理冲突 -->
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
