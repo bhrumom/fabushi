@@ -1,0 +1,3 @@
+#include "../../Flutter/Flutter-Release.xcconfig"
+MACOSX_DEPLOYMENT_TARGET = 10.15
+#include "Warnings.xcconfig"
