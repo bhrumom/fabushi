@@ -125,11 +125,7 @@ class CloudflareTextService {
       // 🚀 极速返回：队列有内容时秒返回
       if (_preloadQueue.isNotEmpty) {
         final content = _preloadQueue.removeAt(0);
-        // 记录已使用的素材
-        final filePath = content['filePath'] as String?;
-        if (filePath != null) {
-          _markAsRecentlyUsed(filePath);
-        }
+        // 已在选择时标记为已使用，此处无需重复标记
         _refillQueue();
         print('🚀 队列有内容，秒返回 (剩余: ${_preloadQueue.length})');
         return content;
@@ -228,8 +224,15 @@ class CloudflareTextService {
     
     final content = await _getCloudTextFromLocalManifest();
     if (content != null) {
-      _preloadQueue.add(content);
-      print('预加载队列: ${_preloadQueue.length}/$_queueSize');
+      // 🔧 检查队列中是否已有相同内容，避免重复
+      final filePath = content['filePath'];
+      final isDuplicate = _preloadQueue.any((item) => item['filePath'] == filePath);
+      if (!isDuplicate) {
+        _preloadQueue.add(content);
+        print('预加载队列: ${_preloadQueue.length}/$_queueSize');
+      } else {
+        print('⚠️ 跳过重复内容: $filePath');
+      }
     }
   }
 
@@ -363,15 +366,31 @@ class CloudflareTextService {
       print('📊 排除最近使用后：缓存=${availableCached.length}, 小文件=${availablePreferred.length}, 总可用=${availableTxt.length}');
       
       // 选择策略优化：优先选择未使用过的缓存文件
+      // 🔧 修复：当缓存文件太少时，优先下载新内容增加多样性
+      const minCacheForLoop = 5; // 至少需要5个缓存文件才能循环使用
+      
       if (availableCached.isNotEmpty) {
         // 从未使用过的缓存文件中随机选择
         selectedFile = availableCached[_random.nextInt(availableCached.length)];
         print('🚀 优先加载未使用缓存: $selectedFile');
-      } else if (cachedFiles.isNotEmpty) {
-        // 如果所有缓存都用过了，清空记录并重新选择
+      } else if (cachedFiles.length >= minCacheForLoop) {
+        // 缓存数量足够多时，清空记录循环使用
         _recentlyUsedPaths.clear();
         selectedFile = cachedFiles[_random.nextInt(cachedFiles.length)];
-        print('🔄 所有缓存已用过,清空记录后选择: $selectedFile');
+        print('🔄 缓存充足(${cachedFiles.length}个),清空记录后选择: $selectedFile');
+      } else if (availablePreferred.isNotEmpty) {
+        // 缓存太少，优先下载小文件扩充缓存
+        selectedFile = availablePreferred[_random.nextInt(availablePreferred.length)];
+        print('📥 缓存不足(${cachedFiles.length}<$minCacheForLoop),下载小文件扩充: $selectedFile');
+      } else if (availableTxt.isNotEmpty) {
+        // 没有未使用的小文件，从所有未使用文件中随机选择
+        selectedFile = availableTxt[_random.nextInt(availableTxt.length)];
+        print('📥 下载随机文件扩充缓存: $selectedFile');
+      } else if (cachedFiles.isNotEmpty) {
+        // 最后的后备：虽然缓存少，但至少有缓存可用
+        _recentlyUsedPaths.clear();
+        selectedFile = cachedFiles[_random.nextInt(cachedFiles.length)];
+        print('🔄 所有文件已用过,回退到缓存: $selectedFile');
       } else if (availablePreferred.isNotEmpty) {
         // 没有缓存，从未使用过的小文件中选择
         selectedFile = availablePreferred[_random.nextInt(availablePreferred.length)];
@@ -387,6 +406,9 @@ class CloudflareTextService {
         print('🔄 所有文件已用过,清空后随机: $selectedFile');
       }
 
+      // 🔧 关键修复：选择后立即标记为已使用，防止并发时重复选择
+      _markAsRecentlyUsed(selectedFile);
+      
       // 修正路径：如果路径不包含built_in，则添加
       String requestPath = selectedFile;
       if (!selectedFile.contains('built_in') && selectedFile.startsWith('assets/')) {
