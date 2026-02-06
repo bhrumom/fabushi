@@ -241,6 +241,7 @@
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				638C68006236E20A61BE8054 /* [CP] Embed Pods Frameworks */,
 				D4CD447FDFFC03694F05118F /* [CP] Copy Pods Resources */,
+				A1B2C3D4E5F60001LLAMA001 /* Copy Llama Libraries */,
 			);
 			buildRules = (
 			);
@@ -438,6 +439,24 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources.sh\"\n";
 			showEnvVarsInLog = 0;
+		};
+		A1B2C3D4E5F60001LLAMA001 /* Copy Llama Libraries */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Llama Libraries";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PROJECT_DIR}/copy_llama_libs.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
