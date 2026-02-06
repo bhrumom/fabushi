@@ -48,11 +48,24 @@ class QwenInferenceService {
 
     debugPrint('QwenInferenceService: 开始加载模型: $modelPath');
     
+    // macOS 平台需要设置库路径，因为 llama_cpp_dart 默认使用 DynamicLibrary.process()
+    // 但 dylib 没有链接到应用程序中，需要显式指定路径
+    if (Platform.isMacOS && Llama.libraryPath == null) {
+      final executablePath = Platform.resolvedExecutable;
+      // 从 .../MacOS/global_dharma_sharing 路径获取 .../Frameworks
+      final macOSDir = executablePath.substring(0, executablePath.lastIndexOf('/'));
+      final contentsDir = macOSDir.substring(0, macOSDir.lastIndexOf('/'));
+      final libPath = '$contentsDir/Frameworks/libllama.dylib';
+      debugPrint('QwenInferenceService: 设置 macOS 库路径: $libPath');
+      Llama.libraryPath = libPath;
+    }
+    
     // 检查文件是否存在
     final file = File(modelPath);
     if (!await file.exists()) {
       throw FileSystemException('模型文件不存在', modelPath);
     }
+
     
     try {
       // 配置模型参数

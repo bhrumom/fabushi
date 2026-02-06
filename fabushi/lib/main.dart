@@ -22,6 +22,7 @@ import 'providers/video_feed_visibility_notifier.dart';
 import 'providers/tts_mute_notifier.dart';
 import 'services/cloudflare_text_service.dart';
 import 'services/semantic_nlp_service.dart';
+import 'services/app_settings.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -89,9 +90,14 @@ void main() async {
 
   // 🚀 初始化语义NLP服务（轻量级，不阻塞）
   // 提前初始化正则状态机和TFLite模型（如有）
+  // 注意：只有在用户明确选择下载模型后才自动下载，避免"暂时不下载"后仍然下载
   Future.microtask(() async {
     try {
-      await SemanticNlpService.instance.initialize();
+      // 检查用户是否已完成模型设置，如果未完成则不自动下载
+      final isModelSetupComplete = await AppSettings.isModelSetupComplete();
+      await SemanticNlpService.instance.initialize(
+        downloadModelIfNeeded: isModelSetupComplete,
+      );
       debugPrint('✅ 语义NLP服务初始化完成');
     } catch (e) {
       debugPrint('⚠️ 语义NLP服务初始化失败: $e');
