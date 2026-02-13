@@ -403,6 +403,12 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
   List<Widget> _buildCategorizedModelList() {
     final widgets = <Widget>[];
     
+    // 根据平台筛选可用模型
+    final isMobile = Theme.of(context).platform == TargetPlatform.android ||
+                     Theme.of(context).platform == TargetPlatform.iOS;
+    final platformConfigs = LLMModelConfig.getConfigsForPlatform(isMobile: isMobile);
+    final platformModelTypes = platformConfigs.map((c) => c.type).toSet();
+    
     // 按类别分组
     for (final category in LLMModelCategory.values) {
       // 应用过滤器
@@ -410,8 +416,10 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
         continue;
       }
       
+      // 只显示当前平台支持的模型
       final modelsInCategory = LLMModelConfig.configs.entries
-          .where((e) => e.value.category == category)
+          .where((e) => e.value.category == category && 
+                        platformModelTypes.contains(e.key))
           .toList();
       
       if (modelsInCategory.isEmpty) continue;

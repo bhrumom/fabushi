@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
 import '../services/app_initializer.dart';
 import '../services/app_settings.dart';
+import '../services/eula_service.dart';
 import '../screens/main_navigation_screen.dart';
+import '../screens/eula_screen.dart';
 import '../services/platform_service.dart';
 import '../widgets/model_selection_dialog.dart';
 
@@ -20,6 +22,7 @@ class _AppWrapperState extends State<AppWrapper> {
   bool _initStarted = false;
   String? _initError;
   bool _needsModelSetup = false;
+  bool _needsEula = false;
   final PlatformService _platformService = PlatformServiceFactory.create();
 
   @override
@@ -50,7 +53,10 @@ class _AppWrapperState extends State<AppWrapper> {
         await AppInitializer.initialize();
       }
       
-      // 4. 检查是否需要模型设置引导
+      // 4. 检查是否需要 EULA 同意
+      final needsEula = !await EulaService.isAccepted();
+      
+      // 5. 检查是否需要模型设置引导
       final needsModelSetup = await AppSettings.isFirstLaunch() && 
                               !await AppSettings.isModelSetupComplete();
 
@@ -58,11 +64,17 @@ class _AppWrapperState extends State<AppWrapper> {
       if (mounted) {
         setState(() {
           _isInitialized = true;
+          _needsEula = needsEula;
           _needsModelSetup = needsModelSetup;
         });
         
-        // 首次启动显示模型选择引导
-        if (needsModelSetup) {
+        // 首先检查 EULA
+        if (needsEula) {
+          await _showEulaScreen();
+        }
+        
+        // 然后显示模型选择引导
+        if (needsModelSetup && mounted) {
           _showModelSetupDialog();
         }
       }
@@ -77,6 +89,17 @@ class _AppWrapperState extends State<AppWrapper> {
     }
   }
   
+  /// 显示 EULA 同意页面
+  Future<void> _showEulaScreen() async {
+    if (!mounted) return;
+    
+    final accepted = await EulaScreen.checkAndShow(context);
+    
+    if (mounted) {
+      setState(() => _needsEula = !accepted);
+    }
+  }
+
   /// 显示首次启动模型选择引导
   Future<void> _showModelSetupDialog() async {
     // 延迟一下，确保 UI 已经完全渲染

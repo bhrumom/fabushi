@@ -6,6 +6,7 @@ import 'package:global_dharma_sharing/features/video_feed/presentation/view/widg
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_full_text_reader.dart';
 import 'package:global_dharma_sharing/providers/tts_mute_notifier.dart';
 import 'package:global_dharma_sharing/core/utils/auth_guard.dart';
+import 'package:global_dharma_sharing/widgets/report_dialog.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 class VideoFeedViewInteractionButtons extends StatefulWidget {
@@ -23,6 +24,8 @@ class VideoFeedViewInteractionButtons extends StatefulWidget {
     this.textContent,
     this.username = '',
     this.currentParagraph,
+    this.contentId = '',
+    this.authorId,
     super.key,
   });
 
@@ -39,6 +42,8 @@ class VideoFeedViewInteractionButtons extends StatefulWidget {
   final String? textContent;
   final String username;
   final String? currentParagraph;
+  final String contentId;
+  final String? authorId;
 
   @override
   State<VideoFeedViewInteractionButtons> createState() =>
@@ -104,6 +109,23 @@ class _VideoFeedViewInteractionButtonsState
             child: Icon(
               widget.isBookmarked ? Icons.bookmark : Icons.bookmark_border,
               color: widget.isBookmarked ? Colors.amber : white,
+              size: iconSize,
+            ),
+          ),
+          SizedBox(height: isMobile ? 12 : 16),
+          // 举报/更多操作按钮
+          GestureDetector(
+            onTap: () {
+              ReportDialog.show(
+                context,
+                contentId: widget.contentId,
+                authorId: widget.authorId,
+                authorName: widget.username,
+              );
+            },
+            child: Icon(
+              Icons.more_horiz,
+              color: white.withValues(alpha: 0.7),
               size: iconSize,
             ),
           ),

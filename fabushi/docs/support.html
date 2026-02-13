@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大乘 - 支持与帮助</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans SC', sans-serif;
+            background: linear-gradient(135deg, #0A0E21 0%, #1A1F36 50%, #0A0E21 100%);
+            color: #E0E0E0;
+            min-height: 100vh;
+            line-height: 1.8;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+        header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #667EEA 0%, #764BA2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+        header p {
+            color: #9CA3AF;
+            font-size: 1.1rem;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 24px;
+            backdrop-filter: blur(10px);
+        }
+        .card h2 {
+            color: #667EEA;
+            font-size: 1.3rem;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card h2 .icon { font-size: 1.5rem; }
+        .card p, .card li { color: #D1D5DB; line-height: 1.8; }
+        .card ul { padding-left: 20px; margin-top: 8px; }
+        .card li { margin-bottom: 8px; }
+        .faq-item {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 16px 0;
+        }
+        .faq-item:last-child { border-bottom: none; }
+        .faq-item h3 {
+            color: #F3F4F6;
+            font-size: 1rem;
+            margin-bottom: 8px;
+            cursor: pointer;
+        }
+        .faq-item h3::before {
+            content: "Q: ";
+            color: #667EEA;
+            font-weight: bold;
+        }
+        .faq-item p::before {
+            content: "A: ";
+            color: #764BA2;
+            font-weight: bold;
+        }
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 12px;
+        }
+        .contact-item {
+            background: rgba(102, 126, 234, 0.1);
+            border: 1px solid rgba(102, 126, 234, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        .contact-item .label {
+            color: #9CA3AF;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+        }
+        .contact-item .value {
+            color: #667EEA;
+            font-weight: 600;
+            word-break: break-all;
+        }
+        a { color: #667EEA; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        footer {
+            text-align: center;
+            margin-top: 48px;
+            padding-top: 24px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            color: #6B7280;
+            font-size: 0.85rem;
+        }
+        @media (max-width: 600px) {
+            header h1 { font-size: 1.8rem; }
+            .card { padding: 24px 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🙏 大乘</h1>
+            <p>佛教经文传播与修行辅助应用</p>
+        </header>
+
+        <!-- 应用简介 -->
+        <div class="card">
+            <h2><span class="icon">📖</span> 关于大乘</h2>
+            <p>
+                "大乘"是一款专注于佛教经文传播与修行辅助的应用，提供经文阅读、朗诵练习、
+                AI 问经、禅修室等功能。我们致力于为全球佛教修行者打造一个清净、便利的学习平台。
+            </p>
+        </div>
+
+        <!-- 常见问题 -->
+        <div class="card">
+            <h2><span class="icon">❓</span> 常见问题 (FAQ)</h2>
+            
+            <div class="faq-item">
+                <h3>如何开始使用应用？</h3>
+                <p>下载安装后即可浏览经文内容。注册账号可解锁收藏、点赞、AI问经等功能。</p>
+            </div>
+            
+            <div class="faq-item">
+                <h3>应用支持哪些经文？</h3>
+                <p>目前收录了常见的大乘佛教经文，包括《心经》《金刚经》《法华经》等，持续更新中。</p>
+            </div>
+            
+            <div class="faq-item">
+                <h3>AI 问经功能如何使用？</h3>
+                <p>进入经文阅读页面后，点击 AI 按钮即可向 AI 提问与经文相关的问题。需要先下载 AI 模型。</p>
+            </div>
+            
+            <div class="faq-item">
+                <h3>如何举报不当内容？</h3>
+                <p>在内容详情页点击右侧"更多"按钮（⋯），选择"举报内容"，选择原因后提交。我们会在24小时内处理。</p>
+            </div>
+            
+            <div class="faq-item">
+                <h3>如何屏蔽用户？</h3>
+                <p>在内容详情页点击"更多"按钮（⋯），选择"屏蔽用户"，确认后该用户的所有内容将从您的信息流中移除。</p>
+            </div>
+            
+            <div class="faq-item">
+                <h3>忘记密码怎么办？</h3>
+                <p>在登录页面点击"忘记密码"，输入注册邮箱即可收到重置链接。</p>
+            </div>
+            
+            <div class="faq-item">
+                <h3>应用支持后台播放吗？</h3>
+                <p>是的，在禅修室页面播放的经文音频支持后台播放，方便您在做其他事情时聆听。</p>
+            </div>
+        </div>
+
+        <!-- 联系我们 -->
+        <div class="card">
+            <h2><span class="icon">📬</span> 联系我们</h2>
+            <p>如果您遇到任何问题或有建议，欢迎通过以下方式联系我们：</p>
+            <div class="contact-grid">
+                <div class="contact-item">
+                    <div class="label">客服邮箱</div>
+                    <div class="value"><a href="mailto:support@ombhrum.com">support@ombhrum.com</a></div>
+                </div>
+                <div class="contact-item">
+                    <div class="label">响应时间</div>
+                    <div class="value">24小时内</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 用户协议 -->
+        <div class="card">
+            <h2><span class="icon">📋</span> 法律条款</h2>
+            <ul>
+                <li><strong>用户协议</strong>：使用本应用即表示您同意我们的用户服务协议。我们对不当内容和滥用行为实行零容忍政策。</li>
+                <li><strong>隐私政策</strong>：我们重视您的隐私，仅收集提供服务所必需的最少信息。</li>
+                <li><strong>内容举报</strong>：所有举报将在24小时内审核处理，违规内容将被立即删除。</li>
+            </ul>
+        </div>
+
+        <footer>
+            <p>&copy; 2026 大乘 (Mahayana). All rights reserved.</p>
+            <p style="margin-top: 8px;">Version 1.0 | Built with Flutter</p>
+        </footer>
+    </div>
+</body>
+</html>

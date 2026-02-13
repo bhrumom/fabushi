@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -28,11 +29,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
   DeviceCapabilityInfo? _deviceInfo;
   LLMModelType? _selectedModel;
   Map<LLMModelType, ModelStatus>? _modelStatus;
+  
+  // 下载进度状态
+  StreamSubscription<DownloadProgressEvent>? _downloadProgressSubscription;
+  double _downloadProgress = 0.0;
+  String _downloadStage = '';
+  bool _isDownloading = false;
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _subscribeToDownloadProgress();
+  }
+  
+  @override
+  void dispose() {
+    _downloadProgressSubscription?.cancel();
+    super.dispose();
+  }
+  
+  /// 订阅下载进度流
+  void _subscribeToDownloadProgress() {
+    // 检查是否有正在进行的下载
+    if (LLMModelManager.instance.isDownloading) {
+      _isDownloading = true;
+      _downloadProgress = LLMModelManager.instance.currentDownloadProgress;
+      _downloadStage = LLMModelManager.instance.currentDownloadStage;
+    }
+    
+    _downloadProgressSubscription = LLMModelManager.instance.downloadProgressStream.listen((event) {
+      if (mounted) {
+        setState(() {
+          _isDownloading = !event.isComplete;
+          _downloadProgress = event.progress;
+          _downloadStage = event.stage;
+        });
+        
+        // 下载完成时刷新模型状态
+        if (event.isComplete) {
+          _refreshModelStatus();
+        }
+      }
+    });
+  }
+  
+  /// 刷新模型状态
+  Future<void> _refreshModelStatus() async {
+    final newStatus = await LLMModelManager.instance.getAllModelStatus();
+    if (mounted) {
+      setState(() {
+        _modelStatus = newStatus;
+      });
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -77,6 +126,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _setMatchThreshold(double value) async {
     setState(() => _matchThreshold = value);
     await AppSettings.setMatchThreshold(value);
+  }
+  
+  /// 显示删除模型确认对话框
+  Future<void> _showDeleteModelDialog() async {
+    if (_selectedModel == null) return;
+    
+    final config = LLMModelConfig.getConfig(_selectedModel!);
+    
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('删除模型', style: TextStyle(color: Colors.white)),
+        content: Text(
+          '确定要删除 ${config.displayName} 吗？\n\n删除后需要重新下载才能使用。',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirm == true) {
+      // 执行删除
+      await LLMModelManager.instance.deleteModel(_selectedModel!);
+      
+      // 刷新模型状态
+      final newStatus = await LLMModelManager.instance.getAllModelStatus();
+      if (mounted) {
+        setState(() {
+          _modelStatus = newStatus;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${config.displayName} 已删除'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -313,6 +410,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             
+            // 下载进度显示（仅在下载中时显示）
+            if (_isDownloading) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.amber,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _downloadStage.isNotEmpty ? _downloadStage : '下载中...',
+                            style: const TextStyle(
+                              color: Colors.amber,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '${(_downloadProgress * 100).toStringAsFixed(1)}%',
+                          style: const TextStyle(
+                            color: Colors.amber,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: _downloadProgress,
+                        backgroundColor: Colors.white12,
+                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.amber),
+                        minHeight: 6,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            
             const SizedBox(height: 12),
             
             // 切换模型按钮
@@ -343,6 +499,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
+            
+            // 删除模型按钮（仅当模型已下载时显示）
+            if (_selectedModel != null && selectedStatus == ModelStatus.downloaded)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showDeleteModelDialog(),
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('删除模型'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.redAccent,
+                      side: const BorderSide(color: Colors.redAccent),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

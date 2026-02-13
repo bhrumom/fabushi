@@ -24,6 +24,20 @@ class MainActivity : FlutterFragmentActivity() {
     
     companion object {
         private const val TAG = "MainActivity"
+        
+        init {
+            try {
+                // 预加载 llama.cpp 及其依赖库，解决 Dart Isolate 中的动态链接问题
+                // 顺序：基础依赖 -> 上层依赖
+                System.loadLibrary("ggml-base")
+                System.loadLibrary("ggml")
+                System.loadLibrary("ggml-cpu")
+                System.loadLibrary("llama")
+                Log.i(TAG, "Native libraries loaded successfully")
+            } catch (e: Throwable) {
+                Log.e(TAG, "Failed to load native libraries: ${e.message}")
+            }
+        }
     }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {

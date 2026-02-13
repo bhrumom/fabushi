@@ -21,6 +21,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
     this.onBookmarkTap,
     this.onStartRecitation,
     this.onStartReading,
+    this.contentId = '',
     super.key,
   });
 
@@ -40,6 +41,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
   final VoidCallback? onBookmarkTap;
   final VoidCallback? onStartRecitation;
   final VoidCallback? onStartReading;
+  final String contentId;
 
   @override
   Widget build(BuildContext context) {
@@ -83,6 +85,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
               textContent: textContent,
               username: username,
               currentParagraph: currentParagraph,
+              contentId: contentId,
             ),
           ),
         ],

@@ -26,6 +26,16 @@ class LLMModelManager {
   bool _isDownloading = false;
   LLMModelType? _currentDownloadingModel;
   String _currentDownloadStage = ''; // 当前下载阶段
+  double _currentDownloadProgress = 0.0; // 当前下载进度
+  
+  // 下载进度广播流（用于 UI 订阅）
+  final _downloadProgressController = StreamController<DownloadProgressEvent>.broadcast();
+  
+  /// 下载进度事件流（UI 可订阅此流获取实时进度）
+  Stream<DownloadProgressEvent> get downloadProgressStream => _downloadProgressController.stream;
+  
+  /// 当前下载进度（0.0 ~ 1.0）
+  double get currentDownloadProgress => _currentDownloadProgress;
   
   // 下载源检测缓存
   HFDownloadSource? _cachedSource;
@@ -306,6 +316,8 @@ class LLMModelManager {
       
       // 检测最佳下载源
       _currentDownloadStage = '检测网络环境';
+      _currentDownloadProgress = 0.0;
+      _emitProgress(type, 0.0, _currentDownloadStage);
       onProgress?.call(0.0, _currentDownloadStage);
       final source = await detectBestSource();
       debugPrint('LLMModelManager: 使用下载源: ${source.name}');
@@ -317,6 +329,7 @@ class LLMModelManager {
       // 阶段1：下载主模型
       if (!await _isMainModelAvailable(type)) {
         _currentDownloadStage = '下载主模型';
+        _emitProgress(type, 0.0, _currentDownloadStage);
         onProgress?.call(0.0, _currentDownloadStage);
         
         await _downloadFile(
@@ -326,6 +339,8 @@ class LLMModelManager {
           onReceiveProgress: (received, total) {
             downloadedBytes = received;
             final progress = downloadedBytes / totalSize;
+            _currentDownloadProgress = progress;
+            _emitProgress(type, progress, _currentDownloadStage);
             onProgress?.call(progress, _currentDownloadStage);
           },
         );
@@ -338,6 +353,7 @@ class LLMModelManager {
       // 阶段2：下载 mmproj（如需要）
       if (config.requiresMmproj && !await _isMmprojAvailable(type)) {
         _currentDownloadStage = '下载视觉编码器';
+        _emitProgress(type, downloadedBytes / totalSize, _currentDownloadStage);
         onProgress?.call(downloadedBytes / totalSize, _currentDownloadStage);
         
         await _downloadFile(
@@ -346,12 +362,16 @@ class LLMModelManager {
           expectedSize: config.mmprojSizeBytes!,
           onReceiveProgress: (received, total) {
             final progress = (downloadedBytes + received) / totalSize;
+            _currentDownloadProgress = progress;
+            _emitProgress(type, progress, _currentDownloadStage);
             onProgress?.call(progress, _currentDownloadStage);
           },
         );
       }
 
       _currentDownloadStage = '下载完成';
+      _currentDownloadProgress = 1.0;
+      _emitProgress(type, 1.0, _currentDownloadStage, isComplete: true);
       onProgress?.call(1.0, _currentDownloadStage);
       
     } catch (e) {
@@ -365,6 +385,7 @@ class LLMModelManager {
       _isDownloading = false;
       _currentDownloadingModel = null;
       _currentDownloadStage = '';
+      _currentDownloadProgress = 0.0;
       _cancelToken = null;
     }
   }
@@ -380,9 +401,12 @@ class LLMModelManager {
     final path = '${dir.path}/$fileName';
     final tempPath = '$path.downloading';
     
-    // 将 URL 转换为使用检测到的最佳源
+    // 将 HuggingFace URL 转换为使用检测到的最佳源
+    // 注意：非 HuggingFace URL（如 Google Storage）不应转换
     String actualUrl = url;
-    if (_cachedSource != null) {
+    final isHuggingFaceUrl = url.contains('huggingface.co') || 
+                              url.contains('hf-mirror.com');
+    if (_cachedSource != null && isHuggingFaceUrl) {
       final relativePath = HFSourceConfig.extractRelativePath(url);
       actualUrl = HFSourceConfig.getFullUrl(relativePath, _cachedSource!);
     }
@@ -414,6 +438,27 @@ class LLMModelManager {
     if (await tempFile.exists()) {
       await tempFile.rename(path);
       debugPrint('LLMModelManager: 文件下载完成: $path');
+    }
+  }
+  
+  /// 发送下载进度事件
+  void _emitProgress(
+    LLMModelType type, 
+    double progress, 
+    String stage, {
+    bool isComplete = false,
+    bool isFailed = false,
+    String? error,
+  }) {
+    if (!_downloadProgressController.isClosed) {
+      _downloadProgressController.add(DownloadProgressEvent(
+        modelType: type,
+        progress: progress,
+        stage: stage,
+        isComplete: isComplete,
+        isFailed: isFailed,
+        error: error,
+      ));
     }
   }
 
@@ -553,5 +598,35 @@ class _SourceTestResult {
     required this.source,
     required this.success,
     required this.latencyMs,
+  });
+}
+
+/// 下载进度事件
+class DownloadProgressEvent {
+  /// 正在下载的模型类型
+  final LLMModelType modelType;
+  
+  /// 下载进度（0.0 ~ 1.0）
+  final double progress;
+  
+  /// 当前下载阶段描述
+  final String stage;
+  
+  /// 是否下载完成
+  final bool isComplete;
+  
+  /// 是否下载失败
+  final bool isFailed;
+  
+  /// 错误信息（仅 isFailed 时有效）
+  final String? error;
+  
+  const DownloadProgressEvent({
+    required this.modelType,
+    required this.progress,
+    required this.stage,
+    this.isComplete = false,
+    this.isFailed = false,
+    this.error,
   });
 }

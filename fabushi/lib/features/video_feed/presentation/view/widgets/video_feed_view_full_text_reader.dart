@@ -7,6 +7,7 @@ import '../../../../../models/sutra_table_of_contents.dart';
 import '../../../../../models/merit_benefit.dart';
 import '../../../../../services/merit_benefit_llm_service.dart';
 import '../../../../../widgets/sutra_toc_bottom_sheet.dart';
+import '../../../../../screens/sutra_ai_page.dart';
 
 // ============================================================================
 // 第一性原理极致优化版本
@@ -612,6 +613,17 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   final Set<int> _recognizingParagraphs = {};
   // 原始段落文本（用于 LLM 识别）
   List<String> _rawParagraphs = [];
+  
+  // ========= UI显示/隐藏控制 =========
+  bool _isUIVisible = true;  // 初始显示工具栏和悬浮按钮
+  
+  /// 切换UI显示/隐藏状态
+  void _toggleUIVisibility() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _isUIVisible = !_isUIVisible;
+    });
+  }
 
   @override
   void initState() {
@@ -773,16 +785,141 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                   ],
                 ),
               )
-            : Column(
+            : Stack(
                 children: [
-                  Expanded(child: _buildContent()),
-                  _buildBottomToolbar(),
+                  // 主内容区域（点击切换UI显示/隐藏）
+                  GestureDetector(
+                    onTap: _toggleUIVisibility,
+                    behavior: HitTestBehavior.translucent,
+                    child: _buildContent(),
+                  ),
+                  // 悬浮按钮（AI + 听）
+                  Positioned(
+                    right: 16,
+                    bottom: _isUIVisible ? 72 : 16,  // 工具栏显示时上移
+                    child: AnimatedOpacity(
+                      opacity: _isUIVisible ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: AnimatedSlide(
+                        offset: _isUIVisible ? Offset.zero : const Offset(0, 0.5),
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOutCubic,
+                        child: _buildFloatingButtons(),
+                      ),
+                    ),
+                  ),
+                  // 底部工具栏（带动画）
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: AnimatedSlide(
+                      offset: _isUIVisible ? Offset.zero : const Offset(0, 1),
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      child: AnimatedOpacity(
+                        opacity: _isUIVisible ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: _buildBottomToolbar(),
+                      ),
+                    ),
+                  ),
                 ],
               ),
       ),
     );
   }
 
+
+  /// 构建悬浮按钮组（AI + 听）
+  Widget _buildFloatingButtons() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // AI 按钮
+        _buildFloatingButton(
+          label: 'Ai',
+          gradient: const LinearGradient(
+            colors: [Color(0xFF7B68EE), Color(0xFF9370DB)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            _openAIPage();
+          },
+        ),
+        const SizedBox(height: 12),
+        // 听 按钮
+        _buildFloatingButton(
+          label: '听',
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFF8C00), Color(0xFFFFD700)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          onTap: () {
+            HapticFeedback.lightImpact();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('听经功能即将上线'),
+                backgroundColor: Color(0xFF1A1A2E),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+  
+  /// 构建单个悬浮按钮
+  Widget _buildFloatingButton({
+    required String label,
+    required Gradient gradient,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          gradient: gradient,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+  
+  /// 打开AI问经页面
+  void _openAIPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SutraAIPage(
+          bookTitle: widget.bookTitle,
+          fullText: widget.fullText,
+        ),
+      ),
+    );
+  }
 
   /// 构建底部工具栏（微信读书风格）
   Widget _buildBottomToolbar() {
