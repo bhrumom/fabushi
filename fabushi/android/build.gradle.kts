@@ -1,11 +1,12 @@
 allprojects {
     repositories {
-        // 阿里云镜像源
+        // Google 官方仓库必须在前面，以便获取 MediaPipe 等官方依赖
+        google()
+        mavenCentral()
+        // 阿里云镜像源（作为备选加速）
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/public") }
-        google()
-        mavenCentral()
     }
 }
 

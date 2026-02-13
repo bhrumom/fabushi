@@ -95,10 +95,17 @@ dependencies:
   audio_session: ^0.1.21      # 音频会话管理（iOS 需要）
 
   # NLP 语义分析 - 本地 LLM 推理（llama.cpp Dart 绑定）
-  # - 所有平台统一使用 GGUF 格式模型
-  # - 支持多模态视觉（Qwen3-VL）
-  # - 模型首次使用时从 HuggingFace 下载到本地
-  llama_cpp_dart: ^0.2.2
+  # - macOS 平台专用，使用 GGUF 格式模型
+  # - 支持 Qwen 系列模型
+  llama_cpp_dart:
+    git:
+      url: https://github.com/netdur/llama_cpp_dart.git
+      ref: main
+
+  # flutter_gemma - Android/iOS/macOS 平台
+  # - 支持 Gemma 3n (.litertlm) 和 Gemma 3 (.task) 格式
+  # - 基于 MediaPipe GenAI + LiteRT-LM 引擎
+  flutter_gemma: ^0.12.3
 
   # FFmpeg - 音频合并与字幕嵌入
   ffmpeg_kit_flutter_new_audio: ^2.0.0  # FFmpeg 纯音频版本（体积小）

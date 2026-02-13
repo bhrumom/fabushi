@@ -326,6 +326,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
           contentType: widget.videoItem.contentType,
           textContent: widget.videoItem.textContent,
           currentParagraph: _currentParagraph,
+          contentId: widget.videoItem.id,
           onLikeTap: _handleLikeTap,
           onCommentTap: _handleCommentTap,
           onBookmarkTap: _handleFavoriteTap,

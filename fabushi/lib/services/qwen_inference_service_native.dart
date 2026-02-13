@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
@@ -31,11 +32,13 @@ class QwenInferenceService {
   /// 初始化模型
   /// 
   /// [modelPath] GGUF 模型文件的本地路径
-  /// [nCtx] 上下文大小（默认 2048）
+  /// [nCtx] 上下文大小（Android 默认 512 以减少内存占用，其他平台默认 2048）
   Future<void> initialize(
     String modelPath, {
-    int nCtx = 2048,
+    int? nCtx,
   }) async {
+    // Android 平台使用更小的上下文以减少内存占用
+    final effectiveNCtx = nCtx ?? (Platform.isAndroid ? 512 : 2048);
     if (_isInitialized && _modelPath == modelPath) {
       debugPrint('QwenInferenceService: 模型已加载，跳过重复初始化');
       return;
@@ -46,7 +49,13 @@ class QwenInferenceService {
       await _disposeParent();
     }
 
-    debugPrint('QwenInferenceService: 开始加载模型: $modelPath');
+    debugPrint('╔══════════════════════════════════════════════════════════════');
+    debugPrint('║ QwenInferenceService: 开始加载模型');
+    debugPrint('╠══════════════════════════════════════════════════════════════');
+    debugPrint('║ 模型路径: $modelPath');
+    debugPrint('║ 上下文大小: $effectiveNCtx');
+    debugPrint('║ 平台: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
+    debugPrint('║ Dart版本: ${Platform.version}');
     
     // macOS 平台需要设置库路径，因为 llama_cpp_dart 默认使用 DynamicLibrary.process()
     // 但 dylib 没有链接到应用程序中，需要显式指定路径
@@ -56,45 +65,167 @@ class QwenInferenceService {
       final macOSDir = executablePath.substring(0, executablePath.lastIndexOf('/'));
       final contentsDir = macOSDir.substring(0, macOSDir.lastIndexOf('/'));
       final libPath = '$contentsDir/Frameworks/libllama.dylib';
-      debugPrint('QwenInferenceService: 设置 macOS 库路径: $libPath');
+      debugPrint('║ macOS 库路径: $libPath');
       Llama.libraryPath = libPath;
     }
     
-    // 检查文件是否存在
+    // Android 平台需要显式设置库路径为 libllama.so
+    // llama_cpp_dart 默认使用 libmtmd.so（多模态库），这会导致纯文本模型加载失败
+    // 必须强制覆盖，因为库可能已预设了 libmtmd.so
+    // 
+    // 重要：Android 动态链接器在 Isolate 中可能无法自动解析 libllama.so 的依赖链
+    // 因此需要按正确顺序预加载依赖库：libggml-base.so -> libggml.so -> libggml-cpu.so -> libllama.so
+    if (Platform.isAndroid) {
+      debugPrint('║ Android: 开始预加载原生库依赖...');
+      
+      // 按依赖顺序预加载库（底层依赖先加载）
+      // 注意：库已使用 GGML_OPENMP=OFF 编译，不依赖 libomp.so
+      final dependencyLibs = [
+        'libggml-base.so',
+        'libggml.so',
+        'libggml-cpu.so',
+      ];
+      
+      for (final libName in dependencyLibs) {
+        try {
+          DynamicLibrary.open(libName);
+          debugPrint('║   ✓ 预加载: $libName');
+        } catch (e) {
+          debugPrint('║   ✗ 预加载失败: $libName ($e)');
+        }
+      }
+      
+      const libPath = 'libllama.so';
+      debugPrint('║ Android 库路径: $libPath (覆盖默认值)');
+      Llama.libraryPath = libPath;
+    }
+    
+    debugPrint('║ 当前 Llama.libraryPath: ${Llama.libraryPath ?? "(默认)"}');
+    
+    // 详细检查文件状态
     final file = File(modelPath);
-    if (!await file.exists()) {
+    final exists = await file.exists();
+    debugPrint('║ 文件存在: $exists');
+    
+    if (!exists) {
+      debugPrint('╚══════════════════════════════════════════════════════════════');
       throw FileSystemException('模型文件不存在', modelPath);
     }
-
+    
+    try {
+      final fileSize = await file.length();
+      final fileSizeMB = (fileSize / (1024 * 1024)).toStringAsFixed(2);
+      debugPrint('║ 文件大小: $fileSizeMB MB ($fileSize bytes)');
+      
+      // 检查文件大小是否合理（至少 100MB）
+      if (fileSize < 100 * 1024 * 1024) {
+        debugPrint('║ ⚠️ 警告: 文件大小异常小，可能下载不完整');
+      }
+      
+      // 尝试读取文件头验证格式
+      final raf = await file.open();
+      final header = await raf.read(4);
+      await raf.close();
+      final headerHex = header.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+      debugPrint('║ 文件头(hex): $headerHex');
+      
+      // GGUF 文件应该以 "GGUF" (47 47 55 46) 开头
+      final isGGUF = header.length == 4 && 
+                     header[0] == 0x47 && header[1] == 0x47 && 
+                     header[2] == 0x55 && header[3] == 0x46;
+      debugPrint('║ GGUF格式验证: ${isGGUF ? "✓ 有效" : "✗ 无效"}');
+      
+      if (!isGGUF) {
+        debugPrint('╚══════════════════════════════════════════════════════════════');
+        throw Exception('模型文件格式无效，不是有效的 GGUF 文件');
+      }
+      
+    } catch (e) {
+      if (e is Exception && e.toString().contains('GGUF')) {
+        rethrow;
+      }
+      debugPrint('║ 文件检查警告: $e');
+    }
+    
+    debugPrint('╠══════════════════════════════════════════════════════════════');
+    debugPrint('║ 开始初始化 llama.cpp...');
     
     try {
       // 配置模型参数
       final modelParams = ModelParams();
+      // Android 上禁用 mmap 可能有助于解决内存不足问题，或者防止映射失败
+      if (Platform.isAndroid) {
+        modelParams.useMemorymap = false;
+        modelParams.nGpuLayers = 0; // Android 上禁用 GPU Offload，避免潜在的初始化失败
+        debugPrint('║ Android: 已禁用 mmap, nGpuLayers=0');
+      }
+      debugPrint('║ ModelParams 已创建');
       
       // 配置上下文参数（使用级联操作符设置属性）
       final contextParams = ContextParams()
-        ..nCtx = nCtx;
+        ..nCtx = effectiveNCtx;
+      debugPrint('║ ContextParams 已创建 (nCtx=$effectiveNCtx)');
       
       // 配置采样参数（使用默认值）
       final samplingParams = SamplerParams();
+      debugPrint('║ SamplerParams 已创建');
       
       // 创建加载命令
+      // 注意：verbose 模式在 Isolate 中会导致 native callback 跨 isolate 调用崩溃
       final loadCommand = LlamaLoad(
         path: modelPath,
         modelParams: modelParams,
         contextParams: contextParams,
         samplingParams: samplingParams,
+        verbose: false,  // 不能开启，会导致跨 isolate callback 崩溃
       );
+      debugPrint('║ LlamaLoad 命令已创建');
       
       // 创建 LlamaParent（在 Isolate 中运行）
+      debugPrint('║ 创建 LlamaParent...');
       _llamaParent = LlamaParent(loadCommand);
+      
+      debugPrint('║ 调用 LlamaParent.init()...');
       await _llamaParent!.init();
       
       _modelPath = modelPath;
       _isInitialized = true;
-      debugPrint('QwenInferenceService: 模型加载成功');
-    } catch (e) {
-      debugPrint('QwenInferenceService: 模型加载失败: $e');
+      debugPrint('║ ✓ 模型加载成功！');
+      debugPrint('╚══════════════════════════════════════════════════════════════');
+    } catch (e, stackTrace) {
+      debugPrint('║ ✗ 模型加载失败!');
+      debugPrint('╠══════════════════════════════════════════════════════════════');
+      debugPrint('║ 错误类型: ${e.runtimeType}');
+      debugPrint('║ 错误信息: $e');
+      
+      // 检测是否是内存不足问题
+      final errorMsg = e.toString().toLowerCase();
+      final isMemoryIssue = errorMsg.contains('nullptr') || 
+                            errorMsg.contains('memory') ||
+                            errorMsg.contains('could not load model');
+      
+      if (isMemoryIssue) {
+        debugPrint('╠══════════════════════════════════════════════════════════════');
+        debugPrint('║ ⚠ 可能的原因: 设备内存不足');
+        debugPrint('║');
+        // 重新获取文件大小用于诊断
+        final modelFile = File(modelPath);
+        if (await modelFile.exists()) {
+          final modelSize = await modelFile.length();
+          debugPrint('║ 当前模型大小: ${(modelSize / 1024 / 1024).toStringAsFixed(0)} MB');
+        }
+        debugPrint('║ 建议解决方案:');
+        debugPrint('║   1. 关闭其他应用释放内存');
+        debugPrint('║   2. 使用更小的模型 (如 Qwen 0.5B，约 400MB)');
+        debugPrint('║   3. 使用更低的量化精度 (如 Q2_K)');
+      }
+      
+      debugPrint('╠══════════════════════════════════════════════════════════════');
+      debugPrint('║ 堆栈跟踪:');
+      for (final line in stackTrace.toString().split('\n').take(15)) {
+        debugPrint('║   $line');
+      }
+      debugPrint('╚══════════════════════════════════════════════════════════════');
       _isInitialized = false;
       _llamaParent = null;
       rethrow;
