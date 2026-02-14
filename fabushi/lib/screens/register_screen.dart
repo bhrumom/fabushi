@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:universal_html/html.dart' as html;
 import 'dart:async';
+import 'eula_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
@@ -224,6 +225,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('注册成功！已自动登录'), backgroundColor: Colors.green));
+      // 注册成功后检查 EULA 同意状态
+      await EulaScreen.checkAndShow(context);
+      if (!mounted) return;
       Navigator.of(context).pop(); // 返回登录界面
       Navigator.of(context).pop(); // 返回主界面
     } else if (mounted) {
