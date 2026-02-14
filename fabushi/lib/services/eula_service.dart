@@ -103,6 +103,46 @@ class EulaService {
 
 四、联系我们
 如有隐私相关问题，请联系：support@ombhrum.com
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ENGLISH VERSION
+
+"Mahayana" End User License Agreement (EULA)
+
+Last Updated: February 11, 2026
+
+Welcome to "Mahayana" (the "App"). Please read these terms carefully before using the App. By using the App, you agree to be bound by all terms of this agreement.
+
+1. Service Description
+The App provides Buddhist scripture reading, recitation, sharing, and community interaction services.
+
+2. User Conduct
+Users must comply with the following rules:
+- Do not post, transmit, or share any unlawful, harmful, threatening, abusive, harassing, defamatory, vulgar, obscene, or otherwise objectionable content.
+- Do not post advertisements or commercial promotions unrelated to the App's purpose.
+- Do not impersonate any person or entity.
+- Do not use the App for any illegal activities.
+- Respect other users and maintain a friendly, harmonious community atmosphere.
+
+3. Zero Tolerance Policy for Objectionable Content
+This App enforces a ZERO TOLERANCE policy for objectionable content and abusive behavior:
+- Any objectionable content (including but not limited to pornography, violence, hate speech, harassment, etc.) will be REMOVED WITHIN 24 HOURS upon discovery or report.
+- User accounts that post objectionable content will be PERMANENTLY BANNED without restoration.
+- Content suspected of criminal activity will be reported to relevant authorities.
+
+4. Content Moderation and Reporting
+- The App employs content filtering and moderation mechanisms to automatically detect and block objectionable content.
+- Users can report objectionable content or abusive behavior using the in-app "Report" feature.
+- All reports will be reviewed and acted upon within 24 hours.
+- Users can block other users, and blocked users' content will be removed from their feed.
+
+5. Privacy
+- We value user privacy and only collect information necessary for providing services.
+- Personal information will not be sold or shared with third parties without authorization.
+
+6. Contact
+For any questions: support@ombhrum.com
 ''';
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/liked_item.dart';
 import '../services/like_service.dart';
+import '../widgets/report_dialog.dart';
 
 class ContentDetailScreen extends StatefulWidget {
   final LikedItem item;
@@ -48,6 +49,17 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
               if (!_isLiked && mounted) {
                 Navigator.pop(context);
               }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.more_horiz),
+            tooltip: '举报/屏蔽',
+            onPressed: () {
+              ReportDialog.show(
+                context,
+                contentId: widget.item.id,
+                authorName: widget.item.username,
+              );
             },
           ),
         ],
