@@ -3,6 +3,8 @@ import 'package:global_dharma_sharing/features/video_feed/data/models/response/v
 import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_entity.dart';
 import 'package:global_dharma_sharing/features/video_feed/domain/repositories/video_feed_repository.dart';
 import 'package:global_dharma_sharing/services/cloudflare_text_service.dart';
+import 'package:global_dharma_sharing/services/content_filter_service.dart';
+import 'package:global_dharma_sharing/services/user_block_service.dart';
 import 'package:fpdart/fpdart.dart';
 
 class VideoFeedRepositoryImpl implements VideoFeedRepository {
@@ -105,10 +107,17 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
         }
       }
 
-      print('加载成功: ${videos.length} 个内容');
+      // 🛡️ UGC 安全：过滤被屏蔽用户的内容
+      final blockService = UserBlockService();
+      final filteredVideos = videos.where((v) => !blockService.shouldFilter(v.id)).toList();
+
+      // 🛡️ UGC 安全：过滤含不当内容的文本
+      final safeVideos = ContentFilterService.filterVideos(filteredVideos);
+
+      print('加载成功: ${safeVideos.length} 个内容（原始: ${videos.length})');
       _textContentIndex++;
 
-      return Right(videos);
+      return Right(safeVideos);
     } on FirebaseException catch (e) {
       return Left('Firestore error: ${e.message ?? 'Unknown error'}');
     } catch (e) {

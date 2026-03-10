@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../../../models/feed_post_model.dart';
+import '../../../../../services/content_filter_service.dart';
 import '../../../../../services/feed_service.dart';
+import '../../../../../services/user_block_service.dart';
 import '../../../../../services/video_title_service.dart';
 import '../../../../../features/video_feed/domain/entities/video_entity.dart';
 import 'feed_post_card.dart';
@@ -66,7 +68,8 @@ class _FeedPostListViewState extends State<FeedPostListView>
       _currentPage = 1;
     });
 
-    final posts = await _feedService.getTaggedPosts(widget.tag, page: 1);
+    final rawPosts = await _feedService.getTaggedPosts(widget.tag, page: 1);
+    final posts = _filterPosts(rawPosts);
     
     if (mounted) {
       setState(() {
@@ -83,7 +86,8 @@ class _FeedPostListViewState extends State<FeedPostListView>
     _hasLoadedOnce = false; // 允许重新加载
     _currentPage = 1;
 
-    final posts = await _feedService.getTaggedPosts(widget.tag, page: 1);
+    final rawPosts = await _feedService.getTaggedPosts(widget.tag, page: 1);
+    final posts = _filterPosts(rawPosts);
     
     if (mounted) {
       setState(() {
@@ -100,7 +104,8 @@ class _FeedPostListViewState extends State<FeedPostListView>
     setState(() => _isLoadingMore = true);
     _currentPage++;
 
-    final morePosts = await _feedService.getTaggedPosts(widget.tag, page: _currentPage);
+    final rawMore = await _feedService.getTaggedPosts(widget.tag, page: _currentPage);
+    final morePosts = _filterPosts(rawMore);
     
     if (mounted) {
       setState(() {
@@ -109,6 +114,18 @@ class _FeedPostListViewState extends State<FeedPostListView>
         _hasMore = morePosts.length >= 20;
       });
     }
+  }
+
+  /// 🛡️ UGC 安全：过滤被屏蔽用户和含不当内容的帖子
+  List<FeedPostModel> _filterPosts(List<FeedPostModel> posts) {
+    final blockService = UserBlockService();
+    return posts.where((post) {
+      // 过滤被屏蔽用户的帖子
+      if (blockService.shouldFilter(post.userId)) return false;
+      // 过滤含不当内容的帖子文字
+      if (ContentFilterService.containsObjectionableContent(post.content)) return false;
+      return true;
+    }).toList();
   }
 
   /// 点击@原视频标题时跳转到全屏视频并显示评论
