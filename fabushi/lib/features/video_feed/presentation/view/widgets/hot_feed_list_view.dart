@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:preload_page_view/preload_page_view.dart' hide PageScrollPhysics;
 import 'package:video_player/video_player.dart';
+import '../../../../../services/content_filter_service.dart';
 import '../../../../../services/feed_service.dart';
 import '../../../../../services/cloudflare_text_service.dart';
+import '../../../../../services/user_block_service.dart';
 import '../../../../../features/video_feed/domain/entities/video_entity.dart';
 import '../../../../../features/video_feed/presentation/view/widgets/video_feed_view_item.dart';
 
@@ -173,7 +175,16 @@ class _HotFeedListViewState extends State<HotFeedListView>
 
       // 等待所有内容加载完成
       final results = await Future.wait(videoFutures);
-      final validVideos = results.whereType<VideoEntity>().toList();
+      var validVideos = results.whereType<VideoEntity>().toList();
+
+      // 🛡️ UGC 安全：过滤被屏蔽用户的内容
+      final blockService = UserBlockService();
+      validVideos = validVideos.where((v) => !blockService.shouldFilter(v.id)).toList();
+
+      // 🛡️ UGC 安全：过滤含不当内容的文本
+      validVideos = ContentFilterService.filterVideos(validVideos);
+
+      debugPrint('🛡️ 安全过滤后: ${validVideos.length} 条热门内容');
 
       if (mounted) {
         setState(() {
