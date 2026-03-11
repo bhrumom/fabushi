@@ -41,6 +41,10 @@ class GemmaInferenceService {
     debugPrint('GemmaInferenceService: 开始加载模型 $modelPath');
     
     try {
+      // 全局初始化 FlutterGemma 插件（必须在使用任何 API 之前调用）
+      await FlutterGemma.initialize();
+      debugPrint('GemmaInferenceService: FlutterGemma 全局初始化完成');
+      
       // 使用 FileSource 从本地文件安装模型
       await FlutterGemma.installModel(
         modelType: ModelType.gemmaIt,
