@@ -46,6 +46,21 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	
+	<!-- 支付宝 URL Scheme - 用于支付宝授权/支付回调 -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>alipay</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>alipay2021005193647715</string>
+			</array>
+		</dict>
+	</array>
+	
 	<!-- 应用查询 schemes（检测其他应用是否安装）-->
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
