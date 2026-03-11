@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'keep_alive_service.dart';
 
 /// 听经服务 - 管理 TTS 经文朗读与后台播放
 ///
@@ -21,6 +22,7 @@ class SutraListeningService extends ChangeNotifier {
   // 播放状态
   bool _isPlaying = false;
   bool _isPaused = false;
+  bool _isSpeaking = false; // 防重入标志
   int _currentSentenceIndex = 0;
   List<String> _sentences = [];
   String _sutraName = '';
@@ -106,6 +108,9 @@ class SutraListeningService extends ChangeNotifier {
     _isPaused = false;
     notifyListeners();
 
+    // 同步通知栏
+    _enterNotificationMode();
+
     await _speakCurrentSentence();
   }
 
@@ -130,6 +135,7 @@ class SutraListeningService extends ChangeNotifier {
       _isPaused = false;
       _isPlaying = true;
       notifyListeners();
+      _syncNotification();
       await _speakCurrentSentence();
     }
   }
@@ -141,6 +147,7 @@ class SutraListeningService extends ChangeNotifier {
     _isPaused = true;
     _isPlaying = false;
     await _tts?.stop();
+    _syncNotification();
     notifyListeners();
   }
 
@@ -157,6 +164,7 @@ class SutraListeningService extends ChangeNotifier {
   Future<void> nextSentence() async {
     if (_currentSentenceIndex < _sentences.length - 1) {
       await _tts?.stop();
+      _isSpeaking = false;
       _currentSentenceIndex++;
       notifyListeners();
       if (_isPlaying) {
@@ -169,6 +177,7 @@ class SutraListeningService extends ChangeNotifier {
   Future<void> previousSentence() async {
     if (_currentSentenceIndex > 0) {
       await _tts?.stop();
+      _isSpeaking = false;
       _currentSentenceIndex--;
       notifyListeners();
       if (_isPlaying) {
@@ -181,6 +190,7 @@ class SutraListeningService extends ChangeNotifier {
   Future<void> seekToSentence(int index) async {
     if (index >= 0 && index < _sentences.length) {
       await _tts?.stop();
+      _isSpeaking = false;
       _currentSentenceIndex = index;
       notifyListeners();
       if (_isPlaying) {
@@ -200,7 +210,9 @@ class SutraListeningService extends ChangeNotifier {
   Future<void> stop() async {
     _isPlaying = false;
     _isPaused = false;
+    _isSpeaking = false;
     await _tts?.stop();
+    _exitNotificationMode();
     notifyListeners();
   }
 
@@ -237,6 +249,7 @@ class SutraListeningService extends ChangeNotifier {
 
   /// 朗读当前句
   Future<void> _speakCurrentSentence() async {
+    if (_isSpeaking) return; // 防重入
     if (!_isPlaying || _currentSentenceIndex >= _sentences.length) {
       if (_currentSentenceIndex >= _sentences.length) {
         await stop();
@@ -244,6 +257,7 @@ class SutraListeningService extends ChangeNotifier {
       return;
     }
 
+    _isSpeaking = true;
     final sentence = _sentences[_currentSentenceIndex];
     final preview = sentence.length > 20
         ? '${sentence.substring(0, 20)}...'
@@ -256,10 +270,12 @@ class SutraListeningService extends ChangeNotifier {
 
   /// 单句朗读完成回调
   void _onSentenceComplete() {
+    _isSpeaking = false;
     if (!_isPlaying) return;
 
     _currentSentenceIndex++;
     notifyListeners();
+    _syncNotification();
 
     if (_currentSentenceIndex >= _sentences.length) {
       stop();
@@ -271,7 +287,54 @@ class SutraListeningService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _exitNotificationMode();
     _tts?.stop();
     super.dispose();
+  }
+
+  // ========== 通知栏集成 ==========
+
+  /// 进入通知栏听经模式
+  void _enterNotificationMode() {
+    final handler = KeepAliveService.instance.audioHandler;
+    if (handler == null) return;
+
+    handler.enterSutraMode(
+      sutraName: _sutraName,
+      totalSentences: _sentences.length,
+      callback: _handleNotificationControl,
+    );
+  }
+
+  /// 同步当前状态到通知栏
+  void _syncNotification() {
+    final handler = KeepAliveService.instance.audioHandler;
+    if (handler == null || !handler.isSutraMode) return;
+
+    handler.updateSutraProgress(
+      sutraName: _sutraName,
+      currentIndex: _currentSentenceIndex,
+      totalSentences: _sentences.length,
+      isPlaying: _isPlaying,
+    );
+  }
+
+  /// 退出通知栏听经模式
+  void _exitNotificationMode() {
+    KeepAliveService.instance.audioHandler?.exitSutraMode();
+  }
+
+  /// 处理通知栏按钮回调
+  void _handleNotificationControl(SutraControlAction action) {
+    switch (action) {
+      case SutraControlAction.play:
+        play();
+      case SutraControlAction.pause:
+        pause();
+      case SutraControlAction.skipNext:
+        nextSentence();
+      case SutraControlAction.skipPrevious:
+        previousSentence();
+    }
   }
 }

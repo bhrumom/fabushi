@@ -64,6 +64,7 @@ class _SutraListeningScreenState extends State<SutraListeningScreen>
   @override
   void dispose() {
     _service.removeListener(_onServiceChanged);
+    _service.stop();
     _pulseController.dispose();
     super.dispose();
   }
