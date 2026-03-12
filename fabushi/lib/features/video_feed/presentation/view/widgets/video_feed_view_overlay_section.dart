@@ -22,6 +22,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
     this.onStartRecitation,
     this.onStartReading,
     this.contentId = '',
+    this.authorId,
     super.key,
   });
 
@@ -42,6 +43,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
   final VoidCallback? onStartRecitation;
   final VoidCallback? onStartReading;
   final String contentId;
+  final String? authorId;
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +88,7 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
               username: username,
               currentParagraph: currentParagraph,
               contentId: contentId,
+              authorId: authorId,
             ),
           ),
         ],

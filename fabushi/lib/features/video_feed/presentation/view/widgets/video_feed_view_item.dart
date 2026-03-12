@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:global_dharma_sharing/features/video_feed/domain/entities/video_entity.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_optimized_video_player.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/video_feed_view_overlay_section.dart';
@@ -12,6 +13,7 @@ import 'package:global_dharma_sharing/services/favorite_service.dart';
 import 'package:global_dharma_sharing/services/content_stats_service.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/comment_bottom_sheet.dart';
 import 'package:global_dharma_sharing/core/utils/auth_guard.dart';
+import 'package:global_dharma_sharing/widgets/report_dialog.dart';
 import 'package:video_player/video_player.dart';
 
 class VideoFeedViewItem extends StatefulWidget {
@@ -298,46 +300,62 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        widget.videoItem.contentType == ContentType.text
-            ? VideoFeedViewTextContent(
-                textContent: widget.videoItem.textContent ?? '',
-                isVisible: widget.isVisible,
-                onCurrentParagraphChanged: (paragraph) {
-                  if (mounted) {
-                    setState(() => _currentParagraph = paragraph);
-                  }
-                },
-              )
-            : VideoFeedViewOptimizedVideoPlayer(
-                controller: widget.controller,
-                videoId: widget.videoItem.id,
-              ),
-        VideoFeedViewOverlaySection(
-          profileImageUrl: widget.videoItem.profileImageUrl,
-          username: widget.videoItem.username,
-          description: widget.videoItem.description,
-          isBookmarked: _isFavorited,
-          isLiked: _isLiked,
-          likeCount: _likeCount,
-          commentCount: _commentCount,
-          shareCount: widget.videoItem.shareCount,
-          contentType: widget.videoItem.contentType,
-          textContent: widget.videoItem.textContent,
-          currentParagraph: _currentParagraph,
+    return GestureDetector(
+      onLongPress: () {
+        HapticFeedback.mediumImpact();
+        ReportDialog.show(
+          context,
           contentId: widget.videoItem.id,
-          onLikeTap: _handleLikeTap,
-          onCommentTap: _handleCommentTap,
-          onBookmarkTap: _handleFavoriteTap,
-          onStartRecitation: widget.videoItem.contentType == ContentType.text
-              ? _handleStartRecitation
-              : null,
-          onStartReading: widget.videoItem.contentType == ContentType.text
-              ? _handleStartReading
-              : null,
-        ),
-      ],
+          authorId: widget.videoItem.id, // 视频 ID 作为作者标识
+          authorName: widget.videoItem.username,
+          onActionCompleted: () {
+            // 屏蔽后刷新当前状态
+            if (mounted) setState(() {});
+          },
+        );
+      },
+      child: Stack(
+        children: [
+          widget.videoItem.contentType == ContentType.text
+              ? VideoFeedViewTextContent(
+                  textContent: widget.videoItem.textContent ?? '',
+                  isVisible: widget.isVisible,
+                  onCurrentParagraphChanged: (paragraph) {
+                    if (mounted) {
+                      setState(() => _currentParagraph = paragraph);
+                    }
+                  },
+                )
+              : VideoFeedViewOptimizedVideoPlayer(
+                  controller: widget.controller,
+                  videoId: widget.videoItem.id,
+                ),
+          VideoFeedViewOverlaySection(
+            profileImageUrl: widget.videoItem.profileImageUrl,
+            username: widget.videoItem.username,
+            description: widget.videoItem.description,
+            isBookmarked: _isFavorited,
+            isLiked: _isLiked,
+            likeCount: _likeCount,
+            commentCount: _commentCount,
+            shareCount: widget.videoItem.shareCount,
+            contentType: widget.videoItem.contentType,
+            textContent: widget.videoItem.textContent,
+            currentParagraph: _currentParagraph,
+            contentId: widget.videoItem.id,
+            authorId: widget.videoItem.id,
+            onLikeTap: _handleLikeTap,
+            onCommentTap: _handleCommentTap,
+            onBookmarkTap: _handleFavoriteTap,
+            onStartRecitation: widget.videoItem.contentType == ContentType.text
+                ? _handleStartRecitation
+                : null,
+            onStartReading: widget.videoItem.contentType == ContentType.text
+                ? _handleStartReading
+                : null,
+          ),
+        ],
+      ),
     );
   }
 

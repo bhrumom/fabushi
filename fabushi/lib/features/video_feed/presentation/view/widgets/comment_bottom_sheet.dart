@@ -1,10 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../../services/audio_stream_service.dart';
 import '../../../../../models/comment_model.dart';
 import '../../../../../services/comment_service.dart';
 import '../../../../../services/content_stats_service.dart';
 import '../../../../../core/utils/auth_guard.dart';
+import '../../../../../services/content_filter_service.dart';
+import '../../../../../services/user_block_service.dart';
+import '../../../../../widgets/report_dialog.dart';
 
 class CommentBottomSheet extends StatefulWidget {
   final String videoId;
@@ -51,8 +55,15 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
     try {
       final comments = await _commentService.getComments(widget.videoId);
       if (mounted) {
+        // 过滤违禁词和被屏蔽用户的评论
+        final blockService = UserBlockService();
+        final filtered = comments.where((c) {
+          if (blockService.shouldFilter(c.userId)) return false;
+          if (ContentFilterService.containsObjectionableContent(c.content)) return false;
+          return true;
+        }).toList();
         setState(() {
-          _comments = comments;
+          _comments = filtered;
           _isLoading = false;
         });
       }
@@ -201,8 +212,22 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
   }
 
   Widget _buildCommentItem(CommentModel comment) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+    return GestureDetector(
+      onLongPress: () {
+        HapticFeedback.mediumImpact();
+        ReportDialog.show(
+          context,
+          contentId: 'comment_${comment.id}',
+          authorId: comment.userId,
+          authorName: comment.displayName,
+          onActionCompleted: () {
+            // 屏蔽/举报后重新加载评论
+            _loadComments();
+          },
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -304,6 +329,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
           ),
         ],
       ),
+    ),
     );
   }
 

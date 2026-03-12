@@ -93,8 +93,11 @@ enum LLMModelType {
   
   // ========== Android/iOS 专用模型（flutter_gemma / Gemma 3n）==========
   
-  /// Gemma 3n E2B - 专为移动端优化，2GB RAM 即可运行
+  /// Gemma 3n E2B - 专为 Android 优化 (LiteRT-LM 引擎)
   gemma3n_e2b,
+  
+  /// Gemma 3n E2B Task - 专为 iOS 优化 (MediaPipe 引擎)
+  gemma3n_e2b_task,
   
   // ========== macOS 也可用的 Gemma 3n GGUF ==========
   
@@ -349,13 +352,26 @@ class LLMModelConfig {
     LLMModelType.gemma3n_e2b: LLMModelConfig(
       type: LLMModelType.gemma3n_e2b,
       category: LLMModelCategory.textOnly,
-      displayName: 'Gemma 3n E2B',
+      displayName: 'Gemma 3n E2B (Android)',
       fileName: 'gemma-3n-E2B-it-int4.litertlm',
       // 公开仓库，hf-mirror.com 可直接下载，无需 Token
       downloadUrl: 'https://huggingface.co/bhrum108/gemma-3n-E2B-it-litertlm/resolve/main/gemma-3n-E2B-it-int4.litertlm',
       expectedSizeBytes: 3660 * 1024 * 1024, // ~3.66 GB
-      minRamMb: 2048, // 2 GB（Gemma 3n 专为低内存设备优化）
-      description: 'Google 最新 Gemma 3n 模型，专为手机优化',
+      minRamMb: 2048, // 2 GB
+      description: 'Google 最新 Gemma 3n 模型，使用 LiteRT-LM 引擎 (Android专用)',
+      platform: LLMModelPlatform.mobileOnly,
+    ),
+    
+    LLMModelType.gemma3n_e2b_task: LLMModelConfig(
+      type: LLMModelType.gemma3n_e2b_task,
+      category: LLMModelCategory.textOnly,
+      displayName: 'Gemma 3n E2B (iOS)',
+      fileName: 'gemma-3n-E2B-it-int4.task',
+      // 用户上传的公开镜像仓库
+      downloadUrl: 'https://huggingface.co/bhrum108/gemma-3n-E2B-it-task/resolve/main/gemma-3n-E2B-it-int4.task',
+      expectedSizeBytes: 3136 * 1024 * 1024, // ~3.136 GB
+      minRamMb: 2048, // 2 GB
+      description: 'Google 最新 Gemma 3n 模型，使用 MediaPipe 引擎 (iOS专用)',
       platform: LLMModelPlatform.mobileOnly,
     ),
     
