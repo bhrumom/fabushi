@@ -35,8 +35,6 @@ import BackgroundTasks
     // MARK: - 内存警告处理
     
     override func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
-        super.applicationDidReceiveMemoryWarning(application)
-        
         NSLog("⚠️ iOS 收到内存警告")
         
         // 通知 Flutter 层释放内存

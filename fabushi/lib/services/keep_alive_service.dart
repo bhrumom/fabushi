@@ -29,6 +29,12 @@ bool _audioServiceInitialized = false;
 /// 【与原实现的区别】
 /// - 原实现：just_audio + flutter_foreground_task 分离运行
 /// - 新实现：audio_service + just_audio 集成，统一管理MediaSession
+/// 听经模式通知栏控制回调
+/// 当用户在通知栏点击播放/暂停/上一句/下一句时调用
+typedef SutraControlCallback = void Function(SutraControlAction action);
+
+enum SutraControlAction { play, pause, skipNext, skipPrevious }
+
 class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isInitialized = false;
@@ -46,6 +52,12 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
   int _loopCount = 0;
   bool _isLoopbackActive = false;
   int _loopbackCount = 0;
+  
+  // ========== 听经模式 ==========
+  bool _isSutraMode = false;
+  SutraControlCallback? _sutraCallback;
+  
+  bool get isSutraMode => _isSutraMode;
   
   // 缓存相关
   static const String _cacheFileName = 'keep_alive_dharani.mp3';
@@ -439,19 +451,137 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
   // BaseAudioHandler 必须实现的方法
   @override
   Future<void> play() async {
+    if (_isSutraMode) {
+      _sutraCallback?.call(SutraControlAction.play);
+      return;
+    }
     await _audioPlayer.play();
     _broadcastState();
   }
 
   @override
   Future<void> pause() async {
+    if (_isSutraMode) {
+      _sutraCallback?.call(SutraControlAction.pause);
+      return;
+    }
     await _audioPlayer.pause();
     _broadcastState();
   }
 
   @override
+  Future<void> skipToNext() async {
+    if (_isSutraMode) {
+      _sutraCallback?.call(SutraControlAction.skipNext);
+      return;
+    }
+    super.skipToNext();
+  }
+
+  @override
+  Future<void> skipToPrevious() async {
+    if (_isSutraMode) {
+      _sutraCallback?.call(SutraControlAction.skipPrevious);
+      return;
+    }
+    super.skipToPrevious();
+  }
+
+  @override
   Future<void> seek(Duration position) async {
     await _audioPlayer.seek(position);
+  }
+
+  // ========== 听经模式方法 ==========
+
+  /// 进入听经模式 — 通知栏切换为经文信息
+  void enterSutraMode({
+    required String sutraName,
+    required int totalSentences,
+    required SutraControlCallback callback,
+  }) {
+    _isSutraMode = true;
+    _sutraCallback = callback;
+
+    mediaItem.add(MediaItem(
+      id: 'sutra_listening',
+      title: sutraName,
+      artist: '听经',
+      album: '第 1 / $totalSentences 句',
+      duration: Duration(seconds: totalSentences), // 用句数模拟时长
+    ));
+
+    playbackState.add(PlaybackState(
+      controls: [
+        MediaControl.skipToPrevious,
+        MediaControl.pause,
+        MediaControl.skipToNext,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+      },
+      androidCompactActionIndices: const [0, 1, 2],
+      processingState: AudioProcessingState.ready,
+      playing: true,
+      updatePosition: Duration.zero,
+    ));
+
+    debugPrint('🎧 通知栏进入听经模式: $sutraName');
+  }
+
+  /// 更新听经进度 — 刷新通知栏进度和播放状态
+  void updateSutraProgress({
+    required String sutraName,
+    required int currentIndex,
+    required int totalSentences,
+    required bool isPlaying,
+  }) {
+    if (!_isSutraMode) return;
+
+    mediaItem.add(MediaItem(
+      id: 'sutra_listening',
+      title: sutraName,
+      artist: '听经',
+      album: '第 ${currentIndex + 1} / $totalSentences 句',
+      duration: Duration(seconds: totalSentences),
+    ));
+
+    playbackState.add(PlaybackState(
+      controls: [
+        MediaControl.skipToPrevious,
+        isPlaying ? MediaControl.pause : MediaControl.play,
+        MediaControl.skipToNext,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+      },
+      androidCompactActionIndices: const [0, 1, 2],
+      processingState: AudioProcessingState.ready,
+      playing: isPlaying,
+      updatePosition: Duration(seconds: currentIndex),
+    ));
+  }
+
+  /// 退出听经模式 — 恢复保活通知或清空
+  void exitSutraMode() {
+    if (!_isSutraMode) return;
+
+    _isSutraMode = false;
+    _sutraCallback = null;
+
+    // 如果保活服务正在运行，恢复保活通知
+    if (_isPlaying) {
+      _updateMediaItemForHeartbeat();
+      _broadcastState();
+    } else {
+      // 清空通知栏
+      playbackState.add(PlaybackState(
+        processingState: AudioProcessingState.idle,
+        playing: false,
+      ));
+    }
+
+    debugPrint('🎧 通知栏退出听经模式');
   }
 
   /// 释放资源

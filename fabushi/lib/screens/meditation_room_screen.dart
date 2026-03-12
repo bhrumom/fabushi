@@ -110,8 +110,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     
     setState(() => _isInitialized = true);
     
-    // 检查是否需要选择功课
-    _checkPracticeSelection();
+    // 注意：不在这里检查功课选择，因为 IndexedStack 会同时初始化所有 tab
+    // 功课选择弹窗只在用户实际切换到禅室 tab 时才显示（见 _onVisibilityChanged）
   }
   
   /// 检查是否需要选择功课
@@ -150,6 +150,11 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     
     _isPageVisible = visible;
     debugPrint('🧘 禅室页面可见性变化: $visible');
+    
+    if (visible) {
+      // 进入禅室时检查是否需要选择功课
+      _checkPracticeSelection();
+    }
     
     // 不再自动开始修行，需要用户手动点击"开始修行"按钮
     if (!visible && _sessionManager.isInSession) {

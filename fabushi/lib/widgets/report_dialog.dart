@@ -9,12 +9,14 @@ class ReportDialog extends StatefulWidget {
   final String contentId;
   final String? authorId;
   final String? authorName;
+  final VoidCallback? onActionCompleted;
 
   const ReportDialog({
     super.key,
     required this.contentId,
     this.authorId,
     this.authorName,
+    this.onActionCompleted,
   });
 
   /// 显示举报/屏蔽选项底部弹窗
@@ -23,6 +25,7 @@ class ReportDialog extends StatefulWidget {
     required String contentId,
     String? authorId,
     String? authorName,
+    VoidCallback? onActionCompleted,
   }) async {
     await showModalBottomSheet(
       context: context,
@@ -32,6 +35,7 @@ class ReportDialog extends StatefulWidget {
         contentId: contentId,
         authorId: authorId,
         authorName: authorName,
+        onActionCompleted: onActionCompleted,
       ),
     );
   }
@@ -66,6 +70,8 @@ class _ReportDialogState extends State<ReportDialog> {
     if (mounted) {
       setState(() => _isSubmitting = false);
       Navigator.of(context).pop();
+
+      widget.onActionCompleted?.call();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -109,6 +115,8 @@ class _ReportDialogState extends State<ReportDialog> {
 
     if (mounted) {
       Navigator.of(context).pop();
+
+      widget.onActionCompleted?.call();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('已屏蔽${widget.authorName ?? '该用户'}'),

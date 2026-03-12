@@ -98,7 +98,7 @@ class AssetLoaderService {
       return _memoryCache[fileName]!;
     }
     
-    // 2. 检查本地持久化文件
+    // 2. 检查本地持久化文件（含完整性校验）
     if (!forceRefresh) {
       final cached = await _loadFromPersistentStorage(fileName);
       if (cached != null && cached.isNotEmpty) {
@@ -109,11 +109,19 @@ class AssetLoaderService {
       }
     }
     
-    // 3. 执行断点续传下载
+    // 3. 检查是否有未完成的下载（.downloading 文件）
+    if (!kIsWeb) {
+      final hasPartial = await _hasPartialDownload(fileName);
+      if (hasPartial) {
+        debugPrint('🔄 [AssetLoader] 检测到未完成下载，将执行断点续传: $fileName');
+      }
+    }
+    
+    // 4. 执行断点续传下载
     debugPrint('📥 [AssetLoader] 开始下载: $fileName');
     final data = await _downloadResumable(fileName, onProgress: onProgress);
     
-    // 4. 更新内存缓存
+    // 5. 更新内存缓存
     _memoryCache[fileName] = data;
     
     return data;
@@ -134,19 +142,57 @@ class AssetLoaderService {
     return modelDir;
   }
 
-  /// 从本地持久化存储加载
+  /// 检查是否存在未完成的下载
+  static Future<bool> _hasPartialDownload(String fileName) async {
+    if (kIsWeb) return false;
+    try {
+      final dir = await _getStorageDirectory();
+      final safeFileName = fileName.replaceAll('/', '_');
+      final tempFile = File('${dir.path}/$safeFileName.downloading');
+      return await tempFile.exists() && await tempFile.length() > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// 通过 HEAD 请求获取服务端文件大小
+  static Future<int?> _getRemoteFileSize(String fileName) async {
+    try {
+      final url = '$cdnBaseUrl$fileName';
+      final response = await http.head(Uri.parse(url)).timeout(
+        const Duration(seconds: 10),
+      );
+      if (response.statusCode == 200) {
+        final contentLength = response.headers['content-length'];
+        if (contentLength != null) {
+          return int.tryParse(contentLength);
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ [AssetLoader] HEAD 请求失败: $e');
+    }
+    return null;
+  }
+
+  /// 从本地持久化存储加载（含完整性校验）
   static Future<Uint8List?> _loadFromPersistentStorage(String fileName) async {
     if (kIsWeb) return null;
     
     try {
       final dir = await _getStorageDirectory();
-      // 处理文件名中的路径分隔符
       final safeFileName = fileName.replaceAll('/', '_'); 
       final file = File('${dir.path}/$safeFileName');
       
       if (await file.exists()) {
         final length = await file.length();
         if (length > 0) {
+          // 校验文件完整性：比对服务端文件大小
+          final remoteSize = await _getRemoteFileSize(fileName);
+          if (remoteSize != null && length != remoteSize) {
+            debugPrint('⚠️ [AssetLoader] 缓存文件大小不匹配 (本地: $length, 远端: $remoteSize)，删除损坏缓存');
+            await file.delete();
+            return null;
+          }
           return await file.readAsBytes();
         } else {
           // 0字节文件，视为无效，删除
@@ -222,12 +268,19 @@ class AssetLoaderService {
         await sink.close();
         client.close();
 
+        // 验证下载完整性
+        final downloadedSize = await tempFile.length();
+        if (totalLength > 0 && downloadedSize != totalLength) {
+          debugPrint('⚠️ [AssetLoader] 下载文件大小不匹配 (实际: $downloadedSize, 预期: $totalLength)，保留 .downloading 文件以便续传');
+          throw Exception('下载不完整: 已下载 $downloadedSize / $totalLength bytes');
+        }
+
         // 下载完成，重命名为正式文件
         if (await finalFile.exists()) {
           await finalFile.delete();
         }
         await tempFile.rename(finalFile.path);
-        debugPrint('✅ [AssetLoader] 下载完成并保存: ${finalFile.path}');
+        debugPrint('✅ [AssetLoader] 下载完成并保存: ${finalFile.path} ($downloadedSize bytes)');
         
         return await finalFile.readAsBytes();
       } else if (response.statusCode == 416) {

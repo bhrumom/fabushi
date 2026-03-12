@@ -43,6 +43,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
   
   bool _isLoading = true;
   double _loadingProgress = 0.0;
+  bool _loadFailed = false; // 加载失败标记，用于显示重试按钮
   
   // 香相关
   three.Mesh? _incenseStick;
@@ -507,79 +508,118 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
     threeJs.scene.add(stars);
   }
 
+  /// 加载佛像模型（带自动重试）
   Future<void> _loadModel() async {
-    try {
-      // 统一使用相同路径，Web 版本的模型放在 web/assets/models/ 目录
-      // 原生平台的模型放在 assets/models/ 目录
-      debugPrint('开始从 AssetLoaderService 加载佛像模型 (kIsWeb: $kIsWeb)');
-      if (mounted) setState(() => _isLoading = true);
-      final modelData = await AssetLoaderService.loadBuddhaModel(
-        onProgress: (progress) {
+    const maxRetries = 3;
+    
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        debugPrint('开始加载佛像模型 (第 $attempt/$maxRetries 次尝试, kIsWeb: $kIsWeb)');
+        if (mounted) {
+          setState(() {
+            _isLoading = true;
+            _loadFailed = false;
+            _loadingProgress = 0.0;
+          });
+        }
+        
+        final modelData = await AssetLoaderService.loadBuddhaModel(
+          onProgress: (progress) {
+            if (mounted) {
+              setState(() {
+                _loadingProgress = progress;
+              });
+            }
+          },
+        );
+        
+        if (!mounted) return;
+        
+        final loader = GLTFLoader();
+        final gltf = await loader.fromBytes(modelData.buffer.asUint8List());
+        debugPrint('GLTF 解析结果: ${gltf != null ? "成功" : "失败"}');
+
+        if (gltf?.scene != null) {
+          debugPrint('场景存在，添加到 threeJs.scene');
+          final scene = gltf!.scene!;
+          threeJs.scene.add(scene);
+
+          // 计算整个场景的边界框
+          double minX = double.infinity, minY = double.infinity, minZ = double.infinity;
+          double maxX = double.negativeInfinity,
+              maxY = double.negativeInfinity,
+              maxZ = double.negativeInfinity;
+
+          scene.traverse((child) {
+            if (child is three.Mesh) {
+              child.geometry?.computeBoundingBox();
+              final bbox = child.geometry?.boundingBox;
+              if (bbox != null) {
+                minX = minX < bbox.min.x ? minX : bbox.min.x;
+                minY = minY < bbox.min.y ? minY : bbox.min.y;
+                minZ = minZ < bbox.min.z ? minZ : bbox.min.z;
+                maxX = maxX > bbox.max.x ? maxX : bbox.max.x;
+                maxY = maxY > bbox.max.y ? maxY : bbox.max.y;
+                maxZ = maxZ > bbox.max.z ? maxZ : bbox.max.z;
+              }
+
+              // 黄金材质
+              final goldMaterial = three.MeshStandardMaterial.fromMap({
+                'color': 0xFFD700,
+                'metalness': 0.9,
+                'roughness': 0.2,
+                'side': tmath.DoubleSide,
+              });
+              child.material = goldMaterial;
+            }
+          });
+
+          // 计算整体中心和大小
+          final centerX = (minX + maxX) / 2;
+          final centerY = (minY + maxY) / 2;
+          final centerZ = (minZ + maxZ) / 2;
+          final sizeX = maxX - minX;
+          final sizeY = maxY - minY;
+          final sizeZ = maxZ - minZ;
+          final maxSize = [sizeX, sizeY, sizeZ].reduce((a, b) => a > b ? a : b);
+
+          // 缩放并居中，放大佛像并上移留出供品空间
+          const targetSize = 150.0;
+          final scale = targetSize / maxSize;
+          scene.scale.setValues(scale, scale, scale);
+          scene.position.setValues(-centerX * scale, -centerY * scale + 30, -centerZ * scale);
+        }
+        
+        // 加载成功，清除加载状态
+        if (mounted) setState(() => _isLoading = false);
+        return; // 成功，退出重试循环
+        
+      } catch (e, stackTrace) {
+        debugPrint('❌ 加载模型失败 (第 $attempt/$maxRetries 次): $e');
+        debugPrint('堆栈: $stackTrace');
+        
+        if (attempt < maxRetries) {
+          // 指数退避: 2s -> 4s -> 8s
+          final delay = Duration(seconds: 1 << attempt);
+          debugPrint('🔄 ${delay.inSeconds} 秒后重试...');
           if (mounted) {
             setState(() {
-              _loadingProgress = progress;
+              _loadingProgress = 0.0;
             });
           }
-        },
-      );
-      if (mounted) setState(() => _isLoading = false);
-      final loader = GLTFLoader();
-      final gltf = await loader.fromBytes(modelData.buffer.asUint8List());
-      debugPrint('GLTF 解析结果: ${gltf != null ? "成功" : "失败"}');
-
-      if (gltf?.scene != null) {
-        debugPrint('场景存在，添加到 threeJs.scene');
-        final scene = gltf!.scene!;
-        threeJs.scene.add(scene);
-
-        // 计算整个场景的边界框
-        double minX = double.infinity, minY = double.infinity, minZ = double.infinity;
-        double maxX = double.negativeInfinity,
-            maxY = double.negativeInfinity,
-            maxZ = double.negativeInfinity;
-
-        scene.traverse((child) {
-          if (child is three.Mesh) {
-            child.geometry?.computeBoundingBox();
-            final bbox = child.geometry?.boundingBox;
-            if (bbox != null) {
-              minX = minX < bbox.min.x ? minX : bbox.min.x;
-              minY = minY < bbox.min.y ? minY : bbox.min.y;
-              minZ = minZ < bbox.min.z ? minZ : bbox.min.z;
-              maxX = maxX > bbox.max.x ? maxX : bbox.max.x;
-              maxY = maxY > bbox.max.y ? maxY : bbox.max.y;
-              maxZ = maxZ > bbox.max.z ? maxZ : bbox.max.z;
-            }
-
-            // 黄金材质
-            final goldMaterial = three.MeshStandardMaterial.fromMap({
-              'color': 0xFFD700,
-              'metalness': 0.9,
-              'roughness': 0.2,
-              'side': tmath.DoubleSide,
+          await Future.delayed(delay);
+          if (!mounted) return;
+        } else {
+          // 所有重试都失败，显示重试按钮
+          debugPrint('❌ 所有重试均失败，显示手动重试按钮');
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _loadFailed = true;
             });
-            child.material = goldMaterial;
           }
-        });
-
-        // 计算整体中心和大小
-        final centerX = (minX + maxX) / 2;
-        final centerY = (minY + maxY) / 2;
-        final centerZ = (minZ + maxZ) / 2;
-        final sizeX = maxX - minX;
-        final sizeY = maxY - minY;
-        final sizeZ = maxZ - minZ;
-        final maxSize = [sizeX, sizeY, sizeZ].reduce((a, b) => a > b ? a : b);
-
-        // 缩放并居中，放大佛像并上移留出供品空间
-        const targetSize = 150.0;
-        final scale = targetSize / maxSize;
-        scene.scale.setValues(scale, scale, scale);
-        scene.position.setValues(-centerX * scale, -centerY * scale + 30, -centerZ * scale);
+        }
       }
-    } catch (e, stackTrace) {
-      debugPrint('❌ 加载模型失败: $e');
-      debugPrint('堆栈: $stackTrace');
     }
   }
 
@@ -711,6 +751,62 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
                           color: Color(0xFFFFD700),
                           fontSize: 14,
                           letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          // 加载失败 — 显示重试按钮
+          if (_loadFailed && !_isLoading)
+            Positioned.fill(
+              child: Container(
+                color: const Color(0xFF0B0E14).withOpacity(0.85),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.cloud_off_rounded,
+                        color: Color(0xFFFFD700),
+                        size: 48,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        '佛像加载失败',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '请检查网络连接后重试\n已下载部分将自动续传',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _loadFailed = false;
+                          });
+                          _loadModel();
+                        },
+                        icon: const Icon(Icons.refresh, size: 20),
+                        label: const Text('重新加载'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFD4AF37),
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
                         ),
                       ),
                     ],
