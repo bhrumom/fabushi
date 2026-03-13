@@ -1582,6 +1582,7 @@ DEPENDENCIES:
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
   - sherpa_onnx_ios (from `.symlinks/plugins/sherpa_onnx_ios/ios`)
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
+  - TensorFlowLiteSwift (from `LocalDependencies/TensorFlowLiteSwift`)
   - three_js_sensors (from `.symlinks/plugins/three_js_sensors/ios`)
   - tobias (from `.symlinks/plugins/tobias/ios`)
   - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
@@ -1626,7 +1627,6 @@ SPEC REPOS:
     - SwiftyGif
     - TensorFlowLiteC
     - TensorFlowLiteSelectTfOps
-    - TensorFlowLiteSwift
 
 EXTERNAL SOURCES:
   app_links:
@@ -1691,6 +1691,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/sherpa_onnx_ios/ios"
   sqflite_darwin:
     :path: ".symlinks/plugins/sqflite_darwin/darwin"
+  TensorFlowLiteSwift:
+    :path: LocalDependencies/TensorFlowLiteSwift
   three_js_sensors:
     :path: ".symlinks/plugins/three_js_sensors/ios"
   tobias:
@@ -1734,7 +1736,7 @@ SPEC CHECKSUMS:
   FirebaseSharedSwift: 9d2fa84a46676302b89dbd5e6e62bce2fe376909
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_angle: 290cf0e9610f10ee5e5a77e0a1e43885aa02ae3b
-  flutter_gemma: 2807ffce3803ffa039adc50ab636ee5fb55fd7ed
+  flutter_gemma: d979079b482f8a8b8b9b86cb052443c1c893071b
   flutter_inappwebview_ios: b89ba3482b96fb25e00c967aae065701b66e9b99
   flutter_local_notifications: a5a732f069baa862e728d839dd2ebb904737effb
   flutter_sound: d95194f6476c9ad211d22b3a414d852c12c7ca44
@@ -1769,9 +1771,9 @@ SPEC CHECKSUMS:
   sherpa_onnx_ios: 26559c59f7587c6bcb358d9fa10f5f692cc76b76
   sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
   SwiftyGif: 706c60cf65fa2bc5ee0313beece843c8eb8194d4
-  TensorFlowLiteC: 215ef57653dd0fa09a474e7d94d79ae64a870b28
-  TensorFlowLiteSelectTfOps: 392229579b8c686fb1525cdb46ee2ac380558873
-  TensorFlowLiteSwift: f165f01f6932a91b67d8375166da6cd3dda7e198
+  TensorFlowLiteC: bf49439a769b79f2a68c8b33ffb8885082758b1e
+  TensorFlowLiteSelectTfOps: 5dd26c20e856c8407f6ce57556e26a6e20cc0377
+  TensorFlowLiteSwift: 1b1b80a30489674ac7474af754de6ba7a40d002b
   three_js_sensors: f516b092803411e05b1e3dc7625efa36acd8f455
   tobias: 7bc370eaccba2e7c7c345902a4a47dc5916cf8bb
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
@@ -1779,6 +1781,6 @@ SPEC CHECKSUMS:
   webview_flutter_wkwebview: 8ebf4fded22593026f7dbff1fbff31ea98573c8d
   workmanager: 01be2de7f184bd15de93a1812936a2b7f42ef07e
 
-PODFILE CHECKSUM: 47090b829f2757d76eab6db659cdc4ee27e1416d
+PODFILE CHECKSUM: 301def589655a96f440ba0da010b181df435b305
 
 COCOAPODS: 1.16.2

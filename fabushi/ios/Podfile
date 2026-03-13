@@ -36,7 +36,8 @@ target 'Runner' do
   use_frameworks! :linkage => :static
   
   # Overrides injected into global trunk cache, not linked directly into Runner
-  
+  pod 'TensorFlowLiteSwift', :path => 'LocalDependencies/TensorFlowLiteSwift'
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths
