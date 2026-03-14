@@ -270,6 +270,39 @@ class MembershipService {
     }
   }
 
+  /// Apple App Store Server API v2 收据验证
+  Future<Map<String, dynamic>> verifyAppleReceipt(
+    String token,
+    String transactionId,
+    String productId,
+  ) async {
+    try {
+      final endpoint = Uri.parse(AppConfig.appleVerifyReceiptUrl).path;
+      final response = await _apiClient.post(
+        endpoint,
+        body: {
+          'transactionId': transactionId,
+          'productId': productId,
+        },
+        token: token,
+      );
+
+      if (response['success'] == true) {
+        return {
+          'success': true,
+          'message': response['message'] ?? '会员激活成功',
+          'membershipType': response['membershipType'],
+          'expiresAt': response['expiresAt'],
+        };
+      } else {
+        return {'success': false, 'message': response['message'] ?? '收据验证失败'};
+      }
+    } catch (e) {
+      debugPrint('Apple IAP 收据验证失败: $e');
+      return {'success': false, 'message': '网络连接失败'};
+    }
+  }
+
   // 查询支付宝订单状态（无token版本）
   Future<Map<String, dynamic>> queryAlipayOrderPublic(String orderId) async {
     try {

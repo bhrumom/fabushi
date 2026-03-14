@@ -6,9 +6,11 @@ import 'dart:async';
 import 'dart:convert';
 // 仅在Web平台上导入dart:html
 import 'package:universal_html/html.dart' as html;
+import 'package:in_app_purchase/in_app_purchase.dart';
 import '../models/auth_model.dart';
 import '../services/membership_service.dart';
 import '../services/alipay_service.dart';
+import '../services/apple_iap_service.dart';
 // import '../widgets/membership_dialog.dart';
 import '../core/config/app_config.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -24,6 +26,7 @@ class MembershipScreen extends StatefulWidget {
 class _MembershipScreenState extends State<MembershipScreen> with SingleTickerProviderStateMixin {
   final MembershipService _membershipService = MembershipService();
   final AlipayService _alipayService = AlipayService();
+  final AppleIapService _appleIapService = AppleIapService();
   bool _isLoading = false;
 
   // 历史记录相关状态
@@ -47,6 +50,11 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       _setupLocalStorageListener();
     }
 
+    // iOS 端初始化 Apple IAP
+    if (AppleIapService.isAppleIapPlatform) {
+      _initAppleIap();
+    }
+
     // 加载历史记录
     _loadHistory();
   }
@@ -64,6 +72,10 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       }
     }
     _localStorageCheckTimer?.cancel();
+
+    // 清理 Apple IAP 回调
+    _appleIapService.onPurchaseSuccess = null;
+    _appleIapService.onPurchaseError = null;
 
     super.dispose();
   }
@@ -208,7 +220,11 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
 
       Map<String, dynamic> result;
 
-      if (paymentMethod == 'stripe') {
+      if (paymentMethod == 'apple_iap') {
+        // iOS 端使用 Apple IAP
+        await _processAppleIapPurchase(priceType);
+        return; // Apple IAP 通过回调处理结果，直接返回
+      } else if (paymentMethod == 'stripe') {
         result = await _membershipService.createPaymentSession(authModel.authToken!, priceType);
 
         if (result['success'] == true) {
@@ -297,12 +313,17 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
 
   /// 根据平台自动选择合适的支付方式
   Future<String?> _getPaymentMethodForPlatform() async {
+    // iOS 端使用 Apple IAP
+    if (AppleIapService.isAppleIapPlatform) {
+      return 'apple_iap';
+    }
+
     // Web和桌面端默认使用支付宝电脑网站支付
     if (kIsWeb || _isDesktopPlatform()) {
       return 'alipay';
     }
 
-    // 手机端检查是否安装了支付宝，如果安装了默认使用支付宝，否则显示选择对话框
+    // Android 手机端检查是否安装了支付宝
     try {
       final alipayInitResult = await _alipayService.initAlipay();
       if (alipayInitResult['success'] == true) {
@@ -326,6 +347,72 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       // 如果平台检测失败，默认为false
       return false;
     }
+  }
+
+  /// 初始化 Apple IAP
+  Future<void> _initAppleIap() async {
+    final available = await _appleIapService.initialize();
+    if (!available) {
+      debugPrint('Apple IAP 初始化失败或不可用');
+      return;
+    }
+
+    // 设置购买成功回调
+    _appleIapService.onPurchaseSuccess = (PurchaseDetails purchase) async {
+      if (!mounted) return;
+
+      final authModel = Provider.of<AuthModel>(context, listen: false);
+      if (authModel.authToken == null) return;
+
+      // 向后端发送 v2 API 需要的 transactionId
+      final transactionId = _appleIapService.getTransactionId(purchase);
+      if (transactionId != null) {
+        final result = await _membershipService.verifyAppleReceipt(
+          authModel.authToken!,
+          transactionId,
+          purchase.productID,
+        );
+
+        if (mounted) {
+          if (result['success'] == true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('支付成功！会员已激活'), backgroundColor: Colors.green),
+            );
+            await authModel.refreshUserInfo();
+            _loadHistory();
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(result['message'] ?? '会员激活失败'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    };
+
+    // 设置购买失败回调
+    _appleIapService.onPurchaseError = (String error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: Colors.orange),
+      );
+      setState(() => _isLoading = false);
+    };
+  }
+
+  /// 处理 Apple IAP 购买
+  Future<void> _processAppleIapPurchase(String priceType) async {
+    final success = await _appleIapService.purchase(priceType);
+    if (!success && mounted) {
+      setState(() => _isLoading = false);
+    }
+    // 购买结果由 _initAppleIap 中设置的回调处理
   }
 
   /// 处理支付宝APP支付
@@ -824,6 +911,20 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
             );
           }).toList(),
 
+          // iOS 端显示"恢复购买"按钮（App Store 审核要求）
+          if (AppleIapService.isAppleIapPlatform) ...[
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: _isLoading ? null : () async {
+                setState(() => _isLoading = true);
+                await _appleIapService.restorePurchases();
+                // 结果通过回调处理
+              },
+              icon: const Icon(Icons.restore, color: Colors.white70),
+              label: const Text('恢复购买', style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+
           const SizedBox(height: 32),
 
           // 历史记录部分
@@ -991,6 +1092,8 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
         return Icons.credit_card;
       case 'wechat':
         return Icons.chat_bubble;
+      case 'apple':
+        return Icons.apple;
       default:
         return Icons.account_balance_wallet;
     }
@@ -1005,6 +1108,8 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
         return '信用卡';
       case 'wechat':
         return '微信支付';
+      case 'apple':
+        return 'Apple Pay';
       default:
         return '未知';
     }
