@@ -47,6 +47,7 @@ class AppConfig {
   // 功能开关
   static const bool enableFirebaseAuth = true;
   static const bool enableAlipay = true;
+  static const bool enableAppleIAP = true;
   static const bool enableVideoFeed = true;
   static bool get enableDebugMode => !isProduction;
 
@@ -103,6 +104,8 @@ class AppConfig {
   static String get stripeCreateSubscriptionUrl =>
       '$currentBackendUrl/api/stripe/create-subscription';
   static String get stripeSessionStatusUrl => '$currentBackendUrl/api/stripe/session-status';
+
+  static String get appleVerifyReceiptUrl => '$currentBackendUrl/api/apple/verify-receipt';
 
   static String get adminCheckStatusUrl => '$currentBackendUrl/api/admin/check-status';
   static String get adminCreateRedeemCodeUrl => '$currentBackendUrl/api/admin/create-redeem-code';

@@ -66,6 +66,7 @@ dependencies:
 
   # 支付
   tobias: ^5.3.0  # 支付宝
+  in_app_purchase: ^3.2.0  # Apple IAP（iOS端会员充值）
 
   # WebView
   webview_flutter: ^4.4.2

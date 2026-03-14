@@ -33,21 +33,28 @@ pre_install do |installer|
 end
 
 target 'Runner' do
-  use_frameworks! :linkage => :static
+  use_frameworks! :linkage => :dynamic
   
-  # Overrides injected into global trunk cache, not linked directly into Runner
-  pod 'TensorFlowLiteSwift', :path => 'LocalDependencies/TensorFlowLiteSwift'
+  
+  # TensorFlowLiteSwift nightly versions have issues with ZIP downloads in the standard podspec.
+  # Use a local corrected podspec that fixes the source file paths.
+  pod 'TensorFlowLiteSwift', :podspec => 'TensorFlowLiteSwift.podspec.json'
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
-  target 'RunnerTests' do
-    inherit! :search_paths
-  end
 end
 
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    
+    # Ensure Accelerate and other frameworks are linked to all targets that might need them
     target.build_configurations.each do |config|
+      config.build_settings['OTHER_LDFLAGS'] ||= '$(inherited)'
+      ['Accelerate', 'CoreGraphics', 'CoreVideo', 'Metal'].each do |framework|
+        unless config.build_settings['OTHER_LDFLAGS'].include?("-framework #{framework}")
+          config.build_settings['OTHER_LDFLAGS'] << " -framework #{framework}"
+        end
+      end
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
     end
   end
