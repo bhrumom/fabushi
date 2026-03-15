@@ -106,7 +106,6 @@ dependencies:
   # flutter_gemma - Android/iOS/macOS 平台
   # - 支持 Gemma 3n (.litertlm) 和 Gemma 3 (.task) 格式
   # - 基于 MediaPipe GenAI + LiteRT-LM 引擎
-  flutter_gemma: ^0.12.3
 
   # FFmpeg - 音频合并与字幕嵌入
   ffmpeg_kit_flutter_new_audio: ^2.0.0  # FFmpeg 纯音频版本（体积小）

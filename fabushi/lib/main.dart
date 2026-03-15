@@ -25,10 +25,13 @@ import 'services/semantic_nlp_service.dart';
 import 'services/app_settings.dart';
 
 void main() async {
+  debugPrint('🚀 [main] App starting... WidgetsFlutterBinding.ensureInitialized()');
   WidgetsFlutterBinding.ensureInitialized();
 
   // 初始化依赖注入
+  debugPrint('🚀 [main] setupDependencies() begin');
   setupDependencies();
+  debugPrint('🚀 [main] setupDependencies() done');
 
   // 打印配置信息（仅调试模式）
   if (kDebugMode) {
@@ -48,13 +51,18 @@ void main() async {
     try {
       // 检查是否已初始化，避免重复初始化
       if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-        debugPrint('✅ Firebase初始化成功');
+        debugPrint('🚀 [main] Firebase.initializeApp() begin');
+        await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)
+            .timeout(const Duration(seconds: 5), onTimeout: () {
+          debugPrint('⚠️ [main] Firebase初始化超时 (5s)');
+          return null as dynamic;
+        });
+        debugPrint('✅ [main] Firebase初始化成功');
       } else {
-        debugPrint('✅ Firebase已初始化，跳过');
+        debugPrint('✅ [main] Firebase已初始化，跳过');
       }
     } catch (e) {
-      debugPrint('⚠️ Firebase初始化失败: $e');
+      debugPrint('⚠️ [main] Firebase初始化失败: $e');
     }
   } else {
     // Web平台：延迟Firebase初始化到用户交互后
@@ -72,11 +80,16 @@ void main() async {
 
   // 延迟异步初始化，避免阻塞启动
   Future.delayed(const Duration(milliseconds: 100), () {
-    AppInitializer.initialize().catchError((e) => debugPrint('初始化失败: $e'));
+    debugPrint('🚀 [main] AppInitializer.initialize() begin');
+    AppInitializer.initialize().then((_) {
+      debugPrint('🚀 [main] AppInitializer.initialize() done');
+    }).catchError((e) => debugPrint('初始化失败: $e'));
   });
 
   // 🚀 立即初始化Video Feed依赖（不阻塞）
+  debugPrint('🚀 [main] setupVideoFeedDependencies() begin');
   setupVideoFeedDependencies();
+  debugPrint('🚀 [main] setupVideoFeedDependencies() done');
   
   // 🚀 后台预加载法流内容，实现秒加载
   Future.microtask(() async {
@@ -93,6 +106,7 @@ void main() async {
   // 注意：只有在用户明确选择下载模型后才自动下载，避免"暂时不下载"后仍然下载
   Future.microtask(() async {
     try {
+      debugPrint('🚀 [main] SemanticNlpService init begin');
       // 检查用户是否已完成模型设置，如果未完成则不自动下载
       final isModelSetupComplete = await AppSettings.isModelSetupComplete();
       await SemanticNlpService.instance.initialize(
@@ -104,6 +118,7 @@ void main() async {
     }
   });
 
+  debugPrint('🚀 [main] runApp(MyApp) begin');
   runApp(const MyApp());
 }
 

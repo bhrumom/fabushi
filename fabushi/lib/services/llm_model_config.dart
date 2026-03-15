@@ -21,18 +21,6 @@ enum LLMModelCategory {
   reranker,
 }
 
-/// 模型支持的平台
-enum LLMModelPlatform {
-  /// 所有平台
-  all,
-  
-  /// 仅 macOS（使用 llama_cpp_dart）
-  macOSOnly,
-  
-  /// 仅 Android/iOS（使用 MediaPipe）
-  mobileOnly,
-}
-
 /// HuggingFace 下载源
 enum HFDownloadSource {
   /// 官方源 (huggingface.co) - 国外用户
@@ -65,8 +53,6 @@ class HFSourceConfig {
 
 /// 模型类型枚举
 enum LLMModelType {
-  // ========== macOS 专用模型（llama_cpp_dart / GGUF）==========
-  
   /// Qwen2.5-0.5B-Instruct - 入门级，适合低端设备
   qwen05b,
   
@@ -91,17 +77,7 @@ enum LLMModelType {
   /// Qwen3-Reranker-0.6B - 文本重排序模型，用于检索结果优化
   qwen3Reranker06b,
   
-  // ========== Android/iOS 专用模型（flutter_gemma / Gemma 3n）==========
-  
-  /// Gemma 3n E2B - 专为 Android 优化 (LiteRT-LM 引擎)
-  gemma3n_e2b,
-  
-  /// Gemma 3n E2B Task - 专为 iOS 优化 (MediaPipe 引擎)
-  gemma3n_e2b_task,
-  
-  // ========== macOS 也可用的 Gemma 3n GGUF ==========
-  
-  /// Gemma 3n E2B GGUF Q4_K_M - macOS llama.cpp
+  /// Gemma 3n E2B GGUF Q4_K_M
   gemma3n_e2b_gguf,
 }
 
@@ -156,9 +132,6 @@ class LLMModelConfig {
   
   /// 视觉编码器文件大小（字节）
   final int? mmprojSizeBytes;
-  
-  /// 支持的平台
-  final LLMModelPlatform platform;
 
   const LLMModelConfig({
     required this.type,
@@ -173,7 +146,6 @@ class LLMModelConfig {
     this.mmprojFileName,
     this.mmprojDownloadUrl,
     this.mmprojSizeBytes,
-    this.platform = LLMModelPlatform.all,
   });
 
   /// 是否为多模态模型
@@ -253,7 +225,6 @@ class LLMModelConfig {
       expectedSizeBytes: 386 * 1024 * 1024, // ~386 MB
       minRamMb: 1024, // 1 GB
       description: '入门级模型，适合低端设备，响应快速',
-      platform: LLMModelPlatform.macOSOnly,
     ),
     
     LLMModelType.qwen15b: LLMModelConfig(
@@ -265,7 +236,6 @@ class LLMModelConfig {
       expectedSizeBytes: 986 * 1024 * 1024, // ~986 MB
       minRamMb: 2048, // 2 GB
       description: '通用能力强，语义理解准确',
-      platform: LLMModelPlatform.macOSOnly,
     ),
     
     LLMModelType.deepseekR1: LLMModelConfig(
@@ -277,7 +247,6 @@ class LLMModelConfig {
       expectedSizeBytes: 1100 * 1024 * 1024, // ~1.1 GB
       minRamMb: 2048, // 2 GB
       description: 'DeepSeek官方蒸馏版，推理能力强',
-      platform: LLMModelPlatform.macOSOnly,
     ),
     
     LLMModelType.qwen3b: LLMModelConfig(
@@ -289,7 +258,6 @@ class LLMModelConfig {
       expectedSizeBytes: 1900 * 1024 * 1024, // ~1.9 GB
       minRamMb: 4096, // 4 GB
       description: '能力最强，适合高端设备',
-      platform: LLMModelPlatform.macOSOnly,
     ),
     
     // ========== 多模态视觉语言模型 ==========
@@ -345,37 +313,8 @@ class LLMModelConfig {
       expectedSizeBytes: 650 * 1024 * 1024, // ~650 MB
       minRamMb: 1024, // 1 GB
       description: '重排序模型，优化检索结果排序',
-      platform: LLMModelPlatform.macOSOnly,
     ),
     
-    // ========== Android/iOS 专用 Gemma 3n 模型 ==========
-    LLMModelType.gemma3n_e2b: LLMModelConfig(
-      type: LLMModelType.gemma3n_e2b,
-      category: LLMModelCategory.textOnly,
-      displayName: 'Gemma 3n E2B (Android)',
-      fileName: 'gemma-3n-E2B-it-int4.litertlm',
-      // 公开仓库，hf-mirror.com 可直接下载，无需 Token
-      downloadUrl: 'https://huggingface.co/bhrum108/gemma-3n-E2B-it-litertlm/resolve/main/gemma-3n-E2B-it-int4.litertlm',
-      expectedSizeBytes: 3660 * 1024 * 1024, // ~3.66 GB
-      minRamMb: 2048, // 2 GB
-      description: 'Google 最新 Gemma 3n 模型，使用 LiteRT-LM 引擎 (Android专用)',
-      platform: LLMModelPlatform.mobileOnly,
-    ),
-    
-    LLMModelType.gemma3n_e2b_task: LLMModelConfig(
-      type: LLMModelType.gemma3n_e2b_task,
-      category: LLMModelCategory.textOnly,
-      displayName: 'Gemma 3n E2B (iOS)',
-      fileName: 'gemma-3n-E2B-it-int4.task',
-      // 用户上传的公开镜像仓库
-      downloadUrl: 'https://huggingface.co/bhrum108/gemma-3n-E2B-it-task/resolve/main/gemma-3n-E2B-it-int4.task',
-      expectedSizeBytes: 3136 * 1024 * 1024, // ~3.136 GB
-      minRamMb: 2048, // 2 GB
-      description: 'Google 最新 Gemma 3n 模型，使用 MediaPipe 引擎 (iOS专用)',
-      platform: LLMModelPlatform.mobileOnly,
-    ),
-    
-    // ========== macOS 可用的 Gemma 3n GGUF 模型 ==========
     LLMModelType.gemma3n_e2b_gguf: LLMModelConfig(
       type: LLMModelType.gemma3n_e2b_gguf,
       category: LLMModelCategory.textOnly,
@@ -385,8 +324,7 @@ class LLMModelConfig {
       downloadUrl: 'https://huggingface.co/bartowski/google_gemma-3n-E2B-it-GGUF/resolve/main/google_gemma-3n-E2B-it-Q4_K_M.gguf',
       expectedSizeBytes: 2100 * 1024 * 1024, // ~2.1 GB
       minRamMb: 2048, // 2 GB
-      description: 'Gemma 3n 轻量对话模型 (macOS)',
-      platform: LLMModelPlatform.macOSOnly,
+      description: 'Gemma 3n 轻量对话模型',
     ),
   };
 
@@ -433,17 +371,9 @@ class LLMModelConfig {
   
   /// 根据平台筛选可用模型
   /// 
-  /// [isMobile] 是否为移动端（Android/iOS）
+  /// [isMobile] 是否为移动端（Android/iOS） (已废弃概念，全平台可用)
   static List<LLMModelConfig> getConfigsForPlatform({required bool isMobile}) {
-    return configs.values.where((c) {
-      if (isMobile) {
-        return c.platform == LLMModelPlatform.mobileOnly || 
-               c.platform == LLMModelPlatform.all;
-      } else {
-        return c.platform == LLMModelPlatform.macOSOnly || 
-               c.platform == LLMModelPlatform.all;
-      }
-    }).toList();
+    return allConfigs;
   }
   
   /// 获取当前平台可用的对话模型
