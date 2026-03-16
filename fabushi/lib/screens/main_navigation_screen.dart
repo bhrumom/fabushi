@@ -23,8 +23,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   // 追踪哪些页面已被激活
   final List<bool> _activatedScreens = [true, false, false, false];
   
-  // 用于通知禅室页面可见性变化
+  // 用于通知各主页面的可见性变化
   final GlobalKey<MeditationRoomScreenState> _meditationKey = GlobalKey();
+  final GlobalKey<GlobeHomeScreenState> _globeKey = GlobalKey();
 
   @override
   void initState() {
@@ -53,6 +54,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     // 使用 GlobalKey 通知禅室页面可见性变化
     _meditationKey.currentState?.setVisible(isZenRoomVisible);
   }
+  
+  /// 更新地球页面可见性状态
+  void _updateGlobeVisibility() {
+    final isGlobeVisible = _currentIndex == 0;
+    _globeKey.currentState?.setVisible(isGlobeVisible);
+  }
 
   // 保持所有页面实例，按需延迟加载
   List<Widget> get _screens {
@@ -60,7 +67,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     
     // 0: 首页 (地球)
     screens.add(_isGlobeReady
-        ? const GlobeHomeScreen()
+        ? GlobeHomeScreen(key: _globeKey)
         : const Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -129,6 +136,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 });
                 _updateVideoFeedVisibility();
                 _updateMeditationRoomVisibility();  // 通知禅室页面可见性变化
+                _updateGlobeVisibility(); // 通知地球页面可见性变化
               },
               backgroundColor: Colors.transparent,
               elevation: 0,

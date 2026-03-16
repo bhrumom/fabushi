@@ -15,6 +15,7 @@ class BuddhaModelScreen extends StatefulWidget {
   final bool showBook; // 是否显示经书
   final String? bookTitle; // 经书标题
   final VoidCallback? onBookTap; // 点击经书回调
+  final bool isVisible; // 是否可见，用于暂停后台渲染
   
   const BuddhaModelScreen({
     super.key, 
@@ -24,6 +25,7 @@ class BuddhaModelScreen extends StatefulWidget {
     this.showBook = false,
     this.bookTitle,
     this.onBookTap,
+    this.isVisible = true,
   });
 
   @override
@@ -142,6 +144,36 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
     // 更新经书显示状态
     if (oldWidget.showBook != widget.showBook) {
       _updateBookState(widget.showBook);
+    }
+    
+    // 监听可见性变化，优化后台渲染
+    if (oldWidget.isVisible != widget.isVisible) {
+      _updateVisibilityState(widget.isVisible);
+    }
+  }
+
+  void _updateVisibilityState(bool isVisible) {
+    debugPrint('👁️ 佛像3D层可见性变化: $isVisible');
+    try {
+      threeJs.pause = !isVisible;
+    } catch (e) {
+      debugPrint('⚠️ 暂停 ThreeJs 失败: $e');
+    }
+    
+    if (isVisible) {
+      // 恢复定时器
+      if (_isAutoRotating && _autoRotateTimer == null) {
+        _startAutoRotate();
+      }
+      if (_isBurning && _smokeTimer == null) {
+        _startSmokeAnimation();
+      }
+    } else {
+      // 暂停定时器以节省 CPU
+      _autoRotateTimer?.cancel();
+      _autoRotateTimer = null;
+      _smokeTimer?.cancel();
+      _smokeTimer = null;
     }
   }
 

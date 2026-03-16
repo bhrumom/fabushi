@@ -654,6 +654,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                 onTap: _onTapCount, // 点击屏幕计数
                 child: BuddhaModelScreen(
                   key: _buddhaKey,
+                  isVisible: _isPageVisible,
                   autoRotate: _isCircumambulating,
                   isBurning: _sessionManager.isInSession,
                   incenseProgress: _incenseController.value,

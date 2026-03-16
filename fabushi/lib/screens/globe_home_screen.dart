@@ -15,10 +15,10 @@ class GlobeHomeScreen extends StatefulWidget {
   const GlobeHomeScreen({super.key});
 
   @override
-  State<GlobeHomeScreen> createState() => _GlobeHomeScreenState();
+  State<GlobeHomeScreen> createState() => GlobeHomeScreenState();
 }
 
-class _GlobeHomeScreenState extends State<GlobeHomeScreen>
+class GlobeHomeScreenState extends State<GlobeHomeScreen>
     with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   static EarthGlobeWidgetState? _globeState; // 静态引用，保持在页面切换时不丢失
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
@@ -26,7 +26,21 @@ class _GlobeHomeScreenState extends State<GlobeHomeScreen>
   final List<Map<String, dynamic>> _pendingBeams = []; // 缓存待播放的轨迹（包含标签）
   bool _isGlobeLoaded = false; // 地球组件是否已加载
   bool _isCallbackSetup = false; // 性能优化：防止重复设置回调
+  bool _isVisible = true; // 跟踪页面可见性
   final _onlineCounterService = OnlineCounterService();
+
+  /// 供外部调用以设置页面的可见性
+  void setVisible(bool visible) {
+    if (_isVisible == visible) return;
+    _isVisible = visible;
+    debugPrint('🌍 地球页面可见性变化: $visible');
+    
+    // 如果有关联的 GlobeState，则相应地暂停/恢复
+    final state = _globeState ?? _globeKey.currentState;
+    if (state != null) {
+      state.setRenderingPaused(!visible);
+    }
+  }
 
   @override
   void initState() {

@@ -376,6 +376,27 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
     super.dispose();
   }
 
+  bool _isRenderingPaused = false;
+  
+  /// 暂停或恢复地球渲染、旋转
+  void setRenderingPaused(bool paused) {
+    if (_isRenderingPaused == paused || _isDisposed || !mounted) return;
+    _isRenderingPaused = paused;
+    debugPrint('🌍 地球渲染暂停状态: $paused');
+    
+    try {
+      if (paused) {
+        // 如果页面不可见，强制暂停地球旋转以节省资源
+        _controller.stopRotation();
+      } else if (!_isSending) {
+        // 页面可见且不在发送状态时，恢复旋转
+        _controller.startRotation();
+      }
+    } catch (e) {
+      debugPrint('🌍 地球旋转状态切换失败: $e');
+    }
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -406,11 +427,13 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
       radius = radius.clamp(100.0, 180.0);
     }
 
-    // 添加错误边界
     return Builder(
       builder: (context) {
         try {
-          return FlutterEarthGlobe(controller: _controller, radius: radius);
+          return TickerMode(
+            enabled: !_isRenderingPaused,
+            child: FlutterEarthGlobe(controller: _controller, radius: radius),
+          );
         } catch (e) {
           debugPrint('❌ FlutterEarthGlobe 渲染失败: $e');
           return Center(
