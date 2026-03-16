@@ -41,3 +41,12 @@ DerivedData/
 /captures
 .externalNativeBuild
 .cxx
+# 构建日志与本地缓存
+fabushi/build_output.txt
+fabushi/build_output_full.txt
+fabushi/flutter_logs_capture.txt
+tf_swift_cache/
+
+# 敏感信息与本地变量
+fabushi/web/.dev.vars
+**/*.p8

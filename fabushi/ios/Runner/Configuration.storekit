@@ -1,0 +1,99 @@
+{
+  "identifier" : "B5C8E5",
+  "non_renewing_subscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+
+  },
+  "subscription_groups" : [
+    {
+      "id" : "7849B49C",
+      "localizations" : [
+
+      ],
+      "name" : "Membership",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "21.00",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "968BD231",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Fabushi Monthly Membership",
+              "displayName" : "Monthly Membership",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Monthly",
+          "type" : "Recurring Subscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "63.00",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A68BD232",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Fabushi Quarterly Membership",
+              "displayName" : "Quarterly Membership",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "Quarterly",
+          "recurringSubscriptionPeriod" : "P3M",
+          "referenceName" : "Quarterly",
+          "type" : "Recurring Subscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "252.00",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "B68BD233",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Fabushi Annual Membership",
+              "displayName" : "Annual Membership",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "Annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Annual",
+          "type" : "Recurring Subscription"
+        }
+      ]
+    }
+  ],
+  "version" : [
+    1,
+    2
+  ]
+}

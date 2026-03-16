@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/painting.dart';
 
 /// 内存管理器
 /// 
@@ -36,9 +37,11 @@ class MemoryManager {
   // 可清理的缓存注册表
   final List<ClearableCache> _registeredCaches = [];
   
-  // 是否已初始化
-  bool _isInitialized = false;
+  // 记录最后一次警告时间
+  DateTime? _lastWarningTime;
   
+  bool _isInitialized = false;
+
   /// 初始化内存管理器
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -68,28 +71,6 @@ class MemoryManager {
     }
   }
   
-  /// 启动定期清理
-  void _startPeriodicCleanup() {
-    _cleanupTimer?.cancel();
-    _cleanupTimer = Timer.periodic(
-      const Duration(seconds: cleanupIntervalSeconds),
-      (_) => trimCacheIfNeeded(),
-    );
-  }
-  
-  /// 注册可清理的缓存
-  void registerCache(ClearableCache cache) {
-    if (!_registeredCaches.contains(cache)) {
-      _registeredCaches.add(cache);
-      debugPrint('📦 注册缓存: ${cache.cacheName}');
-    }
-  }
-  
-  /// 取消注册缓存
-  void unregisterCache(ClearableCache cache) {
-    _registeredCaches.remove(cache);
-  }
-  
   /// 检查并清理缓存（如果需要）
   Future<void> trimCacheIfNeeded() async {
     int totalCacheSize = 0;
@@ -101,7 +82,7 @@ class MemoryManager {
     final totalCacheMB = totalCacheSize / (1024 * 1024);
     
     if (totalCacheMB > maxCacheMemoryMB) {
-      debugPrint('🧹 缓存超出限制 (${totalCacheMB.toStringAsFixed(1)}MB > ${maxCacheMemoryMB}MB)，开始清理...');
+      debugPrint('🧹 [MemoryManager] 缓存超出限制 (${totalCacheMB.toStringAsFixed(1)}MB > ${maxCacheMemoryMB}MB)，开始清理...');
       
       // 按优先级排序，优先清理低优先级缓存
       final sortedCaches = List<ClearableCache>.from(_registeredCaches)
@@ -115,28 +96,45 @@ class MemoryManager {
         final after = cache.currentSizeBytes;
         
         totalCacheSize -= (before - after);
-        debugPrint('  🗑️ ${cache.cacheName}: ${(before / 1024).toStringAsFixed(0)}KB -> ${(after / 1024).toStringAsFixed(0)}KB');
+        debugPrint('  🗑️ [MemoryManager] ${cache.cacheName}: ${(before / 1024).toStringAsFixed(0)}KB -> ${(after / 1024).toStringAsFixed(0)}KB');
       }
     }
   }
   
   /// 处理系统内存警告 - 紧急释放内存
   Future<void> handleLowMemoryWarning() async {
-    debugPrint('🚨 紧急内存清理开始');
+    debugPrint('🚨 [MemoryManager] 收到系统内存警告，启动紧急清理程序...');
+    _lastWarningTime = DateTime.now();
     
+    // 1. 清理 Flutter 框架层面的图片缓存
+    try {
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+      debugPrint('✅ [MemoryManager] 已清理 Flutter 图片缓存');
+    } catch (e) {
+      debugPrint('⚠️ [MemoryManager] 清理图片缓存异常: $e');
+    }
+
+    // 2. 清理所有已注册的业务缓存（包括 3D 模型 Uint8List）
+    await _clearAllRegisteredCaches();
+    
+    // 3. 保存状态（在可能被杀死前）
+    await _saveStateBeforePossibleKill();
+    
+    debugPrint('🚨 [MemoryManager] 紧急内存清理完成');
+  }
+
+  /// 清理所有已注册的缓存
+  Future<void> _clearAllRegisteredCaches() async {
+    debugPrint('🚨 [MemoryManager] 开始清理所有注册的业务缓存...');
     for (final cache in _registeredCaches) {
       try {
         await cache.clearAll();
-        debugPrint('  🗑️ 已清空: ${cache.cacheName}');
+        debugPrint('  🗑️ [MemoryManager] 已清空: ${cache.cacheName}');
       } catch (e) {
-        debugPrint('  ❌ 清空失败 ${cache.cacheName}: $e');
+        debugPrint('  ❌ [MemoryManager] 清空失败 ${cache.cacheName}: $e');
       }
     }
-    
-    // 保存当前状态到持久化存储（防止数据丢失）
-    await _saveStateBeforePossibleKill();
-    
-    debugPrint('🚨 紧急内存清理完成');
   }
   
   /// 保存状态（在可能被杀死前）
@@ -150,22 +148,20 @@ class MemoryManager {
     }
   }
   
-  /// 获取当前内存统计
-  Map<String, int> getMemoryStats() {
-    final stats = <String, int>{};
-    for (final cache in _registeredCaches) {
-      stats[cache.cacheName] = cache.currentSizeBytes;
+  /// 注册可清理缓存
+  void registerCache(ClearableCache cache) {
+    if (!_registeredCaches.contains(cache)) {
+      _registeredCaches.add(cache);
+      debugPrint('📦 [MemoryManager] 已注册缓存: ${cache.cacheName}');
     }
-    return stats;
   }
-  
-  /// 获取总缓存大小（字节）
-  int get totalCacheSizeBytes {
-    int total = 0;
-    for (final cache in _registeredCaches) {
-      total += cache.currentSizeBytes;
-    }
-    return total;
+
+  /// 启动定期清理
+  void _startPeriodicCleanup() {
+    _cleanupTimer?.cancel();
+    _cleanupTimer = Timer.periodic(const Duration(seconds: cleanupIntervalSeconds), (timer) {
+      trimCacheIfNeeded();
+    });
   }
   
   /// 停止内存管理器

@@ -11,6 +11,7 @@ import 'like_service.dart';
 import 'keep_alive_service.dart';
 import 'workmanager_keep_alive.dart';
 import 'memory_manager.dart';
+import 'semantic_nlp_service.dart';
 
 class AppInitializer {
   static bool _isInitialized = false;
@@ -82,7 +83,22 @@ class AppInitializer {
       await optimizer.startInitialization();
       
       _isInitialized = true;
-      debugPrint('🎉 应用初始化完成');
+      debugPrint('🚀 [AppInitializer] 初始化核心任务完成'); // Modified debugPrint message
+      
+      // 性能优化：推迟 LLM 模型初始化，避免与 3D 组件竞争资源
+      // 延迟 3 秒，确保首屏（地球 1s 延迟加载）已经渲染稳定
+      Future.delayed(const Duration(seconds: 3), () async {
+        debugPrint('🚀 [AppInitializer] 开始后台延迟初始化 LLM 服务...');
+        try {
+          // 初始化但不立即强制下载大模型，支持按需加载逻辑
+          await SemanticNlpService.instance.initialize(
+            downloadModelIfNeeded: false // 启动时不自动触发 ~1GB 模型下载，由 NLP 业务触发
+          );
+        } catch (e) {
+          debugPrint('⚠️ [AppInitializer] LLM 后台初始化异常: $e');
+        }
+      });
+
     } catch (e) {
       debugPrint('应用初始化失败: $e');
       _isInitialized = true;

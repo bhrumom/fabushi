@@ -318,6 +318,9 @@ class PurchaseRecord {
         return 'Stripe';
       case 'wechat':
         return '微信支付';
+      case 'apple':
+      case 'apple_iap':
+        return 'Apple 支付';
       default:
         return paymentMethod;
     }
