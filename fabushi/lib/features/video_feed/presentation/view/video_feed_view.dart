@@ -11,6 +11,7 @@ import 'package:global_dharma_sharing/services/content_stats_service.dart';
 import 'package:global_dharma_sharing/services/video_title_service.dart';
 import 'package:preload_page_view/preload_page_view.dart' hide PageScrollPhysics;
 import 'package:video_player/video_player.dart';
+import 'package:global_dharma_sharing/providers/video_feed_visibility_notifier.dart';
 
 class VideoFeedView extends StatefulWidget {
   const VideoFeedView({
@@ -61,6 +62,45 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
     _initializeFirstVideo();
     _startPeriodicCleanup();
   }
+
+  VideoFeedVisibilityNotifier? _visibilityNotifier;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final notifier = context.read<VideoFeedVisibilityNotifier>();
+    if (_visibilityNotifier != notifier) {
+      _visibilityNotifier?.removeListener(_onVisibilityChanged);
+      _visibilityNotifier = notifier;
+      _visibilityNotifier?.addListener(_onVisibilityChanged);
+    }
+  }
+
+  void _onVisibilityChanged() {
+    if (!mounted) return;
+    final isVisible = _visibilityNotifier?.isVideoFeedVisible ?? true;
+    if (isVisible && widget.isTabActive) {
+      // 只要此页面作为当前 tab 被激活并且可见，那么初始化
+      _initAndPlayVideo(_currentPage);
+    } else {
+      // 如果不在前台或 tab 被覆盖，必须暂停所有的视频
+      _pauseAllControllers();
+    }
+    setState(() {}); // 更新试图以触发生命周期或显隐改变
+  }
+
+  @override
+  void didUpdateWidget(VideoFeedView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isTabActive != widget.isTabActive) {
+      final isVisible = _visibilityNotifier?.isVideoFeedVisible ?? true;
+      if (widget.isTabActive && isVisible) {
+        _initAndPlayVideo(_currentPage);
+      } else {
+        _pauseAllControllers();
+      }
+    }
+  }
   
   /// 🧹 启动周期性内存清理
   void _startPeriodicCleanup() {
@@ -98,6 +138,7 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _visibilityNotifier?.removeListener(_onVisibilityChanged);
     _periodicCleanupTimer?.cancel();
     _periodicCleanupTimer = null;
     _disposeAllControllers();
@@ -409,12 +450,13 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
           physics: const BouncingScrollPhysics(),
           onPageChanged: _handlePageChange,
           itemBuilder: (context, index) {
+            final isVisible = _visibilityNotifier?.isVideoFeedVisible ?? true;
             return RepaintBoundary(
               child: VideoFeedViewItem(
                 key: ValueKey(_videos[index].id),
                 controller: _getController(_videos[index].id),
                 videoItem: _videos[index],
-                isVisible: widget.isTabActive && index == _currentPage,
+                isVisible: widget.isTabActive && isVisible && index == _currentPage,
               ),
             );
           },
