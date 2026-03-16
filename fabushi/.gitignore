@@ -59,3 +59,13 @@ temp_large_assets/
 # 临时文件
 *.tmp
 *.temp
+
+# 构建日志与本地缓存
+build_output.txt
+build_output_full.txt
+flutter_logs_capture.txt
+tf_swift_cache/
+
+# 敏感信息与本地变量
+web/.dev.vars
+**/*.p8

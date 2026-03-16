@@ -20,7 +20,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
   bool _isGlobeReady = false;
   
-  // 禅室屏幕的 GlobalKey，用于通知可见性变化
+  // 追踪哪些页面已被激活
+  final List<bool> _activatedScreens = [true, false, false, false];
+  
+  // 用于通知禅室页面可见性变化
   final GlobalKey<MeditationRoomScreenState> _meditationKey = GlobalKey();
 
   @override
@@ -41,30 +44,47 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   void _updateVideoFeedVisibility() {
     // 使用 context.read 避免重复监听
     final notifier = context.read<VideoFeedVisibilityNotifier>();
-    notifier.setVisible(_currentIndex == 1); // index 1 是法流页面
+    notifier.setVisible(_currentIndex == 1 && _activatedScreens[1]); // 仅在激活且选中的情况下可见
   }
   
   /// 更新禅室页面可见性状态
   void _updateMeditationRoomVisibility() {
-    final isZenRoomVisible = _currentIndex == 2;  // index 2 是禅室页面
+    final isZenRoomVisible = _currentIndex == 2 && _activatedScreens[2];
     // 使用 GlobalKey 通知禅室页面可见性变化
     _meditationKey.currentState?.setVisible(isZenRoomVisible);
   }
 
-  // 保持所有页面实例，避免重建
-  List<Widget> get _screens => [
-    _isGlobeReady
+  // 保持所有页面实例，按需延迟加载
+  List<Widget> get _screens {
+    final screens = <Widget>[];
+    
+    // 0: 首页 (地球)
+    screens.add(_isGlobeReady
         ? const GlobeHomeScreen()
         : const Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [CircularProgressIndicator(), SizedBox(height: 16), Text('正在加载地球组件...')],
             ),
-          ),
-    const VideoFeedScreen(),
-    MeditationRoomScreen(key: _meditationKey),  // 使用 GlobalKey
-    const MyProfileScreen(),
-  ];
+          ));
+          
+    // 1: 法流 (视频)
+    screens.add(_activatedScreens[1] 
+        ? const VideoFeedScreen() 
+        : const Center(child: CircularProgressIndicator()));
+        
+    // 2: 禅室 (佛像3D)
+    screens.add(_activatedScreens[2] 
+        ? MeditationRoomScreen(key: _meditationKey) 
+        : const Center(child: CircularProgressIndicator()));
+        
+    // 3: 我的
+    screens.add(_activatedScreens[3] 
+        ? const MyProfileScreen() 
+        : const Center(child: CircularProgressIndicator()));
+        
+    return screens;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -90,17 +110,23 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               color: const Color(0x1AFFFFFF), // Glass effect
               border: const Border(top: BorderSide(color: Color(0x26FFFFFF))),
               boxShadow: [
-                 BoxShadow(
+                BoxShadow(
                   color: Colors.black.withOpacity(0.3),
                   blurRadius: 10,
                   offset: const Offset(0, -2),
-                 )
+                )
               ],
             ),
             child: NavigationBar(
               selectedIndex: _currentIndex,
               onDestinationSelected: (index) {
-                setState(() => _currentIndex = index);
+                setState(() {
+                  _currentIndex = index;
+                  // 标记页面为激活状态
+                  if (!_activatedScreens[index]) {
+                    _activatedScreens[index] = true;
+                  }
+                });
                 _updateVideoFeedVisibility();
                 _updateMeditationRoomVisibility();  // 通知禅室页面可见性变化
               },

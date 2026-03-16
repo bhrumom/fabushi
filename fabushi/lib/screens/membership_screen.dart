@@ -51,7 +51,9 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
     }
 
     // iOS 端初始化 Apple IAP
-    if (AppleIapService.isAppleIapPlatform) {
+    final isIos = AppleIapService.isAppleIapPlatform;
+    debugPrint('MembershipScreen: initState - isAppleIapPlatform = $isIos');
+    if (isIos) {
       _initAppleIap();
     }
 
@@ -208,8 +210,8 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
     });
 
     try {
-      // 根据平台选择合适的支付方式
       final paymentMethod = await _getPaymentMethodForPlatform();
+      debugPrint('MembershipScreen: 选定的支付方式为: $paymentMethod, 价格类型: $priceType');
 
       if (paymentMethod == null) {
         setState(() {
@@ -351,7 +353,9 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
 
   /// 初始化 Apple IAP
   Future<void> _initAppleIap() async {
+    debugPrint('MembershipScreen: 开始初始化 Apple IAP...');
     final available = await _appleIapService.initialize();
+    debugPrint('MembershipScreen: Apple IAP 初始化结果: $available');
     if (!available) {
       debugPrint('Apple IAP 初始化失败或不可用');
       return;
@@ -375,18 +379,25 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
 
         if (mounted) {
           if (result['success'] == true) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('支付成功！会员已激活'), backgroundColor: Colors.green),
-            );
+            final alreadyProcessed = result['alreadyProcessed'] == true;
+            if (!alreadyProcessed && _isLoading) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('支付成功！会员已激活'), backgroundColor: Colors.green),
+              );
+            } else {
+              debugPrint('AppleIapService: 后台续订或已处理，跳过提示弹窗 (isLoading=$_isLoading, alreadyProcessed=$alreadyProcessed)');
+            }
             await authModel.refreshUserInfo();
             _loadHistory();
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(result['message'] ?? '会员激活失败'),
-                backgroundColor: Colors.red,
-              ),
-            );
+            if (_isLoading) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(result['message'] ?? '会员激活失败'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
           }
         }
       }
@@ -1093,6 +1104,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       case 'wechat':
         return Icons.chat_bubble;
       case 'apple':
+      case 'apple_iap':
         return Icons.apple;
       default:
         return Icons.account_balance_wallet;
@@ -1109,9 +1121,10 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
       case 'wechat':
         return '微信支付';
       case 'apple':
-        return 'Apple Pay';
+      case 'apple_iap':
+        return 'Apple 支付';
       default:
-        return '未知';
+        return paymentMethod == 'unknown' ? '未知' : paymentMethod;
     }
   }
 
@@ -1174,6 +1187,7 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
 
   // 格式化日期时间
   String _formatDateTime(DateTime dateTime) {
+    dateTime = dateTime.toLocal(); // 转换为本地时间显示
     return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')} '
         '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
   }

@@ -517,51 +517,65 @@ class CloudflareTextService {
 
   /// 清理反编译器水印
   static String _cleanDecompilerWatermark(String content) {
-    // 移除CHM反编译器水印
-    final watermarkPattern = RegExp(
-      r'This file is decompiled by an unregistered version of ChmDecompiler\..*?http://\s*www\.etextwizard\.com/',
-      multiLine: true,
-      dotAll: true,
-    );
-    content = content.replaceAll(watermarkPattern, '');
+    if (content.isEmpty) return '';
+    
+    // 性能优化：水印通常出现在文件开头或结尾
+    // 如果文件非常大，只在两端进行搜索清理，避免全量正则匹配导致的卡顿
+    if (content.length > 100000) {
+      // 检查开头
+      final header = content.substring(0, 2000);
+      final cleanHeader = header.replaceFirst(
+        RegExp(r'This file is decompiled.*?etextwizard\.com/', caseSensitive: false, dotAll: true),
+        '',
+      );
+      if (cleanHeader != header) {
+        content = cleanHeader + content.substring(2000);
+      }
+      
+      // 检查结尾
+      final footer = content.substring(content.length - 2000);
+      final cleanFooter = footer.replaceFirst(
+        RegExp(r'This file is decompiled.*?etextwizard\.com/', caseSensitive: false, dotAll: true),
+        '',
+      );
+      if (cleanFooter != footer) {
+        content = content.substring(0, content.length - 2000) + cleanFooter;
+      }
+      return content.trim();
+    }
 
-    // 移除常见的变体
-    content = content.replaceAll(
-      RegExp(r'This file is decompiled.*?etextwizard\.com/', multiLine: true, dotAll: true),
+    // 小型文件使用原有的正则
+    return content.replaceAll(
+      RegExp(r'This file is decompiled.*?etextwizard\.com/', caseSensitive: false, dotAll: true),
       '',
-    );
-
-    return content.trim();
+    ).trim();
   }
 
   /// 清理“上一部”、“下一部”等导航信息
   static String _cleanNavigationInfo(String content) {
-    // 移除位于文档末尾的导航信息
-    // 匹配模式：换行符 + (上一部|下一部) + 任意字符 + 结束
+    if (content.isEmpty) return '';
     
-    // 移除“上一部”及其后续内容
-    content = content.replaceAll(
-      RegExp(r'\n+\s*上一部.*$', multiLine: true, dotAll: true), 
-      ''
-    );
-    
-    // 移除“下一部”及其后续内容
-    content = content.replaceAll(
-      RegExp(r'\n+\s*下一部.*$', multiLine: true, dotAll: true), 
-      ''
-    );
-    
-    // 也尝试移除单独成行的 “上一部：xxx” 或 “下一部：xxx”
-    content = content.replaceAll(
-      RegExp(r'\n+\s*上一部[：:].*(\n|$)', caseSensitive: false), 
-      '\n'
-    );
-    content = content.replaceAll(
-      RegExp(r'\n+\s*下一部[：:].*(\n|$)', caseSensitive: false), 
-      '\n'
-    );
+    // 性能优化：导航信息通常只出现在文档末尾
+    // 仅在末尾 5000 字符内搜索，避免全量匹配
+    if (content.length > 5000) {
+      final body = content.substring(0, content.length - 5000);
+      final footer = content.substring(content.length - 5000);
+      
+      final cleanFooter = footer
+        .replaceAll(RegExp(r'\n+\s*上一部.*$', multiLine: true, dotAll: true), '')
+        .replaceAll(RegExp(r'\n+\s*下一部.*$', multiLine: true, dotAll: true), '')
+        .replaceAll(RegExp(r'\n+\s*上一部[：:].*(\n|$)', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'\n+\s*下一部[：:].*(\n|$)', caseSensitive: false), '\n');
+        
+      return (body + cleanFooter).trim();
+    }
 
-    return content.trim();
+    return content
+        .replaceAll(RegExp(r'\n+\s*上一部.*$', multiLine: true, dotAll: true), '')
+        .replaceAll(RegExp(r'\n+\s*下一部.*$', multiLine: true, dotAll: true), '')
+        .replaceAll(RegExp(r'\n+\s*上一部[：:].*(\n|$)', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'\n+\s*下一部[：:].*(\n|$)', caseSensitive: false), '\n')
+        .trim();
   }
 
   /// 获取所有文本列表

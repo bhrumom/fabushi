@@ -81,6 +81,9 @@ class AssetLoaderService {
     );
   }
   
+  // 正在进行的加载任务，防止并发下载同一资源
+  static final Map<String, Future<Uint8List>> _loadingFutures = {};
+
   /// 通用资源加载方法
   /// 
   /// [fileName] 文件名 (相对路径)
@@ -97,8 +100,34 @@ class AssetLoaderService {
       onProgress?.call(1.0);
       return _memoryCache[fileName]!;
     }
-    
-    // 2. 检查本地持久化文件（含完整性校验）
+
+    // 2. 检查是否有正在进行的加载任务
+    if (_loadingFutures.containsKey(fileName)) {
+      debugPrint('⏳ [AssetLoader] 发现正在进行的加载任务，合并请求: $fileName');
+      // 注意：这里无法直接合并 onProgress，但后续请求会共享最终结果
+      return _loadingFutures[fileName]!;
+    }
+
+    // 3. 创建新的加载任务
+    final loadFuture = _performLoad(fileName, onProgress: onProgress, forceRefresh: forceRefresh);
+    _loadingFutures[fileName] = loadFuture;
+
+    try {
+      final result = await loadFuture;
+      return result;
+    } finally {
+      // 任务完成后移除 Future 缓存
+      _loadingFutures.remove(fileName);
+    }
+  }
+
+  /// 实际执行加载逻辑
+  static Future<Uint8List> _performLoad(
+    String fileName, {
+    void Function(double progress)? onProgress,
+    bool forceRefresh = false,
+  }) async {
+    // 2.1 检查本地持久化文件（含完整性校验）
     if (!forceRefresh) {
       final cached = await _loadFromPersistentStorage(fileName);
       if (cached != null && cached.isNotEmpty) {

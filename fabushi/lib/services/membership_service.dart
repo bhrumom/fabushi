@@ -293,6 +293,7 @@ class MembershipService {
           'message': response['message'] ?? '会员激活成功',
           'membershipType': response['membershipType'],
           'expiresAt': response['expiresAt'],
+          'alreadyProcessed': response['alreadyProcessed'] == true,
         };
       } else {
         return {'success': false, 'message': response['message'] ?? '收据验证失败'};

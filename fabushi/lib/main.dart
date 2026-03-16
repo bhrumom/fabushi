@@ -101,22 +101,8 @@ void main() async {
     }
   });
 
-  // 🚀 初始化语义NLP服务（轻量级，不阻塞）
-  // 提前初始化正则状态机和TFLite模型（如有）
-  // 注意：只有在用户明确选择下载模型后才自动下载，避免"暂时不下载"后仍然下载
-  Future.microtask(() async {
-    try {
-      debugPrint('🚀 [main] SemanticNlpService init begin');
-      // 检查用户是否已完成模型设置，如果未完成则不自动下载
-      final isModelSetupComplete = await AppSettings.isModelSetupComplete();
-      await SemanticNlpService.instance.initialize(
-        downloadModelIfNeeded: isModelSetupComplete,
-      );
-      debugPrint('✅ 语义NLP服务初始化完成');
-    } catch (e) {
-      debugPrint('⚠️ 语义NLP服务初始化失败: $e');
-    }
-  });
+  // 语义 NLP 服务、Firebase 等重型服务的详细初始化已迁移至 AppInitializer 统一管理
+  // 旨在实现启动阶段的削峰填谷，避免内存崩溃
 
   debugPrint('🚀 [main] runApp(MyApp) begin');
   runApp(const MyApp());
