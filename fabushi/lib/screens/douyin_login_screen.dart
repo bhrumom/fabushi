@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'dart:async';
 import 'dart:io' show Platform;
 import '../models/auth_model.dart';
@@ -651,6 +652,79 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     }
   }
 
+  // ==================== Apple登录逻辑 ====================
+
+  Future<void> _handleAppleLogin() async {
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      final identityToken = credential.identityToken;
+      final authorizationCode = credential.authorizationCode;
+
+      if (identityToken == null) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = 'Apple登录失败：未获取到身份令牌';
+          });
+        }
+        return;
+      }
+
+      final success = await authModel.appleLogin(
+        identityToken: identityToken,
+        authorizationCode: authorizationCode,
+        email: credential.email,
+        givenName: credential.givenName,
+        familyName: credential.familyName,
+      );
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Apple登录成功'), backgroundColor: Colors.green),
+          );
+          Navigator.of(context).pop(true);
+        } else {
+          setState(() => _errorMessage = authModel.error ?? 'Apple登录失败');
+        }
+      }
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) {
+        debugPrint('用户取消了Apple登录');
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Apple登录失败: ${e.message}';
+        });
+      }
+    } catch (e) {
+      debugPrint('Apple登录异常: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Apple登录出错: $e';
+        });
+      }
+    }
+  }
+
   // ==================== 切换登录模式 ====================
 
   void _toggleLoginMode() {
@@ -1068,13 +1142,23 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 支付宝登录 - 直接执行登录逻辑
+            // 支付宝登录
             _buildOtherLoginButton(
               icon: '💰',
               label: '支付宝',
               onTap: _handleAlipayLogin,
             ),
-            const SizedBox(width: 40),
+            const SizedBox(width: 32),
+            // Apple登录（仅Apple平台）
+            if (!kIsWeb && (Platform.isIOS || Platform.isMacOS))
+              Padding(
+                padding: const EdgeInsets.only(right: 32),
+                child: _buildOtherLoginButton(
+                  icon: '🍎',
+                  label: 'Apple',
+                  onTap: _handleAppleLogin,
+                ),
+              ),
             // 切换登录模式
             _buildOtherLoginButton(
               icon: _isPasswordMode ? '📱' : '🔐',

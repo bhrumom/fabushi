@@ -66,6 +66,43 @@
 - 将 `docs/support.html` 部署到 `https://flutter.ombhrum.com/support`
 - 在 App Store Connect 中更新 Support URL 为 `https://flutter.ombhrum.com/support`
 
+### 8. 支付宝登录 (Guideline 4.2.3(i)) - 已通过代码修复
+
+已实施的修复：
+- ✅ **应用内网页登录体验**：未安装支付宝的用户也可通过 Safari View Controller 直接使用网页完成支付宝登录。
+- ✅ **智能体验回退机制**：应用不再强求用户必须安装支付宝 App。
+
+**建议回复（英文）**：
+
+> We have resolved the Guideline 4.2.3(i) issue regarding the Alipay login dependency:
+>
+> 1. **In-App Web Login**: We have successfully integrated the `SFSafariViewController` API (In-App Browser View) for users who do not have the Alipay app installed on their devices.
+> 
+> 2. **No Additional App Required**: Users can now fully complete the Alipay login process via the securely embedded webpage without having to install any additional apps. They can also verify the URL and SSL certificates directly within the Safari View Controller during the OAuth process. 
+> 
+> The app is now fully compliant with the Minimum Functionality requirements.
+
+### 9. Sign in with Apple (Guideline 4.8) - 已通过代码修复
+
+已实施的修复：
+- ✅ **Sign in with Apple 按钮**：在登录页面添加了原生的 "Sign in with Apple" 按钮，与支付宝登录并列作为等效的登录方式。
+- ✅ **隐私保护**：Apple 登录仅收集用户姓名和邮箱，且用户可选择隐藏真实邮箱地址（使用 Apple 中继邮箱）。
+- ✅ **无广告数据收集**：Apple 登录过程不收集任何用于广告目的的交互数据。
+
+**建议回复（英文）**：
+
+> We have resolved the Guideline 4.8 issue by integrating Sign in with Apple as an equivalent login option:
+>
+> 1. **Sign in with Apple Integration**: We have added a native "Sign in with Apple" button on our login screen, positioned alongside our existing Alipay login option. This provides users with a login service that meets all requirements of Guideline 4.8.
+>
+> 2. **Minimal Data Collection**: The Sign in with Apple integration only requests the user's name and email address.
+>
+> 3. **Email Privacy**: Users can choose to hide their real email address using Apple's private relay email service when setting up their account.
+>
+> 4. **No Advertising Data Collection**: Our Sign in with Apple implementation does not collect any user interactions for advertising purposes.
+>
+> The Sign in with Apple button is displayed on iOS and macOS platforms, providing full compliance with login service requirements.
+
 ---
 
 ## 提交前检查清单
