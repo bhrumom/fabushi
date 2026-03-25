@@ -257,6 +257,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
 
+                  _buildDeleteAccountItem(context),
+
                   _buildLogoutItem(context),
                 ],
               ),
@@ -770,6 +772,112 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SnackBar(content: Text('已退出登录')),
               );
               Navigator.pop(context); // 返回上一页
+            }
+          }
+        },
+      ),
+    );
+  }
+
+  /// 注销账户按钮
+  Widget _buildDeleteAccountItem(BuildContext context) {
+    return Card(
+      color: const Color(0xFF1E1E1E),
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(Icons.person_remove, color: Colors.red, size: 24),
+        ),
+        title: const Text(
+          '注销账户',
+          style: TextStyle(
+            color: Colors.red,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        subtitle: const Text(
+          '此操作不可逆，将永久删除您的数据',
+          style: TextStyle(color: Colors.white54, fontSize: 13),
+        ),
+        trailing: const Icon(Icons.chevron_right, color: Colors.white24),
+        onTap: () async {
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: const Color(0xFF1E1E1E),
+              title: const Text('风险警告', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+              content: const Text(
+                '您正在申请注销账户。\n\n注销后，您的所有个人数据、记录与设置将被彻底删除，并且无法恢复。确定要继续吗？',
+                style: TextStyle(color: Colors.white70),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('点错了，取消', style: TextStyle(color: Colors.white70)),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('确定注销', style: TextStyle(color: Colors.redAccent)),
+                ),
+              ],
+            ),
+          );
+          
+          if (confirm == true) {
+            // 提供双重认证防止误操作
+            if (!context.mounted) return;
+            final doubleConfirm = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                backgroundColor: const Color(0xFF1E1E1E),
+                title: const Text('最终确认', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                content: const Text('账户删除后将彻底丢失，不可找回，这是最后的确认，还要继续吗？', style: TextStyle(color: Colors.white70)),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('取消', style: TextStyle(color: Colors.white70)),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('确认删除账户', style: TextStyle(color: Colors.red)),
+                  ),
+                ]
+              )
+            );
+
+            if (doubleConfirm == true) {
+              if (!context.mounted) return;
+              
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (BuildContext context) {
+                  return const Center(child: CircularProgressIndicator());
+                },
+              );
+              
+              final authModel = Provider.of<AuthModel>(context, listen: false);
+              final res = await authModel.deleteAccount();
+              
+              if (!context.mounted) return;
+              Navigator.pop(context); // close loading indicator
+
+              if (res['success'] == true) {
+                 ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('账户已成功注销'), backgroundColor: Colors.green),
+                );
+                Navigator.pop(context); // 返回上一页到未登录状态页面
+              } else {
+                 ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(res['error'] ?? '注销失败，请重试或联系客服'), backgroundColor: Colors.red),
+                );
+              }
             }
           }
         },

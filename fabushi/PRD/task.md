@@ -1,13 +1,10 @@
-# 任务清单 - 修复 iOS 构建错误
+# 账户注销功能任务列表
 
-- [x] 诊断问题
-    - [x] 检查磁盘空间
-    - [x] 检查模拟器状态
-- [x] 清理环境
-    - [x] 清理 Flutter 构建产物
-    - [x] 清理 CocoaPods 缓存及 Pods 目录
-    - [x] 清理 Xcode DerivedData
-- [x] 重新构建与验证
-    - [x] 重新同步依赖 (`flutter pub get`, `pod install`)
-    - [x] 运行 iOS 构建
-    - [x] 验证构建是否成功
+- [x] 在 `api_constants_template.dart` 和 `api_constants.dart`中添加注销账号的API端点 `deleteAccount`。
+- [x] 在 `auth_service.dart` 中实现网络请求调用注销接口。
+- [x] 在 `auth_model.dart` 中实现 `deleteAccount` 逻辑（清除缓存并执行登出业务逻辑）。
+- [x] 在 `settings_screen.dart` 的底部增加一个“注销账户”行选项，并给以醒目的红色警示语。
+- [x] 点击“注销账户”时，弹出双重确认对话框。确认后触发 `auth_model.deleteAccount`。
+- [x] 确保注销成功后回到登录页面。
+- [x] 本地自测完整的重新登录、注销流程。
+- [ ] 留出物理设备提供录制使用。

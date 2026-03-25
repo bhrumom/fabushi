@@ -89,6 +89,7 @@ class AppConfig {
   static String get registerUrl => '$currentBackendUrl/api/auth/register';
   static String get verifyUrl => '$currentBackendUrl/api/auth/verify';
   static String get logoutUrl => '$currentBackendUrl/api/auth/logout';
+  static String get deleteAccountUrl => '$currentBackendUrl/api/auth/delete';
   static String get sendVerificationCodeUrl => '$currentBackendUrl/api/auth/send-verification-code';
   static String get verifyCodeUrl => '$currentBackendUrl/api/auth/verify-code';
   static String get forgotPasswordUrl => '$currentBackendUrl/api/auth/forgot-password';

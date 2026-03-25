@@ -428,6 +428,33 @@ class AuthService {
     }
   }
 
+  // 注销账户
+  Future<Map<String, dynamic>> deleteAccount() async {
+    if (_currentToken == null) {
+      return {'success': false, 'error': '未登录'};
+    }
+    try {
+      final response = await HttpService.delete(AppConfig.deleteAccountUrl, useAuth: true);
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        return {'success': true, 'message': '注销成功'};
+      } else {
+        String errorMessage = '注销失败 (HTTP ${response.statusCode})';
+        try {
+          if (response.body.isNotEmpty) {
+            final errorData = jsonDecode(response.body);
+            errorMessage = errorData['error'] ?? errorData['message'] ?? errorMessage;
+          }
+        } catch (_) {
+          // 忽略非JSON响应解析错误
+        }
+        return {'success': false, 'error': errorMessage};
+      }
+    } catch (e) {
+      print('注销账户请求失败: $e');
+      return {'success': false, 'error': '网络错误，请检查网络连接'};
+    }
+  }
+
   // 检查用户名是否可用（可选功能）
   Future<bool> checkUsernameAvailable(String username) async {
     try {

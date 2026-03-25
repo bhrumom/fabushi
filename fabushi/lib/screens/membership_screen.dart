@@ -42,7 +42,8 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    final isApplePlatform = AppleIapService.isAppleIapPlatform;
+    _tabController = TabController(length: isApplePlatform ? 1 : 2, vsync: this);
 
     // 在Web平台上添加消息监听器
     if (kIsWeb) {
@@ -934,6 +935,45 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
               icon: const Icon(Icons.restore, color: Colors.white70),
               label: const Text('恢复购买', style: TextStyle(color: Colors.white70)),
             ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '自动续期订阅说明',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '• 订阅服务及价格会显示在上方的各个套餐中。\n'
+                    '• 付款：用户确认购买并从iTunes账户扣款。\n'
+                    '• 续订：苹果iTunes账户会在到期前24小时内扣费，扣费成功后订阅周期顺延。\n'
+                    '• 取消续订：如需取消，请在当前周期到期前24小时，前往Apple ID设置中关闭自动续订。',
+                    style: TextStyle(color: Colors.white70, height: 1.5, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      TextButton(
+                        onPressed: () => launchUrl(Uri.parse('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')),
+                        child: const Text('用户协议 (EULA)', style: TextStyle(color: Colors.white, fontSize: 12, decoration: TextDecoration.underline, decorationColor: Colors.white)),
+                      ),
+                      TextButton(
+                        onPressed: () => launchUrl(Uri.parse('https://flutter.ombhrum.com/privacy')),
+                        child: const Text('隐私政策', style: TextStyle(color: Colors.white, fontSize: 12, decoration: TextDecoration.underline, decorationColor: Colors.white)),
+                      ),
+                    ],
+                  )
+                ],
+              ),
+            ),
           ],
 
           const SizedBox(height: 32),
@@ -997,15 +1037,18 @@ class _MembershipScreenState extends State<MembershipScreen> with SingleTickerPr
                       labelColor: const Color(0xFF667eea),
                       unselectedLabelColor: Colors.grey,
                       indicatorColor: const Color(0xFF667eea),
-                      tabs: const [
-                        Tab(text: '购买记录'),
-                        Tab(text: '兑换记录'),
+                      tabs: [
+                        const Tab(text: '购买记录'),
+                        if (!AppleIapService.isAppleIapPlatform) const Tab(text: '兑换记录'),
                       ],
                     ),
                     Expanded(
                       child: TabBarView(
                         controller: _tabController,
-                        children: [_buildPurchaseHistoryList(), _buildRedeemHistoryList()],
+                        children: [
+                          _buildPurchaseHistoryList(),
+                          if (!AppleIapService.isAppleIapPlatform) _buildRedeemHistoryList(),
+                        ],
                       ),
                     ),
                   ],

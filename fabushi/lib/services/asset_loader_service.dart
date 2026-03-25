@@ -203,7 +203,10 @@ class AssetLoaderService {
     return null;
   }
 
-  /// 从本地持久化存储加载（含完整性校验）
+  /// 从本地持久化存储加载
+  /// 
+  /// 注意：已保存到正式文件路径的资源在下载完成时已通过完整性校验，
+  /// 这里不再发 HEAD 请求重复校验，避免不必要的网络延迟。
   static Future<Uint8List?> _loadFromPersistentStorage(String fileName) async {
     if (kIsWeb) return null;
     
@@ -215,13 +218,6 @@ class AssetLoaderService {
       if (await file.exists()) {
         final length = await file.length();
         if (length > 0) {
-          // 校验文件完整性：比对服务端文件大小
-          final remoteSize = await _getRemoteFileSize(fileName);
-          if (remoteSize != null && length != remoteSize) {
-            debugPrint('⚠️ [AssetLoader] 缓存文件大小不匹配 (本地: $length, 远端: $remoteSize)，删除损坏缓存');
-            await file.delete();
-            return null;
-          }
           return await file.readAsBytes();
         } else {
           // 0字节文件，视为无效，删除
