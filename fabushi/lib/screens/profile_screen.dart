@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
 import '../models/user_model.dart';
 import '../services/membership_service.dart';
+import '../services/apple_iap_service.dart';
 import 'douyin_login_screen.dart';
 import 'membership_screen.dart';
 import '../widgets/common_widgets.dart';
@@ -175,6 +176,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildProfileView(AuthModel authModel) {
     final user = authModel.currentUser!;
+    final isApplePlatform = AppleIapService.isAppleIapPlatform;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -238,47 +240,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 16),
 
-          // 兑换码卡片
-          Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    '🎁 兑换码',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2c3e50),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _redeemCodeController,
-                          decoration: InputDecoration(
-                            hintText: '输入兑换码',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            filled: true,
-                            fillColor: Colors.grey[50],
-                          ),
-                          textCapitalization: TextCapitalization.characters,
-                        ),
+          // 兑换码卡片 (iOS/Mac不显示)
+          if (!isApplePlatform) ...[
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      '🎁 兑换码',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2c3e50),
                       ),
-                      const SizedBox(width: 12),
-                      PrimaryButton(text: '兑换', onPressed: _handleRedeemCode),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _redeemCodeController,
+                            decoration: InputDecoration(
+                              hintText: '输入兑换码',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              filled: true,
+                              fillColor: Colors.grey[50],
+                            ),
+                            textCapitalization: TextCapitalization.characters,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        PrimaryButton(text: '兑换', onPressed: _handleRedeemCode),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 16),
+          ],
 
           // 功能菜单
           Card(
@@ -332,26 +336,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   },
                 ),
                 const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.card_giftcard, color: Color(0xFF667eea)),
-                  title: const Text('兑换记录'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    try {
-                      final result = await _membershipService.getRedeemHistory(authModel.authToken!);
-                      if (context.mounted) {
-                        final redeems = result['redeems'] as List? ?? [];
-                        _showRedeemHistory(context, redeems);
+                if (!isApplePlatform) ...[
+                  ListTile(
+                    leading: const Icon(Icons.card_giftcard, color: Color(0xFF667eea)),
+                    title: const Text('兑换记录'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      try {
+                        final result = await _membershipService.getRedeemHistory(authModel.authToken!);
+                        if (context.mounted) {
+                          final redeems = result['redeems'] as List? ?? [];
+                          _showRedeemHistory(context, redeems);
+                        }
+                      } catch (e) {
+                        debugPrint('加载兑换记录失败: $e');
+                        if (context.mounted) {
+                          _showRedeemHistory(context, []);
+                        }
                       }
-                    } catch (e) {
-                      debugPrint('加载兑换记录失败: $e');
-                      if (context.mounted) {
-                        _showRedeemHistory(context, []);
-                      }
-                    }
-                  },
-                ),
-                const Divider(height: 1),
+                    },
+                  ),
+                  const Divider(height: 1),
+                ],
                 ListTile(
                   leading: const Icon(Icons.settings, color: Color(0xFF667eea)),
                   title: const Text('账户设置'),

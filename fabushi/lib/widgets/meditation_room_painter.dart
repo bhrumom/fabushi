@@ -314,5 +314,13 @@ class MeditationRoomPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(MeditationRoomPainter oldDelegate) => true;
+  bool shouldRepaint(MeditationRoomPainter oldDelegate) {
+    return cameraAngleX != oldDelegate.cameraAngleX ||
+        cameraAngleY != oldDelegate.cameraAngleY ||
+        cameraDistance != oldDelegate.cameraDistance ||
+        glowValue != oldDelegate.glowValue ||
+        rotationValue != oldDelegate.rotationValue ||
+        isIncenseOffering != oldDelegate.isIncenseOffering ||
+        isLampOffering != oldDelegate.isLampOffering;
+  }
 }

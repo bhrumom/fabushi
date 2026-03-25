@@ -827,6 +827,29 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>> deleteAccount() async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final result = await _authService.deleteAccount();
+      if (result['success'] == true) {
+        // 若云端注销成功，清除本地状态
+        await logout();
+        _setLoading(false);
+        return {'success': true, 'message': '注销成功'};
+      } else {
+        _setError(result['error'] ?? '注销失败');
+        _setLoading(false);
+        return result;
+      }
+    } catch (e) {
+      _setError('注销时发生错误: $e');
+      _setLoading(false);
+      return {'success': false, 'error': '操作发生错误'};
+    }
+  }
+
   Future<void> logout() async {
     try {
       await _authService.logout();

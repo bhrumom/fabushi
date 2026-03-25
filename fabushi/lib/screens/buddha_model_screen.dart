@@ -53,7 +53,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
   three.PointLight? _tipLight;
   // Use Points for smoke to allow "particle" effect (fading, size change)
   three.Points? _smokeParticles;
-  final int _particleCount = 150;
+  final int _particleCount = 50;
   final List<double> _particleSpeeds = [];
   Timer? _smokeTimer;
   bool _isBurning = false; // Whether it is burning
@@ -181,7 +181,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
     _autoRotateTimer?.cancel();
     debugPrint('🎬 启动绕佛旋转');
     _isReturningToStart = false;
-    _autoRotateTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _autoRotateTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
       if (!mounted) {
         debugPrint('⚠️ 组件已卸载，停止旋转');
         timer.cancel();
@@ -468,7 +468,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
   /// 启动烟雾动画
   void _startSmokeAnimation() {
     _smokeTimer?.cancel();
-    _smokeTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+    _smokeTimer = Timer.periodic(const Duration(milliseconds: 80), (timer) {
       if (!mounted || !_isBurning) {
         timer.cancel();
         return;
@@ -527,7 +527,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen> with AutomaticKeep
     final vertices = <double>[];
     final random = math.Random();
 
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 300; i++) {
       final x = (random.nextDouble() - 0.5) * 2000;
       final y = (random.nextDouble() - 0.5) * 2000;
       final z = (random.nextDouble() - 0.5) * 2000;
