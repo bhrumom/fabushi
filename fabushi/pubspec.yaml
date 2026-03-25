@@ -137,6 +137,7 @@ dependencies:
   lpinyin: ^2.0.3
   crypto: ^3.0.3  # 用于流式计算文件哈希
   scrollable_positioned_list: ^0.3.8  # 精确索引跳转
+  sign_in_with_apple: ^7.0.1
 
 # Tobias 配置
 tobias:

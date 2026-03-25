@@ -467,6 +467,87 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
+  /// Apple登录 - 使用 Sign in with Apple
+  Future<bool> appleLogin({
+    required String identityToken,
+    required String authorizationCode,
+    String? email,
+    String? givenName,
+    String? familyName,
+  }) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      debugPrint('🍎 Apple登录开始');
+
+      final result = await _authService.appleLogin(
+        identityToken: identityToken,
+        authorizationCode: authorizationCode,
+        email: email,
+        givenName: givenName,
+        familyName: familyName,
+      );
+
+      debugPrint('🍎 Apple登录结果: success=${result['success']}');
+
+      if (result['success'] == true) {
+        _token = result['token'];
+        final userJson = result['user'];
+        final username = result['username'] ?? userJson?['username'] ?? '';
+
+        // 创建基本用户模型
+        final basicUserModel = UserModel(
+          username: username,
+          email: userJson?['email'] ?? email ?? '',
+          emailVerified: true,
+          createdAt: DateTime.now().toIso8601String(),
+          membership: MembershipInfo(
+            type: userJson?['membership']?['type'] ?? 'trial',
+            isActive: true,
+          ),
+        );
+
+        await _authService.setAuth(_token!, basicUserModel);
+
+        // 创建用户对象
+        _currentUser = User(
+          username: username,
+          email: userJson?['email'] ?? email ?? '',
+          membershipType: userJson?['membership']?['type'] ?? 'trial',
+          membershipExpiry: userJson?['membership']?['expiresAt'] != null
+              ? DateTime.parse(userJson['membership']['expiresAt'])
+              : DateTime.now().add(const Duration(days: 3)),
+          isAdmin: false,
+        );
+
+        await _storeAuth();
+        await LikeService().initialize(userId: _currentUser!.username);
+        _setLoading(false);
+        notifyListeners();
+
+        // 后台刷新完整用户信息
+        refreshUserInfo();
+
+        // 初始化同步服务
+        await SyncService().initialize();
+        SyncService().fullSync();
+
+        debugPrint('✅ Apple登录完成: $username');
+        return true;
+      } else {
+        _setError(result['error'] ?? 'Apple登录失败');
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Apple登录错误: $e');
+      _setError('Apple登录错误: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
   /// Firebase手机号登录 - 同步到D1后端
   Future<bool> firebasePhoneLogin({
     required String idToken,
