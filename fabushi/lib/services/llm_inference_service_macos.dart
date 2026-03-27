@@ -24,7 +24,7 @@ class LlamaInferenceService {
 
   /// 初始化模型
   Future<void> initialize(String modelPath, {int? nCtx}) async {
-    final effectiveNCtx = nCtx ?? 2048;
+    final effectiveNCtx = nCtx ?? 1024;
     
     if (_isInitialized && _modelPath == modelPath) {
       debugPrint('LlamaInferenceService: 模型已加载，跳过重复初始化');
@@ -66,8 +66,15 @@ class LlamaInferenceService {
     
     try {
       final modelParams = ModelParams();
-      final contextParams = ContextParams()..nCtx = effectiveNCtx;
-      final samplingParams = SamplerParams();
+      final contextParams = ContextParams()
+        ..nCtx = effectiveNCtx
+        ..nBatch = effectiveNCtx
+        ..autoTrimContext = true
+        ..trimKeepTokens = 0
+        ..nPredict = 512;
+      final samplingParams = SamplerParams()
+        ..temp = 0.7
+        ..penaltyRepeat = 1.1;
       
       final loadCommand = LlamaLoad(
         path: modelPath,
@@ -109,10 +116,100 @@ class LlamaInferenceService {
   }
   
   /// 流式生成
+  /// 
+  /// 注意：LlamaParent.stream 是 broadcast stream，不缓存事件。
+  /// 必须先订阅再发送 prompt，否则早期 token 或 isDone 事件会丢失，
+  /// 导致页面永远停在"生成中"状态。
   Stream<String> generateStream(String prompt) {
     _ensureInitialized();
-    _llamaParent!.sendPrompt(prompt);
-    return _llamaParent!.stream;
+    
+    debugPrint('LlamaInferenceService: generateStream 开始');
+    debugPrint('LlamaInferenceService: prompt 长度=${prompt.length} 字符');
+    
+    // 创建一个非-broadcast controller，确保事件不丢失
+    final controller = StreamController<String>();
+    
+    // 先订阅 broadcast stream
+    StreamSubscription<String>? sub;
+    StreamSubscription? completionSub;
+    String? promptId;
+    final pendingCompletions = <CompletionEvent>[];
+    bool isClosed = false;
+    
+    void closeAll() {
+      if (isClosed) return;
+      isClosed = true;
+      debugPrint('LlamaInferenceService: 关闭流');
+      if (!controller.isClosed) controller.close();
+      sub?.cancel();
+      completionSub?.cancel();
+    }
+    
+    void checkCompletion(CompletionEvent event) {
+      if (promptId != null && event.promptId == promptId) {
+        debugPrint('LlamaInferenceService: 推理完成 (promptId=$promptId, success=${event.success}, error=${event.errorDetails})');
+        if (!event.success && !controller.isClosed) {
+          controller.addError(Exception(event.errorDetails ?? '推理失败（未知原因）'));
+        }
+        closeAll();
+      }
+    }
+    
+    int tokenCount = 0;
+    sub = _llamaParent!.stream.listen(
+      (token) {
+        tokenCount++;
+        if (tokenCount <= 3 || tokenCount % 50 == 0) {
+          debugPrint('LlamaInferenceService: 收到token #$tokenCount: ${token.length > 20 ? token.substring(0, 20) + "..." : token}');
+        }
+        if (!controller.isClosed) {
+          controller.add(token);
+        }
+      },
+      onError: (error) {
+        debugPrint('LlamaInferenceService: stream 错误: $error');
+        if (!controller.isClosed) {
+          controller.addError(error);
+        }
+        closeAll();
+      },
+    );
+    
+    // 监听完成事件
+    completionSub = _llamaParent!.completions.listen((event) {
+      debugPrint('LlamaInferenceService: 收到 completion event (eventPromptId=${event.promptId}, myPromptId=$promptId, success=${event.success})');
+      if (promptId != null) {
+        checkCompletion(event);
+      } else {
+        // promptId 还未设置，缓存事件
+        pendingCompletions.add(event);
+      }
+    });
+    
+    // 然后发送 prompt（此时订阅已就绪，不会丢失事件）
+    _llamaParent!.sendPrompt(prompt).then((id) {
+      promptId = id;
+      debugPrint('LlamaInferenceService: sendPrompt 完成, promptId=$id');
+      // 检查在 promptId 设置前已收到的 completion 事件
+      for (final event in pendingCompletions) {
+        checkCompletion(event);
+      }
+      pendingCompletions.clear();
+    }).catchError((error) {
+      debugPrint('LlamaInferenceService: sendPrompt 失败: $error');
+      if (!controller.isClosed) {
+        controller.addError(error);
+      }
+      closeAll();
+    });
+    
+    // 取消时的清理
+    controller.onCancel = () {
+      debugPrint('LlamaInferenceService: stream 被取消');
+      closeAll();
+    };
+    
+    return controller.stream;
   }
   
   /// 停止生成
