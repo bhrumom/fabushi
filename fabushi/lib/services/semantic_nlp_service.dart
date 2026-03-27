@@ -2,19 +2,20 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
-import 'package:global_dharma_sharing/services/qwen_model_manager.dart';
-import 'package:global_dharma_sharing/services/qwen_inference_service.dart';
+import 'package:global_dharma_sharing/services/llm_model_manager.dart';
+import 'package:global_dharma_sharing/services/llm_inference_service.dart';
+import 'package:global_dharma_sharing/services/llm_model_config.dart';
+import 'package:global_dharma_sharing/services/app_settings.dart';
 
-/// 语义优先服务 - Qwen 模型 + 规则引擎混合架构
+/// 语义优先服务 - AI问书共用 LLM 模型 + 规则引擎混合架构
 /// 
-/// 跨平台统一架构（替代原 TFLite + macOS Natural Language）：
-/// - 所有平台统一使用 Qwen 2.5 1.5B 模型（GGUF 格式）
-/// - 模型首次使用时从 HuggingFace 下载
+/// 跨平台统一架构：
+/// - 与 AI 问书共用用户选择的 LLM 模型
 /// - 规则引擎作为模型未就绪时的降级方案
 /// 
 /// 混合架构：
 /// 1. 快速路径：预编译正则表达式 O(n) 匹配
-/// 2. 精确路径：Qwen 模型推理（语义相似度）
+/// 2. 精确路径：模型推理（基于占位或模型的语义相似度）
 /// 3. 后台处理：不阻塞UI线程
 /// 4. LRU缓存：避免重复计算
 class SemanticNlpService {
@@ -22,12 +23,12 @@ class SemanticNlpService {
   static SemanticNlpService get instance => _instance ??= SemanticNlpService._();
   SemanticNlpService._();
 
-  // Qwen 模型服务
-  final _modelManager = QwenModelManager.instance;
-  final _inference = QwenInferenceService.instance;
+  // 统一 LLM 模型服务
+  final _modelManager = LLMModelManager.instance;
+  final _inference = LLMInferenceService.instance;
   
   // 模型状态
-  bool _qwenModelReady = false;
+  bool _llmModelReady = false;
   bool _isInitializing = false;
   Completer<bool>? _initCompleter;
   
@@ -35,16 +36,42 @@ class SemanticNlpService {
   void Function(double progress)? onModelDownloadProgress;
   
   /// 是否模型已就绪
-  bool get isModelReady => _qwenModelReady;
+  bool get isModelReady => _llmModelReady;
   
   /// 是否正在下载模型
   bool get isDownloadingModel => _modelManager.isDownloading;
+  
+  /// 获取当前选择的模型类型（与 AI 问书一致）
+  Future<LLMModelType?> _getSelectedModelType() async {
+    final downloadedModels = await _modelManager.getDownloadedModels();
+    final savedModelName = await AppSettings.getSelectedModelName();
+    
+    if (savedModelName != null) {
+      try {
+        final type = LLMModelType.values.firstWhere((t) => t.name == savedModelName);
+        if (downloadedModels.contains(type)) {
+          return type;
+        }
+      } catch (_) {}
+    }
+    
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+    final platformModels = LLMModelConfig.getChatModelsForPlatform(isMobile: isMobile);
+    final platformModelTypes = platformModels.map((c) => c.type).toSet();
+    
+    final chatModels = downloadedModels.where((t) => platformModelTypes.contains(t)).toList();
+    if (chatModels.isNotEmpty) {
+      return chatModels.first;
+    }
+    
+    return platformModels.isNotEmpty ? platformModels.first.type : null;
+  }
   
   /// 等待模型就绪
   /// 
   /// 返回 true 表示模型已就绪，false 表示初始化失败
   Future<bool> waitForReady() async {
-    if (_qwenModelReady) return true;
+    if (_llmModelReady) return true;
     if (_initCompleter != null && !_initCompleter!.isCompleted) {
       return await _initCompleter!.future;
     }
@@ -109,7 +136,6 @@ class SemanticNlpService {
   /// [downloadModelIfNeeded] 是否在初始化时下载模型（默认 true）
   Future<void> initialize({bool downloadModelIfNeeded = true}) async {
     if (_isInitializing) {
-      // 如果正在初始化，等待完成
       if (_initCompleter != null && !_initCompleter!.isCompleted) {
         await _initCompleter!.future;
       }
@@ -119,28 +145,33 @@ class SemanticNlpService {
     _initCompleter = Completer<bool>();
 
     try {
-      debugPrint('📖 SemanticNlpService: 开始初始化 Qwen 模型...');
+      debugPrint('📖 SemanticNlpService: 开始初始化 LLM 模型...');
       
-      // 检查模型是否已下载
-      final modelAvailable = await _modelManager.isModelAvailable();
+      final modelType = await _getSelectedModelType();
+      if (modelType == null) {
+        debugPrint('📖 SemanticNlpService: 无法确定模型类型，降级为规则引擎');
+        _llmModelReady = false;
+        _initCompleter!.complete(false);
+        return;
+      }
+      
+      final modelAvailable = await _modelManager.isModelAvailable(modelType);
       
       if (modelAvailable) {
-        // 模型已存在，直接加载
-        await _loadQwenModel();
-        _initCompleter!.complete(_qwenModelReady);
+        await _loadLLMModel(modelType);
+        _initCompleter!.complete(_llmModelReady);
       } else if (downloadModelIfNeeded) {
-        // 模型不存在，需要下载并等待完成
         debugPrint('📖 SemanticNlpService: 模型未下载，开始下载...');
-        await _downloadAndLoadModel();
-        _initCompleter!.complete(_qwenModelReady);
+        await _downloadAndLoadModel(modelType);
+        _initCompleter!.complete(_llmModelReady);
       } else {
         debugPrint('📖 SemanticNlpService: 模型未下载，使用规则引擎模式');
-        _qwenModelReady = false;
+        _llmModelReady = false;
         _initCompleter!.complete(false);
       }
     } catch (e) {
       debugPrint('📖 SemanticNlpService: 初始化异常: $e');
-      _qwenModelReady = false;
+      _llmModelReady = false;
       _initCompleter!.complete(false);
     } finally {
       _isInitializing = false;
@@ -148,43 +179,50 @@ class SemanticNlpService {
   }
   
   /// 下载并加载模型（后台执行）
-  Future<void> _downloadAndLoadModel() async {
+  Future<void> _downloadAndLoadModel(LLMModelType type) async {
     try {
       final modelPath = await _modelManager.ensureModelAvailable(
-        onProgress: (progress) {
+        type,
+        onProgress: (progress, stage) {
           onModelDownloadProgress?.call(progress);
           if ((progress * 100).toInt() % 10 == 0) {
-            debugPrint('📖 SemanticNlpService: 模型下载进度 ${(progress * 100).toStringAsFixed(0)}%');
+            debugPrint('📖 SemanticNlpService: 模型下载进度 ${(progress * 100).toStringAsFixed(0)}% [$stage]');
           }
         },
       );
       
       await _inference.initialize(modelPath);
-      _qwenModelReady = true;
-      debugPrint('📖 SemanticNlpService: Qwen 模型加载成功');
+      _llmModelReady = true;
+      debugPrint('📖 SemanticNlpService: LLM 模型加载成功');
     } catch (e) {
       debugPrint('📖 SemanticNlpService: 模型下载/加载失败: $e');
-      _qwenModelReady = false;
+      _llmModelReady = false;
     }
   }
   
-  /// 加载 Qwen 模型
-  Future<void> _loadQwenModel() async {
+  /// 加载 LLM 模型
+  Future<void> _loadLLMModel(LLMModelType type) async {
     try {
-      final modelPath = await _modelManager.modelPath;
+      if (_inference.isInitialized) {
+        _llmModelReady = true;
+        return;
+      }
+      final modelPath = await _modelManager.getModelPath(type);
       await _inference.initialize(modelPath);
-      _qwenModelReady = true;
-      debugPrint('📖 SemanticNlpService: Qwen 模型加载成功');
+      _llmModelReady = true;
+      debugPrint('📖 SemanticNlpService: LLM 模型加载成功');
     } catch (e) {
-      debugPrint('📖 SemanticNlpService: Qwen 模型加载失败: $e');
-      _qwenModelReady = false;
+      debugPrint('📖 SemanticNlpService: LLM 模型加载失败: $e');
+      _llmModelReady = false;
     }
   }
   
   /// 手动触发模型下载
   Future<void> downloadModel({void Function(double)? onProgress}) async {
-    await _modelManager.ensureModelAvailable(onProgress: onProgress);
-    await _loadQwenModel();
+    final modelType = await _getSelectedModelType();
+    if (modelType == null) return;
+    await _modelManager.ensureModelAvailable(modelType, onProgress: (progress, stage) => onProgress?.call(progress));
+    await _loadLLMModel(modelType);
   }
 
   /// 语义优先排序（异步后台执行）
@@ -200,11 +238,9 @@ class SemanticNlpService {
 
     List<_ScoredSentence> scored;
     
-    if (_qwenModelReady) {
-      // 使用 Qwen 模型进行语义分析
-      scored = await _analyzeSentencesWithQwen(sentences);
+    if (_llmModelReady) {
+      scored = await _analyzeSentencesWithLLM(sentences);
     } else {
-      // 降级：使用纯规则引擎
       scored = await compute(_analyzeSentencesWithRules, sentences);
     }
 
@@ -215,31 +251,69 @@ class SemanticNlpService {
     return scored.map((s) => s.text).toList();
   }
   
-  /// 使用 Qwen 模型分析句子
-  Future<List<_ScoredSentence>> _analyzeSentencesWithQwen(List<String> sentences) async {
+  /// 获取占位语义嵌入向量
+  List<double> _getEmbedding(String text) {
+    return _generatePlaceholderEmbedding(text);
+  }
+
+  /// 占位嵌入生成（基于关键词的简单向量）
+  List<double> _generatePlaceholderEmbedding(String text) {
+    // 生成简单的特征向量（64维）
+    final embedding = List<double>.filled(64, 0.0);
+    
+    // 关键词特征
+    for (int i = 0; i < _meritKeywords.length && i < 32; i++) {
+      if (text.contains(_meritKeywords[i])) {
+        embedding[i] = 1.0;
+      }
+    }
+    
+    for (int i = 0; i < _benefitKeywords.length && i < 32; i++) {
+      if (text.contains(_benefitKeywords[i])) {
+        embedding[32 + i] = 1.0;
+      }
+    }
+    
+    // 归一化
+    double mag = 0.0;
+    for (final v in embedding) {
+      mag += v * v;
+    }
+    if (mag > 0) {
+      mag = math.sqrt(mag);
+      for (int i = 0; i < embedding.length; i++) {
+        embedding[i] /= mag;
+      }
+    }
+    
+    return embedding;
+  }
+
+  /// 使用 LLM 模型分析句子
+  Future<List<_ScoredSentence>> _analyzeSentencesWithLLM(List<String> sentences) async {
     final scored = <_ScoredSentence>[];
     
     // 获取锚点句的嵌入向量
     List<double>? anchorEmbedding;
     try {
-      anchorEmbedding = await _inference.getEmbedding(_meritAnchorSentence);
+      anchorEmbedding = _getEmbedding(_meritAnchorSentence);
     } catch (e) {
       debugPrint('📖 SemanticNlpService: 获取锚点嵌入失败: $e');
     }
     
     for (int i = 0; i < sentences.length; i++) {
       final sentence = sentences[i];
+
       
       // 基础分：规则引擎
       double score = _calculateRuleScore(sentence);
       
-      // 进阶分：Qwen 语义相似度
+      // 进阶分：伪语义相似度
       if (anchorEmbedding != null) {
         try {
-          final embedding = await _inference.getEmbedding(sentence);
+          final embedding = _getEmbedding(sentence);
           final similarity = _cosineSimilarity(embedding, anchorEmbedding);
           
-          // 根据相似度加分
           if (similarity > 0.8) {
             score += 3.0;
           } else if (similarity > 0.7) {
@@ -312,8 +386,7 @@ class SemanticNlpService {
   
   /// 释放资源
   void dispose() {
-    _inference.dispose();
-    _qwenModelReady = false;
+    _llmModelReady = false;
   }
   
   /// 计算余弦相似度
