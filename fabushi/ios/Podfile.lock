@@ -1314,10 +1314,6 @@ PODS:
     - nanopb (~> 3.30910.0)
   - FirebaseSharedSwift (12.9.0)
   - Flutter (1.0.0)
-  - flutter_angle (0.3.9):
-    - Flutter
-    - FlutterAngle (~> 0.0.8)
-    - FlutterMacOS
   - flutter_inappwebview_ios (0.0.1):
     - Flutter
     - flutter_inappwebview_ios/Core (= 0.0.1)
@@ -1335,7 +1331,6 @@ PODS:
     - Flutter
   - flutter_volume_controller (0.0.1):
     - Flutter
-  - FlutterAngle (0.0.8)
   - geolocator_apple (1.2.0):
     - Flutter
     - FlutterMacOS
@@ -1513,8 +1508,6 @@ PODS:
     - Flutter
     - FlutterMacOS
   - SwiftyGif (5.4.5)
-  - three_js_sensors (0.1.2):
-    - Flutter
   - tobias (0.0.1):
     - Flutter
     - tobias/normal (= 0.0.1)
@@ -1543,7 +1536,6 @@ DEPENDENCIES:
   - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
   - Flutter (from `Flutter`)
-  - flutter_angle (from `.symlinks/plugins/flutter_angle/darwin`)
   - flutter_inappwebview_ios (from `.symlinks/plugins/flutter_inappwebview_ios/ios`)
   - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
   - flutter_sound (from `.symlinks/plugins/flutter_sound/ios`)
@@ -1562,7 +1554,6 @@ DEPENDENCIES:
   - sherpa_onnx_ios (from `.symlinks/plugins/sherpa_onnx_ios/ios`)
   - sign_in_with_apple (from `.symlinks/plugins/sign_in_with_apple/ios`)
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
-  - three_js_sensors (from `.symlinks/plugins/three_js_sensors/ios`)
   - tobias (from `.symlinks/plugins/tobias/ios`)
   - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
   - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
@@ -1588,7 +1579,6 @@ SPEC REPOS:
     - FirebaseFirestoreInternal
     - FirebaseSharedSwift
     - flutter_sound_core
-    - FlutterAngle
     - GoogleSignIn
     - GoogleUtilities
     - "gRPC-C++"
@@ -1626,8 +1616,6 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/firebase_core/ios"
   Flutter:
     :path: Flutter
-  flutter_angle:
-    :path: ".symlinks/plugins/flutter_angle/darwin"
   flutter_inappwebview_ios:
     :path: ".symlinks/plugins/flutter_inappwebview_ios/ios"
   flutter_local_notifications:
@@ -1664,8 +1652,6 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/sign_in_with_apple/ios"
   sqflite_darwin:
     :path: ".symlinks/plugins/sqflite_darwin/darwin"
-  three_js_sensors:
-    :path: ".symlinks/plugins/three_js_sensors/ios"
   tobias:
     :path: ".symlinks/plugins/tobias/ios"
   url_launcher_ios:
@@ -1705,14 +1691,12 @@ SPEC CHECKSUMS:
   FirebaseFirestoreInternal: 02341a9ba87f6309227b04685022a5e16307bbf7
   FirebaseSharedSwift: 9d2fa84a46676302b89dbd5e6e62bce2fe376909
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  flutter_angle: 290cf0e9610f10ee5e5a77e0a1e43885aa02ae3b
   flutter_inappwebview_ios: b89ba3482b96fb25e00c967aae065701b66e9b99
   flutter_local_notifications: a5a732f069baa862e728d839dd2ebb904737effb
   flutter_sound: d95194f6476c9ad211d22b3a414d852c12c7ca44
   flutter_sound_core: 7f2626d249d3a57bfa6da892ef7e22d234482c1a
   flutter_tts: 35ac3c7d42412733e795ea96ad2d7e05d0a75113
   flutter_volume_controller: c2be490cb0487e8b88d0d9fc2b7e1c139a4ebccb
-  FlutterAngle: c810891af800750361b1d0e7cc944f2338d5ae18
   geolocator_apple: ab36aa0e8b7d7a2d7639b3b4e48308394e8cef5e
   google_sign_in_ios: 000870aa06da9b28d1d0bf7ef70ff0213059dd28
   GoogleSignIn: fcee2257188d5eda57a5e2b6a715550ffff9206d
@@ -1739,7 +1723,6 @@ SPEC CHECKSUMS:
   sign_in_with_apple: c5dcc141574c8c54d5ac99dd2163c0c72ad22418
   sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
   SwiftyGif: 706c60cf65fa2bc5ee0313beece843c8eb8194d4
-  three_js_sensors: f516b092803411e05b1e3dc7625efa36acd8f455
   tobias: 7bc370eaccba2e7c7c345902a4a47dc5916cf8bb
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
   video_player_avfoundation: dd410b52df6d2466a42d28550e33e4146928280a

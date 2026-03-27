@@ -68,7 +68,7 @@ class AssetLoaderService {
 
   /// 加载佛像模型
   /// 
-  /// 返回模型数据的 Uint8List,可以传递给 three_js 的 GLTFLoader
+  /// 返回模型数据的 Uint8List,可以传递给 flutter_scene 解析
   static Future<Uint8List> loadBuddhaModel({
     void Function(double progress)? onProgress
   }) async {
@@ -76,7 +76,7 @@ class AssetLoaderService {
     initialize();
     
     return await _loadAsset(
-      'models/buddha_model.glb',
+      'models/buddha_model.model',
       onProgress: onProgress,
     );
   }
@@ -255,6 +255,18 @@ class AssetLoaderService {
 
     try {
       final client = http.Client();
+      
+      // 先进行 HEAD 请求获取确切的总大小以防 client.send 剥离 Content-Length
+      int? expectedContentLength;
+      try {
+        final headRes = await client.head(Uri.parse(url)).timeout(const Duration(seconds: 5));
+        if (headRes.statusCode == 200) {
+           if (headRes.headers['content-length'] != null) {
+              expectedContentLength = int.tryParse(headRes.headers['content-length']!);
+           }
+        }
+      } catch (_) {}
+
       final request = http.Request('GET', Uri.parse(url));
       
       // 添加 Range 头
@@ -265,8 +277,9 @@ class AssetLoaderService {
       final response = await client.send(request);
       
       if (response.statusCode == 200 || response.statusCode == 206) {
-        final totalLength = (response.contentLength ?? 0) + downloadedBytes;
-        debugPrint('📥 [AssetLoader] 总大小: $totalLength bytes, 响应状态: ${response.statusCode}');
+        final streamContentLength = response.contentLength ?? expectedContentLength ?? 0;
+        final totalLength = streamContentLength + downloadedBytes;
+        debugPrint('📥 [AssetLoader] 总大小: $totalLength bytes (Stream: ${response.contentLength}, HEAD: $expectedContentLength)');
 
         // 如果是 200 OK，说明服务器不支持 Range 或返回了全部内容，需要重置
         final isResuming = response.statusCode == 206;
@@ -286,6 +299,9 @@ class AssetLoaderService {
           received += chunk.length;
           if (totalLength > 0) {
             onProgress?.call(received / totalLength);
+          } else {
+             // 如果真获取不到总大小，也提供一个伪装的变动进度以表明没有卡死
+            onProgress?.call((received % 10000000) / 10000000.0 * 0.99);
           }
         }
         
