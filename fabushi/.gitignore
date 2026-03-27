@@ -69,3 +69,5 @@ tf_swift_cache/
 # 敏感信息与本地变量
 web/.dev.vars
 **/*.p8
+.wrangler/
+web/.wrangler/
