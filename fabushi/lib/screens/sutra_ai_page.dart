@@ -149,11 +149,14 @@ class _SutraAIPageState extends State<SutraAIPage> {
       
       if (!inferenceService.isInitialized) {
         // 初始化模型
+        debugPrint('SutraAIPage: 开始初始化模型...');
         final modelManager = LLMModelManager.instance;
         final modelPath = await modelManager.getModelPath(_selectedModel!);
         await inferenceService.initialize(modelPath);
+        debugPrint('SutraAIPage: 模型初始化完成');
       }
       
+      debugPrint('SutraAIPage: 调用 generateStream, prompt长度=${prompt.length}');
       // 流式生成回答
       final stream = inferenceService.generateStream(prompt);
       
@@ -220,23 +223,24 @@ class _SutraAIPageState extends State<SutraAIPage> {
     }
   }
   
-  /// 构建提示词
+  /// 构建提示词 (使用 ChatML 格式适配 Qwen-2.5-Instruct)
   String _buildPrompt(String question) {
-    // 截取经文摘要（避免上下文过长）
-    final textSummary = widget.fullText.length > 2000 
-        ? widget.fullText.substring(0, 2000) + '...'
+    // 截取经文摘要（避免上下文过长，超出 nCtx=1024）
+    // 中文约 1 token/字，300字 + 模板 + 问题 ≈ 400-500 token
+    final textSummary = widget.fullText.length > 300 
+        ? widget.fullText.substring(0, 300) + '...'
         : widget.fullText;
     
-    return '''你是一位佛学大师和智慧导师，精通佛教经典。
-用户正在阅读《${widget.bookTitle}》，以下是经文内容摘要：
+    return '''<|im_start|>system
+你是一位佛学大师和智慧导师，精通佛教经典。用户正在阅读《${widget.bookTitle}》，以下是经文内容摘要：
 
 $textSummary
 
-请根据经文内容回答用户的问题。回答要简洁明了，深入浅出，引导思考。
-
-用户问题：$question
-
-请用中文回答：''';
+请根据经文内容回答用户的问题。回答要简洁明了，深入浅出，引导思考。<|im_end|>
+<|im_start|>user
+$question<|im_end|>
+<|im_start|>assistant
+''';
   }
   
   /// 滚动到底部
@@ -453,26 +457,29 @@ $textSummary
     }
     
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            _availableModels.isEmpty ? Icons.download : Icons.auto_awesome,
-            color: _availableModels.isEmpty 
-                ? Colors.orange.withValues(alpha: 0.5)
-                : Colors.amber.withValues(alpha: 0.5),
-            size: 64,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            hintText,
-            style: const TextStyle(
-              color: Colors.white54,
-              fontSize: 14,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _availableModels.isEmpty ? Icons.download : Icons.auto_awesome,
+              color: _availableModels.isEmpty 
+                  ? Colors.orange.withValues(alpha: 0.5)
+                  : Colors.amber.withValues(alpha: 0.5),
+              size: 48,
             ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+            const SizedBox(height: 12),
+            Text(
+              hintText,
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -16,6 +16,16 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		LLAMA001000000000000001 /* libllama.a in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA002000000000000001 /* libllama.a */; };
+		LLAMA001000000000000002 /* libggml.a in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA002000000000000002 /* libggml.a */; };
+		LLAMA001000000000000003 /* libggml-base.a in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA002000000000000003 /* libggml-base.a */; };
+		LLAMA001000000000000004 /* libggml-cpu.a in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA002000000000000004 /* libggml-cpu.a */; };
+		LLAMA001000000000000005 /* libggml-metal.a in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA002000000000000005 /* libggml-metal.a */; };
+		LLAMA001000000000000006 /* libggml-blas.a in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA002000000000000006 /* libggml-blas.a */; };
+		LLAMA001000000000000007 /* ggml-metal.metal in Resources */ = {isa = PBXBuildFile; fileRef = LLAMA002000000000000007 /* ggml-metal.metal */; };
+		LLAMA001000000000000008 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA002000000000000008 /* Metal.framework */; };
+		LLAMA001000000000000009 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA002000000000000009 /* MetalKit.framework */; };
+		LLAMA00100000000000000A /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA00200000000000000A /* Accelerate.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,6 +74,16 @@
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9EDD541BE7A9008FCF3925AB /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		FF7C1BB1685737BE8649E0E2 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
+		LLAMA002000000000000001 /* libllama.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libllama.a; path = libllama.a; sourceTree = "<group>"; };
+		LLAMA002000000000000002 /* libggml.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libggml.a; path = libggml.a; sourceTree = "<group>"; };
+		LLAMA002000000000000003 /* libggml-base.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libggml-base.a; path = libggml-base.a; sourceTree = "<group>"; };
+		LLAMA002000000000000004 /* libggml-cpu.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libggml-cpu.a; path = libggml-cpu.a; sourceTree = "<group>"; };
+		LLAMA002000000000000005 /* libggml-metal.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libggml-metal.a; path = libggml-metal.a; sourceTree = "<group>"; };
+		LLAMA002000000000000006 /* libggml-blas.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libggml-blas.a; path = libggml-blas.a; sourceTree = "<group>"; };
+		LLAMA002000000000000007 /* ggml-metal.metal */ = {isa = PBXFileReference; lastKnownFileType = text; name = ggml-metal.metal; path = ggml-metal.metal; sourceTree = "<group>"; };
+		LLAMA002000000000000008 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		LLAMA002000000000000009 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		LLAMA00200000000000000A /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -80,6 +100,15 @@
 			files = (
 				5FB7B477CDC53564B6B00D5C /* Pods_Runner.framework in Frameworks */,
 				4E2CB63A2F66CCA900E0E3E8 /* StoreKit.framework in Frameworks */,
+				LLAMA001000000000000001 /* libllama.a in Frameworks */,
+				LLAMA001000000000000002 /* libggml.a in Frameworks */,
+				LLAMA001000000000000003 /* libggml-base.a in Frameworks */,
+				LLAMA001000000000000004 /* libggml-cpu.a in Frameworks */,
+				LLAMA001000000000000005 /* libggml-metal.a in Frameworks */,
+				LLAMA001000000000000006 /* libggml-blas.a in Frameworks */,
+				LLAMA001000000000000008 /* Metal.framework in Frameworks */,
+				LLAMA001000000000000009 /* MetalKit.framework in Frameworks */,
+				LLAMA00100000000000000A /* Accelerate.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -109,8 +138,26 @@
 			children = (
 				4E2CB6392F66CCA900E0E3E8 /* StoreKit.framework */,
 				9EDD541BE7A9008FCF3925AB /* Pods_Runner.framework */,
+				LLAMA002000000000000008 /* Metal.framework */,
+				LLAMA002000000000000009 /* MetalKit.framework */,
+				LLAMA00200000000000000A /* Accelerate.framework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		LLAMA003000000000000001 /* Libs */ = {
+			isa = PBXGroup;
+			children = (
+				LLAMA002000000000000001 /* libllama.a */,
+				LLAMA002000000000000002 /* libggml.a */,
+				LLAMA002000000000000003 /* libggml-base.a */,
+				LLAMA002000000000000004 /* libggml-cpu.a */,
+				LLAMA002000000000000005 /* libggml-metal.a */,
+				LLAMA002000000000000006 /* libggml-blas.a */,
+				LLAMA002000000000000007 /* ggml-metal.metal */,
+			);
+			name = Libs;
+			path = Runner/Libs;
 			sourceTree = "<group>";
 		};
 		9740EEB11CF90186004384FC /* Flutter */ = {
@@ -133,6 +180,7 @@
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				53EC2BB7395A9C0134835EE6 /* Pods */,
 				94EED5358774400769377981 /* Frameworks */,
+				LLAMA003000000000000001 /* Libs */,
 			);
 			sourceTree = "<group>";
 		};
@@ -261,6 +309,7 @@
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+				LLAMA001000000000000007 /* ggml-metal.metal in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -473,6 +522,15 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Runner/Libs",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lc++",
+					"-all_load",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.ombhrum.fabushi;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -657,6 +715,15 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Runner/Libs",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lc++",
+					"-all_load",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.ombhrum.fabushi;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -683,6 +750,15 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Runner/Libs",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lc++",
+					"-all_load",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.ombhrum.fabushi;
 				PRODUCT_NAME = "$(TARGET_NAME)";
