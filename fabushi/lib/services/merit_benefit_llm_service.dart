@@ -2,12 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/merit_benefit.dart';
-import 'qwen_inference_service.dart';
+import 'llm_inference_service.dart';
 import 'semantic_nlp_service.dart';
 
 /// 功德利益 LLM 识别服务
 /// 
-/// 使用 Qwen 模型直接识别经文中的功德利益句子。
+/// 使用用户选择的 LLM 模型直接识别经文中的功德利益句子。
 /// 模型输出位置索引，程序根据索引提取原文。
 /// 
 /// 核心优势：
@@ -19,7 +19,7 @@ class MeritBenefitLLMService {
   static MeritBenefitLLMService get instance => _instance ??= MeritBenefitLLMService._();
   MeritBenefitLLMService._();
 
-  final _inference = QwenInferenceService.instance;
+  final _inference = LLMInferenceService.instance;
   
   // 结果缓存（基于段落哈希）
   final _cache = <int, List<MeritBenefitSentence>>{};
