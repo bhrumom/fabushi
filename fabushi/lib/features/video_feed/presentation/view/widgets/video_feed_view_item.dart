@@ -14,6 +14,7 @@ import 'package:global_dharma_sharing/services/content_stats_service.dart';
 import 'package:global_dharma_sharing/features/video_feed/presentation/view/widgets/comment_bottom_sheet.dart';
 import 'package:global_dharma_sharing/core/utils/auth_guard.dart';
 import 'package:global_dharma_sharing/widgets/report_dialog.dart';
+import 'package:global_dharma_sharing/services/auth_service.dart';
 import 'package:video_player/video_player.dart';
 
 class VideoFeedViewItem extends StatefulWidget {
@@ -303,13 +304,18 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
     return GestureDetector(
       onLongPress: () {
         HapticFeedback.mediumImpact();
+        final currentUser = AuthService().currentUser;
+        // 如果用户名匹配，或者是模拟环境下的作者标识
+        final isAuthor = currentUser != null && currentUser.username == widget.videoItem.username;
+        
         ReportDialog.show(
           context,
           contentId: widget.videoItem.id,
           authorId: widget.videoItem.id, // 视频 ID 作为作者标识
           authorName: widget.videoItem.username,
+          isAuthor: isAuthor,
           onActionCompleted: () {
-            // 屏蔽后刷新当前状态
+            // 屏蔽或删除后刷新当前状态
             if (mounted) setState(() {});
           },
         );

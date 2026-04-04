@@ -237,9 +237,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.help_outline,
                     iconColor: Colors.orange,
                     title: '帮助与反馈',
-                    subtitle: '常见问题与意见反馈',
-                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('帮助功能开发中')),
+                    subtitle: '联系邮箱: support@ombhrum.com',
+                    onTap: () => showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        backgroundColor: const Color(0xFF1E1E1E),
+                        title: const Text('帮助与反馈', style: TextStyle(color: Colors.white)),
+                        content: const Text(
+                          '如果您发现任何违规内容，或有任何建议，请联系我们：\n\n邮箱：support@ombhrum.com\n我们将会在24小时内处理您的反馈。',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('确定'),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
 
@@ -251,7 +265,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: '版本 1.0.0',
                     onTap: () => showAboutDialog(
                       context: context,
-                      applicationName: '全球法布施',
+                      applicationName: '大乘',
                       applicationVersion: '1.0.0',
                       children: [const Text('传播佛法，利益众生')],
                     ),

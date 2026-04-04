@@ -38,7 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🙏 全球法布施'),
+        title: const Text('🙏 大乘'),
         actions: [
           // 性能优化：只监听认证状态
           Selector<AuthModel, bool>(
@@ -153,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            '全球法布施',
+            '大乘',
             style: Theme.of(context).textTheme.headlineSmall,
             textAlign: TextAlign.center,
           ),
@@ -296,7 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return SizedBox(
           width: double.infinity,
           child: PrimaryButton(
-            text: '开始全球法布施',
+            text: '开始大乘',
             icon: Icons.public,
             onPressed: hasFiles
                 ? () {

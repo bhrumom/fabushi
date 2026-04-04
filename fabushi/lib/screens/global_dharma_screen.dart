@@ -7,7 +7,7 @@ import '../services/real_global_send_service.dart';
 import '../core/constants/country_servers.dart';
 import 'search_screen.dart';
 
-/// 全球法布施详细界面
+/// 大乘详细界面
 /// 显示国家列表和实时发送状态
 class GlobalDharmaScreen extends StatefulWidget {
   const GlobalDharmaScreen({Key? key}) : super(key: key);
@@ -86,7 +86,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🌍 全球法布施'),
+        title: const Text('🌍 大乘'),
         backgroundColor: const Color(0xFF667eea),
         foregroundColor: Colors.white,
         actions: [

@@ -5,7 +5,7 @@ import 'package:lpinyin/lpinyin.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../../../../models/sutra_table_of_contents.dart';
 import '../../../../../models/merit_benefit.dart';
-import '../../../../../services/merit_benefit_llm_service.dart';
+import '../../../../../services/merit_benefit_service.dart';
 import '../../../../../widgets/sutra_toc_bottom_sheet.dart';
 import '../../../../../screens/sutra_ai_page.dart';
 
@@ -605,14 +605,14 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
     child: _buildSutraEpilogue(),
   );
   
-  // ========= 功德利益 LLM 识别与高亮 =========
-  final MeritBenefitLLMService _meritLLMService = MeritBenefitLLMService.instance;
+  // ========= 功德利益识别与高亮 (基于轻量推荐引擎) =========
+  final MeritBenefitService _meritService = MeritBenefitService.instance;
   // 每个段落的功德利益句高亮范围
   final Map<int, List<MeritBenefitSentence>> _meritHighlights = {};
-  // 正在识别的段落索引
-  final Set<int> _recognizingParagraphs = {};
   // 原始段落文本（用于 LLM 识别）
   List<String> _rawParagraphs = [];
+  // 全文分析是否已触发
+  bool _fullTextAnalysisTriggered = false;
   
   // ========= UI显示/隐藏控制 =========
   bool _isUIVisible = true;  // 初始显示工具栏和悬浮按钮
@@ -664,46 +664,15 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
         _currentParagraphIndex = newIndex;
       });
     }
-    
-    // 触发可见段落的功德利益识别（懒加载）
-    for (final pos in visibleParagraphs) {
-      final paragraphIndex = pos.index - 1;
-      if (paragraphIndex >= 0) {
-        _recognizeParagraphMerit(paragraphIndex);
-      }
-    }
+
   }
   
-  /// 识别单个段落的功德利益句（懒加载）
-  Future<void> _recognizeParagraphMerit(int paragraphIndex) async {
-    // 已识别或正在识别则跳过
+  
+  /// 从全局缓存中获取段落的功德利益高亮（全文分析完成后可用）
+  void _fillMeritHighlightsFromCache(int paragraphIndex) {
     if (_meritHighlights.containsKey(paragraphIndex)) return;
-    if (_recognizingParagraphs.contains(paragraphIndex)) return;
     if (paragraphIndex >= _rawParagraphs.length) return;
-    
-    // 检查模型状态
-    if (!_meritLLMService.isModelReady) return;
-    
-    _recognizingParagraphs.add(paragraphIndex);
-    
-    try {
-      final paragraph = _rawParagraphs[paragraphIndex];
-      final sentences = await _meritLLMService.recognizeParagraph(paragraph, paragraphIndex);
-      
-      if (mounted) {
-        setState(() {
-          _meritHighlights[paragraphIndex] = sentences;
-        });
-        
-        if (sentences.isNotEmpty) {
-          debugPrint('📿 Reader: 段落 $paragraphIndex 识别到 ${sentences.length} 个功德利益句');
-        }
-      }
-    } catch (e) {
-      debugPrint('📿 Reader: 段落 $paragraphIndex 识别失败: $e');
-    } finally {
-      _recognizingParagraphs.remove(paragraphIndex);
-    }
+    // 此方法仅作为占位，高亮数据由 _prefetchVisibleMerit 统一填充
   }
 
   Future<void> _preprocessText() async {
@@ -728,18 +697,38 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
         _isLoading = false;
       });
       
-      // 首屏可见段落预加载功德利益识别
-      _prefetchVisibleMerit();
+      // 功德利益分析不在此处自动触发，仅在目录面板点击功德利益标签时触发
     }
   }
   
-  /// 预加载首屏可见段落的功德利益识别
-  void _prefetchVisibleMerit() {
-    if (_rawParagraphs.isEmpty) return;
+  /// 全文功德利益分析（一次性，共用全局缓存）
+  Future<void> _prefetchVisibleMerit() async {
+    if (_rawParagraphs.isEmpty || _fullTextAnalysisTriggered) return;
+    if (_tableOfContents == null) return;
     
-    // 预加载前3个段落
-    for (int i = 0; i < 3 && i < _rawParagraphs.length; i++) {
-      _recognizeParagraphMerit(i);
+    _fullTextAnalysisTriggered = true;
+    
+    try {
+      // 一次性分析全文（共用全局缓存，基于毫秒级推荐引擎）
+      final data = await _meritService.extractFromText(
+        widget.fullText, _tableOfContents!);
+      
+      if (mounted) {
+        // 将全文结果按段落索引分组到高亮缓存
+        for (final sentence in data.sentences) {
+          _meritHighlights
+              .putIfAbsent(sentence.paragraphIndex, () => [])
+              .add(sentence);
+        }
+        setState(() {});
+        
+        if (data.sentences.isNotEmpty) {
+          debugPrint('📿 Reader: 全文功德利益分析完成，'
+              '共 ${data.sentences.length} 个功德利益句');
+        }
+      }
+    } catch (e) {
+      debugPrint('📿 Reader: 全文功德利益分析失败: $e');
     }
   }
 

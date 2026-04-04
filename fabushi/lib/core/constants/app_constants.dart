@@ -2,7 +2,7 @@ class AppConstants {
   AppConstants._();
 
   // 应用信息
-  static const String appName = '全球法布施';
+  static const String appName = '大乘';
   static const String appVersion = '1.0.0';
 
   // 支持的国家代码
