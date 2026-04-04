@@ -3,8 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:global_dharma_sharing/services/tts_manager.dart';
-import 'package:global_dharma_sharing/services/merit_benefit_llm_service.dart';
-import 'package:global_dharma_sharing/models/merit_benefit.dart';
 import 'package:global_dharma_sharing/providers/video_feed_visibility_notifier.dart';
 import 'package:global_dharma_sharing/providers/tts_mute_notifier.dart';
 
@@ -104,13 +102,7 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
   // ========= 第一性原理优化：预构建Widget缓存 =========
   // 句子开始时构建一次，而非每帧构建
   List<Widget>? _cachedWordWidgets;
-  
-  // ========= 功德利益 LLM 识别 =========
-  final MeritBenefitLLMService _meritLLMService = MeritBenefitLLMService.instance;
-  List<MeritBenefitSentence> _meritSentences = [];
-  bool _useFallbackMode = false;  // 模型未就绪时从头朗读
-  bool _isLoadingMerit = false;   // 是否正在加载功德利益句
-  bool _firstMeritReady = false;  // 第一句功德利益是否就绪
+
 
   @override
   void initState() {
@@ -237,9 +229,6 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
 
   void _parseContent() {
     _sentences = [];
-    _meritSentences = [];
-    _useFallbackMode = false;
-    _firstMeritReady = false;
     
     if (widget.textContent.isEmpty) return;
     
@@ -252,118 +241,21 @@ class _VideoFeedViewTextContentState extends State<VideoFeedViewTextContent>
       _debugLog('TTS MV: Large text detected (${widget.textContent.length} chars), showing preview first');
     }
     
-    // 分段落存储（用于 LLM 识别）
-    final paragraphs = widget.textContent.split(RegExp(r'[\n]+'));
-    final validParagraphs = paragraphs.where((p) => p.trim().isNotEmpty).toList();
-    
-    // 初始分句（用于降级模式）
+    // 分句
     final parts = initialText.split(RegExp(r'[，。！？、；：""‘’「」『』【】《》〈〉\n]+'));
     for (final p in parts) {
       final t = p.trim();
       if (t.isNotEmpty && _hasActualContent(t)) _sentences.add(t);
     }
     
-    _debugLog('TTS MV: Initial parsed ${_sentences.length} sentences from ${validParagraphs.length} paragraphs');
-    
-    // 后台使用 LLM 识别功德利益句
-    _initMeritBenefitRecognition(validParagraphs);
+    _debugLog('TTS MV: Initial parsed ${_sentences.length} sentences');
     
     if (_sentences.isNotEmpty) {
       _parseWordsForSentence(0);
     }
   }
   
-  /// 初始化功德利益识别（首屏只识别第一段，剩余懒加载）
-  Future<void> _initMeritBenefitRecognition(List<String> paragraphs) async {
-    if (_disposed || paragraphs.isEmpty) return;
-    
-    // 等待模型就绪（ensureInitialized 会触发初始化或等待已有初始化完成）
-    final modelReady = await _meritLLMService.ensureInitialized();
-    if (!modelReady) {
-      _debugLog('💿 TTS: LLM 模型未就绪，使用降级模式（从头朗读）');
-      _useFallbackMode = true;
-      return;
-    }
-    
-    _isLoadingMerit = true;
-    
-    try {
-      // 只识别第一段落（首屏优化）
-      final firstParagraph = paragraphs.first;
-      _debugLog('💿 TTS: 开始识别第一段功德利益句...');
-      
-      final firstMeritSentences = await _meritLLMService.recognizeParagraph(firstParagraph, 0);
-      
-      if (mounted && !_disposed) {
-        _meritSentences = firstMeritSentences;
-        _firstMeritReady = _meritSentences.isNotEmpty;
-        
-        if (_firstMeritReady) {
-          // 将功德利益句作为 TTS 朗读内容
-          _sentences = _meritSentences.map((s) => s.text).toList();
-          // 切分为适合朗读的短句
-          final resplit = <String>[];
-          for (final s in _sentences) {
-            resplit.addAll(_splitTextForRecitation(s));
-          }
-          _sentences = resplit;
-          
-          _debugLog('💿 TTS: 第一段识别完成，找到 ${_meritSentences.length} 个功德利益句');
-          
-          // 更新 UI
-          setState(() {
-            _parseWordsForSentence(0);
-          });
-        } else {
-          _debugLog('💿 TTS: 第一段未找到功德利益句，使用降级模式');
-          _useFallbackMode = true;
-        }
-        
-        // 后台继续加载剩余段落
-        if (paragraphs.length > 1) {
-          _loadRemainingMeritSentences(paragraphs.sublist(1));
-        }
-      }
-    } catch (e) {
-      _debugLog('💿 TTS: 功德利益识别失败: $e');
-      _useFallbackMode = true;
-    } finally {
-      _isLoadingMerit = false;
-    }
-  }
-  
-  /// 后台加载剩余段落的功德利益句（懒加载）
-  Future<void> _loadRemainingMeritSentences(List<String> remainingParagraphs) async {
-    if (_disposed || remainingParagraphs.isEmpty) return;
-    
-    _debugLog('💿 TTS: 后台加载剩余 ${remainingParagraphs.length} 个段落...');
-    
-    await for (final result in _meritLLMService.recognizeParagraphsStream(
-      remainingParagraphs,
-      startIndex: 1,
-    )) {
-      if (_disposed || !mounted) break;
-      
-      if (result.isReady && result.sentences.isNotEmpty) {
-        _meritSentences.addAll(result.sentences);
-        
-        // 将新识别的句子添加到播放列表
-        final newTexts = result.sentences.map((s) => s.text).toList();
-        final resplit = <String>[];
-        for (final s in newTexts) {
-          resplit.addAll(_splitTextForRecitation(s));
-        }
-        
-        setState(() {
-          _sentences.addAll(resplit);
-        });
-        
-        _debugLog('💿 TTS: 段落 ${result.paragraphIndex} 识别完成，新增 ${result.sentences.length} 个功德利益句');
-      }
-    }
-    
-    _debugLog('💿 TTS: 所有段落识别完成，共 ${_meritSentences.length} 个功德利益句');
-  }
+
 
   /// 将文本分割成不超过指定字数的片段（复用旧逻辑）
   /// 优先在标点符号处分割，否则在指定长度处强制分割

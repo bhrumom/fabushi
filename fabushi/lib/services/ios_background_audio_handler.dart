@@ -199,7 +199,7 @@ Future<IOSBackgroundAudioHandler> initIOSBackgroundAudio() async {
     builder: () => IOSBackgroundAudioHandler(),
     config: AudioServiceConfig(
       androidNotificationChannelId: 'com.fabushi.app.audio',
-      androidNotificationChannelName: '全球法布施',
+      androidNotificationChannelName: '大乘',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: false,
     ),

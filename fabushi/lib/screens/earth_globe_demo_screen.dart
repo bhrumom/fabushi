@@ -73,7 +73,7 @@ class _EarthGlobeDemoScreenState extends State<EarthGlobeDemoScreen> {
                   border: Border.all(color: Colors.cyan.withOpacity(0.3), width: 1),
                 ),
                 child: const Text(
-                  '🌍 全球法布施 - 实时传输轨迹',
+                  '🌍 大乘 - 实时传输轨迹',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,

@@ -9,6 +9,7 @@ class ReportDialog extends StatefulWidget {
   final String contentId;
   final String? authorId;
   final String? authorName;
+  final bool isAuthor;
   final VoidCallback? onActionCompleted;
 
   const ReportDialog({
@@ -16,6 +17,7 @@ class ReportDialog extends StatefulWidget {
     required this.contentId,
     this.authorId,
     this.authorName,
+    this.isAuthor = false,
     this.onActionCompleted,
   });
 
@@ -25,6 +27,7 @@ class ReportDialog extends StatefulWidget {
     required String contentId,
     String? authorId,
     String? authorName,
+    bool isAuthor = false,
     VoidCallback? onActionCompleted,
   }) async {
     await showModalBottomSheet(
@@ -35,6 +38,7 @@ class ReportDialog extends StatefulWidget {
         contentId: contentId,
         authorId: authorId,
         authorName: authorName,
+        isAuthor: isAuthor,
         onActionCompleted: onActionCompleted,
       ),
     );
@@ -134,6 +138,46 @@ class _ReportDialogState extends State<ReportDialog> {
     }
   }
 
+  Future<void> _deleteContent() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1F36),
+        title: const Text('确认删除', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          '删除后无法恢复，确定要删除此作品吗？',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('确认删除', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    // TODO: 实现真实的内容删除API调用
+    if (mounted) {
+      Navigator.of(context).pop();
+      widget.onActionCompleted?.call();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('已请求删除作品'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -173,24 +217,34 @@ class _ReportDialogState extends State<ReportDialog> {
         ),
         const SizedBox(height: 16),
 
-        // 举报内容
-        _buildMenuItem(
-          icon: Icons.flag_outlined,
-          label: '举报内容',
-          subtitle: '举报不当或违规内容',
-          color: Colors.orange,
-          onTap: () => setState(() => _showReportReasons = true),
-        ),
-
-        // 屏蔽用户
-        if (widget.authorId != null)
+        if (widget.isAuthor)
           _buildMenuItem(
-            icon: Icons.block,
-            label: '屏蔽${widget.authorName ?? '该用户'}',
-            subtitle: '屏蔽后不再看到此用户的内容',
+            icon: Icons.delete_forever,
+            label: '删除作品',
+            subtitle: '永久删除此内容',
             color: Colors.red,
-            onTap: _blockUser,
+            onTap: _deleteContent,
+          )
+        else ...[
+          // 举报内容
+          _buildMenuItem(
+            icon: Icons.flag_outlined,
+            label: '举报内容',
+            subtitle: '举报不当或违规内容',
+            color: Colors.orange,
+            onTap: () => setState(() => _showReportReasons = true),
           ),
+
+          // 屏蔽用户
+          if (widget.authorId != null)
+            _buildMenuItem(
+              icon: Icons.block,
+              label: '屏蔽${widget.authorName ?? '该用户'}',
+              subtitle: '屏蔽后不再看到此用户的内容',
+              color: Colors.red,
+              onTap: _blockUser,
+            ),
+        ],
 
         const SizedBox(height: 8),
 

@@ -232,7 +232,7 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
     // 设置媒体项信息（显示在系统媒体控制中心）
     mediaItem.add(MediaItem(
       id: 'keep_alive_dharani',
-      title: '全球法布施',
+      title: '大乘',
       artist: _audioName,
       album: '后台保活中',
       duration: Duration.zero,
@@ -375,7 +375,7 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
     
     mediaItem.add(MediaItem(
       id: 'keep_alive_dharani',
-      title: '全球法布施',
+      title: '大乘',
       artist: subtitle,
       album: _audioName,
       duration: _audioPlayer.duration ?? Duration.zero,
@@ -673,7 +673,7 @@ class KeepAliveService {
           builder: () => KeepAliveAudioHandler(),
           config: const AudioServiceConfig(
             androidNotificationChannelId: 'com.ombhrum.fabushi.keep_alive',
-            androidNotificationChannelName: '全球法布施',
+            androidNotificationChannelName: '大乘',
             androidNotificationChannelDescription: '保持应用在后台运行，确保全球发送不中断',
             // Android 通知配置 - 显示音乐播放器风格通知
             // 注意：androidNotificationOngoing=true 要求 androidStopForegroundOnPause=true
@@ -764,7 +764,7 @@ class KeepAliveService {
     try {
       const androidDetails = AndroidNotificationDetails(
         'com.ombhrum.fabushi.keep_alive',
-        '全球法布施',
+        '大乘',
         channelDescription: '全球发送进度通知',
         importance: Importance.low,
         priority: Priority.low,
@@ -820,7 +820,7 @@ class KeepAliveService {
     // 降级模式：显示备用通知
     if (_isDegradedMode) {
       await _showFallbackNotification(
-        title: '全球法布施',
+        title: '大乘',
         body: '${audioName ?? "准备中"} · 发送到 $totalCountries 个国家',
       );
       debugPrint('📢 已显示备用通知（降级模式）');
@@ -866,7 +866,7 @@ class KeepAliveService {
       }
       
       _showFallbackNotification(
-        title: '全球法布施',
+        title: '大乘',
         body: subtitle,
       );
     }

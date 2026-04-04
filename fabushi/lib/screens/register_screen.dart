@@ -271,7 +271,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       children: [
                         // 标题
                         const Text(
-                          '🙏 加入全球法布施',
+                          '🙏 加入大乘',
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,

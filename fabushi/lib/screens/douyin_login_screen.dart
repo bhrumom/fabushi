@@ -4,7 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart' hide IconAlignment;
+import 'package:sign_in_with_apple/sign_in_with_apple.dart' as apple_pkg show IconAlignment;
 import 'dart:async';
 import 'dart:io' show Platform;
 import '../models/auth_model.dart';
@@ -876,7 +877,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         ),
         const SizedBox(height: 24),
         const Text(
-          '全球法布施',
+          '大乘',
           style: TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.bold,
@@ -1200,7 +1201,22 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
             Expanded(child: Divider(color: Colors.white.withOpacity(0.2))),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+        // Apple登录（仅Apple平台）。符合苹果 HIG 规范，使用标准宽带文字按钮
+        if (!kIsWeb && (Platform.isIOS || Platform.isMacOS))
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
+            child: SizedBox(
+              height: 48,
+              width: double.infinity,
+              child: SignInWithAppleButton(
+                onPressed: _handleAppleLogin,
+                style: SignInWithAppleButtonStyle.white,
+                borderRadius: const BorderRadius.all(Radius.circular(12)),
+              ),
+            ),
+          ),
+        const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -1210,17 +1226,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
               label: '支付宝',
               onTap: _handleAlipayLogin,
             ),
-            const SizedBox(width: 32),
-            // Apple登录（仅Apple平台）
-            if (!kIsWeb && (Platform.isIOS || Platform.isMacOS))
-              Padding(
-                padding: const EdgeInsets.only(right: 32),
-                child: _buildOtherLoginButton(
-                  icon: '🍎',
-                  label: 'Apple',
-                  onTap: _handleAppleLogin,
-                ),
-              ),
+            const SizedBox(width: 48),
             // 切换登录模式
             _buildOtherLoginButton(
               icon: _isPasswordMode ? '📱' : '🔐',

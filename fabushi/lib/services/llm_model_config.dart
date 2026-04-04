@@ -79,6 +79,12 @@ enum LLMModelType {
   
   /// Gemma 3n E2B GGUF Q4_K_M
   gemma3n_e2b_gguf,
+  
+  /// Gemma 4 E2B GGUF Q4_K_M
+  gemma4_e2b_gguf,
+  
+  /// Gemma 4 E4B GGUF Q4_K_M
+  gemma4_e4b_gguf,
 }
 
 /// 设备能力等级
@@ -325,6 +331,28 @@ class LLMModelConfig {
       expectedSizeBytes: 2100 * 1024 * 1024, // ~2.1 GB
       minRamMb: 2048, // 2 GB
       description: 'Gemma 3n 轻量对话模型',
+    ),
+    
+    LLMModelType.gemma4_e2b_gguf: LLMModelConfig(
+      type: LLMModelType.gemma4_e2b_gguf,
+      category: LLMModelCategory.textOnly,
+      displayName: 'Gemma 4 E2B (GGUF)',
+      fileName: 'gemma-4-E2B-it_Q4_K_M.gguf',
+      downloadUrl: 'https://hf-mirror.com/tatsuyaaaaaaa/gemma-4-E2B-it-gguf/resolve/main/gemma-4-E2B-it_Q4_K_M.gguf',
+      expectedSizeBytes: 2200 * 1024 * 1024, // ~2.2 GB
+      minRamMb: 2048, // 2 GB
+      description: 'Gemma 4 轻量对话模型 (E2B) (国内源优化)',
+    ),
+    
+    LLMModelType.gemma4_e4b_gguf: LLMModelConfig(
+      type: LLMModelType.gemma4_e4b_gguf,
+      category: LLMModelCategory.textOnly,
+      displayName: 'Gemma 4 E4B (GGUF)',
+      fileName: 'gemma-4-E4B-it_Q5_K_M.gguf',
+      downloadUrl: 'https://hf-mirror.com/tatsuyaaaaaaa/gemma-4-E4B-it-gguf/resolve/main/gemma-4-E4B-it_Q5_K_M.gguf',
+      expectedSizeBytes: 3800 * 1024 * 1024, // ~3.8 GB
+      minRamMb: 4096, // 4 GB
+      description: 'Gemma 4 增强对话模型 (E4B) (国内源优化)',
     ),
   };
 

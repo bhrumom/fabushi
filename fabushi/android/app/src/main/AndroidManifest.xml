@@ -38,16 +38,9 @@
 
     
     <application
-        android:label="global_dharma_sharing"
+        android:label="大乘"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-        
-        <!-- 前台服务声明 - 使用多种类型以获得更高保活优先级 -->
-        <service
-            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="mediaPlayback"
-            android:exported="false">
-        </service>
         
         <!-- audio_service 音频服务 - 用于系统级MediaSession保活 -->
         <service

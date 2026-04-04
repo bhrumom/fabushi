@@ -36,8 +36,6 @@ class FeedTabBar extends StatelessWidget {
                   _buildTab('感应', 2),
                   const SizedBox(width: 12),
                   _buildTab('发愿', 3),
-                  const SizedBox(width: 12),
-                  _buildTab('商城', 4),
                 ],
               ),
             ),
