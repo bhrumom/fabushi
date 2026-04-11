@@ -71,7 +71,11 @@ class DownloadManager {
   Map<String, DownloadTask> get tasks => Map.unmodifiable(_tasks);
 
   /// 创建下载任务
-  Future<String> createTask(String url, String fileName, String assetPath) async {
+  Future<String> createTask(
+    String url,
+    String fileName,
+    String assetPath,
+  ) async {
     final taskId = DateTime.now().millisecondsSinceEpoch.toString();
     final task = DownloadTask(
       id: taskId,
@@ -237,7 +241,10 @@ class DownloadManager {
           final now = DateTime.now().millisecondsSinceEpoch;
           if (now - lastProgressUpdate > 100) {
             // 每100ms更新一次
-            task.progress = task.totalBytes > 0 ? task.downloadedBytes / task.totalBytes : 0.0;
+            task.progress = task.totalBytes > 0
+                ? task.downloadedBytes / task.totalBytes
+                : 0.0;
+            if (task.progress > 1.0) task.progress = 1.0;
             _notifyTaskUpdate(task);
             lastProgressUpdate = now;
           }
@@ -306,7 +313,10 @@ class DownloadManager {
         final now = DateTime.now().millisecondsSinceEpoch;
         if (now - lastProgressUpdate > 100) {
           // 每100ms更新一次
-          task.progress = task.totalBytes > 0 ? task.downloadedBytes / task.totalBytes : 0.0;
+          task.progress = task.totalBytes > 0
+              ? task.downloadedBytes / task.totalBytes
+              : 0.0;
+          if (task.progress > 1.0) task.progress = 1.0;
           _notifyTaskUpdate(task);
           lastProgressUpdate = now;
         }
@@ -360,7 +370,10 @@ class DownloadManager {
       final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
       final List<dynamic> savedFiles = json.decode(savedFilesStr);
 
-      final fileInfo = savedFiles.firstWhere((f) => f['name'] == fileName, orElse: () => null);
+      final fileInfo = savedFiles.firstWhere(
+        (f) => f['name'] == fileName,
+        orElse: () => null,
+      );
 
       if (fileInfo == null) return null;
 

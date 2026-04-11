@@ -6,7 +6,7 @@ import 'package:dio/dio.dart';
 import 'llm_model_config.dart';
 
 /// LLM 模型管理器
-/// 
+///
 /// 职责：
 /// - 管理多个 LLM 模型的下载、存储
 /// - 检测本地已下载的模型
@@ -18,33 +18,37 @@ class LLMModelManager {
   static LLMModelManager get instance => _instance ??= LLMModelManager._();
   LLMModelManager._();
 
-  final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 30),
-    sendTimeout: const Duration(seconds: 30),
-  ));
+  final Dio _dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 30),
+      sendTimeout: const Duration(seconds: 30),
+    ),
+  );
   CancelToken? _cancelToken;
   bool _isDownloading = false;
   LLMModelType? _currentDownloadingModel;
   String _currentDownloadStage = ''; // 当前下载阶段
   double _currentDownloadProgress = 0.0; // 当前下载进度
-  
+
   // 下载进度广播流（用于 UI 订阅）
-  final _downloadProgressController = StreamController<DownloadProgressEvent>.broadcast();
-  
+  final _downloadProgressController =
+      StreamController<DownloadProgressEvent>.broadcast();
+
   /// 下载进度事件流（UI 可订阅此流获取实时进度）
-  Stream<DownloadProgressEvent> get downloadProgressStream => _downloadProgressController.stream;
-  
+  Stream<DownloadProgressEvent> get downloadProgressStream =>
+      _downloadProgressController.stream;
+
   /// 当前下载进度（0.0 ~ 1.0）
   double get currentDownloadProgress => _currentDownloadProgress;
-  
+
   // 下载源检测缓存
   HFDownloadSource? _cachedSource;
   DateTime? _sourceCheckTime;
   static const Duration _sourceCacheDuration = Duration(hours: 1);
-  
+
   // 当前选择的模型（从设置加载）
   LLMModelType? _selectedModel;
-  
+
   /// 当前选择的模型
   LLMModelType? get selectedModel => _selectedModel;
 
@@ -52,7 +56,7 @@ class LLMModelManager {
   set selectedModel(LLMModelType? type) {
     _selectedModel = type;
   }
-  
+
   /// 获取当前使用的下载源
   HFDownloadSource? get currentSource => _cachedSource;
 
@@ -61,45 +65,54 @@ class LLMModelManager {
 
   /// 正在下载的模型类型
   LLMModelType? get currentDownloadingModel => _currentDownloadingModel;
-  
+
   /// 当前下载阶段描述
   String get currentDownloadStage => _currentDownloadStage;
-  
+
   /// 检测并选择最佳下载源
-  /// 
+  ///
   /// 并发测试官方源和镜像源的连通性，选择响应最快的源
   Future<HFDownloadSource> detectBestSource({bool forceRefresh = false}) async {
     // 使用缓存
-    if (!forceRefresh && 
-        _cachedSource != null && 
+    if (!forceRefresh &&
+        _cachedSource != null &&
         _sourceCheckTime != null &&
         DateTime.now().difference(_sourceCheckTime!) < _sourceCacheDuration) {
       debugPrint('LLMModelManager: 使用缓存的下载源: ${_cachedSource!.name}');
       return _cachedSource!;
     }
-    
+
     debugPrint('LLMModelManager: 开始检测最佳下载源...');
-    
+
     // 测试用的小文件路径（使用一个小模型仓库的 README）
-    const testPath = '/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/README.md';
-    
-    final officialUrl = HFSourceConfig.getFullUrl(testPath, HFDownloadSource.official);
-    final mirrorUrl = HFSourceConfig.getFullUrl(testPath, HFDownloadSource.mirror);
-    
+    const testPath =
+        '/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/README.md';
+
+    final officialUrl = HFSourceConfig.getFullUrl(
+      testPath,
+      HFDownloadSource.official,
+    );
+    final mirrorUrl = HFSourceConfig.getFullUrl(
+      testPath,
+      HFDownloadSource.mirror,
+    );
+
     // 并发测试两个源
-    final testDio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 5),
-      receiveTimeout: const Duration(seconds: 5),
-    ));
-    
+    final testDio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 5),
+        receiveTimeout: const Duration(seconds: 5),
+      ),
+    );
+
     final results = await Future.wait([
       _testSourceConnectivity(testDio, officialUrl, HFDownloadSource.official),
       _testSourceConnectivity(testDio, mirrorUrl, HFDownloadSource.mirror),
     ]);
-    
+
     // 选择响应最快的源
     final successfulResults = results.where((r) => r.success).toList();
-    
+
     HFDownloadSource bestSource;
     if (successfulResults.isEmpty) {
       // 都失败了，默认使用镜像源（国内用户更可能）
@@ -109,27 +122,31 @@ class LLMModelManager {
       // 选择延迟最低的
       successfulResults.sort((a, b) => a.latencyMs.compareTo(b.latencyMs));
       bestSource = successfulResults.first.source;
-      debugPrint('LLMModelManager: 最佳下载源: ${bestSource.name} (${successfulResults.first.latencyMs}ms)');
+      debugPrint(
+        'LLMModelManager: 最佳下载源: ${bestSource.name} (${successfulResults.first.latencyMs}ms)',
+      );
     }
-    
+
     // 缓存结果
     _cachedSource = bestSource;
     _sourceCheckTime = DateTime.now();
-    
+
     return bestSource;
   }
-  
+
   /// 测试单个源的连通性
   Future<_SourceTestResult> _testSourceConnectivity(
-    Dio dio, 
-    String url, 
+    Dio dio,
+    String url,
     HFDownloadSource source,
   ) async {
     final stopwatch = Stopwatch()..start();
     try {
       await dio.head(url);
       stopwatch.stop();
-      debugPrint('LLMModelManager: ${source.name} 连通，延迟 ${stopwatch.elapsedMilliseconds}ms');
+      debugPrint(
+        'LLMModelManager: ${source.name} 连通，延迟 ${stopwatch.elapsedMilliseconds}ms',
+      );
       return _SourceTestResult(
         source: source,
         success: true,
@@ -162,12 +179,12 @@ class LLMModelManager {
     final config = LLMModelConfig.getConfig(type);
     return '${dir.path}/${config.fileName}';
   }
-  
+
   /// 获取 mmproj 文件路径（仅多模态模型）
   Future<String?> getMmprojPath(LLMModelType type) async {
     final config = LLMModelConfig.getConfig(type);
     if (!config.requiresMmproj) return null;
-    
+
     final dir = await _modelDirectory;
     return '${dir.path}/${config.mmprojFileName}';
   }
@@ -190,16 +207,16 @@ class LLMModelManager {
       return false;
     }
   }
-  
+
   /// 检查 mmproj 文件是否已下载且完整
   Future<bool> _isMmprojAvailable(LLMModelType type) async {
     final config = LLMModelConfig.getConfig(type);
     if (!config.requiresMmproj) return true; // 不需要 mmproj 的模型直接返回 true
-    
+
     try {
       final path = await getMmprojPath(type);
       if (path == null) return true;
-      
+
       final file = File(path);
       if (!await file.exists()) {
         return false;
@@ -218,27 +235,27 @@ class LLMModelManager {
   Future<bool> isModelAvailable(LLMModelType type) async {
     final mainAvailable = await _isMainModelAvailable(type);
     if (!mainAvailable) return false;
-    
+
     final mmprojAvailable = await _isMmprojAvailable(type);
     return mmprojAvailable;
   }
-  
+
   /// 获取模型下载状态详情
   Future<ModelDownloadStatus> getModelDownloadStatus(LLMModelType type) async {
     final config = LLMModelConfig.getConfig(type);
     final mainAvailable = await _isMainModelAvailable(type);
     final mmprojAvailable = await _isMmprojAvailable(type);
-    
+
     if (_isDownloading && _currentDownloadingModel == type) {
       return ModelDownloadStatus.downloading;
     }
-    
+
     if (!config.requiresMmproj) {
-      return mainAvailable 
-          ? ModelDownloadStatus.complete 
+      return mainAvailable
+          ? ModelDownloadStatus.complete
           : ModelDownloadStatus.notDownloaded;
     }
-    
+
     // 多模态模型需要检查两个文件
     if (mainAvailable && mmprojAvailable) {
       return ModelDownloadStatus.complete;
@@ -276,7 +293,7 @@ class LLMModelManager {
   }
 
   /// 确保模型可用（检测或下载）
-  /// 
+  ///
   /// [onProgress] 下载进度回调，参数为 (progress: 0.0-1.0, stage: 阶段描述)
   /// 返回模型文件的本地路径
   Future<String> ensureModelAvailable(
@@ -284,7 +301,7 @@ class LLMModelManager {
     void Function(double progress, String stage)? onProgress,
   }) async {
     final path = await getModelPath(type);
-    
+
     // 检查是否已下载
     if (await isModelAvailable(type)) {
       debugPrint('LLMModelManager: 模型已存在: $path');
@@ -313,7 +330,7 @@ class LLMModelManager {
 
     try {
       final config = LLMModelConfig.getConfig(type);
-      
+
       // 检测最佳下载源
       _currentDownloadStage = '检测网络环境';
       _currentDownloadProgress = 0.0;
@@ -321,47 +338,79 @@ class LLMModelManager {
       onProgress?.call(0.0, _currentDownloadStage);
       final source = await detectBestSource();
       debugPrint('LLMModelManager: 使用下载源: ${source.name}');
-      
+
       // 计算总大小（用于多文件时的整体进度）
       final totalSize = config.totalSizeBytes;
       int downloadedBytes = 0;
-      
+
       // 阶段1：下载主模型
       if (!await _isMainModelAvailable(type)) {
         _currentDownloadStage = '下载主模型';
         _emitProgress(type, 0.0, _currentDownloadStage);
         onProgress?.call(0.0, _currentDownloadStage);
-        
+
         await _downloadFile(
           url: config.downloadUrl,
           fileName: config.fileName,
           expectedSize: config.expectedSizeBytes,
           onReceiveProgress: (received, total) {
             downloadedBytes = received;
-            final progress = downloadedBytes / totalSize;
+            int actualTotalSize = totalSize;
+            if (!config.requiresMmproj && total > 0) {
+              actualTotalSize = total;
+            } else if (config.requiresMmproj && total > 0) {
+              actualTotalSize = total + (config.mmprojSizeBytes ?? 0);
+            }
+            double progress = actualTotalSize > 0
+                ? downloadedBytes / actualTotalSize
+                : 0.0;
+            if (progress > 1.0) progress = 1.0;
+
             _currentDownloadProgress = progress;
             _emitProgress(type, progress, _currentDownloadStage);
             onProgress?.call(progress, _currentDownloadStage);
           },
         );
-        
-        downloadedBytes = config.expectedSizeBytes;
+
+        // 更新 downloadedBytes 为实际下载大小，防止多阶段中进度跳跃
+        final mainFile = File(await getModelPath(type));
+        if (await mainFile.exists()) {
+          downloadedBytes = await mainFile.length();
+        } else {
+          downloadedBytes = config.expectedSizeBytes;
+        }
       } else {
-        downloadedBytes = config.expectedSizeBytes;
+        // 模型已存在，获取真实大小
+        final mainFile = File(await getModelPath(type));
+        if (await mainFile.exists()) {
+          downloadedBytes = await mainFile.length();
+        } else {
+          downloadedBytes = config.expectedSizeBytes;
+        }
       }
-      
+
       // 阶段2：下载 mmproj（如需要）
       if (config.requiresMmproj && !await _isMmprojAvailable(type)) {
         _currentDownloadStage = '下载视觉编码器';
-        _emitProgress(type, downloadedBytes / totalSize, _currentDownloadStage);
-        onProgress?.call(downloadedBytes / totalSize, _currentDownloadStage);
-        
+        double baseProgress = totalSize > 0 ? downloadedBytes / totalSize : 0.0;
+        if (baseProgress > 1.0) baseProgress = 1.0;
+
+        _emitProgress(type, baseProgress, _currentDownloadStage);
+        onProgress?.call(baseProgress, _currentDownloadStage);
+
         await _downloadFile(
           url: config.mmprojDownloadUrl!,
           fileName: config.mmprojFileName!,
           expectedSize: config.mmprojSizeBytes!,
           onReceiveProgress: (received, total) {
-            final progress = (downloadedBytes + received) / totalSize;
+            int actualPhase2Total = total > 0 ? total : config.mmprojSizeBytes!;
+            int actualTotalSize = downloadedBytes + actualPhase2Total;
+
+            double progress = actualTotalSize > 0
+                ? (downloadedBytes + received) / actualTotalSize
+                : 0.0;
+            if (progress > 1.0) progress = 1.0;
+
             _currentDownloadProgress = progress;
             _emitProgress(type, progress, _currentDownloadStage);
             onProgress?.call(progress, _currentDownloadStage);
@@ -373,7 +422,6 @@ class LLMModelManager {
       _currentDownloadProgress = 1.0;
       _emitProgress(type, 1.0, _currentDownloadStage, isComplete: true);
       onProgress?.call(1.0, _currentDownloadStage);
-      
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
         debugPrint('LLMModelManager: 下载已取消');
@@ -389,7 +437,7 @@ class LLMModelManager {
       _cancelToken = null;
     }
   }
-  
+
   /// 内部下载方法
   Future<void> _downloadFile({
     required String url,
@@ -400,12 +448,12 @@ class LLMModelManager {
     final dir = await _modelDirectory;
     final path = '${dir.path}/$fileName';
     final tempPath = '$path.downloading';
-    
+
     // 将 HuggingFace URL 转换为使用检测到的最佳源
     // 注意：非 HuggingFace URL（如 Google Storage）不应转换
     String actualUrl = url;
-    final isHuggingFaceUrl = url.contains('huggingface.co') || 
-                              url.contains('hf-mirror.com');
+    final isHuggingFaceUrl =
+        url.contains('huggingface.co') || url.contains('hf-mirror.com');
     if (_cachedSource != null && isHuggingFaceUrl) {
       final relativePath = HFSourceConfig.extractRelativePath(url);
       actualUrl = HFSourceConfig.getFullUrl(relativePath, _cachedSource!);
@@ -423,7 +471,9 @@ class LLMModelManager {
         if (received % (10 * 1024 * 1024) < 1024 * 1024) {
           // 每 10MB 打印一次进度
           final progress = received / (total > 0 ? total : expectedSize);
-          debugPrint('LLMModelManager: 下载进度 ${(progress * 100).toStringAsFixed(1)}%');
+          debugPrint(
+            'LLMModelManager: 下载进度 ${(progress * 100).toStringAsFixed(1)}%',
+          );
         }
       },
       options: Options(
@@ -440,25 +490,27 @@ class LLMModelManager {
       debugPrint('LLMModelManager: 文件下载完成: $path');
     }
   }
-  
+
   /// 发送下载进度事件
   void _emitProgress(
-    LLMModelType type, 
-    double progress, 
+    LLMModelType type,
+    double progress,
     String stage, {
     bool isComplete = false,
     bool isFailed = false,
     String? error,
   }) {
     if (!_downloadProgressController.isClosed) {
-      _downloadProgressController.add(DownloadProgressEvent(
-        modelType: type,
-        progress: progress,
-        stage: stage,
-        isComplete: isComplete,
-        isFailed: isFailed,
-        error: error,
-      ));
+      _downloadProgressController.add(
+        DownloadProgressEvent(
+          modelType: type,
+          progress: progress,
+          stage: stage,
+          isComplete: isComplete,
+          isFailed: isFailed,
+          error: error,
+        ),
+      );
     }
   }
 
@@ -477,7 +529,7 @@ class LLMModelManager {
         await mainFile.delete();
         debugPrint('LLMModelManager: 主模型已删除: ${type.name}');
       }
-      
+
       // 删除 mmproj（如有）
       final mmprojPath = await getMmprojPath(type);
       if (mmprojPath != null) {
@@ -509,14 +561,14 @@ class LLMModelManager {
   Future<String> getModelSizeString(LLMModelType type) async {
     try {
       int totalSize = 0;
-      
+
       // 主模型
       final mainPath = await getModelPath(type);
       final mainFile = File(mainPath);
       if (await mainFile.exists()) {
         totalSize += await mainFile.length();
       }
-      
+
       // mmproj
       final mmprojPath = await getMmprojPath(type);
       if (mmprojPath != null) {
@@ -525,9 +577,9 @@ class LLMModelManager {
           totalSize += await mmprojFile.length();
         }
       }
-      
+
       if (totalSize == 0) return '未下载';
-      
+
       if (totalSize >= 1024 * 1024 * 1024) {
         return '${(totalSize / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
       } else {
@@ -547,7 +599,7 @@ class LLMModelManager {
         if (await mainFile.exists()) {
           total += await mainFile.length();
         }
-        
+
         final mmprojPath = await getMmprojPath(type);
         if (mmprojPath != null) {
           final mmprojFile = File(mmprojPath);
@@ -565,10 +617,10 @@ class LLMModelManager {
 enum ModelStatus {
   /// 未下载
   notDownloaded,
-  
+
   /// 下载中
   downloading,
-  
+
   /// 已下载
   downloaded,
 }
@@ -577,13 +629,13 @@ enum ModelStatus {
 enum ModelDownloadStatus {
   /// 未下载
   notDownloaded,
-  
+
   /// 下载中
   downloading,
-  
+
   /// 部分下载（主模型已下载，mmproj 缺失）
   partialMmprojMissing,
-  
+
   /// 完全下载
   complete,
 }
@@ -593,7 +645,7 @@ class _SourceTestResult {
   final HFDownloadSource source;
   final bool success;
   final int latencyMs;
-  
+
   _SourceTestResult({
     required this.source,
     required this.success,
@@ -605,22 +657,22 @@ class _SourceTestResult {
 class DownloadProgressEvent {
   /// 正在下载的模型类型
   final LLMModelType modelType;
-  
+
   /// 下载进度（0.0 ~ 1.0）
   final double progress;
-  
+
   /// 当前下载阶段描述
   final String stage;
-  
+
   /// 是否下载完成
   final bool isComplete;
-  
+
   /// 是否下载失败
   final bool isFailed;
-  
+
   /// 错误信息（仅 isFailed 时有效）
   final String? error;
-  
+
   const DownloadProgressEvent({
     required this.modelType,
     required this.progress,

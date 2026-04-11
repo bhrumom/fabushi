@@ -1110,8 +1110,8 @@ packages:
     description:
       path: "."
       ref: main
-      resolved-ref: "63a55fc9627ce7c647b4b438dd82df3a56b268f4"
-      url: "https://github.com/netdur/llama_cpp_dart.git"
+      resolved-ref: ad254e3579170965b07f1bb37b755cb4c84d3325
+      url: "https://github.com/bhrum/llama_cpp_dart.git"
     source: git
     version: "0.2.3"
   logger:
