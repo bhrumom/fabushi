@@ -1,7 +1,7 @@
 name: global_dharma_sharing
 description: 全球法布施 - 佛教经文全球传播应用
 publish_to: 'none'
-version: 1.0.0+13
+version: 1.0.0+14
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
@@ -94,7 +94,7 @@ dependencies:
   # - 支持 Qwen 系列模型
   llama_cpp_dart:
     git:
-      url: https://github.com/netdur/llama_cpp_dart.git
+      url: https://github.com/bhrum/llama_cpp_dart.git
       ref: main
 
   # flutter_gemma - Android/iOS/macOS 平台
