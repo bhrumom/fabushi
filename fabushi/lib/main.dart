@@ -91,7 +91,8 @@ void main() async {
   setupVideoFeedDependencies();
   debugPrint('🚀 [main] setupVideoFeedDependencies() done');
   
-  // 🚀 后台预加载法流内容，实现秒加载
+  // 注释掉启动时的法流数据预加载，避免因自动请求引来网络排查
+  /*
   Future.microtask(() async {
     try {
       final textService = videoFeedGetIt<CloudflareTextService>();
@@ -100,6 +101,7 @@ void main() async {
       debugPrint('⚠️ 预加载启动失败: $e');
     }
   });
+  */
 
   // 语义 NLP 服务、Firebase 等重型服务的详细初始化已迁移至 AppInitializer 统一管理
   // 旨在实现启动阶段的削峰填谷，避免内存崩溃

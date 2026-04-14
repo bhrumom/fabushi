@@ -192,14 +192,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // AI 模型设置
-                  _buildModelSettingCard(),
-                  
-                  // TTS 默认静音设置
-                  _buildTtsMuteSettingItem(),
-                  
-                  // 读诵匹配阈值设置
-                  _buildRecitationThresholdSettings(),
+                  // TODO: 临时隐藏，后续需要再开启
+                  // // AI 模型设置
+                  // _buildModelSettingCard(),
+                  // 
+                  // // TTS 默认静音设置
+                  // _buildTtsMuteSettingItem(),
+                  // 
+                  // // 读诵匹配阈值设置
+                  // _buildRecitationThresholdSettings(),
 
                   // Android 后台保活设置（仅 Android 显示）
                   if (Platform.isAndroid)
