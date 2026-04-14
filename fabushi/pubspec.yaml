@@ -1,7 +1,7 @@
 name: global_dharma_sharing
 description: 全球法布施 - 佛教经文全球传播应用
 publish_to: 'none'
-version: 1.0.0+14
+version: 1.0.0+15
 
 environment:
   sdk: '>=3.8.0 <4.0.0'

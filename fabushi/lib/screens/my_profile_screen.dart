@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'dart:ui';
 import '../models/auth_model.dart';
-import '../services/like_service.dart';
 import '../services/favorite_service.dart';
 import '../services/practice_stats_service.dart';
 import 'liked_content_screen.dart';
@@ -16,9 +15,6 @@ import '../widgets/practice_entry_card.dart';
 import '../services/meditation_session_manager.dart';
 import 'practice_record_screen.dart';
 
-import '../features/video_feed/presentation/view/widgets/works_grid_view.dart';
-import '../services/local_work_service.dart';
-import '../models/local_work_model.dart';
 
 /// 抖音风格个人中心页面
 class MyProfileScreen extends StatefulWidget {
@@ -28,30 +24,11 @@ class MyProfileScreen extends StatefulWidget {
   State<MyProfileScreen> createState() => _MyProfileScreenState();
 }
 
-class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
-  // 用于强制刷新 FutureBuilder 的 key
-  Key _worksKey = UniqueKey();
-
-  void refreshWorks() {
-    setState(() {
-      _worksKey = UniqueKey();
-    });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 每次页面变为可见时刷新作品列表
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      refreshWorks();
-    });
-  }
+class _MyProfileScreenState extends State<MyProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
+    return Scaffold(
         backgroundColor: const Color(0xFF121212),
         body: Consumer<AuthModel>(
           builder: (context, authModel, _) {
@@ -72,8 +49,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
                       child: Column(
                         children: [
                           if (user != null) ...[
-                            const SizedBox(height: 16),
-                            _buildStatsRow(context, user),
                             const SizedBox(height: 20),
                             _buildPracticeStatsCard(context),
                             const SizedBox(height: 20),
@@ -91,64 +66,16 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
                       ),
                     ),
                   ),
-                  if (user != null)
-                    SliverPersistentHeader(
-                      delegate: _SliverAppBarDelegate(
-                        TabBar(
-                          indicatorColor: Colors.amber,
-                          labelColor: Colors.white,
-                          unselectedLabelColor: Colors.white54,
-                          tabs: const [
-                            Tab(text: '作品'),
-                            Tab(text: '收藏'), // Using existing FeatureGrid functionality for now, but placeholder here
-                          ],
-                        ),
-                      ),
-                      pinned: true,
-                    ),
+                  // Removed SliverPersistentHeader for TabBar
                 ];
               },
               body: user != null
-                  ? TabBarView(
-                      children: [
-                        // Works Tab
-                        _buildWorksTab(),
-                        // Favorites Tab
-                        _buildFavoritesTab(), 
-                      ],
-                    )
+                  ? _buildFavoritesTab()
                   : const Center(child: Text('请先登录', style: TextStyle(color: Colors.white54))),
             );
           },
         ),
-      ),
-    );
-  }
-
-  Widget _buildWorksTab() {
-    return FutureBuilder<List<LocalWorkModel>>(
-      key: _worksKey,
-      future: LocalWorkService.instance.getWorks(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: Colors.amber));
-        }
-        if (snapshot.hasError) {
-          debugPrint('[MyProfileScreen] 加载作品失败: ${snapshot.error}');
-          return Center(
-            child: Text('加载失败: ${snapshot.error}', style: const TextStyle(color: Colors.redAccent)),
-          );
-        }
-        final works = snapshot.data ?? [];
-        debugPrint('[MyProfileScreen] 加载到 ${works.length} 个作品');
-        return WorksGridView(
-          works: works, 
-          onDelete: () {
-            refreshWorks();
-          }
-        );
-      },
-    );
+      );
   }
 
   Widget _buildFavoritesTab() {
@@ -171,7 +98,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '在法流页面点击收藏按钮后会显示在这里',
+                  '您在此设备暂无收藏',
                   style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
                 ),
               ],
@@ -365,9 +292,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
                                 const SizedBox(height: 6),
                                 Row(
                                   children: [
-                                    Text(
-                                      '一门深入: ${MeditationSessionManager().lockedPractice?.title ?? '未选择'}',
-                                      style: const TextStyle(color: Colors.white60, fontSize: 13),
+                                    Expanded(
+                                      child: Text(
+                                        '一门深入: ${MeditationSessionManager().lockedPractice?.title ?? '未选择'}',
+                                        style: const TextStyle(color: Colors.white60, fontSize: 13),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                     const SizedBox(width: 8),
                                     if (user.isAdmin)
@@ -440,69 +370,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
     );
   }
 
-  /// 抖音风格统计栏 - 获赞/关注/粉丝
-  Widget _buildStatsRow(BuildContext context, User user) {
-    final likeService = LikeService();
-    final favoriteService = FavoriteService();
-    final authModel = Provider.of<AuthModel>(context, listen: false);
-    // 先设置 authToken，再初始化，确保能从云端同步
-    if (authModel.authToken != null) {
-      likeService.setAuthToken(authModel.authToken);
-      favoriteService.setAuthToken(authModel.authToken);
-    }
-    if (!likeService.isInitialized) {
-      likeService.initialize(userId: user.username);
-      likeService.fetchReceivedLikeCount(); // 获取被点赞数
-    }
-    if (!favoriteService.isInitialized) {
-      favoriteService.initialize(userId: user.username);
-    }
-
-    return ListenableBuilder(
-      listenable: likeService,
-      builder: (context, _) {
-        return Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildStatItem('${likeService.receivedLikeCount}', '获赞', onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('获赞统计：您发布的评论被点赞的总数')));
-              }),
-              Container(width: 1, height: 30, color: Colors.white12),
-              _buildStatItem('0', '关注', onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('关注功能开发中')));
-              }),
-              Container(width: 1, height: 30, color: Colors.white12),
-              _buildStatItem('0', '粉丝', onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('粉丝功能开发中')));
-              }),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildStatItem(String value, String label, {VoidCallback? onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(fontSize: 12, color: Colors.white54)),
-        ],
-      ),
-    );
-  }
 
   /// 功能网格 - 抖音风格
   Widget _buildFeatureGrid(BuildContext context) {
@@ -654,7 +521,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> with RouteAware {
           ),
           const SizedBox(height: 16),
           _buildGuestFeatureItem(Icons.public, '全球法布施'),
-          _buildGuestFeatureItem(Icons.video_library, '法流观看'),
+
           _buildGuestFeatureItem(Icons.self_improvement, '禅室体验'),
           const SizedBox(height: 12),
           const Text(
