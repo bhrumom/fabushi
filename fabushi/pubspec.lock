@@ -690,10 +690,9 @@ packages:
   flutter_scene:
     dependency: "direct main"
     description:
-      name: flutter_scene
-      sha256: "9a3a427e902b81c6a901113a7e9428b3b29a2643a52ecbc6592cb051ab37c7e8"
-      url: "https://pub.dev"
-    source: hosted
+      path: "lib/packages/flutter_scene"
+      relative: true
+    source: path
     version: "0.9.2-0"
   flutter_scene_importer:
     dependency: transitive

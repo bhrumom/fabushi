@@ -1,7 +1,5 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:file_picker/file_picker.dart';
 import '../models/file_transfer_model.dart';
 import '../services/real_global_send_service.dart';
 import '../core/constants/country_servers.dart';
@@ -58,8 +56,13 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
 
   Future<void> _startGlobalDharma() async {
     final model = context.read<FileTransferModel>();
-    if (!model.hasFiles) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先选择要发送的文件')));
+
+    final assetCount = await model.prepareDefaultNonR2AssetsForSending();
+    if (assetCount == 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('未找到可发送的非 R2 经文素材')),
+      );
       return;
     }
 
@@ -173,7 +176,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const Icon(Icons.file_present, color: Colors.blue),
                 const SizedBox(width: 8),
                 Text(
-                  '已选文件: $filesCount 个',
+                  '默认素材: $filesCount 个',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],

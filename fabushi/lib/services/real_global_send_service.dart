@@ -9,6 +9,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'global_server_config_loader.dart';
 import 'global_country_servers.dart';
 import 'country_coordinates_service.dart';
+import '../core/constants/country_servers.dart' as country_names;
 import 'dart:math' as math;
 
 /// 真实的全球发送服务
@@ -162,7 +163,9 @@ class RealGlobalSendService {
         // 使用用户IP定位的位置作为固定起点
         if (_userLatitude != null && _userLongitude != null) {
           final fromCountry = _coordService.getByCoordinates(_userLatitude!, _userLongitude!);
-          final fromLabel = fromCountry?.countryName ?? '起点';
+          final fromLabel = fromCountry?.countryCode != null
+              ? _getCountryName(fromCountry!.countryCode!)
+              : fromCountry?.countryName ?? '起点';
           debugPrint(
             '📍 使用用户位置: $fromLabel ($_userLatitude, $_userLongitude) -> $countryName (${toCountry.latitude}, ${toCountry.longitude})',
           );
@@ -486,6 +489,9 @@ class RealGlobalSendService {
   }
 
   String _getCountryName(String countryCode) {
+    final countryName = country_names.COUNTRY_NAMES[countryCode];
+    if (countryName != null) return countryName;
+
     // 国家代码到中文名称映射（按字母顺序，无重复）
     final Map<String, String> countryNames = {
       'AD': '安道尔',

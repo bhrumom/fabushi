@@ -17,6 +17,7 @@ class UserModel {
   final String? nickname;
   final String? avatar;
   final String? phoneNumber;
+  final Map<String, dynamic>? mainPractice;
   final MembershipInfo membership;
 
   UserModel({
@@ -35,6 +36,7 @@ class UserModel {
     this.nickname,
     this.avatar,
     this.phoneNumber,
+    this.mainPractice,
     required this.membership,
   });
 
@@ -56,6 +58,9 @@ class UserModel {
       nickname: json['nickname'] as String?,
       avatar: json['avatar'] as String?,
       phoneNumber: json['phoneNumber'] as String?,
+      mainPractice: json['mainPractice'] is Map
+          ? Map<String, dynamic>.from(json['mainPractice'] as Map)
+          : null,
       membership: MembershipInfo.fromJson(json['membership'] ?? {}),
     );
   }
@@ -78,6 +83,7 @@ class UserModel {
       'nickname': nickname,
       'avatar': avatar,
       'phoneNumber': phoneNumber,
+      'mainPractice': mainPractice,
       'membership': membership.toJson(),
     };
   }

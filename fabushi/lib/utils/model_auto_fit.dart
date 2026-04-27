@@ -115,6 +115,9 @@ class ModelAutoFit {
     ModelBounds bounds, {
     double targetSize = 150.0,
     double yOffset = 20.0,
+    vector.Matrix4? originalTransform,
+    double tiltCorrectionX = 0.12,
+    double facingCorrectionY = math.pi,
   }) {
     final scale = targetSize / bounds.maxDimension;
     final center = bounds.center;
@@ -123,6 +126,9 @@ class ModelAutoFit {
         'maxDim=${bounds.maxDimension}');
 
     return vector.Matrix4.identity()
+      ..multiply(originalTransform ?? vector.Matrix4.identity())
+      ..rotateY(facingCorrectionY)
+      ..rotateX(tiltCorrectionX)
       ..translate(
         -center.x * scale,
         -center.y * scale + yOffset,

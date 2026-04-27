@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
@@ -298,6 +299,42 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       final List<String> assetPaths = selectedAssets.map((asset) => asset.toString()).toList();
       _downloadSelectedAssets(context, assetPaths);
     }
+  }
+
+  Future<int> prepareDefaultNonR2AssetsForSending() async {
+    final manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
+    final List<dynamic> files = json.decode(manifestString);
+
+    final assetPaths = files
+        .whereType<Map<String, dynamic>>()
+        .where((fileInfo) {
+          final key = (fileInfo['key'] ?? '').toString();
+          final source = (fileInfo['source'] ?? '').toString();
+
+          return source != 'r2' &&
+              key.isNotEmpty &&
+              key.toLowerCase().endsWith('.txt') &&
+              !key.contains('/.DS_Store') &&
+              !key.startsWith('.');
+        })
+        .map((fileInfo) => (fileInfo['key'] ?? '').toString())
+        .toList()
+      ..sort();
+
+    _selectedFiles = assetPaths.map((assetPath) {
+      final fileName = assetPath.split('/').last;
+      final bytes = Uint8List.fromList(utf8.encode('全球法布施素材\n$fileName\n$assetPath'));
+      return PlatformFile(
+        name: fileName,
+        size: bytes.length,
+        bytes: bytes,
+      );
+    }).toList();
+
+    _isLooping = true;
+    debugPrint('📚 已准备默认非 R2 经文素材: ${_selectedFiles.length} 个，循环发送已开启');
+    notifyListeners();
+    return _selectedFiles.length;
   }
 
   Future<void> _downloadSelectedAssets(BuildContext context, List<String> assetPaths) async {

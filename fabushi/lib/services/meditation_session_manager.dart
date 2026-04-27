@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/config/app_config.dart';
 import '../models/meditation_practice_model.dart';
+import 'http_service.dart';
 
 /// 禅室会话管理器 - 零摩擦修行核心
 /// 
@@ -27,6 +29,7 @@ class MeditationSessionManager extends ChangeNotifier {
   String? _lastSutra;
   int _preferredDurationMinutes = 30; // 软性建议，非强制
   bool _preferencesLoaded = false;
+  String? _currentUsername;
   
   // ========== 锁定功课 ==========
   MeditationPractice? _lockedPractice;
@@ -49,6 +52,7 @@ class MeditationSessionManager extends ChangeNotifier {
   
   /// 是否可以开始修行（需要已锁定功课）
   bool get canStartSession => isPracticeLocked;
+  String? get currentUsername => _currentUsername;
 
   // 进度百分比（基于软性目标）
   double get progressPercent {
@@ -57,6 +61,43 @@ class MeditationSessionManager extends ChangeNotifier {
   }
 
   // ========== 初始化 ==========
+
+  String _storageKey(String baseKey) {
+    final username = _currentUsername;
+    if (username == null || username.isEmpty) return '${baseKey}_guest';
+    return '${baseKey}_user_$username';
+  }
+
+  /// 切换当前账号并加载对应云端/本地主修功课。
+  Future<void> switchUser(String? username) async {
+    if (_currentUsername == username && _preferencesLoaded) {
+      if (username != null && username.isNotEmpty) {
+        await refreshPracticeFromCloud();
+      }
+      return;
+    }
+
+    _durationTimer?.cancel();
+    _isInSession = false;
+    _currentDuration = Duration.zero;
+    _currentSutra = null;
+    _chantCount = 0;
+    _sessionStartTime = null;
+    _lastSutra = null;
+    _lockedPractice = null;
+    _currentUsername = username;
+    _preferencesLoaded = false;
+
+    if (username == null || username.isEmpty) {
+      debugPrint('🧘 禅室已切换到未登录状态');
+      notifyListeners();
+      return;
+    }
+
+    await loadPreferences();
+    await refreshPracticeFromCloud();
+    notifyListeners();
+  }
   
   /// 加载用户偏好（应在app启动时调用）
   Future<void> loadPreferences() async {
@@ -64,11 +105,11 @@ class MeditationSessionManager extends ChangeNotifier {
     
     try {
       final prefs = await SharedPreferences.getInstance();
-      _lastSutra = prefs.getString('zen_last_sutra');
-      _preferredDurationMinutes = prefs.getInt('zen_preferred_duration') ?? 30;
+      _lastSutra = prefs.getString(_storageKey('zen_last_sutra'));
+      _preferredDurationMinutes = prefs.getInt(_storageKey('zen_preferred_duration')) ?? 30;
       
       // 加载锁定的功课
-      final practiceJson = prefs.getString('zen_locked_practice');
+      final practiceJson = prefs.getString(_storageKey('zen_locked_practice'));
       if (practiceJson != null) {
         try {
           _lockedPractice = MeditationPractice.fromJson(jsonDecode(practiceJson));
@@ -79,7 +120,7 @@ class MeditationSessionManager extends ChangeNotifier {
       }
       
       _preferencesLoaded = true;
-      debugPrint('🧘 禅室偏好加载: 上次功课=$_lastSutra, 锁定功课=${_lockedPractice?.title}, 建议时长=$_preferredDurationMinutes分钟');
+      debugPrint('🧘 禅室偏好加载: 用户=$_currentUsername, 上次功课=$_lastSutra, 锁定功课=${_lockedPractice?.title}, 建议时长=$_preferredDurationMinutes分钟');
       notifyListeners();
     } catch (e) {
       debugPrint('⚠️ 加载禅室偏好失败: $e');
@@ -91,14 +132,14 @@ class MeditationSessionManager extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       if (_currentSutra != null) {
-        await prefs.setString('zen_last_sutra', _currentSutra!);
+        await prefs.setString(_storageKey('zen_last_sutra'), _currentSutra!);
         _lastSutra = _currentSutra;
       }
-      await prefs.setInt('zen_preferred_duration', _preferredDurationMinutes);
+      await prefs.setInt(_storageKey('zen_preferred_duration'), _preferredDurationMinutes);
       
       // 保存锁定的功课
       if (_lockedPractice != null) {
-        await prefs.setString('zen_locked_practice', jsonEncode(_lockedPractice!.toJson()));
+        await prefs.setString(_storageKey('zen_locked_practice'), jsonEncode(_lockedPractice!.toJson()));
       }
       
       debugPrint('🧘 禅室偏好已保存');
@@ -122,9 +163,63 @@ class MeditationSessionManager extends ChangeNotifier {
     );
     
     await _savePreferences();
+    await _syncLockedPracticeToCloud();
     debugPrint('🧘 功课已锁定: $title ($filePath)');
     notifyListeners();
     return true;
+  }
+
+  Future<void> refreshPracticeFromCloud() async {
+    if (_currentUsername == null || _currentUsername!.isEmpty) return;
+
+    try {
+      final response = await HttpService.get(AppConfig.userInfoUrl, useAuth: true);
+      if (response.statusCode != 200) {
+        debugPrint('⚠️ 拉取云端主修功课失败: HTTP ${response.statusCode}');
+        return;
+      }
+
+      final data = jsonDecode(response.body);
+      final cloudPractice = data['mainPractice'];
+      if (cloudPractice is Map && cloudPractice['title'] != null) {
+        final title = cloudPractice['title'].toString();
+        _lockedPractice = MeditationPractice(
+          title: title,
+          filePath: (cloudPractice['filePath'] ?? 'manual:${Uri.encodeComponent(title)}').toString(),
+          selectedAt: DateTime.tryParse((cloudPractice['selectedAt'] ?? '').toString()) ?? DateTime.now(),
+          isLocked: true,
+        );
+        await _savePreferences();
+        debugPrint('☁️ 已从云端加载主修功课: ${_lockedPractice?.title}');
+        notifyListeners();
+      } else if (_lockedPractice != null) {
+        await _syncLockedPracticeToCloud();
+      }
+    } catch (e) {
+      debugPrint('⚠️ 同步云端主修功课失败: $e');
+    }
+  }
+
+  Future<void> _syncLockedPracticeToCloud() async {
+    if (_currentUsername == null || _currentUsername!.isEmpty || _lockedPractice == null) return;
+
+    try {
+      final response = await HttpService.post(
+        '${AppConfig.apiUrl}/api/auth/update-profile',
+        body: {
+          'mainPractice': _lockedPractice!.toJson(),
+        },
+        useAuth: true,
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        debugPrint('☁️ 主修功课已保存到云端: ${_lockedPractice!.title}');
+      } else {
+        debugPrint('⚠️ 保存云端主修功课失败: HTTP ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('⚠️ 保存云端主修功课异常: $e');
+    }
   }
 
   // ========== 核心操作 ==========

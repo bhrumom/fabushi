@@ -17,7 +17,7 @@ import '../widgets/practice_selection_sheet.dart';
 import '../widgets/reflection_dialog.dart';
 
 /// 禅室修行界面 - 零摩擦版本
-/// 
+///
 /// 设计原则：
 /// - 进入即开始：无需点击任何按钮
 /// - 智能默认：自动使用上次功课
@@ -30,7 +30,7 @@ class MeditationRoomScreen extends StatefulWidget {
   State<MeditationRoomScreen> createState() => MeditationRoomScreenState();
 }
 
-class MeditationRoomScreenState extends State<MeditationRoomScreen> 
+class MeditationRoomScreenState extends State<MeditationRoomScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   /// 公开方法：设置页面可见性（由主导航调用）
   void setVisible(bool visible) {
@@ -41,18 +41,17 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   final _sessionManager = MeditationSessionManager();
   final _achievementSystem = AchievementSystem();
   final _onlineCounterService = OnlineCounterService();
-  
+
   // ========== 状态变量 ==========
   bool _isCircumambulating = false;
   bool _isInitialized = false;
-  bool _isPageVisible = false;  // 追踪页面是否可见
-  bool _hasAutoStarted = false;  // 追踪是否已经自动开始过
-  
+  bool _isPageVisible = false; // 追踪页面是否可见
+
   // ========== 动画控制器 ==========
   late AnimationController _incenseController;
   late AnimationController _pulseController;
   late AnimationController _welcomeController;
-  
+
   // ========== Key ==========
   final GlobalKey<BuddhaModelScreenState> _buddhaKey = GlobalKey();
 
@@ -63,24 +62,24 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    
+
     _incenseController = AnimationController(
       vsync: this,
       duration: const Duration(hours: 2), // 极长时间，不再限制
     );
-    
+
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-    
+    );
+
     _welcomeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    
+
     _incenseController.addListener(_onIncenseProgressChanged);
-    
+
     // 初始化
     _initialize();
   }
@@ -91,51 +90,31 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       _sessionManager.loadPreferences(),
       _achievementSystem.loadData(),
     ]);
-    
+
     // 初始化音量监听（用于念诵计数）
     _initVolumeListener();
-    
+
     // 获取在线人数
     _fetchInitialCount();
-    
+
     // 监听成就事件
-    _achievementSubscription = _achievementSystem.achievementStream.listen((achievement) {
+    _achievementSubscription = _achievementSystem.achievementStream.listen((
+      achievement,
+    ) {
       if (mounted) {
         AchievementPopup.show(context, achievement);
       }
     });
-    
-    // 播放欢迎动画
-    _welcomeController.forward();
-    
+
     setState(() => _isInitialized = true);
-    
-    // 注意：不在这里检查功课选择，因为 IndexedStack 会同时初始化所有 tab
-    // 功课选择弹窗只在用户实际切换到禅室 tab 时才显示（见 _onVisibilityChanged）
+
+    // 启动时不主动弹出功课输入，等用户点击开始修行或功课按钮再提示。
   }
-  
-  /// 检查是否需要选择功课
-  void _checkPracticeSelection() {
-    if (!_sessionManager.isPracticeLocked && mounted) {
-      // 未选择功课，显示必选功课弹窗
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_sessionManager.isPracticeLocked) {
-          showPracticeSelectionSheet(
-            context,
-            onSelected: () {
-              // 功课选择完成，刷新界面
-              if (mounted) setState(() {});
-            },
-          );
-        }
-      });
-    }
-  }
-  
+
   /// 打开经文阅读界面
   void _openSutraReader() {
     final practice = _sessionManager.lockedPractice;
-    if (practice != null) {
+    if (practice != null && !practice.filePath.startsWith('manual:')) {
       openSutraReader(
         context,
         title: practice.title,
@@ -147,15 +126,11 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   /// 当页面可见性变化时调用
   void _onVisibilityChanged(bool visible) {
     if (_isPageVisible == visible) return;
-    
+
     _isPageVisible = visible;
     debugPrint('🧘 禅室页面可见性变化: $visible');
-    
-    if (visible) {
-      // 进入禅室时检查是否需要选择功课
-      _checkPracticeSelection();
-    }
-    
+    _syncAnimationVisibility();
+
     // 不再自动开始修行，需要用户手动点击"开始修行"按钮
     if (!visible && _sessionManager.isInSession) {
       // 离开禅室页面时暂停计时（但不结束）
@@ -166,6 +141,25 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     }
   }
 
+  void _syncAnimationVisibility() {
+    if (_isPageVisible) {
+      if (!_pulseController.isAnimating) {
+        _pulseController.repeat(reverse: true);
+      }
+      if (_welcomeController.status == AnimationStatus.dismissed) {
+        _welcomeController.forward();
+      }
+      if (_sessionManager.isInSession && !_incenseController.isAnimating) {
+        _incenseController.forward();
+      }
+      return;
+    }
+
+    _pulseController.stop();
+    _welcomeController.stop();
+    _incenseController.stop();
+  }
+
   /// 自动开始修行（零摩擦入口的核心）
   Future<void> _autoStartMeditation() async {
     // 防止重复开始
@@ -173,7 +167,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       debugPrint('🧘 已经开始修行，跳过');
       return;
     }
-    
+
     // 检查是否已选择功课
     if (!_sessionManager.isPracticeLocked) {
       // 未选择功课，弹出选择界面并提醒
@@ -195,32 +189,34 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       }
       return;
     }
-    
+
     // 确保页面可见
     if (!_isPageVisible) {
       debugPrint('🧘 页面不可见，跳过自动开始');
       return;
     }
-    
-    _hasAutoStarted = true;
-    
+
     // 稍等一下让UI完成渲染
     await Future.delayed(const Duration(milliseconds: 300));
-    
+
     if (!mounted || !_isPageVisible) return;
-    
+
     // 使用锁定的功课开始
-    await _sessionManager.instantStart(sutra: _sessionManager.lockedPractice?.title);
-    
+    await _sessionManager.instantStart(
+      sutra: _sessionManager.lockedPractice?.title,
+    );
+
     // 触发开始成就
     await _achievementSystem.onSessionStart();
-    
+
     // 开始香的燃烧动画
-    _incenseController.forward();
-    
+    if (_isPageVisible) {
+      _incenseController.forward();
+    }
+
     // 加入在线活动
     _onlineCounterService.joinActivity('zen_room');
-    
+
     if (mounted) setState(() {});
   }
 
@@ -279,7 +275,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   /// 结束修行并同步数据
   Future<void> _endMeditation() async {
     final result = await _sessionManager.endSession();
-    
+
     if (result.success) {
       // 触发结束成就
       await _achievementSystem.onSessionEnd(
@@ -287,13 +283,13 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         chantCount: result.chantCount,
         sutra: result.sutra ?? '默认功课',
       );
-      
+
       // 离开在线活动
       await _onlineCounterService.leaveActivity();
-      
+
       // 尝试同步到云端（静默进行）
       _syncToCloud(result);
-      
+
       // 显示心得填写弹窗（替代简单完成提示）
       if (mounted) {
         final practice = _sessionManager.lockedPractice;
@@ -311,7 +307,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         }
       }
     }
-    
+
     setState(() {});
   }
 
@@ -319,17 +315,17 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     try {
       final authModel = context.read<AuthModel>();
       if (!authModel.isLoggedIn || authModel.authToken == null) return;
-      
+
       final service = PracticeStatsService();
       service.setAuthToken(authModel.authToken);
-      
+
       await service.syncRecord(
         sutra: result.sutra ?? '默认功课',
         sutraSource: 'auto',
         chantCount: result.chantCount > 0 ? result.chantCount : 1,
         duration: result.duration.inMinutes,
       );
-      
+
       debugPrint('🧘 修行记录已同步到云端');
     } catch (e) {
       debugPrint('⚠️ 同步失败: $e');
@@ -346,7 +342,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           children: [
             const Text('🙏', style: TextStyle(fontSize: 28)),
             const SizedBox(width: 12),
-            const Text('功德圆满', style: TextStyle(color: Colors.white, fontSize: 22)),
+            const Text(
+              '功德圆满',
+              style: TextStyle(color: Colors.white, fontSize: 22),
+            ),
           ],
         ),
         content: Column(
@@ -361,7 +360,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('随喜功德', style: TextStyle(color: Color(0xFFD4AF37))),
+            child: const Text(
+              '随喜功德',
+              style: TextStyle(color: Color(0xFFD4AF37)),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -385,7 +387,13 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: TextStyle(color: Colors.white.withOpacity(0.7))),
-          Text(value, style: const TextStyle(color: Color(0xFFD4AF37), fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFFD4AF37),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -399,6 +407,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   }
 
   /// 显示功课选择（高级选项）
+  // ignore: unused_element
   void _showSutraSelection() {
     showModalBottomSheet(
       context: context,
@@ -428,14 +437,18 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               ),
               const Text(
                 '更换功课',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               ),
               Text(
                 '当前: ${_sessionManager.currentSutra}',
                 style: const TextStyle(color: Colors.white54, fontSize: 13),
               ),
               const SizedBox(height: 16),
-              
+
               // 常用功课快捷选择
               Expanded(
                 child: ListView.builder(
@@ -443,27 +456,42 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   itemCount: SutraLibrary.sutras.length,
                   itemBuilder: (context, index) {
                     final sutra = SutraLibrary.sutras[index];
-                    final isSelected = _sessionManager.currentSutra == sutra.title;
+                    final isSelected =
+                        _sessionManager.currentSutra == sutra.title;
                     return ListTile(
                       leading: Container(
                         width: 40,
                         height: 40,
                         decoration: BoxDecoration(
-                          color: isSelected 
-                              ? const Color(0xFFD4AF37).withOpacity(0.2) 
+                          color: isSelected
+                              ? const Color(0xFFD4AF37).withOpacity(0.2)
                               : const Color(0xFF2A2A2A),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
                           Icons.auto_stories,
-                          color: isSelected ? const Color(0xFFD4AF37) : Colors.white54,
+                          color: isSelected
+                              ? const Color(0xFFD4AF37)
+                              : Colors.white54,
                           size: 20,
                         ),
                       ),
-                      title: Text(sutra.title, style: const TextStyle(color: Colors.white)),
-                      subtitle: Text(sutra.category, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                      trailing: isSelected 
-                          ? const Icon(Icons.check_circle, color: Color(0xFFD4AF37)) 
+                      title: Text(
+                        sutra.title,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      subtitle: Text(
+                        sutra.category,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                      trailing: isSelected
+                          ? const Icon(
+                              Icons.check_circle,
+                              color: Color(0xFFD4AF37),
+                            )
                           : null,
                       onTap: () {
                         _sessionManager.changeSutra(sutra.title);
@@ -474,7 +502,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   },
                 ),
               ),
-              
+
               // 手动输入选项
               ListTile(
                 leading: Container(
@@ -484,10 +512,20 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                     color: const Color(0xFF2A2A2A),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.edit_note, color: Colors.white54, size: 20),
+                  child: const Icon(
+                    Icons.edit_note,
+                    color: Colors.white54,
+                    size: 20,
+                  ),
                 ),
-                title: const Text('手动输入', style: TextStyle(color: Colors.white)),
-                subtitle: const Text('自定义功课名称', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                title: const Text(
+                  '手动输入',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: const Text(
+                  '自定义功课名称',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _showManualInput();
@@ -509,7 +547,9 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         context: context,
         builder: (context) => AlertDialog(
           backgroundColor: const Color(0xFF1E1E1E),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: const Row(
             children: [
               Icon(Icons.auto_stories, color: Color(0xFFD4AF37), size: 28),
@@ -555,18 +595,25 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('知道了', style: TextStyle(color: Color(0xFFD4AF37))),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _openSutraReader();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFD4AF37),
+              child: const Text(
+                '知道了',
+                style: TextStyle(color: Color(0xFFD4AF37)),
               ),
-              child: const Text('阅读经文', style: TextStyle(color: Colors.black)),
             ),
+            if (practice != null && !practice.filePath.startsWith('manual:'))
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _openSutraReader();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFD4AF37),
+                ),
+                child: const Text(
+                  '阅读经文',
+                  style: TextStyle(color: Colors.black),
+                ),
+              ),
           ],
         ),
       );
@@ -583,8 +630,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   }
 
   void _showManualInput() {
-    final controller = TextEditingController(text: _sessionManager.currentSutra);
-    
+    final controller = TextEditingController(
+      text: _sessionManager.currentSutra,
+    );
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -633,10 +682,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   void _onTapCount() {
     if (_sessionManager.isInSession) {
       _sessionManager.incrementChant();
-      
+
       // 触感反馈
       HapticFeedback.lightImpact();
-      
+
       setState(() {});
     }
   }
@@ -660,28 +709,30 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   incenseProgress: _incenseController.value,
                   showBook: _sessionManager.isPracticeLocked,
                   bookTitle: _sessionManager.lockedPractice?.title,
-                  onBookTap: _openSutraReader,
+                  onBookTap:
+                      _sessionManager.lockedPractice?.filePath.startsWith(
+                            'manual:',
+                          ) ==
+                          true
+                      ? null
+                      : _openSutraReader,
                 ),
               ),
             ),
-            
+
             // 沉浸式遮罩
             if (_sessionManager.isInSession)
-              Container(
-                color: Colors.black.withOpacity(0.15),
-              ),
+              Container(color: Colors.black.withOpacity(0.15)),
 
             // UI 覆盖层
             SafeArea(
               child: Column(
                 children: [
                   _buildTopBar(),
-                  
+
                   // 中央区域 - 修行时显示计数，非修行时为空（3D经书模型在背景层显示）
                   if (_sessionManager.isInSession)
-                    Expanded(
-                      child: _buildCenterContent(),
-                    )
+                    Expanded(child: _buildCenterContent())
                   else
                     const Spacer(),
 
@@ -692,8 +743,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
             ),
 
             // 欢迎提示（首次进入）
-            if (!_isInitialized)
-              _buildLoadingOverlay(),
+            if (!_isInitialized) _buildLoadingOverlay(),
           ],
         );
       },
@@ -717,44 +767,57 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
             ),
           ),
           const SizedBox(width: 8),
-          
+
           // 修行时长（正向计时）
           AnimatedBuilder(
             animation: _pulseController,
             builder: (context, child) {
               final isActive = _sessionManager.isInSession;
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black.withOpacity(0.4),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: isActive 
-                        ? Color.lerp(Colors.white24, const Color(0xFFD4AF37), _pulseController.value)!
-                        : Colors.white24, 
+                    color: isActive
+                        ? Color.lerp(
+                            Colors.white24,
+                            const Color(0xFFD4AF37),
+                            _pulseController.value,
+                          )!
+                        : Colors.white24,
                     width: 0.5,
                   ),
-                  boxShadow: isActive ? [
-                    BoxShadow(
-                      color: const Color(0xFFD4AF37).withOpacity(0.2 * _pulseController.value),
-                      blurRadius: 8,
-                    ),
-                  ] : null,
+                  boxShadow: isActive
+                      ? [
+                          BoxShadow(
+                            color: const Color(
+                              0xFFD4AF37,
+                            ).withOpacity(0.2 * _pulseController.value),
+                            blurRadius: 8,
+                          ),
+                        ]
+                      : null,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      isActive ? Icons.timer : Icons.timer_outlined, 
-                      color: isActive ? const Color(0xFFD4AF37) : Colors.white70, 
+                      isActive ? Icons.timer : Icons.timer_outlined,
+                      color: isActive
+                          ? const Color(0xFFD4AF37)
+                          : Colors.white70,
                       size: 14,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       _formatDuration(_sessionManager.currentDuration),
                       style: TextStyle(
-                        color: isActive ? Colors.white : Colors.white70, 
-                        fontWeight: FontWeight.w600, 
+                        color: isActive ? Colors.white : Colors.white70,
+                        fontWeight: FontWeight.w600,
                         fontFamily: 'monospace',
                       ),
                     ),
@@ -787,7 +850,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
             },
           ),
           const SizedBox(height: 16),
-          
+
           // 大数字计数器
           GestureDetector(
             onTap: _onTapCount,
@@ -796,7 +859,9 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.3)),
+                border: Border.all(
+                  color: const Color(0xFFD4AF37).withOpacity(0.3),
+                ),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -824,7 +889,6 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     );
   }
 
-
   Widget _buildBottomControls() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
@@ -841,9 +905,9 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                 isActive: _sessionManager.isPracticeLocked,
                 onTap: _showPracticeSelection,
               ),
-              
+
               const SizedBox(width: 16),
-              
+
               // 中间：结束修行按钮
               Expanded(
                 child: GestureDetector(
@@ -858,18 +922,23 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                     height: 56,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: _sessionManager.isInSession 
-                          ? [const Color(0xFF8B3A3A), const Color(0xFF602020)]
-                          : [const Color(0xFFD4AF37), const Color(0xFFA67C00)],
+                        colors: _sessionManager.isInSession
+                            ? [const Color(0xFF8B3A3A), const Color(0xFF602020)]
+                            : [
+                                const Color(0xFFD4AF37),
+                                const Color(0xFFA67C00),
+                              ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(28),
                       boxShadow: [
                         BoxShadow(
-                          color: (_sessionManager.isInSession 
-                              ? Colors.red 
-                              : const Color(0xFFD4AF37)).withOpacity(0.3),
+                          color:
+                              (_sessionManager.isInSession
+                                      ? Colors.red
+                                      : const Color(0xFFD4AF37))
+                                  .withOpacity(0.3),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -879,8 +948,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
-                          _sessionManager.isInSession 
-                              ? Icons.stop_circle_outlined 
+                          _sessionManager.isInSession
+                              ? Icons.stop_circle_outlined
                               : Icons.play_circle_outline,
                           color: Colors.white,
                           size: 24,
@@ -900,9 +969,9 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   ),
                 ),
               ),
-              
+
               const SizedBox(width: 16),
-              
+
               // 右侧：绕佛按钮
               _buildSideButton(
                 icon: Icons.rotate_right,
@@ -927,14 +996,12 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         width: 56,
         height: 56,
         decoration: BoxDecoration(
-          color: isActive 
+          color: isActive
               ? const Color(0xFFD4AF37).withOpacity(0.2)
               : Colors.black.withOpacity(0.4),
           shape: BoxShape.circle,
           border: Border.all(
-            color: isActive 
-                ? const Color(0xFFD4AF37)
-                : Colors.white24,
+            color: isActive ? const Color(0xFFD4AF37) : Colors.white24,
             width: 1.5,
           ),
         ),
@@ -956,10 +1023,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           children: [
             CircularProgressIndicator(color: Color(0xFFD4AF37)),
             SizedBox(height: 16),
-            Text(
-              '正在进入禅室...',
-              style: TextStyle(color: Colors.white70),
-            ),
+            Text('正在进入禅室...', style: TextStyle(color: Colors.white70)),
           ],
         ),
       ),

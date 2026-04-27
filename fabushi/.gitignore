@@ -71,3 +71,10 @@ web/.dev.vars
 **/*.p8
 .wrangler/
 web/.wrangler/
+
+# 工具生成的缓存与认证信息
+.appstore-auth/
+.appstore-auth.json
+.playwright-cli/
+.playwright/
+appstore-connect-manager-skill/

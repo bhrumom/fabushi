@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'geoip_data_service.dart';
 import 'country_coordinates_service.dart';
+import '../core/constants/country_servers.dart' as country_names;
 
 /// UDP 全球发送服务
 /// 使用 GeoLite2 IP 数据向全球每个国家发送 UDP 数据包
@@ -576,12 +577,15 @@ class UDPGlobalSendService {
 
     if (_userLatitude != null && _userLongitude != null) {
       final fromCountry = _coordService.getByCoordinates(_userLatitude!, _userLongitude!);
+      final fromLabel = fromCountry?.countryCode != null
+          ? _getCountryName(fromCountry!.countryCode!)
+          : fromCountry?.countryName ?? '起点';
       onTransferBeam!(
         _userLatitude!,
         _userLongitude!,
         toCountry.latitude,
         toCountry.longitude,
-        fromLabel: fromCountry?.countryName ?? '起点',
+        fromLabel: fromLabel,
         toLabel: countryName,
         displayDuration: beamDuration,
       );
@@ -610,6 +614,9 @@ class UDPGlobalSendService {
   bool get isRunning => _isRunning;
 
   String _getCountryName(String countryCode) {
+    final countryName = country_names.COUNTRY_NAMES[countryCode];
+    if (countryName != null) return countryName;
+
     final names = {
       'CN': '中国', 'US': '美国', 'JP': '日本', 'KR': '韩国',
       'GB': '英国', 'DE': '德国', 'FR': '法国', 'IT': '意大利',
