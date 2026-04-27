@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'memory_manager.dart';
@@ -74,10 +73,10 @@ class AssetLoaderService {
   }) async {
     // 确保已注册到 MemoryManager
     initialize();
-    
     return await _loadAsset(
       'models/buddha_model.model',
       onProgress: onProgress,
+      validateRemoteSize: true,
     );
   }
   
@@ -93,6 +92,7 @@ class AssetLoaderService {
     String fileName, {
     void Function(double progress)? onProgress,
     bool forceRefresh = false,
+    bool validateRemoteSize = false,
   }) async {
     // 1. 检查内存缓存
     if (!forceRefresh && _memoryCache.containsKey(fileName)) {
@@ -109,7 +109,12 @@ class AssetLoaderService {
     }
 
     // 3. 创建新的加载任务
-    final loadFuture = _performLoad(fileName, onProgress: onProgress, forceRefresh: forceRefresh);
+    final loadFuture = _performLoad(
+      fileName,
+      onProgress: onProgress,
+      forceRefresh: forceRefresh,
+      validateRemoteSize: validateRemoteSize,
+    );
     _loadingFutures[fileName] = loadFuture;
 
     try {
@@ -126,9 +131,13 @@ class AssetLoaderService {
     String fileName, {
     void Function(double progress)? onProgress,
     bool forceRefresh = false,
+    bool validateRemoteSize = false,
   }) async {
     // 2.1 检查本地持久化文件（含完整性校验）
     if (!forceRefresh) {
+      if (validateRemoteSize) {
+        await _invalidatePersistentCacheIfStale(fileName);
+      }
       final cached = await _loadFromPersistentStorage(fileName);
       if (cached != null && cached.isNotEmpty) {
         debugPrint('✅ [AssetLoader] 从本地存储加载: $fileName (${cached.lengthInBytes} bytes)');
@@ -201,6 +210,45 @@ class AssetLoaderService {
       debugPrint('⚠️ [AssetLoader] HEAD 请求失败: $e');
     }
     return null;
+  }
+
+  static Future<void> _invalidatePersistentCacheIfStale(String fileName) async {
+    if (kIsWeb) return;
+
+    try {
+      final remoteSize = await _getRemoteFileSize(fileName);
+      if (remoteSize == null || remoteSize <= 0) return;
+
+      final dir = await _getStorageDirectory();
+      final safeFileName = fileName.replaceAll('/', '_');
+      final file = File('${dir.path}/$safeFileName');
+      final tempFile = File('${dir.path}/$safeFileName.downloading');
+
+      if (await file.exists()) {
+        final localSize = await file.length();
+        if (localSize != remoteSize) {
+          debugPrint(
+            '♻️ [AssetLoader] 检测到佛像模型缓存过期，删除旧缓存: '
+            '$fileName (local=$localSize, remote=$remoteSize)',
+          );
+          await file.delete();
+          _memoryCache.remove(fileName);
+        }
+      }
+
+      if (await tempFile.exists()) {
+        final tempSize = await tempFile.length();
+        if (tempSize > remoteSize) {
+          debugPrint(
+            '♻️ [AssetLoader] 检测到临时下载文件与远端不匹配，删除续传缓存: '
+            '$fileName (temp=$tempSize, remote=$remoteSize)',
+          );
+          await tempFile.delete();
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ [AssetLoader] 校验佛像模型缓存失败: $e');
+    }
   }
 
   /// 从本地持久化存储加载

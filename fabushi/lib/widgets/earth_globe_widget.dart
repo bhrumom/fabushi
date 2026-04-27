@@ -111,7 +111,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
           ),
         );
 
-        print('用户位置已设置: ${location.country}, ${location.city}');
+        debugPrint('用户位置已设置: ${location.country}, ${location.city}');
       } else {
         // IP定位失败，使用中国北京作为默认位置
         final china = _coordService.getByCountryCode('CN');
@@ -139,11 +139,11 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
             ),
           );
 
-          print('使用默认位置: 中国北京');
+          debugPrint('使用默认位置: 中国北京');
         }
       }
     } catch (e) {
-      print('初始化用户位置失败: $e');
+      debugPrint('初始化用户位置失败: $e');
       if (!mounted) return;
       // 使用中国北京作为默认位置
       final china = _coordService.getByCountryCode('CN');
@@ -201,7 +201,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
   // 当前活跃的轨迹（只保留一条，代表当前正在发送的国家）
   String? _currentConnectionId;
   String? _currentDestPointId;
-  
+
   // 发送状态管理 - 控制地球旋转和视角
   bool _isSending = false;
 
@@ -248,7 +248,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
     final startLng = _userLongitude ?? fromLng;
     final midLat = (startLat + toLat) / 2;
     final midLng = (startLng + toLng) / 2;
-    
+
     // 聚焦到轨迹中点，确保轨迹始终可见
     // 视角缓慢移动，速度与自转类似，更平滑自然
     _controller.focusOnCoordinates(
@@ -289,7 +289,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
         ),
       ),
     );
-    
+
     // 轨迹会一直显示，直到下一个国家开始发送或调用 clearBeams
   }
 
@@ -322,7 +322,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
         _safeRemovePoint(_currentDestPointId!);
         _currentDestPointId = null;
       }
-      
+
       // 清除所有其他点和连接，保留用户位置标记
       for (var point in List.from(_controller.points)) {
         if (point.id != 'user_location') {
@@ -332,7 +332,7 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
       for (var conn in List.from(_controller.connections)) {
         _controller.removePointConnection(conn.id);
       }
-      
+
       // 恢复地球旋转
       if (_isSending) {
         _isSending = false;
@@ -377,13 +377,15 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
   }
 
   bool _isRenderingPaused = false;
-  
+
   /// 暂停或恢复地球渲染、旋转
   void setRenderingPaused(bool paused) {
     if (_isRenderingPaused == paused || _isDisposed || !mounted) return;
-    _isRenderingPaused = paused;
+    setState(() {
+      _isRenderingPaused = paused;
+    });
     debugPrint('🌍 地球渲染暂停状态: $paused');
-    
+
     try {
       if (paused) {
         // 如果页面不可见，强制暂停地球旋转以节省资源
@@ -404,31 +406,35 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
   Widget build(BuildContext context) {
     super.build(context); // 必须调用以保持状态
 
-    // 根据屏幕尺寸动态计算地球大小
-    final screenSize = MediaQuery.of(context).size;
-    final screenWidth = screenSize.width;
-    final screenHeight = screenSize.height;
-    
-    // 移动端使用较小的地球，桌面端使用较大的地球
-    // 取屏幕宽高的较小值，然后按比例缩放
-    final minDimension = screenWidth < screenHeight ? screenWidth : screenHeight;
-    
-    // 移动端（宽度 < 600）：地球半径为屏幕较小边的 28%
-    // 平板/桌面端：地球半径为屏幕较小边的 35%，但最大不超过 180
-    double radius;
-    if (screenWidth < 600) {
-      // 移动端：更小的地球，留出更多空间给控制面板
-      radius = minDimension * 0.28;
-      // 最小半径 80，最大半径 130
-      radius = radius.clamp(80.0, 130.0);
-    } else {
-      // 平板/桌面端
-      radius = minDimension * 0.35;
-      radius = radius.clamp(100.0, 180.0);
-    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final boundedWidth =
+            constraints.hasBoundedWidth && constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width;
+        final boundedHeight =
+            constraints.hasBoundedHeight && constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : MediaQuery.of(context).size.height;
 
-    return Builder(
-      builder: (context) {
+        final hasValidSize = boundedWidth > 0 && boundedHeight > 0;
+        if (!hasValidSize) {
+          return const SizedBox.expand();
+        }
+
+        if (_isRenderingPaused) {
+          return const SizedBox.expand();
+        }
+
+        final minDimension = math.min(boundedWidth, boundedHeight);
+
+        double radius;
+        if (boundedWidth < 600) {
+          radius = (minDimension * 0.28).clamp(80.0, 130.0);
+        } else {
+          radius = (minDimension * 0.35).clamp(100.0, 180.0);
+        }
+
         try {
           return TickerMode(
             enabled: !_isRenderingPaused,
@@ -439,10 +445,13 @@ class EarthGlobeWidgetState extends State<EarthGlobeWidget>
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.public_off, color: Colors.white54, size: 64),
-                const SizedBox(height: 16),
-                Text('地球组件暂时不可用', style: const TextStyle(color: Colors.white70, fontSize: 16)),
+              children: const [
+                Icon(Icons.public_off, color: Colors.white54, size: 64),
+                SizedBox(height: 16),
+                Text(
+                  '地球组件暂时不可用',
+                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                ),
               ],
             ),
           );

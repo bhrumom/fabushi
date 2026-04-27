@@ -6,6 +6,7 @@ import '../services/like_service.dart';
 import '../services/membership_service.dart';
 import '../services/alipay_auth_service.dart';
 import '../services/sync_service.dart';
+import '../services/meditation_session_manager.dart';
 import 'user_model.dart';
 
 class User {
@@ -105,6 +106,10 @@ class AuthModel extends ChangeNotifier {
     // Initialization is now handled by the UI layer (AppWrapper) to avoid race conditions.
   }
 
+  Future<void> _syncMeditationPracticeForCurrentUser() async {
+    await MeditationSessionManager().switchUser(_currentUser?.username);
+  }
+
   Future<void> loadStoredAuth() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -132,6 +137,7 @@ class AuthModel extends ChangeNotifier {
         await _authService.setAuth(token, basicUserModel);
         LikeService().setAuthToken(token);
         await LikeService().initialize(userId: _currentUser!.username);
+        await _syncMeditationPracticeForCurrentUser();
         
         // 初始化同步服务并拉取最新数据
         await SyncService().initialize();
@@ -181,6 +187,7 @@ class AuthModel extends ChangeNotifier {
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
+        await _syncMeditationPracticeForCurrentUser();
         
         // 初始化同步服务并进行全量同步
         await SyncService().initialize();
@@ -328,6 +335,7 @@ class AuthModel extends ChangeNotifier {
         );
         
         await _storeAuth();
+        await _syncMeditationPracticeForCurrentUser();
         notifyListeners();
         
         debugPrint('✅ 用户信息刷新完成');
@@ -382,6 +390,7 @@ class AuthModel extends ChangeNotifier {
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
+        await _syncMeditationPracticeForCurrentUser();
 
         _setLoading(false);
         notifyListeners();
@@ -448,6 +457,7 @@ class AuthModel extends ChangeNotifier {
         // 立即保存并通知UI
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
+        await _syncMeditationPracticeForCurrentUser();
         _setLoading(false);
         notifyListeners();
         
@@ -523,6 +533,7 @@ class AuthModel extends ChangeNotifier {
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
+        await _syncMeditationPracticeForCurrentUser();
         _setLoading(false);
         notifyListeners();
 
@@ -605,6 +616,7 @@ class AuthModel extends ChangeNotifier {
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
+        await _syncMeditationPracticeForCurrentUser();
         _setLoading(false);
         notifyListeners();
 
@@ -662,6 +674,7 @@ class AuthModel extends ChangeNotifier {
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
+        await _syncMeditationPracticeForCurrentUser();
         
         _setLoading(false);
         notifyListeners();
@@ -717,6 +730,7 @@ class AuthModel extends ChangeNotifier {
 
           await _storeAuth();
           await LikeService().initialize(userId: _currentUser!.username);
+          await _syncMeditationPracticeForCurrentUser();
           _setLoading(false);
           notifyListeners();
           return true;
@@ -776,6 +790,7 @@ class AuthModel extends ChangeNotifier {
 
     // Store in AuthModel's storage (redundant but part of current design)
     await _storeAuth();
+    await _syncMeditationPracticeForCurrentUser();
 
     // Notify UI to show "logged in" state immediately.
     notifyListeners();
@@ -816,6 +831,7 @@ class AuthModel extends ChangeNotifier {
       // 立即保存并通知UI
       await _storeAuth();
       await LikeService().initialize(userId: _currentUser!.username);
+      await _syncMeditationPracticeForCurrentUser();
       notifyListeners();
 
       debugPrint('✅ Token已设置，登录完成');
@@ -862,6 +878,7 @@ class AuthModel extends ChangeNotifier {
       LikeService().setAuthToken(null);
       await LikeService().clearUserData();
       await SyncService().clearSyncState();  // 清除同步状态
+      await MeditationSessionManager().switchUser(null);
 
       // 清除存储的认证信息
       final prefs = await SharedPreferences.getInstance();

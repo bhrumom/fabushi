@@ -321,6 +321,9 @@ class AuthService {
           createdAt: DateTime.now().toIso8601String(),
           nickname: data['nickname'],
           avatar: data['avatar'],
+          mainPractice: data['mainPractice'] is Map
+              ? Map<String, dynamic>.from(data['mainPractice'] as Map)
+              : null,
           membership: MembershipInfo(
             type: membershipType,
             isActive: isActive,
@@ -360,11 +363,16 @@ class AuthService {
   }
 
   // 更新个人资料
-  Future<Map<String, dynamic>> updateProfile({String? nickname, String? avatar}) async {
+  Future<Map<String, dynamic>> updateProfile({
+    String? nickname,
+    String? avatar,
+    Map<String, dynamic>? mainPractice,
+  }) async {
     try {
       final body = <String, dynamic>{};
       if (nickname != null) body['nickname'] = nickname;
       if (avatar != null) body['avatar'] = avatar;
+      if (mainPractice != null) body['mainPractice'] = mainPractice;
 
       final response = await HttpService.post(
         '${AppConfig.apiUrl}/api/auth/update-profile',

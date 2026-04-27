@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
-import 'dart:ui';
 import '../models/auth_model.dart';
 import '../services/favorite_service.dart';
 import '../services/practice_stats_service.dart';
@@ -86,23 +84,39 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         final items = favoriteService.getFavoritedItems();
         
         if (items.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.bookmark_border, size: 80, color: Colors.grey.shade400),
-                const SizedBox(height: 16),
-                Text(
-                  '还没有收藏的内容',
-                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight.isFinite
+                        ? constraints.maxHeight
+                        : 0,
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.bookmark_border, size: 80, color: Colors.grey.shade400),
+                        const SizedBox(height: 16),
+                        Text(
+                          '还没有收藏的内容',
+                          style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '您在此设备暂无收藏',
+                          style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '您在此设备暂无收藏',
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                ),
-              ],
-            ),
+              );
+            },
           );
         }
         

@@ -131,7 +131,8 @@ dependencies:
   crypto: ^3.0.3  # 用于流式计算文件哈希
   scrollable_positioned_list: ^0.3.8  # 精确索引跳转
   sign_in_with_apple: ^7.0.1
-  flutter_scene: ^0.9.2-0
+  flutter_scene:
+    path: lib/packages/flutter_scene
 
 # Tobias 配置
 tobias:
@@ -156,7 +157,7 @@ flutter:
     - assets/earth_texture.jpg
     - assets/ip_data/
     - assets/sherpa_models/streaming-paraformer-zh-en/
-    # assets/models/ 已移除 - 模型文件（佛像、NLP模型等）通过网络按需下载
+    # 佛像模型优先从 R2 加载原始版本，不默认打包本地简化 .model
   
   fonts:
     # 使用子集化后的字体（从80MB压缩至~4.5MB）
@@ -171,4 +172,3 @@ flutter:
         - asset: fonts/subset/NotoSerifSC-Regular-subset.woff2
         - asset: fonts/subset/NotoSerifSC-Bold-subset.woff2
           weight: 700
-

@@ -8,7 +8,6 @@ import 'leaderboard_screen.dart';
 import '../core/design_system/app_theme.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/online_counter_widget.dart';
-import '../core/utils/auth_guard.dart';
 import '../widgets/auto_start_guide_dialog.dart';
 
 class GlobeHomeScreen extends StatefulWidget {
@@ -20,7 +19,6 @@ class GlobeHomeScreen extends StatefulWidget {
 
 class GlobeHomeScreenState extends State<GlobeHomeScreen>
     with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
-  static EarthGlobeWidgetState? _globeState; // 静态引用，保持在页面切换时不丢失
   final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
   String _currentSendingCountry = ''; // 当前正在发送的国家
   final List<Map<String, dynamic>> _pendingBeams = []; // 缓存待播放的轨迹（包含标签）
@@ -34,11 +32,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     if (_isVisible == visible) return;
     _isVisible = visible;
     debugPrint('🌍 地球页面可见性变化: $visible');
-    
-    // 如果有关联的 GlobeState，则相应地暂停/恢复
-    final state = _globeState ?? _globeKey.currentState;
-    if (state != null) {
-      state.setRenderingPaused(!visible);
+
+    _globeKey.currentState?.setRenderingPaused(!visible);
+    if (visible) {
+      _playPendingBeams();
     }
   }
 
@@ -107,6 +104,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   @override
   void dispose() {
+    try {
+      Provider.of<FileTransferModel>(
+        context,
+        listen: false,
+      ).setTransferBeamCallback(null);
+    } catch (_) {}
     _onlineCounterService.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -114,13 +117,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   void _setupTransferBeamCallback() {
     // 性能优化：如果回调已设置且Globe状态仍然有效，跳过重复设置
-    if (_isCallbackSetup && _globeState != null && _globeKey.currentState != null) {
+    if (_isCallbackSetup && _globeKey.currentState != null) {
       return;
-    }
-
-    // 更新静态引用
-    if (_globeKey.currentState != null) {
-      _globeState = _globeKey.currentState;
     }
 
     final model = Provider.of<FileTransferModel>(context, listen: false);
@@ -140,10 +138,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         });
       }
 
-      // 优先使用静态引用
-      final state = _globeState ?? _globeKey.currentState;
+      final state = _globeKey.currentState;
 
-      if (state != null) {
+      if (_isVisible && state != null) {
         try {
           // 显示目标点和连线，使用实际发送时间作为显示时长
           state.addTransferBeam(
@@ -179,8 +176,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   void _playPendingBeams() {
     if (_pendingBeams.isEmpty) return;
+    if (!_isVisible) return;
 
-    final state = _globeState ?? _globeKey.currentState;
+    final state = _globeKey.currentState;
     if (state == null) {
       Future.delayed(const Duration(milliseconds: 500), _playPendingBeams);
       return;
@@ -222,17 +220,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       body: Stack(
         children: [
           Container(
-            color: Colors.transparent, // Keep transparent to show SpaceBackground
+            color:
+                Colors.transparent, // Keep transparent to show SpaceBackground
             child: _isGlobeLoaded
                 ? LayoutBuilder(
                     builder: (context, constraints) {
-                      // 保存 Globe 静态引用（移除调试日志以提升性能）
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (_globeKey.currentState != null && _globeState == null) {
-                          _globeState = _globeKey.currentState;
-                        }
-                      });
-                      
                       // 添加错误边界保护
                       try {
                         return EarthGlobeWidget(key: _globeKey);
@@ -244,16 +236,26 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.public, size: 80, color: Colors.cyan),
+                                Icon(
+                                  Icons.public,
+                                  size: 80,
+                                  color: Colors.cyan,
+                                ),
                                 SizedBox(height: 16),
                                 Text(
                                   '🌍 地球组件加载中...',
-                                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 16,
+                                  ),
                                 ),
                                 SizedBox(height: 8),
                                 Text(
                                   '请稍后或重启应用',
-                                  style: TextStyle(color: Colors.white54, fontSize: 14),
+                                  style: TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 14,
+                                  ),
                                 ),
                               ],
                             ),
@@ -272,12 +274,18 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                           SizedBox(height: 16),
                           Text(
                             '🌍 正在加载地球组件...',
-                            style: TextStyle(color: Colors.white70, fontSize: 16),
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                            ),
                           ),
                           SizedBox(height: 8),
                           Text(
                             '首次加载可能需要几秒钟',
-                            style: TextStyle(color: Colors.white54, fontSize: 14),
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 14,
+                            ),
                           ),
                         ],
                       ),
@@ -304,7 +312,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const LeaderboardScreen()),
+                  MaterialPageRoute(
+                    builder: (context) => const LeaderboardScreen(),
+                  ),
                 );
               },
               icon: const Icon(Icons.leaderboard, color: Colors.white),
@@ -327,7 +337,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 right: 20,
                 child: Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
                     decoration: AppTheme.glassDecoration.copyWith(
                       color: Colors.black.withOpacity(0.6),
                       borderRadius: BorderRadius.circular(20),
@@ -366,7 +379,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
             right: 20,
             child: _buildControlPanel(context),
           ),
-
         ],
       ),
     );
@@ -389,7 +401,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     decoration: BoxDecoration(
                       color: AppTheme.primaryColor.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
+                      border: Border.all(
+                        color: AppTheme.primaryColor.withOpacity(0.3),
+                      ),
                     ),
                     child: Column(
                       children: [
@@ -398,7 +412,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              Icon(Icons.sync, color: Colors.cyanAccent, size: 16),
+                              Icon(
+                                Icons.sync,
+                                color: Colors.cyanAccent,
+                                size: 16,
+                              ),
                               const SizedBox(width: 6),
                               Text(
                                 '动态杨升激活: ${model.loopbackCount} 次',
@@ -428,11 +446,16 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                           ),
                         ],
                         // 场能广播状态显示
-                        if (model.isFieldEnergyMode && model.fieldBroadcastCount > 0) ...[
+                        if (model.isFieldEnergyMode &&
+                            model.fieldBroadcastCount > 0) ...[
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              Icon(Icons.wifi_tethering, color: Colors.purple, size: 16),
+                              Icon(
+                                Icons.wifi_tethering,
+                                color: Colors.purple,
+                                size: 16,
+                              ),
                               const SizedBox(width: 6),
                               Text(
                                 '场能广播: ${model.fieldBroadcastCount} 次',
@@ -468,7 +491,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                           borderRadius: BorderRadius.circular(4),
                           child: LinearProgressIndicator(
                             backgroundColor: Colors.white.withOpacity(0.2),
-                            valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              AppTheme.primaryColor,
+                            ),
                             minHeight: 6,
                           ),
                         ),
@@ -477,11 +502,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   ),
                   const SizedBox(height: 12),
                 ] else ...[
-                  // 未发送时显示文件名
-                  Text(
-                    model.selectedFile?.name ?? '未选择经文',
-                    style: const TextStyle(
-                      fontSize: 15, 
+                  // 未发送时显示默认发送范围
+                  const Text(
+                    '全球普渡',
+                    style: TextStyle(
+                      fontSize: 15,
                       fontWeight: FontWeight.w500,
                       color: Colors.white,
                     ),
@@ -490,10 +515,13 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 12),
-                  
-                  // 循环发送开关（仅在未发送时显示）
+
+                  // 循环发送状态（点击开始时默认开启）
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
@@ -504,43 +532,43 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                         Row(
                           children: [
                             Icon(
-                              model.isLooping ? Icons.repeat : Icons.repeat_one,
-                              color: model.isLooping ? AppTheme.primaryColor : Colors.white70,
+                              Icons.repeat,
+                              color: AppTheme.primaryColor,
                               size: 18,
                             ),
                             const SizedBox(width: 8),
-                            Text(
+                            const Text(
                               '循环发送',
                               style: TextStyle(
-                                color: model.isLooping ? AppTheme.primaryColor : Colors.white70,
+                                color: AppTheme.primaryColor,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
                         ),
-                        SizedBox(
-                          height: 28,
-                          child: Switch(
-                            value: model.isLooping,
-                            onChanged: (value) => model.setLooping(value),
-                            activeColor: AppTheme.primaryColor,
-                          ),
+                        const Icon(
+                          Icons.check_circle,
+                          color: AppTheme.primaryColor,
+                          size: 20,
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 8),
-                  
+
                   // 无网场能模式开关
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
-                      color: model.isFieldEnergyMode 
+                      color: model.isFieldEnergyMode
                           ? Colors.purple.withOpacity(0.2)
                           : Colors.white.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
-                      border: model.isFieldEnergyMode 
+                      border: model.isFieldEnergyMode
                           ? Border.all(color: Colors.purple.withOpacity(0.5))
                           : null,
                     ),
@@ -551,8 +579,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                           child: Row(
                             children: [
                               Icon(
-                                model.isFieldEnergyMode ? Icons.wifi_tethering : Icons.wifi_tethering_off,
-                                color: model.isFieldEnergyMode ? Colors.purple : Colors.white70,
+                                model.isFieldEnergyMode
+                                    ? Icons.wifi_tethering
+                                    : Icons.wifi_tethering_off,
+                                color: model.isFieldEnergyMode
+                                    ? Colors.purple
+                                    : Colors.white70,
                                 size: 18,
                               ),
                               const SizedBox(width: 8),
@@ -563,17 +595,20 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                                     Text(
                                       '无网场能模式',
                                       style: TextStyle(
-                                        color: model.isFieldEnergyMode ? Colors.purple : Colors.white70,
+                                        color: model.isFieldEnergyMode
+                                            ? Colors.purple
+                                            : Colors.white70,
                                         fontSize: 13,
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
                                     Text(
-                                      model.isFieldEnergyMode && model.hotspotMessage.isNotEmpty
+                                      model.isFieldEnergyMode &&
+                                              model.hotspotMessage.isNotEmpty
                                           ? model.hotspotMessage
                                           : '自动开启热点向周围广播',
                                       style: TextStyle(
-                                        color: model.isFieldEnergyMode 
+                                        color: model.isFieldEnergyMode
                                             ? Colors.purple.withOpacity(0.7)
                                             : Colors.white54,
                                         fontSize: 10,
@@ -593,8 +628,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                             value: model.isFieldEnergyMode,
                             onChanged: (value) async {
                               await model.setFieldEnergyMode(value);
+                              if (!context.mounted) return;
                               // 如果需要显示热点指导，弹出指导弹窗
-                              if (model.needsHotspotGuide && mounted) {
+                              if (model.needsHotspotGuide) {
                                 _showHotspotGuideDialog(context);
                                 model.clearHotspotGuide();
                               }
@@ -607,46 +643,38 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   ),
                   const SizedBox(height: 12),
                 ],
-                
+
                 // 按钮行
                 Row(
                   children: [
-                    // 选择经文按钮（发送中时禁用）
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: model.isTransferring ? null : () => _selectFile(context),
-                        icon: Icon(Icons.menu_book, size: 18),
-                        label: const Text('选择经文', style: TextStyle(fontSize: 13)),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          backgroundColor: model.isTransferring 
-                              ? Colors.grey.withOpacity(0.3)
-                              : AppTheme.secondaryColor.withOpacity(0.8),
-                          disabledBackgroundColor: Colors.grey.withOpacity(0.3),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
                     // 开始/停止按钮
                     Expanded(
                       child: model.isTransferring
                           ? ElevatedButton.icon(
                               onPressed: () => _stopSending(model),
                               icon: const Icon(Icons.stop, size: 18),
-                              label: const Text('停止发送', style: TextStyle(fontSize: 13)),
+                              label: const Text(
+                                '停止发送',
+                                style: TextStyle(fontSize: 13),
+                              ),
                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
                                 backgroundColor: Colors.red.shade600,
                               ),
                             )
                           : ElevatedButton.icon(
-                              onPressed: model.selectedFile != null
-                                  ? () => _startSending(model)
-                                  : null,
+                              onPressed: () => _startSending(model),
                               icon: const Icon(Icons.send, size: 18),
-                              label: const Text('开始发送', style: TextStyle(fontSize: 13)),
+                              label: const Text(
+                                '开始发送',
+                                style: TextStyle(fontSize: 13),
+                              ),
                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
                                 backgroundColor: AppTheme.primaryColor,
                               ),
                             ),
@@ -661,18 +689,13 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
-  void _selectFile(BuildContext context) async {
-    final model = Provider.of<FileTransferModel>(context, listen: false);
-    await model.selectBuiltInAssets(context);
-  }
-
   /// 显示热点开启指导弹窗
   void _showHotspotGuideDialog(BuildContext context) {
     // 根据平台显示不同的指导内容
     String title;
     List<String> steps;
     String tip;
-    
+
     if (kIsWeb) {
       return; // Web 平台不支持
     } else if (Platform.isIOS) {
@@ -705,12 +728,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       tip = '💡 开启共享后，经文能量将通过 Wi-Fi 信号向周围空间广播';
     } else {
       title = '开启热点';
-      steps = [
-        '1. 打开系统设置',
-        '2. 找到网络或热点设置',
-        '3. 开启 Wi-Fi 热点功能',
-        '4. 返回本应用开始发送',
-      ];
+      steps = ['1. 打开系统设置', '2. 找到网络或热点设置', '3. 开启 Wi-Fi 热点功能', '4. 返回本应用开始发送'];
       tip = '💡 开启热点后，经文能量将通过 Wi-Fi 信号向周围空间广播';
     }
 
@@ -718,9 +736,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.grey[900],
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
             const Icon(Icons.wifi_tethering, color: Colors.purple, size: 28),
@@ -741,23 +757,22 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           children: [
             const Text(
               '请按以下步骤开启热点：',
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: Colors.white70, fontSize: 14),
             ),
             const SizedBox(height: 16),
-            ...steps.map((step) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                step,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  height: 1.5,
+            ...steps.map(
+              (step) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  step,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
                 ),
               ),
-            )),
+            ),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -768,15 +783,16 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.lightbulb_outline, color: Colors.purple, size: 20),
+                  const Icon(
+                    Icons.lightbulb_outline,
+                    color: Colors.purple,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       tip,
-                      style: TextStyle(
-                        color: Colors.purple[200],
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: Colors.purple[200], fontSize: 12),
                     ),
                   ),
                 ],
@@ -787,16 +803,16 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text(
-              '稍后设置',
-              style: TextStyle(color: Colors.white54),
-            ),
+            child: const Text('稍后设置', style: TextStyle(color: Colors.white54)),
           ),
           ElevatedButton.icon(
             onPressed: () {
               Navigator.pop(context);
               // 再次触发打开设置
-              final model = Provider.of<FileTransferModel>(context, listen: false);
+              final model = Provider.of<FileTransferModel>(
+                context,
+                listen: false,
+              );
               model.setFieldEnergyMode(true);
             },
             icon: const Icon(Icons.settings, size: 18),
@@ -812,13 +828,23 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   void _startSending(FileTransferModel model) async {
-    // 抖音风格：所有同步云端的活跃操作都需要登录
-    final hasAuth = await AuthGuard.check(context);
-    if (!hasAuth) return;
-
     // Android 平台：首次使用时显示自启动设置引导
     if (Platform.isAndroid && mounted) {
       await AutoStartGuideDialog.showIfNeeded(context);
+    }
+
+    final assetCount = await model.prepareDefaultNonR2AssetsForSending();
+    if (assetCount == 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('未找到可发送的非 R2 经文素材'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
     }
 
     _globeKey.currentState?.clearBeams();
@@ -828,9 +854,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🌍 开始向全球发送经文...'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text('🌍 开始循环发送 $assetCount 个非 R2 经文素材...'),
+          duration: const Duration(seconds: 2),
           backgroundColor: Colors.black87,
         ),
       );
@@ -844,7 +870,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
     // 发送完成后清除轨迹
     _globeKey.currentState?.clearBeams();
-    
+
     // 清除当前发送状态
     if (mounted) {
       setState(() {
@@ -865,18 +891,18 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   void _stopSending(FileTransferModel model) async {
     model.stopTransfer();
-    
+
     // 离开在线活动，减少在线人数
     await _onlineCounterService.leaveActivity();
-    
+
     // 清除轨迹
     _globeKey.currentState?.clearBeams();
-    
+
     // 清除当前发送状态
     setState(() {
       _currentSendingCountry = '';
     });
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
