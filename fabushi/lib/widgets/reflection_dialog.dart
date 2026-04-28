@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import '../services/comment_service.dart';
-import '../services/meditation_session_manager.dart';
 
 /// 修行心得填写弹窗
-/// 
-/// 修行结束后显示，用户可填写心得并发布到对应经文的评论区
+///
+/// 修行结束后显示，用户可填写心得并保存到对应的云端修行记录。
 class ReflectionDialog extends StatefulWidget {
   final Duration duration;
   final int chantCount;
@@ -27,7 +25,6 @@ class ReflectionDialog extends StatefulWidget {
 
 class _ReflectionDialogState extends State<ReflectionDialog> {
   final TextEditingController _contentController = TextEditingController();
-  final CommentService _commentService = CommentService();
   bool _isSubmitting = false;
 
   String get _formattedDuration {
@@ -40,7 +37,10 @@ class _ReflectionDialogState extends State<ReflectionDialog> {
     final content = _contentController.text.trim();
     if (content.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请填写修行心得'), backgroundColor: Colors.orange),
+        const SnackBar(
+          content: Text('请填写修行心得'),
+          backgroundColor: Colors.orange,
+        ),
       );
       return;
     }
@@ -48,44 +48,18 @@ class _ReflectionDialogState extends State<ReflectionDialog> {
     setState(() => _isSubmitting = true);
 
     try {
-      // 构造评论内容，包含修行时长
-      final fullContent = '【修行心得】$content\n\n📿 修行时长: $_formattedDuration | 念诵: ${widget.chantCount}遍';
-      
-      // 使用 filePath 作为 contentId
-      final contentId = 'practice_${widget.filePath.hashCode.abs()}';
-      
-      final result = await _commentService.postComment(
-        contentId,
-        fullContent,
-        contentTitle: widget.sutraTitle,
-        filePath: widget.filePath,
-        tag: 'practice', // 修行心得标签
-      );
-
       if (mounted) {
-        if (result['success'] == true) {
-          Navigator.pop(context);
-          widget.onCompleted?.call();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('心得已发布，功德无量 🙏'),
-              backgroundColor: Color(0xFFD4AF37),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result['error'] ?? '发布失败，请稍后重试'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        Navigator.pop(context, content);
+        widget.onCompleted?.call();
       }
     } catch (e) {
-      debugPrint('发布心得失败: $e');
+      debugPrint('保存心得失败: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('网络错误，请稍后重试'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('保存失败，请稍后重试'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -131,7 +105,9 @@ class _ReflectionDialogState extends State<ReflectionDialog> {
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.3)),
+                border: Border.all(
+                  color: const Color(0xFFD4AF37).withOpacity(0.3),
+                ),
               ),
               child: Column(
                 children: [
@@ -143,9 +119,9 @@ class _ReflectionDialogState extends State<ReflectionDialog> {
                 ],
               ),
             ),
-            
+
             const SizedBox(height: 20),
-            
+
             // 心得输入
             const Text(
               '记录修行心得（可选）',
@@ -158,7 +134,7 @@ class _ReflectionDialogState extends State<ReflectionDialog> {
               maxLength: 500,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: '今日修行有何感悟？与同修分享...',
+                hintText: '今日修行有何感悟？写入自己的修行记录...',
                 hintStyle: const TextStyle(color: Colors.white38),
                 filled: true,
                 fillColor: const Color(0xFF2A2A2A),
@@ -169,10 +145,10 @@ class _ReflectionDialogState extends State<ReflectionDialog> {
                 counterStyle: const TextStyle(color: Colors.white38),
               ),
             ),
-            
+
             const SizedBox(height: 8),
             Text(
-              '心得将发布到「${widget.sutraTitle}」的评论区',
+              '心得会随本次修行记录同步到云端，仅自己可见',
               style: const TextStyle(color: Colors.white38, fontSize: 12),
             ),
           ],
@@ -180,10 +156,12 @@ class _ReflectionDialogState extends State<ReflectionDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _isSubmitting ? null : () {
-            Navigator.pop(context);
-            widget.onCompleted?.call();
-          },
+          onPressed: _isSubmitting
+              ? null
+              : () {
+                  Navigator.pop(context);
+                  widget.onCompleted?.call();
+                },
           child: const Text('跳过', style: TextStyle(color: Colors.white54)),
         ),
         ElevatedButton(
@@ -196,9 +174,12 @@ class _ReflectionDialogState extends State<ReflectionDialog> {
               ? const SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
-              : const Text('发布心得', style: TextStyle(color: Colors.black)),
+              : const Text('保存心得', style: TextStyle(color: Colors.black)),
         ),
       ],
     );
@@ -208,7 +189,10 @@ class _ReflectionDialogState extends State<ReflectionDialog> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
+        ),
         Text(
           value,
           style: const TextStyle(
@@ -223,7 +207,7 @@ class _ReflectionDialogState extends State<ReflectionDialog> {
 }
 
 /// 显示修行心得填写弹窗
-Future<void> showReflectionDialog(
+Future<String?> showReflectionDialog(
   BuildContext context, {
   required Duration duration,
   required int chantCount,
@@ -231,7 +215,7 @@ Future<void> showReflectionDialog(
   required String filePath,
   VoidCallback? onCompleted,
 }) {
-  return showDialog(
+  return showDialog<String>(
     context: context,
     barrierDismissible: false,
     builder: (context) => ReflectionDialog(

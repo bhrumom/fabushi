@@ -135,6 +135,10 @@ class AuthModel extends ChangeNotifier {
             expiresAt: _currentUser!.membershipExpiry?.toIso8601String(),
           ),
           alipayUserId: _currentUser!.alipayUserId,
+          nickname: _currentUser!.nickname,
+          avatar: _currentUser!.avatar,
+          phoneNumber: _currentUser!.phoneNumber,
+          firebaseUid: _currentUser!.firebaseUid,
         );
         await _authService.setAuth(token, basicUserModel);
         LikeService().setAuthToken(token);
@@ -354,6 +358,8 @@ class AuthModel extends ChangeNotifier {
           alipayUserId: userModel.alipayUserId,
           nickname: userModel.nickname,
           avatar: userModel.avatarUrl,
+          phoneNumber: userModel.phoneNumber,
+          firebaseUid: userModel.firebaseUid,
         );
 
         await _storeAuth();

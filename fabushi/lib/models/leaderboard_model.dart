@@ -5,20 +5,61 @@ import '../services/leaderboard_service.dart';
 
 class LeaderboardEntry {
   final String username;
+  final String displayName;
+  final String? avatar;
   final int totalBytes;
+  final int totalRecords;
+  final int totalCount;
+  final int totalDuration;
+  final int totalDays;
+  final String? latestSutra;
+  final String? latestRecordDate;
   final int rank;
 
-  LeaderboardEntry({required this.username, required this.totalBytes, required this.rank});
+  LeaderboardEntry({
+    required this.username,
+    required this.displayName,
+    this.avatar,
+    required this.totalBytes,
+    required this.totalRecords,
+    required this.totalCount,
+    required this.totalDuration,
+    required this.totalDays,
+    this.latestSutra,
+    this.latestRecordDate,
+    required this.rank,
+  });
 
   factory LeaderboardEntry.fromJson(Map<String, dynamic> json) {
     return LeaderboardEntry(
       username: json['username'] ?? '',
+      displayName:
+          json['displayName'] ?? json['nickname'] ?? json['username'] ?? '',
+      avatar: json['avatar'],
       totalBytes: json['totalBytes'] ?? 0,
+      totalRecords: json['totalRecords'] ?? 0,
+      totalCount: json['totalCount'] ?? 0,
+      totalDuration: json['totalDuration'] ?? 0,
+      totalDays: json['totalDays'] ?? 0,
+      latestSutra: json['latestSutra'],
+      latestRecordDate: json['latestRecordDate'],
       rank: json['rank'] ?? 0,
     );
   }
 
-  Map<String, dynamic> toJson() => {'username': username, 'totalBytes': totalBytes, 'rank': rank};
+  Map<String, dynamic> toJson() => {
+    'username': username,
+    'displayName': displayName,
+    'avatar': avatar,
+    'totalBytes': totalBytes,
+    'totalRecords': totalRecords,
+    'totalCount': totalCount,
+    'totalDuration': totalDuration,
+    'totalDays': totalDays,
+    'latestSutra': latestSutra,
+    'latestRecordDate': latestRecordDate,
+    'rank': rank,
+  };
 }
 
 class LeaderboardModel extends ChangeNotifier {
@@ -113,7 +154,10 @@ class LeaderboardModel extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final data = _entries.map((e) => e.toJson()).toList();
       await prefs.setString('leaderboard_cache', jsonEncode(data));
-      await prefs.setInt('leaderboard_timestamp', DateTime.now().millisecondsSinceEpoch);
+      await prefs.setInt(
+        'leaderboard_timestamp',
+        DateTime.now().millisecondsSinceEpoch,
+      );
     } catch (e) {
       debugPrint('保存缓存失败: $e');
     }

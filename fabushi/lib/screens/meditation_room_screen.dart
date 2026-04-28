@@ -312,8 +312,21 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       // 离开在线活动
       await _onlineCounterService.leaveActivity();
 
+      String? reflectionNotes;
+      final practice = _sessionManager.lockedPractice;
+      if (mounted && practice != null) {
+        reflectionNotes = await showReflectionDialog(
+          context,
+          duration: result.duration,
+          chantCount: result.chantCount,
+          sutraTitle: practice.title,
+          filePath: practice.filePath,
+        );
+      }
+      if (!mounted) return;
+
       // 修行记录必须进入云端保存链路。网络异常时服务会放入待同步队列。
-      final savedToCloud = await _syncToCloud(result);
+      final savedToCloud = await _syncToCloud(result, notes: reflectionNotes);
 
       if (mounted && !savedToCloud) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -329,30 +342,24 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
             backgroundColor: Colors.orange,
           ),
         );
+      } else if (mounted && reflectionNotes?.isNotEmpty == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('心得已保存到修行记录，仅自己可见'),
+            backgroundColor: Color(0xFFD4AF37),
+          ),
+        );
       }
 
-      // 显示心得填写弹窗（替代简单完成提示）
-      if (mounted) {
-        final practice = _sessionManager.lockedPractice;
-        if (practice != null) {
-          showReflectionDialog(
-            context,
-            duration: result.duration,
-            chantCount: result.chantCount,
-            sutraTitle: practice.title,
-            filePath: practice.filePath,
-          );
-        } else {
-          // 未锁定功课时使用原来的完成对话框
-          _showCompletionDialog(result);
-        }
+      if (mounted && practice == null) {
+        _showCompletionDialog(result);
       }
     }
 
     setState(() {});
   }
 
-  Future<bool> _syncToCloud(SessionResult result) async {
+  Future<bool> _syncToCloud(SessionResult result, {String? notes}) async {
     try {
       final authModel = context.read<AuthModel>();
       if (!authModel.isLoggedIn || authModel.authToken == null) return false;
@@ -367,6 +374,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         duration: result.duration.inMinutes,
         startTime: result.startTime,
         endTime: result.endTime,
+        notes: notes,
       );
 
       debugPrint(service.lastWriteQueued ? '🧘 修行记录已加入云端待同步' : '🧘 修行记录已同步到云端');

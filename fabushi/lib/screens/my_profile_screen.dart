@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/auth_model.dart';
-import '../services/favorite_service.dart';
 import '../services/practice_stats_service.dart';
-import 'liked_content_screen.dart';
 import 'membership_screen.dart';
 import 'edit_profile_screen.dart';
 import 'douyin_login_screen.dart';
@@ -12,7 +10,6 @@ import '../core/design_system/app_theme.dart';
 import '../widgets/practice_entry_card.dart';
 import '../services/meditation_session_manager.dart';
 import 'practice_record_screen.dart';
-
 
 /// 抖音风格个人中心页面
 class MyProfileScreen extends StatefulWidget {
@@ -23,163 +20,61 @@ class MyProfileScreen extends StatefulWidget {
 }
 
 class _MyProfileScreenState extends State<MyProfileScreen> {
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        backgroundColor: const Color(0xFF121212),
-        body: Consumer<AuthModel>(
-          builder: (context, authModel, _) {
-            final user = authModel.currentUser;
-            
-            // 设置统计服务的Token
-            if (user != null && authModel.authToken != null) {
-              PracticeStatsService().setAuthToken(authModel.authToken);
-            }
-            
-            return NestedScrollView(
-              headerSliverBuilder: (context, innerBoxIsScrolled) {
-                return [
-                  _buildSliverAppBar(context, user, authModel),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        children: [
-                          if (user != null) ...[
-                            const SizedBox(height: 20),
-                            _buildPracticeStatsCard(context),
-                            const SizedBox(height: 20),
-                            _buildMembershipCard(context, user),
-                            const SizedBox(height: 20),
-                            _buildFeatureGrid(context),
-                          ] else ...[
-                            const SizedBox(height: 20),
-                            _buildGuestCard(context),
-                            const SizedBox(height: 20),
-                            _buildLoginButton(context),
-                          ],
-                          const SizedBox(height: 40), // Space before tabs
-                        ],
-                      ),
-                    ),
-                  ),
-                  // Removed SliverPersistentHeader for TabBar
-                ];
-              },
-              body: user != null
-                  ? _buildFavoritesTab()
-                  : const Center(child: Text('请先登录', style: TextStyle(color: Colors.white54))),
-            );
-          },
-        ),
-      );
-  }
+      backgroundColor: const Color(0xFF121212),
+      body: Consumer<AuthModel>(
+        builder: (context, authModel, _) {
+          final user = authModel.currentUser;
 
-  Widget _buildFavoritesTab() {
-    final favoriteService = FavoriteService();
-    return ListenableBuilder(
-      listenable: favoriteService,
-      builder: (context, _) {
-        final items = favoriteService.getFavoritedItems();
-        
-        if (items.isEmpty) {
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight.isFinite
-                        ? constraints.maxHeight
-                        : 0,
-                  ),
-                  child: Center(
+          // 设置统计服务的Token
+          if (user != null && authModel.authToken != null) {
+            PracticeStatsService().setAuthToken(authModel.authToken);
+          }
+
+          return NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) {
+              return [
+                _buildSliverAppBar(context, user, authModel),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.bookmark_border, size: 80, color: Colors.grey.shade400),
-                        const SizedBox(height: 16),
-                        Text(
-                          '还没有收藏的内容',
-                          style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '您在此设备暂无收藏',
-                          style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                          textAlign: TextAlign.center,
-                        ),
+                        if (user != null) ...[
+                          const SizedBox(height: 20),
+                          _buildPracticeStatsCard(context),
+                          const SizedBox(height: 20),
+                          _buildMembershipCard(context, user),
+                          const SizedBox(height: 20),
+                          _buildFeatureGrid(context),
+                        ] else ...[
+                          const SizedBox(height: 20),
+                          _buildGuestCard(context),
+                          const SizedBox(height: 20),
+                          _buildLoginButton(context),
+                        ],
+                        const SizedBox(height: 40), // Space before tabs
                       ],
                     ),
                   ),
                 ),
-              );
+                // Removed SliverPersistentHeader for TabBar
+              ];
             },
+            body: user != null
+                ? const SizedBox.shrink()
+                : const Center(
+                    child: Text(
+                      '请先登录',
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                  ),
           );
-        }
-        
-        return ListView.builder(
-          padding: EdgeInsets.zero,
-          itemCount: items.length,
-          itemBuilder: (context, index) {
-            final item = items[index];
-            return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: ListTile(
-                leading: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    item.contentType == 'video' ? Icons.videocam : Icons.article,
-                    color: Colors.amber.shade700,
-                  ),
-                ),
-                title: Text(
-                  item.title.isNotEmpty ? item.title : '未命名内容',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  _formatFavoriteTime(item.favoritedAt),
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.bookmark, color: Colors.amber),
-                  onPressed: () async {
-                    await favoriteService.toggleFavorite(item);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('已取消收藏'), duration: Duration(seconds: 1)),
-                      );
-                    }
-                  },
-                ),
-              ),
-            );
-          },
-        );
-      },
+        },
+      ),
     );
-  }
-
-  String _formatFavoriteTime(DateTime time) {
-    final now = DateTime.now();
-    final diff = now.difference(time);
-    if (diff.inDays > 0) {
-      return '${diff.inDays}天前';
-    } else if (diff.inHours > 0) {
-      return '${diff.inHours}小时前';
-    } else if (diff.inMinutes > 0) {
-      return '${diff.inMinutes}分钟前';
-    } else {
-      return '刚刚';
-    }
   }
 
   /// 修行记录入口卡片
@@ -194,8 +89,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     );
   }
 
-
-  Widget _buildSliverAppBar(BuildContext context, User? user, AuthModel authModel) {
+  Widget _buildSliverAppBar(
+    BuildContext context,
+    User? user,
+    AuthModel authModel,
+  ) {
     return SliverAppBar(
       expandedHeight: user != null ? 260 : 200,
       pinned: true,
@@ -239,7 +137,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                           GestureDetector(
                             onTap: () => Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+                              MaterialPageRoute(
+                                builder: (_) => const EditProfileScreen(),
+                              ),
                             ),
                             child: Stack(
                               children: [
@@ -248,7 +148,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                   height: 80,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white24, width: 2),
+                                    border: Border.all(
+                                      color: Colors.white24,
+                                      width: 2,
+                                    ),
                                     image: user.avatar != null
                                         ? DecorationImage(
                                             image: NetworkImage(user.avatar!),
@@ -257,14 +160,20 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                         : null,
                                     gradient: user.avatar == null
                                         ? const LinearGradient(
-                                            colors: [Color(0xFFFF6B6B), Color(0xFFFFE66D)],
+                                            colors: [
+                                              Color(0xFFFF6B6B),
+                                              Color(0xFFFFE66D),
+                                            ],
                                           )
                                         : null,
                                   ),
                                   child: user.avatar == null
                                       ? Center(
                                           child: Text(
-                                            (user.displayName.isNotEmpty ? user.displayName[0] : '?').toUpperCase(),
+                                            (user.displayName.isNotEmpty
+                                                    ? user.displayName[0]
+                                                    : '?')
+                                                .toUpperCase(),
                                             style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 32,
@@ -283,7 +192,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                       color: AppTheme.primaryColor,
                                       shape: BoxShape.circle,
                                     ),
-                                    child: const Icon(Icons.add, color: Colors.white, size: 14),
+                                    child: const Icon(
+                                      Icons.add,
+                                      color: Colors.white,
+                                      size: 14,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -309,23 +222,38 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                     Expanded(
                                       child: Text(
                                         '一门深入: ${MeditationSessionManager().lockedPractice?.title ?? '未选择'}',
-                                        style: const TextStyle(color: Colors.white60, fontSize: 13),
+                                        style: const TextStyle(
+                                          color: Colors.white60,
+                                          fontSize: 13,
+                                        ),
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                     const SizedBox(width: 8),
                                     if (user.isAdmin)
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
                                         decoration: BoxDecoration(
                                           gradient: const LinearGradient(
-                                            colors: [Colors.purple, Colors.deepPurple],
+                                            colors: [
+                                              Colors.purple,
+                                              Colors.deepPurple,
+                                            ],
                                           ),
-                                          borderRadius: BorderRadius.circular(10),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
                                         ),
                                         child: const Text(
                                           '管理员',
-                                          style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ),
                                   ],
@@ -335,16 +263,28 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                 OutlinedButton(
                                   onPressed: () => Navigator.push(
                                     context,
-                                    MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+                                    MaterialPageRoute(
+                                      builder: (_) => const EditProfileScreen(),
+                                    ),
                                   ),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: Colors.white,
-                                    side: const BorderSide(color: Colors.white30),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                    side: const BorderSide(
+                                      color: Colors.white30,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 4,
+                                    ),
                                     minimumSize: const Size(0, 30),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
                                   ),
-                                  child: const Text('编辑资料', style: TextStyle(fontSize: 12)),
+                                  child: const Text(
+                                    '编辑资料',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
                                 ),
                               ],
                             ),
@@ -368,12 +308,26 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                           shape: BoxShape.circle,
                           color: Colors.white.withOpacity(0.1),
                         ),
-                        child: const Icon(Icons.person_outline, size: 50, color: Colors.white54),
+                        child: const Icon(
+                          Icons.person_outline,
+                          size: 50,
+                          color: Colors.white54,
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      const Text('游客模式', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                      const Text(
+                        '游客模式',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       const SizedBox(height: 8),
-                      const Text('登录后享受更多功能', style: TextStyle(color: Colors.white54, fontSize: 14)),
+                      const Text(
+                        '登录后享受更多功能',
+                        style: TextStyle(color: Colors.white54, fontSize: 14),
+                      ),
                     ],
                   ),
                 ),
@@ -384,11 +338,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     );
   }
 
-
   /// 功能网格 - 抖音风格
   Widget _buildFeatureGrid(BuildContext context) {
     return GridView.count(
-      crossAxisCount: 4,
+      crossAxisCount: 3,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: 12,
@@ -399,25 +352,26 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           icon: Icons.card_membership,
           label: '会员',
           gradient: const [Color(0xFFD4AF37), Color(0xFFC5A028)],
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MembershipScreen())),
-        ),
-        _buildFeatureItem(
-          icon: Icons.favorite,
-          label: '收藏',
-          gradient: const [Color(0xFFFF6B6B), Color(0xFFEE5A5A)],
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LikedContentScreen())),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const MembershipScreen()),
+          ),
         ),
         _buildFeatureItem(
           icon: Icons.history,
           label: '历史',
           gradient: const [Color(0xFF667eea), Color(0xFF764ba2)],
-          onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('浏览历史开发中'))),
+          onTap: () => ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('浏览历史开发中'))),
         ),
         _buildFeatureItem(
           icon: Icons.download,
           label: '下载',
           gradient: const [Color(0xFF11998e), Color(0xFF38ef7d)],
-          onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('下载管理开发中'))),
+          onTap: () => ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('下载管理开发中'))),
         ),
       ],
     );
@@ -449,7 +403,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               child: Icon(icon, color: Colors.white, size: 22),
             ),
             const SizedBox(height: 8),
-            Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
           ],
         ),
       ),
@@ -468,7 +425,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         ),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: const Color(0xFFD4AF37).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: const Color(0xFFD4AF37).withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Row(
@@ -488,27 +449,42 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               children: [
                 Text(
                   user.membershipType ?? '普通用户',
-                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   user.membershipExpiry != null
                       ? '有效期至 ${user.membershipExpiry!.year}.${user.membershipExpiry!.month}.${user.membershipExpiry!.day}'
                       : '升级会员解锁更多功能',
-                  style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12),
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.8),
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
           ),
           TextButton(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MembershipScreen())),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MembershipScreen()),
+            ),
             style: TextButton.styleFrom(
               backgroundColor: Colors.black.withOpacity(0.2),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
             ),
-            child: const Text('升级', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            child: const Text(
+              '升级',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -530,7 +506,14 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             children: [
               Icon(Icons.star, color: Color(0xFFD4AF37), size: 20),
               SizedBox(width: 8),
-              Text('游客可用功能', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+              Text(
+                '游客可用功能',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -554,7 +537,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         children: [
           Icon(icon, color: Colors.white54, size: 18),
           const SizedBox(width: 12),
-          Text(title, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          Text(
+            title,
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
+          ),
         ],
       ),
     );
@@ -571,18 +557,29 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         ),
         borderRadius: BorderRadius.circular(25),
         boxShadow: [
-          BoxShadow(color: const Color(0xFFFF6B6B).withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: const Color(0xFFFF6B6B).withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(25),
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DouyinLoginScreen())),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const DouyinLoginScreen()),
+          ),
           child: const Center(
             child: Text(
               '立即登录 / 注册',
-              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ),
@@ -604,11 +601,12 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _tabBar.preferredSize.height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: const Color(0xFF121212),
-      child: _tabBar,
-    );
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(color: const Color(0xFF121212), child: _tabBar);
   }
 
   @override
