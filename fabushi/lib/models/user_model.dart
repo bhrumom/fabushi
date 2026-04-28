@@ -17,6 +17,7 @@ class UserModel {
   final String? nickname;
   final String? avatar;
   final String? phoneNumber;
+  final String? firebaseUid;
   final Map<String, dynamic>? mainPractice;
   final MembershipInfo membership;
 
@@ -36,6 +37,7 @@ class UserModel {
     this.nickname,
     this.avatar,
     this.phoneNumber,
+    this.firebaseUid,
     this.mainPractice,
     required this.membership,
   });
@@ -57,7 +59,8 @@ class UserModel {
       alipayBoundAt: json['alipayBoundAt'] as String?,
       nickname: json['nickname'] as String?,
       avatar: json['avatar'] as String?,
-      phoneNumber: json['phoneNumber'] as String?,
+      phoneNumber: (json['phoneNumber'] ?? json['phone_number']) as String?,
+      firebaseUid: (json['firebaseUid'] ?? json['firebase_uid']) as String?,
       mainPractice: json['mainPractice'] is Map
           ? Map<String, dynamic>.from(json['mainPractice'] as Map)
           : null,
@@ -83,6 +86,7 @@ class UserModel {
       'nickname': nickname,
       'avatar': avatar,
       'phoneNumber': phoneNumber,
+      'firebaseUid': firebaseUid,
       'mainPractice': mainPractice,
       'membership': membership.toJson(),
     };
@@ -102,6 +106,11 @@ class UserModel {
     String? alipayNickname,
     String? alipayAvatar,
     String? alipayBoundAt,
+    String? nickname,
+    String? avatar,
+    String? phoneNumber,
+    String? firebaseUid,
+    Map<String, dynamic>? mainPractice,
     MembershipInfo? membership,
   }) {
     return UserModel(
@@ -117,6 +126,11 @@ class UserModel {
       alipayNickname: alipayNickname ?? this.alipayNickname,
       alipayAvatar: alipayAvatar ?? this.alipayAvatar,
       alipayBoundAt: alipayBoundAt ?? this.alipayBoundAt,
+      nickname: nickname ?? this.nickname,
+      avatar: avatar ?? this.avatar,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      firebaseUid: firebaseUid ?? this.firebaseUid,
+      mainPractice: mainPractice ?? this.mainPractice,
       membership: membership ?? this.membership,
     );
   }
@@ -279,8 +293,10 @@ class PurchaseRecord {
       amount: (json['amount'] ?? '0') as String,
       currency: (json['currency'] ?? 'CNY') as String,
       status: (json['status'] ?? 'unknown') as String,
-      paymentMethod: (json['payment_method'] ?? json['paymentMethod'] ?? '') as String,
-      purchasedAt: (json['purchased_at'] ?? json['purchasedAt'] ?? '') as String,
+      paymentMethod:
+          (json['payment_method'] ?? json['paymentMethod'] ?? '') as String,
+      purchasedAt:
+          (json['purchased_at'] ?? json['purchasedAt'] ?? '') as String,
       validFrom: (json['valid_from'] ?? json['validFrom'] ?? '') as String,
       validTo: (json['valid_to'] ?? json['validTo'] ?? '') as String,
     );
@@ -383,7 +399,8 @@ class RedeemRecord {
       redeemedAt: (json['redeemed_at'] ?? json['redeemedAt'] ?? '') as String,
       validFrom: (json['valid_from'] ?? json['validFrom'] ?? '') as String,
       validTo: (json['valid_to'] ?? json['validTo'] ?? '') as String,
-      previousExpiryDate: json['previous_expiry_date'] ?? json['previousExpiryDate'] as String?,
+      previousExpiryDate:
+          json['previous_expiry_date'] ?? json['previousExpiryDate'] as String?,
     );
   }
 

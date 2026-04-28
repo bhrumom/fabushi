@@ -2,7 +2,6 @@
 // 处理用户登录、注册、验证等功能
 
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/config/app_config.dart';
 import '../models/user_model.dart';
@@ -74,7 +73,7 @@ class AuthService {
     _currentToken = token;
     _currentUser = user;
     await _saveAuth(token, user);
-    
+
     // 验证保存是否成功
     final prefs = await SharedPreferences.getInstance();
     final savedToken = prefs.getString(_tokenKey);
@@ -223,7 +222,10 @@ class AuthService {
   }
 
   // 验证邮箱验证码
-  Future<Map<String, dynamic>> verifyCode({required String email, required String code}) async {
+  Future<Map<String, dynamic>> verifyCode({
+    required String email,
+    required String code,
+  }) async {
     try {
       final response = await HttpService.post(
         AppConfig.verifyCodeUrl,
@@ -245,7 +247,10 @@ class AuthService {
   // 忘记密码
   Future<Map<String, dynamic>> forgotPassword(String email) async {
     try {
-      final response = await HttpService.post(AppConfig.forgotPasswordUrl, body: {'email': email});
+      final response = await HttpService.post(
+        AppConfig.forgotPasswordUrl,
+        body: {'email': email},
+      );
 
       if (response.statusCode == 200) {
         return {'success': true, 'message': '重置邮件已发送'};
@@ -291,16 +296,19 @@ class AuthService {
 
     try {
       // 优先使用 /api/admin/check-status 获取完整用户信息
-      final response = await HttpService.get(AppConfig.adminCheckStatusUrl, useAuth: true);
+      final response = await HttpService.get(
+        AppConfig.adminCheckStatusUrl,
+        useAuth: true,
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         print('📥 获取到的用户数据: $data');
-        
+
         // 检查会员到期时间
         final membershipExpiresAt = data['membershipExpiresAt'];
         final membershipType = data['membershipType'] ?? 'expired';
-        
+
         // 判断会员是否激活
         bool isActive = false;
         if (membershipExpiresAt != null && membershipType != 'expired') {
@@ -312,7 +320,7 @@ class AuthService {
             print('⚠️ 解析会员到期时间失败: $e');
           }
         }
-        
+
         // 构建完整的用户信息
         return UserModel(
           username: data['username'] ?? '',
@@ -321,6 +329,10 @@ class AuthService {
           createdAt: DateTime.now().toIso8601String(),
           nickname: data['nickname'],
           avatar: data['avatar'],
+          phoneNumber: data['phoneNumber'] ?? data['phone_number'],
+          alipayUserId: data['alipayUserId'] ?? data['alipay_user_id'],
+          alipayNickname: data['alipayNickname'] ?? data['alipay_nickname'],
+          alipayAvatar: data['alipayAvatar'] ?? data['alipay_avatar'],
           mainPractice: data['mainPractice'] is Map
               ? Map<String, dynamic>.from(data['mainPractice'] as Map)
               : null,
@@ -381,8 +393,19 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
-        // 刷新用户信息
-        await refreshUserInfo();
+        final data = jsonDecode(response.body);
+        if (data['user'] is Map) {
+          final userInfo = UserModel.fromJson(
+            Map<String, dynamic>.from(data['user'] as Map),
+          );
+          _currentUser = userInfo;
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_userInfoKey, jsonEncode(userInfo.toJson()));
+        } else {
+          // 刷新用户信息
+          await refreshUserInfo();
+        }
         return {'success': true, 'message': '更新成功'};
       } else {
         final errorData = jsonDecode(response.body);
@@ -442,7 +465,10 @@ class AuthService {
       return {'success': false, 'error': '未登录'};
     }
     try {
-      final response = await HttpService.delete(AppConfig.deleteAccountUrl, useAuth: true);
+      final response = await HttpService.delete(
+        AppConfig.deleteAccountUrl,
+        useAuth: true,
+      );
       if (response.statusCode == 200 || response.statusCode == 204) {
         return {'success': true, 'message': '注销成功'};
       } else {
@@ -450,7 +476,8 @@ class AuthService {
         try {
           if (response.body.isNotEmpty) {
             final errorData = jsonDecode(response.body);
-            errorMessage = errorData['error'] ?? errorData['message'] ?? errorMessage;
+            errorMessage =
+                errorData['error'] ?? errorData['message'] ?? errorMessage;
           }
         } catch (_) {
           // 忽略非JSON响应解析错误
@@ -602,7 +629,10 @@ class AuthService {
         }
       } else {
         final errorData = jsonDecode(response.body);
-        return {'success': false, 'error': errorData['error'] ?? 'Firebase手机登录失败'};
+        return {
+          'success': false,
+          'error': errorData['error'] ?? 'Firebase手机登录失败',
+        };
       }
     } catch (e) {
       print('Firebase手机登录请求失败: $e');

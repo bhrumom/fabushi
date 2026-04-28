@@ -9,7 +9,10 @@ class LeaderboardService {
 
   Future<List<Map<String, dynamic>>> fetchLeaderboard() async {
     try {
-      final response = await HttpService.get(AppConfig.leaderboardUrl, useAuth: false);
+      final response = await HttpService.get(
+        AppConfig.leaderboardUrl,
+        useAuth: false,
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -32,6 +35,28 @@ class LeaderboardService {
       print('获取排行榜失败: $e');
       return []; // 返回空数组而不是抛出异常
     }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPublicPracticeRecords(
+    String username,
+  ) async {
+    try {
+      final uri = Uri.parse(
+        '${AppConfig.leaderboardUrl}/records',
+      ).replace(queryParameters: {'username': username, 'limit': '30'});
+      final response = await HttpService.get(uri.toString(), useAuth: false);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final records = data['records'];
+        if (records is List) {
+          return List<Map<String, dynamic>>.from(records);
+        }
+      }
+    } catch (e) {
+      print('获取公开修行记录失败: $e');
+    }
+    return [];
   }
 
   Future<void> updateTransferData(int bytes) async {

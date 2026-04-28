@@ -23,7 +23,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void initState() {
     super.initState();
     final user = context.read<AuthModel>().currentUser;
-    _nicknameController = TextEditingController(text: user?.nickname ?? user?.username ?? '');
+    _nicknameController = TextEditingController(
+      text: user?.nickname ?? user?.username ?? '',
+    );
     _avatarController = TextEditingController(text: user?.avatar ?? '');
   }
 
@@ -42,7 +44,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final authService = AuthService();
     final result = await authService.updateProfile(
       nickname: _nicknameController.text.trim(),
-      avatar: _avatarController.text.trim().isEmpty ? null : _avatarController.text.trim(),
+      avatar: _avatarController.text.trim(),
     );
 
     if (mounted) {
@@ -52,14 +54,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         await context.read<AuthModel>().refreshUserInfo();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('个人资料更新成功'), backgroundColor: Colors.green),
+            const SnackBar(
+              content: Text('个人资料更新成功'),
+              backgroundColor: Colors.green,
+            ),
           );
           Navigator.pop(context);
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['error'] ?? '更新失败')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result['error'] ?? '更新失败')));
       }
     }
   }
@@ -73,7 +78,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E1E1E),
         elevation: 0,
-        title: const Text('编辑资料', style: TextStyle(color: Colors.white, fontSize: 17)),
+        title: const Text(
+          '编辑资料',
+          style: TextStyle(color: Colors.white, fontSize: 17),
+        ),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
@@ -86,9 +94,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(color: AppTheme.primaryColor, strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      color: AppTheme.primaryColor,
+                      strokeWidth: 2,
+                    ),
                   )
-                : const Text('保存', style: TextStyle(color: AppTheme.primaryColor, fontSize: 15, fontWeight: FontWeight.w500)),
+                : const Text(
+                    '保存',
+                    style: TextStyle(
+                      color: AppTheme.primaryColor,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
           ),
         ],
       ),
@@ -114,9 +132,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return GestureDetector(
       onTap: () {
         // TODO: 实现头像选择器
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('头像上传功能开发中')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('头像上传功能开发中')));
       },
       child: Column(
         children: [
@@ -139,15 +157,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       ? DecorationImage(
                           image: NetworkImage(_avatarController.text),
                           fit: BoxFit.cover,
-                          onError: (_, __) {},
+                          onError: (error, stackTrace) {},
                         )
                       : null,
                 ),
                 child: _avatarController.text.isEmpty
                     ? Center(
                         child: Text(
-                          (user?.displayName.isNotEmpty == true ? user!.displayName[0] : '?').toUpperCase(),
-                          style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
+                          (user?.displayName.isNotEmpty == true
+                                  ? user!.displayName[0]
+                                  : '?')
+                              .toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 36,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       )
                     : null,
@@ -160,9 +185,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   decoration: BoxDecoration(
                     color: AppTheme.primaryColor,
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFF121212), width: 2),
+                    border: Border.all(
+                      color: const Color(0xFF121212),
+                      width: 2,
+                    ),
                   ),
-                  child: const Icon(Icons.camera_alt, size: 14, color: Colors.black),
+                  child: const Icon(
+                    Icons.camera_alt,
+                    size: 14,
+                    color: Colors.black,
+                  ),
                 ),
               ),
             ],
@@ -205,14 +237,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               },
             ),
           ),
-          const Divider(color: Colors.white10, height: 1, indent: 16, endIndent: 16),
+          const Divider(
+            color: Colors.white10,
+            height: 1,
+            indent: 16,
+            endIndent: 16,
+          ),
           // 一门深入（锁定功课）
           _buildInfoItem(
             label: '一门深入',
             value: MeditationSessionManager().lockedPractice?.title ?? '未选择',
             showArrow: false,
           ),
-          const Divider(color: Colors.white10, height: 1, indent: 16, endIndent: 16),
+          const Divider(
+            color: Colors.white10,
+            height: 1,
+            indent: 16,
+            endIndent: 16,
+          ),
           // 手机号
           _buildInfoItem(
             label: '手机号',
@@ -220,12 +262,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ? _maskPhoneNumber(user.phoneNumber!)
                 : '未绑定',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('手机号更换功能开发中')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('手机号更换功能开发中')));
             },
           ),
-          const Divider(color: Colors.white10, height: 1, indent: 16, endIndent: 16),
+          const Divider(
+            color: Colors.white10,
+            height: 1,
+            indent: 16,
+            endIndent: 16,
+          ),
           // 头像URL (临时，后续改为上传)
           _buildFormItem(
             label: '头像链接',
