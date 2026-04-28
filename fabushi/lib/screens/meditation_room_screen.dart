@@ -14,6 +14,7 @@ import '../services/online_counter_service.dart';
 import '../widgets/online_counter_widget.dart';
 import '../widgets/achievement_popup.dart';
 import '../widgets/practice_selection_sheet.dart';
+import '../widgets/practice_leaderboard_sheet.dart';
 import '../widgets/reflection_dialog.dart';
 
 /// 禅室修行界面 - 零摩擦版本
@@ -213,6 +214,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
     // 开始香的燃烧动画
     if (_isPageVisible) {
+      _incenseController.reset();
       _incenseController.forward();
     }
 
@@ -300,6 +302,9 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   /// 结束修行并同步数据
   Future<void> _endMeditation() async {
     final result = await _sessionManager.endSession();
+    _incenseController.stop();
+    _incenseController.reset();
+    _buddhaKey.currentState?.updateIncenseProgress(0);
 
     if (result.success) {
       // 触发结束成就
@@ -748,6 +753,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     return ListenableBuilder(
       listenable: _sessionManager,
       builder: (context, _) {
+        final practice = _sessionManager.lockedPractice;
         return Stack(
           children: [
             // 背景：佛像3D场景
@@ -760,14 +766,12 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   autoRotate: _isCircumambulating,
                   isBurning: _sessionManager.isInSession,
                   incenseProgress: _incenseController.value,
-                  showBook: _sessionManager.isPracticeLocked,
-                  bookTitle: _sessionManager.lockedPractice?.title,
+                  showBook: true,
+                  bookTitle: practice?.title ?? '选择功课',
                   onBookTap:
-                      _sessionManager.lockedPractice?.filePath.startsWith(
-                            'manual:',
-                          ) ==
-                          true
-                      ? null
+                      practice == null ||
+                          practice.filePath.startsWith('manual:')
+                      ? _showPracticeSelection
                       : _openSutraReader,
                 ),
               ),
@@ -778,20 +782,26 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               Container(color: Colors.black.withOpacity(0.15)),
 
             // UI 覆盖层
-            SafeArea(
-              child: Column(
-                children: [
-                  _buildTopBar(),
-
-                  // 中央区域 - 修行时显示计数，非修行时为空（3D经书模型在背景层显示）
-                  if (_sessionManager.isInSession)
-                    Expanded(child: _buildCenterContent())
-                  else
-                    const Spacer(),
-
-                  // 底部控制区
-                  _buildBottomControls(),
-                ],
+            Positioned.fill(
+              child: SafeArea(
+                child: Stack(
+                  children: [
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: _buildTopBar(),
+                    ),
+                    if (_sessionManager.isInSession)
+                      Center(child: _buildCenterContent()),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: _buildBottomControls(),
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -807,19 +817,33 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.start,
         children: [
           // 在线人数
-          Flexible(
-            child: OnlineCounterWidget(
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.36),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xFFD4AF37).withOpacity(0.22),
+              ),
+            ),
+            child: CompactOnlineCounterWidget(
               countStream: _onlineCounterService.onlineCountStream,
               initialCount: _onlineCounterService.currentCount,
               icon: Icons.self_improvement,
-              prefix: '🧘',
               color: const Color(0xFFD4AF37),
             ),
           ),
           const SizedBox(width: 8),
+
+          _buildTopIconButton(
+            icon: Icons.leaderboard,
+            tooltip: '修行排行',
+            onTap: _showPracticeLeaderboard,
+          ),
+          const Spacer(),
 
           // 修行时长（正向计时）
           AnimatedBuilder(
@@ -880,6 +904,33 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
             },
           ),
         ],
+      ),
+    );
+  }
+
+  void _showPracticeLeaderboard() {
+    PracticeLeaderboardSheet.show(context);
+  }
+
+  Widget _buildTopIconButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.36),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white24, width: 0.5),
+          ),
+          child: Icon(icon, color: Colors.white70, size: 21),
+        ),
       ),
     );
   }
