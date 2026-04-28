@@ -187,18 +187,23 @@ class _ReflectionDialogState extends State<ReflectionDialog> {
 
   Widget _buildStatRow(String label, String value) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           label,
           style: const TextStyle(color: Colors.white70, fontSize: 14),
         ),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Color(0xFFD4AF37),
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: Color(0xFFD4AF37),
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
           ),
         ),
       ],

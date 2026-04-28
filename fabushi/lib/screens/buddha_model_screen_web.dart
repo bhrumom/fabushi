@@ -77,35 +77,43 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _WebBuddhaRoomPainter(
-                  tick: _controller.value,
-                  autoRotate: _autoRotate,
-                  isBurning: widget.isBurning,
-                  incenseProgress: _incenseProgress,
-                  showBook: widget.showBook,
-                  bookTitle: widget.bookTitle,
-                ),
-              ),
-            ),
-            if (widget.showBook && widget.bookTitle != null)
-              Align(
-                alignment: const Alignment(0, 0.32),
-                child: GestureDetector(
-                  onTap: widget.onBookTap,
-                  child: SizedBox(
-                    width: 168,
-                    height: 118,
-                    child: CustomPaint(
-                      painter: _WebSutraBookPainter(widget.bookTitle!),
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final size = Size(constraints.maxWidth, constraints.maxHeight);
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _WebBuddhaRoomPainter(
+                      tick: _controller.value,
+                      autoRotate: _autoRotate,
+                      isBurning: widget.isBurning,
+                      incenseProgress: _incenseProgress,
+                      showBook: widget.showBook,
+                      bookTitle: widget.bookTitle,
                     ),
                   ),
                 ),
-              ),
-          ],
+                if (widget.showBook && widget.bookTitle != null)
+                  Positioned(
+                    left: (size.width - 184) / 2,
+                    top: (size.height * 0.60)
+                        .clamp(0.0, size.height - 270)
+                        .toDouble(),
+                    child: GestureDetector(
+                      onTap: widget.onBookTap,
+                      child: SizedBox(
+                        width: 184,
+                        height: 128,
+                        child: CustomPaint(
+                          painter: _WebSutraBookPainter(widget.bookTitle!),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         );
       },
     );

@@ -56,20 +56,12 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   double _currentIncenseProgress = 0.0;
   final math.Random _random = math.Random();
 
-  // Book UI
-  Offset _bookScreenPos = Offset.zero;
-  bool _bookVisibleOnScreen = false;
-
   // 香和书的基准位置 (3D 坐标)
   static const double _incenseBaseX = 0.0;
   static const double _incenseBaseY = -60.0;
   static const double _incenseBaseZ = 80.0;
   static const double _incenseFullHeight = 46.0;
   static const List<double> _incenseStickOffsets = [-7.0, 0.0, 7.0];
-
-  static const double _bookBaseX = 0.0;
-  static const double _bookBaseY = -42.0;
-  static const double _bookBaseZ = 72.0;
 
   // 烟雾粒子
   final int _particleCount = 90;
@@ -438,37 +430,12 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     super.dispose();
   }
 
-  Offset? _project3DTo2D(vector.Vector3 worldPos, Size size) {
-    final transform = camera.getViewTransform(size);
-    final vec4 = vector.Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0);
-    transform.transform(vec4);
-    if (vec4.w <= 0.1) return null; // 位于相机后方
-    final ndcX = vec4.x / vec4.w;
-    final ndcY = -vec4.y / vec4.w; // 2D y 轴向下
-    return Offset(
-      (ndcX + 1.0) * size.width / 2.0,
-      (ndcY + 1.0) * size.height / 2.0,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
-
-        // 更新经书在2D屏幕上的点击框位置
-        if (!_isLoading && !_loadFailed && widget.showBook) {
-          final bp = _project3DTo2D(
-            vector.Vector3(_bookBaseX, _bookBaseY, _bookBaseZ),
-            size,
-          );
-          _bookScreenPos = bp ?? Offset(size.width / 2, size.height * 0.62);
-          _bookVisibleOnScreen = true;
-        } else {
-          _bookVisibleOnScreen = false;
-        }
 
         return Listener(
           onPointerDown: (e) {
@@ -519,14 +486,13 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                   ),
                 ),
 
-              // 跟随 3D 投影的立体经书热区
-              if (widget.showBook &&
-                  widget.bookTitle != null &&
-                  !_isLoading &&
-                  _bookVisibleOnScreen)
+              // 经书固定摆在佛像正前方，不随模型旋转漂移。
+              if (widget.showBook && widget.bookTitle != null && !_isLoading)
                 Positioned(
-                  left: _bookScreenPos.dx - 82,
-                  top: _bookScreenPos.dy - 58,
+                  left: (size.width - 184) / 2,
+                  top: (size.height * 0.60)
+                      .clamp(0.0, size.height - 270)
+                      .toDouble(),
                   child: _SutraBookButton(
                     title: widget.bookTitle!,
                     onTap: widget.onBookTap,
@@ -618,8 +584,8 @@ class _SutraBookButton extends StatelessWidget {
         button: true,
         label: title,
         child: SizedBox(
-          width: 164,
-          height: 116,
+          width: 184,
+          height: 128,
           child: CustomPaint(painter: _SutraBookPainter(title)),
         ),
       ),
@@ -837,106 +803,86 @@ class ScenePainter extends CustomPainter {
     }
     canvas.drawPoints(ui.PointMode.points, starPoints, starPaint);
 
-    // --- 绘制 2D 香特效 ---
-    final basePos = vector.Vector3(
-      BuddhaModelScreenState._incenseBaseX,
-      BuddhaModelScreenState._incenseBaseY,
-      BuddhaModelScreenState._incenseBaseZ,
-    );
-    final remaining = (1.0 - incenseProgress).clamp(0.01, 1.0).toDouble();
-    final currentHeight = BuddhaModelScreenState._incenseFullHeight * remaining;
-    final pBase =
-        project(basePos) ?? Offset(size.width / 2, size.height * 0.70);
-    final referenceTip = project(
-      vector.Vector3(basePos.x, basePos.y + currentHeight, basePos.z),
-    );
-    final stickHeight =
-        (referenceTip == null
-                ? 46.0
-                : (pBase - referenceTip).distance.clamp(34.0, 92.0))
-            .toDouble();
-    _drawIncenseBurner(canvas, pBase, stickHeight);
+    _drawFixedIncense(canvas, size);
+  }
 
-    for (final offset in BuddhaModelScreenState._incenseStickOffsets) {
-      final stickBase = vector.Vector3(
-        basePos.x + offset,
-        basePos.y,
-        basePos.z,
+  void _drawFixedIncense(Canvas canvas, Size size) {
+    final base = Offset(size.width / 2, size.height * 0.74);
+    final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
+    final stickHeight = 74.0 * remaining;
+    _drawIncenseBurner(canvas, base, stickHeight);
+
+    for (final offset in const [-14.0, 0.0, 14.0]) {
+      final stickBase = base.translate(offset, -8);
+      final stickTip = stickBase.translate(0, -stickHeight);
+      canvas.drawLine(
+        stickBase,
+        stickTip,
+        Paint()
+          ..shader = ui.Gradient.linear(stickBase, stickTip, const [
+            Color(0xFF5A2E16),
+            Color(0xFFB07136),
+            Color(0xFF2B1509),
+          ])
+          ..strokeWidth = 3.3
+          ..strokeCap = StrokeCap.round,
       );
-      final stickTip = vector.Vector3(
-        stickBase.x,
-        basePos.y + currentHeight,
-        stickBase.z,
-      );
-      final fallbackX = offset * 2.0;
-      final pStickBase = project(stickBase) ?? pBase.translate(fallbackX, 0);
-      final pStickTip =
-          project(stickTip) ?? pBase.translate(fallbackX, -stickHeight);
 
-      final stickPaint = Paint()
-        ..shader = ui.Gradient.linear(pStickBase, pStickTip, const [
-          Color(0xFF5A2E16),
-          Color(0xFFB07136),
-          Color(0xFF2B1509),
-        ])
-        ..strokeWidth = 3.3
-        ..strokeCap = StrokeCap.round;
-      canvas.drawLine(pStickBase, pStickTip, stickPaint);
-
-      if (isBurning && remaining > 0.01) {
-        final emberPaint = Paint()
-          ..shader = ui.Gradient.radial(pStickTip, 6, const [
-            Color(0xFFFFF1A3),
-            Color(0xFFFF6B1A),
-            Color(0x00FF6B1A),
-          ]);
-        canvas.drawCircle(pStickTip, 6.0, emberPaint);
+      if (isBurning) {
         canvas.drawCircle(
-          pStickTip,
+          stickTip,
+          6,
+          Paint()
+            ..shader = ui.Gradient.radial(stickTip, 8, const [
+              Color(0xFFFFF1A3),
+              Color(0xFFFF6B1A),
+              Color(0x00FF6B1A),
+            ]),
+        );
+        canvas.drawCircle(
+          stickTip,
           2.4,
           Paint()..color = const Color(0xFFFFE6A3),
         );
+        _drawFixedSmoke(canvas, stickTip, offset);
       }
     }
+  }
 
-    // --- 绘制烟雾粒子 ---
-    if (isBurning) {
-      for (var i = 0; i < smokeParticles.length; i++) {
-        final particle = smokeParticles[i];
-        final pp = project(particle);
-        if (pp != null) {
-          final lift = ((particle.y - basePos.y) / 118.0)
-              .clamp(0.0, 1.0)
-              .toDouble();
-          final radius = ui.lerpDouble(2.0, 8.5, lift)!;
-          final opacity = ((1.0 - lift) * 0.18 + 0.035)
-              .clamp(0.0, 0.22)
-              .toDouble();
-          final smokePaint = Paint()
-            ..color = Color.fromRGBO(235, 229, 214, opacity)
-            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3.0 + lift * 7.0);
-          canvas.drawCircle(pp, radius, smokePaint);
+  void _drawFixedSmoke(Canvas canvas, Offset tip, double seed) {
+    final time = DateTime.now().millisecondsSinceEpoch * 0.001;
+    for (var i = 0; i < 11; i++) {
+      final t = (time * 0.18 + i / 11 + seed * 0.006) % 1.0;
+      final x = tip.dx + math.sin(t * math.pi * 2.0 + seed) * (7 + t * 26);
+      final y = tip.dy - t * 122 - i * 3.2;
+      final radius = 2.4 + t * 9.5;
+      final opacity = ((1 - t) * 0.17 + 0.025).clamp(0.0, 0.20).toDouble();
+      canvas.drawCircle(
+        Offset(x, y),
+        radius,
+        Paint()
+          ..color = Color.fromRGBO(235, 229, 214, opacity)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + t * 7),
+      );
 
-          if (i % 4 == 0) {
-            final wisp = Path()
-              ..moveTo(pp.dx, pp.dy + radius * 0.8)
-              ..quadraticBezierTo(
-                pp.dx + math.sin(particle.y * 0.04) * 10,
-                pp.dy - radius * 1.4,
-                pp.dx + math.cos(particle.y * 0.03) * 15,
-                pp.dy - radius * 3.0,
-              );
-            canvas.drawPath(
-              wisp,
-              Paint()
-                ..color = Color.fromRGBO(240, 235, 222, opacity * 0.8)
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = 1.1 + lift
-                ..strokeCap = StrokeCap.round
-                ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
-            );
-          }
-        }
+      if (i.isEven) {
+        final wisp = Path()
+          ..moveTo(x, y + radius)
+          ..quadraticBezierTo(
+            x + math.sin(time + i) * 10,
+            y - radius * 1.6,
+            x + math.cos(time * 0.7 + i) * 18,
+            y - radius * 3.2,
+          );
+        canvas.drawPath(
+          wisp,
+          Paint()
+            ..color = Color.fromRGBO(242, 236, 220, opacity * 0.75)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.0 + t
+            ..strokeCap = StrokeCap.round
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+        );
       }
     }
   }
