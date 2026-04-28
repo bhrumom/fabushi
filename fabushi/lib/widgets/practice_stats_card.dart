@@ -449,7 +449,7 @@ class _PracticeStatsCardState extends State<PracticeStatsCard> {
 
   Widget _buildBar(DayStats day, int maxCount) {
     final ratio = maxCount > 0 ? day.count / maxCount : 0.0;
-    final height = 80 * ratio + 10; // 最小高度10
+    final height = 66 * ratio + 8; // 留出数值和日期标签空间，避免底部溢出。
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.end,
