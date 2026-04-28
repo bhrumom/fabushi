@@ -168,6 +168,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       return;
     }
 
+    if (!_ensureCloudRecordingReady()) return;
+
     // 检查是否已选择功课
     if (!_sessionManager.isPracticeLocked) {
       // 未选择功课，弹出选择界面并提醒
@@ -218,6 +220,29 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     _onlineCounterService.joinActivity('zen_room');
 
     if (mounted) setState(() {});
+  }
+
+  bool _ensureCloudRecordingReady() {
+    final authModel = context.read<AuthModel>();
+    if (authModel.isLoggedIn && authModel.authToken != null) {
+      PracticeStatsService().setAuthToken(authModel.authToken);
+      return true;
+    }
+
+    if (!mounted) return false;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('请先登录，修行记录将保存到云端'),
+        backgroundColor: Colors.orange,
+        action: SnackBarAction(
+          label: '去登录',
+          textColor: Colors.white,
+          onPressed: () => Navigator.pushNamed(context, '/login'),
+        ),
+      ),
+    );
+    return false;
   }
 
   void _onIncenseProgressChanged() {
@@ -287,8 +312,24 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       // 离开在线活动
       await _onlineCounterService.leaveActivity();
 
-      // 尝试同步到云端（静默进行）
-      _syncToCloud(result);
+      // 修行记录必须进入云端保存链路。网络异常时服务会放入待同步队列。
+      final savedToCloud = await _syncToCloud(result);
+
+      if (mounted && !savedToCloud) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('云端保存失败，请登录并检查网络后重试'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      } else if (mounted && PracticeStatsService().lastWriteQueued) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('网络暂不可用，记录已加入云端待同步'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
 
       // 显示心得填写弹窗（替代简单完成提示）
       if (mounted) {
@@ -311,24 +352,28 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     setState(() {});
   }
 
-  Future<void> _syncToCloud(SessionResult result) async {
+  Future<bool> _syncToCloud(SessionResult result) async {
     try {
       final authModel = context.read<AuthModel>();
-      if (!authModel.isLoggedIn || authModel.authToken == null) return;
+      if (!authModel.isLoggedIn || authModel.authToken == null) return false;
 
       final service = PracticeStatsService();
       service.setAuthToken(authModel.authToken);
 
-      await service.syncRecord(
+      final saved = await service.syncRecord(
         sutra: result.sutra ?? '默认功课',
         sutraSource: 'auto',
         chantCount: result.chantCount > 0 ? result.chantCount : 1,
         duration: result.duration.inMinutes,
+        startTime: result.startTime,
+        endTime: result.endTime,
       );
 
-      debugPrint('🧘 修行记录已同步到云端');
+      debugPrint(service.lastWriteQueued ? '🧘 修行记录已加入云端待同步' : '🧘 修行记录已同步到云端');
+      return saved;
     } catch (e) {
       debugPrint('⚠️ 同步失败: $e');
+      return false;
     }
   }
 

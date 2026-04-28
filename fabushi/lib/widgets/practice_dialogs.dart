@@ -4,11 +4,12 @@ import '../services/practice_stats_service.dart';
 /// 补录功课对话框
 class AddPracticeRecordDialog extends StatefulWidget {
   final String? initialSutra;
-  
+
   const AddPracticeRecordDialog({super.key, this.initialSutra});
 
   @override
-  State<AddPracticeRecordDialog> createState() => _AddPracticeRecordDialogState();
+  State<AddPracticeRecordDialog> createState() =>
+      _AddPracticeRecordDialogState();
 }
 
 class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
@@ -63,24 +64,25 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
     final notes = _notesController.text.trim();
 
     if (sutra.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入功课名称')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入功课名称')));
       return;
     }
 
     if (count <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入有效的遍数')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入有效的遍数')));
       return;
     }
 
     setState(() => _isLoading = true);
 
     final service = PracticeStatsService();
-    final dateStr = '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
-    
+    final dateStr =
+        '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+
     final success = await service.addManualRecord(
       sutra: sutra,
       chantCount: count,
@@ -95,12 +97,19 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
     if (success) {
       Navigator.of(context).pop(true);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('功课已补录'), backgroundColor: Colors.green),
+        SnackBar(
+          content: Text(
+            service.lastWriteQueued ? '网络暂不可用，补录已加入云端待同步' : '功课已补录到云端',
+          ),
+          backgroundColor: service.lastWriteQueued
+              ? Colors.orange
+              : Colors.green,
+        ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('补录失败，请重试')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('补录失败，请先登录并检查网络')));
     }
   }
 
@@ -117,11 +126,15 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
           children: [
             const Text(
               '补录功课',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
-            
+
             // 功课名称
             TextField(
               controller: _sutraController,
@@ -140,7 +153,7 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            
+
             // 遍数
             TextField(
               controller: _countController,
@@ -158,12 +171,15 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            
+
             // 日期选择
             GestureDetector(
               onTap: _selectDate,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 16,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF2A2A2A),
                   borderRadius: BorderRadius.circular(8),
@@ -175,13 +191,17 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
                       '日期: ${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
                       style: const TextStyle(color: Colors.white),
                     ),
-                    const Icon(Icons.calendar_today, color: Colors.white54, size: 20),
+                    const Icon(
+                      Icons.calendar_today,
+                      color: Colors.white54,
+                      size: 20,
+                    ),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 12),
-            
+
             // 备注
             TextField(
               controller: _notesController,
@@ -199,7 +219,7 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
               ),
             ),
             const SizedBox(height: 20),
-            
+
             // 按钮
             Row(
               children: [
@@ -221,10 +241,19 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
                       backgroundColor: const Color(0xFFE74C3C),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                     child: _isLoading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
                         : const Text('确认补录'),
                   ),
                 ),
@@ -240,7 +269,7 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
 /// 发愿回向对话框
 class SetGoalDialog extends StatefulWidget {
   final String? initialSutra;
-  
+
   const SetGoalDialog({super.key, this.initialSutra});
 
   @override
@@ -275,16 +304,16 @@ class _SetGoalDialogState extends State<SetGoalDialog> {
     final dedication = _dedicationController.text.trim();
 
     if (sutra.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入功课名称')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入功课名称')));
       return;
     }
 
     if (target <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入有效的目标数量')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入有效的目标数量')));
       return;
     }
 
@@ -307,9 +336,9 @@ class _SetGoalDialogState extends State<SetGoalDialog> {
         const SnackBar(content: Text('发愿目标已设置'), backgroundColor: Colors.green),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('设置失败，请重试')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('设置失败，请重试')));
     }
   }
 
@@ -326,11 +355,15 @@ class _SetGoalDialogState extends State<SetGoalDialog> {
           children: [
             const Text(
               '发愿回向',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
-            
+
             // 功课名称
             TextField(
               controller: _sutraController,
@@ -349,7 +382,7 @@ class _SetGoalDialogState extends State<SetGoalDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            
+
             // 目标数量
             TextField(
               controller: _targetController,
@@ -369,7 +402,7 @@ class _SetGoalDialogState extends State<SetGoalDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            
+
             // 回向文
             TextField(
               controller: _dedicationController,
@@ -389,7 +422,7 @@ class _SetGoalDialogState extends State<SetGoalDialog> {
               ),
             ),
             const SizedBox(height: 20),
-            
+
             // 按钮
             Row(
               children: [
@@ -411,10 +444,19 @@ class _SetGoalDialogState extends State<SetGoalDialog> {
                       backgroundColor: const Color(0xFFE74C3C),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                     child: _isLoading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
                         : const Text('确认发愿'),
                   ),
                 ),

@@ -5,10 +5,7 @@ import '../services/practice_stats_service.dart';
 class PracticeEntryCard extends StatefulWidget {
   final VoidCallback? onTap;
 
-  const PracticeEntryCard({
-    super.key,
-    this.onTap,
-  });
+  const PracticeEntryCard({super.key, this.onTap});
 
   @override
   State<PracticeEntryCard> createState() => _PracticeEntryCardState();
@@ -34,7 +31,8 @@ class _PracticeEntryCardState extends State<PracticeEntryCard> {
       listenable: _service,
       builder: (context, _) {
         final stats = _service.stats;
-        
+        final pendingCount = _service.pendingSyncCount;
+
         return GestureDetector(
           onTap: widget.onTap,
           child: Container(
@@ -48,7 +46,7 @@ class _PracticeEntryCardState extends State<PracticeEntryCard> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFE74C3C).withOpacity(0.3),
+                  color: const Color(0xFFE74C3C).withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 4),
                 ),
@@ -60,7 +58,7 @@ class _PracticeEntryCardState extends State<PracticeEntryCard> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
+                    color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
@@ -88,9 +86,34 @@ class _PracticeEntryCardState extends State<PracticeEntryCard> {
                         children: [
                           _buildMiniStat('今日 ${stats.today.count}'),
                           const SizedBox(width: 12),
-                          _buildMiniStat('累计 ${_formatNumber(stats.total.count)}'),
+                          _buildMiniStat(
+                            '累计 ${_formatNumber(stats.total.count)}',
+                          ),
                           const SizedBox(width: 12),
                           _buildMiniStat('连续 ${stats.consecutiveDays} 天'),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(
+                            pendingCount > 0
+                                ? Icons.cloud_sync_outlined
+                                : Icons.cloud_done_outlined,
+                            color: Colors.white.withValues(alpha: 0.8),
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              pendingCount > 0 ? '$pendingCount 条待同步' : '云端已同步',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -114,7 +137,7 @@ class _PracticeEntryCardState extends State<PracticeEntryCard> {
     return Text(
       text,
       style: TextStyle(
-        color: Colors.white.withOpacity(0.8),
+        color: Colors.white.withValues(alpha: 0.8),
         fontSize: 12,
       ),
     );
