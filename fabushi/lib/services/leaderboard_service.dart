@@ -37,12 +37,39 @@ class LeaderboardService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchPracticeLeaderboard({
+    int limit = 100,
+  }) async {
+    try {
+      final uri = Uri.parse(
+        '${AppConfig.leaderboardUrl}/practice',
+      ).replace(queryParameters: {'limit': '$limit'});
+      final response = await HttpService.get(uri.toString(), useAuth: false);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['leaderboard'] != null) {
+          return List<Map<String, dynamic>>.from(data['leaderboard']);
+        }
+        if (data['error'] != null) {
+          print('后端返回修行榜错误: ${data['error']} - ${data['message'] ?? ""}');
+        }
+      } else {
+        print('获取修行排行榜失败: HTTP ${response.statusCode}');
+        print('响应内容: ${response.body}');
+      }
+    } catch (e) {
+      print('获取修行排行榜失败: $e');
+    }
+    return [];
+  }
+
   Future<List<Map<String, dynamic>>> fetchPublicPracticeRecords(
     String username,
   ) async {
     try {
       final uri = Uri.parse(
-        '${AppConfig.leaderboardUrl}/records',
+        '${AppConfig.leaderboardUrl}/practice/records',
       ).replace(queryParameters: {'username': username, 'limit': '30'});
       final response = await HttpService.get(uri.toString(), useAuth: false);
 

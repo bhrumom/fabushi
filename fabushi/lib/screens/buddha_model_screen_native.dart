@@ -68,8 +68,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   static const List<double> _incenseStickOffsets = [-7.0, 0.0, 7.0];
 
   static const double _bookBaseX = 0.0;
-  static const double _bookBaseY = -28.0;
-  static const double _bookBaseZ = 76.0;
+  static const double _bookBaseY = -42.0;
+  static const double _bookBaseZ = 72.0;
 
   // 烟雾粒子
   final int _particleCount = 90;
@@ -399,6 +399,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
   void updateIncenseProgress(double progress) {
     _currentIncenseProgress = progress;
+    if (mounted) setState(() {});
   }
 
   void _updateVisibilityState(bool isVisible) {
@@ -463,12 +464,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
             vector.Vector3(_bookBaseX, _bookBaseY, _bookBaseZ),
             size,
           );
-          if (bp != null) {
-            _bookScreenPos = bp;
-            _bookVisibleOnScreen = true;
-          } else {
-            _bookVisibleOnScreen = false;
-          }
+          _bookScreenPos = bp ?? Offset(size.width / 2, size.height * 0.62);
+          _bookVisibleOnScreen = true;
+        } else {
+          _bookVisibleOnScreen = false;
         }
 
         return Listener(
@@ -846,58 +845,57 @@ class ScenePainter extends CustomPainter {
     );
     final remaining = (1.0 - incenseProgress).clamp(0.01, 1.0).toDouble();
     final currentHeight = BuddhaModelScreenState._incenseFullHeight * remaining;
-    final pBase = project(basePos);
+    final pBase =
+        project(basePos) ?? Offset(size.width / 2, size.height * 0.70);
+    final referenceTip = project(
+      vector.Vector3(basePos.x, basePos.y + currentHeight, basePos.z),
+    );
+    final stickHeight =
+        (referenceTip == null
+                ? 46.0
+                : (pBase - referenceTip).distance.clamp(34.0, 92.0))
+            .toDouble();
+    _drawIncenseBurner(canvas, pBase, stickHeight);
 
-    if (pBase != null) {
-      final referenceTip = project(
-        vector.Vector3(basePos.x, basePos.y + currentHeight, basePos.z),
+    for (final offset in BuddhaModelScreenState._incenseStickOffsets) {
+      final stickBase = vector.Vector3(
+        basePos.x + offset,
+        basePos.y,
+        basePos.z,
       );
-      final stickHeight =
-          (referenceTip == null
-                  ? 46.0
-                  : (pBase - referenceTip).distance.clamp(34.0, 92.0))
-              .toDouble();
-      _drawIncenseBurner(canvas, pBase, stickHeight);
+      final stickTip = vector.Vector3(
+        stickBase.x,
+        basePos.y + currentHeight,
+        stickBase.z,
+      );
+      final fallbackX = offset * 2.0;
+      final pStickBase = project(stickBase) ?? pBase.translate(fallbackX, 0);
+      final pStickTip =
+          project(stickTip) ?? pBase.translate(fallbackX, -stickHeight);
 
-      for (final offset in BuddhaModelScreenState._incenseStickOffsets) {
-        final stickBase = vector.Vector3(
-          basePos.x + offset,
-          basePos.y,
-          basePos.z,
+      final stickPaint = Paint()
+        ..shader = ui.Gradient.linear(pStickBase, pStickTip, const [
+          Color(0xFF5A2E16),
+          Color(0xFFB07136),
+          Color(0xFF2B1509),
+        ])
+        ..strokeWidth = 3.3
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(pStickBase, pStickTip, stickPaint);
+
+      if (isBurning && remaining > 0.01) {
+        final emberPaint = Paint()
+          ..shader = ui.Gradient.radial(pStickTip, 6, const [
+            Color(0xFFFFF1A3),
+            Color(0xFFFF6B1A),
+            Color(0x00FF6B1A),
+          ]);
+        canvas.drawCircle(pStickTip, 6.0, emberPaint);
+        canvas.drawCircle(
+          pStickTip,
+          2.4,
+          Paint()..color = const Color(0xFFFFE6A3),
         );
-        final stickTip = vector.Vector3(
-          stickBase.x,
-          basePos.y + currentHeight,
-          stickBase.z,
-        );
-        final pStickBase = project(stickBase);
-        final pStickTip = project(stickTip);
-        if (pStickBase == null || pStickTip == null) continue;
-
-        final stickPaint = Paint()
-          ..shader = ui.Gradient.linear(pStickBase, pStickTip, const [
-            Color(0xFF5A2E16),
-            Color(0xFFB07136),
-            Color(0xFF2B1509),
-          ])
-          ..strokeWidth = 3.3
-          ..strokeCap = StrokeCap.round;
-        canvas.drawLine(pStickBase, pStickTip, stickPaint);
-
-        if (isBurning && remaining > 0.01) {
-          final emberPaint = Paint()
-            ..shader = ui.Gradient.radial(pStickTip, 6, const [
-              Color(0xFFFFF1A3),
-              Color(0xFFFF6B1A),
-              Color(0x00FF6B1A),
-            ]);
-          canvas.drawCircle(pStickTip, 6.0, emberPaint);
-          canvas.drawCircle(
-            pStickTip,
-            2.4,
-            Paint()..color = const Color(0xFFFFE6A3),
-          );
-        }
       }
     }
 

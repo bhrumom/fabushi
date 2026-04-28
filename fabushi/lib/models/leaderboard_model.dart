@@ -36,15 +36,22 @@ class LeaderboardEntry {
       displayName:
           json['displayName'] ?? json['nickname'] ?? json['username'] ?? '',
       avatar: json['avatar'],
-      totalBytes: json['totalBytes'] ?? 0,
-      totalRecords: json['totalRecords'] ?? 0,
-      totalCount: json['totalCount'] ?? 0,
-      totalDuration: json['totalDuration'] ?? 0,
-      totalDays: json['totalDays'] ?? 0,
+      totalBytes: _asInt(json['totalBytes']),
+      totalRecords: _asInt(json['totalRecords']),
+      totalCount: _asInt(json['totalCount']),
+      totalDuration: _asInt(json['totalDuration']),
+      totalDays: _asInt(json['totalDays']),
       latestSutra: json['latestSutra'],
       latestRecordDate: json['latestRecordDate'],
-      rank: json['rank'] ?? 0,
+      rank: _asInt(json['rank']),
     );
+  }
+
+  static int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.round();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
   }
 
   Map<String, dynamic> toJson() => {
@@ -63,6 +70,9 @@ class LeaderboardEntry {
 }
 
 class LeaderboardModel extends ChangeNotifier {
+  static const _cacheKey = 'global_leaderboard_cache_v2';
+  static const _timestampKey = 'global_leaderboard_timestamp_v2';
+
   final LeaderboardService _service = LeaderboardService();
   List<LeaderboardEntry> _entries = [];
   bool _isLoading = false;
@@ -136,8 +146,8 @@ class LeaderboardModel extends ChangeNotifier {
   Future<void> _loadCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final cached = prefs.getString('leaderboard_cache');
-      final timestamp = prefs.getInt('leaderboard_timestamp');
+      final cached = prefs.getString(_cacheKey);
+      final timestamp = prefs.getInt(_timestampKey);
 
       if (cached != null && timestamp != null) {
         final data = jsonDecode(cached) as List;
@@ -153,11 +163,8 @@ class LeaderboardModel extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final data = _entries.map((e) => e.toJson()).toList();
-      await prefs.setString('leaderboard_cache', jsonEncode(data));
-      await prefs.setInt(
-        'leaderboard_timestamp',
-        DateTime.now().millisecondsSinceEpoch,
-      );
+      await prefs.setString(_cacheKey, jsonEncode(data));
+      await prefs.setInt(_timestampKey, DateTime.now().millisecondsSinceEpoch);
     } catch (e) {
       debugPrint('保存缓存失败: $e');
     }

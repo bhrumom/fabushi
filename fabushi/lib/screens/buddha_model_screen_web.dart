@@ -58,7 +58,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   void updateIncenseProgress(double progress) {
-    _incenseProgress = progress;
+    if (!mounted) return;
+    setState(() => _incenseProgress = progress);
   }
 
   void setAutoRotate(bool enabled) {
@@ -92,7 +93,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
             ),
             if (widget.showBook && widget.bookTitle != null)
               Align(
-                alignment: const Alignment(0, 0.18),
+                alignment: const Alignment(0, 0.32),
                 child: GestureDetector(
                   onTap: widget.onBookTap,
                   child: SizedBox(
@@ -158,7 +159,7 @@ class _WebBuddhaRoomPainter extends CustomPainter {
 
     _drawHalo(canvas, center.translate(0, -70), size);
     _drawBuddha(canvas, center.translate(0, -4), size);
-    _drawIncense(canvas, Offset(center.dx, size.height * 0.72));
+    _drawIncense(canvas, Offset(center.dx, size.height * 0.69));
   }
 
   void _drawHalo(Canvas canvas, Offset center, Size size) {
@@ -262,8 +263,8 @@ class _WebBuddhaRoomPainter extends CustomPainter {
   }
 
   void _drawIncense(Canvas canvas, Offset base) {
-    final remaining = (1 - incenseProgress).clamp(0.08, 1.0).toDouble();
-    final stickHeight = 68 * remaining;
+    final remaining = (1 - incenseProgress).clamp(0.16, 1.0).toDouble();
+    final stickHeight = 74 * remaining;
     final offsets = [-13.0, 0.0, 13.0];
     _drawBurner(canvas, base);
 
