@@ -54,8 +54,8 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Compute changed Dart files
-        id: dart_changes
+      - name: Compute changed files
+        id: changes
         shell: bash
         run: |
           set -euo pipefail
@@ -66,29 +66,46 @@ jobs:
           fi
 
           dart_files=$(echo "$changed_files" | grep '^fabushi/.*\.dart$' | sed 's#^fabushi/##' || true)
-          if [ -z "$dart_files" ]; then
+          test_files=$(echo "$changed_files" | grep '^fabushi/test/.*\.dart$' | sed 's#^fabushi/##' || true)
+
+          if [ -n "$dart_files" ]; then
+            printf '%s\n' "$dart_files" > /tmp/changed_dart_files.txt
+            echo "has_changed_dart=true" >> "$GITHUB_OUTPUT"
+            echo "Changed Dart files:"
+            cat /tmp/changed_dart_files.txt
+          else
             echo "has_changed_dart=false" >> "$GITHUB_OUTPUT"
             echo "No changed Dart files."
-            exit 0
           fi
 
-          printf '%s\n' "$dart_files" > /tmp/changed_dart_files.txt
-          echo "has_changed_dart=true" >> "$GITHUB_OUTPUT"
-          echo "Changed Dart files:"
-          cat /tmp/changed_dart_files.txt
+          if [ -n "$test_files" ]; then
+            printf '%s\n' "$test_files" > /tmp/changed_test_files.txt
+            echo "has_changed_tests=true" >> "$GITHUB_OUTPUT"
+            echo "Changed Flutter test files:"
+            cat /tmp/changed_test_files.txt
+          else
+            echo "has_changed_tests=false" >> "$GITHUB_OUTPUT"
+            echo "No changed Flutter test files."
+          fi
 
       - name: Format changed Dart files in CI workspace
-        if: steps.dart_changes.outputs.has_changed_dart == 'true'
+        if: steps.changes.outputs.has_changed_dart == 'true'
         shell: bash
         run: xargs dart format --output=none < /tmp/changed_dart_files.txt
 
       - name: Analyze changed Dart files
-        if: steps.dart_changes.outputs.has_changed_dart == 'true'
+        if: steps.changes.outputs.has_changed_dart == 'true'
         shell: bash
         run: xargs dart analyze --fatal-infos --fatal-warnings < /tmp/changed_dart_files.txt
 
-      - name: Test
-        run: flutter test
+      - name: Test changed Flutter tests
+        if: steps.changes.outputs.has_changed_tests == 'true'
+        shell: bash
+        run: xargs flutter test < /tmp/changed_test_files.txt
+
+      - name: Skip unchanged Flutter tests
+        if: steps.changes.outputs.has_changed_tests != 'true'
+        run: echo "No Flutter test files changed; skipping legacy full test suite."
 
       - name: Build web
         run: flutter build web --release
