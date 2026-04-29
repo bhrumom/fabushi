@@ -1,4 +1,4 @@
-name: Deploy production after dev E2E
+name: CD - Staging E2E gated production deploy
 
 on:
   workflow_run:
@@ -11,16 +11,17 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-production-${{ github.ref }}
+  group: cd-production-${{ github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: false
 
 permissions:
   contents: read
   deployments: write
+  issues: write
 
 jobs:
-  deploy-dev:
-    name: Deploy development environment
+  build-artifact:
+    name: Build release artifact
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
@@ -28,11 +29,22 @@ jobs:
     defaults:
       run:
         working-directory: fabushi
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
     steps:
-      - name: Checkout main
+      - name: Resolve source commit
+        id: source
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "source_sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "source_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ steps.source.outputs.source_sha }}
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
@@ -46,21 +58,57 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Build Flutter web
+      - name: Build Flutter web release
         run: |
           flutter pub get
           flutter build web --release
 
-      - name: Deploy development Worker
-        working-directory: fabushi/web
+      - name: Package release artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../release-artifact/fabushi/build
+          cp -R build/web ../release-artifact/fabushi/build/web
+          cp -R web ../release-artifact/fabushi/web
+          find ../release-artifact/fabushi/web -path '*/assets/built_in/*' -prune -exec rm -rf {} + || true
+          printf '%s\n' "${{ steps.source.outputs.source_sha }}" > ../release-artifact/SOURCE_SHA
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fabushi-release-${{ steps.source.outputs.source_sha }}
+          path: release-artifact
+          retention-days: 30
+          if-no-files-found: error
+
+  deploy-staging:
+    name: Deploy staging environment
+    needs: build-artifact
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_APP_URL }}
+    defaults:
+      run:
+        working-directory: release-artifact/fabushi/web
+    steps:
+      - name: Download release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fabushi-release-${{ needs.build-artifact.outputs.source_sha }}
+          path: release-artifact
+
+      - name: Deploy staging Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx --yes wrangler@latest deploy
 
-  dev-e2e:
-    name: Run development API E2E
-    needs: deploy-dev
+  staging-e2e:
+    name: Staging API E2E and smoke test
+    needs:
+      - build-artifact
+      - deploy-staging
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -75,12 +123,12 @@ jobs:
       - name: Checkout E2E files
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ needs.build-artifact.outputs.source_sha }}
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/e2e/**
 
-      - name: Check E2E configuration
+      - name: Check staging E2E configuration
         shell: bash
         run: |
           set -euo pipefail
@@ -101,53 +149,131 @@ jobs:
       - name: Install E2E dependencies
         run: npm install
 
-      - name: Run development API E2E
+      - name: Run staging API E2E
         run: npm test
 
-      - name: Upload Playwright report
+      - name: Run staging smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "$STAGING_APP_URL" > /tmp/staging-index.html
+          test -s /tmp/staging-index.html
+          status=$(curl -sS -o /tmp/staging-auth.json -w '%{http_code}' "$STAGING_APP_URL/api/auth/user-info")
+          if [ "$status" != "401" ] && [ "$status" != "403" ]; then
+            echo "Expected unauthenticated user-info to return 401 or 403, got $status"
+            cat /tmp/staging-auth.json
+            exit 1
+          fi
+
+      - name: Upload staging E2E report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dev-e2e-playwright-report
+          name: staging-e2e-playwright-report
           path: fabushi/e2e/playwright-report
           if-no-files-found: ignore
 
   deploy-production:
     name: Deploy production environment
-    needs: dev-e2e
+    needs:
+      - build-artifact
+      - staging-e2e
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://flutter.ombhrum.com
+      url: ${{ vars.PRODUCTION_APP_URL || 'https://flutter.ombhrum.com' }}
     defaults:
       run:
-        working-directory: fabushi
+        working-directory: release-artifact/fabushi/web
     steps:
-      - name: Checkout main
-        uses: actions/checkout@v4
+      - name: Download validated release artifact
+        uses: actions/download-artifact@v4
         with:
-          ref: main
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /fabushi/**
-            !/fabushi/assets/built_in/**
-            !/fabushi/web/assets/built_in/**
-            /.github/workflows/**
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Build Flutter web
-        run: |
-          flutter pub get
-          flutter build web --release
+          name: fabushi-release-${{ needs.build-artifact.outputs.source_sha }}
+          path: release-artifact
 
       - name: Deploy production Worker
-        working-directory: fabushi/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx --yes wrangler@latest deploy --env production
+
+      - name: Write deployment summary
+        shell: bash
+        run: |
+          {
+            echo "## Production deployment"
+            echo ""
+            echo "- Source SHA: ${{ needs.build-artifact.outputs.source_sha }}"
+            echo "- Artifact: fabushi-release-${{ needs.build-artifact.outputs.source_sha }}"
+            echo "- URL: ${{ vars.PRODUCTION_APP_URL || 'https://flutter.ombhrum.com' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  production-smoke:
+    name: Production smoke test
+    needs:
+      - build-artifact
+      - deploy-production
+    runs-on: ubuntu-latest
+    env:
+      PRODUCTION_APP_URL: ${{ vars.PRODUCTION_APP_URL || 'https://flutter.ombhrum.com' }}
+    steps:
+      - name: Smoke test production site and API auth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "$PRODUCTION_APP_URL" > /tmp/production-index.html
+          test -s /tmp/production-index.html
+          status=$(curl -sS -o /tmp/production-auth.json -w '%{http_code}' "$PRODUCTION_APP_URL/api/auth/user-info")
+          if [ "$status" != "401" ] && [ "$status" != "403" ]; then
+            echo "Expected unauthenticated user-info to return 401 or 403, got $status"
+            cat /tmp/production-auth.json
+            exit 1
+          fi
+
+      - name: Write production smoke summary
+        shell: bash
+        run: |
+          {
+            echo "## Production smoke test passed"
+            echo ""
+            echo "- Source SHA: ${{ needs.build-artifact.outputs.source_sha }}"
+            echo "- URL: $PRODUCTION_APP_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-failure:
+    name: Notify deployment failure
+    needs:
+      - build-artifact
+      - deploy-staging
+      - staging-e2e
+      - deploy-production
+      - production-smoke
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub issue for failed deployment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const sourceSha = '${{ needs.build-artifact.outputs.source_sha }}' || context.sha;
+            const title = `CD failed for ${sourceSha.substring(0, 7)}`;
+            const body = [
+              '## CD failure',
+              '',
+              `- Source SHA: ${sourceSha}`,
+              `- Workflow run: ${runUrl}`,
+              '- Failed stage: check the workflow job list for the first failed job.',
+              '',
+              '### Rollback',
+              '',
+              'Use Cloudflare Workers deployment history to roll back to the previous known-good production deployment, then rerun this workflow after fixing the failure.'
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['deployment-failure']
+            });
