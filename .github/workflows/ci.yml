@@ -34,6 +34,7 @@ jobs:
             /fabushi/fonts/**
             /fabushi/web/**
             !/fabushi/web/assets/built_in/**
+            /fabushi/e2e/**
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -71,3 +72,64 @@ jobs:
           test -s /tmp/fabushi-index.html
           google-chrome --headless=new --no-sandbox --disable-dev-shm-usage --virtual-time-budget=10000 --screenshot=/tmp/fabushi-smoke.png http://127.0.0.1:8080/
           test -s /tmp/fabushi-smoke.png
+
+  staging-e2e:
+    name: Staging E2E profile flow
+    runs-on: ubuntu-latest
+    needs: flutter
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'pull_request' }}
+    defaults:
+      run:
+        working-directory: fabushi/e2e
+    env:
+      STAGING_APP_URL: ${{ vars.STAGING_APP_URL }}
+      STAGING_TEST_LOGIN: ${{ secrets.STAGING_TEST_LOGIN }}
+      STAGING_TEST_PASSWORD: ${{ secrets.STAGING_TEST_PASSWORD }}
+      STAGING_TEST_EMAIL: ${{ vars.STAGING_TEST_EMAIL }}
+      STAGING_TEST_PHONE: ${{ vars.STAGING_TEST_PHONE }}
+    steps:
+      - name: Checkout E2E files
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/e2e/**
+
+      - name: Check staging E2E configuration
+        id: config
+        shell: bash
+        run: |
+          if [ -z "${STAGING_APP_URL}" ] || [ -z "${STAGING_TEST_LOGIN}" ] || [ -z "${STAGING_TEST_PASSWORD}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Staging E2E is not configured. Set STAGING_APP_URL, STAGING_TEST_LOGIN, and STAGING_TEST_PASSWORD to enable it."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js
+        if: steps.config.outputs.configured == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: fabushi/e2e/package-lock.json
+
+      - name: Install E2E dependencies
+        if: steps.config.outputs.configured == 'true'
+        run: npm install
+
+      - name: Install Playwright browser
+        if: steps.config.outputs.configured == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run staging E2E profile flow
+        if: steps.config.outputs.configured == 'true'
+        run: npm test
+
+      - name: Upload Playwright report
+        if: steps.config.outputs.configured == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: fabushi/e2e/playwright-report
+          if-no-files-found: ignore
