@@ -1,0 +1,153 @@
+name: Deploy production after dev E2E
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  deploy-dev:
+    name: Deploy development environment
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+            /.github/workflows/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build Flutter web
+        run: |
+          flutter pub get
+          flutter build web --release
+
+      - name: Deploy development Worker
+        working-directory: fabushi/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@latest deploy
+
+  dev-e2e:
+    name: Run development API E2E
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fabushi/e2e
+    env:
+      STAGING_APP_URL: ${{ vars.STAGING_APP_URL }}
+      STAGING_TEST_LOGIN: ${{ secrets.STAGING_TEST_LOGIN }}
+      STAGING_TEST_PASSWORD: ${{ secrets.STAGING_TEST_PASSWORD }}
+      STAGING_TEST_EMAIL: ${{ vars.STAGING_TEST_EMAIL }}
+      STAGING_TEST_PHONE: ${{ vars.STAGING_TEST_PHONE }}
+    steps:
+      - name: Checkout E2E files
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/e2e/**
+
+      - name: Check E2E configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in STAGING_APP_URL STAGING_TEST_LOGIN STAGING_TEST_PASSWORD STAGING_TEST_EMAIL STAGING_TEST_PHONE; do
+            if [ -z "${!name:-}" ]; then
+              echo "$name is not configured."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install E2E dependencies
+        run: npm install
+
+      - name: Run development API E2E
+        run: npm test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-e2e-playwright-report
+          path: fabushi/e2e/playwright-report
+          if-no-files-found: ignore
+
+  deploy-production:
+    name: Deploy production environment
+    needs: dev-e2e
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://flutter.ombhrum.com
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+            /.github/workflows/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build Flutter web
+        run: |
+          flutter pub get
+          flutter build web --release
+
+      - name: Deploy production Worker
+        working-directory: fabushi/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@latest deploy --env production
