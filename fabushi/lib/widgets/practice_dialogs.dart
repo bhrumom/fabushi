@@ -15,8 +15,10 @@ class AddPracticeRecordDialog extends StatefulWidget {
 class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
   final _sutraController = TextEditingController();
   final _countController = TextEditingController(text: '1');
+  final _durationController = TextEditingController(text: '30');
   final _notesController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
+  TimeOfDay _selectedTime = TimeOfDay.now();
   bool _isLoading = false;
 
   @override
@@ -31,6 +33,7 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
   void dispose() {
     _sutraController.dispose();
     _countController.dispose();
+    _durationController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -58,9 +61,31 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
     }
   }
 
+  Future<void> _selectTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFFE74C3C),
+              surface: Color(0xFF1E1E1E),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() => _selectedTime = picked);
+    }
+  }
+
   Future<void> _submit() async {
     final sutra = _sutraController.text.trim();
     final count = int.tryParse(_countController.text) ?? 0;
+    final duration = int.tryParse(_durationController.text) ?? 0;
     final notes = _notesController.text.trim();
 
     if (sutra.isEmpty) {
@@ -77,16 +102,27 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
       return;
     }
 
+    if (duration < 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入有效的修行时长')));
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     final service = PracticeStatsService();
     final dateStr =
         '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+    final timeStr =
+        '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}';
 
     final success = await service.addManualRecord(
       sutra: sutra,
       chantCount: count,
+      duration: duration,
       recordDate: dateStr,
+      localTime: timeStr,
       notes: notes.isEmpty ? null : notes,
     );
 
@@ -197,6 +233,52 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
                       size: 20,
                     ),
                   ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            GestureDetector(
+              onTap: _selectTime,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2A2A2A),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '当地时间: ${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    const Icon(
+                      Icons.access_time,
+                      color: Colors.white54,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            TextField(
+              controller: _durationController,
+              style: const TextStyle(color: Colors.white),
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: '修行时长（分钟）',
+                labelStyle: const TextStyle(color: Colors.white54),
+                filled: true,
+                fillColor: const Color(0xFF2A2A2A),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
                 ),
               ),
             ),

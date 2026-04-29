@@ -325,73 +325,171 @@ class _PracticeRecordScreenState extends State<PracticeRecordScreen> {
   }
 
   Widget _buildRecordTile(PracticeRecord record) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF252525),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showRecordDetail(record),
         borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE74C3C).withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.self_improvement, color: Color(0xFFE74C3C)),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF252525),
+            borderRadius: BorderRadius.circular(8),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE74C3C).withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.self_improvement,
+                  color: Color(0xFFE74C3C),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        record.sutraName,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            record.sutraName,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
+                        _buildRecordSourceChip(record.sourceLabel),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${record.dateTimeLabel} · ${record.chantCount} 部 · ${_formatDuration(record.duration)}',
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
                       ),
                     ),
-                    _buildRecordSourceChip(record.sourceLabel),
+                    if (record.notes != null) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '心得：${record.notes!}',
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  '${record.recordDate} · ${record.chantCount} 部 · ${_formatDuration(record.duration)}',
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showRecordDetail(PracticeRecord record) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '修行详情',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                if (record.notes != null) ...[
+                const SizedBox(height: 14),
+                _detailRow(label: '功课', value: record.sutraName),
+                _detailRow(label: '时间', value: record.dateTimeLabel),
+                _detailRow(
+                  label: '修行时长',
+                  value: _formatDuration(record.duration),
+                ),
+                _detailRow(label: '念诵遍数', value: '${record.chantCount} 部'),
+                _detailRow(label: '来源', value: record.sourceLabel),
+                if (record.startTime != null)
+                  _detailRow(label: '开始', value: record.startTime!.toString()),
+                if (record.endTime != null)
+                  _detailRow(label: '结束', value: record.endTime!.toString()),
+                if (record.notes?.isNotEmpty == true) ...[
                   const SizedBox(height: 6),
                   Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      '心得：${record.notes!}',
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
+                      record.notes!,
                       style: const TextStyle(
-                        color: Colors.white60,
-                        fontSize: 12,
-                        height: 1.4,
+                        color: Colors.white70,
+                        height: 1.45,
                       ),
                     ),
                   ),
                 ],
               ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _detailRow({required String label, required String value}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white38, fontSize: 13),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value.isEmpty ? '-' : value,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
             ),
           ),
         ],

@@ -471,17 +471,30 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
               if (!_isLoading && !_loadFailed)
                 ClipRect(
+                  child: RepaintBoundary(
+                    child: CustomPaint(
+                      size: size,
+                      painter: ScenePainter(
+                        scene: scene,
+                        camera: camera,
+                        isBurning: widget.isBurning,
+                        incenseProgress: _currentIncenseProgress,
+                        smokeParticles: _smokeParticles,
+                        stars: _stars,
+                        showBook: widget.showBook,
+                        onRenderError: _handleRenderFailure,
+                      ),
+                    ),
+                  ),
+                ),
+
+              if (!_isLoading && !_loadFailed)
+                IgnorePointer(
                   child: CustomPaint(
                     size: size,
-                    painter: ScenePainter(
-                      scene: scene,
-                      camera: camera,
+                    painter: _IncensePainter(
                       isBurning: widget.isBurning,
                       incenseProgress: _currentIncenseProgress,
-                      smokeParticles: _smokeParticles,
-                      stars: _stars,
-                      showBook: widget.showBook,
-                      onRenderError: _handleRenderFailure,
                     ),
                   ),
                 ),
@@ -490,7 +503,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
               if (widget.showBook && widget.bookTitle != null && !_isLoading)
                 Positioned(
                   left: (size.width - 184) / 2,
-                  top: (size.height * 0.60)
+                  top: (size.height * 0.54)
                       .clamp(0.0, size.height - 270)
                       .toDouble(),
                   child: _SutraBookButton(
@@ -624,12 +637,14 @@ class _SutraBookPainter extends CustomPainter {
         Offset(size.width * 0.2, size.height * 0.12),
         Offset(size.width * 0.82, size.height * 0.7),
         const [Color(0xFF9E1C16), Color(0xFF5E0707), Color(0xFF2A0202)],
+        const [0.0, 0.5, 1.0],
       );
     final rightCoverPaint = Paint()
       ..shader = ui.Gradient.linear(
         Offset(size.width * 0.46, size.height * 0.1),
         Offset(size.width * 0.9, size.height * 0.66),
         const [Color(0xFFC0261E), Color(0xFF6B0808), Color(0xFF310303)],
+        const [0.0, 0.5, 1.0],
       );
 
     final leftPages = Path()
@@ -709,21 +724,23 @@ class _SutraBookPainter extends CustomPainter {
         text: title,
         style: const TextStyle(
           color: Color(0xFFFFE6A3),
-          fontSize: 15,
+          fontSize: 14,
           fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
+          letterSpacing: 1.0,
           shadows: [Shadow(color: Color(0xFF3A1204), blurRadius: 4)],
+          height: 1.2,
         ),
       ),
-      maxLines: 1,
+      maxLines: 2,
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
       ellipsis: '…',
     );
-    titlePainter.layout(maxWidth: size.width * 0.72);
+    titlePainter.layout(maxWidth: size.width * 0.82);
+    final offsetY = titlePainter.height > 20 ? size.height * 0.31 : size.height * 0.37;
     titlePainter.paint(
       canvas,
-      Offset((size.width - titlePainter.width) / 2, size.height * 0.37),
+      Offset((size.width - titlePainter.width) / 2, offsetY),
     );
 
     final hintPainter = TextPainter(
@@ -802,19 +819,38 @@ class ScenePainter extends CustomPainter {
       if (p != null) starPoints.add(p);
     }
     canvas.drawPoints(ui.PointMode.points, starPoints, starPaint);
+  }
 
+  @override
+  bool shouldRepaint(covariant ScenePainter oldDelegate) {
+    return true; // 每帧依靠 Ticker 驱动重绘即可
+  }
+}
+
+class _IncensePainter extends CustomPainter {
+  final double incenseProgress;
+  final bool isBurning;
+
+  _IncensePainter({
+    required this.incenseProgress,
+    required this.isBurning,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty || !size.width.isFinite || !size.height.isFinite) return;
     _drawFixedIncense(canvas, size);
   }
 
   void _drawFixedIncense(Canvas canvas, Size size) {
-    final base = Offset(size.width / 2, size.height * 0.74);
+    final base = Offset(size.width / 2, size.height * 0.82);
     final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
     final stickHeight = 74.0 * remaining;
     _drawIncenseBurner(canvas, base, stickHeight);
 
     for (final offset in const [-14.0, 0.0, 14.0]) {
-      final stickBase = base.translate(offset, -8);
-      final stickTip = stickBase.translate(0, -stickHeight);
+      final stickBase = base.translate(offset, 6);
+      final stickTip = stickBase.translate(0, -stickHeight - 14);
       canvas.drawLine(
         stickBase,
         stickTip,
@@ -823,7 +859,7 @@ class ScenePainter extends CustomPainter {
             Color(0xFF5A2E16),
             Color(0xFFB07136),
             Color(0xFF2B1509),
-          ])
+          ], const [0.0, 0.5, 1.0])
           ..strokeWidth = 3.3
           ..strokeCap = StrokeCap.round,
       );
@@ -837,7 +873,7 @@ class ScenePainter extends CustomPainter {
               Color(0xFFFFF1A3),
               Color(0xFFFF6B1A),
               Color(0x00FF6B1A),
-            ]),
+            ], const [0.0, 0.5, 1.0]),
         );
         canvas.drawCircle(
           stickTip,
@@ -856,13 +892,13 @@ class ScenePainter extends CustomPainter {
       final x = tip.dx + math.sin(t * math.pi * 2.0 + seed) * (7 + t * 26);
       final y = tip.dy - t * 122 - i * 3.2;
       final radius = 2.4 + t * 9.5;
-      final opacity = ((1 - t) * 0.17 + 0.025).clamp(0.0, 0.20).toDouble();
+      final opacity = ((1 - t) * 0.45 + 0.05).clamp(0.0, 0.5).toDouble();
       canvas.drawCircle(
         Offset(x, y),
         radius,
         Paint()
           ..color = Color.fromRGBO(235, 229, 214, opacity)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + t * 7),
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2 + t * 5),
       );
 
       if (i.isEven) {
@@ -877,11 +913,11 @@ class ScenePainter extends CustomPainter {
         canvas.drawPath(
           wisp,
           Paint()
-            ..color = Color.fromRGBO(242, 236, 220, opacity * 0.75)
+            ..color = Color.fromRGBO(242, 236, 220, opacity * 0.85)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.0 + t
+            ..strokeWidth = 1.5 + t * 1.5
             ..strokeCap = StrokeCap.round
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
         );
       }
     }
@@ -927,6 +963,7 @@ class ScenePainter extends CustomPainter {
           Offset(topCenter.dx - width * 0.5, topCenter.dy),
           Offset(topCenter.dx + width * 0.5, topCenter.dy + bodyHeight),
           const [Color(0xFF4A2111), Color(0xFF9A5A24), Color(0xFF2A1208)],
+          const [0.0, 0.5, 1.0],
         ),
     );
     canvas.drawPath(
@@ -949,6 +986,7 @@ class ScenePainter extends CustomPainter {
           rimRect.topLeft,
           rimRect.bottomRight,
           const [Color(0xFFD4AF37), Color(0xFF6F3514), Color(0xFFFFD36A)],
+          const [0.0, 0.5, 1.0],
         ),
     );
     canvas.drawOval(
@@ -970,7 +1008,7 @@ class ScenePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant ScenePainter oldDelegate) {
-    return true; // 每帧依靠 Ticker 驱动重绘即可
+  bool shouldRepaint(covariant _IncensePainter oldDelegate) {
+    return true;
   }
 }

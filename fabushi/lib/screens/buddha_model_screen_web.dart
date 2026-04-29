@@ -97,7 +97,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                 if (widget.showBook && widget.bookTitle != null)
                   Positioned(
                     left: (size.width - 184) / 2,
-                    top: (size.height * 0.60)
+                    top: (size.height * 0.54)
                         .clamp(0.0, size.height - 270)
                         .toDouble(),
                     child: GestureDetector(
@@ -167,7 +167,7 @@ class _WebBuddhaRoomPainter extends CustomPainter {
 
     _drawHalo(canvas, center.translate(0, -70), size);
     _drawBuddha(canvas, center.translate(0, -4), size);
-    _drawIncense(canvas, Offset(center.dx, size.height * 0.69));
+    _drawIncense(canvas, Offset(center.dx, size.height * 0.82));
   }
 
   void _drawHalo(Canvas canvas, Offset center, Size size) {
