@@ -104,21 +104,33 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Check for committed secrets in changed files
         shell: bash
         run: |
-          git fetch origin ${{ github.base_ref }} --depth=1
+          set -euo pipefail
           changed_files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
           if [ -z "$changed_files" ]; then
             echo "No changed files."
             exit 0
           fi
-          echo "$changed_files" | grep -Ev '(^|/)(pubspec.lock|Podfile.lock)$' | while read -r file; do
+
+          secret_key_pattern='api[_-]?key|secret|token|private[_-]?key|password'
+          failed=0
+          while IFS= read -r file; do
+            case "$file" in
+              *pubspec.lock|*Podfile.lock)
+                continue
+                ;;
+            esac
             if [ -f "$file" ]; then
-              if grep -nEi '(api[_-]?key|secret|token|private[_-]?key|password)\s*[:=]\s*["'\''][^"'\'']{8,}' "$file"; then
+              if grep -nEi "($secret_key_pattern)[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}" "$file"; then
                 echo "Potential secret found in $file"
-                exit 1
+                failed=1
               fi
             fi
-          done
+          done <<< "$changed_files"
+
+          exit "$failed"
