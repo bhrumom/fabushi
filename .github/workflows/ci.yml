@@ -22,13 +22,22 @@ jobs:
       run:
         working-directory: fabushi
     steps:
-      - name: Checkout
+      - name: Checkout Flutter project files
         uses: actions/checkout@v4
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /*
+            /.github/workflows/**
+            /fabushi/analysis_options.yaml
+            /fabushi/pubspec.yaml
+            /fabushi/pubspec.lock
+            /fabushi/lib/**
+            /fabushi/test/**
+            /fabushi/integration_test/**
+            /fabushi/assets/**
             !/fabushi/assets/built_in/**
+            /fabushi/fonts/**
+            /fabushi/web/**
             !/fabushi/web/assets/built_in/**
 
       - name: Set up Flutter
@@ -70,13 +79,13 @@ jobs:
       run:
         working-directory: fabushi/web
     steps:
-      - name: Checkout
+      - name: Checkout Worker files
         uses: actions/checkout@v4
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /*
-            !/fabushi/assets/built_in/**
+            /.github/workflows/**
+            /fabushi/web/**
             !/fabushi/web/assets/built_in/**
 
       - name: Download Flutter web build
@@ -114,15 +123,19 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - name: Checkout
+      - name: Checkout changed files context
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /*
-            !/fabushi/assets/built_in/**
+            /.github/workflows/**
+            /fabushi/lib/**
+            /fabushi/test/**
+            /fabushi/web/**
             !/fabushi/web/assets/built_in/**
+            /fabushi/pubspec.yaml
+            /fabushi/pubspec.lock
 
       - name: Check for committed secrets in changed files
         shell: bash
