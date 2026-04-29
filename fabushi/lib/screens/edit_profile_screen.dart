@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
 import '../core/design_system/app_theme.dart';
 import '../models/auth_model.dart';
+import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/http_service.dart';
 import '../services/meditation_session_manager.dart';
