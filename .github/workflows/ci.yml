@@ -232,6 +232,10 @@ jobs:
         if: steps.config.outputs.configured == 'true'
         run: npm install
 
+      - name: Install Playwright Chromium
+        if: steps.config.outputs.configured == 'true'
+        run: npx playwright install chromium --with-deps
+
       - name: Run staging E2E profile API flow
         if: steps.config.outputs.configured == 'true'
         run: npm test
