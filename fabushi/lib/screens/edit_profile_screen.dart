@@ -1,11 +1,16 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/config/app_config.dart';
+import '../core/design_system/app_theme.dart';
 import '../models/auth_model.dart';
 import '../services/auth_service.dart';
-import '../core/design_system/app_theme.dart';
+import '../services/http_service.dart';
 import '../services/meditation_session_manager.dart';
 
-/// 抖音风格编辑资料页面
+/// 编辑资料页面
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
 
@@ -15,25 +20,92 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
-  late TextEditingController _nicknameController;
+  late TextEditingController _usernameController;
+  late TextEditingController _emailController;
+  late TextEditingController _phoneController;
+  late TextEditingController _passwordController;
+  late TextEditingController _confirmPasswordController;
   late TextEditingController _avatarController;
   bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+  bool _hasPassword = true;
+  String? _pendingAvatarBase64;
+  String? _pendingAvatarFileName;
+  String? _pendingAvatarContentType;
 
   @override
   void initState() {
     super.initState();
     final user = context.read<AuthModel>().currentUser;
-    _nicknameController = TextEditingController(
-      text: user?.nickname ?? user?.username ?? '',
-    );
+    _usernameController = TextEditingController(text: user?.username ?? '');
+    _emailController = TextEditingController(text: user?.email ?? '');
+    _phoneController = TextEditingController(text: user?.phoneNumber ?? '');
+    _passwordController = TextEditingController();
+    _confirmPasswordController = TextEditingController();
     _avatarController = TextEditingController(text: user?.avatar ?? '');
+    _loadPasswordState();
   }
 
   @override
   void dispose() {
-    _nicknameController.dispose();
+    _usernameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _avatarController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPasswordState() async {
+    try {
+      final response = await HttpService.get(
+        AppConfig.adminCheckStatusUrl,
+        useAuth: true,
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (mounted && data.containsKey('hasPassword')) {
+          setState(() => _hasPassword = data['hasPassword'] == true);
+        }
+      }
+    } catch (_) {
+      // 旧后端没有返回 hasPassword 时，保守地隐藏设置密码入口。
+    }
+  }
+
+  Future<void> _pickAvatar() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+      withData: true,
+    );
+    final file = result?.files.single;
+    final bytes = file?.bytes;
+    if (file == null || bytes == null) return;
+
+    if (bytes.length > 3 * 1024 * 1024) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('头像图片不能超过 3MB')),
+      );
+      return;
+    }
+
+    setState(() {
+      _pendingAvatarBase64 = base64Encode(bytes);
+      _pendingAvatarFileName = file.name;
+      _pendingAvatarContentType = _contentTypeForName(file.name);
+    });
+  }
+
+  String _contentTypeForName(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
   }
 
   Future<void> _saveProfile() async {
@@ -41,31 +113,64 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     setState(() => _isLoading = true);
 
-    final authService = AuthService();
-    final result = await authService.updateProfile(
-      nickname: _nicknameController.text.trim(),
-      avatar: _avatarController.text.trim(),
-    );
+    final body = <String, dynamic>{
+      'username': _usernameController.text.trim(),
+      'email': _emailController.text.trim(),
+      'phoneNumber': _phoneController.text.trim(),
+      'avatar': _avatarController.text.trim(),
+    };
 
-    if (mounted) {
+    if (!_hasPassword && _passwordController.text.isNotEmpty) {
+      body['password'] = _passwordController.text;
+    }
+
+    if (_pendingAvatarBase64 != null) {
+      body['avatarData'] = {
+        'imageBase64': _pendingAvatarBase64,
+        'fileName': _pendingAvatarFileName,
+        'contentType': _pendingAvatarContentType,
+      };
+    }
+
+    try {
+      final response = await HttpService.post(
+        '${AppConfig.apiUrl}/api/auth/update-profile',
+        body: body,
+        useAuth: true,
+      );
+      final data = response.body.isNotEmpty
+          ? jsonDecode(response.body) as Map<String, dynamic>
+          : <String, dynamic>{};
+
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      if (result['success']) {
-        // 刷新AuthModel中的用户信息
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        final token = data['token'] as String?;
+        if (token != null && data['user'] is Map) {
+          await AuthService().setAuth(
+            token,
+            UserModel.fromJson(Map<String, dynamic>.from(data['user'] as Map)),
+          );
+        }
         await context.read<AuthModel>().refreshUserInfo();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('个人资料更新成功'),
-              backgroundColor: Colors.green,
-            ),
+            const SnackBar(content: Text('个人资料更新成功'), backgroundColor: Colors.green),
           );
           Navigator.pop(context);
         }
       } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(result['error'] ?? '更新失败')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['error'] ?? '更新失败')),
+        );
       }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('更新失败: $e')),
+      );
     }
   }
 
@@ -78,10 +183,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E1E1E),
         elevation: 0,
-        title: const Text(
-          '编辑资料',
-          style: TextStyle(color: Colors.white, fontSize: 17),
-        ),
+        title: const Text('编辑资料', style: TextStyle(color: Colors.white, fontSize: 17)),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
@@ -94,19 +196,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(
-                      color: AppTheme.primaryColor,
-                      strokeWidth: 2,
-                    ),
+                    child: CircularProgressIndicator(color: AppTheme.primaryColor, strokeWidth: 2),
                   )
-                : const Text(
-                    '保存',
-                    style: TextStyle(
-                      color: AppTheme.primaryColor,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+                : const Text('保存', style: TextStyle(color: AppTheme.primaryColor, fontSize: 15, fontWeight: FontWeight.w500)),
           ),
         ],
       ),
@@ -116,10 +208,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           child: Column(
             children: [
               const SizedBox(height: 24),
-              // 头像区域
               _buildAvatarSection(user),
               const SizedBox(height: 32),
-              // 表单区域
               _buildFormSection(user),
             ],
           ),
@@ -130,12 +220,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Widget _buildAvatarSection(User? user) {
     return GestureDetector(
-      onTap: () {
-        // TODO: 实现头像选择器
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('头像上传功能开发中')));
-      },
+      onTap: _pickAvatar,
       child: Column(
         children: [
           Stack(
@@ -146,33 +231,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white24, width: 2),
-                  gradient: _avatarController.text.isEmpty
-                      ? const LinearGradient(
-                          colors: [Color(0xFFFF6B6B), Color(0xFFFFE66D)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        )
+                  gradient: (_avatarController.text.isEmpty && _pendingAvatarBase64 == null)
+                      ? const LinearGradient(colors: [Color(0xFFFF6B6B), Color(0xFFFFE66D)])
                       : null,
-                  image: _avatarController.text.isNotEmpty
-                      ? DecorationImage(
-                          image: NetworkImage(_avatarController.text),
-                          fit: BoxFit.cover,
-                          onError: (error, stackTrace) {},
-                        )
-                      : null,
+                  image: _buildAvatarImage(),
                 ),
-                child: _avatarController.text.isEmpty
+                child: (_avatarController.text.isEmpty && _pendingAvatarBase64 == null)
                     ? Center(
                         child: Text(
-                          (user?.displayName.isNotEmpty == true
-                                  ? user!.displayName[0]
-                                  : '?')
-                              .toUpperCase(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 36,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          (user?.username.isNotEmpty == true ? user!.username[0] : '?').toUpperCase(),
+                          style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
                         ),
                       )
                     : null,
@@ -185,170 +253,168 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   decoration: BoxDecoration(
                     color: AppTheme.primaryColor,
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFF121212),
-                      width: 2,
-                    ),
+                    border: Border.all(color: const Color(0xFF121212), width: 2),
                   ),
-                  child: const Icon(
-                    Icons.camera_alt,
-                    size: 14,
-                    color: Colors.black,
-                  ),
+                  child: const Icon(Icons.camera_alt, size: 14, color: Colors.black),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          const Text(
-            '点击更换头像',
-            style: TextStyle(color: Colors.white54, fontSize: 12),
-          ),
+          const Text('点击从本地选择头像', style: TextStyle(color: Colors.white54, fontSize: 12)),
         ],
       ),
     );
   }
 
+  DecorationImage? _buildAvatarImage() {
+    if (_pendingAvatarBase64 != null) {
+      return DecorationImage(
+        image: MemoryImage(base64Decode(_pendingAvatarBase64!)),
+        fit: BoxFit.cover,
+      );
+    }
+    if (_avatarController.text.isNotEmpty) {
+      return DecorationImage(image: NetworkImage(_avatarController.text), fit: BoxFit.cover);
+    }
+    return null;
+  }
+
   Widget _buildFormSection(User? user) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(16)),
       child: Column(
         children: [
-          // 昵称
           _buildFormItem(
-            label: '昵称',
+            label: '用户名',
             child: TextFormField(
-              controller: _nicknameController,
+              controller: _usernameController,
               style: const TextStyle(color: Colors.white, fontSize: 15),
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                hintText: '请输入昵称',
-                hintStyle: TextStyle(color: Colors.white38),
-              ),
+              decoration: const InputDecoration(border: InputBorder.none, hintText: '请输入用户名', hintStyle: TextStyle(color: Colors.white38)),
               validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return '请输入昵称';
-                }
+                final username = value?.trim() ?? '';
+                if (username.isEmpty) return '请输入用户名';
+                if (username.contains('@') || username.contains(RegExp(r'\s'))) return '用户名不能包含 @ 或空格';
+                if (username.length < 2 || username.length > 32) return '用户名长度需为 2-32 个字符';
                 return null;
               },
             ),
           ),
-          const Divider(
-            color: Colors.white10,
-            height: 1,
-            indent: 16,
-            endIndent: 16,
-          ),
-          // 一门深入（锁定功课）
-          _buildInfoItem(
-            label: '一门深入',
-            value: MeditationSessionManager().lockedPractice?.title ?? '未选择',
-            showArrow: false,
-          ),
-          const Divider(
-            color: Colors.white10,
-            height: 1,
-            indent: 16,
-            endIndent: 16,
-          ),
-          // 手机号
-          _buildInfoItem(
-            label: '手机号',
-            value: user?.phoneNumber != null && user!.phoneNumber!.isNotEmpty
-                ? _maskPhoneNumber(user.phoneNumber!)
-                : '未绑定',
-            onTap: () {
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('手机号更换功能开发中')));
-            },
-          ),
-          const Divider(
-            color: Colors.white10,
-            height: 1,
-            indent: 16,
-            endIndent: 16,
-          ),
-          // 头像URL (临时，后续改为上传)
+          _divider(),
           _buildFormItem(
-            label: '头像链接',
+            label: '邮箱',
             child: TextFormField(
-              controller: _avatarController,
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
               style: const TextStyle(color: Colors.white, fontSize: 15),
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                hintText: '请输入头像图片URL',
-                hintStyle: TextStyle(color: Colors.white38),
-              ),
-              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(border: InputBorder.none, hintText: '请输入邮箱', hintStyle: TextStyle(color: Colors.white38)),
+              validator: (value) {
+                final email = value?.trim() ?? '';
+                if (email.isEmpty) return null;
+                if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) return '邮箱格式不正确';
+                return null;
+              },
             ),
           ),
+          _divider(),
+          _buildFormItem(
+            label: '手机号',
+            child: TextFormField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+              decoration: const InputDecoration(border: InputBorder.none, hintText: '请输入手机号', hintStyle: TextStyle(color: Colors.white38)),
+              validator: (value) {
+                final phone = value?.trim() ?? '';
+                if (phone.isEmpty) return null;
+                if (!RegExp(r'^\+?[0-9]{6,20}$').hasMatch(phone)) return '手机号格式不正确';
+                return null;
+              },
+            ),
+          ),
+          if (!_hasPassword) ...[
+            _divider(),
+            _buildFormItem(
+              label: '设置密码',
+              child: TextFormField(
+                controller: _passwordController,
+                obscureText: _obscurePassword,
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  hintText: '设置后可用账号密码登录',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.white38),
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                  ),
+                ),
+                validator: (value) {
+                  if ((value ?? '').isEmpty) return null;
+                  if (value!.length < 6) return '密码至少 6 位';
+                  return null;
+                },
+              ),
+            ),
+            _divider(),
+            _buildFormItem(
+              label: '确认密码',
+              child: TextFormField(
+                controller: _confirmPasswordController,
+                obscureText: _obscureConfirmPassword,
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  hintText: '再次输入密码',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureConfirmPassword ? Icons.visibility_off : Icons.visibility, color: Colors.white38),
+                    onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                  ),
+                ),
+                validator: (value) {
+                  if (_passwordController.text.isEmpty) return null;
+                  if (value != _passwordController.text) return '两次输入的密码不一致';
+                  return null;
+                },
+              ),
+            ),
+          ],
+          _divider(),
+          _buildInfoItem(label: '一门深入', value: MeditationSessionManager().lockedPractice?.title ?? '未选择', showArrow: false),
         ],
       ),
     );
   }
+
+  Widget _divider() => const Divider(color: Colors.white10, height: 1, indent: 16, endIndent: 16);
 
   Widget _buildFormItem({required String label, required Widget child}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: const TextStyle(color: Colors.white70, fontSize: 15),
-            ),
-          ),
+          SizedBox(width: 80, child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 15))),
           Expanded(child: child),
         ],
       ),
     );
   }
 
-  Widget _buildInfoItem({
-    required String label,
-    required String value,
-    VoidCallback? onTap,
-    bool showArrow = true,
-  }) {
+  Widget _buildInfoItem({required String label, required String value, VoidCallback? onTap, bool showArrow = true}) {
     return InkWell(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            SizedBox(
-              width: 80,
-              child: Text(
-                label,
-                style: const TextStyle(color: Colors.white70, fontSize: 15),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                value,
-                style: TextStyle(
-                  color: value == '未绑定' ? Colors.white38 : Colors.white,
-                  fontSize: 15,
-                ),
-              ),
-            ),
-            if (showArrow)
-              const Icon(Icons.chevron_right, color: Colors.white24, size: 20),
+            SizedBox(width: 80, child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 15))),
+            Expanded(child: Text(value, style: TextStyle(color: value == '未绑定' ? Colors.white38 : Colors.white, fontSize: 15))),
+            if (showArrow) const Icon(Icons.chevron_right, color: Colors.white24, size: 20),
           ],
         ),
       ),
     );
-  }
-
-  String _maskPhoneNumber(String phone) {
-    if (phone.length < 7) return phone;
-    // 隐藏中间4位: 138****1234
-    return '${phone.substring(0, phone.length - 8)}****${phone.substring(phone.length - 4)}';
   }
 }
