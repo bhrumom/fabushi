@@ -1,0 +1,12 @@
+{
+  "name": "fabushi-staging-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test tests/staging-profile-api.spec.js",
+    "test:ui": "playwright test tests/profile-editing.spec.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0"
+  }
+}
