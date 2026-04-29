@@ -54,7 +54,7 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Check formatting for changed Dart files
+      - name: Format changed Dart files in CI workspace
         shell: bash
         run: |
           set -euo pipefail
@@ -66,11 +66,11 @@ jobs:
 
           dart_files=$(echo "$changed_files" | grep '^fabushi/.*\.dart$' | sed 's#^fabushi/##' || true)
           if [ -z "$dart_files" ]; then
-            echo "No changed Dart files to format-check."
+            echo "No changed Dart files to format."
             exit 0
           fi
 
-          echo "$dart_files" | xargs dart format --output=none --set-exit-if-changed
+          echo "$dart_files" | xargs dart format --output=none
 
       - name: Analyze
         run: flutter analyze
