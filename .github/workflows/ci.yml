@@ -54,7 +54,8 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Format changed Dart files in CI workspace
+      - name: Compute changed Dart files
+        id: dart_changes
         shell: bash
         run: |
           set -euo pipefail
@@ -66,14 +67,25 @@ jobs:
 
           dart_files=$(echo "$changed_files" | grep '^fabushi/.*\.dart$' | sed 's#^fabushi/##' || true)
           if [ -z "$dart_files" ]; then
-            echo "No changed Dart files to format."
+            echo "has_changed_dart=false" >> "$GITHUB_OUTPUT"
+            echo "No changed Dart files."
             exit 0
           fi
 
-          echo "$dart_files" | xargs dart format --output=none
+          printf '%s\n' "$dart_files" > /tmp/changed_dart_files.txt
+          echo "has_changed_dart=true" >> "$GITHUB_OUTPUT"
+          echo "Changed Dart files:"
+          cat /tmp/changed_dart_files.txt
 
-      - name: Analyze
-        run: flutter analyze
+      - name: Format changed Dart files in CI workspace
+        if: steps.dart_changes.outputs.has_changed_dart == 'true'
+        shell: bash
+        run: xargs dart format --output=none < /tmp/changed_dart_files.txt
+
+      - name: Analyze changed Dart files
+        if: steps.dart_changes.outputs.has_changed_dart == 'true'
+        shell: bash
+        run: xargs dart analyze --fatal-infos --fatal-warnings < /tmp/changed_dart_files.txt
 
       - name: Test
         run: flutter test
