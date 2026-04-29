@@ -12,6 +12,7 @@ import 'buddha_model_screen.dart';
 import 'sutra_reader_screen.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/achievement_popup.dart';
+import '../widgets/online_counter_widget.dart';
 import '../widgets/practice_selection_sheet.dart';
 import '../widgets/practice_leaderboard_sheet.dart';
 import '../widgets/reflection_dialog.dart';
@@ -785,14 +786,19 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               child: SafeArea(
                 child: Stack(
                   children: [
+                    // 顶部导航栏 (在线人数、排行、计时) - 绝对定位在顶部
                     Positioned(
                       top: 0,
                       left: 0,
                       right: 0,
                       child: _buildTopBar(),
                     ),
+                    
+                    // 中间点击计数区
                     if (_sessionManager.isInSession)
                       Center(child: _buildCenterContent()),
+                      
+                    // 底部控制区
                     Positioned(
                       left: 0,
                       right: 0,
@@ -818,6 +824,25 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
+          // 在线人数
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.36),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xFFD4AF37).withOpacity(0.22),
+              ),
+            ),
+            child: CompactOnlineCounterWidget(
+              countStream: _onlineCounterService.onlineCountStream,
+              initialCount: _onlineCounterService.currentCount,
+              icon: Icons.self_improvement,
+              color: const Color(0xFFD4AF37),
+            ),
+          ),
+          const SizedBox(width: 8),
+
           _buildTopIconButton(
             icon: Icons.leaderboard,
             tooltip: '修行排行',

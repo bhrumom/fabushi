@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'memory_manager.dart';
+import '../core/config/app_config.dart';
 
 /// 3D 模型资源缓存包装器
 /// 实现 ClearableCache 接口以便 MemoryManager 在内存警告时清理
@@ -74,9 +75,10 @@ class AssetLoaderService {
     // 确保已注册到 MemoryManager
     initialize();
     return await _loadAsset(
-      'models/buddha_model.model',
+      AppConfig.buddhaModelAssetPath,
       onProgress: onProgress,
       validateRemoteSize: true,
+      minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
     );
   }
   
@@ -93,6 +95,7 @@ class AssetLoaderService {
     void Function(double progress)? onProgress,
     bool forceRefresh = false,
     bool validateRemoteSize = false,
+    int? minExpectedBytes,
   }) async {
     // 1. 检查内存缓存
     if (!forceRefresh && _memoryCache.containsKey(fileName)) {
@@ -114,6 +117,7 @@ class AssetLoaderService {
       onProgress: onProgress,
       forceRefresh: forceRefresh,
       validateRemoteSize: validateRemoteSize,
+      minExpectedBytes: minExpectedBytes,
     );
     _loadingFutures[fileName] = loadFuture;
 
@@ -132,14 +136,24 @@ class AssetLoaderService {
     void Function(double progress)? onProgress,
     bool forceRefresh = false,
     bool validateRemoteSize = false,
+    int? minExpectedBytes,
   }) async {
     // 2.1 检查本地持久化文件（含完整性校验）
     if (!forceRefresh) {
       if (validateRemoteSize) {
-        await _invalidatePersistentCacheIfStale(fileName);
+        await _invalidatePersistentCacheIfStale(
+          fileName,
+          minExpectedBytes: minExpectedBytes,
+        );
       }
       final cached = await _loadFromPersistentStorage(fileName);
       if (cached != null && cached.isNotEmpty) {
+        _assertAssetSizeIsValid(
+          fileName,
+          cached.lengthInBytes,
+          minExpectedBytes: minExpectedBytes,
+          source: 'persistent-cache',
+        );
         debugPrint('✅ [AssetLoader] 从本地存储加载: $fileName (${cached.lengthInBytes} bytes)');
         _memoryCache[fileName] = cached;
         onProgress?.call(1.0);
@@ -157,7 +171,18 @@ class AssetLoaderService {
     
     // 4. 执行断点续传下载
     debugPrint('📥 [AssetLoader] 开始下载: $fileName');
-    final data = await _downloadResumable(fileName, onProgress: onProgress);
+    final data = await _downloadResumable(
+      fileName,
+      onProgress: onProgress,
+      minExpectedBytes: minExpectedBytes,
+    );
+
+    _assertAssetSizeIsValid(
+      fileName,
+      data.lengthInBytes,
+      minExpectedBytes: minExpectedBytes,
+      source: 'download',
+    );
     
     // 5. 更新内存缓存
     _memoryCache[fileName] = data;
@@ -212,12 +237,22 @@ class AssetLoaderService {
     return null;
   }
 
-  static Future<void> _invalidatePersistentCacheIfStale(String fileName) async {
+  static Future<void> _invalidatePersistentCacheIfStale(
+    String fileName, {
+    int? minExpectedBytes,
+  }) async {
     if (kIsWeb) return;
 
     try {
       final remoteSize = await _getRemoteFileSize(fileName);
       if (remoteSize == null || remoteSize <= 0) return;
+
+      _assertAssetSizeIsValid(
+        fileName,
+        remoteSize,
+        minExpectedBytes: minExpectedBytes,
+        source: 'remote-head',
+      );
 
       final dir = await _getStorageDirectory();
       final safeFileName = fileName.replaceAll('/', '_');
@@ -226,7 +261,8 @@ class AssetLoaderService {
 
       if (await file.exists()) {
         final localSize = await file.length();
-        if (localSize != remoteSize) {
+        if (localSize != remoteSize ||
+            (minExpectedBytes != null && localSize < minExpectedBytes)) {
           debugPrint(
             '♻️ [AssetLoader] 检测到佛像模型缓存过期，删除旧缓存: '
             '$fileName (local=$localSize, remote=$remoteSize)',
@@ -283,10 +319,15 @@ class AssetLoaderService {
   static Future<Uint8List> _downloadResumable(
     String fileName, {
     void Function(double progress)? onProgress,
+    int? minExpectedBytes,
   }) async {
     // Web 平台不支持文件操作，直接普通下载
     if (kIsWeb) {
-      return _downloadSimple(fileName, onProgress: onProgress);
+      return _downloadSimple(
+        fileName,
+        onProgress: onProgress,
+        minExpectedBytes: minExpectedBytes,
+      );
     }
 
     final url = '$cdnBaseUrl$fileName';
@@ -327,6 +368,12 @@ class AssetLoaderService {
       if (response.statusCode == 200 || response.statusCode == 206) {
         final streamContentLength = response.contentLength ?? expectedContentLength ?? 0;
         final totalLength = streamContentLength + downloadedBytes;
+        _assertAssetSizeIsValid(
+          fileName,
+          totalLength,
+          minExpectedBytes: minExpectedBytes,
+          source: 'response-length',
+        );
         debugPrint('📥 [AssetLoader] 总大小: $totalLength bytes (Stream: ${response.contentLength}, HEAD: $expectedContentLength)');
 
         // 如果是 200 OK，说明服务器不支持 Range 或返回了全部内容，需要重置
@@ -364,6 +411,13 @@ class AssetLoaderService {
           throw Exception('下载不完整: 已下载 $downloadedSize / $totalLength bytes');
         }
 
+        _assertAssetSizeIsValid(
+          fileName,
+          downloadedSize,
+          minExpectedBytes: minExpectedBytes,
+          source: 'downloaded-file',
+        );
+
         // 下载完成，重命名为正式文件
         if (await finalFile.exists()) {
           await finalFile.delete();
@@ -397,6 +451,7 @@ class AssetLoaderService {
   static Future<Uint8List> _downloadSimple(
     String fileName, {
     void Function(double progress)? onProgress,
+    int? minExpectedBytes,
   }) async {
     final url = '$cdnBaseUrl$fileName';
     try {
@@ -406,6 +461,12 @@ class AssetLoaderService {
       
       if (response.statusCode == 200) {
         final total = response.contentLength ?? 0;
+        _assertAssetSizeIsValid(
+          fileName,
+          total,
+          minExpectedBytes: minExpectedBytes,
+          source: 'response-length',
+        );
         int received = 0;
         final bytes = <int>[];
         
@@ -416,9 +477,16 @@ class AssetLoaderService {
             onProgress?.call(received / total);
           }
         }
-        
+
         client.close();
-        return Uint8List.fromList(bytes);
+        final data = Uint8List.fromList(bytes);
+        _assertAssetSizeIsValid(
+          fileName,
+          data.lengthInBytes,
+          minExpectedBytes: minExpectedBytes,
+          source: 'download',
+        );
+        return data;
       } else {
         client.close();
         throw Exception('下载失败: HTTP ${response.statusCode}');
@@ -432,11 +500,45 @@ class AssetLoaderService {
          final response = await http.get(Uri.parse(fallbackUrl));
          if (response.statusCode == 200) {
             onProgress?.call(1.0);
+            _assertAssetSizeIsValid(
+              fileName,
+              response.bodyBytes.length,
+              minExpectedBytes: minExpectedBytes,
+              source: 'fallback-download',
+            );
             return response.bodyBytes;
          }
        }
        rethrow;
     }
+  }
+
+  static void _assertAssetSizeIsValid(
+    String fileName,
+    int sizeBytes, {
+    int? minExpectedBytes,
+    required String source,
+  }) {
+    if (minExpectedBytes == null || sizeBytes <= 0) return;
+    if (sizeBytes < minExpectedBytes) {
+      throw Exception(
+        '资源大小异常($source): $fileName '
+        '当前 ${_formatBytes(sizeBytes)}，'
+        '小于预期最小值 ${_formatBytes(minExpectedBytes)}。'
+        'R2 可能上传了错误文件。',
+      );
+    }
+  }
+
+  static String _formatBytes(int bytes) {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    double value = bytes.toDouble();
+    int unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex++;
+    }
+    return '${value.toStringAsFixed(unitIndex == 0 ? 0 : 1)} ${units[unitIndex]}';
   }
   
   /// 强制重新下载并清除旧缓存

@@ -18,6 +18,19 @@ int _asInt(dynamic value) {
 
 String _asString(dynamic value) => value?.toString() ?? '';
 
+String? _emptyToNull(dynamic value) {
+  final text = value?.toString();
+  return text == null || text.isEmpty ? null : text;
+}
+
+int? _nullableInt(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.round();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
+
 /// 修行统计数据模型
 class PracticeStats {
   final TodayStats today;
@@ -161,6 +174,10 @@ class PracticeRecord {
   final int duration;
   final int chantCount;
   final String recordDate;
+  final String? localTime;
+  final int? timezoneOffsetMinutes;
+  final DateTime? startTime;
+  final DateTime? endTime;
   final bool isManual;
   final String? notes;
   final DateTime? createdAt;
@@ -172,6 +189,10 @@ class PracticeRecord {
     required this.duration,
     required this.chantCount,
     required this.recordDate,
+    this.localTime,
+    this.timezoneOffsetMinutes,
+    this.startTime,
+    this.endTime,
     required this.isManual,
     this.notes,
     this.createdAt,
@@ -190,6 +211,16 @@ class PracticeRecord {
       duration: _asInt(json['duration']),
       chantCount: _asInt(json['chant_count'] ?? json['chantCount']),
       recordDate: _asString(json['record_date'] ?? json['recordDate']),
+      localTime: _emptyToNull(json['local_time'] ?? json['localTime']),
+      timezoneOffsetMinutes: _nullableInt(
+        json['timezone_offset_minutes'] ?? json['timezoneOffsetMinutes'],
+      ),
+      startTime: DateTime.tryParse(
+        _asString(json['start_time'] ?? json['startTime']),
+      ),
+      endTime: DateTime.tryParse(
+        _asString(json['end_time'] ?? json['endTime']),
+      ),
       isManual:
           json['is_manual'] == true ||
           json['is_manual'] == 1 ||
@@ -202,6 +233,8 @@ class PracticeRecord {
   }
 
   String get sourceLabel => isManual ? '补录' : '禅室';
+  String get dateTimeLabel =>
+      localTime?.isNotEmpty == true ? '$recordDate $localTime' : recordDate;
 }
 
 /// 发愿目标
@@ -668,6 +701,7 @@ class PracticeStatsService extends ChangeNotifier {
     required int chantCount,
     int duration = 0,
     String? recordDate,
+    String? localTime,
     String? notes,
   }) async {
     return _saveRecord(
@@ -677,6 +711,7 @@ class PracticeStatsService extends ChangeNotifier {
       duration: duration,
       isManual: true,
       recordDate: recordDate,
+      localTime: localTime,
       notes: notes,
     );
   }
@@ -689,6 +724,7 @@ class PracticeStatsService extends ChangeNotifier {
     required int duration,
     DateTime? startTime,
     DateTime? endTime,
+    String? localTime,
     String? notes,
   }) async {
     final dateSource = endTime ?? startTime ?? DateTime.now();
@@ -701,6 +737,7 @@ class PracticeStatsService extends ChangeNotifier {
       recordDate: _formatRecordDate(dateSource),
       startTime: startTime,
       endTime: endTime,
+      localTime: localTime ?? _formatLocalTime(dateSource),
       notes: notes,
     );
   }
@@ -714,6 +751,7 @@ class PracticeStatsService extends ChangeNotifier {
     String? recordDate,
     DateTime? startTime,
     DateTime? endTime,
+    String? localTime,
     String? notes,
   }) async {
     _lastWriteQueued = false;
@@ -726,6 +764,9 @@ class PracticeStatsService extends ChangeNotifier {
       'duration': duration,
       'isManual': isManual,
       'recordDate': recordDate ?? _formatRecordDate(DateTime.now()),
+      'localTime':
+          localTime ?? _formatLocalTime(endTime ?? startTime ?? DateTime.now()),
+      'timezoneOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
       'notes': notes ?? '',
       if (startTime != null) 'startTime': startTime.toIso8601String(),
       if (endTime != null) 'endTime': endTime.toIso8601String(),
@@ -752,6 +793,11 @@ class PracticeStatsService extends ChangeNotifier {
     return '${date.year.toString().padLeft(4, '0')}-'
         '${date.month.toString().padLeft(2, '0')}-'
         '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formatLocalTime(DateTime date) {
+    return '${date.hour.toString().padLeft(2, '0')}:'
+        '${date.minute.toString().padLeft(2, '0')}';
   }
 
   /// 加载所有云端数据

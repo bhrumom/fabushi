@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/practice_stats_service.dart';
+import 'practice_leaderboard_sheet.dart';
 
 /// 修行统计卡片 - 一念计数风格
 class PracticeStatsCard extends StatefulWidget {
@@ -178,11 +179,7 @@ class _PracticeStatsCardState extends State<PracticeStatsCard> {
               const SizedBox(width: 12),
               Expanded(
                 child: TextButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(const SnackBar(content: Text('修行榜单功能开发中')));
-                  },
+                  onPressed: () => PracticeLeaderboardSheet.show(context),
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.white,
                     backgroundColor: Colors.white.withValues(alpha: 0.1),
