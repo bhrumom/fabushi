@@ -6,8 +6,6 @@ import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
 import '../core/design_system/app_theme.dart';
 import '../models/auth_model.dart';
-import '../models/user_model.dart';
-import '../services/auth_service.dart';
 import '../services/http_service.dart';
 import '../services/meditation_session_manager.dart';
 
@@ -148,13 +146,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       if (response.statusCode == 200 && data['success'] == true) {
         final token = data['token'] as String?;
-        if (token != null && data['user'] is Map) {
-          await AuthService().setAuth(
-            token,
-            UserModel.fromJson(Map<String, dynamic>.from(data['user'] as Map)),
-          );
+        final userJson = data['user'];
+        final updatedUsername = userJson is Map
+            ? (userJson['username'] as String? ?? _usernameController.text.trim())
+            : _usernameController.text.trim();
+
+        final authModel = context.read<AuthModel>();
+        if (token != null) {
+          await authModel.loginWithToken(token, updatedUsername);
+        } else {
+          await authModel.refreshUserInfo();
         }
-        await context.read<AuthModel>().refreshUserInfo();
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('个人资料更新成功'), backgroundColor: Colors.green),
