@@ -12,7 +12,7 @@ on:
 
 jobs:
   flutter:
-    name: Flutter analyze, test, and web build
+    name: Flutter analyze, test, build, and smoke test
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -52,3 +52,22 @@ jobs:
 
       - name: Build web
         run: flutter build web --release
+
+      - name: Smoke test web app boot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8080 --directory build/web > /tmp/fabushi-web.log 2>&1 &
+          server_pid=$!
+          trap 'kill $server_pid' EXIT
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/ > /tmp/fabushi-index.html; then
+              break
+            fi
+            sleep 1
+          done
+
+          test -s /tmp/fabushi-index.html
+          google-chrome --headless=new --no-sandbox --disable-dev-shm-usage --virtual-time-budget=10000 --screenshot=/tmp/fabushi-smoke.png http://127.0.0.1:8080/
+          test -s /tmp/fabushi-smoke.png
