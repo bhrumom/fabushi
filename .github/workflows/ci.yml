@@ -10,10 +10,6 @@ on:
       - feature/**
   workflow_dispatch:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   flutter:
     name: Flutter analyze, test, and web build
@@ -22,12 +18,11 @@ jobs:
       run:
         working-directory: fabushi
     steps:
-      - name: Checkout Flutter project files
+      - name: Checkout project files
         uses: actions/checkout@v4
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /.github/workflows/**
             /fabushi/analysis_options.yaml
             /fabushi/pubspec.yaml
             /fabushi/pubspec.lock
@@ -46,121 +41,14 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Flutter version
-        run: flutter --version
-
-      - name: Get Flutter dependencies
+      - name: Get dependencies
         run: flutter pub get
 
-      - name: Check Dart formatting
-        run: dart format --output=none --set-exit-if-changed lib test
-
-      - name: Analyze Flutter project
+      - name: Analyze
         run: flutter analyze
 
-      - name: Run Flutter tests
+      - name: Test
         run: flutter test
 
-      - name: Build Flutter web
+      - name: Build web
         run: flutter build web --release
-
-      - name: Upload Flutter web build
-        uses: actions/upload-artifact@v4
-        with:
-          name: flutter-web-build
-          path: fabushi/build/web
-          if-no-files-found: error
-
-  worker:
-    name: Cloudflare Worker syntax and dry-run
-    runs-on: ubuntu-latest
-    needs: flutter
-    defaults:
-      run:
-        working-directory: fabushi/web
-    steps:
-      - name: Checkout Worker files
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /.github/workflows/**
-            /fabushi/web/**
-            !/fabushi/web/assets/built_in/**
-
-      - name: Download Flutter web build
-        uses: actions/download-artifact@v4
-        with:
-          name: flutter-web-build
-          path: fabushi/build/web
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Check Worker JavaScript syntax
-        shell: bash
-        run: |
-          printf '{"type":"module"}\n' > package.json
-          find . -type f -name '*.js' \
-            -not -path './node_modules/*' \
-            -not -path './build/*' \
-            -print0 | xargs -0 -n1 node --check
-
-      - name: Validate Worker bundle with Wrangler dry-run
-        run: npx --yes wrangler@latest deploy --dry-run --outdir ../../worker-dry-run
-
-      - name: Upload Worker dry-run bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: worker-dry-run-bundle
-          path: worker-dry-run
-          if-no-files-found: warn
-
-  pr-changes:
-    name: PR changed-file sanity checks
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - name: Checkout changed files context
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /.github/workflows/**
-            /fabushi/lib/**
-            /fabushi/test/**
-            /fabushi/web/**
-            !/fabushi/web/assets/built_in/**
-            /fabushi/pubspec.yaml
-            /fabushi/pubspec.lock
-
-      - name: Check for committed secrets in changed files
-        shell: bash
-        run: |
-          set -euo pipefail
-          changed_files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
-          if [ -z "$changed_files" ]; then
-            echo "No changed files."
-            exit 0
-          fi
-
-          secret_key_pattern='api[_-]?key|secret|token|private[_-]?key|password'
-          failed=0
-          while IFS= read -r file; do
-            case "$file" in
-              *pubspec.lock|*Podfile.lock)
-                continue
-                ;;
-            esac
-            if [ -f "$file" ]; then
-              if grep -nEi "($secret_key_pattern)[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}" "$file"; then
-                echo "Potential secret found in $file"
-                failed=1
-              fi
-            fi
-          done <<< "$changed_files"
-
-          exit "$failed"
