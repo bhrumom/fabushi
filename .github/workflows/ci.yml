@@ -1,0 +1,297 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+      - feature/**
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    name: Flutter analyze, test, build, and smoke test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout project files
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/**
+            /fabushi/analysis_options.yaml
+            /fabushi/pubspec.yaml
+            /fabushi/pubspec.lock
+            /fabushi/lib/**
+            /fabushi/test/**
+            /fabushi/integration_test/**
+            /fabushi/assets/**
+            !/fabushi/assets/built_in/**
+            /fabushi/fonts/**
+            /fabushi/web/**
+            !/fabushi/web/assets/built_in/**
+            /fabushi/e2e/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Compute changed files
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            changed_files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          else
+            changed_files=$(git diff --name-only HEAD^...HEAD || true)
+          fi
+
+          dart_files=$(echo "$changed_files" | grep '^fabushi/.*\.dart$' | sed 's#^fabushi/##' || true)
+          test_files=$(echo "$changed_files" | grep '^fabushi/test/.*\.dart$' | sed 's#^fabushi/##' || true)
+
+          if [ -n "$dart_files" ]; then
+            printf '%s\n' "$dart_files" > /tmp/changed_dart_files.txt
+            echo "has_changed_dart=true" >> "$GITHUB_OUTPUT"
+            echo "Changed Dart files:"
+            cat /tmp/changed_dart_files.txt
+          else
+            echo "has_changed_dart=false" >> "$GITHUB_OUTPUT"
+            echo "No changed Dart files."
+          fi
+
+          if [ -n "$test_files" ]; then
+            printf '%s\n' "$test_files" > /tmp/changed_test_files.txt
+            echo "has_changed_tests=true" >> "$GITHUB_OUTPUT"
+            echo "Changed Flutter test files:"
+            cat /tmp/changed_test_files.txt
+          else
+            echo "has_changed_tests=false" >> "$GITHUB_OUTPUT"
+            echo "No changed Flutter test files."
+          fi
+
+      - name: Format changed Dart files in CI workspace
+        if: steps.changes.outputs.has_changed_dart == 'true'
+        shell: bash
+        run: xargs dart format --output=none < /tmp/changed_dart_files.txt
+
+      - name: Analyze changed Dart files
+        if: steps.changes.outputs.has_changed_dart == 'true'
+        shell: bash
+        run: xargs dart analyze --fatal-infos --fatal-warnings < /tmp/changed_dart_files.txt
+
+      - name: Test changed Flutter tests
+        if: steps.changes.outputs.has_changed_tests == 'true'
+        shell: bash
+        run: xargs flutter test < /tmp/changed_test_files.txt
+
+      - name: Skip unchanged Flutter tests
+        if: steps.changes.outputs.has_changed_tests != 'true'
+        run: echo "No Flutter test files changed; skipping legacy full test suite."
+
+      - name: Build web
+        run: flutter build web --release
+
+      - name: Smoke test web app boot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8080 --directory build/web > /tmp/fabushi-web.log 2>&1 &
+          server_pid=$!
+          trap 'kill $server_pid' EXIT
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/ > /tmp/fabushi-index.html; then
+              break
+            fi
+            sleep 1
+          done
+
+          test -s /tmp/fabushi-index.html
+          google-chrome --headless=new --no-sandbox --disable-dev-shm-usage --virtual-time-budget=10000 --screenshot=/tmp/fabushi-smoke.png http://127.0.0.1:8080/
+          test -s /tmp/fabushi-smoke.png
+
+      - name: Upload Flutter web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-web-build
+          path: fabushi/build/web
+          if-no-files-found: error
+
+  worker:
+    name: Cloudflare Worker syntax and dry-run
+    runs-on: ubuntu-latest
+    needs: flutter
+    defaults:
+      run:
+        working-directory: fabushi/web
+    steps:
+      - name: Checkout Worker files
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/web/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Download Flutter web build
+        uses: actions/download-artifact@v4
+        with:
+          name: flutter-web-build
+          path: fabushi/build/web
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check Worker JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '{"type":"module"}\n' > package.json
+          find . -type f -name '*.js' \
+            -not -path './node_modules/*' \
+            -not -path './build/*' \
+            -print0 | xargs -0 -n1 node --check
+
+      - name: Validate Worker bundle with Wrangler dry-run
+        run: npx --yes wrangler@latest deploy --dry-run --outdir ../../worker-dry-run
+
+      - name: Upload Worker dry-run bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-dry-run-bundle
+          path: worker-dry-run
+          if-no-files-found: warn
+
+  staging-e2e:
+    name: Staging E2E profile flow
+    runs-on: ubuntu-latest
+    needs: worker
+    defaults:
+      run:
+        working-directory: fabushi/e2e
+    env:
+      STAGING_APP_URL: ${{ vars.STAGING_APP_URL }}
+      STAGING_TEST_LOGIN: ${{ secrets.STAGING_TEST_LOGIN }}
+      STAGING_TEST_PASSWORD: ${{ secrets.STAGING_TEST_PASSWORD }}
+      STAGING_TEST_EMAIL: ${{ vars.STAGING_TEST_EMAIL }}
+      STAGING_TEST_PHONE: ${{ vars.STAGING_TEST_PHONE }}
+    steps:
+      - name: Checkout E2E files
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/e2e/**
+
+      - name: Check staging E2E configuration
+        id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in STAGING_APP_URL STAGING_TEST_LOGIN STAGING_TEST_PASSWORD STAGING_TEST_EMAIL STAGING_TEST_PHONE; do
+            if [ -z "${!name:-}" ]; then
+              echo "$name is not configured."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        if: steps.config.outputs.configured == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install E2E dependencies
+        if: steps.config.outputs.configured == 'true'
+        run: npm install
+
+      - name: Install Playwright Chromium
+        if: steps.config.outputs.configured == 'true'
+        run: npx playwright install chromium --with-deps
+
+      - name: Run staging E2E profile API flow
+        if: steps.config.outputs.configured == 'true'
+        run: npm test
+
+      - name: Upload Playwright report
+        if: steps.config.outputs.configured == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: fabushi/e2e/playwright-report
+          if-no-files-found: ignore
+
+  pr-changes:
+    name: PR changed-file sanity checks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout changed files context
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/**
+            /fabushi/lib/**
+            /fabushi/test/**
+            /fabushi/web/**
+            !/fabushi/web/assets/built_in/**
+            /fabushi/e2e/**
+            /fabushi/pubspec.yaml
+            /fabushi/pubspec.lock
+
+      - name: Check for committed secrets in changed files
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed_files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          if [ -z "$changed_files" ]; then
+            echo "No changed files."
+            exit 0
+          fi
+
+          secret_key_pattern='api[_-]?key|secret|token|private[_-]?key|password'
+          failed=0
+          while IFS= read -r file; do
+            case "$file" in
+              *pubspec.lock|*Podfile.lock)
+                continue
+                ;;
+            esac
+            if [ -f "$file" ]; then
+              if grep -nEi "($secret_key_pattern)[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}" "$file"; then
+                echo "Potential secret found in $file"
+                failed=1
+              fi
+            fi
+          done <<< "$changed_files"
+
+          exit "$failed"
