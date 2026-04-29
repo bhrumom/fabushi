@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../core/config/app_config.dart';
 import '../core/design_system/app_theme.dart';
 import '../models/auth_model.dart';
@@ -148,7 +149,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         final token = data['token'] as String?;
         final userJson = data['user'];
         final updatedUsername = userJson is Map
-            ? (userJson['username'] as String? ?? _usernameController.text.trim())
+            ? (userJson['username'] as String? ??
+                  _usernameController.text.trim())
             : _usernameController.text.trim();
 
         final authModel = context.read<AuthModel>();
@@ -160,7 +162,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('个人资料更新成功'), backgroundColor: Colors.green),
+            const SnackBar(
+              content: Text('个人资料更新成功'),
+              backgroundColor: Colors.green,
+            ),
           );
           Navigator.pop(context);
         }
@@ -187,7 +192,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E1E1E),
         elevation: 0,
-        title: const Text('编辑资料', style: TextStyle(color: Colors.white, fontSize: 17)),
+        title: const Text(
+          '编辑资料',
+          style: TextStyle(color: Colors.white, fontSize: 17),
+        ),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
@@ -200,9 +208,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(color: AppTheme.primaryColor, strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      color: AppTheme.primaryColor,
+                      strokeWidth: 2,
+                    ),
                   )
-                : const Text('保存', style: TextStyle(color: AppTheme.primaryColor, fontSize: 15, fontWeight: FontWeight.w500)),
+                : const Text(
+                    '保存',
+                    style: TextStyle(
+                      color: AppTheme.primaryColor,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
           ),
         ],
       ),
@@ -235,16 +253,29 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white24, width: 2),
-                  gradient: (_avatarController.text.isEmpty && _pendingAvatarBase64 == null)
-                      ? const LinearGradient(colors: [Color(0xFFFF6B6B), Color(0xFFFFE66D)])
+                  gradient:
+                      (_avatarController.text.isEmpty &&
+                          _pendingAvatarBase64 == null)
+                      ? const LinearGradient(
+                          colors: [Color(0xFFFF6B6B), Color(0xFFFFE66D)],
+                        )
                       : null,
                   image: _buildAvatarImage(),
                 ),
-                child: (_avatarController.text.isEmpty && _pendingAvatarBase64 == null)
+                child:
+                    (_avatarController.text.isEmpty &&
+                        _pendingAvatarBase64 == null)
                     ? Center(
                         child: Text(
-                          (user?.username.isNotEmpty == true ? user!.username[0] : '?').toUpperCase(),
-                          style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
+                          (user?.username.isNotEmpty == true
+                                  ? user!.username[0]
+                                  : '?')
+                              .toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 36,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       )
                     : null,
@@ -257,15 +288,25 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   decoration: BoxDecoration(
                     color: AppTheme.primaryColor,
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFF121212), width: 2),
+                    border: Border.all(
+                      color: const Color(0xFF121212),
+                      width: 2,
+                    ),
                   ),
-                  child: const Icon(Icons.camera_alt, size: 14, color: Colors.black),
+                  child: const Icon(
+                    Icons.camera_alt,
+                    size: 14,
+                    color: Colors.black,
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          const Text('点击从本地选择头像', style: TextStyle(color: Colors.white54, fontSize: 12)),
+          const Text(
+            '点击从本地选择头像',
+            style: TextStyle(color: Colors.white54, fontSize: 12),
+          ),
         ],
       ),
     );
@@ -279,7 +320,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       );
     }
     if (_avatarController.text.isNotEmpty) {
-      return DecorationImage(image: NetworkImage(_avatarController.text), fit: BoxFit.cover);
+      return DecorationImage(
+        image: NetworkImage(_avatarController.text),
+        fit: BoxFit.cover,
+      );
     }
     return null;
   }
@@ -287,7 +331,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget _buildFormSection(User? user) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Column(
         children: [
           _buildFormItem(
@@ -295,12 +342,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             child: TextFormField(
               controller: _usernameController,
               style: const TextStyle(color: Colors.white, fontSize: 15),
-              decoration: const InputDecoration(border: InputBorder.none, hintText: '请输入用户名', hintStyle: TextStyle(color: Colors.white38)),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: '请输入用户名',
+                hintStyle: TextStyle(color: Colors.white38),
+              ),
               validator: (value) {
                 final username = value?.trim() ?? '';
                 if (username.isEmpty) return '请输入用户名';
-                if (username.contains('@') || username.contains(RegExp(r'\s'))) return '用户名不能包含 @ 或空格';
-                if (username.length < 2 || username.length > 32) return '用户名长度需为 2-32 个字符';
+                if (username.contains('@') ||
+                    username.contains(RegExp(r'\s'))) {
+                  return '用户名不能包含 @ 或空格';
+                }
+                if (username.length < 2 || username.length > 32) {
+                  return '用户名长度需为 2-32 个字符';
+                }
                 return null;
               },
             ),
@@ -312,11 +368,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               style: const TextStyle(color: Colors.white, fontSize: 15),
-              decoration: const InputDecoration(border: InputBorder.none, hintText: '请输入邮箱', hintStyle: TextStyle(color: Colors.white38)),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: '请输入邮箱',
+                hintStyle: TextStyle(color: Colors.white38),
+              ),
               validator: (value) {
                 final email = value?.trim() ?? '';
                 if (email.isEmpty) return null;
-                if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) return '邮箱格式不正确';
+                if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+                  return '邮箱格式不正确';
+                }
                 return null;
               },
             ),
@@ -328,11 +390,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               controller: _phoneController,
               keyboardType: TextInputType.phone,
               style: const TextStyle(color: Colors.white, fontSize: 15),
-              decoration: const InputDecoration(border: InputBorder.none, hintText: '请输入手机号', hintStyle: TextStyle(color: Colors.white38)),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: '请输入手机号',
+                hintStyle: TextStyle(color: Colors.white38),
+              ),
               validator: (value) {
                 final phone = value?.trim() ?? '';
                 if (phone.isEmpty) return null;
-                if (!RegExp(r'^\+?[0-9]{6,20}$').hasMatch(phone)) return '手机号格式不正确';
+                if (!RegExp(r'^\+?[0-9]{6,20}$').hasMatch(phone)) {
+                  return '手机号格式不正确';
+                }
                 return null;
               },
             ),
@@ -350,8 +418,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   hintText: '设置后可用账号密码登录',
                   hintStyle: const TextStyle(color: Colors.white38),
                   suffixIcon: IconButton(
-                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.white38),
-                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      color: Colors.white38,
+                    ),
+                    onPressed: () => setState(
+                      () => _obscurePassword = !_obscurePassword,
+                    ),
                   ),
                 ),
                 validator: (value) {
@@ -373,8 +448,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   hintText: '再次输入密码',
                   hintStyle: const TextStyle(color: Colors.white38),
                   suffixIcon: IconButton(
-                    icon: Icon(_obscureConfirmPassword ? Icons.visibility_off : Icons.visibility, color: Colors.white38),
-                    onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                    icon: Icon(
+                      _obscureConfirmPassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      color: Colors.white38,
+                    ),
+                    onPressed: () => setState(
+                      () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                    ),
                   ),
                 ),
                 validator: (value) {
@@ -386,36 +468,67 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
           ],
           _divider(),
-          _buildInfoItem(label: '一门深入', value: MeditationSessionManager().lockedPractice?.title ?? '未选择', showArrow: false),
+          _buildInfoItem(
+            label: '一门深入',
+            value: MeditationSessionManager().lockedPractice?.title ?? '未选择',
+            showArrow: false,
+          ),
         ],
       ),
     );
   }
 
-  Widget _divider() => const Divider(color: Colors.white10, height: 1, indent: 16, endIndent: 16);
+  Widget _divider() =>
+      const Divider(color: Colors.white10, height: 1, indent: 16, endIndent: 16);
 
   Widget _buildFormItem({required String label, required Widget child}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
-          SizedBox(width: 80, child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 15))),
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 15),
+            ),
+          ),
           Expanded(child: child),
         ],
       ),
     );
   }
 
-  Widget _buildInfoItem({required String label, required String value, VoidCallback? onTap, bool showArrow = true}) {
+  Widget _buildInfoItem({
+    required String label,
+    required String value,
+    VoidCallback? onTap,
+    bool showArrow = true,
+  }) {
     return InkWell(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            SizedBox(width: 80, child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 15))),
-            Expanded(child: Text(value, style: TextStyle(color: value == '未绑定' ? Colors.white38 : Colors.white, fontSize: 15))),
-            if (showArrow) const Icon(Icons.chevron_right, color: Colors.white24, size: 20),
+            SizedBox(
+              width: 80,
+              child: Text(
+                label,
+                style: const TextStyle(color: Colors.white70, fontSize: 15),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                value,
+                style: TextStyle(
+                  color: value == '未绑定' ? Colors.white38 : Colors.white,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+            if (showArrow)
+              const Icon(Icons.chevron_right, color: Colors.white24, size: 20),
           ],
         ),
       ),
