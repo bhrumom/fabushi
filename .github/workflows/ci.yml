@@ -4,10 +4,20 @@ on:
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'fabushi/docs/**'
+      - '.github/workflows/**'
   push:
     branches:
       - main
       - feature/**
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'fabushi/docs/**'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 concurrency:
