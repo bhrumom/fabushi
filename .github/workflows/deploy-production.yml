@@ -88,7 +88,7 @@ jobs:
     needs: build-artifact
     runs-on: ubuntu-latest
     environment:
-      name: staging
+      name: development
       url: ${{ vars.STAGING_APP_URL }}
     defaults:
       run:
