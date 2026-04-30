@@ -126,11 +126,58 @@ async function fillByPlaceholderOrTap(page, placeholder, value, yRatio) {
   await page.keyboard.type(value, { delay: 10 });
 }
 
+async function clickAgreementNearLoginButton(page) {
+  const loginTextBox = await visibleBox(page.getByText('🔐 登录', { exact: true }).first(), 1200);
+  const size = viewport(page);
+
+  if (loginTextBox) {
+    const loginCenterX = loginTextBox.x + loginTextBox.width / 2;
+    const loginCenterY = loginTextBox.y + loginTextBox.height / 2;
+    await page.mouse.click(Math.max(8, loginCenterX - 118), loginCenterY + 56);
+    await page.waitForTimeout(700);
+    await enableFlutterSemantics(page);
+    return true;
+  }
+
+  const passwordBox = await visibleBox(page.getByPlaceholder(/请输入密码|密码|password/i).first(), 1000);
+  if (passwordBox) {
+    await page.mouse.click(
+      Math.max(8, size.width / 2 - 118),
+      passwordBox.y + passwordBox.height + 106
+    );
+    await page.waitForTimeout(700);
+    await enableFlutterSemantics(page);
+    return true;
+  }
+
+  return false;
+}
+
 async function acceptAgreement(page) {
   await enableFlutterSemantics(page);
 
-  // Prefer semantic checkboxes. Flutter Web may expose the checkbox either as an
-  // ARIA checkbox or as a generic semantics node depending on renderer/browser.
+  // The text label itself is not tappable in Flutter; the checkbox to its left
+  // owns the GestureDetector. Prefer deriving the checkbox location from visible
+  // agreement text instead of trusting Flutter Web's occasionally imprecise
+  // generic semantics nodes.
+  const agreementLabelLocators = [
+    page.getByText('我已阅读并同意', { exact: true }).first(),
+    page.getByText(/我已阅读并同意|我已阅读|同意.*协议|同意.*隐私|用户协议|隐私政策/i).first(),
+    page.getByText(/agree|agreement|terms|privacy/i).first()
+  ];
+
+  for (const label of agreementLabelLocators) {
+    const box = await visibleBox(label, 1200);
+    if (box) {
+      await page.mouse.click(Math.max(8, box.x - 18), box.y + box.height / 2);
+      await page.waitForTimeout(700);
+      await enableFlutterSemantics(page);
+      return;
+    }
+  }
+
+  if (await clickAgreementNearLoginButton(page)) return;
+
   const checkboxLocators = [
     page.getByRole('checkbox', { name: /我已阅读|同意|协议|隐私|agree|agreement|terms|privacy/i }).first(),
     page.getByRole('checkbox').first(),
@@ -138,46 +185,17 @@ async function acceptAgreement(page) {
   ];
 
   for (const locator of checkboxLocators) {
-    if (await clickVisible(locator, 1200)) {
+    if (await clickVisible(locator, 1000)) {
       await page.waitForTimeout(700);
       await enableFlutterSemantics(page);
       return;
     }
   }
 
-  // The visible agreement text is often longer than "我已阅读并同意" because it
-  // includes links to the user agreement and privacy policy. Use regex matching
-  // and a short wait so missing semantics does not consume the full test timeout.
-  const agreementLabelLocators = [
-    page.getByText(/我已阅读并同意|我已阅读|同意.*协议|同意.*隐私|用户协议|隐私政策/i).first(),
-    page.getByText(/agree|agreement|terms|privacy/i).first()
-  ];
-
-  for (const label of agreementLabelLocators) {
-    const box = await visibleBox(label, 1500);
-    if (box) {
-      await page.mouse.click(Math.max(8, box.x - 24), box.y + box.height / 2);
-      await page.waitForTimeout(700);
-      await enableFlutterSemantics(page);
-      return;
-    }
-  }
-
-  // Last semantic fallback: derive the checkbox position from the password field,
-  // which is more stable than absolute viewport coordinates across desktop and
-  // mobile Playwright projects.
-  const passwordBox = await visibleBox(page.getByPlaceholder(/请输入密码|密码|password/i).first(), 1000);
-  if (passwordBox) {
-    await page.mouse.click(
-      Math.max(8, passwordBox.x + 18),
-      passwordBox.y + passwordBox.height + 42
-    );
-    await page.waitForTimeout(700);
-    await enableFlutterSemantics(page);
-    return;
-  }
-
-  await tap(page, 0.34, 0.63);
+  const size = viewport(page);
+  await page.mouse.click(Math.max(8, size.width / 2 - 118), size.height * 0.62);
+  await page.waitForTimeout(700);
+  await enableFlutterSemantics(page);
 }
 
 async function submitLogin(page) {
