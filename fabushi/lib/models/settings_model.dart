@@ -1,12 +1,15 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../l10n/app_localizations.dart';
 
 // 国家常量定义
 const String COUNTRY_ALL = 'ALL';
 const List<String> SUPPORTED_COUNTRIES = [
   'CN', // 中国
   'US', // 美国
-  'IN', // 印度
+  'IN', // 印国
   'BR', // 巴西
   'RU', // 俄罗斯
   'NG', // 尼日利亚
@@ -19,6 +22,7 @@ class SettingsModel extends ChangeNotifier {
   int _wifiSignalStrength = 80; // WiFi信号强度（百分比）
   bool _notificationsEnabled = true;
   List<String> _selectedCountries = []; // 选中的国家列表
+  String _localePreference = AppLocalizations.systemLocaleCode; // 应用显示语言
 
   // 获取深色模式状态
   bool get darkMode => _darkMode;
@@ -35,6 +39,12 @@ class SettingsModel extends ChangeNotifier {
   // 获取选中的国家列表
   List<String> get selectedCountries => _selectedCountries;
 
+  // 获取应用语言偏好，system 表示跟随系统
+  String get localePreference => _localePreference;
+
+  // 获取 MaterialApp 可直接使用的 Locale；null 表示跟随系统
+  Locale? get appLocale => AppLocalizations.localeFromPreference(_localePreference);
+
   // 构造函数
   SettingsModel() {
     _loadSettings();
@@ -49,6 +59,11 @@ class SettingsModel extends ChangeNotifier {
     _wifiSignalStrength = prefs.getInt('wifiSignalStrength') ?? 80;
     _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
     _selectedCountries = prefs.getStringList('selectedCountries') ?? [];
+    final savedLocalePreference =
+        prefs.getString('localePreference') ?? AppLocalizations.systemLocaleCode;
+    _localePreference = AppLocalizations.isSupportedPreference(savedLocalePreference)
+        ? savedLocalePreference
+        : AppLocalizations.systemLocaleCode;
 
     // 加载国家发送配置
     _selectedCountry = prefs.getString('selectedCountry') ?? COUNTRY_ALL;
@@ -68,6 +83,7 @@ class SettingsModel extends ChangeNotifier {
     await prefs.setInt('wifiSignalStrength', _wifiSignalStrength);
     await prefs.setBool('notificationsEnabled', _notificationsEnabled);
     await prefs.setStringList('selectedCountries', _selectedCountries);
+    await prefs.setString('localePreference', _localePreference);
 
     // 保存国家发送配置
     await prefs.setString('selectedCountry', _selectedCountry);
@@ -105,6 +121,19 @@ class SettingsModel extends ChangeNotifier {
   void setNotificationsEnabled(bool value) {
     _notificationsEnabled = value;
     _saveSettings();
+    notifyListeners();
+  }
+
+  // 设置应用显示语言。传入 system 时跟随系统语言。
+  Future<void> setLocalePreference(String value) async {
+    final nextValue = AppLocalizations.isSupportedPreference(value)
+        ? value
+        : AppLocalizations.systemLocaleCode;
+
+    if (_localePreference == nextValue) return;
+
+    _localePreference = nextValue;
+    await _saveSettings();
     notifyListeners();
   }
 
@@ -152,6 +181,7 @@ class SettingsModel extends ChangeNotifier {
     _wifiSignalStrength = 80;
     _notificationsEnabled = true;
     _selectedCountries = [];
+    _localePreference = AppLocalizations.systemLocaleCode;
 
     // 重置国家相关设置
     _selectedCountry = COUNTRY_ALL;
@@ -206,6 +236,7 @@ class SettingsModel extends ChangeNotifier {
   void debugInfo() {
     if (kDebugMode) {
       print('Settings: {');
+      print('  localePreference: $localePreference,');
       print('  selectedCountry: $selectedCountry,');
       print('  isGlobalSendEnabled: $isGlobalSendEnabled,');
       print('  isWifiSendEnabled: $isWifiSendEnabled,');
