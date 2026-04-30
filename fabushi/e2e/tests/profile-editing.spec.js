@@ -108,9 +108,20 @@ async function fillByPlaceholderOrTap(page, placeholder, value, yRatio) {
 }
 
 async function acceptAgreement(page) {
-  if (!(await maybeClick(page, '我已阅读并同意'))) {
-    await tap(page, 0.34, 0.63);
+  await enableFlutterSemantics(page);
+
+  // The agreement text itself is not tappable in Flutter; the checkbox to its
+  // left owns the GestureDetector. Click that checkbox based on the label box.
+  const label = page.getByText('我已阅读并同意', { exact: true }).first();
+  const box = await label.boundingBox().catch(() => null);
+  if (box) {
+    await page.mouse.click(Math.max(8, box.x - 16), box.y + box.height / 2);
+    await page.waitForTimeout(700);
+    await enableFlutterSemantics(page);
+    return;
   }
+
+  await tap(page, 0.34, 0.63);
 }
 
 async function submitLogin(page) {
@@ -121,6 +132,61 @@ async function submitLogin(page) {
   } else {
     await tap(page, 0.5, 0.55);
   }
+}
+
+async function waitForPostLogin(page) {
+  const timeout = 20000;
+  const deadline = Date.now() + timeout;
+  const authenticatedMarkers = [
+    page.getByText('编辑资料', { exact: true }).first(),
+    page.getByText('一门深入:', { exact: false }).first(),
+    page.getByText('会员', { exact: true }).first(),
+    page.getByText('历史', { exact: true }).first(),
+    page.getByText('下载', { exact: true }).first()
+  ];
+  const loginFailure = page
+    .getByText(/登录失败|密码错误|用户不存在|账号不存在|密码不正确|网络错误|服务器错误/)
+    .first();
+  let sawSuccessToast = false;
+
+  while (Date.now() < deadline) {
+    await enableFlutterSemantics(page);
+
+    if (await loginFailure.isVisible().catch(() => false)) {
+      const failureText = await loginFailure.textContent().catch(() => 'unknown login error');
+      throw new Error(`Login failed before reaching profile screen: ${failureText}`);
+    }
+
+    if (await page.getByText('登录成功', { exact: false }).first().isVisible().catch(() => false)) {
+      sawSuccessToast = true;
+    }
+
+    for (const marker of authenticatedMarkers) {
+      if (await marker.isVisible().catch(() => false)) return;
+    }
+
+    if (sawSuccessToast) {
+      const loginFormVisible = await page
+        .getByPlaceholder('请输入用户名或邮箱')
+        .first()
+        .isVisible()
+        .catch(() => false);
+      if (!loginFormVisible) {
+        await tapProfileTab(page);
+        for (const marker of authenticatedMarkers) {
+          if (await marker.isVisible().catch(() => false)) return;
+        }
+      }
+    }
+
+    await page.waitForTimeout(300);
+  }
+
+  throw new Error(
+    `Timed out waiting for authenticated profile screen${
+      sawSuccessToast ? ' after seeing the login success toast' : ''
+    }`
+  );
 }
 
 function createTinyPng() {
@@ -160,7 +226,7 @@ test.describe('staging profile editing flow', () => {
     await fillByPlaceholderOrTap(page, '请输入密码', process.env.STAGING_TEST_PASSWORD, 0.49);
     await acceptAgreement(page);
     await submitLogin(page);
-    await expect(page.getByText('登录成功', { exact: false })).toBeVisible({ timeout: 20000 });
+    await waitForPostLogin(page);
 
     await clickText(page, '我的', { fallback: 'profile-tab' });
     await clickText(page, '编辑资料', { fallbackTap: [0.5, 0.48] });
