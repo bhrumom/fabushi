@@ -121,11 +121,12 @@ class AppLocalizations {
 
   static Locale? localeFromPreference(String code) {
     if (code == systemLocaleCode) return null;
-    return languageOptions
-        .where((option) => option.code == code)
-        .map((option) => option.locale)
-        .cast<Locale?>()
-        .firstOrNull;
+
+    for (final option in languageOptions) {
+      if (option.code == code) return option.locale;
+    }
+
+    return null;
   }
 
   static Locale localeListResolutionCallback(
@@ -180,12 +181,13 @@ class AppLocalizations {
       return 'zh-Hans';
     }
 
-    final supportedCode = languageOptions
-        .where((option) => option.locale?.languageCode == languageCode)
-        .map((option) => option.code)
-        .firstOrNull;
+    for (final option in languageOptions) {
+      if (option.locale?.languageCode == languageCode) {
+        return option.code;
+      }
+    }
 
-    return supportedCode ?? fallbackLocaleCode;
+    return fallbackLocaleCode;
   }
 
   static bool isSupportedPreference(String code) {
@@ -198,10 +200,11 @@ class AppLocalizations {
   ) {
     if (code == systemLocaleCode) return localizations.languageSystem;
 
-    final option = languageOptions
-        .where((languageOption) => languageOption.code == code)
-        .firstOrNull;
-    return option?.nativeName ?? localizations.languageSystem;
+    for (final option in languageOptions) {
+      if (option.code == code) return option.nativeName;
+    }
+
+    return localizations.languageSystem;
   }
 
   String text(String key) {
