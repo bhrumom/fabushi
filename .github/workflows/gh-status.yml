@@ -1,0 +1,58 @@
+name: gh status
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Query latest main CI and CD with gh
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_sha=$(gh api repos/$REPO/commits/main --jq .sha)
+          runs=$(gh api "repos/$REPO/actions/runs?branch=main&per_page=30")
+          report=gh-status-report.md
+          echo "# gh status report" > "$report"
+          echo "" >> "$report"
+          echo "Latest main SHA: $main_sha" >> "$report"
+          echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$report"
+          echo "" >> "$report"
+          for workflow in "CI" "CD - Staging E2E gated production deploy"; do
+            encoded=$(jq -r --arg workflow "$workflow" '.workflow_runs[] | select(.name == $workflow) | @base64' <<< "$runs" | head -n 1)
+            echo "## $workflow" >> "$report"
+            if [ -z "$encoded" ]; then
+              echo "missing" >> "$report"
+              echo "" >> "$report"
+              continue
+            fi
+            run=$(printf '%s' "$encoded" | base64 -d)
+            run_id=$(jq -r .id <<< "$run")
+            status=$(jq -r .status <<< "$run")
+            conclusion=$(jq -r '.conclusion // "n/a"' <<< "$run")
+            url=$(jq -r .html_url <<< "$run")
+            echo "Run ID: $run_id" >> "$report"
+            echo "Status: $status" >> "$report"
+            echo "Conclusion: $conclusion" >> "$report"
+            echo "URL: $url" >> "$report"
+            echo "" >> "$report"
+            echo "### Jobs" >> "$report"
+            gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" --jq '.jobs[] | "- \(.name): \(.status) / \(.conclusion // "n/a")"' >> "$report"
+            echo "" >> "$report"
+          done
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gh-status-report
+          path: gh-status-report.md
