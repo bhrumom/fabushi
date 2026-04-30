@@ -1,58 +1,76 @@
-name: gh status
+name: gh cd orchestrator
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '17 * * * *'
 
+concurrency:
+  group: gh-cd-orchestrator-main
+  cancel-in-progress: false
+
 permissions:
-  actions: read
+  actions: write
   contents: read
 
 jobs:
-  status:
+  orchestrate:
     runs-on: ubuntu-latest
+    timeout-minutes: 150
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
     steps:
-      - name: Query latest main CI and CD with gh
+      - name: Orchestrate latest main CI and CD
         shell: bash
         run: |
           set -euo pipefail
+          report=gh-cd-orchestrator-report.md
+          : > "$report"
+          note(){ echo "$*" | tee -a "$report"; }
           main_sha=$(gh api repos/$REPO/commits/main --jq .sha)
-          runs=$(gh api "repos/$REPO/actions/runs?branch=main&per_page=30")
-          report=gh-status-report.md
-          echo "# gh status report" > "$report"
-          echo "" >> "$report"
-          echo "Latest main SHA: $main_sha" >> "$report"
-          echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$report"
-          echo "" >> "$report"
-          for workflow in "CI" "CD - Staging E2E gated production deploy"; do
-            encoded=$(jq -r --arg workflow "$workflow" '.workflow_runs[] | select(.name == $workflow) | @base64' <<< "$runs" | head -n 1)
-            echo "## $workflow" >> "$report"
-            if [ -z "$encoded" ]; then
-              echo "missing" >> "$report"
-              echo "" >> "$report"
-              continue
-            fi
-            run=$(printf '%s' "$encoded" | base64 -d)
-            run_id=$(jq -r .id <<< "$run")
-            status=$(jq -r .status <<< "$run")
-            conclusion=$(jq -r '.conclusion // "n/a"' <<< "$run")
-            url=$(jq -r .html_url <<< "$run")
-            echo "Run ID: $run_id" >> "$report"
-            echo "Status: $status" >> "$report"
-            echo "Conclusion: $conclusion" >> "$report"
-            echo "URL: $url" >> "$report"
-            echo "" >> "$report"
-            echo "### Jobs" >> "$report"
-            gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" --jq '.jobs[] | "- \(.name): \(.status) / \(.conclusion // "n/a")"' >> "$report"
-            echo "" >> "$report"
-          done
+          note "# gh cd orchestrator report"
+          note "Latest main SHA: $main_sha"
+          note "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          find_run(){ gh api "repos/$REPO/actions/runs?branch=main&per_page=100" --jq ".workflow_runs[] | select(.name == \"$1\" and .head_sha == \"$main_sha\") | .id" | head -n 1; }
+          wait_run(){
+            id=$1; label=$2; max=$3
+            for i in $(seq 1 $max); do
+              row=$(gh api repos/$REPO/actions/runs/$id --jq '.status + " " + (.conclusion // "")')
+              status=${row%% *}; conclusion=${row#* }
+              note "$label $id $i/$max: $status ${conclusion:-n/a}"
+              if [ "$status" = completed ]; then [ "$conclusion" = success ]; return $?; fi
+              sleep 30
+            done
+            return 1
+          }
+          ci=$(find_run CI)
+          if [ -z "$ci" ]; then
+            note "No CI for latest main; dispatching CI"
+            gh workflow run CI --repo "$REPO" --ref main
+            for i in $(seq 1 40); do ci=$(find_run CI); [ -n "$ci" ] && break; sleep 15; done
+          fi
+          [ -n "$ci" ] || { note "CI run missing"; exit 1; }
+          note "CI run: $ci"
+          wait_run "$ci" CI 180 || { note "CI failed or timed out"; gh api repos/$REPO/actions/runs/$ci/jobs?per_page=100 --jq '.jobs[] | "- \(.name): \(.status) / \(.conclusion // "n/a")"' | tee -a "$report"; exit 1; }
+          cd=$(find_run "CD - Staging E2E gated production deploy")
+          if [ -z "$cd" ]; then
+            note "No CD for latest main; dispatching CD"
+            gh workflow run deploy-production.yml --repo "$REPO" --ref main
+            for i in $(seq 1 40); do cd=$(find_run "CD - Staging E2E gated production deploy"); [ -n "$cd" ] && break; sleep 15; done
+          fi
+          [ -n "$cd" ] || { note "CD run missing"; exit 1; }
+          note "CD run: $cd"
+          wait_run "$cd" CD 240 || { note "CD failed or timed out"; gh api repos/$REPO/actions/runs/$cd/jobs?per_page=100 --jq '.jobs[] | "- \(.name): \(.status) / \(.conclusion // "n/a")"' | tee -a "$report"; exit 1; }
+          note "## CD jobs"
+          gh api repos/$REPO/actions/runs/$cd/jobs?per_page=100 --jq '.jobs[] | "- \(.name): \(.status) / \(.conclusion // "n/a")"' | tee -a "$report"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gh-status-report
-          path: gh-status-report.md
+          name: gh-cd-orchestrator-report
+          path: gh-cd-orchestrator-report.md
+          if-no-files-found: ignore
