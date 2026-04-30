@@ -85,6 +85,25 @@ async function maybeClick(page, text) {
   return false;
 }
 
+async function visibleBox(locator, timeout = 1500) {
+  try {
+    await locator.waitFor({ state: 'visible', timeout });
+    return await locator.boundingBox({ timeout });
+  } catch (_) {
+    return null;
+  }
+}
+
+async function clickVisible(locator, timeout = 1500) {
+  try {
+    await locator.waitFor({ state: 'visible', timeout });
+    await locator.click({ timeout: 3000, force: true });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function ensureLoginForm(page) {
   await enableFlutterSemantics(page);
   if (await page.getByPlaceholder('请输入用户名或邮箱').first().isVisible({ timeout: 2500 }).catch(() => false)) return;
@@ -110,12 +129,49 @@ async function fillByPlaceholderOrTap(page, placeholder, value, yRatio) {
 async function acceptAgreement(page) {
   await enableFlutterSemantics(page);
 
-  // The agreement text itself is not tappable in Flutter; the checkbox to its
-  // left owns the GestureDetector. Click that checkbox based on the label box.
-  const label = page.getByText('我已阅读并同意', { exact: true }).first();
-  const box = await label.boundingBox().catch(() => null);
-  if (box) {
-    await page.mouse.click(Math.max(8, box.x - 16), box.y + box.height / 2);
+  // Prefer semantic checkboxes. Flutter Web may expose the checkbox either as an
+  // ARIA checkbox or as a generic semantics node depending on renderer/browser.
+  const checkboxLocators = [
+    page.getByRole('checkbox', { name: /我已阅读|同意|协议|隐私|agree|agreement|terms|privacy/i }).first(),
+    page.getByRole('checkbox').first(),
+    page.locator('[role="checkbox"]').first()
+  ];
+
+  for (const locator of checkboxLocators) {
+    if (await clickVisible(locator, 1200)) {
+      await page.waitForTimeout(700);
+      await enableFlutterSemantics(page);
+      return;
+    }
+  }
+
+  // The visible agreement text is often longer than "我已阅读并同意" because it
+  // includes links to the user agreement and privacy policy. Use regex matching
+  // and a short wait so missing semantics does not consume the full test timeout.
+  const agreementLabelLocators = [
+    page.getByText(/我已阅读并同意|我已阅读|同意.*协议|同意.*隐私|用户协议|隐私政策/i).first(),
+    page.getByText(/agree|agreement|terms|privacy/i).first()
+  ];
+
+  for (const label of agreementLabelLocators) {
+    const box = await visibleBox(label, 1500);
+    if (box) {
+      await page.mouse.click(Math.max(8, box.x - 24), box.y + box.height / 2);
+      await page.waitForTimeout(700);
+      await enableFlutterSemantics(page);
+      return;
+    }
+  }
+
+  // Last semantic fallback: derive the checkbox position from the password field,
+  // which is more stable than absolute viewport coordinates across desktop and
+  // mobile Playwright projects.
+  const passwordBox = await visibleBox(page.getByPlaceholder(/请输入密码|密码|password/i).first(), 1000);
+  if (passwordBox) {
+    await page.mouse.click(
+      Math.max(8, passwordBox.x + 18),
+      passwordBox.y + passwordBox.height + 42
+    );
     await page.waitForTimeout(700);
     await enableFlutterSemantics(page);
     return;
