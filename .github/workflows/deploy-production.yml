@@ -34,6 +34,7 @@ jobs:
     steps:
       - name: Resolve source commit
         id: source
+        working-directory: .
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             echo "source_sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
