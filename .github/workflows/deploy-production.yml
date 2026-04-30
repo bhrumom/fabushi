@@ -105,7 +105,7 @@ jobs:
         run: npx --yes wrangler@latest deploy
 
   staging-e2e:
-    name: Staging API E2E and smoke test
+    name: Staging API and app UI E2E gate
     needs:
       - build-artifact
       - deploy-staging
@@ -149,8 +149,14 @@ jobs:
       - name: Install E2E dependencies
         run: npm install
 
-      - name: Run staging API E2E
+      - name: Install Playwright browsers for web, Android, and iOS UI E2E
+        run: npx playwright install chromium webkit --with-deps
+
+      - name: Run staging profile API E2E
         run: npm test
+
+      - name: Run staging profile app UI E2E on web, Android, and iOS projects
+        run: npm run test:ui
 
       - name: Run staging smoke test
         shell: bash
