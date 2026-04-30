@@ -9,7 +9,7 @@ const String COUNTRY_ALL = 'ALL';
 const List<String> SUPPORTED_COUNTRIES = [
   'CN', // 中国
   'US', // 美国
-  'IN', // 印国
+  'IN', // 印度
   'BR', // 巴西
   'RU', // 俄罗斯
   'NG', // 尼日利亚
