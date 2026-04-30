@@ -6,7 +6,9 @@ import path from 'node:path';
 const requiredEnv = [
   'STAGING_APP_URL',
   'STAGING_TEST_LOGIN',
-  'STAGING_TEST_PASSWORD'
+  'STAGING_TEST_PASSWORD',
+  'STAGING_TEST_EMAIL',
+  'STAGING_TEST_PHONE'
 ];
 
 function missingEnv() {
@@ -283,12 +285,10 @@ test.describe('staging profile editing flow', () => {
     return false;
   });
 
-  test('logs in, updates profile, uploads avatar, and verifies login identifiers', async ({ page }, testInfo) => {
-    const runId = process.env.GITHUB_RUN_ID || `${Date.now()}`;
-    const suffix = `${runId}`.replace(/[^0-9a-zA-Z]/g, '').slice(-10);
-    const newUsername = `e2e_${suffix}`;
-    const newEmail = process.env.STAGING_TEST_EMAIL || `fabushi-e2e-${suffix}@example.com`;
-    const newPhone = process.env.STAGING_TEST_PHONE || `+1555${suffix.padStart(10, '0').slice(-10)}`;
+  test('logs in, updates profile, uploads avatar, and preserves stable login identifiers', async ({ page }, testInfo) => {
+    const stableUsername = process.env.STAGING_TEST_LOGIN;
+    const stableEmail = process.env.STAGING_TEST_EMAIL;
+    const stablePhone = process.env.STAGING_TEST_PHONE;
 
     await page.goto('/', { waitUntil: 'networkidle' });
     await enableFlutterSemantics(page);
@@ -296,7 +296,7 @@ test.describe('staging profile editing flow', () => {
     await clickText(page, '我的', { fallback: 'profile-tab' });
     await ensureLoginForm(page);
 
-    await fillByPlaceholderOrTap(page, '请输入用户名或邮箱', process.env.STAGING_TEST_LOGIN, 0.41);
+    await fillByPlaceholderOrTap(page, '请输入用户名或邮箱', stableUsername, 0.41);
     await fillByPlaceholderOrTap(page, '请输入密码', process.env.STAGING_TEST_PASSWORD, 0.49);
     await acceptAgreement(page);
     await submitLogin(page);
@@ -306,9 +306,9 @@ test.describe('staging profile editing flow', () => {
     await clickText(page, '编辑资料', { fallbackTap: [0.5, 0.48] });
     await expect(page.getByText('编辑资料', { exact: true })).toBeVisible({ timeout: 15000 });
 
-    await fillByPlaceholderOrTap(page, '请输入用户名', newUsername, 0.35);
-    await fillByPlaceholderOrTap(page, '请输入邮箱', newEmail, 0.43);
-    await fillByPlaceholderOrTap(page, '请输入手机号', newPhone, 0.51);
+    await fillByPlaceholderOrTap(page, '请输入用户名', stableUsername, 0.35);
+    await fillByPlaceholderOrTap(page, '请输入邮箱', stableEmail, 0.43);
+    await fillByPlaceholderOrTap(page, '请输入手机号', stablePhone, 0.51);
 
     const avatarPath = createTinyPng();
     const fileChooserPromise = page.waitForEvent('filechooser');
@@ -320,16 +320,16 @@ test.describe('staging profile editing flow', () => {
     await expect(page.getByText('个人资料更新成功', { exact: false })).toBeVisible({ timeout: 15000 });
 
     await clickText(page, '我的', { fallback: 'profile-tab' });
-    await expect(page.getByText(newUsername, { exact: false })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(stableUsername, { exact: false })).toBeVisible({ timeout: 15000 });
 
     await testInfo.attach('updated-profile', {
-      body: JSON.stringify({ newUsername, newEmail, newPhone }, null, 2),
+      body: JSON.stringify({ stableUsername, stableEmail, stablePhone }, null, 2),
       contentType: 'application/json'
     });
 
     await page.reload({ waitUntil: 'networkidle' });
     await enableFlutterSemantics(page);
     await clickText(page, '我的', { fallback: 'profile-tab' });
-    await expect(page.getByText(newUsername, { exact: false })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(stableUsername, { exact: false })).toBeVisible({ timeout: 15000 });
   });
 });
