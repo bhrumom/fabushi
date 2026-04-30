@@ -51,6 +51,7 @@ jobs:
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             /.github/workflows/**
+            /.github/scripts/**
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -179,11 +180,113 @@ jobs:
           path: fabushi/e2e/playwright-report
           if-no-files-found: ignore
 
+  android-native-install:
+    name: Android native package install smoke
+    needs:
+      - build-artifact
+      - staging-e2e
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout Android source and native test helper
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-artifact.outputs.source_sha }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+            /.github/scripts/**
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build Android debug APK for emulator install test
+        run: |
+          flutter pub get
+          flutter build apk --debug --target-platform android-x64
+
+      - name: Install and launch Android APK on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          script: cd fabushi && bash ../.github/scripts/native-install-smoke.sh android
+
+      - name: Upload Android native install diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-native-install-diagnostics
+          path: |
+            ${{ runner.temp }}/fabushi-android-logcat.txt
+          if-no-files-found: ignore
+
+  ios-native-install:
+    name: iOS native package install smoke
+    needs:
+      - build-artifact
+      - staging-e2e
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout iOS source and native test helper
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-artifact.outputs.source_sha }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+            /.github/scripts/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build iOS simulator app
+        run: |
+          flutter pub get
+          flutter build ios --debug --simulator
+
+      - name: Install and launch iOS app on simulator
+        run: bash ../.github/scripts/native-install-smoke.sh ios
+
+      - name: Upload iOS native install diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-install-diagnostics
+          path: |
+            ${{ runner.temp }}/fabushi-ios-simulator.png
+          if-no-files-found: ignore
+
   deploy-production:
     name: Deploy production environment
     needs:
       - build-artifact
       - staging-e2e
+      - android-native-install
+      - ios-native-install
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -212,6 +315,7 @@ jobs:
             echo ""
             echo "- Source SHA: ${{ needs.build-artifact.outputs.source_sha }}"
             echo "- Artifact: fabushi-release-${{ needs.build-artifact.outputs.source_sha }}"
+            echo "- Gates: staging API E2E, web/Android/iOS UI E2E, Android native install, iOS native install"
             echo "- URL: ${{ vars.PRODUCTION_APP_URL || 'https://flutter.ombhrum.com' }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -253,6 +357,8 @@ jobs:
       - build-artifact
       - deploy-staging
       - staging-e2e
+      - android-native-install
+      - ios-native-install
       - deploy-production
       - production-smoke
     if: failure()
@@ -271,6 +377,7 @@ jobs:
               `- Source SHA: ${sourceSha}`,
               `- Workflow run: ${runUrl}`,
               '- Failed stage: check the workflow job list for the first failed job.',
+              '- Gates include staging API E2E, web/Android/iOS UI E2E, Android native install, and iOS native install.',
               '',
               '### Rollback',
               '',
