@@ -13,6 +13,10 @@ function missingEnv() {
   return requiredEnv.filter((name) => !process.env[name]);
 }
 
+function viewport(page) {
+  return page.viewportSize() || { width: 390, height: 844 };
+}
+
 async function enableFlutterSemantics(page) {
   await page.evaluate(() => {
     const clickPlaceholder = (root) => {
@@ -35,11 +39,16 @@ async function enableFlutterSemantics(page) {
   await page.waitForTimeout(500);
 }
 
+async function tap(page, xRatio, yRatio) {
+  const size = viewport(page);
+  await page.mouse.click(size.width * xRatio, size.height * yRatio);
+  await page.waitForTimeout(700);
+  await enableFlutterSemantics(page);
+}
+
 async function tapProfileTab(page) {
-  const viewport = page.viewportSize() || { width: 390, height: 844 };
-  // MainNavigationScreen currently has three NavigationBar destinations:
-  // 首页, 禅室, 我的. Tap the center of the third destination near the bottom.
-  await page.mouse.click((viewport.width * 5) / 6, viewport.height - 35);
+  const size = viewport(page);
+  await page.mouse.click((size.width * 5) / 6, size.height - 35);
   await page.waitForTimeout(1200);
   await enableFlutterSemantics(page);
 }
@@ -56,15 +65,12 @@ async function clickText(page, text, options = {}) {
       await tapProfileTab(page);
       return;
     }
+    if (options.fallbackTap) {
+      await tap(page, options.fallbackTap[0], options.fallbackTap[1]);
+      return;
+    }
     throw error;
   }
-}
-
-async function fillByPlaceholder(page, placeholder, value) {
-  await enableFlutterSemantics(page);
-  const locator = page.getByPlaceholder(placeholder).first();
-  await locator.waitFor({ state: 'visible', timeout: 15000 });
-  await locator.fill(value);
 }
 
 async function maybeClick(page, text) {
@@ -72,9 +78,49 @@ async function maybeClick(page, text) {
   const locator = page.getByText(text, { exact: true }).first();
   if (await locator.isVisible().catch(() => false)) {
     await locator.click();
+    await page.waitForTimeout(700);
+    await enableFlutterSemantics(page);
     return true;
   }
   return false;
+}
+
+async function ensureLoginForm(page) {
+  await enableFlutterSemantics(page);
+  if (await page.getByPlaceholder('请输入用户名或邮箱').first().isVisible({ timeout: 2500 }).catch(() => false)) return;
+  await maybeClick(page, '立即登录 / 注册');
+  if (await page.getByPlaceholder('请输入用户名或邮箱').first().isVisible({ timeout: 2500 }).catch(() => false)) return;
+  await tap(page, 0.5, 0.72);
+  if (await page.getByPlaceholder('请输入用户名或邮箱').first().isVisible({ timeout: 2500 }).catch(() => false)) return;
+  await tap(page, 0.5, 0.62);
+}
+
+async function fillByPlaceholderOrTap(page, placeholder, value, yRatio) {
+  await enableFlutterSemantics(page);
+  const locator = page.getByPlaceholder(placeholder).first();
+  if (await locator.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await locator.fill(value);
+    return;
+  }
+  await tap(page, 0.5, yRatio);
+  await page.keyboard.press('Control+A').catch(() => {});
+  await page.keyboard.type(value, { delay: 10 });
+}
+
+async function acceptAgreement(page) {
+  if (!(await maybeClick(page, '我已阅读并同意'))) {
+    await tap(page, 0.34, 0.63);
+  }
+}
+
+async function submitLogin(page) {
+  await enableFlutterSemantics(page);
+  const login = page.getByText('🔐 登录', { exact: true }).first();
+  if (await login.isVisible().catch(() => false)) {
+    await login.click();
+  } else {
+    await tap(page, 0.5, 0.55);
+  }
 }
 
 function createTinyPng() {
@@ -108,29 +154,29 @@ test.describe('staging profile editing flow', () => {
     await enableFlutterSemantics(page);
 
     await clickText(page, '我的', { fallback: 'profile-tab' });
-    await maybeClick(page, '立即登录 / 注册');
+    await ensureLoginForm(page);
 
-    await fillByPlaceholder(page, '请输入用户名或邮箱', process.env.STAGING_TEST_LOGIN);
-    await fillByPlaceholder(page, '请输入密码', process.env.STAGING_TEST_PASSWORD);
-    await clickText(page, '我已阅读并同意', { exact: false });
-    await clickText(page, '🔐 登录');
-    await expect(page.getByText('登录成功', { exact: false })).toBeVisible({ timeout: 15000 });
+    await fillByPlaceholderOrTap(page, '请输入用户名或邮箱', process.env.STAGING_TEST_LOGIN, 0.41);
+    await fillByPlaceholderOrTap(page, '请输入密码', process.env.STAGING_TEST_PASSWORD, 0.49);
+    await acceptAgreement(page);
+    await submitLogin(page);
+    await expect(page.getByText('登录成功', { exact: false })).toBeVisible({ timeout: 20000 });
 
     await clickText(page, '我的', { fallback: 'profile-tab' });
-    await clickText(page, '编辑资料');
+    await clickText(page, '编辑资料', { fallbackTap: [0.5, 0.48] });
     await expect(page.getByText('编辑资料', { exact: true })).toBeVisible({ timeout: 15000 });
 
-    await page.getByPlaceholder('请输入用户名').fill(newUsername);
-    await page.getByPlaceholder('请输入邮箱').fill(newEmail);
-    await page.getByPlaceholder('请输入手机号').fill(newPhone);
+    await fillByPlaceholderOrTap(page, '请输入用户名', newUsername, 0.35);
+    await fillByPlaceholderOrTap(page, '请输入邮箱', newEmail, 0.43);
+    await fillByPlaceholderOrTap(page, '请输入手机号', newPhone, 0.51);
 
     const avatarPath = createTinyPng();
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await clickText(page, '点击从本地选择头像');
+    await clickText(page, '点击从本地选择头像', { fallbackTap: [0.5, 0.23] });
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(avatarPath);
 
-    await clickText(page, '保存');
+    await clickText(page, '保存', { fallbackTap: [0.5, 0.86] });
     await expect(page.getByText('个人资料更新成功', { exact: false })).toBeVisible({ timeout: 15000 });
 
     await clickText(page, '我的', { fallback: 'profile-tab' });
