@@ -35,14 +35,11 @@ test.describe('staging profile API flow', () => {
       const body = await response.json();
       expect(body.token).toBeTruthy();
       expect(body.username).toBe(login);
+      expect(body.user, 'login response must include user after staging deployment').toBeTruthy();
       return { token: body.token, user: body.user };
     }
 
     const usernameLogin = await passwordLogin(login);
-    test.skip(
-      !usernameLogin.user,
-      'Staging Worker has not deployed the PR backend login response yet; deploy the current Worker before enforcing the full profile API flow.'
-    );
     expect(usernameLogin.user?.username).toBe(login);
 
     await passwordLogin(email);
