@@ -6,43 +6,43 @@ platform="${1:-}"
 android_package="${ANDROID_PACKAGE:-com.ombhrum.fabushi}"
 
 select_ios_runtime() {
-  xcrun simctl list runtimes iOS -j | python3 - <<'PY'
+  xcrun simctl list runtimes -j | python3 -c '
 import json
 import sys
 
 payload = json.load(sys.stdin)
-runtimes = [r for r in payload.get('runtimes', []) if r.get('isAvailable')]
+runtimes = [r for r in payload.get("runtimes", []) if r.get("isAvailable") and "iOS" in r.get("name", "")]
 if not runtimes:
-    raise SystemExit('No available iOS simulator runtimes found')
+    raise SystemExit("No available iOS simulator runtimes found")
 # Prefer the newest available iOS runtime.
-runtimes.sort(key=lambda r: r.get('version', '0'))
-print(runtimes[-1]['identifier'])
-PY
+runtimes.sort(key=lambda r: tuple(int(p) for p in r.get("version", "0").split(".") if p.isdigit()))
+print(runtimes[-1]["identifier"])
+'
 }
 
 select_ios_device_type() {
-  xcrun simctl list devicetypes -j | python3 - <<'PY'
+  xcrun simctl list devicetypes -j | python3 -c '
 import json
 import sys
 
 payload = json.load(sys.stdin)
-devices = payload.get('devicetypes', [])
+devices = payload.get("devicetypes", [])
 preferred = [
-    'com.apple.CoreSimulator.SimDeviceType.iPhone-15',
-    'com.apple.CoreSimulator.SimDeviceType.iPhone-14',
-    'com.apple.CoreSimulator.SimDeviceType.iPhone-13',
+    "com.apple.CoreSimulator.SimDeviceType.iPhone-15",
+    "com.apple.CoreSimulator.SimDeviceType.iPhone-14",
+    "com.apple.CoreSimulator.SimDeviceType.iPhone-13",
 ]
-ids = {d.get('identifier') for d in devices}
+ids = {d.get("identifier") for d in devices}
 for identifier in preferred:
     if identifier in ids:
         print(identifier)
         break
 else:
-    iphones = [d for d in devices if 'iPhone' in d.get('name', '')]
+    iphones = [d for d in devices if "iPhone" in d.get("name", "")]
     if not iphones:
-        raise SystemExit('No iPhone simulator device types found')
-    print(iphones[-1]['identifier'])
-PY
+        raise SystemExit("No iPhone simulator device types found")
+    print(iphones[-1]["identifier"])
+'
 }
 
 android_install_smoke() {
