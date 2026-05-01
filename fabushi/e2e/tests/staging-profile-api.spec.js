@@ -42,11 +42,30 @@ test.describe('staging profile API flow', () => {
     const usernameLogin = await passwordLogin(login);
     expect(usernameLogin.user?.username).toBe(login);
 
+    const seedMarker = `ci-seed-${Date.now()}`;
+    const seedProfile = await request.post(apiUrl('/api/auth/update-profile'), {
+      headers: { Authorization: `Bearer ${usernameLogin.token}` },
+      data: {
+        username: login,
+        email,
+        phoneNumber: phone,
+        avatar: `https://example.com/fabushi-e2e-avatar-${seedMarker}.png`
+      }
+    });
+    expect(seedProfile.status(), await seedProfile.text()).toBe(200);
+    const seeded = await seedProfile.json();
+    expect(seeded.success).toBe(true);
+    expect(seeded.user?.username).toBe(login);
+    expect(seeded.user?.email).toBe(email);
+    expect(seeded.user?.phoneNumber).toBe(phone);
+
+    const seededToken = seeded.token || usernameLogin.token;
+
     await passwordLogin(email);
     await passwordLogin(phone);
 
     const beforeInfo = await request.get(apiUrl('/api/auth/user-info'), {
-      headers: { Authorization: `Bearer ${usernameLogin.token}` }
+      headers: { Authorization: `Bearer ${seededToken}` }
     });
     expect(beforeInfo.status(), await beforeInfo.text()).toBe(200);
     const before = await beforeInfo.json();
@@ -57,7 +76,7 @@ test.describe('staging profile API flow', () => {
 
     const marker = `ci-${Date.now()}`;
     const update = await request.post(apiUrl('/api/auth/update-profile'), {
-      headers: { Authorization: `Bearer ${usernameLogin.token}` },
+      headers: { Authorization: `Bearer ${seededToken}` },
       data: {
         username: login,
         email,
@@ -73,7 +92,7 @@ test.describe('staging profile API flow', () => {
     expect(updated.user?.phoneNumber).toBe(phone);
     expect(updated.user?.avatar).toContain(marker);
 
-    const tokenAfterUpdate = updated.token || usernameLogin.token;
+    const tokenAfterUpdate = updated.token || seededToken;
     const afterInfo = await request.get(apiUrl('/api/auth/user-info'), {
       headers: { Authorization: `Bearer ${tokenAfterUpdate}` }
     });
