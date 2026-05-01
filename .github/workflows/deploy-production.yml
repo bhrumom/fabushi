@@ -100,6 +100,11 @@ jobs:
           name: fabushi-release-${{ needs.build-artifact.outputs.source_sha }}
           path: release-artifact
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Check Cloudflare credential presence
         shell: bash
         env:
@@ -335,11 +340,16 @@ jobs:
           name: fabushi-release-${{ needs.build-artifact.outputs.source_sha }}
           path: release-artifact
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Check production Cloudflare credential presence
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
           CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL || vars.CLOUDFLARE_EMAIL || vars.CF_EMAIL }}
         run: |
           set -euo pipefail
