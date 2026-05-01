@@ -26,16 +26,23 @@ double radiansToDegrees(double radians) {
 /// [radius] is the radius of the sphere.
 /// [rotationY] and [rotationZ] are rotation angles around the Y and Z axes, respectively.
 /// Returns a [Vector3] representing the 3D position of the point on the sphere.
-Vector3 getSpherePosition3D(GlobeCoordinates coordinates, double radius,
-    double rotationY, double rotationZ) {
+Vector3 getSpherePosition3D(
+  GlobeCoordinates coordinates,
+  double radius,
+  double rotationY,
+  double rotationZ,
+) {
   // radius += 10;
   // Convert latitude and longitude to radians
   double lat = degreesToRadians(coordinates.latitude);
   double lon = degreesToRadians(coordinates.longitude);
 
   // Convert spherical coordinates (lat, lon, radius) to Cartesian coordinates (x, y, z)
-  Vector3 cartesian = Vector3(radius * cos(lat) * cos(lon),
-      radius * cos(lat) * sin(lon), radius * sin(lat));
+  Vector3 cartesian = Vector3(
+    radius * cos(lat) * cos(lon),
+    radius * cos(lat) * sin(lon),
+    radius * sin(lat),
+  );
 
   // Create rotation matrices for X, Y, and Z axes
   Matrix3 rotationMatrixY = Matrix3.rotationY(-rotationY);
@@ -55,8 +62,13 @@ Vector3 getSpherePosition3D(GlobeCoordinates coordinates, double radius,
 ///
 /// Returns a [GlobeCoordinates] object representing the spherical coordinates of the point.
 /// Returns null if the point is not on the sphere.
-GlobeCoordinates? convert2DPointToSphereCoordinates(Offset hoverOffset,
-    Offset sphereCenter, double radius, double rotationY, double rotationZ) {
+GlobeCoordinates? convert2DPointToSphereCoordinates(
+  Offset hoverOffset,
+  Offset sphereCenter,
+  double radius,
+  double rotationY,
+  double rotationZ,
+) {
   // Convert the 2D offset back into 3D coordinates relative to the center
   double x = hoverOffset.dx - sphereCenter.dx;
   double y = hoverOffset.dy - sphereCenter.dy;
@@ -69,8 +81,9 @@ GlobeCoordinates? convert2DPointToSphereCoordinates(Offset hoverOffset,
   // Inverse the rotations using rotation matrices
   Matrix3 rotationMatrixY = Matrix3.rotationY(rotationY); // Inverse rotation
   Matrix3 rotationMatrixZ = Matrix3.rotationZ(rotationZ); // Inverse rotation
-  Vector3 originalCartesian =
-      rotationMatrixZ.multiplied(rotationMatrixY).transform(cartesian);
+  Vector3 originalCartesian = rotationMatrixZ
+      .multiplied(rotationMatrixY)
+      .transform(cartesian);
 
   // Convert Cartesian coordinates back to spherical coordinates
   double lat = asin(originalCartesian.z / radius);
@@ -100,11 +113,18 @@ GlobeCoordinates? convert2DPointToSphereCoordinates(Offset hoverOffset,
 /// [zCoord] is the Z-coordinate of the point in 3D space.
 /// [zoomFactor] is the zoom factor of the sphere.
 /// Returns the scale factor for the point.
-double getScaleFactor(Offset point, Offset center, double radius, bool isXAxis,
-    double zCoord, double zoomFactor) {
+double getScaleFactor(
+  Offset point,
+  Offset center,
+  double radius,
+  bool isXAxis,
+  double zCoord,
+  double zoomFactor,
+) {
   // Calculate distance from the point to the center for the specified axis
-  double distance =
-      isXAxis ? (point.dx - center.dx).abs() : (point.dy - center.dy).abs();
+  double distance = isXAxis
+      ? (point.dx - center.dx).abs()
+      : (point.dy - center.dy).abs();
 
   // Normalize Z-coordinate relative to the radius and adjust for zoom factor
   double normalizedZ = (zCoord / radius).clamp(-1, 1) * zoomFactor;
@@ -131,13 +151,31 @@ double getScaleFactor(Offset point, Offset center, double radius, bool isXAxis,
 /// [zoomFactor] is the zoom factor of the sphere.
 /// [pointSize] is the size of the point.
 /// Returns a [Rect] representing the rectangle on the sphere.
-Rect getRectOnSphere(Vector3 cartesian3D, Offset cartesian2D, Offset center,
-    double radius, double zoomFactor, double pointSize) {
+Rect getRectOnSphere(
+  Vector3 cartesian3D,
+  Offset cartesian2D,
+  Offset center,
+  double radius,
+  double zoomFactor,
+  double pointSize,
+) {
   // Calculate scale factors
   double scaleFactorX = getScaleFactor(
-      cartesian2D, center, radius, true, cartesian3D.x, zoomFactor);
+    cartesian2D,
+    center,
+    radius,
+    true,
+    cartesian3D.x,
+    zoomFactor,
+  );
   double scaleFactorY = getScaleFactor(
-      cartesian2D, center, radius, false, cartesian3D.x, zoomFactor);
+    cartesian2D,
+    center,
+    radius,
+    false,
+    cartesian3D.x,
+    zoomFactor,
+  );
 
   // Adjust width and height based on the position on the sphere
   double adjustedWidth =

@@ -6,15 +6,15 @@ import '../core/config/app_config.dart';
 /// 使用托管的HTML页面（Firebase JS SDK）完成reCAPTCHA验证并发送验证码
 class RecaptchaDialog extends StatefulWidget {
   final String phoneNumber;
-  
-  const RecaptchaDialog({
-    super.key,
-    required this.phoneNumber,
-  });
+
+  const RecaptchaDialog({super.key, required this.phoneNumber});
 
   /// 显示对话框，发送验证码后返回sessionInfo
   /// 返回值: {'success': true, 'verificationId': '...'} 或 {'success': false, 'error': '...'}
-  static Future<Map<String, dynamic>?> show(BuildContext context, {required String phoneNumber}) async {
+  static Future<Map<String, dynamic>?> show(
+    BuildContext context, {
+    required String phoneNumber,
+  }) async {
     return showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
@@ -62,11 +62,12 @@ class _RecaptchaDialogState extends State<RecaptchaDialog> {
             children: [
               // 标题栏
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 decoration: const BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: Colors.white10),
-                  ),
+                  border: Border(bottom: BorderSide(color: Colors.white10)),
                 ),
                 child: Row(
                   children: [
@@ -75,14 +76,24 @@ class _RecaptchaDialogState extends State<RecaptchaDialog> {
                     const Expanded(
                       child: Text(
                         '安全验证',
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.white54,
+                        size: 20,
+                      ),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
-                      onPressed: () => Navigator.of(context).pop({'success': false, 'error': '用户取消'}),
+                      onPressed: () => Navigator.of(
+                        context,
+                      ).pop({'success': false, 'error': '用户取消'}),
                     ),
                   ],
                 ),
@@ -98,11 +109,12 @@ class _RecaptchaDialogState extends State<RecaptchaDialog> {
                         transparentBackground: true,
                         disableContextMenu: true,
                         supportZoom: false,
-                        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+                        userAgent:
+                            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
                       ),
                       onWebViewCreated: (controller) {
                         _webViewController = controller;
-                        
+
                         // 注册JavaScript处理器接收验证码发送结果
                         controller.addJavaScriptHandler(
                           handlerName: 'onCodeSent',
@@ -139,7 +151,10 @@ class _RecaptchaDialogState extends State<RecaptchaDialog> {
                           children: [
                             CircularProgressIndicator(color: Color(0xFFFFE66D)),
                             SizedBox(height: 16),
-                            Text('加载中...', style: TextStyle(color: Colors.white70)),
+                            Text(
+                              '加载中...',
+                              style: TextStyle(color: Colors.white70),
+                            ),
                           ],
                         ),
                       ),
@@ -148,9 +163,16 @@ class _RecaptchaDialogState extends State<RecaptchaDialog> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+                            const Icon(
+                              Icons.error_outline,
+                              color: Colors.redAccent,
+                              size: 48,
+                            ),
                             const SizedBox(height: 16),
-                            Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+                            Text(
+                              _error!,
+                              style: const TextStyle(color: Colors.redAccent),
+                            ),
                             const SizedBox(height: 16),
                             ElevatedButton(
                               onPressed: () {

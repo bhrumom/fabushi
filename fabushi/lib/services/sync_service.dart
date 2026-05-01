@@ -5,7 +5,7 @@ import '../core/config/app_config.dart';
 import 'http_service.dart';
 
 /// 同步服务 - 统一管理所有用户数据的云端同步
-/// 
+///
 /// 设计原则:
 /// 1. 云端为单一数据源
 /// 2. 使用 syncVersion 进行增量同步
@@ -107,9 +107,7 @@ class SyncService extends ChangeNotifier {
     try {
       final response = await HttpService.post(
         '${AppConfig.apiUrl}/api/sync',
-        body: {
-          'changes': changes.map((c) => c.toJson()).toList(),
-        },
+        body: {'changes': changes.map((c) => c.toJson()).toList()},
         useAuth: true,
       );
 
@@ -117,9 +115,11 @@ class SyncService extends ChangeNotifier {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
           final hasConflicts = data['hasConflicts'] == true;
-          final conflicts = (data['conflicts'] as List?)
-              ?.map((c) => SyncConflict.fromJson(c))
-              .toList() ?? [];
+          final conflicts =
+              (data['conflicts'] as List?)
+                  ?.map((c) => SyncConflict.fromJson(c))
+                  .toList() ??
+              [];
 
           if (hasConflicts) {
             debugPrint('⚠️ 同步存在冲突: ${conflicts.length}个');
@@ -135,7 +135,10 @@ class SyncService extends ChangeNotifier {
         }
       }
 
-      return SyncResult(success: false, message: '推送失败: ${response.statusCode}');
+      return SyncResult(
+        success: false,
+        message: '推送失败: ${response.statusCode}',
+      );
     } catch (e) {
       debugPrint('❌ 推送同步失败: $e');
       return SyncResult(success: false, message: '推送错误: $e');
@@ -155,7 +158,9 @@ class SyncService extends ChangeNotifier {
         if (data['success'] == true) {
           final serverVersion = data['lastSyncVersion'] as int? ?? 0;
           if (serverVersion > _lastSyncVersion) {
-            debugPrint('📤 云端有新数据: server=$serverVersion, local=$_lastSyncVersion');
+            debugPrint(
+              '📤 云端有新数据: server=$serverVersion, local=$_lastSyncVersion',
+            );
             // 自动拉取新数据
             await pullFromCloud();
           }
@@ -169,7 +174,7 @@ class SyncService extends ChangeNotifier {
   /// 执行全量同步（先拉后推）
   Future<SyncResult> fullSync() async {
     debugPrint('🔄 开始全量同步...');
-    
+
     // 1. 先从云端拉取
     final pullResult = await pullFromCloud();
     if (!pullResult.success) {
@@ -194,11 +199,11 @@ class SyncService extends ChangeNotifier {
     _lastSyncVersion = 0;
     _lastSyncAt = null;
     _syncError = null;
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_syncVersionKey);
     await prefs.remove(_lastSyncAtKey);
-    
+
     notifyListeners();
     debugPrint('🗑️ 同步状态已清除');
   }
@@ -287,8 +292,12 @@ class SyncData {
     return SyncData(
       likes: List<Map<String, dynamic>>.from(json['likes'] ?? []),
       comments: List<Map<String, dynamic>>.from(json['comments'] ?? []),
-      meditationRecords: List<Map<String, dynamic>>.from(json['meditationRecords'] ?? []),
-      meditationGoals: List<Map<String, dynamic>>.from(json['meditationGoals'] ?? []),
+      meditationRecords: List<Map<String, dynamic>>.from(
+        json['meditationRecords'] ?? [],
+      ),
+      meditationGoals: List<Map<String, dynamic>>.from(
+        json['meditationGoals'] ?? [],
+      ),
       follows: List<Map<String, dynamic>>.from(json['follows'] ?? []),
     );
   }

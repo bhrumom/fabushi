@@ -12,11 +12,8 @@ import 'video_feed_view_item.dart';
 /// 感应/发愿帖子列表视图（朋友圈风格）
 class FeedPostListView extends StatefulWidget {
   final String tag; // 'ganying' | 'fayuan'
-  
-  const FeedPostListView({
-    super.key,
-    required this.tag,
-  });
+
+  const FeedPostListView({super.key, required this.tag});
 
   @override
   State<FeedPostListView> createState() => _FeedPostListViewState();
@@ -26,7 +23,7 @@ class _FeedPostListViewState extends State<FeedPostListView>
     with AutomaticKeepAliveClientMixin {
   final FeedService _feedService = FeedService();
   final ScrollController _scrollController = ScrollController();
-  
+
   List<FeedPostModel> _posts = [];
   bool _isLoading = true;
   bool _isLoadingMore = false;
@@ -51,7 +48,8 @@ class _FeedPostListViewState extends State<FeedPostListView>
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
       _loadMorePosts();
     }
   }
@@ -62,7 +60,7 @@ class _FeedPostListViewState extends State<FeedPostListView>
       setState(() => _isLoading = false);
       return;
     }
-    
+
     setState(() {
       _isLoading = true;
       _currentPage = 1;
@@ -70,7 +68,7 @@ class _FeedPostListViewState extends State<FeedPostListView>
 
     final rawPosts = await _feedService.getTaggedPosts(widget.tag, page: 1);
     final posts = _filterPosts(rawPosts);
-    
+
     if (mounted) {
       setState(() {
         _posts = posts;
@@ -88,7 +86,7 @@ class _FeedPostListViewState extends State<FeedPostListView>
 
     final rawPosts = await _feedService.getTaggedPosts(widget.tag, page: 1);
     final posts = _filterPosts(rawPosts);
-    
+
     if (mounted) {
       setState(() {
         _posts = posts;
@@ -104,9 +102,12 @@ class _FeedPostListViewState extends State<FeedPostListView>
     setState(() => _isLoadingMore = true);
     _currentPage++;
 
-    final rawMore = await _feedService.getTaggedPosts(widget.tag, page: _currentPage);
+    final rawMore = await _feedService.getTaggedPosts(
+      widget.tag,
+      page: _currentPage,
+    );
     final morePosts = _filterPosts(rawMore);
-    
+
     if (mounted) {
       setState(() {
         _posts.addAll(morePosts);
@@ -123,7 +124,8 @@ class _FeedPostListViewState extends State<FeedPostListView>
       // 过滤被屏蔽用户的帖子
       if (blockService.shouldFilter(post.userId)) return false;
       // 过滤含不当内容的帖子文字
-      if (ContentFilterService.containsObjectionableContent(post.content)) return false;
+      if (ContentFilterService.containsObjectionableContent(post.content))
+        return false;
       return true;
     }).toList();
   }
@@ -131,7 +133,7 @@ class _FeedPostListViewState extends State<FeedPostListView>
   /// 点击@原视频标题时跳转到全屏视频并显示评论
   void _navigateToOriginalVideo(FeedPostModel post) {
     if (post.videoId.isEmpty) return;
-    
+
     // 从VideoTitleService获取视频数据
     final videoTitleService = VideoTitleService();
     // 先用 videoId 查找，如果找不到再用标题查找（兼容旧数据）
@@ -139,16 +141,14 @@ class _FeedPostListViewState extends State<FeedPostListView>
     if (videoEntity == null && post.videoTitle != null) {
       videoEntity = videoTitleService.getVideoByTitle(post.videoTitle!);
     }
-    
+
     if (videoEntity != null) {
       // 跳转到全屏视频页面
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => _OriginalVideoScreen(
-            video: videoEntity!,
-            autoShowComments: true,
-          ),
+          builder: (context) =>
+              _OriginalVideoScreen(video: videoEntity!, autoShowComments: true),
         ),
       );
     } else {
@@ -168,7 +168,7 @@ class _FeedPostListViewState extends State<FeedPostListView>
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
-    
+
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: Colors.white),
@@ -188,7 +188,9 @@ class _FeedPostListViewState extends State<FeedPostListView>
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    widget.tag == 'ganying' ? Icons.auto_awesome : Icons.favorite_outline,
+                    widget.tag == 'ganying'
+                        ? Icons.auto_awesome
+                        : Icons.favorite_outline,
                     size: 64,
                     color: Colors.white24,
                   ),
@@ -216,8 +218,8 @@ class _FeedPostListViewState extends State<FeedPostListView>
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(), // 确保可以下拉刷新
         padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + 60, 
-          bottom: 80
+          top: MediaQuery.of(context).padding.top + 60,
+          bottom: 80,
         ),
         itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
         itemBuilder: (context, index) {
@@ -314,7 +316,11 @@ class _OriginalVideoScreenState extends State<_OriginalVideoScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                icon: const Icon(
+                  Icons.arrow_back,
+                  color: Colors.white,
+                  size: 28,
+                ),
                 onPressed: () => Navigator.pop(context),
               ),
             ),

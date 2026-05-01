@@ -38,12 +38,16 @@ class StarryBackgroundPainter extends CustomPainter {
     double offsetX = rotationZ % starTexture.width;
     double offsetY = rotationY % starTexture.height;
 
-    for (double i = offsetX - starTexture.width;
-        i < size.width;
-        i += starTexture.width - 1) {
-      for (double j = offsetY - starTexture.height;
-          j < size.height;
-          j += starTexture.height - 1) {
+    for (
+      double i = offsetX - starTexture.width;
+      i < size.width;
+      i += starTexture.width - 1
+    ) {
+      for (
+        double j = offsetY - starTexture.height;
+        j < size.height;
+        j += starTexture.height - 1
+      ) {
         canvas.drawImage(starTexture, Offset(i, j), paint);
       }
     }

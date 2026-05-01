@@ -68,7 +68,11 @@ class _SearchScreenState extends State<SearchScreen> {
       // 异步获取点赞和评论数据，不阻塞搜索结果显示
       // 使用 filePath 作为 contentId，与法流视频页面保持一致，确保点赞评论数据同步
       if (results.isNotEmpty) {
-        final contentIds = results.map((item) => item.filePath.isNotEmpty ? item.filePath : item.title).toList();
+        final contentIds = results
+            .map(
+              (item) => item.filePath.isNotEmpty ? item.filePath : item.title,
+            )
+            .toList();
         ContentStatsService().fetchContentStats(contentIds).then((_) {
           if (mounted) {
             setState(() {}); // 统计数据加载完成后刷新UI
@@ -80,9 +84,9 @@ class _SearchScreenState extends State<SearchScreen> {
         _pageController.jumpToPage(0);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('搜索失败: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('搜索失败: $e')));
     } finally {
       setState(() {
         _isLoading = false;
@@ -118,7 +122,11 @@ class _SearchScreenState extends State<SearchScreen> {
               prefixIcon: Icon(Icons.search, color: Colors.grey[600], size: 20),
               suffixIcon: _controller.text.isNotEmpty
                   ? IconButton(
-                      icon: Icon(Icons.cancel, color: Colors.grey[600], size: 20),
+                      icon: Icon(
+                        Icons.cancel,
+                        color: Colors.grey[600],
+                        size: 20,
+                      ),
                       onPressed: () {
                         _controller.clear();
                         _search('');
@@ -143,7 +151,11 @@ class _SearchScreenState extends State<SearchScreen> {
             onPressed: () => _search(_controller.text),
             child: const Text(
               '搜索',
-              style: TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -181,7 +193,11 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.sentiment_dissatisfied, size: 80, color: Colors.grey[800]),
+            Icon(
+              Icons.sentiment_dissatisfied,
+              size: 80,
+              color: Colors.grey[800],
+            ),
             const SizedBox(height: 16),
             Text(
               '暂无内容，换个词试试',
@@ -206,7 +222,7 @@ class _SearchScreenState extends State<SearchScreen> {
         // 使用 filePath 作为 id，与 ContentStatsService 的 contentId 保持一致
         final contentId = item.filePath.isNotEmpty ? item.filePath : item.title;
         final videoEntity = VideoEntity(
-          id: contentId,  // 使用 filePath 作为 contentId，与法流视频一致
+          id: contentId, // 使用 filePath 作为 contentId，与法流视频一致
           username: item.title,
           description: item.preview ?? '点击头像阅读全文',
           videoUrl: '',
@@ -235,9 +251,7 @@ class _SearchScreenState extends State<SearchScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(item.title),
-        content: SingleChildScrollView(
-          child: Text(item.content),
-        ),
+        content: SingleChildScrollView(child: Text(item.content)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),

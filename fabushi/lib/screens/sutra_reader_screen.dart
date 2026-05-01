@@ -3,7 +3,7 @@ import '../services/cloudflare_text_service.dart';
 import '../features/video_feed/presentation/view/widgets/video_feed_view_full_text_reader.dart';
 
 /// 经文阅读界面
-/// 
+///
 /// 用于禅室中点击经书后打开的全文阅读界面
 /// 复用法流页面的 VideoFeedViewFullTextReader 组件
 
@@ -82,10 +82,8 @@ Future<void> openSutraReader(
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => VideoFeedViewFullTextReader(
-            bookTitle: title,
-            fullText: content!,
-          ),
+          builder: (context) =>
+              VideoFeedViewFullTextReader(bookTitle: title, fullText: content!),
         ),
       );
     }
@@ -95,10 +93,7 @@ Future<void> openSutraReader(
     if (context.mounted) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('加载失败: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('加载失败: $e'), backgroundColor: Colors.red),
       );
     }
   }

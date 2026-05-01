@@ -5,17 +5,17 @@ import '../services/device_capability_service.dart';
 import '../services/app_settings.dart';
 
 /// 模型选择对话框
-/// 
+///
 /// 用于首次启动时引导用户选择 AI 模型，
 /// 或在设置中手动切换模型。
 /// 支持按类别分组显示，多模态模型显示特殊标识。
 class ModelSelectionDialog extends StatefulWidget {
   /// 是否为首次启动引导模式
   final bool isFirstLaunch;
-  
+
   /// 过滤显示的模型类别（null 表示全部显示）
   final LLMModelCategory? filterCategory;
-  
+
   const ModelSelectionDialog({
     Key? key,
     this.isFirstLaunch = false,
@@ -51,7 +51,7 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
   double _downloadProgress = 0.0;
   String _downloadStage = '';
   String? _error;
-  
+
   // 当前展开的类别
   Set<LLMModelCategory> _expandedCategories = {
     LLMModelCategory.textOnly,
@@ -66,18 +66,21 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
 
   Future<void> _loadDeviceInfo() async {
     try {
-      final deviceInfo = await DeviceCapabilityService.instance.getDeviceCapabilityInfo();
+      final deviceInfo = await DeviceCapabilityService.instance
+          .getDeviceCapabilityInfo();
       final modelStatus = await LLMModelManager.instance.getAllModelStatus();
-      
+
       // 加载已选择的模型
       final savedModelName = await AppSettings.getSelectedModelName();
       LLMModelType? savedType;
       if (savedModelName != null) {
         try {
-          savedType = LLMModelType.values.firstWhere((t) => t.name == savedModelName);
+          savedType = LLMModelType.values.firstWhere(
+            (t) => t.name == savedModelName,
+          );
         } catch (_) {}
       }
-      
+
       if (mounted) {
         setState(() {
           _deviceInfo = deviceInfo;
@@ -114,40 +117,43 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
     // 使用 Future 开始下载，不等待完成（允许后台运行）
     _startBackgroundDownload(type);
   }
-  
+
   /// 启动后台下载
   void _startBackgroundDownload(LLMModelType type) {
-    LLMModelManager.instance.downloadModel(
-      type,
-      onProgress: (progress, stage) {
-        if (mounted) {
-          setState(() {
-            _downloadProgress = progress;
-            _downloadStage = stage;
-          });
-        }
-      },
-    ).then((_) async {
-      // 下载完成
-      if (mounted) {
-        await _selectModel(type);
-      } else {
-        // 对话框已关闭，显示全局通知
-        _showDownloadCompleteNotification(type);
-      }
-    }).catchError((e) {
-      if (mounted) {
-        setState(() {
-          _error = '下载失败: $e';
-          _isDownloading = false;
+    LLMModelManager.instance
+        .downloadModel(
+          type,
+          onProgress: (progress, stage) {
+            if (mounted) {
+              setState(() {
+                _downloadProgress = progress;
+                _downloadStage = stage;
+              });
+            }
+          },
+        )
+        .then((_) async {
+          // 下载完成
+          if (mounted) {
+            await _selectModel(type);
+          } else {
+            // 对话框已关闭，显示全局通知
+            _showDownloadCompleteNotification(type);
+          }
+        })
+        .catchError((e) {
+          if (mounted) {
+            setState(() {
+              _error = '下载失败: $e';
+              _isDownloading = false;
+            });
+          } else {
+            // 对话框已关闭，显示全局错误通知
+            _showDownloadErrorNotification(e);
+          }
         });
-      } else {
-        // 对话框已关闭，显示全局错误通知
-        _showDownloadErrorNotification(e);
-      }
-    });
   }
-  
+
   /// 显示下载完成通知（当对话框已关闭时）
   static void _showDownloadCompleteNotification(LLMModelType type) {
     final config = LLMModelConfig.getConfig(type);
@@ -155,22 +161,19 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
     AppSettings.setSelectedModelName(type.name);
     AppSettings.setModelSetupComplete(true);
     LLMModelManager.instance.selectedModel = type;
-    
+
     // 使用全局 OverlayEntry 显示通知
     GlobalNotification.show(
       message: '${config.displayName} 下载完成',
       isError: false,
     );
   }
-  
+
   /// 显示下载错误通知
   static void _showDownloadErrorNotification(dynamic error) {
-    GlobalNotification.show(
-      message: '模型下载失败: $error',
-      isError: true,
-    );
+    GlobalNotification.show(message: '模型下载失败: $error', isError: true);
   }
-  
+
   /// 隐藏对话框，继续后台下载
   void _hideAndContinueDownload() {
     // 保存 Overlay 引用以便后台下载完成后显示通知
@@ -182,9 +185,9 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
     // 保存选择
     await AppSettings.setSelectedModelName(type.name);
     await AppSettings.setModelSetupComplete(true);
-    
+
     LLMModelManager.instance.selectedModel = type;
-    
+
     if (mounted) {
       Navigator.of(context).pop(type);
     }
@@ -198,20 +201,22 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
       _downloadStage = '';
     });
   }
-  
+
   /// 选中模型卡片（不自动下载）
   void _selectModelCard(LLMModelType type) {
     setState(() {
       _selectedType = type;
     });
   }
-  
+
   /// 构建操作按钮
   Widget _buildActionButtons() {
     final hasSelectedModel = _selectedType != null;
-    final status = hasSelectedModel ? (_modelStatus?[_selectedType!] ?? ModelStatus.notDownloaded) : null;
+    final status = hasSelectedModel
+        ? (_modelStatus?[_selectedType!] ?? ModelStatus.notDownloaded)
+        : null;
     final isDownloaded = status == ModelStatus.downloaded;
-    
+
     return Row(
       children: [
         // 暂不下载/关闭按钮
@@ -230,7 +235,9 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
         // 下载并使用/确定按钮
         Expanded(
           child: ElevatedButton(
-            onPressed: hasSelectedModel ? () => _downloadAndSelect(_selectedType!) : null,
+            onPressed: hasSelectedModel
+                ? () => _downloadAndSelect(_selectedType!)
+                : null,
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.amber,
               foregroundColor: Colors.black87,
@@ -256,8 +263,8 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
         child: _isLoading
             ? _buildLoading()
             : _isDownloading
-                ? _buildDownloadProgress()
-                : _buildModelSelection(),
+            ? _buildDownloadProgress()
+            : _buildModelSelection(),
       ),
     );
   }
@@ -268,10 +275,7 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
       children: [
         CircularProgressIndicator(color: Colors.amber),
         SizedBox(height: 16),
-        Text(
-          '正在检测设备配置...',
-          style: TextStyle(color: Colors.white70),
-        ),
+        Text('正在检测设备配置...', style: TextStyle(color: Colors.white70)),
       ],
     );
   }
@@ -312,7 +316,10 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
         const SizedBox(height: 8),
         Text(
           '${(_downloadProgress * 100).toStringAsFixed(1)}%',
-          style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.amber,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         const SizedBox(height: 24),
         // 按钮行：隐藏到后台 + 取消下载
@@ -324,12 +331,18 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
             TextButton.icon(
               onPressed: _hideAndContinueDownload,
               icon: const Icon(Icons.minimize, color: Colors.white70, size: 18),
-              label: const Text('后台下载', style: TextStyle(color: Colors.white70)),
+              label: const Text(
+                '后台下载',
+                style: TextStyle(color: Colors.white70),
+              ),
             ),
             TextButton.icon(
               onPressed: _cancelDownload,
               icon: const Icon(Icons.close, color: Colors.redAccent, size: 18),
-              label: const Text('取消', style: TextStyle(color: Colors.redAccent)),
+              label: const Text(
+                '取消',
+                style: TextStyle(color: Colors.redAccent),
+              ),
             ),
           ],
         ),
@@ -358,10 +371,10 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
           ],
         ),
         const SizedBox(height: 16),
-        
+
         // 设备信息
         if (_deviceInfo != null) _buildDeviceInfo(),
-        
+
         // 错误信息
         if (_error != null)
           Container(
@@ -373,15 +386,22 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+                const Icon(
+                  Icons.error_outline,
+                  color: Colors.redAccent,
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
                 ),
               ],
             ),
           ),
-        
+
         // 按类别分组的模型列表 - 使用 Expanded 确保填满剩余空间并可滚动
         const SizedBox(height: 8),
         Expanded(
@@ -392,7 +412,7 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
             ),
           ),
         ),
-        
+
         // 操作按钮
         const SizedBox(height: 16),
         _buildActionButtons(),
@@ -402,30 +422,36 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
 
   List<Widget> _buildCategorizedModelList() {
     final widgets = <Widget>[];
-    
+
     // 根据平台筛选可用模型
-    final isMobile = Theme.of(context).platform == TargetPlatform.android ||
-                     Theme.of(context).platform == TargetPlatform.iOS;
-    final platformConfigs = LLMModelConfig.getConfigsForPlatform(isMobile: isMobile);
+    final isMobile =
+        Theme.of(context).platform == TargetPlatform.android ||
+        Theme.of(context).platform == TargetPlatform.iOS;
+    final platformConfigs = LLMModelConfig.getConfigsForPlatform(
+      isMobile: isMobile,
+    );
     final platformModelTypes = platformConfigs.map((c) => c.type).toSet();
-    
+
     // 按类别分组
     for (final category in LLMModelCategory.values) {
       // 应用过滤器
       if (widget.filterCategory != null && category != widget.filterCategory) {
         continue;
       }
-      
+
       // 只显示当前平台支持的模型
       final modelsInCategory = LLMModelConfig.configs.entries
-          .where((e) => e.value.category == category && 
-                        platformModelTypes.contains(e.key))
+          .where(
+            (e) =>
+                e.value.category == category &&
+                platformModelTypes.contains(e.key),
+          )
           .toList();
-      
+
       if (modelsInCategory.isEmpty) continue;
-      
+
       final isExpanded = _expandedCategories.contains(category);
-      
+
       widgets.add(
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -460,14 +486,20 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         '${modelsInCategory.length}',
-                        style: const TextStyle(color: Colors.white54, fontSize: 11),
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11,
+                        ),
                       ),
                     ),
                     const Spacer(),
@@ -480,17 +512,17 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
                 ),
               ),
             ),
-            
+
             // 模型列表
             if (isExpanded)
               ...modelsInCategory.map((e) => _buildModelCard(e.key)),
-            
+
             const SizedBox(height: 8),
           ],
         ),
       );
     }
-    
+
     return widgets;
   }
 
@@ -548,8 +580,7 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
     final status = _modelStatus?[type] ?? ModelStatus.notDownloaded;
     final isRecommended = type == _deviceInfo?.recommendedModel;
     final isSelected = type == _selectedType;
-    final canRun = _deviceInfo != null && 
-                   _deviceInfo!.ramMb >= config.minRamMb;
+    final canRun = _deviceInfo != null && _deviceInfo!.ramMb >= config.minRamMb;
 
     return GestureDetector(
       onTap: canRun ? () => _selectModelCard(type) : null,
@@ -557,8 +588,8 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isSelected 
-              ? Colors.amber.withOpacity(0.15) 
+          color: isSelected
+              ? Colors.amber.withOpacity(0.15)
               : Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
@@ -573,8 +604,8 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: canRun 
-                    ? _getModelIconColor(config).withOpacity(0.15) 
+                color: canRun
+                    ? _getModelIconColor(config).withOpacity(0.15)
                     : Colors.grey.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -589,7 +620,7 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
               ),
             ),
             const SizedBox(width: 12),
-            
+
             // 模型信息
             Expanded(
               child: Column(
@@ -630,7 +661,7 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
                 ],
               ),
             ),
-            
+
             // 状态指示
             _buildStatusIndicator(status, canRun),
           ],
@@ -665,7 +696,7 @@ class _ModelSelectionDialogState extends State<ModelSelectionDialog> {
     if (!canRun) {
       return const Icon(Icons.block, color: Colors.grey, size: 20);
     }
-    
+
     switch (status) {
       case ModelStatus.downloaded:
         return Container(
@@ -716,17 +747,17 @@ class _RecommendedBadge extends StatelessWidget {
 }
 
 /// 全局通知工具类
-/// 
+///
 /// 用于在应用任何位置显示通知，即使当前页面已被 pop
 class GlobalNotification {
   static OverlayEntry? _currentEntry;
   static OverlayState? _savedOverlay;
-  
+
   /// 保存 Overlay 引用（在关闭对话框前调用）
   static void saveOverlay(BuildContext context) {
     _savedOverlay = Overlay.of(context);
   }
-  
+
   /// 显示全局通知
   static void show({
     required String message,
@@ -735,10 +766,10 @@ class GlobalNotification {
   }) {
     final overlay = _savedOverlay;
     if (overlay == null) return;
-    
+
     // 移除现有通知
     _currentEntry?.remove();
-    
+
     _currentEntry = OverlayEntry(
       builder: (context) => _NotificationWidget(
         message: message,
@@ -749,9 +780,9 @@ class GlobalNotification {
         },
       ),
     );
-    
+
     overlay.insert(_currentEntry!);
-    
+
     // 自动消失
     Future.delayed(duration, () {
       _currentEntry?.remove();
@@ -765,13 +796,13 @@ class _NotificationWidget extends StatefulWidget {
   final String message;
   final bool isError;
   final VoidCallback onDismiss;
-  
+
   const _NotificationWidget({
     required this.message,
     required this.isError,
     required this.onDismiss,
   });
-  
+
   @override
   State<_NotificationWidget> createState() => _NotificationWidgetState();
 }
@@ -781,7 +812,7 @@ class _NotificationWidgetState extends State<_NotificationWidget>
   late AnimationController _controller;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _fadeAnimation;
-  
+
   @override
   void initState() {
     super.initState();
@@ -792,20 +823,17 @@ class _NotificationWidgetState extends State<_NotificationWidget>
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, -1),
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOut,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
     _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(_controller);
     _controller.forward();
   }
-  
+
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Positioned(
@@ -821,8 +849,8 @@ class _NotificationWidgetState extends State<_NotificationWidget>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: widget.isError 
-                    ? const Color(0xFF2D1F1F) 
+                color: widget.isError
+                    ? const Color(0xFF2D1F1F)
                     : const Color(0xFF1F2D1F),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
@@ -840,7 +868,9 @@ class _NotificationWidgetState extends State<_NotificationWidget>
               child: Row(
                 children: [
                   Icon(
-                    widget.isError ? Icons.error_outline : Icons.check_circle_outline,
+                    widget.isError
+                        ? Icons.error_outline
+                        : Icons.check_circle_outline,
                     color: widget.isError ? Colors.redAccent : Colors.green,
                     size: 24,
                   ),

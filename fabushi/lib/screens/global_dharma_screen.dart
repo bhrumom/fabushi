@@ -60,9 +60,9 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
     final assetCount = await model.prepareDefaultNonR2AssetsForSending();
     if (assetCount == 0) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('未找到可发送的非 R2 经文素材')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('未找到可发送的非 R2 经文素材')));
       return;
     }
 
@@ -104,7 +104,11 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
           Selector<FileTransferModel, bool>(
             selector: (_, m) => m.isTransferring,
             builder: (_, isTransferring, __) => isTransferring
-                ? IconButton(icon: const Icon(Icons.stop), onPressed: _stopGlobalDharma, tooltip: '停止发送')
+                ? IconButton(
+                    icon: const Icon(Icons.stop),
+                    onPressed: _stopGlobalDharma,
+                    tooltip: '停止发送',
+                  )
                 : IconButton(
                     icon: const Icon(Icons.play_arrow),
                     onPressed: _startGlobalDharma,
@@ -117,8 +121,20 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
         children: [
           // 统计信息卡片
           Selector<FileTransferModel, List<dynamic>>(
-            selector: (_, m) => [m.selectedFiles.length, m.countryStatuses.length, m.globalSentCount, m.globalDataSentMB, m.isLooping],
-            builder: (_, data, __) => _buildStatsCard(data[0] as int, data[1] as int, data[2] as int, data[3] as double, data[4] as bool),
+            selector: (_, m) => [
+              m.selectedFiles.length,
+              m.countryStatuses.length,
+              m.globalSentCount,
+              m.globalDataSentMB,
+              m.isLooping,
+            ],
+            builder: (_, data, __) => _buildStatsCard(
+              data[0] as int,
+              data[1] as int,
+              data[2] as int,
+              data[3] as double,
+              data[4] as bool,
+            ),
           ),
 
           // 当前日志
@@ -156,14 +172,22 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
           onPressed: isTransferring ? _stopGlobalDharma : _startGlobalDharma,
           icon: Icon(isTransferring ? Icons.stop : Icons.play_arrow),
           label: Text(isTransferring ? '停止发送' : '开始法布施'),
-          backgroundColor: isTransferring ? Colors.red : const Color(0xFF667eea),
+          backgroundColor: isTransferring
+              ? Colors.red
+              : const Color(0xFF667eea),
           foregroundColor: Colors.white,
         ),
       ),
     );
   }
 
-  Widget _buildStatsCard(int filesCount, int countriesCount, int sentCount, double dataMB, bool isLooping) {
+  Widget _buildStatsCard(
+    int filesCount,
+    int countriesCount,
+    int sentCount,
+    double dataMB,
+    bool isLooping,
+  ) {
     return Card(
       margin: const EdgeInsets.all(16),
       child: Padding(
@@ -177,7 +201,10 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const SizedBox(width: 8),
                 Text(
                   '默认素材: $filesCount 个',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
@@ -197,7 +224,10 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
               children: [
                 const Icon(Icons.send, color: Colors.orange),
                 const SizedBox(width: 8),
-                Text('已发送: $sentCount 个文件', style: const TextStyle(fontSize: 16)),
+                Text(
+                  '已发送: $sentCount 个文件',
+                  style: const TextStyle(fontSize: 16),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -241,7 +271,10 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                   const SizedBox(width: 8),
                   Text(
                     '国家发送状态 (${statuses.where((s) => s.status == SendStatus.success).length}/${statuses.length})',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),

@@ -82,9 +82,7 @@ class _EulaScreenState extends State<EulaScreen> {
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.1),
-                ),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
               ),
               child: SingleChildScrollView(
                 controller: _scrollController,
@@ -128,7 +126,8 @@ class _EulaScreenState extends State<EulaScreen> {
                   child: Checkbox(
                     value: _agreedToTerms,
                     onChanged: _isScrolledToBottom
-                        ? (value) => setState(() => _agreedToTerms = value ?? false)
+                        ? (value) =>
+                              setState(() => _agreedToTerms = value ?? false)
                         : null,
                     activeColor: const Color(0xFF667EEA),
                     side: BorderSide(
@@ -194,7 +193,10 @@ class _EulaScreenState extends State<EulaScreen> {
                     ),
                     child: const Text(
                       '同意并继续',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ),

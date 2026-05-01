@@ -34,7 +34,9 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
   void _subscribeToTask() {
     // 获取当前任务
     final task = widget.downloadManager.tasks[widget.taskId];
-    debugPrint('DownloadProgressDialog: 订阅任务 ${widget.taskId}, 任务状态: ${task?.status}');
+    debugPrint(
+      'DownloadProgressDialog: 订阅任务 ${widget.taskId}, 任务状态: ${task?.status}',
+    );
 
     if (task != null) {
       if (mounted) {
@@ -81,12 +83,13 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
           } else if (task.status == DownloadStatus.failed) {
             debugPrint('DownloadProgressDialog: Stream收到失败状态，关闭对话框');
             _onError(task.error ?? '下载失败');
-          } else if (task.status == DownloadStatus.paused && task.error == '下载已取消') {
+          } else if (task.status == DownloadStatus.paused &&
+              task.error == '下载已取消') {
             debugPrint('DownloadProgressDialog: Stream收到取消状态，关闭对话框');
             Navigator.of(context).pop();
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text('下载已取消'), backgroundColor: Colors.orange));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('下载已取消'), backgroundColor: Colors.orange),
+            );
           }
         }
       },
@@ -121,7 +124,7 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
       } catch (e) {
         debugPrint('DownloadProgressDialog: 执行用户回调时出错: $e');
       }
-      
+
       // 延迟关闭对话框
       Future.delayed(Duration(milliseconds: 100), () {
         if (mounted) {
@@ -139,9 +142,9 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
   void _onError(String error) {
     if (mounted) {
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('下载失败: $error'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('下载失败: $error'), backgroundColor: Colors.red),
+      );
     }
   }
 
@@ -158,7 +161,12 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
       return AlertDialog(
         title: Text('下载任务不存在'),
         content: Text('下载任务可能已被取消'),
-        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: Text('确定'))],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('确定'),
+          ),
+        ],
       );
     }
 
@@ -195,7 +203,9 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
             value: progress,
             minHeight: 8,
             backgroundColor: Colors.grey[300],
-            valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+            valueColor: AlwaysStoppedAnimation<Color>(
+              Theme.of(context).primaryColor,
+            ),
           ),
           SizedBox(height: 8),
 
@@ -260,7 +270,8 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
     String format(int bytes) {
       if (bytes < 1024) return '${bytes} B';
       if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-      if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+      if (bytes < 1024 * 1024 * 1024)
+        return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
       return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
     }
 
@@ -268,8 +279,10 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
   }
 
   String _formatSpeed(double bytesPerSecond) {
-    if (bytesPerSecond < 1024) return '${bytesPerSecond.toStringAsFixed(1)} B/s';
-    if (bytesPerSecond < 1024 * 1024) return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+    if (bytesPerSecond < 1024)
+      return '${bytesPerSecond.toStringAsFixed(1)} B/s';
+    if (bytesPerSecond < 1024 * 1024)
+      return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
     if (bytesPerSecond < 1024 * 1024 * 1024)
       return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
     return '${(bytesPerSecond / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB/s';
@@ -331,8 +344,11 @@ class DownloadProgressWidget extends StatefulWidget {
   final String taskId;
   final DownloadManager downloadManager;
 
-  const DownloadProgressWidget({Key? key, required this.taskId, required this.downloadManager})
-    : super(key: key);
+  const DownloadProgressWidget({
+    Key? key,
+    required this.taskId,
+    required this.downloadManager,
+  }) : super(key: key);
 
   @override
   _DownloadProgressWidgetState createState() => _DownloadProgressWidgetState();
@@ -397,11 +413,16 @@ class _DownloadProgressWidgetState extends State<DownloadProgressWidget> {
               value: progress,
               minHeight: 4,
               backgroundColor: Colors.grey[300],
-              valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                Theme.of(context).primaryColor,
+              ),
             ),
           ),
           SizedBox(width: 8),
-          Text('${(progress * 100).toStringAsFixed(0)}%', style: TextStyle(fontSize: 12)),
+          Text(
+            '${(progress * 100).toStringAsFixed(0)}%',
+            style: TextStyle(fontSize: 12),
+          ),
         ],
       ),
     );

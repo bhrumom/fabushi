@@ -72,18 +72,19 @@ class AppSettings {
   }
 
   // ============ 读诵匹配阈值设置 ============
-  
+
   static const String _fastMatchThresholdKey = 'fast_match_threshold';
   static const String _matchThresholdKey = 'match_threshold';
-  
+
   // 默认值（百分比形式，范围 0.0 ~ 1.0）
-  static const double _defaultFastMatchThreshold = 0.50;  // 快速切换阈值 50%
-  static const double _defaultMatchThreshold = 0.50;      // 普通匹配阈值 50%
+  static const double _defaultFastMatchThreshold = 0.50; // 快速切换阈值 50%
+  static const double _defaultMatchThreshold = 0.50; // 普通匹配阈值 50%
 
   /// 获取快速切换阈值（匹配度达到此值立即切换）
   static Future<double> getFastMatchThreshold() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble(_fastMatchThresholdKey) ?? _defaultFastMatchThreshold;
+    return prefs.getDouble(_fastMatchThresholdKey) ??
+        _defaultFastMatchThreshold;
   }
 
   /// 设置快速切换阈值
@@ -105,7 +106,7 @@ class AppSettings {
   }
 
   // ============ LLM 模型设置 ============
-  
+
   static const String _selectedModelKey = 'selected_llm_model';
   static const String _isFirstLaunchKey = 'is_first_launch_v2';
   static const String _modelSetupCompleteKey = 'model_setup_complete';
@@ -146,4 +147,3 @@ class AppSettings {
     await prefs.setBool(_modelSetupCompleteKey, complete);
   }
 }
-

@@ -36,11 +36,16 @@ class ApiClient {
         uri = uri.replace(queryParameters: queryParams);
       }
 
-      final requestHeaders = <String, String>{'Content-Type': 'application/json', ...?headers};
+      final requestHeaders = <String, String>{
+        'Content-Type': 'application/json',
+        ...?headers,
+      };
 
       if (token != null) {
         requestHeaders['Authorization'] = 'Bearer $token';
-        debugPrint('🔐 ApiClient: 添加认证头 Authorization: Bearer ${token.substring(0, 20)}...');
+        debugPrint(
+          '🔐 ApiClient: 添加认证头 Authorization: Bearer ${token.substring(0, 20)}...',
+        );
       } else {
         debugPrint('⚠️ ApiClient: 没有token');
       }
@@ -71,11 +76,16 @@ class ApiClient {
       final url = await baseUrl;
       final uri = Uri.parse('$url$endpoint');
 
-      final requestHeaders = <String, String>{'Content-Type': 'application/json', ...?headers};
+      final requestHeaders = <String, String>{
+        'Content-Type': 'application/json',
+        ...?headers,
+      };
 
       if (token != null) {
         requestHeaders['Authorization'] = 'Bearer $token';
-        debugPrint('🔐 ApiClient: 添加认证头 Authorization: Bearer ${token.substring(0, 20)}...');
+        debugPrint(
+          '🔐 ApiClient: 添加认证头 Authorization: Bearer ${token.substring(0, 20)}...',
+        );
       } else {
         debugPrint('⚠️ ApiClient: 没有token');
       }
@@ -113,7 +123,10 @@ class ApiClient {
       final url = await baseUrl;
       final uri = Uri.parse('$url$endpoint');
 
-      final requestHeaders = <String, String>{'Content-Type': 'application/json', ...?headers};
+      final requestHeaders = <String, String>{
+        'Content-Type': 'application/json',
+        ...?headers,
+      };
 
       if (token != null) {
         requestHeaders['Authorization'] = 'Bearer $token';
@@ -149,7 +162,10 @@ class ApiClient {
       final url = await baseUrl;
       final uri = Uri.parse('$url$endpoint');
 
-      final requestHeaders = <String, String>{'Content-Type': 'application/json', ...?headers};
+      final requestHeaders = <String, String>{
+        'Content-Type': 'application/json',
+        ...?headers,
+      };
 
       if (token != null) {
         requestHeaders['Authorization'] = 'Bearer $token';
@@ -178,7 +194,7 @@ class ApiClient {
   Map<String, dynamic> _handleResponse(http.Response response) {
     debugPrint('📥 Response: ${response.statusCode} ${response.reasonPhrase}');
     debugPrint('📄 原始响应体: ${response.body}');
-    
+
     // 如果是 401 错误，打印请求头信息帮助调试
     if (response.statusCode == 401) {
       debugPrint('❌ 401 认证失败 - 请求头: ${response.request?.headers}');
@@ -203,13 +219,19 @@ class ApiClient {
         if (data is Map<String, dynamic>) {
           return data;
         } else {
-          return {'success': true, 'statusCode': response.statusCode, 'data': data};
+          return {
+            'success': true,
+            'statusCode': response.statusCode,
+            'data': data,
+          };
         }
       } else {
         return {
           'success': false,
           'statusCode': response.statusCode,
-          'error': data is Map ? (data['error'] ?? data['message'] ?? '请求失败') : '请求失败',
+          'error': data is Map
+              ? (data['error'] ?? data['message'] ?? '请求失败')
+              : '请求失败',
           'details': data,
         };
       }
@@ -253,7 +275,10 @@ class ApiClient {
     );
   }
 
-  Future<Map<String, dynamic>> sendVerificationCode(String email, {String type = 'register'}) {
+  Future<Map<String, dynamic>> sendVerificationCode(
+    String email, {
+    String type = 'register',
+  }) {
     return post(
       WorkerConfig.getEndpoint('sendVerificationCode'),
       body: {'email': email, 'type': type},
@@ -273,6 +298,10 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> useRedeemCode(String token, String code) {
-    return post(WorkerConfig.getEndpoint('adminUseRedeemCode'), body: {'code': code}, token: token);
+    return post(
+      WorkerConfig.getEndpoint('adminUseRedeemCode'),
+      body: {'code': code},
+      token: token,
+    );
   }
 }

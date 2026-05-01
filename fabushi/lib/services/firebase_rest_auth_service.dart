@@ -7,7 +7,7 @@ import '../firebase_options.dart';
 /// 用于在不支持SDK的平台（如macOS桌面）使用Firebase手机验证码登录
 class FirebaseRestAuthService {
   static const String _baseUrl = 'https://identitytoolkit.googleapis.com/v1';
-  
+
   // 获取当前平台的Firebase API Key
   static String get _apiKey {
     return DefaultFirebaseOptions.currentPlatform.apiKey;
@@ -25,7 +25,7 @@ class FirebaseRestAuthService {
   }) async {
     try {
       final url = '$_baseUrl/accounts:sendVerificationCode?key=$_apiKey';
-      
+
       final response = await http.post(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
@@ -39,22 +39,13 @@ class FirebaseRestAuthService {
 
       if (response.statusCode == 200 && data['sessionInfo'] != null) {
         _sessionInfo = data['sessionInfo'];
-        return {
-          'success': true,
-          'sessionInfo': _sessionInfo,
-        };
+        return {'success': true, 'sessionInfo': _sessionInfo};
       } else {
-        return {
-          'success': false,
-          'error': _parseError(data),
-        };
+        return {'success': false, 'error': _parseError(data)};
       }
     } catch (e) {
       debugPrint('Firebase REST API error: $e');
-      return {
-        'success': false,
-        'error': '网络错误: $e',
-      };
+      return {'success': false, 'error': '网络错误: $e'};
     }
   }
 
@@ -67,21 +58,15 @@ class FirebaseRestAuthService {
     try {
       final session = sessionInfo ?? _sessionInfo;
       if (session == null) {
-        return {
-          'success': false,
-          'error': '请先发送验证码',
-        };
+        return {'success': false, 'error': '请先发送验证码'};
       }
 
       final url = '$_baseUrl/accounts:signInWithPhoneNumber?key=$_apiKey';
-      
+
       final response = await http.post(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'sessionInfo': session,
-          'code': code,
-        }),
+        body: jsonEncode({'sessionInfo': session, 'code': code}),
       );
 
       final data = jsonDecode(response.body);
@@ -97,17 +82,11 @@ class FirebaseRestAuthService {
           'isNewUser': data['isNewUser'] ?? false,
         };
       } else {
-        return {
-          'success': false,
-          'error': _parseError(data),
-        };
+        return {'success': false, 'error': _parseError(data)};
       }
     } catch (e) {
       debugPrint('Firebase REST API signIn error: $e');
-      return {
-        'success': false,
-        'error': '登录失败: $e',
-      };
+      return {'success': false, 'error': '登录失败: $e'};
     }
   }
 
@@ -115,7 +94,7 @@ class FirebaseRestAuthService {
   String _parseError(Map<String, dynamic> data) {
     final error = data['error'];
     if (error == null) return '未知错误';
-    
+
     final message = error['message'] as String?;
     if (message == null) return '未知错误';
 
@@ -145,9 +124,9 @@ class FirebaseRestAuthService {
 
   /// 检查是否需要使用REST API (桌面平台)
   static bool get shouldUseRestApi {
-    return !kIsWeb && 
+    return !kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.macOS ||
-         defaultTargetPlatform == TargetPlatform.windows ||
-         defaultTargetPlatform == TargetPlatform.linux);
+            defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux);
   }
 }

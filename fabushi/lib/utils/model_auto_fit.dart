@@ -39,8 +39,12 @@ class ModelAutoFit {
   static ModelBounds computeBoundsFromModelBytes(Uint8List bytes) {
     final scene = fb.Scene(bytes);
 
-    double minX = double.infinity, minY = double.infinity, minZ = double.infinity;
-    double maxX = double.negativeInfinity, maxY = double.negativeInfinity, maxZ = double.negativeInfinity;
+    double minX = double.infinity,
+        minY = double.infinity,
+        minZ = double.infinity;
+    double maxX = double.negativeInfinity,
+        maxY = double.negativeInfinity,
+        maxZ = double.negativeInfinity;
     int totalVertices = 0;
 
     for (final node in scene.nodes ?? <fb.Node>[]) {
@@ -97,8 +101,10 @@ class ModelAutoFit {
       );
     }
 
-    debugPrint('✅ [ModelAutoFit] 解析完成: $totalVertices 个顶点, '
-        'bounds: ($minX, $minY, $minZ) ~ ($maxX, $maxY, $maxZ)');
+    debugPrint(
+      '✅ [ModelAutoFit] 解析完成: $totalVertices 个顶点, '
+      'bounds: ($minX, $minY, $minZ) ~ ($maxX, $maxY, $maxZ)',
+    );
 
     return ModelBounds(
       min: vector.Vector3(minX, minY, minZ),
@@ -122,8 +128,10 @@ class ModelAutoFit {
     final scale = targetSize / bounds.maxDimension;
     final center = bounds.center;
 
-    debugPrint('📐 [ModelAutoFit] scale=$scale, center=$center, '
-        'maxDim=${bounds.maxDimension}');
+    debugPrint(
+      '📐 [ModelAutoFit] scale=$scale, center=$center, '
+      'maxDim=${bounds.maxDimension}',
+    );
 
     return vector.Matrix4.identity()
       ..multiply(originalTransform ?? vector.Matrix4.identity())

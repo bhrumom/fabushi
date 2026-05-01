@@ -28,8 +28,9 @@ abstract class Geometry {
     Uint8List vertices;
     bool isSkinned =
         fbPrimitive.vertices!.runtimeType == fb.SkinnedVertexBuffer;
-    int perVertexBytes =
-        isSkinned ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize;
+    int perVertexBytes = isSkinned
+        ? kSkinnedPerVertexSize
+        : kUnskinnedPerVertexSize;
 
     switch (fbPrimitive.vertices!.runtimeType) {
       case const (fb.UnskinnedVertexBuffer):

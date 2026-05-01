@@ -87,9 +87,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     if (bytes.length > 3 * 1024 * 1024) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('头像图片不能超过 3MB')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('头像图片不能超过 3MB')));
       return;
     }
 
@@ -170,16 +170,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           Navigator.pop(context);
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? '更新失败')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(data['error'] ?? '更新失败')));
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('更新失败: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('更新失败: $e')));
     }
   }
 
@@ -424,9 +424,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           : Icons.visibility,
                       color: Colors.white38,
                     ),
-                    onPressed: () => setState(
-                      () => _obscurePassword = !_obscurePassword,
-                    ),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
                 validator: (value) {
@@ -478,8 +477,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  Widget _divider() =>
-      const Divider(color: Colors.white10, height: 1, indent: 16, endIndent: 16);
+  Widget _divider() => const Divider(
+    color: Colors.white10,
+    height: 1,
+    indent: 16,
+    endIndent: 16,
+  );
 
   Widget _buildFormItem({required String label, required Widget child}) {
     return Padding(

@@ -12,7 +12,10 @@ class LanguageSettingItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final settings = context.watch<SettingsModel>();
-    final selectedLanguageName = AppLocalizations.languageNameForPreference(settings.localePreference, l10n);
+    final selectedLanguageName = AppLocalizations.languageNameForPreference(
+      settings.localePreference,
+      l10n,
+    );
 
     return Card(
       color: const Color(0xFF1E1E1E),
@@ -21,12 +24,18 @@ class LanguageSettingItem extends StatelessWidget {
       child: ListTile(
         leading: Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: Colors.cyan.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+          decoration: BoxDecoration(
+            color: Colors.cyan.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
+          ),
           child: const Icon(Icons.language, color: Colors.cyan, size: 24),
         ),
         title: Text(
           l10n.settingsLanguageTitle,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w500,
+          ),
         ),
         subtitle: Text(
           '${l10n.settingsLanguageSubtitle} · $selectedLanguageName',

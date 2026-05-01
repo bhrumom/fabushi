@@ -31,7 +31,8 @@ class TextItem {
     id: _parseIdSafe(json['id']),
     title: (json['title'] ?? '').toString(),
     content: (json['content'] ?? '').toString(),
-    filePath: (json['path'] ?? json['filePath'] ?? json['file_path'] ?? '').toString(),
+    filePath: (json['path'] ?? json['filePath'] ?? json['file_path'] ?? '')
+        .toString(),
     category: (json['category'] ?? '').toString(),
     preview: json['preview']?.toString(),
   );
@@ -58,7 +59,7 @@ class TextSearchService {
     try {
       final manifestContent = await rootBundle.loadString('AssetManifest.json');
       final Map<String, dynamic> manifest = json.decode(manifestContent);
-      
+
       final entries = manifest.keys
           .where((s) => s.contains('assets/built_in/') && s.endsWith('.txt'))
           .toList();
@@ -68,8 +69,6 @@ class TextSearchService {
         final parts = path.split('/');
         final category = parts.length > 2 ? parts[2] : '其他';
 
-
-
         String content = '';
         try {
           content = await rootBundle.loadString(path);
@@ -77,14 +76,16 @@ class TextSearchService {
           print('加载内容失败: $path');
         }
 
-        _items.add(TextItem(
-          title: title, 
-          content: content,
-          filePath: path, 
-          category: category
-        ));
+        _items.add(
+          TextItem(
+            title: title,
+            content: content,
+            filePath: path,
+            category: category,
+          ),
+        );
       }
-      
+
       print('✅ 本地索引完成: ${_items.length} 个项目');
     } catch (e) {
       print('❌ 本地索引失败: $e');
@@ -118,21 +119,27 @@ class TextSearchService {
 
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/builtin/search?q=${Uri.encodeComponent(query)}&limit=$limit'),
+        Uri.parse(
+          '$baseUrl/api/builtin/search?q=${Uri.encodeComponent(query)}&limit=$limit',
+        ),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
           final results = data['data']['results'] as List;
-          return results.map((json) => TextItem(
-            id: _parseId(json['id']),
-            title: json['title'] ?? '',
-            content: json['content'] ?? '',
-            filePath: json['file_path'] ?? json['filePath'] ?? '',
-            category: json['category'] ?? '',
-            preview: _generatePreview(json['content'] ?? '', query),
-          )).toList();
+          return results
+              .map(
+                (json) => TextItem(
+                  id: _parseId(json['id']),
+                  title: json['title'] ?? '',
+                  content: json['content'] ?? '',
+                  filePath: json['file_path'] ?? json['filePath'] ?? '',
+                  category: json['category'] ?? '',
+                  preview: _generatePreview(json['content'] ?? '', query),
+                ),
+              )
+              .toList();
         }
       }
     } catch (e) {
@@ -144,35 +151,44 @@ class TextSearchService {
   }
 
   // 远程搜索（带分类筛选）
-  Future<List<TextItem>> searchRemote(String query, {String? category, int limit = 50}) async {
+  Future<List<TextItem>> searchRemote(
+    String query, {
+    String? category,
+    int limit = 50,
+  }) async {
     if (query.isEmpty) return [];
 
     try {
-      var url = '$baseUrl/api/builtin/search?q=${Uri.encodeComponent(query)}&limit=$limit';
+      var url =
+          '$baseUrl/api/builtin/search?q=${Uri.encodeComponent(query)}&limit=$limit';
       if (category != null && category.isNotEmpty) {
         url += '&category=${Uri.encodeComponent(category)}';
       }
-      
+
       print('🔍 搜索请求: $url');
-      
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
-      
+
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 10));
+
       print('📊 响应状态码: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         print('📊 解析数据: $data');
-        
+
         if (data['success'] == true && data['data'] != null) {
           final dataMap = data['data'] as Map<String, dynamic>;
           final results = dataMap['results'] as List;
           final pagination = dataMap['pagination'] as Map<String, dynamic>?;
-          
+
           print('✅ 找到 ${results.length} 条结果');
           if (pagination != null) {
-            print('📊 分页信息: total=${pagination['total']}, limit=${pagination['limit']}, offset=${pagination['offset']}');
+            print(
+              '📊 分页信息: total=${pagination['total']}, limit=${pagination['limit']}, offset=${pagination['offset']}',
+            );
           }
-          
+
           // 如果远程搜索没有结果，尝试本地搜索
           if (results.isEmpty) {
             print('⚠️ 远程搜索无结果，转为本地搜索...');
@@ -182,14 +198,18 @@ class TextSearchService {
             return searchLocal(query);
           }
 
-          return results.map((json) => TextItem(
-            id: _parseId(json['id']),
-            title: json['title'] ?? '',
-            content: json['content'] ?? '',
-            filePath: json['file_path'] ?? json['filePath'] ?? '',
-            category: json['category'] ?? '',
-            preview: _generatePreview(json['content'] ?? '', query),
-          )).toList();
+          return results
+              .map(
+                (json) => TextItem(
+                  id: _parseId(json['id']),
+                  title: json['title'] ?? '',
+                  content: json['content'] ?? '',
+                  filePath: json['file_path'] ?? json['filePath'] ?? '',
+                  category: json['category'] ?? '',
+                  preview: _generatePreview(json['content'] ?? '', query),
+                ),
+              )
+              .toList();
         } else {
           print('⚠️ API返回数据格式不正确');
         }
@@ -213,9 +233,9 @@ class TextSearchService {
     try {
       final url = '$baseUrl/api/builtin/categories';
       print('📚 获取分类请求: $url');
-      
+
       final response = await http.get(Uri.parse(url));
-      
+
       print('📊 分类响应状态码: ${response.statusCode}');
       print('📝 分类响应内容: ${response.body}');
 
@@ -223,7 +243,9 @@ class TextSearchService {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
           final categories = data['data'] as List;
-          final categoryNames = categories.map((cat) => (cat['category'] ?? '').toString()).toList();
+          final categoryNames = categories
+              .map((cat) => (cat['category'] ?? '').toString())
+              .toList();
           print('✅ 获取到 ${categoryNames.length} 个分类: $categoryNames');
           return categoryNames;
         } else {
@@ -263,18 +285,20 @@ class TextSearchService {
   // 生成预览文本
   String _generatePreview(String content, String query) {
     if (content.isEmpty) return '';
-    
+
     final queryLower = query.toLowerCase();
     final contentLower = content.toLowerCase();
     final index = contentLower.indexOf(queryLower);
-    
+
     if (index != -1) {
       final start = (index - 50).clamp(0, content.length);
       final end = (index + query.length + 150).clamp(0, content.length);
       final preview = content.substring(start, end);
-      return (start > 0 ? '...' : '') + preview + (end < content.length ? '...' : '');
+      return (start > 0 ? '...' : '') +
+          preview +
+          (end < content.length ? '...' : '');
     }
-    
+
     return content.length > 200 ? content.substring(0, 200) + '...' : content;
   }
 
@@ -282,7 +306,9 @@ class TextSearchService {
   Future<TextItem?> getTextContent(String path) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/builtin/content?path=${Uri.encodeComponent(path)}'),
+        Uri.parse(
+          '$baseUrl/api/builtin/content?path=${Uri.encodeComponent(path)}',
+        ),
       );
 
       if (response.statusCode == 200) {
@@ -306,7 +332,9 @@ class TextSearchService {
       final response = await http.post(
         Uri.parse('$baseUrl/api/search/index'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'texts': _items.map((item) => item.toJson()).toList()}),
+        body: jsonEncode({
+          'texts': _items.map((item) => item.toJson()).toList(),
+        }),
       );
 
       if (response.statusCode == 200) {

@@ -14,32 +14,34 @@ class CloudflareTextService {
   static List<Map<String, dynamic>>? _cachedManifest;
   static final List<Map<String, dynamic>> _preloadQueue = [];
   static bool _isPreloading = false;
-  
+
   /// 🚀 记录最近已使用的素材，避免重复
   static final Set<String> _recentlyUsedPaths = {};
-  static const int _maxRecentlyUsed = 30;  // 最多记录30个最近使用的
-  
+  static const int _maxRecentlyUsed = 30; // 最多记录30个最近使用的
+
   /// 🚀 第一性原理优化：减少预加载队列大小
   /// 每个文本内容约 20-100KB，从 21 减少到 10 节省约 1MB 内存
   static const int _queueSize = 10;
-  
+
   /// 标记素材为最近已使用
   static void _markAsRecentlyUsed(String path) {
     _recentlyUsedPaths.add(path);
     // 超过最大数量时，移除最早的（但Set没有顺序，所以只保留限制）
     if (_recentlyUsedPaths.length > _maxRecentlyUsed) {
       // 清除一半，保持最近的
-      final toKeep = _recentlyUsedPaths.toList().sublist(_recentlyUsedPaths.length ~/ 2);
+      final toKeep = _recentlyUsedPaths.toList().sublist(
+        _recentlyUsedPaths.length ~/ 2,
+      );
       _recentlyUsedPaths.clear();
       _recentlyUsedPaths.addAll(toKeep);
     }
   }
-  
+
   /// 检查素材是否最近使用过
   static bool _isRecentlyUsed(String path) {
     return _recentlyUsedPaths.contains(path);
   }
-  
+
   final SharedAssetManager _sharedAssetManager = SharedAssetManager();
 
   // 硬编码的佛经文本内容
@@ -61,7 +63,8 @@ class CloudflareTextService {
     },
     {
       'title': '千手千眼观世音菩萨广大圆满无碍大悲心陀罗尼经',
-      'filePath': 'assets/built_in/乾隆大藏经txt版/大乘五大部外重译经/第0316部～千手千眼观世音菩萨广大圆满无碍大悲心陀罗尼经一卷.txt',
+      'filePath':
+          'assets/built_in/乾隆大藏经txt版/大乘五大部外重译经/第0316部～千手千眼观世音菩萨广大圆满无碍大悲心陀罗尼经一卷.txt',
       'content':
           '''南无喝啰怛那哆啰夜耶。南无阿唎耶。婆卢羯帝烁钵啰耶。菩提萨埵婆耶。摩诃萨埵婆耶。摩诃迦卢尼迦耶。唵。萨皤啰罚曳。数怛那怛写。南无悉吉栗埵伊蒙阿唎耶。婆卢吉帝室佛啰愣驮婆。南无那啰谨墀。醯利摩诃皤哆沙咩。萨婆阿他豆输朋。阿逝孕。萨婆萨哆那摩婆萨哆那摩婆伽。摩罚特豆。怛侄他。唵阿婆卢醯。卢迦帝。迦罗帝。夷醯唎。摩诃菩提萨埵。萨婆萨婆。摩啰摩啰。摩醯摩醯唎驮孕。俱卢俱卢羯蒙。度卢度卢罚阇耶帝。摩诃罚阇耶帝。陀啰陀啰。地唎尼。室佛啰耶。遮啰遮啰。摩么罚摩啰。穆帝隶。伊醯伊醯。室那室那。阿啰参佛啰舍利。罚沙罚参。佛啰舍耶。呼嚧呼嚧摩啰。呼嚧呼嚧醯利。娑啰娑啰。悉唎悉唎。苏嚧苏嚧。菩提夜菩提夜。菩驮夜菩驮夜。弥帝唎夜。那啰谨墀。地利瑟尼那。波夜摩那。娑婆诃。悉陀夜。娑婆诃。摩诃悉陀夜。娑婆诃。悉陀喻艺。室皤啰耶。娑婆诃。那啰谨墀。娑婆诃。摩啰那啰。娑婆诃。悉啰僧阿穆佉耶。娑婆诃。娑婆摩诃阿悉陀夜。娑婆诃。者吉啰阿悉陀夜。娑婆诃。波陀摩羯悉陀夜。娑婆诃。那啰谨墀皤伽啰耶。娑婆诃。摩婆利胜羯啰夜。娑婆诃。南无喝啰怛那哆啰夜耶。南无阿唎耶。婆嚧吉帝。烁皤啰夜。娑婆诃。唵悉殿都。漫多啰。跋陀耶。娑婆诃。''',
     },
@@ -137,14 +140,14 @@ class CloudflareTextService {
       final result = {
         'title': sampleText['title']!,
         'content': sampleText['content']!,
-        'filePath': sampleText['filePath'] ?? 'sample_${sampleText['title']}'
+        'filePath': sampleText['filePath'] ?? 'sample_${sampleText['title']}',
       };
-      
+
       // 后台继续填充队列
       if (!_isPreloading) {
         _fillPreloadQueue();
       }
-      
+
       return result;
     } catch (e) {
       print('Failed to load cloud text: $e');
@@ -152,7 +155,7 @@ class CloudflareTextService {
       return {
         'title': '心经',
         'content': _sampleTexts[0]['content']!,
-        'filePath': 'sample_fallback'
+        'filePath': 'sample_fallback',
       };
     }
   }
@@ -161,42 +164,52 @@ class CloudflareTextService {
   Future<Map<String, dynamic>?> getTextByFilePath(String filePath) async {
     try {
       if (filePath.isEmpty) return null;
-      
+
       print('根据 filePath 加载内容: $filePath');
-      
+
       await _sharedAssetManager.initialize();
-      
+
       // 修正路径
       String requestPath = filePath;
       if (!filePath.contains('built_in') && filePath.startsWith('assets/')) {
         requestPath = filePath.replaceFirst('assets/', 'assets/built_in/');
       }
-      
+
       final fileName = filePath.split('/').last.replaceAll('.txt', '');
-      
+
       // 检查是否已下载
       if (_sharedAssetManager.isAssetDownloaded(requestPath)) {
         print('素材已下载，从本地读取: $requestPath');
         final file = await _sharedAssetManager.getDownloadedAsset(requestPath);
         if (file != null) {
           if (file.bytes != null) {
-            return await compute(_processTextContent, _TextProcessingParams(file.bytes!, fileName, filePath));
+            return await compute(
+              _processTextContent,
+              _TextProcessingParams(file.bytes!, fileName, filePath),
+            );
           } else if (file.path != null) {
             final fileContent = await File(file.path!).readAsBytes();
-            return await compute(_processTextContent, _TextProcessingParams(fileContent, fileName, filePath));
+            return await compute(
+              _processTextContent,
+              _TextProcessingParams(fileContent, fileName, filePath),
+            );
           }
         }
       }
-      
+
       // 从云端下载
-      final response = await http.get(Uri.parse('$baseUrl/$requestPath'))
+      final response = await http
+          .get(Uri.parse('$baseUrl/$requestPath'))
           .timeout(const Duration(seconds: 10));
-      
+
       if (response.statusCode == 200) {
         await _sharedAssetManager.markAssetDownloaded(requestPath);
-        return await compute(_processTextContent, _TextProcessingParams(response.bodyBytes, fileName, filePath));
+        return await compute(
+          _processTextContent,
+          _TextProcessingParams(response.bodyBytes, fileName, filePath),
+        );
       }
-      
+
       print('加载失败: ${response.statusCode}');
       return null;
     } catch (e) {
@@ -221,12 +234,14 @@ class CloudflareTextService {
   Future<void> _loadOneToQueue() async {
     // 关键修复：让出主线程控制权
     await Future.delayed(Duration.zero);
-    
+
     final content = await _getCloudTextFromLocalManifest();
     if (content != null) {
       // 🔧 检查队列中是否已有相同内容，避免重复
       final filePath = content['filePath'];
-      final isDuplicate = _preloadQueue.any((item) => item['filePath'] == filePath);
+      final isDuplicate = _preloadQueue.any(
+        (item) => item['filePath'] == filePath,
+      );
       if (!isDuplicate) {
         _preloadQueue.add(content);
         print('预加载队列: ${_preloadQueue.length}/$_queueSize');
@@ -240,22 +255,27 @@ class CloudflareTextService {
   /// 🚀 极致优化：尽早加载manifest并开始填充队列
   Future<void> preloadOnAppStart() async {
     print('🚀 App启动预加载开始...');
-    
+
     // 1. 立即加载manifest到内存
     await _ensureManifestLoaded();
-    
+
     // 2. 后台填充预加载队列
     _fillPreloadQueue();
   }
-  
+
   /// 确保manifest已加载到内存
   Future<void> _ensureManifestLoaded() async {
     if (_cachedManifest != null) return;
-    
+
     try {
       await Future.delayed(Duration.zero);
-      final manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
-      final List<dynamic> manifestData = await compute(_parseManifestJson, manifestString);
+      final manifestString = await rootBundle.loadString(
+        'assets/data/asset-manifest.json',
+      );
+      final List<dynamic> manifestData = await compute(
+        _parseManifestJson,
+        manifestString,
+      );
       _cachedManifest = manifestData.cast<Map<String, dynamic>>();
       print('🚀 Manifest预加载完成: ${_cachedManifest!.length} 项');
     } catch (e) {
@@ -279,7 +299,7 @@ class CloudflareTextService {
       while (loaded < _queueSize && attempts < maxAttempts) {
         // 关键修复：每次加载前让出主线程控制权
         await Future.delayed(Duration.zero);
-        
+
         final content = await _getCloudTextFromLocalManifest();
         if (content != null) {
           _preloadQueue.add(content);
@@ -289,7 +309,7 @@ class CloudflareTextService {
           }
         }
         attempts++;
-        
+
         // 关键修复：每加载一个内容后短暂延迟，确保UI响应性
         if (loaded % 3 == 0) {
           await Future.delayed(const Duration(milliseconds: 10));
@@ -311,11 +331,16 @@ class CloudflareTextService {
       if (_cachedManifest == null) {
         // 关键修复：加载manifest时也让出主线程控制权
         await Future.delayed(Duration.zero);
-        final manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
-        
+        final manifestString = await rootBundle.loadString(
+          'assets/data/asset-manifest.json',
+        );
+
         // 使用compute在后台解析JSON
-        final List<dynamic> manifestData = await compute(_parseManifestJson, manifestString);
-        
+        final List<dynamic> manifestData = await compute(
+          _parseManifestJson,
+          manifestString,
+        );
+
         _cachedManifest = manifestData.cast<Map<String, dynamic>>();
         print('Loaded local manifest with ${_cachedManifest!.length} items');
       }
@@ -334,41 +359,47 @@ class CloudflareTextService {
       // 🚀 优先选择已缓存的文件（本地优先策略）
       final cachedFiles = <String>[];
       final preferredFiles = <String>[];
-      
+
       for (final file in txtFiles) {
         String requestPath = file;
         if (!file.contains('built_in') && file.startsWith('assets/')) {
           requestPath = file.replaceFirst('assets/', 'assets/built_in/');
         }
-        
+
         // 检查是否已缓存
         if (_sharedAssetManager.isAssetDownloaded(requestPath)) {
           cachedFiles.add(file);
         }
-        
+
         // 同时检查是否是优先文件（小文件）
-        if (file.contains('一卷') || 
-            file.contains('二卷') || 
+        if (file.contains('一卷') ||
+            file.contains('二卷') ||
             file.contains('三卷') ||
             file.contains('心经') ||
             file.contains('咒语')) {
           preferredFiles.add(file);
         }
       }
-      
+
       print('📊 缓存文件数量: ${cachedFiles.length}/${txtFiles.length}');
-      
+
       // 🔧 排除最近使用过的文件，增加多样性
-      final availableCached = cachedFiles.where((f) => !_isRecentlyUsed(f)).toList();
-      final availablePreferred = preferredFiles.where((f) => !_isRecentlyUsed(f)).toList();
+      final availableCached = cachedFiles
+          .where((f) => !_isRecentlyUsed(f))
+          .toList();
+      final availablePreferred = preferredFiles
+          .where((f) => !_isRecentlyUsed(f))
+          .toList();
       final availableTxt = txtFiles.where((f) => !_isRecentlyUsed(f)).toList();
-      
-      print('📊 排除最近使用后：缓存=${availableCached.length}, 小文件=${availablePreferred.length}, 总可用=${availableTxt.length}');
-      
+
+      print(
+        '📊 排除最近使用后：缓存=${availableCached.length}, 小文件=${availablePreferred.length}, 总可用=${availableTxt.length}',
+      );
+
       // 选择策略优化：优先选择未使用过的缓存文件
       // 🔧 修复：当缓存文件太少时，优先下载新内容增加多样性
       const minCacheForLoop = 5; // 至少需要5个缓存文件才能循环使用
-      
+
       if (availableCached.isNotEmpty) {
         // 从未使用过的缓存文件中随机选择
         selectedFile = availableCached[_random.nextInt(availableCached.length)];
@@ -380,8 +411,11 @@ class CloudflareTextService {
         print('🔄 缓存充足(${cachedFiles.length}个),清空记录后选择: $selectedFile');
       } else if (availablePreferred.isNotEmpty) {
         // 缓存太少，优先下载小文件扩充缓存
-        selectedFile = availablePreferred[_random.nextInt(availablePreferred.length)];
-        print('📥 缓存不足(${cachedFiles.length}<$minCacheForLoop),下载小文件扩充: $selectedFile');
+        selectedFile =
+            availablePreferred[_random.nextInt(availablePreferred.length)];
+        print(
+          '📥 缓存不足(${cachedFiles.length}<$minCacheForLoop),下载小文件扩充: $selectedFile',
+        );
       } else if (availableTxt.isNotEmpty) {
         // 没有未使用的小文件，从所有未使用文件中随机选择
         selectedFile = availableTxt[_random.nextInt(availableTxt.length)];
@@ -393,7 +427,8 @@ class CloudflareTextService {
         print('🔄 所有文件已用过,回退到缓存: $selectedFile');
       } else if (availablePreferred.isNotEmpty) {
         // 没有缓存，从未使用过的小文件中选择
-        selectedFile = availablePreferred[_random.nextInt(availablePreferred.length)];
+        selectedFile =
+            availablePreferred[_random.nextInt(availablePreferred.length)];
         print('📁 选择未使用小文件: $selectedFile');
       } else if (availableTxt.isNotEmpty) {
         // 从未使用过的所有文件中随机选择
@@ -408,10 +443,11 @@ class CloudflareTextService {
 
       // 🔧 关键修复：选择后立即标记为已使用，防止并发时重复选择
       _markAsRecentlyUsed(selectedFile);
-      
+
       // 修正路径：如果路径不包含built_in，则添加
       String requestPath = selectedFile;
-      if (!selectedFile.contains('built_in') && selectedFile.startsWith('assets/')) {
+      if (!selectedFile.contains('built_in') &&
+          selectedFile.startsWith('assets/')) {
         requestPath = selectedFile.replaceFirst('assets/', 'assets/built_in/');
         print('Corrected path to: $requestPath');
       }
@@ -422,13 +458,19 @@ class CloudflareTextService {
         final file = await _sharedAssetManager.getDownloadedAsset(requestPath);
         if (file != null) {
           final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
-          
+
           // 使用compute在后台处理文本解码和清理
           if (file.bytes != null) {
-             return await compute(_processTextContent, _TextProcessingParams(file.bytes!, fileName, selectedFile));
+            return await compute(
+              _processTextContent,
+              _TextProcessingParams(file.bytes!, fileName, selectedFile),
+            );
           } else if (file.path != null) {
             final fileContent = await File(file.path!).readAsBytes();
-            return await compute(_processTextContent, _TextProcessingParams(fileContent, fileName, selectedFile));
+            return await compute(
+              _processTextContent,
+              _TextProcessingParams(fileContent, fileName, selectedFile),
+            );
           } else {
             return null;
           }
@@ -437,15 +479,17 @@ class CloudflareTextService {
 
       // 关键修复：网络请求前让出主线程控制权
       await Future.delayed(Duration.zero);
-      
+
       // 从Cloudflare下载内容 - 增加超时时间以处理大文件
       http.Response? contentResponse;
       int retryCount = 0;
       const maxRetries = 2;
-      
+
       while (retryCount <= maxRetries) {
         try {
-          print('Attempting to download: $baseUrl/$requestPath (attempt ${retryCount + 1})');
+          print(
+            'Attempting to download: $baseUrl/$requestPath (attempt ${retryCount + 1})',
+          );
           final startTime = DateTime.now();
           contentResponse = await http
               .get(Uri.parse('$baseUrl/$requestPath'))
@@ -456,16 +500,20 @@ class CloudflareTextService {
         } catch (e) {
           retryCount++;
           if (e.toString().contains('TimeoutException')) {
-            print('Timeout on attempt $retryCount for $requestPath after 10 seconds');
+            print(
+              'Timeout on attempt $retryCount for $requestPath after 10 seconds',
+            );
           } else {
             print('Network error on attempt $retryCount for $requestPath: $e');
           }
-          
+
           if (retryCount > maxRetries) {
             rethrow; // 超过最大重试次数，抛出异常
           }
-          
-          await Future.delayed(Duration(milliseconds: 500 * retryCount)); // 指数退避
+
+          await Future.delayed(
+            Duration(milliseconds: 500 * retryCount),
+          ); // 指数退避
         }
       }
 
@@ -474,13 +522,17 @@ class CloudflareTextService {
         await _sharedAssetManager.markAssetDownloaded(requestPath);
 
         final fileName = selectedFile.split('/').last.replaceAll('.txt', '');
-        
+
         // 使用compute在后台处理文本解码和清理
         final result = await compute(
-          _processTextContent, 
-          _TextProcessingParams(contentResponse.bodyBytes, fileName, selectedFile)
+          _processTextContent,
+          _TextProcessingParams(
+            contentResponse.bodyBytes,
+            fileName,
+            selectedFile,
+          ),
         );
-        
+
         print('Loaded cloud text from local manifest: $fileName');
 
         return result;
@@ -500,17 +552,17 @@ class CloudflareTextService {
         print('Error loading from local manifest: $e');
         print('Falling back to sample texts due to error');
       }
-      
+
       // 回退到样本文本
       if (_sampleTexts.isNotEmpty) {
         final sampleText = _sampleTexts[_random.nextInt(_sampleTexts.length)];
         return {
           'title': sampleText['title']!,
           'content': sampleText['content']!,
-          'filePath': 'sample_text'
+          'filePath': 'sample_text',
         };
       }
-      
+
       return null;
     }
   }
@@ -518,24 +570,32 @@ class CloudflareTextService {
   /// 清理反编译器水印
   static String _cleanDecompilerWatermark(String content) {
     if (content.isEmpty) return '';
-    
+
     // 性能优化：水印通常出现在文件开头或结尾
     // 如果文件非常大，只在两端进行搜索清理，避免全量正则匹配导致的卡顿
     if (content.length > 100000) {
       // 检查开头
       final header = content.substring(0, 2000);
       final cleanHeader = header.replaceFirst(
-        RegExp(r'This file is decompiled.*?etextwizard\.com/', caseSensitive: false, dotAll: true),
+        RegExp(
+          r'This file is decompiled.*?etextwizard\.com/',
+          caseSensitive: false,
+          dotAll: true,
+        ),
         '',
       );
       if (cleanHeader != header) {
         content = cleanHeader + content.substring(2000);
       }
-      
+
       // 检查结尾
       final footer = content.substring(content.length - 2000);
       final cleanFooter = footer.replaceFirst(
-        RegExp(r'This file is decompiled.*?etextwizard\.com/', caseSensitive: false, dotAll: true),
+        RegExp(
+          r'This file is decompiled.*?etextwizard\.com/',
+          caseSensitive: false,
+          dotAll: true,
+        ),
         '',
       );
       if (cleanFooter != footer) {
@@ -545,36 +605,60 @@ class CloudflareTextService {
     }
 
     // 小型文件使用原有的正则
-    return content.replaceAll(
-      RegExp(r'This file is decompiled.*?etextwizard\.com/', caseSensitive: false, dotAll: true),
-      '',
-    ).trim();
+    return content
+        .replaceAll(
+          RegExp(
+            r'This file is decompiled.*?etextwizard\.com/',
+            caseSensitive: false,
+            dotAll: true,
+          ),
+          '',
+        )
+        .trim();
   }
 
   /// 清理“上一部”、“下一部”等导航信息
   static String _cleanNavigationInfo(String content) {
     if (content.isEmpty) return '';
-    
+
     // 性能优化：导航信息通常只出现在文档末尾
     // 仅在末尾 5000 字符内搜索，避免全量匹配
     if (content.length > 5000) {
       final body = content.substring(0, content.length - 5000);
       final footer = content.substring(content.length - 5000);
-      
+
       final cleanFooter = footer
-        .replaceAll(RegExp(r'\n+\s*上一部.*$', multiLine: true, dotAll: true), '')
-        .replaceAll(RegExp(r'\n+\s*下一部.*$', multiLine: true, dotAll: true), '')
-        .replaceAll(RegExp(r'\n+\s*上一部[：:].*(\n|$)', caseSensitive: false), '\n')
-        .replaceAll(RegExp(r'\n+\s*下一部[：:].*(\n|$)', caseSensitive: false), '\n');
-        
+          .replaceAll(
+            RegExp(r'\n+\s*上一部.*$', multiLine: true, dotAll: true),
+            '',
+          )
+          .replaceAll(
+            RegExp(r'\n+\s*下一部.*$', multiLine: true, dotAll: true),
+            '',
+          )
+          .replaceAll(
+            RegExp(r'\n+\s*上一部[：:].*(\n|$)', caseSensitive: false),
+            '\n',
+          )
+          .replaceAll(
+            RegExp(r'\n+\s*下一部[：:].*(\n|$)', caseSensitive: false),
+            '\n',
+          );
+
       return (body + cleanFooter).trim();
     }
 
     return content
         .replaceAll(RegExp(r'\n+\s*上一部.*$', multiLine: true, dotAll: true), '')
         .replaceAll(RegExp(r'\n+\s*下一部.*$', multiLine: true, dotAll: true), '')
-        .replaceAll(RegExp(r'\n+\s*上一部[：:].*(\n|$)', caseSensitive: false), '\n')
-        .replaceAll(RegExp(r'\n+\s*下一部[：:].*(\n|$)', caseSensitive: false), '\n')
+        .replaceAll(
+          RegExp(r'\n+\s*上一部[：:].*(\n|$)', caseSensitive: false),
+          '\n',
+        )
+        .replaceAll(
+          RegExp(r'\n+\s*下一部[：:].*(\n|$)', caseSensitive: false),
+          '\n',
+        )
         .trim();
   }
 
@@ -608,11 +692,11 @@ Map<String, dynamic> _processTextContent(_TextProcessingParams params) {
   content = CloudflareTextService._cleanDecompilerWatermark(content);
   // 清理导航信息
   content = CloudflareTextService._cleanNavigationInfo(content);
-  
+
   return {
     'title': params.fileName,
     'content': content,
-    'filePath': params.filePath
+    'filePath': params.filePath,
   };
 }
 

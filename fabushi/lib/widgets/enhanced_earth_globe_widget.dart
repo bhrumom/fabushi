@@ -12,7 +12,8 @@ class EnhancedEarthGlobeWidget extends StatefulWidget {
   const EnhancedEarthGlobeWidget({super.key});
 
   @override
-  State<EnhancedEarthGlobeWidget> createState() => EnhancedEarthGlobeWidgetState();
+  State<EnhancedEarthGlobeWidget> createState() =>
+      EnhancedEarthGlobeWidgetState();
 }
 
 class EnhancedEarthGlobeWidgetState extends State<EnhancedEarthGlobeWidget>
@@ -63,7 +64,14 @@ class EnhancedEarthGlobeWidgetState extends State<EnhancedEarthGlobeWidget>
     _addEndpointMarkers(fromLat, fromLng, toLat, toLng, timestamp);
 
     // 执行流星动画
-    await _animateBeautifulMeteor(start, control, end, beamColor, animDuration, timestamp);
+    await _animateBeautifulMeteor(
+      start,
+      control,
+      end,
+      beamColor,
+      animDuration,
+      timestamp,
+    );
 
     // 清理标记
     _cleanupMarkers(timestamp);
@@ -126,7 +134,12 @@ class EnhancedEarthGlobeWidgetState extends State<EnhancedEarthGlobeWidget>
         if (i - j < 0) continue;
 
         final tailT = (i - j) / steps;
-        final tailPos = GlobeMathUtils.quadraticBezier(start, control, end, tailT);
+        final tailPos = GlobeMathUtils.quadraticBezier(
+          start,
+          control,
+          end,
+          tailT,
+        );
         final tailCoords = _vector3ToGlobeCoords(tailPos);
 
         final opacity = (1 - j / tailLength);
@@ -136,7 +149,10 @@ class EnhancedEarthGlobeWidgetState extends State<EnhancedEarthGlobeWidget>
           Point(
             id: 'tail_${timestamp}_${i}_$j',
             coordinates: tailCoords,
-            style: PointStyle(color: color.withOpacity(opacity), size: size.clamp(3, 10)),
+            style: PointStyle(
+              color: color.withOpacity(opacity),
+              size: size.clamp(3, 10),
+            ),
           ),
         );
 

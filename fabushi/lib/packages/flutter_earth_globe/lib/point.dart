@@ -15,8 +15,12 @@ class Point {
 
   /// A builder function that returns a widget to display as the label of the point.
   final Widget? Function(
-          BuildContext context, Point point, bool isHovering, bool isVisible)?
-      labelBuilder;
+    BuildContext context,
+    Point point,
+    bool isHovering,
+    bool isVisible,
+  )?
+  labelBuilder;
 
   /// Determines whether the label is visible or not.
   final bool isLabelVisible;
@@ -91,8 +95,12 @@ class Point {
     GlobeCoordinates? coordinates,
     String? label,
     Widget? Function(
-            BuildContext context, Point point, bool isHovering, bool isVisible)?
-        labelBuilder,
+      BuildContext context,
+      Point point,
+      bool isHovering,
+      bool isVisible,
+    )?
+    labelBuilder,
     bool? isLabelVisible,
     Offset? labelOffset,
     String? id,
@@ -146,10 +154,7 @@ class PointStyle {
 
   /// Converts the [PointStyle] object to a map.
   Map<String, dynamic> toMap() {
-    return <String, dynamic>{
-      'size': size,
-      'color': color.value,
-    };
+    return <String, dynamic>{'size': size, 'color': color.value};
   }
 
   /// Creates a [PointStyle] object from a map.
@@ -168,13 +173,7 @@ class PointStyle {
       PointStyle.fromMap(json.decode(source) as Map<String, dynamic>);
 
   /// Creates a copy of the [PointStyle] object with the specified properties overridden.
-  PointStyle copyWith({
-    double? size,
-    Color? color,
-  }) {
-    return PointStyle(
-      size: size ?? this.size,
-      color: color ?? this.color,
-    );
+  PointStyle copyWith({double? size, Color? color}) {
+    return PointStyle(size: size ?? this.size, color: color ?? this.color);
   }
 }

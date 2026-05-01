@@ -6,7 +6,7 @@ import 'dart:async';
 
 class FirebaseAuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  
+
   // 手机验证相关状态
   String? _verificationId;
   int? _resendToken;
@@ -104,7 +104,7 @@ class FirebaseAuthService {
       final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
 
       debugPrint('📱 手机登录成功, isNewUser: $isNewUser');
-      
+
       return {
         'success': true,
         'user': userCredential.user,
@@ -182,9 +182,15 @@ class FirebaseAuthService {
   }
 
   // 邮箱密码登录
-  Future<Map<String, dynamic>> signInWithEmail(String email, String password) async {
+  Future<Map<String, dynamic>> signInWithEmail(
+    String email,
+    String password,
+  ) async {
     try {
-      final credential = await _auth.signInWithEmailAndPassword(email: email, password: password);
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
       await _saveUserLocally(credential.user);
       return {'success': true, 'user': credential.user};
     } on FirebaseAuthException catch (e) {

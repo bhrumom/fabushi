@@ -48,7 +48,7 @@ class SphereStyle {
       colors: [
         Colors.transparent,
         Color.fromARGB(5, 255, 255, 255),
-        Color.fromARGB(21, 255, 255, 255)
+        Color.fromARGB(21, 255, 255, 255),
       ],
       stops: [0.1, 0.85, 1.0],
     ),

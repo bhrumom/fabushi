@@ -15,7 +15,8 @@ class SharedAssetManager {
   factory SharedAssetManager() => _instance;
   SharedAssetManager._internal();
 
-  final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
+  final DownloadedAssetsService _downloadedAssetsService =
+      DownloadedAssetsService();
   final DownloadManager _downloadManager = DownloadManager();
   final Map<String, String> _assetToTaskMap = {};
 
@@ -37,7 +38,7 @@ class SharedAssetManager {
   Future<PlatformFile?> getDownloadedAsset(String assetPath) async {
     // 关键修复：让出主线程控制权
     await Future.delayed(Duration.zero);
-    
+
     final fileName = assetPath.split('/').last;
     debugPrint('🔍 尝试获取已下载素材: $fileName');
 
@@ -70,11 +71,7 @@ class SharedAssetManager {
         if (await file.exists()) {
           final size = await file.length();
           debugPrint('✅ 本地平台找到文件: $fileName, 大小: $size');
-          return PlatformFile(
-            name: fileName,
-            size: size,
-            path: filePath,
-          );
+          return PlatformFile(name: fileName, size: size, path: filePath);
         } else {
           debugPrint('❌ 本地平台未找到文件: $filePath');
         }
@@ -87,26 +84,29 @@ class SharedAssetManager {
   /// 批量获取素材（已下载的直接返回，未下载的返回null）
   Future<Map<String, PlatformFile?>> getAssets(List<String> assetPaths) async {
     final Map<String, PlatformFile?> result = {};
-    
+
     for (String assetPath in assetPaths) {
       // 关键修复：每次处理前让出主线程控制权
       await Future.delayed(Duration.zero);
       result[assetPath] = await getDownloadedAsset(assetPath);
     }
-    
+
     return result;
   }
 
   /// 下载单个素材
   Future<String> downloadAsset(String assetPath) async {
-    final bool isStaticFile = assetPath.contains('乾隆大藏经') ||
+    final bool isStaticFile =
+        assetPath.contains('乾隆大藏经') ||
         assetPath.contains('房山石经陀罗尼') ||
         assetPath.contains('咒语') ||
         assetPath.contains('经文');
 
     final String url;
     if (isStaticFile) {
-      final cleanAssetPath = assetPath.startsWith('web/') ? assetPath.substring(4) : assetPath;
+      final cleanAssetPath = assetPath.startsWith('web/')
+          ? assetPath.substring(4)
+          : assetPath;
 
       if (kIsWeb) {
         url = '/$cleanAssetPath';
@@ -117,7 +117,8 @@ class SharedAssetManager {
         url = '$baseUrl/$cleanAssetPath';
       }
     } else {
-      url = '${AppConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(assetPath)}';
+      url =
+          '${AppConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(assetPath)}';
     }
 
     final fileName = assetPath.split('/').last;
@@ -178,7 +179,10 @@ class SharedAssetManager {
       final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
       final List<dynamic> savedFiles = json.decode(savedFilesStr);
 
-      final fileInfo = savedFiles.firstWhere((f) => f['name'] == fileName, orElse: () => null);
+      final fileInfo = savedFiles.firstWhere(
+        (f) => f['name'] == fileName,
+        orElse: () => null,
+      );
 
       if (fileInfo == null) return null;
 

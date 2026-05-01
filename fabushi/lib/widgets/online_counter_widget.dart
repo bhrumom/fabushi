@@ -27,7 +27,7 @@ class OnlineCounterWidget extends StatelessWidget {
       initialData: initialCount,
       builder: (context, snapshot) {
         final count = snapshot.data ?? 0;
-        
+
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
@@ -40,19 +40,12 @@ class OnlineCounterWidget extends StatelessWidget {
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: displayColor.withOpacity(0.3),
-              width: 1,
-            ),
+            border: Border.all(color: displayColor.withOpacity(0.3), width: 1),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                icon,
-                color: displayColor,
-                size: 20,
-              ),
+              Icon(icon, color: displayColor, size: 20),
               const SizedBox(width: 8),
               Text(
                 prefix,
@@ -66,10 +59,7 @@ class OnlineCounterWidget extends StatelessWidget {
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
                 transitionBuilder: (child, animation) {
-                  return ScaleTransition(
-                    scale: animation,
-                    child: child,
-                  );
+                  return ScaleTransition(scale: animation, child: child);
                 },
                 child: Text(
                   '$count',
@@ -122,23 +112,16 @@ class CompactOnlineCounterWidget extends StatelessWidget {
       initialData: initialCount,
       builder: (context, snapshot) {
         final count = snapshot.data ?? 0;
-        
+
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: displayColor,
-              size: 16,
-            ),
+            Icon(icon, color: displayColor, size: 16),
             const SizedBox(width: 4),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               transitionBuilder: (child, animation) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: child,
-                );
+                return FadeTransition(opacity: animation, child: child);
               },
               child: Text(
                 '$count',

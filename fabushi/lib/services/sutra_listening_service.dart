@@ -35,14 +35,13 @@ class SutraListeningService extends ChangeNotifier {
   int get totalSentences => _sentences.length;
   String get currentSentence =>
       _sentences.isNotEmpty && _currentSentenceIndex < _sentences.length
-          ? _sentences[_currentSentenceIndex]
-          : '';
+      ? _sentences[_currentSentenceIndex]
+      : '';
   String get sutraName => _sutraName;
   List<String> get sentences => _sentences;
   double get speechRate => _speechRate;
-  double get progress => _sentences.isEmpty
-      ? 0.0
-      : _currentSentenceIndex / _sentences.length;
+  double get progress =>
+      _sentences.isEmpty ? 0.0 : _currentSentenceIndex / _sentences.length;
 
   /// 初始化 TTS 引擎
   Future<void> initialize() async {
@@ -63,14 +62,11 @@ class SutraListeningService extends ChangeNotifier {
     // iOS 后台播放配置
     if (!kIsWeb && Platform.isIOS) {
       await _tts!.setSharedInstance(true);
-      await _tts!.setIosAudioCategory(
-        IosTextToSpeechAudioCategory.playback,
-        [
-          IosTextToSpeechAudioCategoryOptions.allowBluetooth,
-          IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
-          IosTextToSpeechAudioCategoryOptions.mixWithOthers,
-        ],
-      );
+      await _tts!.setIosAudioCategory(IosTextToSpeechAudioCategory.playback, [
+        IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+        IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+        IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+      ]);
     }
 
     _tts!.setCompletionHandler(() {
@@ -263,7 +259,8 @@ class SutraListeningService extends ChangeNotifier {
         ? '${sentence.substring(0, 20)}...'
         : sentence;
     debugPrint(
-        '🎧 朗读第 ${_currentSentenceIndex + 1}/${_sentences.length} 句: $preview');
+      '🎧 朗读第 ${_currentSentenceIndex + 1}/${_sentences.length} 句: $preview',
+    );
 
     await _tts?.speak(sentence);
   }

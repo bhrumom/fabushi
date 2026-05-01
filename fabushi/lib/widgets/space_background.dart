@@ -17,10 +17,7 @@ class SpaceBackground extends StatelessWidget {
             gradient: RadialGradient(
               center: Alignment.center,
               radius: 1.5,
-              colors: [
-                Color(0xFF0B1026),
-                Colors.black,
-              ],
+              colors: [Color(0xFF0B1026), Colors.black],
               stops: [0.0, 1.0],
             ),
           ),
@@ -36,10 +33,7 @@ class SpaceBackground extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: RadialGradient(
-                colors: [
-                  nebulaPurple.withOpacity(0.1),
-                  Colors.transparent,
-                ],
+                colors: [nebulaPurple.withOpacity(0.1), Colors.transparent],
               ),
             ),
           ),

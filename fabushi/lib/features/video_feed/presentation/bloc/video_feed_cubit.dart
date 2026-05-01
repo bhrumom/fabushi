@@ -27,13 +27,14 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
   final FetchVideosUseCase _fetchVideosUseCase;
   final FetchMoreVideosUseCase _fetchMoreVideosUseCase;
   final _preloadQueue = Queue<String>();
-  
+
   /// 🚀 第一性原理优化：LRU 缓存限制
   /// 使用 LinkedHashMap 保持插入顺序，便于 LRU 淘汰
   /// 最大缓存 8 个视频文件引用（约 100-200MB 内存占用）
   static const int _maxCacheSize = 8;
-  final LinkedHashMap<String, File> _preloadedFiles = LinkedHashMap<String, File>();
-  
+  final LinkedHashMap<String, File> _preloadedFiles =
+      LinkedHashMap<String, File>();
+
   bool _isPreloadingMore = false;
 
   /// 🔄 LRU 缓存访问：移到末尾表示最近使用
@@ -58,7 +59,13 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
 
     result.fold(
       (error) {
-        emit(state.copyWith(isLoading: false, isSuccess: false, errorMessage: error));
+        emit(
+          state.copyWith(
+            isLoading: false,
+            isSuccess: false,
+            errorMessage: error,
+          ),
+        );
       },
       (videos) {
         // 总是有更多内容（文本可以无限加载）
@@ -83,7 +90,9 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
 
   Future<void> loadMoreVideos() async {
     if (state.isPaginating || !state.hasMoreVideos) {
-      debugPrint('跳过加载: isPaginating=${state.isPaginating}, hasMoreVideos=${state.hasMoreVideos}');
+      debugPrint(
+        '跳过加载: isPaginating=${state.isPaginating}, hasMoreVideos=${state.hasMoreVideos}',
+      );
       return;
     }
 
@@ -99,25 +108,28 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
       },
       (moreVideos) {
         debugPrint('加载成功: ${moreVideos.length} 个内容');
-        
+
         // 🚀 24小时优化：视频列表滑动窗口
         // 限制视频列表最大长度，防止无限增长
         var updatedVideos = [...state.videos, ...moreVideos];
         const maxVideoListSize = 50; // 最多保留50个视频实体
         if (updatedVideos.length > maxVideoListSize) {
           // 保留最近的50个
-          updatedVideos = updatedVideos.sublist(updatedVideos.length - maxVideoListSize);
+          updatedVideos = updatedVideos.sublist(
+            updatedVideos.length - maxVideoListSize,
+          );
           debugPrint('📊 24小时优化: 视频列表裁剪到 $maxVideoListSize 个');
         }
-        
+
         // 🧹 清理 preloadedVideoUrls，只保留窗口内的
         final validUrls = updatedVideos
             .where((v) => v.contentType != ContentType.text)
             .map((v) => v.videoUrl)
             .toSet();
-        final cleanedPreloadedUrls = state.preloadedVideoUrls
-            .intersection(validUrls);
-        
+        final cleanedPreloadedUrls = state.preloadedVideoUrls.intersection(
+          validUrls,
+        );
+
         emit(
           state.copyWith(
             videos: updatedVideos,
@@ -142,7 +154,9 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
     await preloadNextVideos();
 
     // Smart pagination trigger
-    if (!_isPreloadingMore && state.hasMoreVideos && newIndex >= state.videos.length - 2) {
+    if (!_isPreloadingMore &&
+        state.hasMoreVideos &&
+        newIndex >= state.videos.length - 2) {
       debugPrint('触发分页加载');
       _isPreloadingMore = true;
       try {
@@ -156,11 +170,11 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
   /// 🧹 清理距离当前位置超过阈值的缓存
   void _cleanupDistantCache(int currentIndex) {
     if (state.videos.isEmpty) return;
-    
+
     // 获取当前窗口内的视频 URL
     final windowStart = (currentIndex - 2).clamp(0, state.videos.length - 1);
     final windowEnd = (currentIndex + 3).clamp(0, state.videos.length - 1);
-    
+
     final urlsToKeep = <String>{};
     for (int i = windowStart; i <= windowEnd; i++) {
       final video = state.videos[i];
@@ -168,18 +182,20 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
         urlsToKeep.add(video.videoUrl);
       }
     }
-    
+
     // 移除窗口外的缓存
     final urlsToRemove = _preloadedFiles.keys
         .where((url) => !urlsToKeep.contains(url))
         .toList();
-    
+
     for (final url in urlsToRemove) {
       _preloadedFiles.remove(url);
     }
-    
+
     if (urlsToRemove.isNotEmpty) {
-      debugPrint('📊 内存优化: 清理 ${urlsToRemove.length} 个远离缓存, 保留 ${_preloadedFiles.length} 个');
+      debugPrint(
+        '📊 内存优化: 清理 ${urlsToRemove.length} 个远离缓存, 保留 ${_preloadedFiles.length} 个',
+      );
     }
   }
 
@@ -208,14 +224,15 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
     try {
       // 关键修复：让出主线程控制权
       await Future.delayed(Duration.zero);
-      
+
       final file = await getCachedVideoFile(videoUrl);
       _touchCache(videoUrl, file);
       _enforceCacheLimit();
 
-      final currentPreloaded = Set<String>.from(state.preloadedVideoUrls)..add(videoUrl);
+      final currentPreloaded = Set<String>.from(state.preloadedVideoUrls)
+        ..add(videoUrl);
       emit(state.copyWith(preloadedVideoUrls: currentPreloaded));
-      
+
       debugPrint('📊 缓存状态: ${_preloadedFiles.length}/$_maxCacheSize');
     } catch (e) {
       debugPrint('Error preloading video: $e');
@@ -238,11 +255,11 @@ class VideoFeedCubit extends Cubit<VideoFeedState> {
     final cacheManager = DefaultCacheManager();
     final fileInfo = await cacheManager.getFileFromCache(videoUrl);
     final file = fileInfo?.file ?? await cacheManager.getSingleFile(videoUrl);
-    
+
     // 添加到 LRU 缓存
     _touchCache(videoUrl, file);
     _enforceCacheLimit();
-    
+
     return file;
   }
 

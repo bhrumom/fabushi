@@ -52,12 +52,16 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
                 ),
               ),
               // 背诵按钮（仅文字内容显示）
-              if (contentType == ContentType.text && onStartRecitation != null) ...[
+              if (contentType == ContentType.text &&
+                  onStartRecitation != null) ...[
                 const SizedBox(width: 12),
                 GestureDetector(
                   onTap: onStartRecitation,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFF8E2DE2), Color(0xFF4A00E0)],
@@ -74,11 +78,7 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
-                          Icons.school,
-                          color: Colors.white,
-                          size: 14,
-                        ),
+                        const Icon(Icons.school, color: Colors.white, size: 14),
                         const SizedBox(width: 4),
                         Text(
                           '背诵',
@@ -94,12 +94,16 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
                 ),
               ],
               // 读诵按钮（仅文字内容显示）
-              if (contentType == ContentType.text && onStartReading != null) ...[
+              if (contentType == ContentType.text &&
+                  onStartReading != null) ...[
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: onStartReading,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFFFF6B6B), Color(0xFFEE5A24)],
@@ -116,11 +120,7 @@ class VideoFeedViewUserInfoSection extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
-                          Icons.mic,
-                          color: Colors.white,
-                          size: 14,
-                        ),
+                        const Icon(Icons.mic, color: Colors.white, size: 14),
                         const SizedBox(width: 4),
                         Text(
                           '读诵',

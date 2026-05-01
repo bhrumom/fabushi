@@ -56,10 +56,7 @@ class _KeepAliveGuideScreenState extends State<KeepAliveGuideScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('后台保活设置'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('后台保活设置'), centerTitle: true),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -74,8 +71,11 @@ class _KeepAliveGuideScreenState extends State<KeepAliveGuideScreen> {
                       padding: const EdgeInsets.all(16),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline, 
-                               color: Colors.orange.shade700, size: 32),
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.orange.shade700,
+                            size: 32,
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -110,8 +110,8 @@ class _KeepAliveGuideScreenState extends State<KeepAliveGuideScreen> {
                   _buildSettingItem(
                     icon: Icons.battery_saver,
                     title: '关闭电池优化',
-                    subtitle: _isBatteryOptimizationIgnored 
-                        ? '已关闭 ✓' 
+                    subtitle: _isBatteryOptimizationIgnored
+                        ? '已关闭 ✓'
                         : '允许应用在后台运行',
                     isCompleted: _isBatteryOptimizationIgnored,
                     onTap: _requestBatteryOptimization,
@@ -159,9 +159,7 @@ class _KeepAliveGuideScreenState extends State<KeepAliveGuideScreen> {
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: isCompleted 
-                ? Colors.green.shade100 
-                : Colors.blue.shade100,
+            color: isCompleted ? Colors.green.shade100 : Colors.blue.shade100,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
@@ -171,10 +169,7 @@ class _KeepAliveGuideScreenState extends State<KeepAliveGuideScreen> {
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
         subtitle: Text(subtitle, style: const TextStyle(fontSize: 13)),
-        trailing: Icon(
-          Icons.chevron_right,
-          color: Colors.grey.shade400,
-        ),
+        trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
         onTap: onTap,
       ),
     );
@@ -210,34 +205,41 @@ class _KeepAliveGuideScreenState extends State<KeepAliveGuideScreen> {
       case 'oneplus':
       case 'oppo':
       case 'realme':
-        brandName = _deviceBrand == 'oneplus' ? '一加' : 
-                    _deviceBrand == 'oppo' ? 'OPPO' : 'realme';
-        tips = '1. 打开「设置 → 电池 → 更多电池设置」\n'
-               '2. 关闭「睡眠待机优化」\n'
-               '3. 在「自启动管理」中允许本应用\n'
-               '4. 在「省电策略」中选择「无限制」';
+        brandName = _deviceBrand == 'oneplus'
+            ? '一加'
+            : _deviceBrand == 'oppo'
+            ? 'OPPO'
+            : 'realme';
+        tips =
+            '1. 打开「设置 → 电池 → 更多电池设置」\n'
+            '2. 关闭「睡眠待机优化」\n'
+            '3. 在「自启动管理」中允许本应用\n'
+            '4. 在「省电策略」中选择「无限制」';
         break;
       case 'xiaomi':
       case 'redmi':
       case 'poco':
         brandName = '小米/红米';
-        tips = '1. 打开「设置 → 应用设置 → 应用管理」\n'
-               '2. 找到本应用，开启「自启动」\n'
-               '3. 在「省电策略」中选择「无限制」\n'
-               '4. 关闭「锁屏后清理」';
+        tips =
+            '1. 打开「设置 → 应用设置 → 应用管理」\n'
+            '2. 找到本应用，开启「自启动」\n'
+            '3. 在「省电策略」中选择「无限制」\n'
+            '4. 关闭「锁屏后清理」';
         break;
       case 'huawei':
       case 'honor':
         brandName = '华为/荣耀';
-        tips = '1. 打开「设置 → 应用 → 应用启动管理」\n'
-               '2. 关闭本应用的「自动管理」\n'
-               '3. 手动开启「自启动」「后台活动」「关联启动」';
+        tips =
+            '1. 打开「设置 → 应用 → 应用启动管理」\n'
+            '2. 关闭本应用的「自动管理」\n'
+            '3. 手动开启「自启动」「后台活动」「关联启动」';
         break;
       case 'vivo':
         brandName = 'vivo';
-        tips = '1. 打开「设置 → 电池 → 后台高耗电」\n'
-               '2. 允许本应用在后台高耗电\n'
-               '3. 在「自启动管理」中允许本应用';
+        tips =
+            '1. 打开「设置 → 电池 → 后台高耗电」\n'
+            '2. 允许本应用在后台高耗电\n'
+            '3. 在「自启动管理」中允许本应用';
         break;
       default:
         return const SizedBox.shrink();
@@ -285,7 +287,7 @@ class _KeepAliveGuideScreenState extends State<KeepAliveGuideScreen> {
         setState(() {
           _isBatteryOptimizationIgnored = status.isGranted;
         });
-        
+
         if (status.isGranted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -304,7 +306,7 @@ class _KeepAliveGuideScreenState extends State<KeepAliveGuideScreen> {
     try {
       // 尝试打开厂商自启动页面
       String? intentAction;
-      
+
       switch (_deviceBrand) {
         case 'oneplus':
         case 'oppo':

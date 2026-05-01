@@ -105,23 +105,22 @@ class NativePlatformService implements PlatformService {
   void listenToMessages(Function(dynamic) handler) {
     try {
       _messageHandler = handler;
-      
+
       // 使用 app_links 监听深度链接
       debugPrint('NativePlatformService: 开始监听深度链接回调');
-      
+
       // 监听应用运行时的链接
       _linkSubscription = _appLinks.uriLinkStream.listen((Uri uri) {
         debugPrint('NativePlatformService: 收到深度链接: $uri');
         _handleDeepLink(uri.toString());
       });
-      
+
       // 检查应用启动时的初始链接
       _checkInitialLink();
-      
+
       // 同时保留MethodChannel监听（兼容macOS）
       _channel = const MethodChannel('com.globaldharma.alipay/callback');
       _channel!.setMethodCallHandler(_handleMethodCall);
-      
     } catch (e) {
       debugPrint('NativePlatformService: 设置消息监听失败: $e');
     }
@@ -143,9 +142,9 @@ class NativePlatformService implements PlatformService {
   // 处理深度链接
   void _handleDeepLink(String url) {
     debugPrint('NativePlatformService: 处理深度链接URL: $url');
-    
+
     // 检查是否是支付宝回调
-    if (url.startsWith('com.ombhrum.fabushi://') || 
+    if (url.startsWith('com.ombhrum.fabushi://') ||
         url.startsWith('globaldharma://')) {
       if (_messageHandler != null) {
         _messageHandler!(url);

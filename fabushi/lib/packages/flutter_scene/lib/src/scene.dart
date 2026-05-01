@@ -162,21 +162,17 @@ base class Scene implements SceneGraph {
       enableMsaa,
     );
 
-    final env =
-        environment.environmentMap.isEmpty()
-            ? environment.withNewEnvironmentMap(
-              Material.getDefaultEnvironmentMap(),
-            )
-            : environment;
+    final env = environment.environmentMap.isEmpty()
+        ? environment.withNewEnvironmentMap(Material.getDefaultEnvironmentMap())
+        : environment;
 
     final encoder = SceneEncoder(renderTarget, camera, drawArea.size, env);
     root.render(encoder, Matrix4.identity());
     encoder.finish();
 
-    final gpu.Texture texture =
-        enableMsaa
-            ? renderTarget.colorAttachments[0].resolveTexture!
-            : renderTarget.colorAttachments[0].texture;
+    final gpu.Texture texture = enableMsaa
+        ? renderTarget.colorAttachments[0].resolveTexture!
+        : renderTarget.colorAttachments[0].texture;
     final image = texture.asImage();
     canvas.drawImage(image, drawArea.topLeft, ui.Paint());
   }

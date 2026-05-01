@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 微成就系统 - 持续正向反馈
-/// 
+///
 /// 设计理念：让用户每次进入禅室都能获得即时成就感
 /// 华丽动画风格：金色光效、粒子特效、渐变发光
 class AchievementSystem extends ChangeNotifier {
@@ -11,9 +11,9 @@ class AchievementSystem extends ChangeNotifier {
   factory AchievementSystem() => _instance;
   AchievementSystem._internal();
 
-  final StreamController<Achievement> _achievementController = 
+  final StreamController<Achievement> _achievementController =
       StreamController<Achievement>.broadcast();
-  
+
   /// 成就事件流（用于UI监听并显示动画）
   Stream<Achievement> get achievementStream => _achievementController.stream;
 
@@ -35,24 +35,26 @@ class AchievementSystem extends ChangeNotifier {
   /// 加载成就数据
   Future<void> loadData() async {
     if (_dataLoaded) return;
-    
+
     try {
       final prefs = await SharedPreferences.getInstance();
       _totalSessions = prefs.getInt('achievement_total_sessions') ?? 0;
       _totalMinutes = prefs.getInt('achievement_total_minutes') ?? 0;
       _totalChants = prefs.getInt('achievement_total_chants') ?? 0;
       _consecutiveDays = prefs.getInt('achievement_consecutive_days') ?? 0;
-      
+
       final lastDateStr = prefs.getString('achievement_last_session_date');
       if (lastDateStr != null) {
         _lastSessionDate = DateTime.tryParse(lastDateStr);
       }
-      
+
       final unlockedList = prefs.getStringList('achievement_unlocked') ?? [];
       _unlockedAchievements = unlockedList.toSet();
-      
+
       _dataLoaded = true;
-      debugPrint('🏆 成就数据加载: 总会话=$_totalSessions, 总时长=$_totalMinutes分钟, 连续=$_consecutiveDays天');
+      debugPrint(
+        '🏆 成就数据加载: 总会话=$_totalSessions, 总时长=$_totalMinutes分钟, 连续=$_consecutiveDays天',
+      );
     } catch (e) {
       debugPrint('⚠️ 加载成就数据失败: $e');
     }
@@ -66,12 +68,18 @@ class AchievementSystem extends ChangeNotifier {
       await prefs.setInt('achievement_total_minutes', _totalMinutes);
       await prefs.setInt('achievement_total_chants', _totalChants);
       await prefs.setInt('achievement_consecutive_days', _consecutiveDays);
-      
+
       if (_lastSessionDate != null) {
-        await prefs.setString('achievement_last_session_date', _lastSessionDate!.toIso8601String());
+        await prefs.setString(
+          'achievement_last_session_date',
+          _lastSessionDate!.toIso8601String(),
+        );
       }
-      
-      await prefs.setStringList('achievement_unlocked', _unlockedAchievements.toList());
+
+      await prefs.setStringList(
+        'achievement_unlocked',
+        _unlockedAchievements.toList(),
+      );
     } catch (e) {
       debugPrint('⚠️ 保存成就数据失败: $e');
     }
@@ -80,29 +88,39 @@ class AchievementSystem extends ChangeNotifier {
   /// 检查并触发修行开始成就
   Future<void> onSessionStart() async {
     await loadData();
-    
+
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    
+
     // 检查是否是今日首次修行
-    if (_lastSessionDate == null || 
-        DateTime(_lastSessionDate!.year, _lastSessionDate!.month, _lastSessionDate!.day) != today) {
-      
+    if (_lastSessionDate == null ||
+        DateTime(
+              _lastSessionDate!.year,
+              _lastSessionDate!.month,
+              _lastSessionDate!.day,
+            ) !=
+            today) {
       // 今日首次修行成就
-      _triggerAchievement(Achievement(
-        id: 'daily_start',
-        title: '今日已开启修行',
-        description: '迈出修行的第一步',
-        icon: '🌅',
-        tier: AchievementTier.bronze,
-        animation: AchievementAnimation.sunrise,
-      ));
+      _triggerAchievement(
+        Achievement(
+          id: 'daily_start',
+          title: '今日已开启修行',
+          description: '迈出修行的第一步',
+          icon: '🌅',
+          tier: AchievementTier.bronze,
+          animation: AchievementAnimation.sunrise,
+        ),
+      );
 
       // 检查连续天数
       if (_lastSessionDate != null) {
         final yesterday = today.subtract(const Duration(days: 1));
-        final lastDate = DateTime(_lastSessionDate!.year, _lastSessionDate!.month, _lastSessionDate!.day);
-        
+        final lastDate = DateTime(
+          _lastSessionDate!.year,
+          _lastSessionDate!.month,
+          _lastSessionDate!.day,
+        );
+
         if (lastDate == yesterday) {
           _consecutiveDays++;
           _checkConsecutiveDaysAchievements();
@@ -112,13 +130,13 @@ class AchievementSystem extends ChangeNotifier {
       } else {
         _consecutiveDays = 1;
       }
-      
+
       _lastSessionDate = now;
     }
 
     // 检查特殊时间成就
     _checkTimeBasedAchievements(now);
-    
+
     await _saveData();
     notifyListeners();
   }
@@ -130,32 +148,34 @@ class AchievementSystem extends ChangeNotifier {
     required String sutra,
   }) async {
     await loadData();
-    
+
     _totalSessions++;
     _totalMinutes += duration.inMinutes;
     _totalChants += chantCount;
 
     // 首次完成成就
     if (_totalSessions == 1) {
-      _triggerAchievement(Achievement(
-        id: 'first_session',
-        title: '初心不改',
-        description: '完成首次修行',
-        icon: '✨',
-        tier: AchievementTier.gold,
-        animation: AchievementAnimation.sparkle,
-      ));
+      _triggerAchievement(
+        Achievement(
+          id: 'first_session',
+          title: '初心不改',
+          description: '完成首次修行',
+          icon: '✨',
+          tier: AchievementTier.gold,
+          animation: AchievementAnimation.sparkle,
+        ),
+      );
     }
 
     // 时长里程碑
     _checkDurationMilestones(duration);
-    
+
     // 念诵里程碑
     _checkChantMilestones(chantCount);
-    
+
     // 累计会话里程碑
     _checkSessionMilestones();
-    
+
     // 累计时长里程碑
     _checkTotalMinutesMilestones();
 
@@ -209,7 +229,8 @@ class AchievementSystem extends ChangeNotifier {
     };
 
     for (final entry in milestones.entries) {
-      if (_consecutiveDays == entry.key && !_unlockedAchievements.contains(entry.value.id)) {
+      if (_consecutiveDays == entry.key &&
+          !_unlockedAchievements.contains(entry.value.id)) {
         _triggerAchievement(entry.value);
       }
     }
@@ -218,27 +239,34 @@ class AchievementSystem extends ChangeNotifier {
   /// 检查特殊时间成就
   void _checkTimeBasedAchievements(DateTime time) {
     // 子时修行 (23:00 - 01:00)
-    if ((time.hour >= 23 || time.hour < 1) && !_unlockedAchievements.contains('midnight_practice')) {
-      _triggerAchievement(Achievement(
-        id: 'midnight_practice',
-        title: '子时修行',
-        description: '在子时开始修行',
-        icon: '🌙',
-        tier: AchievementTier.silver,
-        animation: AchievementAnimation.moonGlow,
-      ));
+    if ((time.hour >= 23 || time.hour < 1) &&
+        !_unlockedAchievements.contains('midnight_practice')) {
+      _triggerAchievement(
+        Achievement(
+          id: 'midnight_practice',
+          title: '子时修行',
+          description: '在子时开始修行',
+          icon: '🌙',
+          tier: AchievementTier.silver,
+          animation: AchievementAnimation.moonGlow,
+        ),
+      );
     }
-    
+
     // 清晨早课 (05:00 - 07:00)
-    if (time.hour >= 5 && time.hour < 7 && !_unlockedAchievements.contains('morning_practice')) {
-      _triggerAchievement(Achievement(
-        id: 'morning_practice',
-        title: '清晨早课',
-        description: '在清晨开始修行',
-        icon: '🌄',
-        tier: AchievementTier.silver,
-        animation: AchievementAnimation.sunrise,
-      ));
+    if (time.hour >= 5 &&
+        time.hour < 7 &&
+        !_unlockedAchievements.contains('morning_practice')) {
+      _triggerAchievement(
+        Achievement(
+          id: 'morning_practice',
+          title: '清晨早课',
+          description: '在清晨开始修行',
+          icon: '🌄',
+          tier: AchievementTier.silver,
+          animation: AchievementAnimation.sunrise,
+        ),
+      );
     }
   }
 
@@ -272,7 +300,8 @@ class AchievementSystem extends ChangeNotifier {
     };
 
     for (final entry in milestones.entries) {
-      if (duration.inMinutes >= entry.key && !_unlockedAchievements.contains(entry.value.id)) {
+      if (duration.inMinutes >= entry.key &&
+          !_unlockedAchievements.contains(entry.value.id)) {
         _triggerAchievement(entry.value);
       }
     }
@@ -281,14 +310,16 @@ class AchievementSystem extends ChangeNotifier {
   /// 检查念诵里程碑
   void _checkChantMilestones(int chantCount) {
     if (chantCount >= 108 && !_unlockedAchievements.contains('chant_108')) {
-      _triggerAchievement(Achievement(
-        id: 'chant_108',
-        title: '一百零八遍',
-        description: '单次念诵108遍',
-        icon: '📿',
-        tier: AchievementTier.gold,
-        animation: AchievementAnimation.mala,
-      ));
+      _triggerAchievement(
+        Achievement(
+          id: 'chant_108',
+          title: '一百零八遍',
+          description: '单次念诵108遍',
+          icon: '📿',
+          tier: AchievementTier.gold,
+          animation: AchievementAnimation.mala,
+        ),
+      );
     }
   }
 
@@ -322,7 +353,8 @@ class AchievementSystem extends ChangeNotifier {
     };
 
     for (final entry in milestones.entries) {
-      if (_totalSessions == entry.key && !_unlockedAchievements.contains(entry.value.id)) {
+      if (_totalSessions == entry.key &&
+          !_unlockedAchievements.contains(entry.value.id)) {
         _triggerAchievement(entry.value);
       }
     }
@@ -358,7 +390,8 @@ class AchievementSystem extends ChangeNotifier {
     };
 
     for (final entry in milestones.entries) {
-      if (_totalMinutes >= entry.key && !_unlockedAchievements.contains(entry.value.id)) {
+      if (_totalMinutes >= entry.key &&
+          !_unlockedAchievements.contains(entry.value.id)) {
         _triggerAchievement(entry.value);
       }
     }
@@ -367,10 +400,10 @@ class AchievementSystem extends ChangeNotifier {
   /// 触发成就
   void _triggerAchievement(Achievement achievement) {
     if (_unlockedAchievements.contains(achievement.id)) return;
-    
+
     _unlockedAchievements.add(achievement.id);
     _achievementController.add(achievement);
-    
+
     debugPrint('🏆 成就解锁: ${achievement.title}');
   }
 
@@ -378,7 +411,8 @@ class AchievementSystem extends ChangeNotifier {
   List<String> get unlockedAchievements => _unlockedAchievements.toList();
 
   /// 检查成就是否已解锁
-  bool isUnlocked(String achievementId) => _unlockedAchievements.contains(achievementId);
+  bool isUnlocked(String achievementId) =>
+      _unlockedAchievements.contains(achievementId);
 
   @override
   void dispose() {
@@ -389,31 +423,31 @@ class AchievementSystem extends ChangeNotifier {
 
 /// 成就等级
 enum AchievementTier {
-  bronze,   // 铜
-  silver,   // 银
-  gold,     // 金
+  bronze, // 铜
+  silver, // 银
+  gold, // 金
   platinum, // 白金
-  legendary,// 传说
+  legendary, // 传说
 }
 
 /// 成就动画类型
 enum AchievementAnimation {
-  sunrise,    // 日出动画
-  sparkle,    // 闪烁星光
-  flame,      // 火焰燃烧
-  starBurst,  // 星爆
-  diamond,    // 钻石闪烁
-  trophy,     // 奖杯升起
-  crown,      // 皇冠降临
-  moonGlow,   // 月光笼罩
-  pulse,      // 脉冲扩散
-  hourglass,  // 沙漏流转
+  sunrise, // 日出动画
+  sparkle, // 闪烁星光
+  flame, // 火焰燃烧
+  starBurst, // 星爆
+  diamond, // 钻石闪烁
+  trophy, // 奖杯升起
+  crown, // 皇冠降临
+  moonGlow, // 月光笼罩
+  pulse, // 脉冲扩散
+  hourglass, // 沙漏流转
   clockChime, // 时钟敲响
-  mala,       // 念珠转动
-  target,     // 命中靶心
-  medal,      // 勋章授予
-  goldMedal,  // 金牌闪耀
-  cosmic,     // 宇宙光效
+  mala, // 念珠转动
+  target, // 命中靶心
+  medal, // 勋章授予
+  goldMedal, // 金牌闪耀
+  cosmic, // 宇宙光效
 }
 
 /// 成就数据

@@ -52,7 +52,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const DouyinLoginScreen()),
+                      MaterialPageRoute(
+                        builder: (context) => const DouyinLoginScreen(),
+                      ),
                     );
                   },
                   tooltip: '登录',
@@ -102,7 +104,10 @@ class _HomeScreenState extends State<HomeScreen> {
               backgroundColor: Colors.white,
               child: Text(
                 username.isNotEmpty ? username[0].toUpperCase() : '?',
-                style: const TextStyle(color: Color(0xFF667eea), fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  color: Color(0xFF667eea),
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
@@ -111,7 +116,9 @@ class _HomeScreenState extends State<HomeScreen> {
               case 'profile':
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const ProfileScreen()),
+                  MaterialPageRoute(
+                    builder: (context) => const ProfileScreen(),
+                  ),
                 );
                 break;
               case 'logout':
@@ -126,7 +133,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   const Icon(Icons.person),
                   const SizedBox(width: 8),
-                  Text('个人中心 (${context.read<AuthModel>().getMembershipStatusText()})'),
+                  Text(
+                    '个人中心 (${context.read<AuthModel>().getMembershipStatusText()})',
+                  ),
                 ],
               ),
             ),
@@ -189,7 +198,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: SecondaryButton(
             text: '内置素材',
             icon: Icons.image,
-            onPressed: () => context.read<FileTransferModel>().selectBuiltInAssets(context),
+            onPressed: () =>
+                context.read<FileTransferModel>().selectBuiltInAssets(context),
           ),
         ),
       ],
@@ -224,7 +234,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             return ListTile(
                               dense: true,
                               leading: Icon(
-                                _getIconForFileType(model.getFileType(file.name)),
+                                _getIconForFileType(
+                                  model.getFileType(file.name),
+                                ),
                                 size: 20,
                               ),
                               title: Text(
@@ -262,7 +274,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                 ),
-                if (hasFiles) ...[ 
+                if (hasFiles) ...[
                   const SizedBox(height: 8),
                   Align(
                     alignment: Alignment.centerRight,

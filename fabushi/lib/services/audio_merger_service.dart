@@ -32,16 +32,17 @@ class AudioMarker {
 }
 
 /// 音频合并服务
-/// 
+///
 /// 跨平台实现：
 /// - iOS/Android: 使用 FFmpeg
 /// - macOS: 使用 afconvert 系统命令 + 纯 Dart
 class AudioMergerService {
   static AudioMergerService? _instance;
-  static AudioMergerService get instance => _instance ??= AudioMergerService._();
-  
+  static AudioMergerService get instance =>
+      _instance ??= AudioMergerService._();
+
   AudioMergerService._();
-  
+
   /// 是否是 macOS 平台
   bool get _isMacOS => !kIsWeb && Platform.isMacOS;
 
@@ -59,32 +60,32 @@ class AudioMergerService {
     try {
       final tempDir = await getTemporaryDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      
+
       // 1. 合并所有 PCM 文件
       final mergedPcmPath = '${tempDir.path}/merged_$timestamp.pcm';
       await _mergePcmFiles(pcmPaths, mergedPcmPath);
-      
+
       // 2. 生成 SRT 字幕文件
       final srtPath = '${tempDir.path}/subtitle_$timestamp.srt';
       await _generateSrtFile(sentences, markers, srtPath);
-      
+
       // 3. 转换 PCM 为 音频格式
       String? audioPath;
       if (_isMacOS) {
         // macOS: 先转 WAV，再用 afconvert 转 M4A
         final wavPath = '${tempDir.path}/audio_$timestamp.wav';
         await _pcmToWav(mergedPcmPath, wavPath);
-        
+
         audioPath = '${tempDir.path}/audio_$timestamp.m4a';
         final success = await _wavToM4aMacOS(wavPath, audioPath);
-        
+
         if (!success) {
           // 如果转换失败，返回 WAV 文件
           debugPrint('[AudioMerger] macOS afconvert 失败，返回 WAV');
           await _cleanupTempFiles([mergedPcmPath]);
           return wavPath;
         }
-        
+
         await _cleanupTempFiles([wavPath]);
       } else {
         // iOS/Android: 使用 FFmpeg
@@ -95,15 +96,19 @@ class AudioMergerService {
           return null;
         }
       }
-      
+
       // 4. 尝试嵌入字幕轨道（仅 FFmpeg 支持）
       final outputPath = '${tempDir.path}/reading_$timestamp.m4a';
       bool embedSuccess = false;
-      
+
       if (!_isMacOS) {
-        embedSuccess = await _embedSubtitleFFmpeg(audioPath, srtPath, outputPath);
+        embedSuccess = await _embedSubtitleFFmpeg(
+          audioPath,
+          srtPath,
+          outputPath,
+        );
       }
-      
+
       if (embedSuccess) {
         debugPrint('[AudioMerger] 成功生成带字幕的音频: $outputPath');
         await _cleanupTempFiles([mergedPcmPath, srtPath, audioPath]);
@@ -125,7 +130,7 @@ class AudioMergerService {
   Future<void> _mergePcmFiles(List<String> pcmPaths, String outputPath) async {
     final outputFile = File(outputPath);
     final sink = outputFile.openWrite();
-    
+
     for (final path in pcmPaths) {
       final file = File(path);
       if (await file.exists()) {
@@ -134,10 +139,10 @@ class AudioMergerService {
         debugPrint('[AudioMerger] 已合并: $path (${data.length} bytes)');
       }
     }
-    
+
     await sink.flush();
     await sink.close();
-    
+
     final mergedSize = await outputFile.length();
     debugPrint('[AudioMerger] 合并完成: $outputPath ($mergedSize bytes)');
   }
@@ -149,20 +154,22 @@ class AudioMergerService {
     String outputPath,
   ) async {
     final buffer = StringBuffer();
-    
+
     for (int i = 0; i < markers.length && i < sentences.length; i++) {
       final marker = markers[i];
       final sentence = sentences[i];
-      
+
       buffer.writeln('${i + 1}');
-      buffer.writeln('${_formatSrtTime(marker.startMs)} --> ${_formatSrtTime(marker.endMs)}');
+      buffer.writeln(
+        '${_formatSrtTime(marker.startMs)} --> ${_formatSrtTime(marker.endMs)}',
+      );
       buffer.writeln(sentence);
       buffer.writeln();
     }
-    
+
     final file = File(outputPath);
     await file.writeAsString(buffer.toString(), flush: true);
-    
+
     debugPrint('[AudioMerger] 生成字幕: $outputPath');
   }
 
@@ -172,11 +179,11 @@ class AudioMergerService {
     final minutes = (ms % 3600000) ~/ 60000;
     final seconds = (ms % 60000) ~/ 1000;
     final millis = ms % 1000;
-    
+
     return '${hours.toString().padLeft(2, '0')}:'
-           '${minutes.toString().padLeft(2, '0')}:'
-           '${seconds.toString().padLeft(2, '0')},'
-           '${millis.toString().padLeft(3, '0')}';
+        '${minutes.toString().padLeft(2, '0')}:'
+        '${seconds.toString().padLeft(2, '0')},'
+        '${millis.toString().padLeft(3, '0')}';
   }
 
   // =====================================================
@@ -184,12 +191,12 @@ class AudioMergerService {
   // =====================================================
 
   /// PCM 转 WAV（纯 Dart 实现）
-  /// 
+  ///
   /// 为 PCM 数据添加 WAV 文件头
   Future<void> _pcmToWav(String pcmPath, String wavPath) async {
     final pcmFile = File(pcmPath);
     final pcmData = await pcmFile.readAsBytes();
-    
+
     // WAV 文件头参数
     const int sampleRate = 16000;
     const int bitsPerSample = 16;
@@ -197,14 +204,13 @@ class AudioMergerService {
     final int dataSize = pcmData.length;
     final int byteRate = sampleRate * numChannels * bitsPerSample ~/ 8;
     final int blockAlign = numChannels * bitsPerSample ~/ 8;
-    
+
     // 构建 WAV 文件头 (44 bytes)
     final wavHeader = <int>[
       // RIFF header
       0x52, 0x49, 0x46, 0x46, // "RIFF"
       ...(_intToBytes(36 + dataSize, 4)), // File size - 8
       0x57, 0x41, 0x56, 0x45, // "WAVE"
-      
       // fmt chunk
       0x66, 0x6D, 0x74, 0x20, // "fmt "
       0x10, 0x00, 0x00, 0x00, // Chunk size (16)
@@ -214,12 +220,11 @@ class AudioMergerService {
       ...(_intToBytes(byteRate, 4)), // Byte rate
       ...(_intToBytes(blockAlign, 2)), // Block align
       ...(_intToBytes(bitsPerSample, 2)), // Bits per sample
-      
       // data chunk
       0x64, 0x61, 0x74, 0x61, // "data"
       ...(_intToBytes(dataSize, 4)), // Data size
     ];
-    
+
     // 写入 WAV 文件
     final wavFile = File(wavPath);
     final sink = wavFile.openWrite();
@@ -227,10 +232,10 @@ class AudioMergerService {
     sink.add(pcmData);
     await sink.flush();
     await sink.close();
-    
+
     debugPrint('[AudioMerger] PCM -> WAV 完成: $wavPath');
   }
-  
+
   /// 整数转字节数组（小端序）
   List<int> _intToBytes(int value, int length) {
     final bytes = <int>[];
@@ -248,13 +253,16 @@ class AudioMergerService {
       // -d aac: 使用 AAC 编码
       // -b 128000: 比特率 128kbps
       final result = await Process.run('afconvert', [
-        '-f', 'm4af',
-        '-d', 'aac',
-        '-b', '128000',
+        '-f',
+        'm4af',
+        '-d',
+        'aac',
+        '-b',
+        '128000',
         wavPath,
         m4aPath,
       ]);
-      
+
       if (result.exitCode == 0) {
         debugPrint('[AudioMerger] macOS afconvert 成功: $m4aPath');
         return true;
@@ -274,15 +282,16 @@ class AudioMergerService {
 
   /// PCM 转 AAC (FFmpeg)
   Future<bool> _pcmToAacFFmpeg(String pcmPath, String outputPath) async {
-    final command = '-y -f s16le -ar 16000 -ac 1 -i "$pcmPath" '
-                    '-af "aresample=44100,lowpass=f=7500,dynaudnorm=f=150:g=15,afftdn=nf=-25" '
-                    '-c:a aac -profile:a aac_low -b:a 128k "$outputPath"';
-    
+    final command =
+        '-y -f s16le -ar 16000 -ac 1 -i "$pcmPath" '
+        '-af "aresample=44100,lowpass=f=7500,dynaudnorm=f=150:g=15,afftdn=nf=-25" '
+        '-c:a aac -profile:a aac_low -b:a 128k "$outputPath"';
+
     debugPrint('[AudioMerger] 执行 FFmpeg: $command');
-    
+
     final session = await FFmpegKit.execute(command);
     final returnCode = await session.getReturnCode();
-    
+
     if (ReturnCode.isSuccess(returnCode)) {
       debugPrint('[AudioMerger] FFmpeg PCM -> AAC 成功');
       return true;
@@ -294,15 +303,20 @@ class AudioMergerService {
   }
 
   /// 嵌入字幕轨道 (FFmpeg)
-  Future<bool> _embedSubtitleFFmpeg(String audioPath, String srtPath, String outputPath) async {
-    final command = '-y -i "$audioPath" -i "$srtPath" '
-                    '-c copy -c:s mov_text "$outputPath"';
-    
+  Future<bool> _embedSubtitleFFmpeg(
+    String audioPath,
+    String srtPath,
+    String outputPath,
+  ) async {
+    final command =
+        '-y -i "$audioPath" -i "$srtPath" '
+        '-c copy -c:s mov_text "$outputPath"';
+
     debugPrint('[AudioMerger] 执行 FFmpeg: $command');
-    
+
     final session = await FFmpegKit.execute(command);
     final returnCode = await session.getReturnCode();
-    
+
     if (ReturnCode.isSuccess(returnCode)) {
       debugPrint('[AudioMerger] 嵌入字幕成功');
       return true;
@@ -330,17 +344,19 @@ class AudioMergerService {
   /// 获取 SRT 字幕内容
   String generateSrtContent(List<String> sentences, List<AudioMarker> markers) {
     final buffer = StringBuffer();
-    
+
     for (int i = 0; i < markers.length && i < sentences.length; i++) {
       final marker = markers[i];
       final sentence = sentences[i];
-      
+
       buffer.writeln('${i + 1}');
-      buffer.writeln('${_formatSrtTime(marker.startMs)} --> ${_formatSrtTime(marker.endMs)}');
+      buffer.writeln(
+        '${_formatSrtTime(marker.startMs)} --> ${_formatSrtTime(marker.endMs)}',
+      );
       buffer.writeln(sentence);
       buffer.writeln();
     }
-    
+
     return buffer.toString();
   }
 }

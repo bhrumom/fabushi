@@ -24,14 +24,19 @@ class ApiClient {
   Future<Map<String, dynamic>> get(String endpoint) async {
     try {
       final url = Uri.parse('${AppConfig.apiUrl}$endpoint');
-      final response = await _client.get(url, headers: _headers).timeout(AppConfig.requestTimeout);
+      final response = await _client
+          .get(url, headers: _headers)
+          .timeout(AppConfig.requestTimeout);
       return _handleResponse(response);
     } catch (e) {
       throw NetworkException(e.toString());
     }
   }
 
-  Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> post(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
     try {
       final url = Uri.parse('${AppConfig.apiUrl}$endpoint');
       final response = await _client

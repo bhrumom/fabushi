@@ -39,7 +39,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: const Text('确认登出'),
         content: const Text('您确定要登出吗？'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: ElevatedButton.styleFrom(
@@ -57,27 +60,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await authModel.logout();
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('已成功登出'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已成功登出'), backgroundColor: Colors.green),
+        );
       }
     }
   }
 
   Future<void> _handleRedeemCode() async {
     if (_redeemCodeController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请输入兑换码'), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入兑换码'), backgroundColor: Colors.orange),
+      );
       return;
     }
 
     final authModel = Provider.of<AuthModel>(context, listen: false);
 
     if (!authModel.isLoggedIn) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先登录'), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先登录'), backgroundColor: Colors.orange),
+      );
       return;
     }
 
@@ -89,7 +92,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (result['success'] == true && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'] ?? '兑换成功'), backgroundColor: Colors.green),
+          SnackBar(
+            content: Text(result['message'] ?? '兑换成功'),
+            backgroundColor: Colors.green,
+          ),
         );
 
         // 刷新用户信息
@@ -97,14 +103,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _redeemCodeController.clear();
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'] ?? '兑换失败'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(result['message'] ?? '兑换失败'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('兑换时发生错误: $e'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('兑换时发生错误: $e'), backgroundColor: Colors.red),
+        );
       }
     }
   }
@@ -135,13 +144,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
         padding: const EdgeInsets.all(24.0),
         child: Card(
           elevation: 8,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(32.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.account_circle, size: 64, color: Color(0xFF667eea)),
+                const Icon(
+                  Icons.account_circle,
+                  size: 64,
+                  color: Color(0xFF667eea),
+                ),
                 const SizedBox(height: 24),
                 const Text(
                   '请先登录',
@@ -161,9 +176,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 PrimaryButton(
                   text: '立即登录',
                   onPressed: () {
-                    Navigator.of(
-                      context,
-                    ).push(MaterialPageRoute(builder: (context) => const DouyinLoginScreen()));
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const DouyinLoginScreen(),
+                      ),
+                    );
                   },
                 ),
               ],
@@ -185,7 +202,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           // 用户信息卡片
           Card(
             elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(24.0),
               child: Column(
@@ -195,7 +214,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     radius: 40,
                     backgroundColor: const Color(0xFF667eea),
                     child: Text(
-                      user.username.isNotEmpty ? user.username[0].toUpperCase() : '?',
+                      user.username.isNotEmpty
+                          ? user.username[0].toUpperCase()
+                          : '?',
                       style: const TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
@@ -217,7 +238,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 8),
 
                   // 邮箱
-                  Text(user.email, style: const TextStyle(fontSize: 16, color: Color(0xFF7f8c8d))),
+                  Text(
+                    user.email,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Color(0xFF7f8c8d),
+                    ),
+                  ),
                   const SizedBox(height: 16),
 
                   // 会员状态
@@ -231,7 +258,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 8),
                     Text(
                       authModel.getMembershipExpiryText()!,
-                      style: const TextStyle(fontSize: 14, color: Color(0xFF7f8c8d)),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF7f8c8d),
+                      ),
                     ),
                   ],
                 ],
@@ -244,7 +274,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           if (!isApplePlatform) ...[
             Card(
               elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(24.0),
                 child: Column(
@@ -266,7 +298,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             controller: _redeemCodeController,
                             decoration: InputDecoration(
                               hintText: '输入兑换码',
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                               filled: true,
                               fillColor: Colors.grey[50],
                             ),
@@ -287,7 +321,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           // 功能菜单
           Card(
             elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Column(
               children: [
                 ListTile(
@@ -298,31 +334,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     await authModel.refreshUserInfo();
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('已刷新用户信息'), backgroundColor: Colors.green),
+                        const SnackBar(
+                          content: Text('已刷新用户信息'),
+                          backgroundColor: Colors.green,
+                        ),
                       );
                     }
                   },
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.card_membership, color: Color(0xFF667eea)),
+                  leading: const Icon(
+                    Icons.card_membership,
+                    color: Color(0xFF667eea),
+                  ),
                   title: const Text('会员中心'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const MembershipScreen()),
+                      MaterialPageRoute(
+                        builder: (context) => const MembershipScreen(),
+                      ),
                     );
                   },
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.receipt_long, color: Color(0xFF667eea)),
+                  leading: const Icon(
+                    Icons.receipt_long,
+                    color: Color(0xFF667eea),
+                  ),
                   title: const Text('购买记录'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () async {
                     try {
-                      final result = await _membershipService.getPurchaseHistory(authModel.authToken!);
+                      final result = await _membershipService
+                          .getPurchaseHistory(authModel.authToken!);
                       if (context.mounted) {
                         final purchases = result['purchases'] as List? ?? [];
                         _showPurchaseHistory(context, purchases);
@@ -338,12 +386,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const Divider(height: 1),
                 if (!isApplePlatform) ...[
                   ListTile(
-                    leading: const Icon(Icons.card_giftcard, color: Color(0xFF667eea)),
+                    leading: const Icon(
+                      Icons.card_giftcard,
+                      color: Color(0xFF667eea),
+                    ),
                     title: const Text('兑换记录'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () async {
                       try {
-                        final result = await _membershipService.getRedeemHistory(authModel.authToken!);
+                        final result = await _membershipService
+                            .getRedeemHistory(authModel.authToken!);
                         if (context.mounted) {
                           final redeems = result['redeems'] as List? ?? [];
                           _showRedeemHistory(context, redeems);
@@ -364,7 +416,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('账户设置功能开发中，敬请期待'), backgroundColor: Colors.blue),
+                      const SnackBar(
+                        content: Text('账户设置功能开发中，敬请期待'),
+                        backgroundColor: Colors.blue,
+                      ),
                     );
                   },
                 ),
@@ -410,11 +465,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       child: ListTile(
                         title: Text(purchase['plan']?.toString() ?? '未知套餐'),
-                        subtitle: Text('金额: ${purchase['amount']?.toString() ?? '0'} ${purchase['currency']?.toString() ?? 'CNY'}\n时间: ${purchase['purchased_at']?.toString() ?? ''}'),
+                        subtitle: Text(
+                          '金额: ${purchase['amount']?.toString() ?? '0'} ${purchase['currency']?.toString() ?? 'CNY'}\n时间: ${purchase['purchased_at']?.toString() ?? ''}',
+                        ),
                         trailing: Text(
                           purchase['status']?.toString() ?? '',
                           style: TextStyle(
-                            color: purchase['status'] == 'completed' ? Colors.green : Colors.orange,
+                            color: purchase['status'] == 'completed'
+                                ? Colors.green
+                                : Colors.orange,
                           ),
                         ),
                       ),
@@ -450,8 +509,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       child: ListTile(
                         title: Text(redeem['name']?.toString() ?? '兑换码'),
-                        subtitle: Text('天数: ${redeem['days']?.toString() ?? '0'} 天\n时间: ${redeem['redeemed_at']?.toString() ?? ''}'),
-                        trailing: const Icon(Icons.check_circle, color: Colors.green),
+                        subtitle: Text(
+                          '天数: ${redeem['days']?.toString() ?? '0'} 天\n时间: ${redeem['redeemed_at']?.toString() ?? ''}',
+                        ),
+                        trailing: const Icon(
+                          Icons.check_circle,
+                          color: Colors.green,
+                        ),
                       ),
                     );
                   },

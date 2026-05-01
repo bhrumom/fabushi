@@ -10,10 +10,7 @@ class TestSearchApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '搜索测试',
-      home: const TestSearchPage(),
-    );
+    return MaterialApp(title: '搜索测试', home: const TestSearchPage());
   }
 }
 
@@ -42,7 +39,7 @@ class _TestSearchPageState extends State<TestSearchPage> {
     setState(() {
       _status = '正在获取分类...';
     });
-    
+
     try {
       final categories = await _searchService.getCategories();
       setState(() {
@@ -83,9 +80,7 @@ class _TestSearchPageState extends State<TestSearchPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('搜索功能测试'),
-      ),
+      appBar: AppBar(title: const Text('搜索功能测试')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -99,13 +94,10 @@ class _TestSearchPageState extends State<TestSearchPage> {
                 color: Colors.grey[100],
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(
-                _status,
-                style: const TextStyle(fontSize: 14),
-              ),
+              child: Text(_status, style: const TextStyle(fontSize: 14)),
             ),
             const SizedBox(height: 16),
-            
+
             // 搜索框
             Row(
               children: [
@@ -122,61 +114,64 @@ class _TestSearchPageState extends State<TestSearchPage> {
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: _isLoading ? null : _testSearch,
-                  child: _isLoading 
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('搜索'),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('搜索'),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            
+
             // 分类显示
             if (_categories.isNotEmpty) ...[
-              const Text('可用分类:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                '可用分类:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
-                children: _categories.map((category) => Chip(
-                  label: Text(category),
-                )).toList(),
+                children: _categories
+                    .map((category) => Chip(label: Text(category)))
+                    .toList(),
               ),
               const SizedBox(height: 16),
             ],
-            
+
             // 搜索结果
             const Text('搜索结果:', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Expanded(
               child: _results.isEmpty
-                ? const Center(child: Text('暂无搜索结果'))
-                : ListView.builder(
-                    itemCount: _results.length,
-                    itemBuilder: (context, index) {
-                      final item = _results[index];
-                      return Card(
-                        child: ListTile(
-                          title: Text(item.title),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('分类: ${item.category}'),
-                              if (item.preview != null)
-                                Text(
-                                  item.preview!,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(color: Colors.grey[600]),
-                                ),
-                            ],
+                  ? const Center(child: Text('暂无搜索结果'))
+                  : ListView.builder(
+                      itemCount: _results.length,
+                      itemBuilder: (context, index) {
+                        final item = _results[index];
+                        return Card(
+                          child: ListTile(
+                            title: Text(item.title),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('分类: ${item.category}'),
+                                if (item.preview != null)
+                                  Text(
+                                    item.preview!,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(color: Colors.grey[600]),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),

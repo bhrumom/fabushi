@@ -19,16 +19,24 @@ class RealGlobalSendService {
   final ValueChanged<double> onDataSent;
   final VoidCallback onStopped;
   final void Function(String) onLog;
-  final Function(double, double, double, double, {String? fromLabel, String? toLabel, Duration? displayDuration})?
+  final Function(
+    double,
+    double,
+    double,
+    double, {
+    String? fromLabel,
+    String? toLabel,
+    Duration? displayDuration,
+  })?
   onTransferBeam;
-  final Function(int)? onLoopStart;  // 每轮循环开始时的回调，参数为轮次
+  final Function(int)? onLoopStart; // 每轮循环开始时的回调，参数为轮次
 
   bool _isRunning = false;
   int _sentCount = 0;
   double _dataSentInMB = 0.0;
   int _totalCountries = 0;
   int _currentCountryIndex = 0;
-  int _loopCount = 0;  // 当前轮次
+  int _loopCount = 0; // 当前轮次
 
   // 全球249个国家的服务器配置（将动态加载）
   Map<String, List<String>> globalCountryServers = {};
@@ -82,31 +90,34 @@ class RealGlobalSendService {
   // 每次成功发送的回调
   final Function(int)? onCountrySent;
 
-  Future<void> startSending({required List<PlatformFile> files, required bool isLoop}) async {
+  Future<void> startSending({
+    required List<PlatformFile> files,
+    required bool isLoop,
+  }) async {
     if (_isRunning) return;
 
     _isRunning = true;
-    _sentCount = 0;  // 这里改为国家计数
+    _sentCount = 0; // 这里改为国家计数
     _dataSentInMB = 0.0;
     _currentCountryIndex = 0;
 
     try {
       onLog('🚀 开始真实全球发送 - 文件数量: ${files.length}, 目标国家: $_totalCountries 个');
 
-      _loopCount = 0;  // 重置轮次计数
-      
+      _loopCount = 0; // 重置轮次计数
+
       do {
         // 每轮循环开始
         _loopCount++;
         _sentCount = 0;
         onProgress(_sentCount);
-        
+
         // 通知轮次更新
         if (onLoopStart != null) {
           onLoopStart!(_loopCount);
         }
         onLog('🔄 开始第 $_loopCount 轮发送');
-        
+
         for (final file in files) {
           if (!_isRunning) break;
 
@@ -123,7 +134,7 @@ class RealGlobalSendService {
           onLog(
             '📊 文件 ${file.name}: ${fileSizeMB.toStringAsFixed(2)} MB × $countriesSent 国 = ${(fileSizeMB * countriesSent).toStringAsFixed(2)} MB',
           );
-          
+
           // 文件处理完成后稍作延迟
           await Future.delayed(Duration(milliseconds: 100));
         }
@@ -156,13 +167,16 @@ class RealGlobalSendService {
       // 触发3D地球轨迹动画（带国家名称标签）
       // 轨迹显示时间与实际发送间隔一致：约500ms（网络请求时间 + 延迟）
       const beamDisplayDuration = Duration(milliseconds: 800);
-      
+
       final toCountry = _coordService.getByCountryCode(countryCode);
       if (toCountry != null && onTransferBeam != null) {
         debugPrint('🚀 准备触发轨迹回调: $countryName');
         // 使用用户IP定位的位置作为固定起点
         if (_userLatitude != null && _userLongitude != null) {
-          final fromCountry = _coordService.getByCoordinates(_userLatitude!, _userLongitude!);
+          final fromCountry = _coordService.getByCoordinates(
+            _userLatitude!,
+            _userLongitude!,
+          );
           final fromLabel = fromCountry?.countryCode != null
               ? _getCountryName(fromCountry!.countryCode!)
               : fromCountry?.countryName ?? '起点';
@@ -197,7 +211,9 @@ class RealGlobalSendService {
           }
         }
       } else {
-        debugPrint('⚠️ 无法触发轨迹: toCountry=${toCountry != null}, callback=${onTransferBeam != null}');
+        debugPrint(
+          '⚠️ 无法触发轨迹: toCountry=${toCountry != null}, callback=${onTransferBeam != null}',
+        );
       }
 
       // 为每个国家尝试多个服务器
@@ -226,8 +242,8 @@ class RealGlobalSendService {
       }
 
       if (countrySuccess) {
-        _sentCount++;  // 实时更新国家计数
-        onProgress(_sentCount);  // 实时通知进度更新
+        _sentCount++; // 实时更新国家计数
+        onProgress(_sentCount); // 实时通知进度更新
       } else {
         failCount++;
         onLog('❌ $countryName ($countryCode) 所有服务器发送失败');
@@ -237,7 +253,7 @@ class RealGlobalSendService {
 
       // 关键修复：让出主线程控制权，避免阻塞UI
       await Future.delayed(Duration.zero);
-      
+
       // 性能优化：每5个国家（而非10个）后增加更长延迟，进一步确保UI响应性
       if (i % 5 == 0 && i > 0) {
         await Future.delayed(Duration(milliseconds: 100));
@@ -249,7 +265,7 @@ class RealGlobalSendService {
   }
 
   /// 发送文件到服务器
-  /// 
+  ///
   /// 内存优化：
   /// - 小文件（< 10MB）：直接 base64 发送
   /// - 大文件（>= 10MB）：流式分块发送，每次只加载 1MB 到内存
@@ -262,10 +278,10 @@ class RealGlobalSendService {
     try {
       // 关键修复：在网络请求前让出主线程控制权
       await Future.delayed(Duration.zero);
-      
+
       // 内存优化：大文件使用流式发送
       const int largeFileThreshold = 10 * 1024 * 1024; // 10MB
-      
+
       if (file.size >= largeFileThreshold && file.path != null) {
         // 大文件：流式分块发送
         await _streamSendLargeFile(file, serverUrl, countryCode, countryName);
@@ -279,7 +295,7 @@ class RealGlobalSendService {
           'timestamp': DateTime.now().toIso8601String(),
           'data': base64Encode(file.bytes ?? Uint8List(0)),
         };
-        
+
         await _sendSmallFile(requestData, serverUrl, countryCode, countryName);
       }
 
@@ -288,9 +304,9 @@ class RealGlobalSendService {
       throw Exception('发送失败: $e');
     }
   }
-  
+
   /// 流式发送大文件（分块读取，分块上传）
-  /// 
+  ///
   /// 每次只从磁盘读取 1MB，发送后释放内存，再读取下一块
   Future<void> _streamSendLargeFile(
     PlatformFile file,
@@ -299,15 +315,17 @@ class RealGlobalSendService {
     String countryName,
   ) async {
     const int chunkSize = 1024 * 1024; // 1MB per chunk
-    
+
     final fileObj = File(file.path!);
     if (!await fileObj.exists()) {
       throw Exception('文件不存在: ${file.path}');
     }
-    
+
     final totalChunks = (file.size / chunkSize).ceil();
-    onLog('📦 大文件流式发送: ${file.name} (${(file.size / 1024 / 1024).toStringAsFixed(1)}MB) - $totalChunks 块');
-    
+    onLog(
+      '📦 大文件流式发送: ${file.name} (${(file.size / 1024 / 1024).toStringAsFixed(1)}MB) - $totalChunks 块',
+    );
+
     // 发送起始标记
     final startPayload = {
       'type': 'stream_start',
@@ -318,25 +336,25 @@ class RealGlobalSendService {
       'countryName': countryName,
       'timestamp': DateTime.now().toIso8601String(),
     };
-    
+
     await _sendChunk(serverUrl, startPayload);
-    
+
     // 流式读取并发送每一块
     final stream = fileObj.openRead();
     int chunkIndex = 0;
     final buffer = BytesBuilder();
-    
+
     await for (var data in stream) {
       if (!_isRunning) break;
-      
+
       buffer.add(data);
-      
+
       // 当缓冲区达到块大小时发送
       while (buffer.length >= chunkSize) {
         final chunk = buffer.takeBytes();
         final chunkToSend = chunk.sublist(0, chunkSize);
         final remaining = chunk.sublist(chunkSize);
-        
+
         // 发送当前块
         final chunkPayload = {
           'type': 'stream_chunk',
@@ -345,18 +363,18 @@ class RealGlobalSendService {
           'chunkData': base64Encode(chunkToSend),
           'countryCode': countryCode,
         };
-        
+
         await _sendChunk(serverUrl, chunkPayload);
         chunkIndex++;
-        
+
         // 将剩余数据放回缓冲区
         buffer.add(remaining);
-        
+
         // 每发送一块后让出控制权
         await Future.delayed(Duration.zero);
       }
     }
-    
+
     // 发送最后一块（如果有剩余）
     if (buffer.isNotEmpty) {
       final chunkPayload = {
@@ -366,11 +384,11 @@ class RealGlobalSendService {
         'chunkData': base64Encode(buffer.takeBytes()),
         'countryCode': countryCode,
       };
-      
+
       await _sendChunk(serverUrl, chunkPayload);
       chunkIndex++;
     }
-    
+
     // 发送结束标记
     final endPayload = {
       'type': 'stream_end',
@@ -379,18 +397,24 @@ class RealGlobalSendService {
       'countryCode': countryCode,
       'timestamp': DateTime.now().toIso8601String(),
     };
-    
+
     await _sendChunk(serverUrl, endPayload);
     onLog('✅ 大文件流式发送完成: $chunkIndex 块');
   }
-  
+
   /// 发送单个数据块
-  Future<void> _sendChunk(String serverUrl, Map<String, dynamic> payload) async {
+  Future<void> _sendChunk(
+    String serverUrl,
+    Map<String, dynamic> payload,
+  ) async {
     if (serverUrl.contains('httpbin.org')) {
       await http
           .post(
             Uri.parse(serverUrl),
-            headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'GlobalDharmaSender/1.0',
+            },
             body: jsonEncode(payload),
           )
           .timeout(const Duration(seconds: 10));
@@ -398,7 +422,10 @@ class RealGlobalSendService {
       await http
           .post(
             Uri.parse(serverUrl),
-            headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'GlobalDharmaSender/1.0',
+            },
             body: jsonEncode({
               'title': 'Dharma Chunk - ${payload['fileName']}',
               'body': 'Chunk ${payload['chunkIndex'] ?? 'meta'}',
@@ -408,7 +435,7 @@ class RealGlobalSendService {
           .timeout(const Duration(seconds: 5));
     }
   }
-  
+
   /// 发送小文件（完整内容）
   Future<void> _sendSmallFile(
     Map<String, dynamic> requestData,
@@ -420,7 +447,10 @@ class RealGlobalSendService {
       final response = await http
           .post(
             Uri.parse(serverUrl),
-            headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'GlobalDharmaSender/1.0',
+            },
             body: jsonEncode(requestData),
           )
           .timeout(const Duration(seconds: 5));
@@ -432,7 +462,10 @@ class RealGlobalSendService {
       final response = await http
           .post(
             Uri.parse(serverUrl),
-            headers: {'Content-Type': 'application/json', 'User-Agent': 'GlobalDharmaSender/1.0'},
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'GlobalDharmaSender/1.0',
+            },
             body: jsonEncode({
               'title': 'Global Dharma Send - ${requestData['fileName']}',
               'body': 'File sent from $countryName ($countryCode)',
@@ -446,7 +479,7 @@ class RealGlobalSendService {
       }
     }
   }
-  
+
   /// 计算文件哈希（流式读取，不占用大量内存）
   Future<String> _calculateFileHash(PlatformFile file) async {
     try {
@@ -454,11 +487,11 @@ class RealGlobalSendService {
         // 有文件路径：流式读取计算哈希
         final fileObj = File(file.path!);
         final stream = fileObj.openRead();
-        
+
         // 使用简单的分块哈希计算，避免依赖 AccumulatorSink
         var hash = crypto.sha256.convert([]);
         final chunks = <int>[];
-        
+
         await for (var chunk in stream) {
           chunks.addAll(chunk);
           // 每累积 1MB 计算一次中间哈希，防止内存过大
@@ -468,7 +501,7 @@ class RealGlobalSendService {
             chunks.addAll(hash.bytes);
           }
         }
-        
+
         // 计算最终哈希
         return crypto.sha256.convert(chunks).toString();
       } else if (file.bytes != null && file.bytes!.length < 10 * 1024 * 1024) {
@@ -476,15 +509,19 @@ class RealGlobalSendService {
         return crypto.sha256.convert(file.bytes!).toString();
       } else {
         // 无法计算，返回基于文件名和大小的伪哈希
-        return crypto.sha256.convert(
-          utf8.encode('${file.name}-${file.size}-${DateTime.now().millisecondsSinceEpoch}')
-        ).toString();
+        return crypto.sha256
+            .convert(
+              utf8.encode(
+                '${file.name}-${file.size}-${DateTime.now().millisecondsSinceEpoch}',
+              ),
+            )
+            .toString();
       }
     } catch (e) {
       // 哈希计算失败，返回伪哈希
-      return crypto.sha256.convert(
-        utf8.encode('${file.name}-${file.size}')
-      ).toString();
+      return crypto.sha256
+          .convert(utf8.encode('${file.name}-${file.size}'))
+          .toString();
     }
   }
 

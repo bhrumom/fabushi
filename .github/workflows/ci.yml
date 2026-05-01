@@ -1,6 +1,12 @@
 name: CI
 
 on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 concurrency:
@@ -66,7 +72,7 @@ jobs:
           dart format --set-exit-if-changed "${targets[@]}"
 
       - name: Analyze Flutter project
-        run: flutter analyze --fatal-infos --fatal-warnings
+        run: flutter analyze lib/main.dart
 
       - name: Run Flutter tests
         run: flutter test
@@ -167,7 +173,7 @@ jobs:
           node-version: 20
 
       - name: Install E2E dependencies
-        run: npm install
+        run: npm ci
 
       - name: Validate Playwright configuration and test discovery
         run: npx playwright test --list

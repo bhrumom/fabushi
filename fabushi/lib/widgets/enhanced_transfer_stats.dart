@@ -28,7 +28,11 @@ class EnhancedTransferStats extends StatelessWidget {
                 const SizedBox(height: 8.0),
                 _buildStatRow(context, '已传播节点数:', '${model.globalSentCount}'),
                 const SizedBox(height: 4.0),
-                _buildStatRow(context, '已传播数据:', '${model.globalDataSentMB.toStringAsFixed(2)} MB'),
+                _buildStatRow(
+                  context,
+                  '已传播数据:',
+                  '${model.globalDataSentMB.toStringAsFixed(2)} MB',
+                ),
 
                 // Web环境提示
                 if (kIsWeb) ...[
@@ -76,7 +80,9 @@ class EnhancedTransferStats extends StatelessWidget {
       children: [
         Icon(
           icon,
-          color: isHighlighted ? Theme.of(context).colorScheme.primary : Colors.grey.shade700,
+          color: isHighlighted
+              ? Theme.of(context).colorScheme.primary
+              : Colors.grey.shade700,
           size: 20,
         ),
         const SizedBox(width: 8.0),
@@ -85,7 +91,9 @@ class EnhancedTransferStats extends StatelessWidget {
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: isHighlighted ? Theme.of(context).colorScheme.primary : Colors.grey.shade800,
+            color: isHighlighted
+                ? Theme.of(context).colorScheme.primary
+                : Colors.grey.shade800,
           ),
         ),
       ],
@@ -106,7 +114,9 @@ class EnhancedTransferStats extends StatelessWidget {
           label,
           style: TextStyle(
             fontWeight: FontWeight.w500,
-            color: isHighlighted ? Theme.of(context).colorScheme.primary.withOpacity(0.8) : null,
+            color: isHighlighted
+                ? Theme.of(context).colorScheme.primary.withOpacity(0.8)
+                : null,
           ),
         ),
         const SizedBox(width: 8.0),
@@ -118,7 +128,9 @@ class EnhancedTransferStats extends StatelessWidget {
                 : isBold
                 ? Theme.of(context).colorScheme.secondary
                 : Theme.of(context).primaryColor,
-            fontWeight: isBold || isHighlighted ? FontWeight.bold : FontWeight.w500,
+            fontWeight: isBold || isHighlighted
+                ? FontWeight.bold
+                : FontWeight.w500,
           ),
         ),
       ],

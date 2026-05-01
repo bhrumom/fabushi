@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'dart:io';
 import 'firebase_options.dart';
 import 'core/di/injection.dart';
@@ -21,12 +20,11 @@ import 'core/video_feed_di/video_feed_injector.dart';
 import 'core/design_system/app_theme.dart';
 import 'providers/video_feed_visibility_notifier.dart';
 import 'providers/tts_mute_notifier.dart';
-import 'services/cloudflare_text_service.dart';
-import 'services/semantic_nlp_service.dart';
-import 'services/app_settings.dart';
 
 void main() async {
-  debugPrint('🚀 [main] App starting... WidgetsFlutterBinding.ensureInitialized()');
+  debugPrint(
+    '🚀 [main] App starting... WidgetsFlutterBinding.ensureInitialized()',
+  );
   WidgetsFlutterBinding.ensureInitialized();
 
   // 初始化依赖注入
@@ -53,11 +51,15 @@ void main() async {
       // 检查是否已初始化，避免重复初始化
       if (Firebase.apps.isEmpty) {
         debugPrint('🚀 [main] Firebase.initializeApp() begin');
-        await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)
-            .timeout(const Duration(seconds: 5), onTimeout: () {
-          debugPrint('⚠️ [main] Firebase初始化超时 (5s)');
-          return null as dynamic;
-        });
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        ).timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            debugPrint('⚠️ [main] Firebase初始化超时 (5s)');
+            return null as dynamic;
+          },
+        );
         debugPrint('✅ [main] Firebase初始化成功');
       } else {
         debugPrint('✅ [main] Firebase已初始化，跳过');
@@ -70,7 +72,9 @@ void main() async {
     Future.delayed(const Duration(seconds: 2), () async {
       try {
         if (Firebase.apps.isEmpty) {
-          await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+          await Firebase.initializeApp(
+            options: DefaultFirebaseOptions.currentPlatform,
+          );
           debugPrint('✅ Firebase初始化成功（Web延迟）');
         }
       } catch (e) {
@@ -80,18 +84,21 @@ void main() async {
   }
 
   // 延迟异步初始化，避免阻塞启动
-  Future.delayed(const Duration(milliseconds: 100), () {
+  Future.delayed(const Duration(milliseconds: 100), () async {
     debugPrint('🚀 [main] AppInitializer.initialize() begin');
-    AppInitializer.initialize().then((_) {
+    try {
+      await AppInitializer.initialize();
       debugPrint('🚀 [main] AppInitializer.initialize() done');
-    }).catchError((e) => debugPrint('初始化失败: $e'));
+    } catch (e) {
+      debugPrint('初始化失败: $e');
+    }
   });
 
   // 🚀 立即初始化Video Feed依赖（不阻塞）
   debugPrint('🚀 [main] setupVideoFeedDependencies() begin');
   setupVideoFeedDependencies();
   debugPrint('🚀 [main] setupVideoFeedDependencies() done');
-  
+
   // 注释掉启动时的法流数据预加载，避免因自动请求引来网络排查
   /*
   Future.microtask(() async {
@@ -135,7 +142,8 @@ class MyApp extends StatelessWidget {
             locale: settings.appLocale,
             supportedLocales: AppLocalizations.supportedLocales,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
-            localeListResolutionCallback: AppLocalizations.localeListResolutionCallback,
+            localeListResolutionCallback:
+                AppLocalizations.localeListResolutionCallback,
             routes: {'/login': (_) => const DouyinLoginScreen()},
             theme: AppTheme.lightTheme, // Though we prefer dark for space theme
             darkTheme: AppTheme.darkTheme,

@@ -4,7 +4,7 @@ import 'dart:ui';
 
 class AppTheme {
   // Primary Colors
-  static const Color primaryColor = nebulaPurple; 
+  static const Color primaryColor = nebulaPurple;
   static const Color secondaryColor = spaceBlue;
   static const Color accentColor = cosmicGold;
   static const Color alipayBlue = Color(0xFF1677FF);
@@ -37,7 +37,7 @@ class AppTheme {
       ),
     ],
   );
-  
+
   // Helper to get a glass effect (requires ClipRRect / BackdropFilter usage in widget tree)
   // but here we define the container style.
 
@@ -45,9 +45,10 @@ class AppTheme {
   static ThemeData darkTheme = ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
-    scaffoldBackgroundColor: Colors.transparent, // Important for background image/gradient
+    scaffoldBackgroundColor:
+        Colors.transparent, // Important for background image/gradient
     fontFamily: 'NotoSansSC',
-    
+
     colorScheme: const ColorScheme.dark(
       primary: primaryColor,
       secondary: secondaryColor,
@@ -83,7 +84,8 @@ class AppTheme {
       style: ElevatedButton.styleFrom(
         elevation: 10,
         shadowColor: nebulaPurple.withOpacity(0.5),
-        backgroundColor: primaryColor, // Use gradient in widget if possible, but here solid
+        backgroundColor:
+            primaryColor, // Use gradient in widget if possible, but here solid
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
@@ -125,5 +127,6 @@ class AppTheme {
   // Light Theme (Keeping it but making it compatible if needed, or just redirect to Dark)
   // For this request, we might want to force Dark mode or make Light mode also "Spacey" (maybe day-sky).
   // Let's stick to the user request "Space travel" -> Dark.
-  static ThemeData lightTheme = darkTheme; // Force Dark/Space theme for now as requested style.
+  static ThemeData lightTheme =
+      darkTheme; // Force Dark/Space theme for now as requested style.
 }

@@ -45,7 +45,8 @@ class FileTransferModel extends ChangeNotifier {
   List<CountrySendStatus> _countryStatuses = [];
   String _currentLog = '';
 
-  final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
+  final DownloadedAssetsService _downloadedAssetsService =
+      DownloadedAssetsService();
   final DownloadManager _downloadManager = DownloadManager();
   Map<String, String> _assetToTaskMap = {};
   final IPLocationService _ipLocationService = IPLocationService();
@@ -53,7 +54,8 @@ class FileTransferModel extends ChangeNotifier {
   bool _isDisposed = false;
 
   // 首页属性
-  PlatformFile? get selectedFile => _selectedFiles.isNotEmpty ? _selectedFiles.first : null;
+  PlatformFile? get selectedFile =>
+      _selectedFiles.isNotEmpty ? _selectedFiles.first : null;
   double _progress = 0.0;
   double get progress => _progress;
 
@@ -195,13 +197,20 @@ class FileTransferModel extends ChangeNotifier {
       MaterialPageRoute(builder: (context) => AssetScreen()),
     );
 
-    if (selectedAssets != null && selectedAssets is List && selectedAssets.isNotEmpty) {
-      final List<String> assetPaths = selectedAssets.map((asset) => asset.toString()).toList();
+    if (selectedAssets != null &&
+        selectedAssets is List &&
+        selectedAssets.isNotEmpty) {
+      final List<String> assetPaths = selectedAssets
+          .map((asset) => asset.toString())
+          .toList();
       _downloadSelectedAssets(context, assetPaths);
     }
   }
 
-  Future<void> _downloadSelectedAssets(BuildContext context, List<String> assetPaths) async {
+  Future<void> _downloadSelectedAssets(
+    BuildContext context,
+    List<String> assetPaths,
+  ) async {
     try {
       await _downloadedAssetsService.initialize();
 
@@ -218,14 +227,17 @@ class FileTransferModel extends ChangeNotifier {
 
       String message = '';
       if (alreadyDownloadedAssets.isNotEmpty && needDownloadAssets.isNotEmpty) {
-        message = '发现 ${alreadyDownloadedAssets.length} 个素材已下载，将下载 ${needDownloadAssets.length} 个新素材';
+        message =
+            '发现 ${alreadyDownloadedAssets.length} 个素材已下载，将下载 ${needDownloadAssets.length} 个新素材';
       } else if (alreadyDownloadedAssets.isNotEmpty) {
         message = '所有 ${alreadyDownloadedAssets.length} 个素材都已下载，将直接复用';
       } else if (needDownloadAssets.isNotEmpty) {
         message = '开始下载 ${needDownloadAssets.length} 个素材';
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
 
       if (alreadyDownloadedAssets.isNotEmpty) {
         await _reuseDownloadedAssets(context, alreadyDownloadedAssets);
@@ -237,7 +249,9 @@ class FileTransferModel extends ChangeNotifier {
         }
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('所有素材处理完成')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('所有素材处理完成')));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('处理失败: $e'), backgroundColor: Colors.red),
@@ -245,7 +259,10 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
 
-  Future<void> _reuseDownloadedAssets(BuildContext context, List<String> assetPaths) async {
+  Future<void> _reuseDownloadedAssets(
+    BuildContext context,
+    List<String> assetPaths,
+  ) async {
     try {
       for (String assetPath in assetPaths) {
         final fileName = assetPath.split('/').last;
@@ -299,7 +316,10 @@ class FileTransferModel extends ChangeNotifier {
       final savedFilesStr = html.window.localStorage['saved_files'] ?? '[]';
       final List<dynamic> savedFiles = json.decode(savedFilesStr);
 
-      final fileInfo = savedFiles.firstWhere((f) => f['name'] == fileName, orElse: () => null);
+      final fileInfo = savedFiles.firstWhere(
+        (f) => f['name'] == fileName,
+        orElse: () => null,
+      );
 
       if (fileInfo == null) return null;
 
@@ -313,16 +333,22 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
 
-  Future<void> _downloadSingleAsset(BuildContext context, String assetPath) async {
+  Future<void> _downloadSingleAsset(
+    BuildContext context,
+    String assetPath,
+  ) async {
     try {
-      final bool isStaticFile = assetPath.contains('乾隆大藏经') ||
+      final bool isStaticFile =
+          assetPath.contains('乾隆大藏经') ||
           assetPath.contains('房山石经陀罗尼') ||
           assetPath.contains('咒语') ||
           assetPath.contains('经文');
 
       final String url;
       if (isStaticFile) {
-        final cleanAssetPath = assetPath.startsWith('web/') ? assetPath.substring(4) : assetPath;
+        final cleanAssetPath = assetPath.startsWith('web/')
+            ? assetPath.substring(4)
+            : assetPath;
 
         if (kIsWeb) {
           url = '/$cleanAssetPath';
@@ -333,7 +359,8 @@ class FileTransferModel extends ChangeNotifier {
           url = '$baseUrl/$cleanAssetPath';
         }
       } else {
-        url = '${AppConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(assetPath)}';
+        url =
+            '${AppConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(assetPath)}';
       }
 
       debugPrint('下载素材URL: $url');
@@ -349,7 +376,11 @@ class FileTransferModel extends ChangeNotifier {
         }
       }
 
-      final taskId = await _downloadManager.createTask(url, fileName, assetPath);
+      final taskId = await _downloadManager.createTask(
+        url,
+        fileName,
+        assetPath,
+      );
       _assetToTaskMap[assetPath] = taskId;
 
       _showDownloadProgressDialog(context, taskId, fileName);
@@ -361,7 +392,11 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
 
-  void _showDownloadProgressDialog(BuildContext context, String taskId, String fileName) {
+  void _showDownloadProgressDialog(
+    BuildContext context,
+    String taskId,
+    String fileName,
+  ) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -378,7 +413,9 @@ class FileTransferModel extends ChangeNotifier {
               debugPrint('📁 处理下载完成的文件: $fileName');
 
               if (kIsWeb) {
-                final fileData = await _downloadManager.getDownloadedFile(fileName);
+                final fileData = await _downloadManager.getDownloadedFile(
+                  fileName,
+                );
                 if (fileData != null) {
                   final fileInfo = PlatformFile(
                     name: fileName,
@@ -388,7 +425,9 @@ class FileTransferModel extends ChangeNotifier {
                   );
 
                   addFiles([fileInfo]);
-                  await _downloadedAssetsService.markAssetAsDownloaded(task.assetPath);
+                  await _downloadedAssetsService.markAssetAsDownloaded(
+                    task.assetPath,
+                  );
                   await Future.delayed(Duration(milliseconds: 200));
                 }
               } else {
@@ -411,7 +450,9 @@ class FileTransferModel extends ChangeNotifier {
                     );
 
                     addFiles([fileInfo]);
-                    await _downloadedAssetsService.markAssetAsDownloaded(task.assetPath);
+                    await _downloadedAssetsService.markAssetAsDownloaded(
+                      task.assetPath,
+                    );
                     await Future.delayed(Duration(milliseconds: 200));
                   }
                 }
@@ -492,10 +533,26 @@ class FileTransferModel extends ChangeNotifier {
     }
   }
 
-  Function(double, double, double, double, {String? fromLabel, String? toLabel})? _onTransferBeam;
+  Function(
+    double,
+    double,
+    double,
+    double, {
+    String? fromLabel,
+    String? toLabel,
+  })?
+  _onTransferBeam;
 
   void setTransferBeamCallback(
-    Function(double, double, double, double, {String? fromLabel, String? toLabel})? callback,
+    Function(
+      double,
+      double,
+      double,
+      double, {
+      String? fromLabel,
+      String? toLabel,
+    })?
+    callback,
   ) {
     _onTransferBeam = callback;
   }
@@ -512,7 +569,10 @@ class FileTransferModel extends ChangeNotifier {
       debugPrint('🚀 开始真实全球传输 - 文件数量: ${_selectedFiles.length}');
 
       await _initializeRealGlobalSendService();
-      await _realGlobalSendService?.startSending(files: _selectedFiles, isLoop: _isLooping);
+      await _realGlobalSendService?.startSending(
+        files: _selectedFiles,
+        isLoop: _isLooping,
+      );
       await _uploadPendingData();
       debugPrint('✅ 传输完成，数据已上传');
     } catch (e) {
@@ -553,7 +613,9 @@ class FileTransferModel extends ChangeNotifier {
       if (userLocation != null) {
         userLat = userLocation.latitude;
         userLng = userLocation.longitude;
-        debugPrint('📍 传输服务使用用户位置: ${userLocation.country}, ${userLocation.city}');
+        debugPrint(
+          '📍 传输服务使用用户位置: ${userLocation.country}, ${userLocation.city}',
+        );
       }
     } catch (e) {
       debugPrint('⚠️ 获取用户位置失败: $e，将使用默认位置');
@@ -678,9 +740,13 @@ class FileTransferModel extends ChangeNotifier {
   void updateCountryStatus(String? countryName, SendStatus status) {
     if (countryName == null) return;
 
-    final index = _countryStatuses.indexWhere((status) => status.countryName == countryName);
+    final index = _countryStatuses.indexWhere(
+      (status) => status.countryName == countryName,
+    );
     if (index != -1) {
-      _countryStatuses[index] = _countryStatuses[index].copyWith(status: status);
+      _countryStatuses[index] = _countryStatuses[index].copyWith(
+        status: status,
+      );
       _schedulePersist(_persistCountryStatuses);
       _scheduleNotify();
     }
@@ -693,7 +759,9 @@ class FileTransferModel extends ChangeNotifier {
   }
 
   int getSuccessCount() {
-    return _countryStatuses.where((status) => status.status == SendStatus.success).length;
+    return _countryStatuses
+        .where((status) => status.status == SendStatus.success)
+        .length;
   }
 
   Future<void> _loadPersistedState() async {
@@ -782,12 +850,7 @@ class FileTransferModel extends ChangeNotifier {
   }
 }
 
-enum SendStatus {
-  pending,
-  sending,
-  success,
-  failed,
-}
+enum SendStatus { pending, sending, success, failed }
 
 class CountrySendStatus {
   final String countryCode;

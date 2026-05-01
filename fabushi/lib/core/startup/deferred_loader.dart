@@ -11,13 +11,17 @@ class DeferredLoader {
   final Map<String, bool> _loadingStates = {};
 
   /// 延迟执行任务，避免启动时的资源竞争
-  void scheduleTask(String taskId, Duration delay, Future<void> Function() task) {
+  void scheduleTask(
+    String taskId,
+    Duration delay,
+    Future<void> Function() task,
+  ) {
     // 取消之前的任务
     _timers[taskId]?.cancel();
-    
+
     _timers[taskId] = Timer(delay, () async {
       if (_loadingStates[taskId] == true) return; // 防止重复执行
-      
+
       _loadingStates[taskId] = true;
       try {
         await task();

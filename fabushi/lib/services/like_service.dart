@@ -15,7 +15,7 @@ class LikeService extends ChangeNotifier {
   bool _isInitialized = false;
   String? _authToken;
   String? _currentUserId;
-  
+
   bool get isInitialized => _isInitialized;
 
   String _getStorageKey() => 'liked_items_${_currentUserId ?? "guest"}';
@@ -81,7 +81,7 @@ class LikeService extends ChangeNotifier {
 
   Future<void> toggleLike(LikedItem item) async {
     final wasLiked = _likedItems.containsKey(item.id);
-    
+
     if (wasLiked) {
       _likedItems.remove(item.id);
       _likeCounts[item.id] = (_likeCounts[item.id] ?? 1) - 1;
@@ -89,23 +89,23 @@ class LikeService extends ChangeNotifier {
       _likedItems[item.id] = item;
       _likeCounts[item.id] = (_likeCounts[item.id] ?? 0) + 1;
     }
-    
+
     await _saveLikedItems();
     notifyListeners();
 
     // 同步到云端，点赞时额外发送标题和文件路径
     _syncToCloud(
-      item.id, 
-      item.contentType, 
+      item.id,
+      item.contentType,
       wasLiked ? 'unlike' : 'like',
-      title: item.username,  // username 字段存储的是标题
+      title: item.username, // username 字段存储的是标题
       filePath: item.filePath,
     );
   }
 
   Future<void> _syncFromCloud() async {
     if (_authToken == null) return;
-    
+
     try {
       final response = await http.get(
         Uri.parse('${AppConfig.apiUrl}/api/likes/my-likes'),
@@ -129,7 +129,13 @@ class LikeService extends ChangeNotifier {
     }
   }
 
-  Future<void> _syncToCloud(String contentId, String contentType, String action, {String? title, String? filePath}) async {
+  Future<void> _syncToCloud(
+    String contentId,
+    String contentType,
+    String action, {
+    String? title,
+    String? filePath,
+  }) async {
     try {
       final headers = {'Content-Type': 'application/json'};
       if (_authToken != null) {
@@ -141,7 +147,7 @@ class LikeService extends ChangeNotifier {
         'contentType': contentType,
         'action': action,
       };
-      
+
       // 点赞时额外发送标题和文件路径
       if (action == 'like') {
         if (title != null) body['title'] = title;
@@ -205,7 +211,7 @@ class LikeService extends ChangeNotifier {
 
   Future<void> fetchReceivedLikeCount() async {
     if (_authToken == null) return;
-    
+
     try {
       final response = await http.get(
         Uri.parse('${AppConfig.apiUrl}/api/likes/received-count'),

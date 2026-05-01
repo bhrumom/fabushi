@@ -40,7 +40,7 @@ class FeedTabBar extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // 右侧搜索图标
           IconButton(
             icon: const Icon(Icons.search, color: Colors.white, size: 28),
@@ -70,10 +70,10 @@ class FeedTabBar extends StatelessWidget {
               fontSize: isSelected ? 17 : 16,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
               shadows: const [
-                 Shadow(
+                Shadow(
                   offset: Offset(0, 1),
                   blurRadius: 2.0,
-                  color: Colors.black26, 
+                  color: Colors.black26,
                 ),
               ],
             ),

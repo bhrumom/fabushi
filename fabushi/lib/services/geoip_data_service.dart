@@ -10,10 +10,10 @@ class GeoIPDataService {
   GeoIPDataService._internal();
 
   bool _isInitialized = false;
-  
+
   // 国家代码 -> IP 地址列表
   final Map<String, List<String>> _countryIPs = {};
-  
+
   // geoname_id -> 国家代码映射（使用方法初始化避免重复键警告）
   late final Map<String, String> _geonameToCountry;
 
@@ -234,27 +234,29 @@ class GeoIPDataService {
 
     try {
       debugPrint('🌍 开始加载 GeoLite2 IP 数据...');
-      
-      final csvData = await rootBundle.loadString('assets/ip_data/GeoLite2-Country-Blocks-IPv4.csv');
+
+      final csvData = await rootBundle.loadString(
+        'assets/ip_data/GeoLite2-Country-Blocks-IPv4.csv',
+      );
       final lines = const LineSplitter().convert(csvData);
-      
+
       // 跳过标题行
       for (int i = 1; i < lines.length; i++) {
         final line = lines[i].trim();
         if (line.isEmpty) continue;
-        
+
         final parts = line.split(',');
         if (parts.length < 2) continue;
-        
+
         final network = parts[0]; // CIDR 格式，如 1.0.0.0/24
         final geonameId = parts[1];
-        
+
         if (geonameId.isEmpty) continue;
-        
+
         // 获取国家代码
         final countryCode = _geonameToCountry[geonameId];
         if (countryCode == null) continue;
-        
+
         // 从 CIDR 提取第一个 IP
         final ip = _getFirstIPFromCIDR(network);
         if (ip != null) {
@@ -265,10 +267,9 @@ class GeoIPDataService {
           }
         }
       }
-      
+
       _isInitialized = true;
       debugPrint('✅ GeoLite2 数据加载完成，共 ${_countryIPs.length} 个国家');
-      
     } catch (e) {
       debugPrint('❌ 加载 GeoLite2 数据失败: $e');
       // 使用备用数据
@@ -307,7 +308,7 @@ class GeoIPDataService {
   /// 加载备用数据（当 CSV 加载失败时）
   void _loadFallbackData() {
     debugPrint('⚠️ 使用备用 IP 数据');
-    
+
     // 每个国家至少一个代表性 IP
     _countryIPs.addAll({
       'CN': ['1.0.1.0', '1.0.2.0', '1.0.8.0', '1.0.32.0'],
@@ -337,7 +338,7 @@ class GeoIPDataService {
       'ID': ['1.0.0.0', '1.20.0.0', '1.32.0.0', '14.0.0.0'],
       'PH': ['1.37.0.0', '1.38.0.0', '14.0.0.0', '27.0.0.0'],
     });
-    
+
     _isInitialized = true;
   }
 }

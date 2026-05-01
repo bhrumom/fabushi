@@ -20,16 +20,16 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _defaultTtsMuted = true;
   bool _isLoading = true;
-  
+
   // 读诵匹配阈值（百分比形式，0.0 ~ 1.0）
   double _fastMatchThreshold = 0.50;
   double _matchThreshold = 0.50;
-  
+
   // AI 模型设置
   DeviceCapabilityInfo? _deviceInfo;
   LLMModelType? _selectedModel;
   Map<LLMModelType, ModelStatus>? _modelStatus;
-  
+
   // 下载进度状态
   StreamSubscription<DownloadProgressEvent>? _downloadProgressSubscription;
   double _downloadProgress = 0.0;
@@ -42,13 +42,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSettings();
     _subscribeToDownloadProgress();
   }
-  
+
   @override
   void dispose() {
     _downloadProgressSubscription?.cancel();
     super.dispose();
   }
-  
+
   /// 订阅下载进度流
   void _subscribeToDownloadProgress() {
     // 检查是否有正在进行的下载
@@ -57,23 +57,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _downloadProgress = LLMModelManager.instance.currentDownloadProgress;
       _downloadStage = LLMModelManager.instance.currentDownloadStage;
     }
-    
-    _downloadProgressSubscription = LLMModelManager.instance.downloadProgressStream.listen((event) {
-      if (mounted) {
-        setState(() {
-          _isDownloading = !event.isComplete;
-          _downloadProgress = event.progress;
-          _downloadStage = event.stage;
+
+    _downloadProgressSubscription = LLMModelManager
+        .instance
+        .downloadProgressStream
+        .listen((event) {
+          if (mounted) {
+            setState(() {
+              _isDownloading = !event.isComplete;
+              _downloadProgress = event.progress;
+              _downloadStage = event.stage;
+            });
+
+            // 下载完成时刷新模型状态
+            if (event.isComplete) {
+              _refreshModelStatus();
+            }
+          }
         });
-        
-        // 下载完成时刷新模型状态
-        if (event.isComplete) {
-          _refreshModelStatus();
-        }
-      }
-    });
   }
-  
+
   /// 刷新模型状态
   Future<void> _refreshModelStatus() async {
     final newStatus = await LLMModelManager.instance.getAllModelStatus();
@@ -88,18 +91,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final defaultMuted = await AppSettings.getDefaultTtsMuted();
     final fastMatchThreshold = await AppSettings.getFastMatchThreshold();
     final matchThreshold = await AppSettings.getMatchThreshold();
-    
+
     // 加载 AI 模型相关设置
-    final deviceInfo = await DeviceCapabilityService.instance.getDeviceCapabilityInfo();
+    final deviceInfo = await DeviceCapabilityService.instance
+        .getDeviceCapabilityInfo();
     final modelStatus = await LLMModelManager.instance.getAllModelStatus();
     final savedModelName = await AppSettings.getSelectedModelName();
     LLMModelType? selectedModel;
     if (savedModelName != null) {
       try {
-        selectedModel = LLMModelType.values.firstWhere((t) => t.name == savedModelName);
+        selectedModel = LLMModelType.values.firstWhere(
+          (t) => t.name == savedModelName,
+        );
       } catch (_) {}
     }
-    
+
     if (mounted) {
       setState(() {
         _defaultTtsMuted = defaultMuted;
@@ -117,23 +123,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _defaultTtsMuted = value);
     await AppSettings.setDefaultTtsMuted(value);
   }
-  
+
   Future<void> _setFastMatchThreshold(double value) async {
     setState(() => _fastMatchThreshold = value);
     await AppSettings.setFastMatchThreshold(value);
   }
-  
+
   Future<void> _setMatchThreshold(double value) async {
     setState(() => _matchThreshold = value);
     await AppSettings.setMatchThreshold(value);
   }
-  
+
   /// 显示删除模型确认对话框
   Future<void> _showDeleteModelDialog() async {
     if (_selectedModel == null) return;
-    
+
     final config = LLMModelConfig.getConfig(_selectedModel!);
-    
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -155,11 +161,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-    
+
     if (confirm == true) {
       // 执行删除
       await LLMModelManager.instance.deleteModel(_selectedModel!);
-      
+
       // 刷新模型状态
       final newStatus = await LLMModelManager.instance.getAllModelStatus();
       if (mounted) {
@@ -195,10 +201,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   // TODO: 临时隐藏，后续需要再开启
                   // // AI 模型设置
                   // _buildModelSettingCard(),
-                  // 
+                  //
                   // // TTS 默认静音设置
                   // _buildTtsMuteSettingItem(),
-                  // 
+                  //
                   // // 读诵匹配阈值设置
                   // _buildRecitationThresholdSettings(),
 
@@ -212,7 +218,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: '防止应用被系统清理',
                       onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const KeepAliveGuideScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const KeepAliveGuideScreen(),
+                        ),
                       ),
                     ),
 
@@ -223,11 +231,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: '刷新数据',
                     subtitle: '重新同步账户信息',
                     onTap: () async {
-                      final authModel = Provider.of<AuthModel>(context, listen: false);
+                      final authModel = Provider.of<AuthModel>(
+                        context,
+                        listen: false,
+                      );
                       await authModel.refreshUserInfo();
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('数据已刷新'), backgroundColor: Colors.green),
+                          const SnackBar(
+                            content: Text('数据已刷新'),
+                            backgroundColor: Colors.green,
+                          ),
                         );
                       }
                     },
@@ -243,7 +257,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       context: context,
                       builder: (context) => AlertDialog(
                         backgroundColor: const Color(0xFF1E1E1E),
-                        title: const Text('帮助与反馈', style: TextStyle(color: Colors.white)),
+                        title: const Text(
+                          '帮助与反馈',
+                          style: TextStyle(color: Colors.white),
+                        ),
                         content: const Text(
                           '如果您发现任何违规内容，或有任何建议，请联系我们：\n\n邮箱：support@ombhrum.com\n我们将会在24小时内处理您的反馈。',
                           style: TextStyle(color: Colors.white70),
@@ -285,7 +302,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildModelSettingCard() {
     final LLMModelConfig? selectedConfig;
     final ModelStatus? selectedStatus;
-    
+
     if (_selectedModel != null) {
       selectedConfig = LLMModelConfig.getConfig(_selectedModel!);
       selectedStatus = _modelStatus?[_selectedModel!];
@@ -312,7 +329,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: Colors.purple.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.psychology, color: Colors.purple, size: 24),
+                  child: const Icon(
+                    Icons.psychology,
+                    color: Colors.purple,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -337,9 +358,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // 设备信息提示
             if (_deviceInfo != null)
               Container(
@@ -350,20 +371,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.phone_android, color: Colors.blue, size: 18),
+                    const Icon(
+                      Icons.phone_android,
+                      color: Colors.blue,
+                      size: 18,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         '内存 ${_deviceInfo!.ramString} | ${_deviceInfo!.levelString}设备',
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            
+
             const SizedBox(height: 12),
-            
+
             // 当前模型信息
             Container(
               padding: const EdgeInsets.all(12),
@@ -375,8 +403,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Row(
                 children: [
                   Icon(
-                    _selectedModel == LLMModelType.deepseekR1 
-                        ? Icons.lightbulb 
+                    _selectedModel == LLMModelType.deepseekR1
+                        ? Icons.lightbulb
                         : Icons.memory,
                     color: selectedConfig != null ? Colors.amber : Colors.grey,
                     size: 28,
@@ -398,8 +426,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           Text(
                             '${selectedConfig.sizeString} | ${selectedStatus == ModelStatus.downloaded ? "已下载" : "未下载"}',
                             style: TextStyle(
-                              color: selectedStatus == ModelStatus.downloaded 
-                                  ? Colors.green 
+                              color: selectedStatus == ModelStatus.downloaded
+                                  ? Colors.green
                                   : Colors.orange,
                               fontSize: 12,
                             ),
@@ -407,26 +435,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         else
                           const Text(
                             '请选择一个 AI 模型',
-                            style: TextStyle(color: Colors.white38, fontSize: 12),
+                            style: TextStyle(
+                              color: Colors.white38,
+                              fontSize: 12,
+                            ),
                           ),
                       ],
                     ),
                   ),
                   // 状态指示
                   if (selectedStatus == ModelStatus.downloaded)
-                    const Icon(Icons.check_circle, color: Colors.green, size: 20)
+                    const Icon(
+                      Icons.check_circle,
+                      color: Colors.green,
+                      size: 20,
+                    )
                   else if (selectedStatus == ModelStatus.downloading)
                     const SizedBox(
-                      width: 20, 
-                      height: 20, 
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber),
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.amber,
+                      ),
                     )
                   else
                     const Icon(Icons.download, color: Colors.orange, size: 20),
                 ],
               ),
             ),
-            
+
             // 下载进度显示（仅在下载中时显示）
             if (_isDownloading) ...[
               const SizedBox(height: 12),
@@ -453,7 +491,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            _downloadStage.isNotEmpty ? _downloadStage : '下载中...',
+                            _downloadStage.isNotEmpty
+                                ? _downloadStage
+                                : '下载中...',
                             style: const TextStyle(
                               color: Colors.amber,
                               fontSize: 13,
@@ -477,7 +517,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: LinearProgressIndicator(
                         value: _downloadProgress,
                         backgroundColor: Colors.white12,
-                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.amber),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Colors.amber,
+                        ),
                         minHeight: 6,
                       ),
                     ),
@@ -485,9 +527,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ],
-            
+
             const SizedBox(height: 12),
-            
+
             // 切换模型按钮
             SizedBox(
               width: double.infinity,
@@ -499,7 +541,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _selectedModel = result;
                     });
                     // 刷新模型状态
-                    final newStatus = await LLMModelManager.instance.getAllModelStatus();
+                    final newStatus = await LLMModelManager.instance
+                        .getAllModelStatus();
                     if (mounted) {
                       setState(() {
                         _modelStatus = newStatus;
@@ -516,9 +559,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
-            
+
             // 删除模型按钮（仅当模型已下载时显示）
-            if (_selectedModel != null && selectedStatus == ModelStatus.downloaded)
+            if (_selectedModel != null &&
+                selectedStatus == ModelStatus.downloaded)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: SizedBox(
@@ -558,10 +602,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         title: const Text(
           '启动默认静音',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w500,
-          ),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
         ),
         subtitle: Text(
           _defaultTtsMuted ? '法流页面TTS朗读默认静音' : '法流页面TTS朗读默认开启',
@@ -575,7 +616,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-  
+
   /// 读诵匹配阈值设置
   Widget _buildRecitationThresholdSettings() {
     return Card(
@@ -596,7 +637,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: Colors.green.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.record_voice_over, color: Colors.green, size: 24),
+                  child: const Icon(
+                    Icons.record_voice_over,
+                    color: Colors.green,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -621,9 +666,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 20),
-            
+
             // 快速切换阈值
             Row(
               children: [
@@ -655,9 +700,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               '匹配度达到此值时立即切换下一句',
               style: TextStyle(color: Colors.white38, fontSize: 12),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // 普通匹配阈值
             Row(
               children: [
@@ -766,7 +811,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             builder: (context) => AlertDialog(
               backgroundColor: const Color(0xFF1E1E1E),
               title: const Text('确认退出', style: TextStyle(color: Colors.white)),
-              content: const Text('确定要退出登录吗？', style: TextStyle(color: Colors.white70)),
+              content: const Text(
+                '确定要退出登录吗？',
+                style: TextStyle(color: Colors.white70),
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
@@ -774,7 +822,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: const Text('退出', style: TextStyle(color: Colors.redAccent)),
+                  child: const Text(
+                    '退出',
+                    style: TextStyle(color: Colors.redAccent),
+                  ),
                 ),
               ],
             ),
@@ -783,9 +834,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             final authModel = Provider.of<AuthModel>(context, listen: false);
             await authModel.logout();
             if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已退出登录')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('已退出登录')));
               Navigator.pop(context); // 返回上一页
             }
           }
@@ -811,10 +862,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         title: const Text(
           '注销账户',
-          style: TextStyle(
-            color: Colors.red,
-            fontWeight: FontWeight.w500,
-          ),
+          style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
         ),
         subtitle: const Text(
           '此操作不可逆，将永久删除您的数据',
@@ -826,7 +874,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             context: context,
             builder: (context) => AlertDialog(
               backgroundColor: const Color(0xFF1E1E1E),
-              title: const Text('风险警告', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+              title: const Text(
+                '风险警告',
+                style: TextStyle(
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               content: const Text(
                 '您正在申请注销账户。\n\n注销后，您的所有个人数据、记录与设置将被彻底删除，并且无法恢复。确定要继续吗？',
                 style: TextStyle(color: Colors.white70),
@@ -834,16 +888,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: const Text('点错了，取消', style: TextStyle(color: Colors.white70)),
+                  child: const Text(
+                    '点错了，取消',
+                    style: TextStyle(color: Colors.white70),
+                  ),
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: const Text('确定注销', style: TextStyle(color: Colors.redAccent)),
+                  child: const Text(
+                    '确定注销',
+                    style: TextStyle(color: Colors.redAccent),
+                  ),
                 ),
               ],
             ),
           );
-          
+
           if (confirm == true) {
             // 提供双重认证防止误操作
             if (!context.mounted) return;
@@ -851,24 +911,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
               context: context,
               builder: (context) => AlertDialog(
                 backgroundColor: const Color(0xFF1E1E1E),
-                title: const Text('最终确认', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                content: const Text('账户删除后将彻底丢失，不可找回，这是最后的确认，还要继续吗？', style: TextStyle(color: Colors.white70)),
+                title: const Text(
+                  '最终确认',
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                content: const Text(
+                  '账户删除后将彻底丢失，不可找回，这是最后的确认，还要继续吗？',
+                  style: TextStyle(color: Colors.white70),
+                ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, false),
-                    child: const Text('取消', style: TextStyle(color: Colors.white70)),
+                    child: const Text(
+                      '取消',
+                      style: TextStyle(color: Colors.white70),
+                    ),
                   ),
                   TextButton(
                     onPressed: () => Navigator.pop(context, true),
-                    child: const Text('确认删除账户', style: TextStyle(color: Colors.red)),
+                    child: const Text(
+                      '确认删除账户',
+                      style: TextStyle(color: Colors.red),
+                    ),
                   ),
-                ]
-              )
+                ],
+              ),
             );
 
             if (doubleConfirm == true) {
               if (!context.mounted) return;
-              
+
               showDialog(
                 context: context,
                 barrierDismissible: false,
@@ -876,21 +951,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   return const Center(child: CircularProgressIndicator());
                 },
               );
-              
+
               final authModel = Provider.of<AuthModel>(context, listen: false);
               final res = await authModel.deleteAccount();
-              
+
               if (!context.mounted) return;
               Navigator.pop(context); // close loading indicator
 
               if (res['success'] == true) {
-                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('账户已成功注销'), backgroundColor: Colors.green),
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('账户已成功注销'),
+                    backgroundColor: Colors.green,
+                  ),
                 );
                 Navigator.pop(context); // 返回上一页到未登录状态页面
               } else {
-                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(res['error'] ?? '注销失败，请重试或联系客服'), backgroundColor: Colors.red),
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(res['error'] ?? '注销失败，请重试或联系客服'),
+                    backgroundColor: Colors.red,
+                  ),
                 );
               }
             }

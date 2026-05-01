@@ -46,7 +46,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
   void initState() {
     super.initState();
     _likeService.initialize();
-    
+
     // 从缓存获取点赞数
     _isLiked = _likeService.isLiked(widget.videoItem.id);
     _likeCount = ContentStatsService().getLikeCount(widget.videoItem.id);
@@ -56,15 +56,15 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
     if (_likeCount == 0) {
       _likeCount = widget.videoItem.likeCount;
     }
-    
+
     // 从缓存获取评论数
     _commentCount = ContentStatsService().getCommentCount(widget.videoItem.id);
     if (_commentCount == 0) {
       _commentCount = widget.videoItem.commentCount;
     }
-    
+
     _likeService.addListener(_updateLikeState);
-    
+
     // 初始化收藏服务并获取收藏状态
     _favoriteService.initialize();
     _isFavorited = _favoriteService.isFavorited(widget.videoItem.id);
@@ -110,8 +110,10 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
       textContent: widget.videoItem.textContent,
       profileImageUrl: widget.videoItem.profileImageUrl,
       likedAt: DateTime.now(),
-      contentType: widget.videoItem.contentType == ContentType.video ? 'video' : 'text',
-      filePath: widget.videoItem.filePath,  // 传递文件路径
+      contentType: widget.videoItem.contentType == ContentType.video
+          ? 'video'
+          : 'text',
+      filePath: widget.videoItem.filePath, // 传递文件路径
     );
 
     await _likeService.toggleLike(item);
@@ -140,7 +142,9 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
       textContent: widget.videoItem.textContent,
       filePath: widget.videoItem.filePath,
       favoritedAt: DateTime.now(),
-      contentType: widget.videoItem.contentType == ContentType.video ? 'video' : 'text',
+      contentType: widget.videoItem.contentType == ContentType.video
+          ? 'video'
+          : 'text',
     );
 
     final wasFavorited = _isFavorited;
@@ -162,27 +166,27 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
   /// 优先在标点符号处分割，否则在指定长度处强制分割
   List<String> _splitTextForRecitation(String text, {int maxLength = 21}) {
     if (text.isEmpty) return [];
-    
+
     // 移除空白字符
     text = text.trim();
-    
+
     // 如果文本短于最大长度，直接返回
     if (text.length <= maxLength) {
       return [text];
     }
-    
+
     final sentences = <String>[];
     int start = 0;
-    
+
     while (start < text.length) {
       int end = start + maxLength;
-      
+
       if (end >= text.length) {
         // 剩余部分不足最大长度
         sentences.add(text.substring(start).trim());
         break;
       }
-      
+
       // 在区间内寻找最佳分割点（标点符号）
       int bestSplit = -1;
       for (int i = end; i > start; i--) {
@@ -197,7 +201,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
           bestSplit = i;
         }
       }
-      
+
       if (bestSplit > start) {
         sentences.add(text.substring(start, bestSplit).trim());
         start = bestSplit;
@@ -207,11 +211,11 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
         for (int i = end; i < text.length; i++) {
           final char = text[i];
           if ('。！？；，、：'.contains(char)) {
-            forwardSplit = i + 1;  // 包含标点
+            forwardSplit = i + 1; // 包含标点
             break;
           }
         }
-        
+
         if (forwardSplit > start) {
           sentences.add(text.substring(start, forwardSplit).trim());
           start = forwardSplit;
@@ -222,7 +226,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
         }
       }
     }
-    
+
     // 过滤空字符串
     return sentences.where((s) => s.isNotEmpty).toList();
   }
@@ -231,11 +235,11 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
     // 使用当前段落或完整文本
     final text = _currentParagraph ?? widget.videoItem.textContent ?? '';
     if (text.isEmpty) return;
-    
+
     // 将文本分割成不超过21个字的句子列表
     final sentences = _splitTextForRecitation(text);
     if (sentences.isEmpty) return;
-    
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -247,15 +251,15 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
   /// 解析文本为句子列表
   List<String> _parseSentences(String text) {
     if (text.isEmpty) return [];
-    
+
     // 按标点符号分割句子
     final sentences = <String>[];
     final buffer = StringBuffer();
-    
+
     for (int i = 0; i < text.length; i++) {
       final char = text[i];
       buffer.write(char);
-      
+
       // 识别句子结束标点
       if ('。！？；'.contains(char)) {
         final sentence = buffer.toString().trim();
@@ -265,34 +269,37 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
         buffer.clear();
       }
     }
-    
+
     // 处理最后可能没有标点的部分
     final remaining = buffer.toString().trim();
     if (remaining.isNotEmpty) {
       sentences.add(remaining);
     }
-    
+
     return sentences;
   }
 
   void _handleStartReading() {
     final textContent = widget.videoItem.textContent ?? '';
     if (textContent.isEmpty) return;
-    
+
     // 使用智能切分，与背诵功能和文本视频保持一致（最大21字，优先在标点处分割）
     final sentences = _splitTextForRecitation(textContent);
     if (sentences.isEmpty) return;
-    
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ReadingGameWidget(
           sentences: sentences,
           contentId: widget.videoItem.id,
-          contentTitle: widget.videoItem.description, // Using description as title
+          contentTitle:
+              widget.videoItem.description, // Using description as title
           onComplete: (result) {
             // Callback kept for future use if needed
-            debugPrint('读诵完成: 音频路径=${result.audioPath}, 时间戳=${result.markers.length}个');
+            debugPrint(
+              '读诵完成: 音频路径=${result.audioPath}, 时间戳=${result.markers.length}个',
+            );
           },
         ),
       ),
@@ -306,8 +313,10 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
         HapticFeedback.mediumImpact();
         final currentUser = AuthService().currentUser;
         // 如果用户名匹配，或者是模拟环境下的作者标识
-        final isAuthor = currentUser != null && currentUser.username == widget.videoItem.username;
-        
+        final isAuthor =
+            currentUser != null &&
+            currentUser.username == widget.videoItem.username;
+
         ReportDialog.show(
           context,
           contentId: widget.videoItem.id,
@@ -373,7 +382,7 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
     // 但是用户说"就像抖音app一样"，抖音点赞会跳登录，点评论按钮看评论是允许的。
     // 所以这里我让点击评论按钮直接显示底栏。
     // 但我会修改 CommentBottomSheet 里的发表逻辑。
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -393,4 +402,3 @@ class _VideoFeedViewItemState extends State<VideoFeedViewItem> {
     );
   }
 }
-

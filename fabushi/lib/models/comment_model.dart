@@ -70,5 +70,6 @@ class CommentModel {
     };
   }
 
-  String get displayName => nickname?.isNotEmpty == true ? nickname! : (username ?? '匿名用户');
+  String get displayName =>
+      nickname?.isNotEmpty == true ? nickname! : (username ?? '匿名用户');
 }

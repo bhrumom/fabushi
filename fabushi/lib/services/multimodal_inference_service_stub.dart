@@ -20,20 +20,20 @@ class MultimodalInferenceService {
 
   /// 是否已初始化
   bool get isInitialized => _isInitialized;
-  
+
   /// 当前加载的模型类型
   LLMModelType? get loadedModelType => _loadedModelType;
 
   /// 初始化多模态模型 (Web 不支持)
   Future<void> initialize(
-    String modelPath, 
+    String modelPath,
     String mmprojPath, {
     int nCtx = 4096,
   }) async {
     debugPrint('MultimodalInferenceService: Web 平台不支持本地多模态推理');
     throw UnsupportedError('Web 平台不支持本地多模态推理');
   }
-  
+
   /// 使用模型类型初始化 (Web 不支持)
   Future<void> initializeWithType(LLMModelType type) async {
     throw UnsupportedError('Web 平台不支持本地多模态推理');
@@ -58,19 +58,16 @@ class MultimodalInferenceService {
   }
 
   /// 流式多模态对话 (Web 不支持)
-  Stream<String> chatStream(
-    String textPrompt, {
-    List<Uint8List>? images,
-  }) {
+  Stream<String> chatStream(String textPrompt, {List<Uint8List>? images}) {
     throw UnsupportedError('Web 平台不支持本地多模态推理');
   }
-  
+
   /// 停止当前生成
   Future<void> stopGeneration() async {}
 
   /// 视觉问答 (Web 不支持)
   Future<String> visualQA(
-    Uint8List imageBytes, 
+    Uint8List imageBytes,
     String question, {
     void Function(String token)? onToken,
   }) async {
@@ -98,10 +95,10 @@ class MultimodalInferenceService {
 enum MultimodalMessageType {
   /// 纯文本
   text,
-  
+
   /// 图像
   image,
-  
+
   /// 文本+图像混合
   mixed,
 }
@@ -110,16 +107,16 @@ enum MultimodalMessageType {
 class MultimodalMessage {
   /// 消息类型
   final MultimodalMessageType type;
-  
+
   /// 文本内容
   final String? text;
-  
+
   /// 图像数据列表
   final List<Uint8List>? images;
-  
+
   /// 是否是用户消息
   final bool isUser;
-  
+
   /// 时间戳
   final DateTime timestamp;
 
@@ -130,7 +127,7 @@ class MultimodalMessage {
     required this.isUser,
     required this.timestamp,
   });
-  
+
   /// 创建纯文本消息
   factory MultimodalMessage.text(String text, {required bool isUser}) {
     return MultimodalMessage(
@@ -140,7 +137,7 @@ class MultimodalMessage {
       timestamp: DateTime.now(),
     );
   }
-  
+
   /// 创建图像消息
   factory MultimodalMessage.image(
     List<Uint8List> images, {
@@ -148,14 +145,16 @@ class MultimodalMessage {
     required bool isUser,
   }) {
     return MultimodalMessage(
-      type: caption != null ? MultimodalMessageType.mixed : MultimodalMessageType.image,
+      type: caption != null
+          ? MultimodalMessageType.mixed
+          : MultimodalMessageType.image,
       text: caption,
       images: images,
       isUser: isUser,
       timestamp: DateTime.now(),
     );
   }
-  
+
   /// 创建混合消息
   factory MultimodalMessage.mixed(
     String text,

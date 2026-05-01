@@ -31,7 +31,7 @@ class CommentBottomSheet extends StatefulWidget {
 class _CommentBottomSheetState extends State<CommentBottomSheet> {
   final TextEditingController _commentController = TextEditingController();
   final CommentService _commentService = CommentService();
-  
+
   List<CommentModel> _comments = [];
   bool _isLoading = true;
   String? _selectedTag;
@@ -59,7 +59,8 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
         final blockService = UserBlockService();
         final filtered = comments.where((c) {
           if (blockService.shouldFilter(c.userId)) return false;
-          if (ContentFilterService.containsObjectionableContent(c.content)) return false;
+          if (ContentFilterService.containsObjectionableContent(c.content))
+            return false;
           return true;
         }).toList();
         setState(() {
@@ -86,7 +87,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
       });
     } else {
       await AudioStreamService.instance.stopPlayer();
-      
+
       // 检查文件是否存在或由于是网络路径
       bool canPlay = false;
       if (path.startsWith('http')) {
@@ -104,11 +105,11 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
           _playingCommentId = comment.id.toString();
         });
       } else {
-         if (mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(
-             const SnackBar(content: Text('音频文件不存在或无法访问')),
-           );
-         }
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('音频文件不存在或无法访问')));
+        }
       }
     }
   }
@@ -133,19 +134,19 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
         _commentController.clear();
         setState(() => _selectedTag = null);
         FocusScope.of(context).unfocus();
-        
+
         // 重新加载评论
         await _loadComments();
-        
+
         widget.onCommentPosted?.call();
-        
+
         // 更新统计数据
         ContentStatsService().incrementCommentCount(widget.videoId);
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(result['error'] ?? '发布失败')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(result['error'] ?? '发布失败')));
         }
       }
     } catch (e) {
@@ -157,7 +158,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
     final isSelected = _selectedTag == tag;
     Color bgColor;
     Color textColor;
-    
+
     if (tag == 'ganying') {
       bgColor = isSelected ? Colors.orange : Colors.orange.withOpacity(0.1);
       textColor = isSelected ? Colors.white : Colors.orange;
@@ -177,8 +178,12 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
           color: bgColor,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected 
-                ? (tag == 'ganying' ? Colors.orange : tag == 'fayuan' ? Colors.purple : Colors.white38)
+            color: isSelected
+                ? (tag == 'ganying'
+                      ? Colors.orange
+                      : tag == 'fayuan'
+                      ? Colors.purple
+                      : Colors.white38)
                 : Colors.transparent,
           ),
         ),
@@ -228,108 +233,132 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
       },
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: Colors.grey[800],
-            backgroundImage: comment.avatar != null ? NetworkImage(comment.avatar!) : null,
-            child: comment.avatar == null
-                ? Text(
-                    (comment.displayName.isNotEmpty ? comment.displayName[0] : '?').toUpperCase(),
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                  )
-                : null,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      comment.displayName,
-                      style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
-                    ),
-                    // 显示主修功课
-                    if (comment.mainPractice != null && comment.mainPractice!.isNotEmpty) ...[
-                      const SizedBox(width: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.grey[800],
+              backgroundImage: comment.avatar != null
+                  ? NetworkImage(comment.avatar!)
+                  : null,
+              child: comment.avatar == null
+                  ? Text(
+                      (comment.displayName.isNotEmpty
+                              ? comment.displayName[0]
+                              : '?')
+                          .toUpperCase(),
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
                       Text(
-                        '@${comment.mainPractice}',
-                        style: const TextStyle(color: Colors.tealAccent, fontSize: 11),
+                        comment.displayName,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
+                      // 显示主修功课
+                      if (comment.mainPractice != null &&
+                          comment.mainPractice!.isNotEmpty) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '@${comment.mainPractice}',
+                          style: const TextStyle(
+                            color: Colors.tealAccent,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                      // 显示感应/发愿标签
+                      if (comment.tag != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: comment.tag == 'ganying'
+                                ? Colors.orange.withOpacity(0.2)
+                                : Colors.purple.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            comment.tag == 'ganying' ? '感应' : '发愿',
+                            style: TextStyle(
+                              color: comment.tag == 'ganying'
+                                  ? Colors.orange
+                                  : Colors.purple,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
-                    // 显示感应/发愿标签
-                    if (comment.tag != null) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    comment.content,
+                    style: const TextStyle(color: Colors.white, fontSize: 15),
+                  ),
+                  if (comment.attachmentType == 'audio' &&
+                      comment.attachmentPath != null) ...[
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: () => _playAudio(comment),
+                      child: Container(
+                        width: 160,
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: comment.tag == 'ganying' 
-                              ? Colors.orange.withOpacity(0.2) 
-                              : Colors.purple.withOpacity(0.2),
+                          color: Colors.amber.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          comment.tag == 'ganying' ? '感应' : '发愿',
-                          style: TextStyle(
-                            color: comment.tag == 'ganying' ? Colors.orange : Colors.purple,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
+                          border: Border.all(
+                            color: Colors.amber.withOpacity(0.3),
                           ),
                         ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  comment.content,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
-                ),
-                if (comment.attachmentType == 'audio' && comment.attachmentPath != null) ...[
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () => _playAudio(comment),
-                    child: Container(
-                      width: 160,
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.amber.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            _playingCommentId == comment.id.toString() 
-                                ? Icons.pause_circle_filled 
-                                : Icons.play_circle_filled,
-                            color: Colors.amber,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            '点击播放作品',
-                            style: TextStyle(color: Colors.amber, fontSize: 12),
-                          ),
-                        ],
+                        child: Row(
+                          children: [
+                            Icon(
+                              _playingCommentId == comment.id.toString()
+                                  ? Icons.pause_circle_filled
+                                  : Icons.play_circle_filled,
+                              color: Colors.amber,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              '点击播放作品',
+                              style: TextStyle(
+                                color: Colors.amber,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
+                  ],
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatDate(comment.createdAt),
+                    style: const TextStyle(color: Colors.white30, fontSize: 12),
                   ),
                 ],
-                const SizedBox(height: 4),
-                Text(
-                  _formatDate(comment.createdAt),
-                  style: const TextStyle(color: Colors.white30, fontSize: 12),
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 
@@ -352,7 +381,11 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
                 const SizedBox(width: 24),
                 Text(
                   '${_comments.length} 条评论',
-                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
@@ -361,34 +394,36 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
               ],
             ),
           ),
-          
+
           const Divider(color: Colors.white10, height: 1),
-          
+
           // 评论列表
           Expanded(
-            child: _isLoading 
-                ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: Colors.amber),
+                  )
                 : _comments.isEmpty
-                    ? const Center(
-                        child: Text(
-                          '暂无评论，快来抢沙发吧',
-                          style: TextStyle(color: Colors.white54),
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _comments.length,
-                        itemBuilder: (context, index) {
-                          return _buildCommentItem(_comments[index]);
-                        },
-                      ),
+                ? const Center(
+                    child: Text(
+                      '暂无评论，快来抢沙发吧',
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _comments.length,
+                    itemBuilder: (context, index) {
+                      return _buildCommentItem(_comments[index]);
+                    },
+                  ),
           ),
-          
+
           // 输入区域
           Container(
             padding: EdgeInsets.only(
-              left: 16, 
-              right: 16, 
+              left: 16,
+              right: 16,
               top: 12,
               bottom: 12 + MediaQuery.of(context).viewInsets.bottom,
             ),
@@ -412,7 +447,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                
+
                 // 输入框和发送按钮
                 Row(
                   children: [
@@ -443,7 +478,11 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
                           color: Colors.amber,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.send, color: Colors.black, size: 20),
+                        child: const Icon(
+                          Icons.send,
+                          color: Colors.black,
+                          size: 20,
+                        ),
                       ),
                     ),
                   ],

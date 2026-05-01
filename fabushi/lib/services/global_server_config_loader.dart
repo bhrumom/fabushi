@@ -50,7 +50,9 @@ class GlobalServerConfigLoader {
   }
 
   /// 从本地文件读取配置
-  static Future<Map<String, List<String>>> loadFromLocalFile(String filePath) async {
+  static Future<Map<String, List<String>>> loadFromLocalFile(
+    String filePath,
+  ) async {
     try {
       debugPrint('📁 尝试从本地文件加载配置: $filePath');
       return {};

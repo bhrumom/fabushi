@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart' hide IconAlignment;
-import 'package:sign_in_with_apple/sign_in_with_apple.dart' as apple_pkg show IconAlignment;
+import 'package:sign_in_with_apple/sign_in_with_apple.dart'
+    as apple_pkg
+    show IconAlignment;
 import 'dart:async';
 import 'dart:io' show Platform;
 import '../models/auth_model.dart';
@@ -22,7 +24,8 @@ class AlipayInAppBrowser extends InAppBrowser {
 
   @override
   Future<NavigationActionPolicy?> shouldOverrideUrlLoading(
-      NavigationAction navigationAction) async {
+    NavigationAction navigationAction,
+  ) async {
     final url = navigationAction.request.url?.toString() ?? '';
     debugPrint('InAppBrowser 导航请求: $url');
 
@@ -50,12 +53,10 @@ class DouyinLoginScreen extends StatefulWidget {
 
 class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     with SingleTickerProviderStateMixin {
-
   // 账号密码登录相关
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
-
 
   bool _isLoading = false;
   bool _agreedToTerms = false;
@@ -73,8 +74,8 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
   bool get _isDesktop {
     return !kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.macOS ||
-         defaultTargetPlatform == TargetPlatform.windows ||
-         defaultTargetPlatform == TargetPlatform.linux);
+            defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux);
   }
 
   @override
@@ -115,8 +116,6 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     _platformService.dispose();
     super.dispose();
   }
-
-
 
   bool get _canPasswordLogin =>
       _usernameController.text.trim().isNotEmpty &&
@@ -162,7 +161,6 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     return Platform.isIOS || Platform.isAndroid;
   }
 
-
   Future<void> _handleAlipayLogin() async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
 
@@ -195,7 +193,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
       // 1. 检查支付宝是否安装
       final alipayService = AlipayService();
       final isInstalled = await alipayService.isAlipayInstalled();
-      
+
       if (!isInstalled) {
         debugPrint('未安装支付宝，使用网页授权登录...');
         await _handleAlipayWebLogin(authModel);
@@ -205,8 +203,9 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
       // 2. 从后端获取授权字符串
       debugPrint('开始SDK授权登录：获取授权字符串...');
       final authStringResult = await AlipayAuthService().getAlipayAuthString();
-      
-      if (authStringResult['success'] != true || authStringResult['authString'] == null) {
+
+      if (authStringResult['success'] != true ||
+          authStringResult['authString'] == null) {
         if (mounted) {
           setState(() {
             _isLoading = false;
@@ -218,13 +217,13 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
 
       final authString = authStringResult['authString'] as String;
       final targetId = authStringResult['targetId'] as String?;
-      
+
       // 3. 调用SDK进行授权
       debugPrint('调用支付宝SDK进行授权...');
       final authResult = await alipayService.authWithAlipay(authString);
-      
+
       debugPrint('SDK授权结果: $authResult');
-      
+
       if (authResult['success'] != true) {
         if (mounted) {
           setState(() {
@@ -248,10 +247,13 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
       }
 
       debugPrint('获取到auth_code，发送给后端登录...');
-      final loginResult = await AlipayAuthService().alipaySDKLogin(authCode, targetId: targetId);
-      
+      final loginResult = await AlipayAuthService().alipaySDKLogin(
+        authCode,
+        targetId: targetId,
+      );
+
       debugPrint('SDK登录结果: $loginResult');
-      
+
       if (loginResult['success'] == true) {
         if (loginResult['needsRegistration'] == true) {
           // 新用户需要注册
@@ -263,11 +265,14 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
               alipayUser['nickname'],
               alipayUser['avatar'],
             );
-            
+
             if (registerResult && mounted) {
               Navigator.of(context).pop(true);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('支付宝登录成功！'), backgroundColor: Colors.green),
+                const SnackBar(
+                  content: Text('支付宝登录成功！'),
+                  backgroundColor: Colors.green,
+                ),
               );
             } else if (mounted) {
               setState(() {
@@ -280,13 +285,16 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
           // 已有用户，直接使用token登录
           final token = loginResult['token'] as String?;
           final username = loginResult['username'] as String?;
-          
+
           if (token != null && username != null) {
             await authModel.loginWithToken(token, username);
             if (mounted) {
               Navigator.of(context).pop(true);
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('欢迎回来，$username！'), backgroundColor: Colors.green),
+                SnackBar(
+                  content: Text('欢迎回来，$username！'),
+                  backgroundColor: Colors.green,
+                ),
               );
             }
           }
@@ -325,7 +333,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
 
     if (result['success'] == true && result['loginUrl'] != null) {
       final loginUrl = result['loginUrl'] as String;
-      
+
       if (_isMobile) {
         debugPrint('使用伪装桌面端 User-Agent 打开 Alipay WebView');
         _alipayBrowser = AlipayInAppBrowser(
@@ -343,7 +351,8 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
             ),
             webViewSettings: InAppWebViewSettings(
               // 伪装成 macOS 桌面端浏览器，强制支付宝显示网页登录（账号密码/扫码），避免它强制尝试唤起支付宝 App
-              userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              userAgent:
+                  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
               javaScriptEnabled: true,
               useShouldOverrideUrlLoading: true,
             ),
@@ -382,10 +391,13 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         alipayAvatar,
       );
 
-        if (success && mounted) {
-          Navigator.of(context).pop(true);
+      if (success && mounted) {
+        Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('支付宝登录成功！'), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text('支付宝登录成功！'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
@@ -437,7 +449,10 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         final errorMessage = params['error_message'] ?? '支付宝登录失败';
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('支付宝登录失败: $errorMessage'), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text('支付宝登录失败: $errorMessage'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
         return;
@@ -482,7 +497,10 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         } else if (mounted) {
           final error = authModel.error ?? '';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(error.isNotEmpty ? error : '支付宝登录失败'), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text(error.isNotEmpty ? error : '支付宝登录失败'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
@@ -539,7 +557,10 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         setState(() => _isLoading = false);
         if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Apple登录成功'), backgroundColor: Colors.green),
+            const SnackBar(
+              content: Text('Apple登录成功'),
+              backgroundColor: Colors.green,
+            ),
           );
           Navigator.of(context).pop(true);
         } else {
@@ -568,7 +589,6 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -636,10 +656,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
             ],
           ),
           child: const Center(
-            child: Text(
-              '🙏',
-              style: TextStyle(fontSize: 40),
-            ),
+            child: Text('🙏', style: TextStyle(fontSize: 40)),
           ),
         ),
         const SizedBox(height: 24),
@@ -656,10 +673,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         // 动态标题
         Text(
           '账号密码登录',
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.white.withOpacity(0.6),
-          ),
+          style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.6)),
         ),
       ],
     );
@@ -707,10 +721,14 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
               _obscurePassword ? Icons.visibility_off : Icons.visibility,
               color: Colors.white38,
             ),
-            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            onPressed: () =>
+                setState(() => _obscurePassword = !_obscurePassword),
           ),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
         ),
         onChanged: (_) => setState(() {}),
         onSubmitted: (_) => _canPasswordLogin ? _passwordLogin() : null,
@@ -743,8 +761,9 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
             boxShadow: canLogin
                 ? [
                     BoxShadow(
-                      color: const Color(0xFFFF6B6B)
-                          .withOpacity(0.3 * _buttonGlow.value),
+                      color: const Color(
+                        0xFFFF6B6B,
+                      ).withOpacity(0.3 * _buttonGlow.value),
                       blurRadius: 20,
                       offset: const Offset(0, 8),
                     ),
@@ -793,7 +812,9 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
             width: 20,
             height: 20,
             decoration: BoxDecoration(
-              color: _agreedToTerms ? AppTheme.primaryColor : Colors.transparent,
+              color: _agreedToTerms
+                  ? AppTheme.primaryColor
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(4),
               border: Border.all(
                 color: _agreedToTerms ? AppTheme.primaryColor : Colors.white38,
@@ -810,7 +831,10 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
             children: [
               Text(
                 '我已阅读并同意',
-                style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.6),
+                  fontSize: 12,
+                ),
               ),
               GestureDetector(
                 onTap: () {
@@ -823,7 +847,10 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
               ),
               Text(
                 '和',
-                style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.6),
+                  fontSize: 12,
+                ),
               ),
               GestureDetector(
                 onTap: () {

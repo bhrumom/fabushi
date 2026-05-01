@@ -793,11 +793,11 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                       right: 0,
                       child: _buildTopBar(),
                     ),
-                    
+
                     // 中间点击计数区
                     if (_sessionManager.isInSession)
                       Center(child: _buildCenterContent()),
-                      
+
                     // 底部控制区
                     Positioned(
                       left: 0,

@@ -182,7 +182,7 @@ jobs:
           node-version: 20
 
       - name: Install E2E dependencies
-        run: npm install
+        run: npm ci
 
       - name: Install Playwright browsers for web, Android, and iOS UI E2E
         run: npx playwright install chromium webkit --with-deps

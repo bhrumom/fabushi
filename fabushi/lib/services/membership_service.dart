@@ -37,7 +37,10 @@ class MembershipService {
     }
   }
 
-  Future<Map<String, dynamic>> createPaymentSession(String token, String priceType) async {
+  Future<Map<String, dynamic>> createPaymentSession(
+    String token,
+    String priceType,
+  ) async {
     try {
       final endpoint = Uri.parse(AppConfig.stripeCreateSubscriptionUrl).path;
       final response = await _apiClient.post(
@@ -63,7 +66,10 @@ class MembershipService {
     }
   }
 
-  Future<Map<String, dynamic>> createAlipayOrder(String token, String plan) async {
+  Future<Map<String, dynamic>> createAlipayOrder(
+    String token,
+    String plan,
+  ) async {
     try {
       final endpoint = Uri.parse(AppConfig.alipayCreateOrderUrl).path;
       final response = await _apiClient.post(
@@ -84,7 +90,10 @@ class MembershipService {
           'orderString': response['orderString'],
         };
       } else {
-        return {'success': false, 'message': response['message'] ?? '创建支付宝订单失败'};
+        return {
+          'success': false,
+          'message': response['message'] ?? '创建支付宝订单失败',
+        };
       }
     } catch (e) {
       debugPrint('创建支付宝订单失败: $e');
@@ -93,7 +102,10 @@ class MembershipService {
   }
 
   /// 创建支付宝Web端订单（电脑网站支付）
-  Future<Map<String, dynamic>> createAlipayWebOrder(String token, String plan) async {
+  Future<Map<String, dynamic>> createAlipayWebOrder(
+    String token,
+    String plan,
+  ) async {
     try {
       final endpoint = '/api/alipay/create-order';
       final response = await _apiClient.post(
@@ -114,7 +126,10 @@ class MembershipService {
           'plan': response['plan'],
         };
       } else {
-        return {'success': false, 'message': response['message'] ?? '创建支付宝Web订单失败'};
+        return {
+          'success': false,
+          'message': response['message'] ?? '创建支付宝Web订单失败',
+        };
       }
     } catch (e) {
       debugPrint('创建支付宝Web订单失败: $e');
@@ -123,7 +138,10 @@ class MembershipService {
   }
 
   /// 查询支付宝订单状态
-  Future<Map<String, dynamic>> queryAlipayOrderStatus(String token, String orderId) async {
+  Future<Map<String, dynamic>> queryAlipayOrderStatus(
+    String token,
+    String orderId,
+  ) async {
     try {
       final endpoint = '/api/alipay/query-order?orderId=$orderId';
       final response = await _apiClient.get(endpoint, token: token);
@@ -140,7 +158,10 @@ class MembershipService {
   }
 
   /// 查询Stripe会话状态
-  Future<Map<String, dynamic>> queryStripeSessionStatus(String token, String sessionId) async {
+  Future<Map<String, dynamic>> queryStripeSessionStatus(
+    String token,
+    String sessionId,
+  ) async {
     try {
       final endpoint = Uri.parse(AppConfig.stripeSessionStatusUrl).path;
       final response = await _apiClient.get(
@@ -163,7 +184,11 @@ class MembershipService {
   Future<Map<String, dynamic>> redeemCode(String token, String code) async {
     try {
       final endpoint = Uri.parse(AppConfig.adminUseRedeemCodeUrl).path;
-      final response = await _apiClient.post(endpoint, body: {'code': code}, token: token);
+      final response = await _apiClient.post(
+        endpoint,
+        body: {'code': code},
+        token: token,
+      );
 
       if (response['success'] == true) {
         return {
@@ -229,7 +254,10 @@ class MembershipService {
           'username': response['username'],
         };
       } else {
-        return {'success': false, 'message': response['message'] ?? '获取管理员状态失败'};
+        return {
+          'success': false,
+          'message': response['message'] ?? '获取管理员状态失败',
+        };
       }
     } catch (e) {
       debugPrint('获取管理员状态失败: $e');
@@ -245,13 +273,20 @@ class MembershipService {
     String? status,
   }) async {
     try {
-      final queryParams = <String, String>{'page': page.toString(), 'limit': limit.toString()};
+      final queryParams = <String, String>{
+        'page': page.toString(),
+        'limit': limit.toString(),
+      };
       if (status != null) {
         queryParams['status'] = status;
       }
 
       final endpoint = Uri.parse(AppConfig.adminRedeemCodesUrl).path;
-      final response = await _apiClient.get(endpoint, token: token, queryParams: queryParams);
+      final response = await _apiClient.get(
+        endpoint,
+        token: token,
+        queryParams: queryParams,
+      );
 
       if (response['success'] == true) {
         return {
@@ -262,7 +297,10 @@ class MembershipService {
           'totalPages': response['totalPages'],
         };
       } else {
-        return {'success': false, 'message': response['message'] ?? '获取兑换码列表失败'};
+        return {
+          'success': false,
+          'message': response['message'] ?? '获取兑换码列表失败',
+        };
       }
     } catch (e) {
       debugPrint('获取兑换码列表失败: $e');
@@ -280,10 +318,7 @@ class MembershipService {
       final endpoint = Uri.parse(AppConfig.appleVerifyReceiptUrl).path;
       final response = await _apiClient.post(
         endpoint,
-        body: {
-          'transactionId': transactionId,
-          'productId': productId,
-        },
+        body: {'transactionId': transactionId, 'productId': productId},
         token: token,
       );
 
@@ -308,7 +343,10 @@ class MembershipService {
   Future<Map<String, dynamic>> queryAlipayOrderPublic(String orderId) async {
     try {
       final endpoint = Uri.parse(AppConfig.alipayQueryOrderUrl).path;
-      final response = await _apiClient.get(endpoint, queryParams: {'orderId': orderId});
+      final response = await _apiClient.get(
+        endpoint,
+        queryParams: {'orderId': orderId},
+      );
 
       if (response['success'] == true) {
         return {'success': true, 'order': response};

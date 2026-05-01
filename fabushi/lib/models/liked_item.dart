@@ -22,30 +22,29 @@ class LikedItem {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'username': username,
-        'description': description,
-        'videoUrl': videoUrl,
-        'textContent': textContent,
-        'profileImageUrl': profileImageUrl,
-        'likedAt': likedAt.toIso8601String(),
-        'contentType': contentType,
-        'filePath': filePath,
-      };
+    'id': id,
+    'username': username,
+    'description': description,
+    'videoUrl': videoUrl,
+    'textContent': textContent,
+    'profileImageUrl': profileImageUrl,
+    'likedAt': likedAt.toIso8601String(),
+    'contentType': contentType,
+    'filePath': filePath,
+  };
 
   factory LikedItem.fromJson(Map<String, dynamic> json) => LikedItem(
-        id: json['id'] as String,
-        // 后端返回 title，本地存储用 username，兼容两者
-        username: json['username'] as String? ?? json['title'] as String? ?? '',
-        description: json['description'] as String? ?? '',
-        videoUrl: json['videoUrl'] as String?,
-        textContent: json['textContent'] as String?,
-        profileImageUrl: json['profileImageUrl'] as String? ?? '',
-        likedAt: json['likedAt'] != null 
-            ? DateTime.parse(json['likedAt'] as String)
-            : DateTime.now(),
-        contentType: json['contentType'] as String? ?? 'text',
-        filePath: json['filePath'] as String?,
-      );
+    id: json['id'] as String,
+    // 后端返回 title，本地存储用 username，兼容两者
+    username: json['username'] as String? ?? json['title'] as String? ?? '',
+    description: json['description'] as String? ?? '',
+    videoUrl: json['videoUrl'] as String?,
+    textContent: json['textContent'] as String?,
+    profileImageUrl: json['profileImageUrl'] as String? ?? '',
+    likedAt: json['likedAt'] != null
+        ? DateTime.parse(json['likedAt'] as String)
+        : DateTime.now(),
+    contentType: json['contentType'] as String? ?? 'text',
+    filePath: json['filePath'] as String?,
+  );
 }
-

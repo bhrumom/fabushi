@@ -14,7 +14,7 @@ class FavoriteService extends ChangeNotifier {
   bool _isInitialized = false;
   String? _authToken;
   String? _currentUserId;
-  
+
   bool get isInitialized => _isInitialized;
 
   String _getStorageKey() => 'favorited_items_${_currentUserId ?? "guest"}';
@@ -60,7 +60,9 @@ class FavoriteService extends ChangeNotifier {
   Future<void> _saveFavoritedItems() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final jsonList = _favoritedItems.values.map((item) => item.toJson()).toList();
+      final jsonList = _favoritedItems.values
+          .map((item) => item.toJson())
+          .toList();
       await prefs.setString(_getStorageKey(), jsonEncode(jsonList));
     } catch (e) {
       debugPrint('保存收藏数据失败: $e');
@@ -78,20 +80,20 @@ class FavoriteService extends ChangeNotifier {
 
   Future<void> toggleFavorite(FavoriteItem item) async {
     final wasFavorited = _favoritedItems.containsKey(item.id);
-    
+
     if (wasFavorited) {
       _favoritedItems.remove(item.id);
     } else {
       _favoritedItems[item.id] = item;
     }
-    
+
     await _saveFavoritedItems();
     notifyListeners();
 
     // 同步到云端
     _syncToCloud(
-      item.id, 
-      item.contentType, 
+      item.id,
+      item.contentType,
       wasFavorited ? 'unfavorite' : 'favorite',
       title: item.title,
       filePath: item.filePath,
@@ -101,7 +103,7 @@ class FavoriteService extends ChangeNotifier {
 
   Future<void> _syncFromCloud() async {
     if (_authToken == null) return;
-    
+
     try {
       final response = await http.get(
         Uri.parse('${AppConfig.apiUrl}/api/favorites/my-favorites'),
@@ -125,17 +127,23 @@ class FavoriteService extends ChangeNotifier {
     }
   }
 
-  Future<void> _syncToCloud(String contentId, String contentType, String action, 
-      {String? title, String? filePath, String? description}) async {
+  Future<void> _syncToCloud(
+    String contentId,
+    String contentType,
+    String action, {
+    String? title,
+    String? filePath,
+    String? description,
+  }) async {
     if (_authToken == null) return;
-    
+
     try {
       final body = {
         'contentId': contentId,
         'contentType': contentType,
         'action': action,
       };
-      
+
       if (action == 'favorite') {
         if (title != null) body['title'] = title;
         if (filePath != null) body['filePath'] = filePath;

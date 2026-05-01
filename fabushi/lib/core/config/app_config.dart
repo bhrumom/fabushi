@@ -7,12 +7,16 @@ class AppConfig {
   static final AppConfig instance = AppConfig._();
 
   // 环境配置
-  static const String environment = String.fromEnvironment('ENV', defaultValue: 'production');
+  static const String environment = String.fromEnvironment(
+    'ENV',
+    defaultValue: 'production',
+  );
 
   static bool get isProduction {
     if (kIsWeb) {
       final currentUrl = Uri.base.toString();
-      if (currentUrl.contains('fabushi-flutter-web-dev') || currentUrl.contains('localhost')) {
+      if (currentUrl.contains('fabushi-flutter-web-dev') ||
+          currentUrl.contains('localhost')) {
         return false;
       }
       if (currentUrl.contains('fabushi-flutter-web-prod')) {
@@ -90,38 +94,55 @@ class AppConfig {
   static String get verifyUrl => '$currentBackendUrl/api/auth/verify';
   static String get logoutUrl => '$currentBackendUrl/api/auth/logout';
   static String get deleteAccountUrl => '$currentBackendUrl/api/auth/delete';
-  static String get sendVerificationCodeUrl => '$currentBackendUrl/api/auth/send-verification-code';
+  static String get sendVerificationCodeUrl =>
+      '$currentBackendUrl/api/auth/send-verification-code';
   static String get verifyCodeUrl => '$currentBackendUrl/api/auth/verify-code';
-  static String get forgotPasswordUrl => '$currentBackendUrl/api/auth/forgot-password';
-  static String get resetPasswordUrl => '$currentBackendUrl/api/auth/reset-password';
+  static String get forgotPasswordUrl =>
+      '$currentBackendUrl/api/auth/forgot-password';
+  static String get resetPasswordUrl =>
+      '$currentBackendUrl/api/auth/reset-password';
   static String get userInfoUrl => '$currentBackendUrl/api/auth/user-info';
   static String get bindEmailUrl => '$currentBackendUrl/api/auth/bind-email';
 
-  static String get alipayCreateOrderUrl => '$currentBackendUrl/api/alipay/create-order';
-  static String get alipayQueryOrderUrl => '$currentBackendUrl/api/alipay/query-order';
-  static String get alipayMembershipStatusUrl => '$currentBackendUrl/api/alipay/check-membership';
+  static String get alipayCreateOrderUrl =>
+      '$currentBackendUrl/api/alipay/create-order';
+  static String get alipayQueryOrderUrl =>
+      '$currentBackendUrl/api/alipay/query-order';
+  static String get alipayMembershipStatusUrl =>
+      '$currentBackendUrl/api/alipay/check-membership';
 
-  static String get stripeMembershipStatusUrl => '$currentBackendUrl/api/stripe/membership-status';
+  static String get stripeMembershipStatusUrl =>
+      '$currentBackendUrl/api/stripe/membership-status';
   static String get stripeCreateSubscriptionUrl =>
       '$currentBackendUrl/api/stripe/create-subscription';
-  static String get stripeSessionStatusUrl => '$currentBackendUrl/api/stripe/session-status';
+  static String get stripeSessionStatusUrl =>
+      '$currentBackendUrl/api/stripe/session-status';
 
-  static String get appleVerifyReceiptUrl => '$currentBackendUrl/api/apple/verify-receipt';
+  static String get appleVerifyReceiptUrl =>
+      '$currentBackendUrl/api/apple/verify-receipt';
 
-  static String get adminCheckStatusUrl => '$currentBackendUrl/api/admin/check-status';
-  static String get adminCreateRedeemCodeUrl => '$currentBackendUrl/api/admin/create-redeem-code';
-  static String get adminRedeemCodesUrl => '$currentBackendUrl/api/admin/redeem-codes';
-  static String get adminUseRedeemCodeUrl => '$currentBackendUrl/api/admin/use-redeem-code';
-  static String get adminPurchaseHistoryUrl => '$currentBackendUrl/api/admin/purchase-history';
-  static String get adminRedeemHistoryUrl => '$currentBackendUrl/api/admin/redeem-history';
+  static String get adminCheckStatusUrl =>
+      '$currentBackendUrl/api/admin/check-status';
+  static String get adminCreateRedeemCodeUrl =>
+      '$currentBackendUrl/api/admin/create-redeem-code';
+  static String get adminRedeemCodesUrl =>
+      '$currentBackendUrl/api/admin/redeem-codes';
+  static String get adminUseRedeemCodeUrl =>
+      '$currentBackendUrl/api/admin/use-redeem-code';
+  static String get adminPurchaseHistoryUrl =>
+      '$currentBackendUrl/api/admin/purchase-history';
+  static String get adminRedeemHistoryUrl =>
+      '$currentBackendUrl/api/admin/redeem-history';
 
   static String get leaderboardUrl => '$currentBackendUrl/api/leaderboard';
-  static String get updateTransferDataUrl => '$currentBackendUrl/api/leaderboard/update';
+  static String get updateTransferDataUrl =>
+      '$currentBackendUrl/api/leaderboard/update';
 
   static String get healthCheckUrl => '$currentBackendUrl/health';
 
   // iOS 后台保活静音音频
-  static String get silenceAudioUrl => '$currentBackendUrl/static/audio/silence.mp3';
+  static String get silenceAudioUrl =>
+      '$currentBackendUrl/static/audio/silence.mp3';
 
   // 3D 佛像模型配置
   // 如果 R2 上需要切换到新的对象键，优先改这里，便于强制绕开旧缓存。
@@ -154,7 +175,10 @@ class AppConfig {
 
   // 调试配置
   static const bool enableApiLogging = true;
-  static const bool debugMode = bool.fromEnvironment('DEBUG', defaultValue: false);
+  static const bool debugMode = bool.fromEnvironment(
+    'DEBUG',
+    defaultValue: false,
+  );
 
   static void printConfigInfo() {
     if (kDebugMode) {
