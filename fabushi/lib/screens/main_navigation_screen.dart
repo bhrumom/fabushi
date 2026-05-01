@@ -3,6 +3,7 @@ import 'globe_home_screen.dart';
 import 'meditation_room_screen.dart';
 import 'my_profile_screen.dart';
 import '../core/design_system/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../widgets/space_background.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -104,6 +105,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
     return SpaceBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -148,21 +151,21 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               backgroundColor: Colors.transparent,
               elevation: 0,
               height: 70,
-              destinations: const [
+              destinations: [
                 NavigationDestination(
-                  icon: Icon(Icons.public_outlined),
-                  selectedIcon: Icon(Icons.public),
-                  label: '首页',
+                  icon: const Icon(Icons.public_outlined),
+                  selectedIcon: const Icon(Icons.public),
+                  label: l10n.navHome,
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.self_improvement_outlined),
-                  selectedIcon: Icon(Icons.self_improvement),
-                  label: '禅室',
+                  icon: const Icon(Icons.self_improvement_outlined),
+                  selectedIcon: const Icon(Icons.self_improvement),
+                  label: l10n.navMeditationRoom,
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person),
-                  label: '我的',
+                  icon: const Icon(Icons.person_outline),
+                  selectedIcon: const Icon(Icons.person),
+                  label: l10n.navProfile,
                 ),
               ],
             ),
