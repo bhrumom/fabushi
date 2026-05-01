@@ -148,21 +148,30 @@ class UnifiedApiService {
 
   // 登录
   Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await post('/api/auth/login', body: {'email': email, 'password': password});
+    final response = await post(
+      '/api/auth/login',
+      body: {'email': email, 'password': password},
+    );
 
     return _handleResponse(response);
   }
 
   // 注册
   Future<Map<String, dynamic>> register(String email, String password) async {
-    final response = await post('/api/auth/register', body: {'email': email, 'password': password});
+    final response = await post(
+      '/api/auth/register',
+      body: {'email': email, 'password': password},
+    );
 
     return _handleResponse(response);
   }
 
   // 获取用户信息
   Future<Map<String, dynamic>> getUserInfo(String token) async {
-    final response = await get('/api/auth/user-info', headers: {'Authorization': 'Bearer $token'});
+    final response = await get(
+      '/api/auth/user-info',
+      headers: {'Authorization': 'Bearer $token'},
+    );
 
     return _handleResponse(response);
   }
@@ -212,7 +221,9 @@ class UnifiedApiService {
   // 构建URI
   Uri _buildUri(String endpoint, Map<String, String>? queryParams) {
     final baseUrl = AppConfig.currentBackendUrl;
-    final fullUrl = endpoint.startsWith('http') ? endpoint : '$baseUrl$endpoint';
+    final fullUrl = endpoint.startsWith('http')
+        ? endpoint
+        : '$baseUrl$endpoint';
 
     if (queryParams != null && queryParams.isNotEmpty) {
       return Uri.parse(fullUrl).replace(queryParameters: queryParams);
@@ -233,7 +244,9 @@ class UnifiedApiService {
   }
 
   // 带重试的请求执行
-  Future<http.Response> _executeWithRetry(Future<http.Response> Function() request) async {
+  Future<http.Response> _executeWithRetry(
+    Future<http.Response> Function() request,
+  ) async {
     int attempts = 0;
 
     while (attempts < AppConfig.maxRetries) {
@@ -330,7 +343,11 @@ class ApiException implements Exception {
   final int statusCode;
   final String response;
 
-  ApiException({required this.message, required this.statusCode, required this.response});
+  ApiException({
+    required this.message,
+    required this.statusCode,
+    required this.response,
+  });
 
   @override
   String toString() {

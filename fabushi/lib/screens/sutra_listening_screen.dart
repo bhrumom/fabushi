@@ -34,7 +34,7 @@ class _SutraListeningScreenState extends State<SutraListeningScreen>
     '0.75x',
     '1.0x',
     '1.25x',
-    '1.5x'
+    '1.5x',
   ];
   int _currentSpeedIndex = 2; // 默认 1.0x (0.55)
 
@@ -97,7 +97,11 @@ class _SutraListeningScreenState extends State<SutraListeningScreen>
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
+            icon: const Icon(
+              Icons.arrow_back_ios,
+              color: Colors.white,
+              size: 20,
+            ),
             onPressed: () => Navigator.pop(context),
           ),
           Expanded(
@@ -113,10 +117,7 @@ class _SutraListeningScreenState extends State<SutraListeningScreen>
                 ),
                 Text(
                   '支持后台播放',
-                  style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: Colors.white54, fontSize: 11),
                 ),
               ],
             ),
@@ -199,10 +200,7 @@ class _SutraListeningScreenState extends State<SutraListeningScreen>
           if (_service.totalSentences > 0)
             Text(
               '第 ${_service.currentSentenceIndex + 1} / ${_service.totalSentences} 句',
-              style: TextStyle(
-                color: Colors.white38,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: Colors.white38, fontSize: 13),
             ),
         ],
       ),
@@ -245,18 +243,13 @@ class _SutraListeningScreenState extends State<SutraListeningScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.headphones,
-                size: 56,
-                color: cosmicGold,
-              ),
+              Icon(Icons.headphones, size: 56, color: cosmicGold),
               const SizedBox(height: 8),
               Text(
-                _service.isPlaying ? '朗读中...' : (_service.isPaused ? '已暂停' : '准备中'),
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                ),
+                _service.isPlaying
+                    ? '朗读中...'
+                    : (_service.isPaused ? '已暂停' : '准备中'),
+                style: TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ],
           ),
@@ -301,8 +294,8 @@ class _SutraListeningScreenState extends State<SutraListeningScreen>
                 icon: Icons.skip_next_rounded,
                 size: 32,
                 onTap: _service.nextSentence,
-                enabled: _service.currentSentenceIndex <
-                    _service.totalSentences - 1,
+                enabled:
+                    _service.currentSentenceIndex < _service.totalSentences - 1,
               ),
             ],
           ),
@@ -328,13 +321,10 @@ class _SutraListeningScreenState extends State<SutraListeningScreen>
           child: Slider(
             value: progress.clamp(0.0, 1.0),
             onChanged: (value) {
-              final index =
-                  (value * _service.totalSentences).round().clamp(
-                        0,
-                        _service.totalSentences > 0
-                            ? _service.totalSentences - 1
-                            : 0,
-                      );
+              final index = (value * _service.totalSentences).round().clamp(
+                0,
+                _service.totalSentences > 0 ? _service.totalSentences - 1 : 0,
+              );
               _service.seekToSentence(index);
             },
           ),
@@ -366,9 +356,7 @@ class _SutraListeningScreenState extends State<SutraListeningScreen>
           ],
         ),
         child: Icon(
-          _service.isPlaying
-              ? Icons.pause_rounded
-              : Icons.play_arrow_rounded,
+          _service.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
           color: spaceDeepBlue,
           size: 36,
         ),

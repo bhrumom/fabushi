@@ -10,7 +10,8 @@ extension ContextSizeExtensions on BuildContext {
 
   double fontSize(double size) => size;
 
-  EdgeInsets paddingHorizontal(double padding) => EdgeInsets.symmetric(horizontal: padding);
+  EdgeInsets paddingHorizontal(double padding) =>
+      EdgeInsets.symmetric(horizontal: padding);
   EdgeInsets paddingLeft(double padding) => EdgeInsets.only(left: padding);
   EdgeInsets paddingAll(double padding) => EdgeInsets.all(padding);
   BorderRadius radiusAll(double radius) => BorderRadius.circular(radius);

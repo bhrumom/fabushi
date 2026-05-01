@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart' show kIsWeb, ValueChanged, VoidCallback;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, ValueChanged, VoidCallback;
 import 'package:file_picker/file_picker.dart';
 import 'real_global_send_service.dart';
 import 'udp_global_send_service.dart';
@@ -11,9 +12,18 @@ class PlatformGlobalSendService {
   final ValueChanged<double> onDataSent;
   final VoidCallback onStopped;
   final void Function(String) onLog;
-  final Function(double, double, double, double, {String? fromLabel, String? toLabel, Duration? displayDuration})? onTransferBeam;
+  final Function(
+    double,
+    double,
+    double,
+    double, {
+    String? fromLabel,
+    String? toLabel,
+    Duration? displayDuration,
+  })?
+  onTransferBeam;
   final Function(int)? onCountrySent;
-  final Function(int)? onLoopStart;  // 每轮循环开始时的回调，参数为轮次
+  final Function(int)? onLoopStart; // 每轮循环开始时的回调，参数为轮次
 
   double? _userLatitude;
   double? _userLongitude;
@@ -89,7 +99,10 @@ class PlatformGlobalSendService {
   }
 
   /// 开始发送
-  Future<void> startSending({required List<PlatformFile> files, required bool isLoop}) async {
+  Future<void> startSending({
+    required List<PlatformFile> files,
+    required bool isLoop,
+  }) async {
     if (!_isInitialized) {
       onLog('⚠️ 服务未初始化，正在初始化...');
       await initialize();

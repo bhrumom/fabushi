@@ -32,7 +32,12 @@ class AuthRepositoryImpl implements AuthRepository {
     String verificationCode,
   ) async {
     try {
-      final user = await remoteDataSource.register(username, email, password, verificationCode);
+      final user = await remoteDataSource.register(
+        username,
+        email,
+        password,
+        verificationCode,
+      );
       return Right(user);
     } on ValidationException catch (e) {
       return Left(ValidationFailure(e.message));
@@ -44,7 +49,10 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<Either<Failure, void>> sendVerificationCode(String email, String type) async {
+  Future<Either<Failure, void>> sendVerificationCode(
+    String email,
+    String type,
+  ) async {
     try {
       await remoteDataSource.sendVerificationCode(email, type);
       return const Right(null);
@@ -78,7 +86,11 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<Either<Failure, void>> resetPassword(String email, String code, String newPassword) async {
+  Future<Either<Failure, void>> resetPassword(
+    String email,
+    String code,
+    String newPassword,
+  ) async {
     try {
       await remoteDataSource.resetPassword(email, code, newPassword);
       return const Right(null);

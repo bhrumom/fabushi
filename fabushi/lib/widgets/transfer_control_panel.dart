@@ -50,7 +50,9 @@ class TransferControlPanel extends StatelessWidget {
                 const SizedBox(width: 16.0),
                 Expanded(
                   child: Text(
-                    selectedFiles.isEmpty ? '未选择文件' : '已选择 ${selectedFiles.length} 个文件',
+                    selectedFiles.isEmpty
+                        ? '未选择文件'
+                        : '已选择 ${selectedFiles.length} 个文件',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -78,8 +80,12 @@ class TransferControlPanel extends StatelessWidget {
             ElevatedButton.icon(
               icon: const Icon(Icons.send),
               label: const Text('发送文件'),
-              onPressed: (selectedFiles.isEmpty || isSending || disableSend) ? null : onSendFiles,
-              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 48.0)),
+              onPressed: (selectedFiles.isEmpty || isSending || disableSend)
+                  ? null
+                  : onSendFiles,
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48.0),
+              ),
             ),
             if (isSending)
               Padding(

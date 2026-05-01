@@ -12,7 +12,7 @@ class ContentStatsService {
 
   // 点赞数缓存
   final Map<String, int> _likeCounts = {};
-  
+
   // 评论数缓存
   final Map<String, int> _commentCounts = {};
 
@@ -50,14 +50,14 @@ class ContentStatsService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final Map<String, dynamic> stats = data['stats'];
-        
+
         for (final entry in stats.entries) {
           final contentId = entry.key;
           final statData = entry.value as Map<String, dynamic>;
           _likeCounts[contentId] = statData['likeCount'] as int? ?? 0;
           _commentCounts[contentId] = statData['commentCount'] as int? ?? 0;
         }
-        
+
         debugPrint('ContentStatsService: 获取 ${stats.length} 个内容的统计数据');
       }
     } catch (e) {

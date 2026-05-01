@@ -11,11 +11,8 @@ import '../providers/tts_mute_notifier.dart';
 /// 作品全屏播放页面 - 与法流视频风格一致
 class WorkPlayerScreen extends StatefulWidget {
   final LocalWorkModel work;
-  
-  const WorkPlayerScreen({
-    required this.work,
-    super.key,
-  });
+
+  const WorkPlayerScreen({required this.work, super.key});
 
   @override
   State<WorkPlayerScreen> createState() => _WorkPlayerScreenState();
@@ -25,22 +22,22 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
   bool _isPlaying = false;
   bool _audioExists = false;
   String? _textContent;
-  
+
   @override
   void initState() {
     super.initState();
     _initPlayer();
   }
-  
+
   Future<void> _initPlayer() async {
     // 检查音频文件是否存在
     final file = File(widget.work.filePath);
     _audioExists = await file.exists();
-    
+
     // 尝试读取文本内容（从contentId获取原始经文）
     // 这里暂时使用作品标题作为显示内容
     _textContent = widget.work.title;
-    
+
     if (mounted) {
       setState(() {});
       if (_audioExists) {
@@ -48,10 +45,10 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
       }
     }
   }
-  
+
   Future<void> _playAudio() async {
     if (!_audioExists) return;
-    
+
     await AudioStreamService.instance.playAudio(widget.work.filePath);
     if (mounted) {
       setState(() {
@@ -59,7 +56,7 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
       });
     }
   }
-  
+
   Future<void> _stopAudio() async {
     await AudioStreamService.instance.stopPlayer();
     if (mounted) {
@@ -68,7 +65,7 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
       });
     }
   }
-  
+
   void _togglePlayPause() {
     if (_isPlaying) {
       _stopAudio();
@@ -76,14 +73,14 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
       _playAudio();
     }
   }
-  
+
   String _formatDuration(int ms) {
     final duration = Duration(milliseconds: ms);
     final minutes = duration.inMinutes;
     final seconds = duration.inSeconds % 60;
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
-  
+
   @override
   void dispose() {
     _stopAudio();
@@ -94,11 +91,15 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
   Widget build(BuildContext context) {
     // 隐藏状态栏，全屏沉浸式体验
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    
+
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => VideoFeedVisibilityNotifier()..setVisible(true)),
-        ChangeNotifierProvider(create: (_) => TtsMuteNotifier()..setMuted(true)), // 静音TTS，只播放录音
+        ChangeNotifierProvider(
+          create: (_) => VideoFeedVisibilityNotifier()..setVisible(true),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => TtsMuteNotifier()..setMuted(true),
+        ), // 静音TTS，只播放录音
       ],
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -118,7 +119,7 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
                 ),
               ),
             ),
-            
+
             // 文本内容区域 - 使用文本视频组件
             if (_textContent != null && _textContent!.isNotEmpty)
               Positioned.fill(
@@ -145,7 +146,7 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
                   ),
                 ),
               ),
-            
+
             // 顶部返回按钮
             Positioned(
               top: MediaQuery.of(context).padding.top + 10,
@@ -158,7 +159,7 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
                 },
               ),
             ),
-            
+
             // 底部信息栏
             Positioned(
               left: 0,
@@ -175,10 +176,7 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
-                    colors: [
-                      Colors.black87,
-                      Colors.transparent,
-                    ],
+                    colors: [Colors.black87, Colors.transparent],
                   ),
                 ),
                 child: Column(
@@ -197,7 +195,7 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
-                    
+
                     // 时长和播放按钮
                     Row(
                       children: [
@@ -215,7 +213,7 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
                           ),
                         ),
                         const Spacer(),
-                        
+
                         // 播放/暂停按钮
                         if (_audioExists)
                           GestureDetector(
@@ -236,7 +234,10 @@ class _WorkPlayerScreenState extends State<WorkPlayerScreen> {
                         else
                           const Text(
                             '音频不可用',
-                            style: TextStyle(color: Colors.redAccent, fontSize: 12),
+                            style: TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 12,
+                            ),
                           ),
                       ],
                     ),

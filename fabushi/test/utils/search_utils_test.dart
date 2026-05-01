@@ -1,4 +1,3 @@
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:global_dharma_sharing/utils/search_utils.dart';
 
@@ -33,9 +32,9 @@ void main() {
       // Note: normalize('华严经31') -> '华严经三十一'
       // text has '华'...'严'...'经'...'三'...'十'...'一' in order
       expect(SearchUtils.fuzzyMatch('大方广佛华严经八十卷（第三十一卷）', '华严经31卷'), true);
-      
+
       // Broken sequence
-      expect(SearchUtils.fuzzyMatch('大方广佛华严经', '严华'), false); 
+      expect(SearchUtils.fuzzyMatch('大方广佛华严经', '严华'), false);
     });
   });
 }

@@ -69,7 +69,8 @@ class ApiConstants {
   // Content Types
   static const String contentTypeJson = 'application/json';
   static const String contentTypeFormData = 'multipart/form-data';
-  static const String contentTypeUrlEncoded = 'application/x-www-form-urlencoded';
+  static const String contentTypeUrlEncoded =
+      'application/x-www-form-urlencoded';
 
   // 超时配置
   static const Duration connectTimeout = Duration(seconds: 30);

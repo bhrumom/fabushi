@@ -737,7 +737,9 @@ class _SutraBookPainter extends CustomPainter {
       ellipsis: '…',
     );
     titlePainter.layout(maxWidth: size.width * 0.82);
-    final offsetY = titlePainter.height > 20 ? size.height * 0.31 : size.height * 0.37;
+    final offsetY = titlePainter.height > 20
+        ? size.height * 0.31
+        : size.height * 0.37;
     titlePainter.paint(
       canvas,
       Offset((size.width - titlePainter.width) / 2, offsetY),
@@ -831,10 +833,7 @@ class _IncensePainter extends CustomPainter {
   final double incenseProgress;
   final bool isBurning;
 
-  _IncensePainter({
-    required this.incenseProgress,
-    required this.isBurning,
-  });
+  _IncensePainter({required this.incenseProgress, required this.isBurning});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -855,11 +854,12 @@ class _IncensePainter extends CustomPainter {
         stickBase,
         stickTip,
         Paint()
-          ..shader = ui.Gradient.linear(stickBase, stickTip, const [
-            Color(0xFF5A2E16),
-            Color(0xFFB07136),
-            Color(0xFF2B1509),
-          ], const [0.0, 0.5, 1.0])
+          ..shader = ui.Gradient.linear(
+            stickBase,
+            stickTip,
+            const [Color(0xFF5A2E16), Color(0xFFB07136), Color(0xFF2B1509)],
+            const [0.0, 0.5, 1.0],
+          )
           ..strokeWidth = 3.3
           ..strokeCap = StrokeCap.round,
       );
@@ -869,11 +869,12 @@ class _IncensePainter extends CustomPainter {
           stickTip,
           6,
           Paint()
-            ..shader = ui.Gradient.radial(stickTip, 8, const [
-              Color(0xFFFFF1A3),
-              Color(0xFFFF6B1A),
-              Color(0x00FF6B1A),
-            ], const [0.0, 0.5, 1.0]),
+            ..shader = ui.Gradient.radial(
+              stickTip,
+              8,
+              const [Color(0xFFFFF1A3), Color(0xFFFF6B1A), Color(0x00FF6B1A)],
+              const [0.0, 0.5, 1.0],
+            ),
         );
         canvas.drawCircle(
           stickTip,

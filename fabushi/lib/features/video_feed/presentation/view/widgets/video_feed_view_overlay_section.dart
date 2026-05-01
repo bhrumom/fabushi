@@ -96,4 +96,3 @@ class VideoFeedViewOverlaySection extends StatelessWidget {
     );
   }
 }
-

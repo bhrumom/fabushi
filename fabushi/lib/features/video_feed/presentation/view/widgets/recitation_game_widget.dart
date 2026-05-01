@@ -5,16 +5,16 @@ import 'package:flutter/services.dart';
 
 /// 背诵游戏状态
 enum RecitationState {
-  idle,      // 空闲
-  flashing,  // 闪现句子
-  playing,   // 游戏中
-  success,   // 成功
-  failed,    // 失败
+  idle, // 空闲
+  flashing, // 闪现句子
+  playing, // 游戏中
+  success, // 成功
+  failed, // 失败
   completed, // 全部完成
 }
 
 /// 背诵游戏组件
-/// 
+///
 /// 功能：
 /// 1. 快速闪过句子让用户记忆
 /// 2. 打乱词序让用户按正确顺序点击
@@ -22,10 +22,7 @@ enum RecitationState {
 /// 4. 15秒倒计时，超时重新闪现
 /// 5. 支持多句连续背诵
 class RecitationGameWidget extends StatefulWidget {
-  const RecitationGameWidget({
-    required this.sentences,
-    super.key,
-  });
+  const RecitationGameWidget({required this.sentences, super.key});
 
   /// 要背诵的句子列表（每句不超过21个字）
   final List<String> sentences;
@@ -38,41 +35,40 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     with TickerProviderStateMixin {
   /// 游戏状态
   RecitationState _state = RecitationState.idle;
-  
+
   /// 当前句子索引
   int _currentSentenceIndex = 0;
-  
+
   /// 当前要背诵的句子
-  String get _currentSentence => 
-      _currentSentenceIndex < widget.sentences.length 
-          ? widget.sentences[_currentSentenceIndex] 
-          : '';
-  
+  String get _currentSentence => _currentSentenceIndex < widget.sentences.length
+      ? widget.sentences[_currentSentenceIndex]
+      : '';
+
   /// 原始词列表（正确顺序）
   List<String> _originalWords = [];
-  
+
   /// 打乱后的词列表
   List<String> _shuffledWords = [];
-  
+
   /// 用户已选择的词列表
   List<String> _selectedWords = [];
-  
+
   /// 已选择词的索引（用于隐藏已选项）
   Set<int> _selectedIndices = {};
-  
+
   /// 剩余错误机会
   int _remainingChances = 3;
-  
+
   /// 剩余时间（秒）
   int _remainingTime = 15;
-  
+
   /// 倒计时Timer
   Timer? _countdownTimer;
-  
+
   /// 闪现动画控制器
   AnimationController? _flashController;
   Animation<double>? _flashAnimation;
-  
+
   /// 成功/失败动画控制器
   AnimationController? _resultController;
   Animation<double>? _resultAnimation;
@@ -102,7 +98,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     _flashAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _flashController!, curve: Curves.easeInOut),
     );
-    
+
     _resultController = AnimationController(
       duration: const Duration(milliseconds: 500),
       vsync: this,
@@ -127,16 +123,16 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
   /// 开始闪现阶段
   void _startFlashing() {
     _parseWords();
-    
+
     setState(() {
       _state = RecitationState.flashing;
       _selectedWords = [];
       _selectedIndices = {};
       _remainingTime = 15;
     });
-    
+
     _flashController?.forward(from: 0.0);
-    
+
     // 2秒后进入游戏阶段
     Future.delayed(const Duration(milliseconds: 2000), () {
       if (mounted && _state == RecitationState.flashing) {
@@ -150,12 +146,12 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     // 打乱词序
     _shuffledWords = List.from(_originalWords);
     _shuffledWords.shuffle(Random());
-    
+
     setState(() {
       _state = RecitationState.playing;
       _remainingTime = 15;
     });
-    
+
     // 开始倒计时
     _startCountdown();
   }
@@ -168,11 +164,11 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
         timer.cancel();
         return;
       }
-      
+
       setState(() {
         _remainingTime--;
       });
-      
+
       if (_remainingTime <= 0) {
         timer.cancel();
         _onTimeout();
@@ -186,9 +182,9 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     setState(() {
       _state = RecitationState.failed;
     });
-    
+
     _resultController?.forward(from: 0.0);
-    
+
     // 2秒后重新开始当前句子
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
@@ -202,11 +198,11 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
   void _onWordTap(int shuffledIndex) {
     if (_state != RecitationState.playing) return;
     if (_selectedIndices.contains(shuffledIndex)) return;
-    
+
     final tappedWord = _shuffledWords[shuffledIndex];
     final expectedIndex = _selectedWords.length;
     final expectedWord = _originalWords[expectedIndex];
-    
+
     if (tappedWord == expectedWord) {
       // 正确选择
       HapticFeedback.lightImpact();
@@ -214,7 +210,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
         _selectedWords.add(tappedWord);
         _selectedIndices.add(shuffledIndex);
       });
-      
+
       // 检查是否完成当前句子
       if (_selectedWords.length == _originalWords.length) {
         _onSentenceSuccess();
@@ -225,7 +221,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
       setState(() {
         _remainingChances--;
       });
-      
+
       if (_remainingChances <= 0) {
         _onAllChancesUsed();
       }
@@ -238,9 +234,9 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     setState(() {
       _state = RecitationState.success;
     });
-    
+
     _resultController?.forward(from: 0.0);
-    
+
     // 1.5秒后检查是否还有下一句
     Future.delayed(const Duration(milliseconds: 1500), () {
       if (mounted) {
@@ -273,9 +269,9 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
     setState(() {
       _state = RecitationState.failed;
     });
-    
+
     _resultController?.forward(from: 0.0);
-    
+
     // 2秒后重新开始当前句子
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
@@ -315,9 +311,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
             ),
         ],
       ),
-      body: SafeArea(
-        child: _buildBody(),
-      ),
+      body: SafeArea(child: _buildBody()),
     );
   }
 
@@ -347,7 +341,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
       builder: (context, child) {
         return Center(
           child: Opacity(
-            opacity: _flashAnimation!.value > 0.5 
+            opacity: _flashAnimation!.value > 0.5
                 ? 2 * (1 - _flashAnimation!.value)
                 : 2 * _flashAnimation!.value,
             child: Container(
@@ -439,8 +433,12 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
                     return Padding(
                       padding: const EdgeInsets.only(left: 4),
                       child: Icon(
-                        index < _remainingChances ? Icons.favorite : Icons.favorite_border,
-                        color: index < _remainingChances ? Colors.red : Colors.grey,
+                        index < _remainingChances
+                            ? Icons.favorite
+                            : Icons.favorite_border,
+                        color: index < _remainingChances
+                            ? Colors.red
+                            : Colors.grey,
                         size: 20,
                       ),
                     );
@@ -473,7 +471,9 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
           spacing: 8,
           runSpacing: 8,
           children: [
-            ..._selectedWords.map((word) => _buildWordChip(word, isSelected: true)),
+            ..._selectedWords.map(
+              (word) => _buildWordChip(word, isSelected: true),
+            ),
             // 占位符显示剩余需要选择的词数
             ...List.generate(
               _originalWords.length - _selectedWords.length,
@@ -502,7 +502,10 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 200),
                 opacity: isSelected ? 0.3 : 1.0,
-                child: _buildWordButton(_shuffledWords[index], isSelected: isSelected),
+                child: _buildWordButton(
+                  _shuffledWords[index],
+                  isSelected: isSelected,
+                ),
               ),
             );
           }),
@@ -581,7 +584,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
         ),
       ),
       child: const Text(
-        '　',  // 全角空格占位
+        '　', // 全角空格占位
         style: TextStyle(fontSize: 20),
       ),
     );
@@ -589,8 +592,9 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
 
   /// 成功视图（单句成功）
   Widget _buildSuccessView() {
-    final hasMoreSentences = _currentSentenceIndex < widget.sentences.length - 1;
-    
+    final hasMoreSentences =
+        _currentSentenceIndex < widget.sentences.length - 1;
+
     return AnimatedBuilder(
       animation: _resultAnimation!,
       builder: (context, child) {
@@ -615,11 +619,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
                       ),
                     ],
                   ),
-                  child: const Icon(
-                    Icons.check,
-                    size: 64,
-                    color: Colors.white,
-                  ),
+                  child: const Icon(Icons.check, size: 64, color: Colors.white),
                 ),
                 const SizedBox(height: 24),
                 const Text(
@@ -633,10 +633,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
                 const SizedBox(height: 8),
                 Text(
                   hasMoreSentences ? '继续下一句...' : '背诵成功',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: Colors.white70,
-                  ),
+                  style: const TextStyle(fontSize: 16, color: Colors.white70),
                 ),
               ],
             ),
@@ -649,7 +646,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
   /// 失败视图
   Widget _buildFailedView() {
     final message = _remainingChances <= 0 ? '机会用完了' : '时间到！';
-    
+
     return AnimatedBuilder(
       animation: _resultAnimation!,
       builder: (context, child) {
@@ -692,10 +689,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
                 const SizedBox(height: 8),
                 const Text(
                   '重新开始...',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white70,
-                  ),
+                  style: TextStyle(fontSize: 16, color: Colors.white70),
                 ),
               ],
             ),
@@ -744,10 +738,7 @@ class _RecitationGameWidgetState extends State<RecitationGameWidget>
           const SizedBox(height: 8),
           Text(
             '共背诵 ${widget.sentences.length} 句',
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.white70,
-            ),
+            style: const TextStyle(fontSize: 16, color: Colors.white70),
           ),
         ],
       ),

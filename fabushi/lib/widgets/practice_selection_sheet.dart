@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/meditation_session_manager.dart';
 
 /// 必选功课底部弹窗
-/// 
+///
 /// 首次进入禅室时显示，要求用户手动输入一门修行功课。
 class PracticeSelectionSheet extends StatefulWidget {
   final VoidCallback? onSelected;
@@ -43,7 +43,7 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
   Future<void> _confirmSelection() async {
     final title = _practiceTitle.trim();
     if (title.isEmpty) return;
-    
+
     // 显示确认对话框
     final confirmed = await showDialog<bool>(
       context: context,
@@ -61,7 +61,11 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
           children: [
             Text(
               '您填写了：$title',
-              style: const TextStyle(color: Color(0xFFD4AF37), fontSize: 18, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: Color(0xFFD4AF37),
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 16),
             Container(
@@ -108,11 +112,11 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
         title,
         'manual:${Uri.encodeComponent(title)}',
       );
-      
+
       if (success && mounted) {
         Navigator.pop(context);
         widget.onSelected?.call();
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('已选定功课：$title'),
@@ -143,7 +147,7 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          
+
           // 标题和关闭按钮
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -169,7 +173,7 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
               ],
             ),
           ),
-          
+
           // 重要警告提醒
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -182,11 +186,18 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
                 ],
               ),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.orange.withOpacity(0.5), width: 1.5),
+              border: Border.all(
+                color: Colors.orange.withOpacity(0.5),
+                width: 1.5,
+              ),
             ),
             child: const Row(
               children: [
-                Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.orange,
+                  size: 28,
+                ),
                 SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -203,10 +214,7 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
                       SizedBox(height: 2),
                       Text(
                         '一旦确认，主修功课将永久锁定，无法修改！',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 13,
-                        ),
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
                       ),
                     ],
                   ),
@@ -214,16 +222,13 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
               ],
             ),
           ),
-          
+
           const Text(
             '请手动输入您一门深入的主修功课',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white54,
-              fontSize: 14,
-            ),
+            style: TextStyle(color: Colors.white54, fontSize: 14),
           ),
-          
+
           // 主修功课输入
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
@@ -247,13 +252,16 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
               ),
             ),
           ),
-          
+
           const Spacer(),
-          
+
           // 底部确认按钮
           Container(
             padding: const EdgeInsets.all(20),
@@ -267,7 +275,9 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: _practiceTitle.isNotEmpty ? _confirmSelection : null,
+                  onPressed: _practiceTitle.isNotEmpty
+                      ? _confirmSelection
+                      : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFD4AF37),
                     disabledBackgroundColor: Colors.white12,
@@ -276,9 +286,13 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
                     ),
                   ),
                   child: Text(
-                    _practiceTitle.isNotEmpty ? '确认锁定「$_practiceTitle」' : '请先填写主修功课',
+                    _practiceTitle.isNotEmpty
+                        ? '确认锁定「$_practiceTitle」'
+                        : '请先填写主修功课',
                     style: TextStyle(
-                      color: _practiceTitle.isNotEmpty ? Colors.black : Colors.white38,
+                      color: _practiceTitle.isNotEmpty
+                          ? Colors.black
+                          : Colors.white38,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
@@ -294,7 +308,7 @@ class _PracticeSelectionSheetState extends State<PracticeSelectionSheet> {
 }
 
 /// 显示功课选择弹窗
-/// 
+///
 /// [required] 为 true 时表示必选，弹窗不可取消
 Future<void> showPracticeSelectionSheet(
   BuildContext context, {

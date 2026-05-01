@@ -8,7 +8,10 @@ class AppConfig {
   static final AppConfig instance = AppConfig._();
 
   // 环境配置
-  static const String environment = String.fromEnvironment('ENV', defaultValue: 'production');
+  static const String environment = String.fromEnvironment(
+    'ENV',
+    defaultValue: 'production',
+  );
 
   // 是否为生产环境
   static bool get isProduction => environment == 'production';

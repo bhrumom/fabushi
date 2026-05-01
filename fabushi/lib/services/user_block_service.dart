@@ -91,7 +91,11 @@ class UserBlockService {
   }
 
   /// 通知后端屏蔽/取消屏蔽
-  Future<void> _notifyBackend(String userId, {required bool blocked, String? reason}) async {
+  Future<void> _notifyBackend(
+    String userId, {
+    required bool blocked,
+    String? reason,
+  }) async {
     try {
       final url = Uri.parse('${AppConfig.apiUrl}/api/block-user');
       await http.post(

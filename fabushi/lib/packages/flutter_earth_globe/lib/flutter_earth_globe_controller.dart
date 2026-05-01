@@ -33,18 +33,18 @@ class FlutterEarthGlobeController extends ChangeNotifier {
   ui.Image? background; // The background image of the sphere.
   Uint32List? surfaceProcessed; // The processed surface image of the sphere.
   Uint32List?
-      nightSurfaceProcessed; // The processed night surface image of the sphere.
+  nightSurfaceProcessed; // The processed night surface image of the sphere.
   bool
-      isBackgroundFollowingSphereRotation; // Whether the background follows the rotation of the sphere.
+  isBackgroundFollowingSphereRotation; // Whether the background follows the rotation of the sphere.
   ImageConfiguration
-      surfaceConfiguration; // The configuration of the surface image.
+  surfaceConfiguration; // The configuration of the surface image.
   ImageConfiguration
-      nightSurfaceConfiguration; // The configuration of the night surface image.
+  nightSurfaceConfiguration; // The configuration of the night surface image.
   ImageConfiguration
-      backgroundConfiguration; // The configuration of the background image.
+  backgroundConfiguration; // The configuration of the background image.
 
   late AnimationController
-      rotationController; // The animation controller for sphere rotation.
+  rotationController; // The animation controller for sphere rotation.
 
   double rotationSpeed; // The speed of the rotation.
 
@@ -56,13 +56,13 @@ class FlutterEarthGlobeController extends ChangeNotifier {
   // Day/Night cycle properties
   bool isDayNightCycleEnabled; // Whether the day/night cycle is enabled.
   double
-      sunLongitude; // The current longitude of the sun (in degrees, -180 to 180).
+  sunLongitude; // The current longitude of the sun (in degrees, -180 to 180).
   double
-      sunLatitude; // The current latitude of the sun (in degrees, -23.5 to 23.5 for realistic Earth tilt).
+  sunLatitude; // The current latitude of the sun (in degrees, -23.5 to 23.5 for realistic Earth tilt).
   double
-      dayNightBlendFactor; // The sharpness of the day/night transition (0.0 = sharp, 1.0 = very smooth).
+  dayNightBlendFactor; // The sharpness of the day/night transition (0.0 = sharp, 1.0 = very smooth).
   bool
-      useRealTimeSunPosition; // Whether to calculate sun position based on real time.
+  useRealTimeSunPosition; // Whether to calculate sun position based on real time.
 
   GlobalKey<RotatingGlobeState> globeKey = GlobalKey();
 
@@ -104,9 +104,12 @@ class FlutterEarthGlobeController extends ChangeNotifier {
   }
 
   // internal calls
-  Function(AnimatedPointConnection connection,
-      {required bool animateDraw,
-      required Duration animateDrawDuration})? onPointConnectionAdded;
+  Function(
+    AnimatedPointConnection connection, {
+    required bool animateDraw,
+    required Duration animateDrawDuration,
+  })?
+  onPointConnectionAdded;
 
   Function()? onResetGlobeRotation;
 
@@ -141,8 +144,9 @@ class FlutterEarthGlobeController extends ChangeNotifier {
   /// ```dart
   /// controller.startDayNightCycle(cycleDuration: Duration(seconds: 30));
   /// ```
-  void startDayNightCycle(
-      {Duration cycleDuration = const Duration(minutes: 1)}) {
+  void startDayNightCycle({
+    Duration cycleDuration = const Duration(minutes: 1),
+  }) {
     isDayNightCycleEnabled = true;
     onStartDayNightCycleAnimation?.call(cycleDuration: cycleDuration);
     notifyListeners();
@@ -178,15 +182,21 @@ class FlutterEarthGlobeController extends ChangeNotifier {
   ///   animateDraw: true,
   ///  );
   /// ```
-  void addPointConnection(PointConnection connection,
-      {bool animateDraw = false,
-      Duration animateDrawDuration = const Duration(seconds: 2)}) {
+  void addPointConnection(
+    PointConnection connection, {
+    bool animateDraw = false,
+    Duration animateDrawDuration = const Duration(seconds: 2),
+  }) {
     final animatedConnection = AnimatedPointConnection.fromPointConnection(
-        pointConnection: connection);
+      pointConnection: connection,
+    );
     connections.add(animatedConnection);
     notifyListeners();
-    onPointConnectionAdded?.call(animatedConnection,
-        animateDraw: animateDraw, animateDrawDuration: animateDrawDuration);
+    onPointConnectionAdded?.call(
+      animatedConnection,
+      animateDraw: animateDraw,
+      animateDrawDuration: animateDrawDuration,
+    );
   }
 
   /// Focuses on the [coordinates] on the globe.
@@ -199,11 +209,16 @@ class FlutterEarthGlobeController extends ChangeNotifier {
   /// ```dart
   /// controller.focusOnCoordinates(GlobeCoordinates(0, 0), animate: true);
   /// ```
-  void focusOnCoordinates(GlobeCoordinates coordinates,
-      {bool animate = false,
-      Duration? duration = const Duration(milliseconds: 500)}) {
-    globeKey.currentState
-        ?.focusOnCoordinates(coordinates, animate: animate, duration: duration);
+  void focusOnCoordinates(
+    GlobeCoordinates coordinates, {
+    bool animate = false,
+    Duration? duration = const Duration(milliseconds: 500),
+  }) {
+    globeKey.currentState?.focusOnCoordinates(
+      coordinates,
+      animate: animate,
+      duration: duration,
+    );
   }
 
   /// Updates the [connection] between two [points] on the globe.
@@ -232,9 +247,13 @@ class FlutterEarthGlobeController extends ChangeNotifier {
   void updatePointConnection(
     String id, {
     String? label,
-    Widget? Function(BuildContext context, PointConnection pointConnection,
-            bool isHovering, bool isVisible)?
-        labelBuilder,
+    Widget? Function(
+      BuildContext context,
+      PointConnection pointConnection,
+      bool isHovering,
+      bool isVisible,
+    )?
+    labelBuilder,
     bool? isLabelVisible,
     Offset? labelOffset,
     bool? isMoving,
@@ -243,16 +262,19 @@ class FlutterEarthGlobeController extends ChangeNotifier {
     VoidCallback? onTap,
     VoidCallback? onHover,
   }) {
-    connections.firstWhere((element) => element.id == id).copyWith(
-        label: label,
-        isMoving: isMoving,
-        labelBuilder: labelBuilder,
-        isLabelVisible: isLabelVisible,
-        labelOffset: labelOffset,
-        style: style,
-        labelTextStyle: labelTextStyle,
-        onTap: onTap,
-        onHover: onHover);
+    connections
+        .firstWhere((element) => element.id == id)
+        .copyWith(
+          label: label,
+          isMoving: isMoving,
+          labelBuilder: labelBuilder,
+          isLabelVisible: isLabelVisible,
+          labelOffset: labelOffset,
+          style: style,
+          labelTextStyle: labelTextStyle,
+          onTap: onTap,
+          onHover: onHover,
+        );
     notifyListeners();
   }
 
@@ -318,8 +340,12 @@ class FlutterEarthGlobeController extends ChangeNotifier {
     String id, {
     String? label,
     Widget? Function(
-            BuildContext context, Point point, bool isHovering, bool isVisible)?
-        labelBuilder,
+      BuildContext context,
+      Point point,
+      bool isHovering,
+      bool isVisible,
+    )?
+    labelBuilder,
     bool? isLabelVisible,
     Offset? labelOffset,
     PointStyle? style,
@@ -327,15 +353,18 @@ class FlutterEarthGlobeController extends ChangeNotifier {
     VoidCallback? onTap,
     VoidCallback? onHover,
   }) {
-    points.firstWhere((element) => element.id == id).copyWith(
-        label: label,
-        labelBuilder: labelBuilder,
-        isLabelVisible: isLabelVisible,
-        labelOffset: labelOffset,
-        style: style,
-        labelTextStyle: labelTextStyle,
-        onTap: onTap,
-        onHover: onHover);
+    points
+        .firstWhere((element) => element.id == id)
+        .copyWith(
+          label: label,
+          labelBuilder: labelBuilder,
+          isLabelVisible: isLabelVisible,
+          labelOffset: labelOffset,
+          style: style,
+          labelTextStyle: labelTextStyle,
+          onTap: onTap,
+          onHover: onHover,
+        );
     notifyListeners();
   }
 
@@ -369,12 +398,14 @@ class FlutterEarthGlobeController extends ChangeNotifier {
   }) {
     image
         .resolve(configuration)
-        .addListener(ImageStreamListener((info, _) async {
-      surface = info.image;
-      surfaceConfiguration = configuration;
-      surfaceProcessed = await convertImageToUint32List(info.image);
-      notifyListeners();
-    }));
+        .addListener(
+          ImageStreamListener((info, _) async {
+            surface = info.image;
+            surfaceConfiguration = configuration;
+            surfaceProcessed = await convertImageToUint32List(info.image);
+            notifyListeners();
+          }),
+        );
   }
 
   /// Loads the [image] as the night surface of the globe for day/night cycle effect.
@@ -394,12 +425,14 @@ class FlutterEarthGlobeController extends ChangeNotifier {
   }) {
     image
         .resolve(configuration)
-        .addListener(ImageStreamListener((info, _) async {
-      nightSurface = info.image;
-      nightSurfaceConfiguration = configuration;
-      nightSurfaceProcessed = await convertImageToUint32List(info.image);
-      notifyListeners();
-    }));
+        .addListener(
+          ImageStreamListener((info, _) async {
+            nightSurface = info.image;
+            nightSurfaceConfiguration = configuration;
+            nightSurfaceProcessed = await convertImageToUint32List(info.image);
+            notifyListeners();
+          }),
+        );
   }
 
   /// Loads the background image for the rotating globe.
@@ -419,12 +452,17 @@ class FlutterEarthGlobeController extends ChangeNotifier {
     ImageConfiguration configuration = const ImageConfiguration(),
     bool isBackgroundFollowingSphereRotation = false,
   }) {
-    image.resolve(configuration).addListener(ImageStreamListener((info, _) {
-      background = info.image;
-      backgroundConfiguration = configuration;
-      isBackgroundFollowingSphereRotation = isBackgroundFollowingSphereRotation;
-      notifyListeners();
-    }));
+    image
+        .resolve(configuration)
+        .addListener(
+          ImageStreamListener((info, _) {
+            background = info.image;
+            backgroundConfiguration = configuration;
+            isBackgroundFollowingSphereRotation =
+                isBackgroundFollowingSphereRotation;
+            notifyListeners();
+          }),
+        );
   }
 
   /// Removes the background of the rotating globe.

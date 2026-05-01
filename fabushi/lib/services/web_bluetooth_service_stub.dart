@@ -29,7 +29,10 @@ class WebBluetoothServiceStub {
   }
 
   /// 开始发送文件
-  Future<void> startSending({required List<PlatformFile> files, required bool isLoop}) async {
+  Future<void> startSending({
+    required List<PlatformFile> files,
+    required bool isLoop,
+  }) async {
     debugPrint('⚠️ Web蓝牙存根：无法发送文件，平台不支持');
 
     // 立即调用停止回调

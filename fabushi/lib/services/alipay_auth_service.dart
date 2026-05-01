@@ -87,18 +87,20 @@ class AlipayAuthService {
   }
 
   /// SDK授权登录（将auth_code发送给后端换取用户信息和token）
-  Future<Map<String, dynamic>> alipaySDKLogin(String authCode, {String? targetId}) async {
+  Future<Map<String, dynamic>> alipaySDKLogin(
+    String authCode, {
+    String? targetId,
+  }) async {
     try {
       final url = await baseUrl;
-      debugPrint('SDK登录API调用: $url/api/auth/alipay/sdk-login, authCode: $authCode');
+      debugPrint(
+        'SDK登录API调用: $url/api/auth/alipay/sdk-login, authCode: $authCode',
+      );
 
       final response = await http.post(
         Uri.parse('$url/api/auth/alipay/sdk-login'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'auth_code': authCode,
-          'target_id': targetId,
-        }),
+        body: jsonEncode({'auth_code': authCode, 'target_id': targetId}),
       );
 
       debugPrint('SDK登录API响应: ${response.statusCode} - ${response.body}');
@@ -128,7 +130,10 @@ class AlipayAuthService {
   }
 
   /// 支付宝登录回调处理
-  Future<Map<String, dynamic>> alipayLogin(String authCode, String? state) async {
+  Future<Map<String, dynamic>> alipayLogin(
+    String authCode,
+    String? state,
+  ) async {
     try {
       final url = await baseUrl;
       debugPrint('支付宝登录API调用: $url/api/auth/alipay/login, authCode: $authCode');

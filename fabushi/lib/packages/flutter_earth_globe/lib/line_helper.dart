@@ -20,26 +20,39 @@ import 'point_connection.dart';
 ///
 /// Returns a [Map] with a path and a Offset representing the drawn line, or null if the line is not visible.
 Map? drawAnimatedLine(
-    Canvas canvas,
-    AnimatedPointConnection connection,
-    double radius,
-    double rotationY,
-    double rotationZ,
-    double animationValue,
-    Size size,
-    Offset? hoverPoint) {
+  Canvas canvas,
+  AnimatedPointConnection connection,
+  double radius,
+  double rotationY,
+  double rotationZ,
+  double animationValue,
+  Size size,
+  Offset? hoverPoint,
+) {
   // Calculate 3D positions for the start and end points
-  Vector3 startCartesian3D =
-      getSpherePosition3D(connection.start, radius, rotationY, rotationZ);
-  Vector3 endCartesian3D =
-      getSpherePosition3D(connection.end, radius, rotationY, rotationZ);
+  Vector3 startCartesian3D = getSpherePosition3D(
+    connection.start,
+    radius,
+    rotationY,
+    rotationZ,
+  );
+  Vector3 endCartesian3D = getSpherePosition3D(
+    connection.end,
+    radius,
+    rotationY,
+    rotationZ,
+  );
 
   // Project 3D positions to 2D canvas
   final center = Offset(size.width / 2, size.height / 2);
-  Offset startCartesian2D =
-      Offset(center.dx + startCartesian3D.y, center.dy - startCartesian3D.z);
-  Offset endCartesian2D =
-      Offset(center.dx + endCartesian3D.y, center.dy - endCartesian3D.z);
+  Offset startCartesian2D = Offset(
+    center.dx + startCartesian3D.y,
+    center.dy - startCartesian3D.z,
+  );
+  Offset endCartesian2D = Offset(
+    center.dx + endCartesian3D.y,
+    center.dy - endCartesian3D.z,
+  );
 
   // Check if points are on the visible side of the sphere
   bool isStartVisible = startCartesian3D.x > 0;
@@ -65,7 +78,11 @@ Map? drawAnimatedLine(
     final midPoint2D = Offset(center.dx + midPoint.y, center.dy - midPoint.z);
 
     path.quadraticBezierTo(
-        midPoint2D.dx, midPoint2D.dy, endCartesian2D.dx, endCartesian2D.dy);
+      midPoint2D.dx,
+      midPoint2D.dy,
+      endCartesian2D.dx,
+      endCartesian2D.dy,
+    );
 
     PathMetric pathMetric = path.computeMetrics().first;
 
@@ -73,8 +90,13 @@ Map? drawAnimatedLine(
     double end = pathMetric.length * animationValue;
 
     if (!isStartVisible) {
-      Offset? intersection =
-          findCurveSphereIntersection(path, center, radius, 1, true);
+      Offset? intersection = findCurveSphereIntersection(
+        path,
+        center,
+        radius,
+        1,
+        true,
+      );
       if (intersection != null) {
         // canvas.drawCircle(intersection, 5, paint);
         final perc = 1 - getDrawPercentage(path, intersection) / 100;
@@ -84,8 +106,13 @@ Map? drawAnimatedLine(
         return null;
       }
     } else if (!isEndVisible) {
-      Offset? intersection =
-          findCurveSphereIntersection(path, center, radius, 1, false);
+      Offset? intersection = findCurveSphereIntersection(
+        path,
+        center,
+        radius,
+        1,
+        false,
+      );
       if (intersection != null) {
         final perc =
             1 - getDrawPercentage(path, intersection, first: false) / 100;
@@ -117,10 +144,11 @@ Map? drawAnimatedLine(
             final double endDash = startDash + dashLength;
 
             if (endDash < extractPathMetric.length) {
-              final Tangent? startTangent =
-                  extractPathMetric.getTangentForOffset(startDash);
-              final Tangent? endTangent =
-                  extractPathMetric.getTangentForOffset(endDash);
+              final Tangent? startTangent = extractPathMetric
+                  .getTangentForOffset(startDash);
+              final Tangent? endTangent = extractPathMetric.getTangentForOffset(
+                endDash,
+              );
 
               if (startTangent != null && endTangent != null) {
                 final Offset startPoint = startTangent.position;
@@ -162,8 +190,13 @@ Map? drawAnimatedLine(
     if ((connection.isLabelVisible &&
             (connection.label?.isNotEmpty ?? false)) &&
         connection.labelBuilder == null) {
-      paintText(connection.label ?? '', connection.labelTextStyle, realMidPoint,
-          size, canvas);
+      paintText(
+        connection.label ?? '',
+        connection.labelTextStyle,
+        realMidPoint,
+        size,
+        canvas,
+      );
     }
     return {'path': extractPath, 'midPoint': realMidPoint};
   }
@@ -184,8 +217,9 @@ double calculateCentralAngle(GlobeCoordinates start, GlobeCoordinates end) {
 
   // Apply the spherical law of cosines
   double deltaLon = lon2 - lon1;
-  double centralAngle =
-      acos(sin(lat1) * sin(lat2) + cos(lat1) * cos(lat2) * cos(deltaLon));
+  double centralAngle = acos(
+    sin(lat1) * sin(lat2) + cos(lat1) * cos(lat2) * cos(deltaLon),
+  );
 
   return centralAngle; // Angle in radians
 }
@@ -220,8 +254,10 @@ List<double> getPathLengthsUpToIntersection(Path path, Offset intersection) {
 ///
 /// Returns the draw percentage as a double value between 0 and 100.
 double getDrawPercentage(Path path, Offset intersection, {bool first = true}) {
-  List<double> lengthsUpToIntersections =
-      getPathLengthsUpToIntersection(path, intersection);
+  List<double> lengthsUpToIntersections = getPathLengthsUpToIntersection(
+    path,
+    intersection,
+  );
   if (lengthsUpToIntersections.isEmpty) return 100.0; // No intersection
 
   PathMetric pathMetric = path.computeMetrics().first;
@@ -241,8 +277,12 @@ double getDrawPercentage(Path path, Offset intersection, {bool first = true}) {
 /// The [step] parameter specifies the step size for calculating the next tangent.
 ///
 /// Returns the curvature as a double value.
-double calculateCurvature(Tangent currentTangent, PathMetric pathMetric,
-    double distance, double step) {
+double calculateCurvature(
+  Tangent currentTangent,
+  PathMetric pathMetric,
+  double distance,
+  double step,
+) {
   // Calculate the next tangent in the path
   double nextDistance = distance + step;
   if (nextDistance >= pathMetric.length) {
@@ -302,7 +342,11 @@ List<Offset> adaptivePathToPoints(Path path, double maxTolerance) {
 ///
 /// Returns the refined intersection point as an [Offset].
 Offset refineIntersection(
-    Offset start, Offset end, Offset center, double radius) {
+  Offset start,
+  Offset end,
+  Offset center,
+  double radius,
+) {
   double startDistance = (start - center).distance - radius;
   // double endDistance = (end - center).distance - radius;
 
@@ -335,8 +379,13 @@ Offset refineIntersection(
 /// The [firstIntersection] parameter specifies whether to find the first or last intersection.
 ///
 /// Returns the intersection point as an [Offset], or null if no intersection is found.
-Offset? findCurveSphereIntersection(Path path, Offset center, double radius,
-    double maxTolerance, bool firstIntersection) {
+Offset? findCurveSphereIntersection(
+  Path path,
+  Offset center,
+  double radius,
+  double maxTolerance,
+  bool firstIntersection,
+) {
   List<Offset> points = adaptivePathToPoints(path, maxTolerance);
   List<Offset> intersections = [];
   Offset previousPoint = points.first;
@@ -345,8 +394,12 @@ Offset? findCurveSphereIntersection(Path path, Offset center, double radius,
     double currDist = (point - center).distance - radius;
 
     if (prevDist.sign != currDist.sign) {
-      Offset intersection =
-          refineIntersection(previousPoint, point, center, radius);
+      Offset intersection = refineIntersection(
+        previousPoint,
+        point,
+        center,
+        radius,
+      );
       intersections.add(intersection);
     }
 

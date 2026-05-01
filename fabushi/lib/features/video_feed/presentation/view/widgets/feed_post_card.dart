@@ -42,7 +42,7 @@ class FeedPostCard extends StatelessWidget {
             // 用户信息行
             _buildUserHeader(),
             const SizedBox(height: 12),
-            
+
             // 帖子内容
             Text(
               post.content,
@@ -54,15 +54,15 @@ class FeedPostCard extends StatelessWidget {
               maxLines: 6,
               overflow: TextOverflow.ellipsis,
             ),
-            
+
             // 原视频链接（单独一行，显示在内容下方）
             if (post.videoId.isNotEmpty) ...[
               const SizedBox(height: 12),
               _buildOriginalVideoLink(),
             ],
-            
+
             const SizedBox(height: 12),
-            
+
             // 底部操作栏
             _buildActionBar(),
           ],
@@ -70,12 +70,12 @@ class FeedPostCard extends StatelessWidget {
       ),
     );
   }
-  
+
   /// 构建原视频链接（单独一行）
   Widget _buildOriginalVideoLink() {
     // 提取可读标题
     String displayTitle = _extractDisplayTitle(post.videoId, post.videoTitle);
-    
+
     return GestureDetector(
       onTap: onOriginalVideoTap,
       child: Container(
@@ -87,7 +87,11 @@ class FeedPostCard extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.play_circle_outline, color: AppTheme.primaryColor, size: 16),
+            const Icon(
+              Icons.play_circle_outline,
+              color: AppTheme.primaryColor,
+              size: 16,
+            ),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
@@ -106,7 +110,7 @@ class FeedPostCard extends StatelessWidget {
       ),
     );
   }
-  
+
   /// 从 videoId 提取可读的显示标题
   String _extractDisplayTitle(String videoId, String? videoTitle) {
     // 首先尝试从VideoTitleService获取真实标题
@@ -114,41 +118,41 @@ class FeedPostCard extends StatelessWidget {
     if (cachedTitle != null && cachedTitle.isNotEmpty) {
       return cachedTitle;
     }
-    
+
     // 如果API已提供标题且不是原始ID格式，直接使用
     if (videoTitle != null && videoTitle.isNotEmpty) {
       if (!RegExp(r'^(text|video)[\s_-]?\d+').hasMatch(videoTitle)) {
         return videoTitle;
       }
     }
-    
+
     if (videoId.isEmpty) return '原视频';
-    
+
     // 如果是路径格式，提取文件名
     String contentId = videoId;
     if (contentId.contains('/')) {
       final parts = contentId.split('/');
       contentId = parts.last;
     }
-    
+
     // 去掉扩展名
     if (contentId.contains('.')) {
       contentId = contentId.substring(0, contentId.lastIndexOf('.'));
     }
-    
+
     // 替换下划线和横杠为空格
     String title = contentId.replaceAll(RegExp(r'[_-]'), ' ').trim();
-    
+
     // 如果是纯数字ID格式如 "text 1764818600612 1"，返回更友好的名称
     if (RegExp(r'^(text|video)\s+\d+').hasMatch(title)) {
       return '法布施内容';
     }
-    
+
     // 首字母大写
     if (title.isNotEmpty) {
       title = title[0].toUpperCase() + title.substring(1);
     }
-    
+
     return title.isEmpty ? '法布施内容' : title;
   }
 
@@ -161,17 +165,20 @@ class FeedPostCard extends StatelessWidget {
           child: CircleAvatar(
             radius: 20,
             backgroundColor: Colors.grey[800],
-            backgroundImage: post.avatar != null ? NetworkImage(post.avatar!) : null,
+            backgroundImage: post.avatar != null
+                ? NetworkImage(post.avatar!)
+                : null,
             child: post.avatar == null
                 ? Text(
-                    (post.displayName.isNotEmpty ? post.displayName[0] : '?').toUpperCase(),
+                    (post.displayName.isNotEmpty ? post.displayName[0] : '?')
+                        .toUpperCase(),
                     style: const TextStyle(color: Colors.white, fontSize: 16),
                   )
                 : null,
           ),
         ),
         const SizedBox(width: 12),
-        
+
         // 用户名和时间
         Expanded(
           child: Column(
@@ -190,10 +197,13 @@ class FeedPostCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   // 标签
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
-                      color: post.isGanying 
-                          ? Colors.orange.withOpacity(0.2) 
+                      color: post.isGanying
+                          ? Colors.orange.withOpacity(0.2)
                           : Colors.purple.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -211,10 +221,7 @@ class FeedPostCard extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 _formatDate(post.createdAt),
-                style: const TextStyle(
-                  color: Colors.white38,
-                  fontSize: 12,
-                ),
+                style: const TextStyle(color: Colors.white38, fontSize: 12),
               ),
             ],
           ),
@@ -247,7 +254,7 @@ class FeedPostCard extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 24),
-        
+
         // 评论
         GestureDetector(
           onTap: onCommentTap,

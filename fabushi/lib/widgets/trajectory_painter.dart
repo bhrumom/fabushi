@@ -33,7 +33,12 @@ class TrajectoryPainter extends CustomPainter {
     if (animationValue <= 0) return;
 
     // 计算当前彗星头部位置
-    final currentPos = _getQuadraticBezierPoint(start, control, end, animationValue);
+    final currentPos = _getQuadraticBezierPoint(
+      start,
+      control,
+      end,
+      animationValue,
+    );
     final screenPos = projectToScreen(currentPos, size);
 
     // 绘制拖尾
@@ -80,7 +85,12 @@ class TrajectoryPainter extends CustomPainter {
     canvas.drawCircle(screenPos, 2.5, corePaint);
   }
 
-  v.Vector3 _getQuadraticBezierPoint(v.Vector3 p0, v.Vector3 p1, v.Vector3 p2, double t) {
+  v.Vector3 _getQuadraticBezierPoint(
+    v.Vector3 p0,
+    v.Vector3 p1,
+    v.Vector3 p2,
+    double t,
+  ) {
     final u = 1 - t;
     final tt = t * t;
     final uu = u * u;

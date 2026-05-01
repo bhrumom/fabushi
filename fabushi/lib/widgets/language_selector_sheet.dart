@@ -39,7 +39,11 @@ class LanguageSelectorSheet extends StatelessWidget {
                   Expanded(
                     child: Text(
                       l10n.languageChooserTitle,
-                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   IconButton(
@@ -53,10 +57,16 @@ class LanguageSelectorSheet extends StatelessWidget {
             Expanded(
               child: ListView.separated(
                 itemCount: AppLocalizations.languageOptions.length,
-                separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10, indent: 20, endIndent: 20),
+                separatorBuilder: (_, __) => const Divider(
+                  height: 1,
+                  color: Colors.white10,
+                  indent: 20,
+                  endIndent: 20,
+                ),
                 itemBuilder: (context, index) {
                   final option = AppLocalizations.languageOptions[index];
-                  final isSystem = option.code == AppLocalizations.systemLocaleCode;
+                  final isSystem =
+                      option.code == AppLocalizations.systemLocaleCode;
                   return RadioListTile<String>(
                     value: option.code,
                     groupValue: settings.localePreference,
@@ -68,11 +78,19 @@ class LanguageSelectorSheet extends StatelessWidget {
                     },
                     title: Text(
                       isSystem ? l10n.languageSystem : option.nativeName,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                     subtitle: Text(
-                      isSystem ? l10n.languageSystemDescription : option.englishName,
-                      style: const TextStyle(color: Colors.white54, fontSize: 13),
+                      isSystem
+                          ? l10n.languageSystemDescription
+                          : option.englishName,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 13,
+                      ),
                     ),
                   );
                 },

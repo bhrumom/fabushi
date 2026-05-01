@@ -6,10 +6,7 @@ class IncensePainter extends CustomPainter {
   final double incenseProgress;
   final bool isBurning;
 
-  IncensePainter({
-    required this.incenseProgress,
-    required this.isBurning,
-  });
+  IncensePainter({required this.incenseProgress, required this.isBurning});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -190,7 +187,8 @@ class SutraBookButton extends StatelessWidget {
   final String title;
   final VoidCallback? onTap;
 
-  const SutraBookButton({Key? key, required this.title, this.onTap}) : super(key: key);
+  const SutraBookButton({Key? key, required this.title, this.onTap})
+    : super(key: key);
 
   @override
   Widget build(BuildContext context) {

@@ -27,7 +27,9 @@ class HttpService {
       final token = await _getStoredToken();
       if (token != null) {
         headers['Authorization'] = 'Bearer $token';
-        print('🔐 HttpService: 添加认证头 Authorization: Bearer ${token.substring(0, 20)}...');
+        print(
+          '🔐 HttpService: 添加认证头 Authorization: Bearer ${token.substring(0, 20)}...',
+        );
       } else {
         print('⚠️ HttpService: useAuth=true 但没有token');
       }
@@ -63,7 +65,11 @@ class HttpService {
       );
     }
 
-    return {'statusCode': response.statusCode, 'body': response.body, 'headers': response.headers};
+    return {
+      'statusCode': response.statusCode,
+      'body': response.body,
+      'headers': response.headers,
+    };
   }
 
   // 处理HTTP错误
@@ -128,13 +134,17 @@ class HttpService {
     try {
       final uri = Uri.parse(url);
       final finalUri = queryParams != null
-          ? uri.replace(queryParameters: {...uri.queryParameters, ...queryParams})
+          ? uri.replace(
+              queryParameters: {...uri.queryParameters, ...queryParams},
+            )
           : uri;
 
       final headers = await _getHeaders(useAuth: useAuth);
 
       return await _retryRequest(
-        () => _client.get(finalUri, headers: headers).timeout(AppConfig.requestTimeout),
+        () => _client
+            .get(finalUri, headers: headers)
+            .timeout(AppConfig.requestTimeout),
         'GET',
         url,
       );
@@ -188,12 +198,17 @@ class HttpService {
   }
 
   // DELETE请求
-  static Future<http.Response> delete(String url, {bool useAuth = false}) async {
+  static Future<http.Response> delete(
+    String url, {
+    bool useAuth = false,
+  }) async {
     try {
       final headers = await _getHeaders(useAuth: useAuth);
 
       return await _retryRequest(
-        () => _client.delete(Uri.parse(url), headers: headers).timeout(AppConfig.requestTimeout),
+        () => _client
+            .delete(Uri.parse(url), headers: headers)
+            .timeout(AppConfig.requestTimeout),
         'DELETE',
         url,
       );
@@ -263,7 +278,10 @@ class HttpService {
   }
 
   // 下载文件
-  static Future<List<int>> downloadFile(String url, {bool useAuth = false}) async {
+  static Future<List<int>> downloadFile(
+    String url, {
+    bool useAuth = false,
+  }) async {
     try {
       final headers = await _getHeaders(useAuth: useAuth);
 

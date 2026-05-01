@@ -120,10 +120,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
         children: [
           Text(
             widget.item.description,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
           Container(
@@ -147,10 +144,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            widget.item.description,
-            style: const TextStyle(fontSize: 16),
-          ),
+          Text(widget.item.description, style: const TextStyle(fontSize: 16)),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(24),
@@ -161,7 +155,11 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
             child: Center(
               child: Column(
                 children: [
-                  Icon(Icons.play_circle_outline, size: 64, color: Colors.grey.shade600),
+                  Icon(
+                    Icons.play_circle_outline,
+                    size: 64,
+                    color: Colors.grey.shade600,
+                  ),
                   const SizedBox(height: 12),
                   Text(
                     '视频内容',

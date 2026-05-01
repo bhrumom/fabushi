@@ -18,7 +18,8 @@ class ApiConstants {
 
   // 支付相关
   static const String alipayCreateOrder = '/api/alipay/create-order';
-  static const String stripeCreateSubscription = '/api/stripe/create-subscription';
+  static const String stripeCreateSubscription =
+      '/api/stripe/create-subscription';
 
   // 传输相关
   static const String globalSend = '/send-global';

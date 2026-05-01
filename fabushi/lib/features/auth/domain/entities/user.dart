@@ -16,7 +16,13 @@ class User extends Equatable {
   });
 
   @override
-  List<Object?> get props => [username, email, emailVerified, createdAt, membership];
+  List<Object?> get props => [
+    username,
+    email,
+    emailVerified,
+    createdAt,
+    membership,
+  ];
 }
 
 class Membership extends Equatable {

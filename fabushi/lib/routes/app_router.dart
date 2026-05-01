@@ -20,7 +20,8 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => Container()); // 待实现
       default:
         return MaterialPageRoute(
-          builder: (_) => Scaffold(body: Center(child: Text('页面未找到: ${settings.name}'))),
+          builder: (_) =>
+              Scaffold(body: Center(child: Text('页面未找到: ${settings.name}'))),
         );
     }
   }

@@ -21,8 +21,13 @@ class AppCard extends StatefulWidget {
   final EdgeInsetsGeometry? margin;
   final bool elevated;
 
-  const AppCard({Key? key, required this.child, this.padding, this.margin, this.elevated = false})
-    : super(key: key);
+  const AppCard({
+    Key? key,
+    required this.child,
+    this.padding,
+    this.margin,
+    this.elevated = false,
+  }) : super(key: key);
 
   @override
   State<AppCard> createState() => _AppCardState();
@@ -35,7 +40,10 @@ class _AppCardState extends State<AppCard> with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(duration: const Duration(milliseconds: 200), vsync: this);
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
     _elevationAnimation = Tween<double>(
       begin: widget.elevated ? 8.0 : 4.0,
       end: widget.elevated ? 12.0 : 8.0,
@@ -58,7 +66,10 @@ class _AppCardState extends State<AppCard> with SingleTickerProviderStateMixin {
         builder: (context, child) => Container(
           decoration: AppTheme.glassDecoration,
           margin: widget.margin ?? const EdgeInsets.symmetric(vertical: 8),
-          child: Padding(padding: widget.padding ?? const EdgeInsets.all(16), child: widget.child),
+          child: Padding(
+            padding: widget.padding ?? const EdgeInsets.all(16),
+            child: widget.child,
+          ),
         ),
       ),
     );
@@ -84,14 +95,18 @@ class PrimaryButton extends StatefulWidget {
   State<PrimaryButton> createState() => _PrimaryButtonState();
 }
 
-class _PrimaryButtonState extends State<PrimaryButton> with SingleTickerProviderStateMixin {
+class _PrimaryButtonState extends State<PrimaryButton>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(duration: const Duration(milliseconds: 100), vsync: this);
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 100),
+      vsync: this,
+    );
     _scaleAnimation = Tween<double>(
       begin: 1.0,
       end: 0.95,
@@ -160,13 +175,21 @@ class SecondaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final IconData? icon;
 
-  const SecondaryButton({Key? key, required this.text, this.onPressed, this.icon})
-    : super(key: key);
+  const SecondaryButton({
+    Key? key,
+    required this.text,
+    this.onPressed,
+    this.icon,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     if (icon != null) {
-      return OutlinedButton.icon(onPressed: onPressed, icon: Icon(icon), label: Text(text));
+      return OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon),
+        label: Text(text),
+      );
     }
 
     return OutlinedButton(onPressed: onPressed, child: Text(text));
@@ -179,8 +202,12 @@ class AlipayButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool outlined;
 
-  const AlipayButton({Key? key, required this.text, this.onPressed, this.outlined = false})
-    : super(key: key);
+  const AlipayButton({
+    Key? key,
+    required this.text,
+    this.onPressed,
+    this.outlined = false,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -230,10 +257,15 @@ class InfoCard extends StatelessWidget {
     return AppCard(
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: (iconColor ?? AppTheme.primaryColor).withOpacity(0.1),
+          backgroundColor: (iconColor ?? AppTheme.primaryColor).withOpacity(
+            0.1,
+          ),
           child: Icon(icon, color: iconColor ?? AppTheme.primaryColor),
         ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
         subtitle: subtitle != null ? Text(subtitle!) : null,
         trailing: onTap != null ? const Icon(Icons.chevron_right) : null,
         onTap: onTap,
@@ -270,7 +302,11 @@ class StatCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             value,
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: cardColor),
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: cardColor,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -340,7 +376,10 @@ class LoadingIndicator extends StatelessWidget {
           const CircularProgressIndicator(),
           if (message != null) ...[
             const SizedBox(height: 16),
-            Text(message!, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+            Text(
+              message!,
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            ),
           ],
         ],
       ),
@@ -353,7 +392,8 @@ class MembershipBadge extends StatelessWidget {
   final String text;
   final Color color;
 
-  const MembershipBadge({Key? key, required this.text, required this.color}) : super(key: key);
+  const MembershipBadge({Key? key, required this.text, required this.color})
+    : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -401,8 +441,12 @@ class SectionHeader extends StatelessWidget {
   final String? subtitle;
   final Widget? action;
 
-  const SectionHeader({Key? key, required this.title, this.subtitle, this.action})
-    : super(key: key);
+  const SectionHeader({
+    Key? key,
+    required this.title,
+    this.subtitle,
+    this.action,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -424,7 +468,10 @@ class SectionHeader extends StatelessWidget {
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 4),
-                  Text(subtitle!, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                  Text(
+                    subtitle!,
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
                 ],
               ],
             ),

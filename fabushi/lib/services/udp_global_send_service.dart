@@ -15,9 +15,18 @@ class UDPGlobalSendService {
   final ValueChanged<double> onDataSent;
   final VoidCallback onStopped;
   final void Function(String) onLog;
-  final Function(double, double, double, double, {String? fromLabel, String? toLabel, Duration? displayDuration})? onTransferBeam;
+  final Function(
+    double,
+    double,
+    double,
+    double, {
+    String? fromLabel,
+    String? toLabel,
+    Duration? displayDuration,
+  })?
+  onTransferBeam;
   final Function(int)? onCountrySent;
-  final Function(int)? onLoopStart;  // 每轮循环开始时的回调，参数为轮次
+  final Function(int)? onLoopStart; // 每轮循环开始时的回调，参数为轮次
 
   // 用户位置
   double? _userLatitude;
@@ -26,14 +35,14 @@ class UDPGlobalSendService {
   bool _isRunning = false;
   int _sentCount = 0;
   double _dataSentInMB = 0.0;
-  int _loopCount = 0;  // 当前轮次
+  int _loopCount = 0; // 当前轮次
 
   final GeoIPDataService _geoIPService = GeoIPDataService();
   final CountryCoordinatesService _coordService = CountryCoordinatesService();
 
   // UDP 端口（使用常见的可达端口）
   static const int _udpPort = 9999;
-  
+
   // 每个数据包的最大大小（UDP 推荐不超过 1472 字节以避免分片）
   static const int _maxPacketSize = 1400;
 
@@ -55,21 +64,21 @@ class UDPGlobalSendService {
   Future<bool> initialize() async {
     try {
       onLog('🌍 初始化 UDP 全球发送服务...');
-      
+
       await _geoIPService.initialize();
       onLog('📊 GeoIP 数据: ${_geoIPService.isInitialized ? "已加载" : "未加载"}');
-      
+
       await _coordService.initialize();
-      
+
       final countryCodes = _geoIPService.getAllCountryCodes();
       onLog('✅ UDP 服务初始化完成，共 ${countryCodes.length} 个国家');
-      
+
       // 打印前几个国家的 IP 数量用于调试
       for (final code in countryCodes.take(5)) {
         final ips = _geoIPService.getIPsForCountry(code);
         onLog('  $code: ${ips.length} 个 IP');
       }
-      
+
       return true;
     } catch (e) {
       onLog('❌ UDP 服务初始化失败: $e');
@@ -77,11 +86,14 @@ class UDPGlobalSendService {
     }
   }
 
-  Future<void> startSending({required List<PlatformFile> files, required bool isLoop}) async {
+  Future<void> startSending({
+    required List<PlatformFile> files,
+    required bool isLoop,
+  }) async {
     if (_isRunning) return;
 
     _isRunning = true;
-    _sentCount = 0;  // 这里改为国家计数
+    _sentCount = 0; // 这里改为国家计数
     _dataSentInMB = 0.0;
 
     RawDatagramSocket? socket;
@@ -92,48 +104,55 @@ class UDPGlobalSendService {
       onLog('🚀 UDP Socket 已创建，本地端口: ${socket.port}');
 
       final countryCodes = _geoIPService.getAllCountryCodes();
-      onLog('📤 开始 UDP 全球发送 - 文件数: ${files.length}, 目标国家: ${countryCodes.length}');
+      onLog(
+        '📤 开始 UDP 全球发送 - 文件数: ${files.length}, 目标国家: ${countryCodes.length}',
+      );
 
-      _loopCount = 0;  // 重置轮次计数
-      
+      _loopCount = 0; // 重置轮次计数
+
       do {
         // 每轮循环开始
         _loopCount++;
         _sentCount = 0;
         onProgress(_sentCount);
-        
+
         // 通知轮次更新
         if (onLoopStart != null) {
           onLoopStart!(_loopCount);
         }
         onLog('🔄 开始第 $_loopCount 轮发送');
-        
+
         for (final file in files) {
           if (!_isRunning) break;
 
           await Future.delayed(Duration.zero);
-          
+
           // 确保文件有字节数据
           Uint8List? fileBytes = file.bytes;
-          
+
           // 内存优化：大文件不加载全部内容
           const int largeFileThreshold = 10 * 1024 * 1024; // 10MB
-          
+
           if (file.size >= largeFileThreshold) {
             // 大文件：只发送元数据，不加载完整内容
-            onLog('📦 大文件模式: ${file.name} (${(file.size / 1024 / 1024).toStringAsFixed(1)}MB) - 流式发送');
-            
+            onLog(
+              '📦 大文件模式: ${file.name} (${(file.size / 1024 / 1024).toStringAsFixed(1)}MB) - 流式发送',
+            );
+
             // 使用流式发送
             final countriesSent = await _sendLargeFileToAllCountries(
-              socket, file, countryCodes);
-            
+              socket,
+              file,
+              countryCodes,
+            );
+
             final fileSizeMB = file.size / (1024 * 1024);
             _dataSentInMB += fileSizeMB * countriesSent;
             onDataSent(_dataSentInMB);
-            
+
             continue; // 跳过下面的小文件处理逻辑
           }
-          
+
           if (fileBytes == null || fileBytes.isEmpty) {
             // 如果 bytes 为空，尝试从路径读取
             if (file.path != null) {
@@ -150,21 +169,27 @@ class UDPGlobalSendService {
               continue;
             }
           }
-          
+
           final countriesSent = await _sendFileToAllCountriesWithBytes(
-            socket, file.name, fileBytes, file.size, countryCodes);
+            socket,
+            file.name,
+            fileBytes,
+            file.size,
+            countryCodes,
+          );
 
           final fileSizeMB = file.size / (1024 * 1024);
           _dataSentInMB += fileSizeMB * countriesSent;
 
           onDataSent(_dataSentInMB);
 
-          onLog('📊 UDP 文件 ${file.name}: ${fileSizeMB.toStringAsFixed(2)} MB × $countriesSent 国 成功');
-          
+          onLog(
+            '📊 UDP 文件 ${file.name}: ${fileSizeMB.toStringAsFixed(2)} MB × $countriesSent 国 成功',
+          );
+
           await Future.delayed(const Duration(milliseconds: 100));
         }
       } while (isLoop && _isRunning);
-
     } catch (e) {
       onLog('❌ UDP 发送错误: $e');
     } finally {
@@ -182,8 +207,10 @@ class UDPGlobalSendService {
     List<String> countryCodes,
   ) async {
     int successCount = 0;
-    
-    onLog('📤 准备发送文件: $fileName, ${fileBytes.length} 字节到 ${countryCodes.length} 个国家');
+
+    onLog(
+      '📤 准备发送文件: $fileName, ${fileBytes.length} 字节到 ${countryCodes.length} 个国家',
+    );
 
     for (int i = 0; i < countryCodes.length; i++) {
       if (!_isRunning) break;
@@ -207,21 +234,29 @@ class UDPGlobalSendService {
       // 这样可以确保用户能看到完整的轨迹动画
       final sendStartTime = DateTime.now();
       const minSendDuration = Duration(milliseconds: 2000); // 最少发送 2 秒
-      
+
       bool countrySuccess = false;
       int ipIndex = 0;
       int sendCount = 0;
-      
-      while (!countrySuccess || DateTime.now().difference(sendStartTime) < minSendDuration) {
+
+      while (!countrySuccess ||
+          DateTime.now().difference(sendStartTime) < minSendDuration) {
         if (!_isRunning) break;
-        
+
         // 循环使用该国家的所有 IP
         final ip = ips[ipIndex % ips.length];
         ipIndex++;
-        
+
         try {
           final success = await _sendUDPPacketWithBytes(
-            socket, fileName, fileBytes, fileSize, ip, countryCode, countryName);
+            socket,
+            fileName,
+            fileBytes,
+            fileSize,
+            ip,
+            countryCode,
+            countryName,
+          );
           if (success) {
             countrySuccess = true;
             sendCount++;
@@ -229,20 +264,20 @@ class UDPGlobalSendService {
         } catch (e) {
           // UDP 发送失败，继续尝试下一个 IP
         }
-        
+
         // 短暂延迟，避免发送过快
         await Future.delayed(const Duration(milliseconds: 100));
-        
+
         // 最多发送 20 次，防止无限循环
         if (ipIndex >= 20) break;
       }
 
       if (countrySuccess) {
         successCount++;
-        _sentCount++;  // 实时更新国家计数
-        onProgress(_sentCount);  // 实时通知进度更新
+        _sentCount++; // 实时更新国家计数
+        onProgress(_sentCount); // 实时通知进度更新
         onLog('✅ UDP 发送到 $countryName ($countryCode) 成功 ($sendCount 次)');
-        
+
         if (onCountrySent != null) {
           onCountrySent!(fileSize * sendCount);
         }
@@ -253,9 +288,9 @@ class UDPGlobalSendService {
 
     return successCount;
   }
-  
+
   /// 大文件流式发送到所有国家
-  /// 
+  ///
   /// 真正的流式发送版本：
   /// - 从磁盘分块读取文件（每块 1MB）
   /// - 每次只保留一个块在内存中
@@ -266,16 +301,18 @@ class UDPGlobalSendService {
     List<String> countryCodes,
   ) async {
     int successCount = 0;
-    
+
     final fileSizeMB = (file.size / 1024 / 1024).toStringAsFixed(1);
-    onLog('📤 大文件流式发送: ${file.name}, ${fileSizeMB}MB 到 ${countryCodes.length} 个国家');
-    
+    onLog(
+      '📤 大文件流式发送: ${file.name}, ${fileSizeMB}MB 到 ${countryCodes.length} 个国家',
+    );
+
     // 确保有文件路径
     if (file.path == null) {
       onLog('❌ 大文件必须有文件路径才能流式发送');
       return 0;
     }
-    
+
     final fileObj = File(file.path!);
     if (!await fileObj.exists()) {
       onLog('❌ 文件不存在: ${file.path}');
@@ -301,19 +338,25 @@ class UDPGlobalSendService {
 
       // 流式发送文件到该国家
       final success = await _streamSendFileToCountry(
-        socket, fileObj, file.name, file.size, 
-        ips.first, countryCode, countryName);
+        socket,
+        fileObj,
+        file.name,
+        file.size,
+        ips.first,
+        countryCode,
+        countryName,
+      );
 
       if (success) {
         successCount++;
         _sentCount++;
         onProgress(_sentCount);
-        
+
         if (onCountrySent != null) {
           onCountrySent!(file.size);
         }
       }
-      
+
       // 每 5 个国家后让出控制权
       if (i % 5 == 0 && i > 0) {
         await Future.delayed(const Duration(milliseconds: 50));
@@ -323,9 +366,9 @@ class UDPGlobalSendService {
     onLog('✅ 大文件 ${file.name} 流式发送完成 - 成功: $successCount 个国家');
     return successCount;
   }
-  
+
   /// 流式发送文件到单个国家
-  /// 
+  ///
   /// 每次只读取并发送 1MB 数据块，避免内存溢出
   Future<bool> _streamSendFileToCountry(
     RawDatagramSocket socket,
@@ -338,7 +381,7 @@ class UDPGlobalSendService {
   ) async {
     try {
       final address = InternetAddress(targetIP);
-      
+
       // 发送文件头信息
       final header = {
         'type': 'dharma_stream_start',
@@ -350,46 +393,46 @@ class UDPGlobalSendService {
         'chunkSize': _streamChunkSize,
         'totalChunks': (fileSize / _streamChunkSize).ceil(),
       };
-      
+
       final headerBytes = utf8.encode(jsonEncode(header));
       socket.send(headerBytes, address, _udpPort);
-      
+
       // 流式读取并发送文件
       final stream = file.openRead();
       int chunkIndex = 0;
       int totalBytesSent = headerBytes.length;
-      
+
       await for (var chunk in stream) {
         if (!_isRunning) break;
-        
+
         // 分割成 UDP 可发送的小包（最大 1400 字节）
         int offset = 0;
         while (offset < chunk.length) {
           final end = (offset + _maxPacketSize).clamp(0, chunk.length);
           final packet = _buildStreamPacket(
-            chunkIndex, 
-            Uint8List.fromList(chunk.sublist(offset, end)), 
-            countryCode
+            chunkIndex,
+            Uint8List.fromList(chunk.sublist(offset, end)),
+            countryCode,
           );
-          
+
           final sent = socket.send(packet, address, _udpPort);
           totalBytesSent += sent;
           offset = end;
         }
-        
+
         chunkIndex++;
-        
+
         // 每发送 10 个块后让出控制权，避免阻塞 UI
         if (chunkIndex % 10 == 0) {
           await Future.delayed(Duration.zero);
         }
-        
+
         // 每发送 100 个块后稍作延迟，控制发送速率
         if (chunkIndex % 100 == 0) {
           await Future.delayed(const Duration(milliseconds: 10));
         }
       }
-      
+
       // 发送文件结束标记
       final footer = {
         'type': 'dharma_stream_end',
@@ -398,9 +441,9 @@ class UDPGlobalSendService {
         'totalBytes': totalBytesSent,
         'countryCode': countryCode,
       };
-      
+
       socket.send(utf8.encode(jsonEncode(footer)), address, _udpPort);
-      
+
       debugPrint('✅ 流式发送完成: $countryName - $chunkIndex 块, $totalBytesSent 字节');
       return true;
     } catch (e) {
@@ -408,32 +451,32 @@ class UDPGlobalSendService {
       return false;
     }
   }
-  
+
   /// 构建流式数据包
   Uint8List _buildStreamPacket(int index, Uint8List data, String countryCode) {
     // 简单的数据包格式: [4字节索引][2字节国家代码长度][国家代码][数据]
     final countryBytes = utf8.encode(countryCode);
     final packet = BytesBuilder();
-    
+
     // 包索引 (4 字节)
     packet.add(_intToBytes(index));
-    
+
     // 国家代码长度 (2 字节)
     packet.addByte((countryBytes.length >> 8) & 0xFF);
     packet.addByte(countryBytes.length & 0xFF);
-    
+
     // 国家代码
     packet.add(countryBytes);
-    
+
     // 数据
     packet.add(data);
-    
+
     return packet.toBytes();
   }
-  
+
   // 流式发送块大小（1MB）
   static const int _streamChunkSize = 1024 * 1024;
-  
+
   /// 发送元数据 UDP 包（不包含文件内容）- 保留作为备用
   Future<bool> _sendMetadataPacket(
     RawDatagramSocket socket,
@@ -445,7 +488,7 @@ class UDPGlobalSendService {
   ) async {
     try {
       final address = InternetAddress(targetIP);
-      
+
       // 只发送元数据，不包含文件内容
       final metadata = {
         'type': 'dharma_metadata',
@@ -456,10 +499,10 @@ class UDPGlobalSendService {
         'timestamp': DateTime.now().toIso8601String(),
         'mode': 'streaming', // 标识为流式模式
       };
-      
+
       final metadataBytes = utf8.encode(jsonEncode(metadata));
       final sent = socket.send(metadataBytes, address, _udpPort);
-      
+
       return sent > 0;
     } catch (e) {
       return false;
@@ -477,7 +520,7 @@ class UDPGlobalSendService {
   ) async {
     try {
       final address = InternetAddress(targetIP);
-      
+
       // 构建数据包头部
       final header = {
         'type': 'dharma_broadcast',
@@ -488,13 +531,13 @@ class UDPGlobalSendService {
         'timestamp': DateTime.now().toIso8601String(),
         'checksum': _calculateChecksum(fileBytes),
       };
-      
+
       final headerBytes = utf8.encode(jsonEncode(header));
-      
+
       // 发送头部包
       final headerSent = socket.send(headerBytes, address, _udpPort);
       debugPrint('📤 UDP 发送头部到 $targetIP:$_udpPort - $headerSent 字节');
-      
+
       // 如果发送返回 0，可能是网络不可达，尝试下一个 IP
       if (headerSent <= 0) {
         debugPrint('⚠️ UDP 头部发送失败 (0字节)，IP 可能不可达: $targetIP');
@@ -505,27 +548,29 @@ class UDPGlobalSendService {
       int offset = 0;
       int packetIndex = 0;
       int totalBytesSent = headerSent;
-      
+
       while (offset < fileBytes.length && _isRunning) {
         final end = (offset + _maxPacketSize).clamp(0, fileBytes.length);
         final chunk = fileBytes.sublist(offset, end);
-        
+
         // 构建数据包
         final packet = _buildDataPacket(packetIndex, chunk, countryCode);
-        
+
         final sent = socket.send(packet, address, _udpPort);
         totalBytesSent += sent;
-        
+
         offset = end;
         packetIndex++;
-        
+
         // 每 10 个包后让出控制权
         if (packetIndex % 10 == 0) {
           await Future.delayed(Duration.zero);
         }
       }
 
-      debugPrint('✅ UDP 发送完成: $countryName - $packetIndex 个包, $totalBytesSent 字节');
+      debugPrint(
+        '✅ UDP 发送完成: $countryName - $packetIndex 个包, $totalBytesSent 字节',
+      );
       return true;
     } catch (e) {
       debugPrint('❌ UDP 发送到 $targetIP 失败: $e');
@@ -537,26 +582,25 @@ class UDPGlobalSendService {
     // 简单的数据包格式: [4字节索引][2字节国家代码长度][国家代码][数据]
     final countryBytes = utf8.encode(countryCode);
     final packet = BytesBuilder();
-    
+
     // 包索引 (4 字节)
     packet.add(_intToBytes(index));
-    
+
     // 国家代码长度 (2 字节)
     packet.addByte((countryBytes.length >> 8) & 0xFF);
     packet.addByte(countryBytes.length & 0xFF);
-    
+
     // 国家代码
     packet.add(countryBytes);
-    
+
     // 数据
     packet.add(data);
-    
+
     return packet.toBytes();
   }
 
   Uint8List _intToBytes(int value) {
-    return Uint8List(4)
-      ..buffer.asByteData().setInt32(0, value, Endian.big);
+    return Uint8List(4)..buffer.asByteData().setInt32(0, value, Endian.big);
   }
 
   String _calculateChecksum(Uint8List data) {
@@ -576,7 +620,10 @@ class UDPGlobalSendService {
     const beamDuration = Duration(milliseconds: 800);
 
     if (_userLatitude != null && _userLongitude != null) {
-      final fromCountry = _coordService.getByCoordinates(_userLatitude!, _userLongitude!);
+      final fromCountry = _coordService.getByCoordinates(
+        _userLatitude!,
+        _userLongitude!,
+      );
       final fromLabel = fromCountry?.countryCode != null
           ? _getCountryName(fromCountry!.countryCode!)
           : fromCountry?.countryName ?? '起点';
@@ -618,17 +665,50 @@ class UDPGlobalSendService {
     if (countryName != null) return countryName;
 
     final names = {
-      'CN': '中国', 'US': '美国', 'JP': '日本', 'KR': '韩国',
-      'GB': '英国', 'DE': '德国', 'FR': '法国', 'IT': '意大利',
-      'ES': '西班牙', 'RU': '俄罗斯', 'IN': '印度', 'BR': '巴西',
-      'CA': '加拿大', 'AU': '澳大利亚', 'MX': '墨西哥', 'AR': '阿根廷',
-      'ZA': '南非', 'EG': '埃及', 'NG': '尼日利亚', 'KE': '肯尼亚',
-      'TH': '泰国', 'VN': '越南', 'SG': '新加坡', 'MY': '马来西亚',
-      'ID': '印度尼西亚', 'PH': '菲律宾', 'NL': '荷兰', 'BE': '比利时',
-      'SE': '瑞典', 'NO': '挪威', 'DK': '丹麦', 'FI': '芬兰',
-      'CH': '瑞士', 'AT': '奥地利', 'PL': '波兰', 'CZ': '捷克',
-      'PT': '葡萄牙', 'GR': '希腊', 'TR': '土耳其', 'SA': '沙特阿拉伯',
-      'AE': '阿联酋', 'IL': '以色列', 'NZ': '新西兰', 'IE': '爱尔兰',
+      'CN': '中国',
+      'US': '美国',
+      'JP': '日本',
+      'KR': '韩国',
+      'GB': '英国',
+      'DE': '德国',
+      'FR': '法国',
+      'IT': '意大利',
+      'ES': '西班牙',
+      'RU': '俄罗斯',
+      'IN': '印度',
+      'BR': '巴西',
+      'CA': '加拿大',
+      'AU': '澳大利亚',
+      'MX': '墨西哥',
+      'AR': '阿根廷',
+      'ZA': '南非',
+      'EG': '埃及',
+      'NG': '尼日利亚',
+      'KE': '肯尼亚',
+      'TH': '泰国',
+      'VN': '越南',
+      'SG': '新加坡',
+      'MY': '马来西亚',
+      'ID': '印度尼西亚',
+      'PH': '菲律宾',
+      'NL': '荷兰',
+      'BE': '比利时',
+      'SE': '瑞典',
+      'NO': '挪威',
+      'DK': '丹麦',
+      'FI': '芬兰',
+      'CH': '瑞士',
+      'AT': '奥地利',
+      'PL': '波兰',
+      'CZ': '捷克',
+      'PT': '葡萄牙',
+      'GR': '希腊',
+      'TR': '土耳其',
+      'SA': '沙特阿拉伯',
+      'AE': '阿联酋',
+      'IL': '以色列',
+      'NZ': '新西兰',
+      'IE': '爱尔兰',
     };
     return names[countryCode] ?? countryCode;
   }

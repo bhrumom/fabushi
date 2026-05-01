@@ -33,7 +33,10 @@ class _BasicTrajectoryExampleState extends State<BasicTrajectoryExample> {
           Positioned(
             bottom: 20,
             right: 20,
-            child: FloatingActionButton(onPressed: _sendBeam, child: const Icon(Icons.send)),
+            child: FloatingActionButton(
+              onPressed: _sendBeam,
+              child: const Icon(Icons.send),
+            ),
           ),
         ],
       ),
@@ -46,7 +49,8 @@ class EnhancedTrajectoryExample extends StatefulWidget {
   const EnhancedTrajectoryExample({super.key});
 
   @override
-  State<EnhancedTrajectoryExample> createState() => _EnhancedTrajectoryExampleState();
+  State<EnhancedTrajectoryExample> createState() =>
+      _EnhancedTrajectoryExampleState();
 }
 
 class _EnhancedTrajectoryExampleState extends State<EnhancedTrajectoryExample> {
@@ -121,7 +125,10 @@ class _FileTransferExampleState extends State<FileTransferExample> {
             child: Center(
               child: _isTransferring
                   ? const CircularProgressIndicator()
-                  : ElevatedButton(onPressed: _startTransfer, child: const Text('开始传输')),
+                  : ElevatedButton(
+                      onPressed: _startTransfer,
+                      child: const Text('开始传输'),
+                    ),
             ),
           ),
         ],

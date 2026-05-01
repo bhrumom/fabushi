@@ -42,12 +42,18 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
     }
     try {
       _isLoading = true;
-      final result = await _fetchVideosHelper(startAfterDocument: _lastDocument);
+      final result = await _fetchVideosHelper(
+        startAfterDocument: _lastDocument,
+      );
       return result;
     } on FirebaseException catch (e) {
-      return Left('Failed to fetch more videos: ${e.message ?? 'Unknown error'}');
+      return Left(
+        'Failed to fetch more videos: ${e.message ?? 'Unknown error'}',
+      );
     } catch (e) {
-      return const Left('An unexpected error occurred while fetching more videos');
+      return const Left(
+        'An unexpected error occurred while fetching more videos',
+      );
     } finally {
       _isLoading = false;
     }
@@ -75,7 +81,9 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
         if (snapshot.docs.isNotEmpty) {
           _lastDocument = snapshot.docs.last;
           videos.addAll(
-            snapshot.docs.map((doc) => VideoResponseModel.fromFirestore(doc).toEntity()).toList(),
+            snapshot.docs
+                .map((doc) => VideoResponseModel.fromFirestore(doc).toEntity())
+                .toList(),
           );
         }
       }
@@ -90,7 +98,9 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
           final filePath = textData['filePath'] as String?;
           videos.add(
             VideoEntity(
-              id: filePath ?? 'text_${DateTime.now().millisecondsSinceEpoch}_$i', // 优先使用 filePath 作为统一ID
+              id:
+                  filePath ??
+                  'text_${DateTime.now().millisecondsSinceEpoch}_$i', // 优先使用 filePath 作为统一ID
               username: textData['title'] ?? '佛法文本',
               description: '点击头像阅读全文',
               videoUrl: '',
@@ -109,7 +119,9 @@ class VideoFeedRepositoryImpl implements VideoFeedRepository {
 
       // 🛡️ UGC 安全：过滤被屏蔽用户的内容
       final blockService = UserBlockService();
-      final filteredVideos = videos.where((v) => !blockService.shouldFilter(v.id)).toList();
+      final filteredVideos = videos
+          .where((v) => !blockService.shouldFilter(v.id))
+          .toList();
 
       // 🛡️ UGC 安全：过滤含不当内容的文本
       final safeVideos = ContentFilterService.filterVideos(filteredVideos);

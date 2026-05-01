@@ -8,21 +8,21 @@ import '../services/merit_benefit_service.dart';
 enum TocTabType { toc, meritBenefit, aiOutline }
 
 /// 微信读书风格的目录底部弹出面板
-/// 
+///
 /// 支持三个标签页：目录 | 功德利益 | AI大纲
 class SutraTocBottomSheet extends StatefulWidget {
   /// 目录数据
   final SutraTableOfContents tableOfContents;
-  
+
   /// 当前阅读的段落索引
   final int currentParagraphIndex;
-  
+
   /// 章节点击回调
   final void Function(SutraChapter chapter) onChapterTap;
-  
+
   /// 经文全文（用于功德利益分析）
   final String fullText;
-  
+
   /// 功德利益句点击回调
   final void Function(int paragraphIndex)? onMeritSentenceTap;
 
@@ -37,7 +37,7 @@ class SutraTocBottomSheet extends StatefulWidget {
 
   @override
   State<SutraTocBottomSheet> createState() => _SutraTocBottomSheetState();
-  
+
   /// 显示目录面板
   static Future<void> show(
     BuildContext context, {
@@ -65,32 +65,33 @@ class SutraTocBottomSheet extends StatefulWidget {
 class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
   final ScrollController _scrollController = ScrollController();
   late int _currentChapterIndex;
-  
+
   // 标签页状态
   TocTabType _selectedTab = TocTabType.toc;
-  
+
   // 功德利益数据
   MeritBenefitData? _meritData;
   bool _isMeritLoading = false;
-  
+
   @override
   void initState() {
     super.initState();
-    _currentChapterIndex = widget.tableOfContents
-        .getCurrentChapterIndex(widget.currentParagraphIndex);
-    
+    _currentChapterIndex = widget.tableOfContents.getCurrentChapterIndex(
+      widget.currentParagraphIndex,
+    );
+
     // 延迟滚动到当前章节
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToCurrentChapter();
     });
   }
-  
+
   @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
   }
-  
+
   void _scrollToCurrentChapter() {
     if (_currentChapterIndex > 0 && _scrollController.hasClients) {
       final targetOffset = (_currentChapterIndex - 1) * 56.0;
@@ -101,7 +102,7 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
       );
     }
   }
-  
+
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -111,33 +112,35 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
       );
     }
   }
-  
+
   /// 切换标签页
   void _selectTab(TocTabType tab) {
     HapticFeedback.lightImpact();
     setState(() {
       _selectedTab = tab;
     });
-    
+
     // 懒加载功德利益数据
-    if (tab == TocTabType.meritBenefit && _meritData == null && !_isMeritLoading) {
+    if (tab == TocTabType.meritBenefit &&
+        _meritData == null &&
+        !_isMeritLoading) {
       _loadMeritBenefitData();
     }
   }
-  
+
   /// 加载功德利益数据
   Future<void> _loadMeritBenefitData() async {
     setState(() {
       _isMeritLoading = true;
     });
-    
+
     try {
       final service = MeritBenefitService.instance;
       final data = await service.extractFromText(
         widget.fullText,
         widget.tableOfContents,
       );
-      
+
       if (mounted) {
         setState(() {
           _meritData = data;
@@ -158,7 +161,7 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
-    
+
     return Container(
       height: screenHeight * 0.75,
       decoration: const BoxDecoration(
@@ -177,30 +180,27 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          
+
           // 顶部标签栏
           _buildTabBar(),
-          
+
           const Divider(height: 1, color: Color(0xFF333333)),
-          
+
           // 当前阅读位置（仅目录标签显示）
-          if (_selectedTab == TocTabType.toc)
-            _buildCurrentReadingIndicator(),
-          
+          if (_selectedTab == TocTabType.toc) _buildCurrentReadingIndicator(),
+
           // 内容区域
-          Expanded(
-            child: _buildContentForTab(),
-          ),
-          
+          Expanded(child: _buildContentForTab()),
+
           // 去底部按钮（仅目录标签且章节较多时显示）
-          if (_selectedTab == TocTabType.toc && 
+          if (_selectedTab == TocTabType.toc &&
               widget.tableOfContents.chapters.length > 10)
             _buildGoToBottomButton(),
         ],
       ),
     );
   }
-  
+
   Widget _buildTabBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -209,10 +209,7 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
           // 搜索图标
           Icon(Icons.search, color: Colors.grey[400], size: 20),
           const SizedBox(width: 8),
-          Text(
-            '搜本书',
-            style: TextStyle(color: Colors.grey[500], fontSize: 14),
-          ),
+          Text('搜本书', style: TextStyle(color: Colors.grey[500], fontSize: 14)),
           const Spacer(),
           // 三个标签
           _buildTabItem('目录', TocTabType.toc),
@@ -224,19 +221,19 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
       ),
     );
   }
-  
+
   /// 构建单个标签项
   Widget _buildTabItem(String label, TocTabType type) {
     final isSelected = _selectedTab == type;
-    
+
     return GestureDetector(
       onTap: () => _selectTab(type),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected 
-              ? Colors.white.withValues(alpha: 0.15) 
+          color: isSelected
+              ? Colors.white.withValues(alpha: 0.15)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
         ),
@@ -251,7 +248,7 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
       ),
     );
   }
-  
+
   /// 根据当前标签构建内容区域
   Widget _buildContentForTab() {
     switch (_selectedTab) {
@@ -265,11 +262,12 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
         return _buildEmptyState('AI大纲', '功能开发中，敬请期待');
     }
   }
-  
+
   Widget _buildCurrentReadingIndicator() {
-    final currentChapter = widget.tableOfContents
-        .getCurrentChapter(widget.currentParagraphIndex);
-    
+    final currentChapter = widget.tableOfContents.getCurrentChapter(
+      widget.currentParagraphIndex,
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
@@ -291,10 +289,7 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
           const Spacer(),
           Text(
             currentChapter?.title ?? '开始',
-            style: const TextStyle(
-              color: Color(0xFF4A90D9),
-              fontSize: 14,
-            ),
+            style: const TextStyle(color: Color(0xFF4A90D9), fontSize: 14),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -302,7 +297,7 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
       ),
     );
   }
-  
+
   Widget _buildChapterList() {
     return ListView.builder(
       controller: _scrollController,
@@ -311,15 +306,15 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
       itemBuilder: (context, index) {
         final chapter = widget.tableOfContents.chapters[index];
         final isCurrent = index == _currentChapterIndex;
-        
+
         return _buildChapterItem(chapter, index, isCurrent);
       },
     );
   }
-  
+
   Widget _buildChapterItem(SutraChapter chapter, int index, bool isCurrent) {
     final leftPadding = chapter.level == 0 ? 0.0 : 20.0;
-    
+
     return InkWell(
       onTap: () {
         HapticFeedback.lightImpact();
@@ -349,7 +344,9 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
                 style: TextStyle(
                   color: isCurrent ? const Color(0xFF4A90D9) : Colors.white,
                   fontSize: chapter.isVolume ? 16 : 15,
-                  fontWeight: chapter.isVolume ? FontWeight.w600 : FontWeight.w400,
+                  fontWeight: chapter.isVolume
+                      ? FontWeight.w600
+                      : FontWeight.w400,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -358,17 +355,14 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
             const SizedBox(width: 12),
             Text(
               '${chapter.paragraphIndex + 1}',
-              style: TextStyle(
-                color: Colors.grey[500],
-                fontSize: 13,
-              ),
+              style: TextStyle(color: Colors.grey[500], fontSize: 13),
             ),
           ],
         ),
       ),
     );
   }
-  
+
   /// 构建功德利益内容
   Widget _buildMeritBenefitContent() {
     if (_isMeritLoading) {
@@ -386,11 +380,11 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
         ),
       );
     }
-    
+
     if (_meritData == null || _meritData!.sentences.isEmpty) {
       return _buildEmptyState('暂无功德利益', '未识别到功德利益相关句子');
     }
-    
+
     // 按章节分组显示
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -399,12 +393,12 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
         final entry = _meritData!.byChapter.entries.elementAt(index);
         final chapter = entry.key;
         final sentences = entry.value;
-        
+
         return _buildMeritChapterSection(chapter, sentences);
       },
     );
   }
-  
+
   /// 构建功德利益章节分组
   Widget _buildMeritChapterSection(
     SutraChapter? chapter,
@@ -438,10 +432,7 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
               ),
               Text(
                 '${sentences.length}句',
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: Colors.grey[500], fontSize: 12),
               ),
             ],
           ),
@@ -452,7 +443,7 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
       ],
     );
   }
-  
+
   /// 构建功德利益句子项
   Widget _buildMeritSentenceItem(MeritBenefitSentence sentence) {
     return InkWell(
@@ -503,38 +494,25 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
       ),
     );
   }
-  
+
   Widget _buildEmptyState(String title, String subtitle) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.menu_book_outlined,
-            size: 48,
-            color: Colors.grey[600],
-          ),
+          Icon(Icons.menu_book_outlined, size: 48, color: Colors.grey[600]),
           const SizedBox(height: 16),
-          Text(
-            title,
-            style: TextStyle(
-              color: Colors.grey[500],
-              fontSize: 16,
-            ),
-          ),
+          Text(title, style: TextStyle(color: Colors.grey[500], fontSize: 16)),
           const SizedBox(height: 8),
           Text(
             subtitle,
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 14,
-            ),
+            style: TextStyle(color: Colors.grey[600], fontSize: 14),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildGoToBottomButton() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -546,18 +524,11 @@ class _SutraTocBottomSheetState extends State<SutraTocBottomSheet> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.keyboard_arrow_down,
-              color: Colors.grey[400],
-              size: 20,
-            ),
+            Icon(Icons.keyboard_arrow_down, color: Colors.grey[400], size: 20),
             const SizedBox(width: 4),
             Text(
               '去底部',
-              style: TextStyle(
-                color: Colors.grey[400],
-                fontSize: 14,
-              ),
+              style: TextStyle(color: Colors.grey[400], fontSize: 14),
             ),
           ],
         ),

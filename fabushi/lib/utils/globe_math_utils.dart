@@ -5,7 +5,11 @@ class GlobeMathUtils {
   static const double earthRadius = 1.0;
 
   // 经纬度转3D坐标
-  static v.Vector3 latLngToVector3(double lat, double lng, {double altitude = 0.0}) {
+  static v.Vector3 latLngToVector3(
+    double lat,
+    double lng, {
+    double altitude = 0.0,
+  }) {
     final phi = (90 - lat) * (math.pi / 180);
     final theta = (lng + 180) * (math.pi / 180);
     final radius = earthRadius + altitude;
@@ -18,7 +22,12 @@ class GlobeMathUtils {
   }
 
   // 计算两点间的大圆距离
-  static double calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+  static double calculateDistance(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+  ) {
     const R = 6371.0;
     final dLat = _toRadians(lat2 - lat1);
     final dLng = _toRadians(lng2 - lng1);
@@ -52,13 +61,24 @@ class GlobeMathUtils {
   }
 
   // 二次贝塞尔曲线插值
-  static v.Vector3 quadraticBezier(v.Vector3 p0, v.Vector3 p1, v.Vector3 p2, double t) {
+  static v.Vector3 quadraticBezier(
+    v.Vector3 p0,
+    v.Vector3 p1,
+    v.Vector3 p2,
+    double t,
+  ) {
     final u = 1 - t;
     return (p0 * (u * u)) + (p1 * (2 * u * t)) + (p2 * (t * t));
   }
 
   // 三次贝塞尔曲线插值（更平滑）
-  static v.Vector3 cubicBezier(v.Vector3 p0, v.Vector3 p1, v.Vector3 p2, v.Vector3 p3, double t) {
+  static v.Vector3 cubicBezier(
+    v.Vector3 p0,
+    v.Vector3 p1,
+    v.Vector3 p2,
+    v.Vector3 p3,
+    double t,
+  ) {
     final u = 1 - t;
     final tt = t * t;
     final uu = u * u;

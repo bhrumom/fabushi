@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:preload_page_view/preload_page_view.dart' hide PageScrollPhysics;
+import 'package:preload_page_view/preload_page_view.dart'
+    hide PageScrollPhysics;
 import 'package:video_player/video_player.dart';
 import '../../../../../services/content_filter_service.dart';
 import '../../../../../services/feed_service.dart';
@@ -11,11 +12,8 @@ import '../../../../../features/video_feed/presentation/view/widgets/video_feed_
 
 /// 热门内容列表（从后端获取热门内容，根据 file_path 加载完整内容）
 class HotFeedListView extends StatefulWidget {
-  const HotFeedListView({
-    super.key,
-    this.isTabActive = true,
-  });
-  
+  const HotFeedListView({super.key, this.isTabActive = true});
+
   /// 当前 tab 是否激活（用于控制 TTS 播放）
   final bool isTabActive;
 
@@ -27,13 +25,13 @@ class _HotFeedListViewState extends State<HotFeedListView>
     with AutomaticKeepAliveClientMixin {
   final FeedService _feedService = FeedService();
   final CloudflareTextService _textService = CloudflareTextService();
-  
+
   List<VideoEntity> _hotVideos = [];
   bool _isLoading = true;
   int _currentPage = 0;
   final PreloadPageController _pageController = PreloadPageController();
   bool _hasLoadedOnce = false;
-  
+
   // Video controller cache
   final Map<String, VideoPlayerController> _controllerCache = {};
   final List<String> _accessOrder = [];
@@ -76,13 +74,16 @@ class _HotFeedListViewState extends State<HotFeedListView>
       setState(() => _isLoading = false);
       return;
     }
-    
+
     setState(() => _isLoading = true);
 
     try {
       // 1. 从后端API获取热门内容列表（包含 title 和 file_path）
-      final hotContentList = await _feedService.getHotFeed(page: 1, pageSize: 50);
-      
+      final hotContentList = await _feedService.getHotFeed(
+        page: 1,
+        pageSize: 50,
+      );
+
       debugPrint('获取到 ${hotContentList.length} 条热门内容');
 
       // 🔥 过滤：只保留有点赞或评论的内容
@@ -91,7 +92,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
         final commentCount = item['comment_count'] as int? ?? 0;
         return likeCount > 0 || commentCount > 0;
       }).toList();
-      
+
       debugPrint('🔥 过滤后剩余 ${filteredContentList.length} 条有互动的内容');
 
       if (filteredContentList.isEmpty) {
@@ -107,10 +108,10 @@ class _HotFeedListViewState extends State<HotFeedListView>
 
       // 🚀 渐进加载：加载一个显示一个，不等待全部完成
       _hasLoadedOnce = true;
-      
+
       // 🚀 渐进加载：使用 Future.wait 并行处理内容，提高加载速度
       _hasLoadedOnce = true;
-      
+
       // 平行处理所有热门内容
       final videoFutures = filteredContentList.map((hotItem) async {
         final contentId = hotItem['id'] as String;
@@ -119,18 +120,18 @@ class _HotFeedListViewState extends State<HotFeedListView>
         final filePath = hotItem['file_path'] as String?;
         final likeCount = hotItem['like_count'] as int? ?? 0;
         final commentCount = hotItem['comment_count'] as int? ?? 0;
-        
+
         debugPrint('🔥 并行处理热门内容: id=$contentId, title=$title');
 
         if (contentType == 'text') {
           // 文本内容：并行加载，优先本地缓存
           String? textContent;
           String displayTitle = title ?? '热门内容';
-          
+
           if (filePath != null && filePath.isNotEmpty) {
             textContent = await _loadTextFromFilePath(filePath);
           }
-          
+
           if (textContent == null) {
             final randomContent = await _textService.getRandomTextContent();
             if (randomContent != null) {
@@ -138,7 +139,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
               displayTitle = randomContent['title'] ?? displayTitle;
             }
           }
-          
+
           if (textContent != null) {
             return VideoEntity(
               id: contentId,
@@ -179,7 +180,9 @@ class _HotFeedListViewState extends State<HotFeedListView>
 
       // 🛡️ UGC 安全：过滤被屏蔽用户的内容
       final blockService = UserBlockService();
-      validVideos = validVideos.where((v) => !blockService.shouldFilter(v.id)).toList();
+      validVideos = validVideos
+          .where((v) => !blockService.shouldFilter(v.id))
+          .toList();
 
       // 🛡️ UGC 安全：过滤含不当内容的文本
       validVideos = ContentFilterService.filterVideos(validVideos);
@@ -191,15 +194,15 @@ class _HotFeedListViewState extends State<HotFeedListView>
           _hotVideos = validVideos;
           _isLoading = false;
         });
-        
+
         // 如果第一条是视频，初始化它
-        if (_hotVideos.isNotEmpty && _hotVideos[0].contentType == ContentType.video) {
+        if (_hotVideos.isNotEmpty &&
+            _hotVideos[0].contentType == ContentType.video) {
           _initAndPlayVideo(0);
         }
       }
-      
+
       debugPrint('🔥 热门内容加载完成，共 ${_hotVideos.length} 条');
-      
     } catch (e) {
       debugPrint('加载热门内容失败: $e');
       if (mounted) {
@@ -216,7 +219,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
     try {
       debugPrint('尝试从 filePath 加载: $filePath');
       if (filePath.isEmpty) return null;
-      
+
       final result = await _textService.getTextByFilePath(filePath);
       if (result != null) {
         return result['content'] as String?;
@@ -236,16 +239,19 @@ class _HotFeedListViewState extends State<HotFeedListView>
 
   Future<void> _initAndPlayVideo(int index) async {
     if (_hotVideos.isEmpty || index >= _hotVideos.length) return;
-    
+
     final video = _hotVideos[index];
-    if (video.contentType != ContentType.video || video.videoUrl.isEmpty) return;
-    
+    if (video.contentType != ContentType.video || video.videoUrl.isEmpty)
+      return;
+
     await _getOrCreateController(video);
     await _playController(video.id);
     if (mounted) setState(() {});
   }
 
-  Future<VideoPlayerController?> _getOrCreateController(VideoEntity video) async {
+  Future<VideoPlayerController?> _getOrCreateController(
+    VideoEntity video,
+  ) async {
     if (video.contentType == ContentType.text || video.videoUrl.isEmpty) {
       return null;
     }
@@ -258,15 +264,15 @@ class _HotFeedListViewState extends State<HotFeedListView>
     try {
       final cacheManager = DefaultCacheManager();
       final file = await cacheManager.getSingleFile(video.videoUrl);
-      
+
       final controller = VideoPlayerController.file(file);
       await controller.initialize();
       await controller.setLooping(true);
-      
+
       _controllerCache[video.id] = controller;
       _touchController(video.id);
       _enforceCacheLimit();
-      
+
       return controller;
     } catch (e) {
       debugPrint('Error initializing controller: $e');
@@ -301,7 +307,9 @@ class _HotFeedListViewState extends State<HotFeedListView>
 
   Future<void> _playController(String videoId) async {
     final controller = _controllerCache[videoId];
-    if (controller != null && controller.value.isInitialized && !controller.value.isPlaying) {
+    if (controller != null &&
+        controller.value.isInitialized &&
+        !controller.value.isPlaying) {
       try {
         await controller.play();
       } catch (e) {
@@ -338,7 +346,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
-    
+
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: Colors.white),
@@ -359,11 +367,21 @@ class _HotFeedListViewState extends State<HotFeedListView>
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.local_fire_department_outlined, size: 64, color: Colors.white24),
+                    const Icon(
+                      Icons.local_fire_department_outlined,
+                      size: 64,
+                      color: Colors.white24,
+                    ),
                     const SizedBox(height: 16),
-                    const Text('暂无热门内容', style: TextStyle(color: Colors.white54, fontSize: 16)),
+                    const Text(
+                      '暂无热门内容',
+                      style: TextStyle(color: Colors.white54, fontSize: 16),
+                    ),
                     const SizedBox(height: 8),
-                    const Text('快去法流页面点赞喜欢的内容吧~', style: TextStyle(color: Colors.white38, fontSize: 14)),
+                    const Text(
+                      '快去法流页面点赞喜欢的内容吧~',
+                      style: TextStyle(color: Colors.white38, fontSize: 14),
+                    ),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
                       onPressed: _refreshHotContent,
@@ -388,7 +406,7 @@ class _HotFeedListViewState extends State<HotFeedListView>
         // 检测是否在最后一页并且过度滚动（上拉到底）
         if (notification is OverscrollNotification) {
           // 正值表示向下过度滚动（在底部继续上拉）
-          if (notification.overscroll > 0 && 
+          if (notification.overscroll > 0 &&
               _currentPage == _hotVideos.length - 1 &&
               !_isLoading) {
             // 触发刷新
@@ -409,7 +427,9 @@ class _HotFeedListViewState extends State<HotFeedListView>
               key: ValueKey(_hotVideos[index].id),
               controller: _getController(_hotVideos[index].id),
               videoItem: _hotVideos[index],
-              isVisible: widget.isTabActive && index == _currentPage, // 🔊 TTS只对当前页面且tab激活时播放
+              isVisible:
+                  widget.isTabActive &&
+                  index == _currentPage, // 🔊 TTS只对当前页面且tab激活时播放
             ),
           );
         },

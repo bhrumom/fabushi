@@ -19,7 +19,7 @@ class OnlineCounterService {
   WebSocketChannel? _channel;
   bool _isConnected = false;
   bool _shouldReconnect = false;
-  
+
   // 在线人数流控制器
   final _onlineCountController = StreamController<int>.broadcast();
   Stream<int> get onlineCountStream => _onlineCountController.stream;
@@ -29,7 +29,9 @@ class OnlineCounterService {
 
   /// 加入活动
   Future<bool> joinActivity(String activityType) async {
-    if (_currentActivity == activityType && _sessionId != null && _isConnected) {
+    if (_currentActivity == activityType &&
+        _sessionId != null &&
+        _isConnected) {
       return true;
     }
 
@@ -43,7 +45,7 @@ class OnlineCounterService {
 
     // 尝试 WebSocket 连接
     final wsSuccess = await _connectWebSocket(activityType);
-    
+
     if (wsSuccess) {
       return true;
     } else {
@@ -56,10 +58,12 @@ class OnlineCounterService {
   Future<bool> _connectWebSocket(String activityType) async {
     try {
       // 直接使用字符串拼接构建 URI，避免 Uri.replace() 导致端口变成 0 的问题
-      final uri = Uri.parse('$wsUrl/api/online/ws?activityType=${Uri.encodeComponent(activityType)}');
-      
+      final uri = Uri.parse(
+        '$wsUrl/api/online/ws?activityType=${Uri.encodeComponent(activityType)}',
+      );
+
       print('🔌 准备连接 WebSocket: $uri');
-      
+
       try {
         _channel = WebSocketChannel.connect(uri);
         print('🔌 WebSocketChannel.connect 调用完成');
@@ -110,13 +114,13 @@ class OnlineCounterService {
         if (_isConnected) break;
         print('⏳ 等待响应... ${retryCount}/6');
       }
-      
+
       if (_isConnected) {
         print('✅ WebSocket 连接流程完成');
         _startHeartbeat();
         return true;
       }
-      
+
       print('📡 WebSocket 连接超时或失败，降级到 HTTP');
       return false;
     } catch (e) {
@@ -129,7 +133,7 @@ class OnlineCounterService {
   void _handleWebSocketMessage(dynamic message) {
     try {
       final data = jsonDecode(message);
-      
+
       switch (data['type']) {
         case 'count_update':
           _updateCount(data['count'] ?? 0);
@@ -170,7 +174,7 @@ class OnlineCounterService {
 
     print('尝试重新连接...');
     await Future.delayed(reconnectDelay);
-    
+
     if (_shouldReconnect && _currentActivity != null) {
       final success = await _connectWebSocket(_currentActivity!);
       if (!success) {
@@ -208,7 +212,7 @@ class OnlineCounterService {
           'sessionId': _sessionId,
           'activityType': _currentActivity,
         });
-        
+
         await Future.delayed(const Duration(milliseconds: 100));
         await _channel!.sink.close();
       } catch (e) {

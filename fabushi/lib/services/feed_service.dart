@@ -11,7 +11,11 @@ class FeedService {
   FeedService._internal();
 
   /// 获取带标签的帖子列表（感应/发愿）
-  Future<List<FeedPostModel>> getTaggedPosts(String tag, {int page = 1, int pageSize = 20}) async {
+  Future<List<FeedPostModel>> getTaggedPosts(
+    String tag, {
+    int page = 1,
+    int pageSize = 20,
+  }) async {
     try {
       final response = await HttpService.get(
         '${AppConfig.apiUrl}/api/posts?tag=$tag&page=$page&pageSize=$pageSize',
@@ -32,12 +36,18 @@ class FeedService {
   }
 
   /// 获取感应列表
-  Future<List<FeedPostModel>> getGanyingPosts({int page = 1, int pageSize = 20}) async {
+  Future<List<FeedPostModel>> getGanyingPosts({
+    int page = 1,
+    int pageSize = 20,
+  }) async {
     return getTaggedPosts('ganying', page: page, pageSize: pageSize);
   }
 
   /// 获取发愿列表
-  Future<List<FeedPostModel>> getFayuanPosts({int page = 1, int pageSize = 20}) async {
+  Future<List<FeedPostModel>> getFayuanPosts({
+    int page = 1,
+    int pageSize = 20,
+  }) async {
     return getTaggedPosts('fayuan', page: page, pageSize: pageSize);
   }
 
@@ -62,7 +72,10 @@ class FeedService {
   }
 
   /// 获取热门内容（按点赞数排序）
-  Future<List<Map<String, dynamic>>> getHotFeed({int page = 1, int pageSize = 20}) async {
+  Future<List<Map<String, dynamic>>> getHotFeed({
+    int page = 1,
+    int pageSize = 20,
+  }) async {
     try {
       final response = await HttpService.get(
         '${AppConfig.apiUrl}/api/feed/hot?page=$page&pageSize=$pageSize',
@@ -71,7 +84,9 @@ class FeedService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List<dynamic> hotContent = data['hotContent'] ?? [];
-        return hotContent.map((item) => Map<String, dynamic>.from(item)).toList();
+        return hotContent
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
       } else {
         debugPrint('获取热门内容失败: ${response.statusCode}');
         return [];

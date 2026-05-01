@@ -6,7 +6,7 @@ import 'http_service.dart';
 import 'meditation_session_manager.dart';
 
 /// 评论服务 - 管理内容评论
-/// 
+///
 /// 使用统一的 contentId 标识内容（替代原来的 videoId）
 
 class CommentService {
@@ -23,11 +23,11 @@ class CommentService {
   // 批量获取评论数（使用 contentId）
   Future<void> fetchCommentCounts(List<String> contentIds) async {
     if (contentIds.isEmpty) return;
-    
+
     try {
       final response = await HttpService.post(
         '${AppConfig.apiUrl}/api/comments/batch-counts',
-        body: {'videoIds': contentIds},  // 后端兼容 videoIds 参数名
+        body: {'videoIds': contentIds}, // 后端兼容 videoIds 参数名
       );
 
       if (response.statusCode == 200) {
@@ -44,7 +44,11 @@ class CommentService {
   }
 
   // 获取评论列表（使用 contentId）
-  Future<List<CommentModel>> getComments(String contentId, {int page = 1, int pageSize = 20}) async {
+  Future<List<CommentModel>> getComments(
+    String contentId, {
+    int page = 1,
+    int pageSize = 20,
+  }) async {
     try {
       final response = await HttpService.get(
         '${AppConfig.apiUrl}/api/comments?contentId=$contentId&page=$page&pageSize=$pageSize',
@@ -90,9 +94,11 @@ class CommentService {
       debugPrint('❌ 发布评论失败: content 为空');
       return {'success': false, 'error': '评论内容不能为空'};
     }
-    
-    debugPrint('📝 发布评论: contentId=$contentId, content长度=${content.length}, tag=$tag, filePath=$filePath');
-    
+
+    debugPrint(
+      '📝 发布评论: contentId=$contentId, content长度=${content.length}, tag=$tag, filePath=$filePath',
+    );
+
     try {
       final body = <String, dynamic>{
         'contentId': contentId,
@@ -103,7 +109,7 @@ class CommentService {
         body['tag'] = tag;
       }
       if (contentTitle != null) {
-        body['videoTitle'] = contentTitle;  // 后端兼容 videoTitle 参数名
+        body['videoTitle'] = contentTitle; // 后端兼容 videoTitle 参数名
       }
       if (filePath != null) {
         body['filePath'] = filePath;
@@ -114,13 +120,13 @@ class CommentService {
       if (attachmentType != null) {
         body['attachment_type'] = attachmentType;
       }
-      
+
       // 自动附带当前用户的主修功课
       final mainPractice = MeditationSessionManager().lockedPractice?.title;
       if (mainPractice != null) {
         body['mainPractice'] = mainPractice;
       }
-      
+
       final response = await HttpService.post(
         '${AppConfig.apiUrl}/api/comments',
         body: body,
@@ -129,7 +135,10 @@ class CommentService {
 
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        return {'success': true, 'comment': CommentModel.fromJson(data['comment'])};
+        return {
+          'success': true,
+          'comment': CommentModel.fromJson(data['comment']),
+        };
       } else {
         debugPrint('发布评论失败: ${response.statusCode} ${response.body}');
         try {

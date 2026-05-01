@@ -50,13 +50,13 @@ class _FeedTabViewState extends State<FeedTabView> {
               children: [
                 // 法流 - 原有的垂直滚动视频/文本流
                 VideoFeedView(isTabActive: _selectedTabIndex == 0),
-                
+
                 // 热门 - 只显示有点赞量的内容
                 HotFeedListView(isTabActive: _selectedTabIndex == 1),
-                
+
                 // 感应 - 朋友圈式列表
                 const FeedPostListView(tag: 'ganying'),
-                
+
                 // 发愿 - 朋友圈式列表
                 const FeedPostListView(tag: 'fayuan'),
               ],

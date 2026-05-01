@@ -7,7 +7,7 @@ import '../models/local_work_model.dart';
 class LocalWorkService {
   static LocalWorkService? _instance;
   static LocalWorkService get instance => _instance ??= LocalWorkService._();
-  
+
   LocalWorkService._();
 
   Database? _database;
@@ -22,11 +22,7 @@ class LocalWorkService {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
-    return await openDatabase(
-      path,
-      version: 1,
-      onCreate: _createDB,
-    );
+    return await openDatabase(path, version: 1, onCreate: _createDB);
   }
 
   Future _createDB(Database db, int version) async {
@@ -67,14 +63,10 @@ class LocalWorkService {
 
   Future<void> deleteWork(String id) async {
     final db = await database;
-    await db.delete(
-      'works',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.delete('works', where: 'id = ?', whereArgs: [id]);
     debugPrint('[LocalWorkService] Deleted work: $id');
   }
-  
+
   Future<void> close() async {
     final db = await database;
     db.close();

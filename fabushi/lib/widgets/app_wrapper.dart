@@ -52,13 +52,14 @@ class _AppWrapperState extends State<AppWrapper> {
       if (!AppInitializer.isInitialized) {
         await AppInitializer.initialize();
       }
-      
+
       // 4. 检查是否需要 EULA 同意
       final needsEula = !await EulaService.isAccepted();
-      
+
       // 5. 检查是否需要模型设置引导
-      final needsModelSetup = await AppSettings.isFirstLaunch() && 
-                              !await AppSettings.isModelSetupComplete();
+      final needsModelSetup =
+          await AppSettings.isFirstLaunch() &&
+          !await AppSettings.isModelSetupComplete();
 
       // If we are still mounted, update state to trigger rebuild to the main UI.
       if (mounted) {
@@ -67,12 +68,12 @@ class _AppWrapperState extends State<AppWrapper> {
           _needsEula = needsEula;
           _needsModelSetup = needsModelSetup;
         });
-        
+
         // 首先检查 EULA
         if (needsEula) {
           await _showEulaScreen();
         }
-        
+
         // 然后显示模型选择引导
         if (needsModelSetup && mounted) {
           _showModelSetupDialog();
@@ -83,18 +84,19 @@ class _AppWrapperState extends State<AppWrapper> {
       if (mounted) {
         setState(() {
           _initError = e.toString();
-          _isInitialized = true; // Mark as initialized to show the error screen.
+          _isInitialized =
+              true; // Mark as initialized to show the error screen.
         });
       }
     }
   }
-  
+
   /// 显示 EULA 同意页面
   Future<void> _showEulaScreen() async {
     if (!mounted) return;
-    
+
     final accepted = await EulaScreen.checkAndShow(context);
-    
+
     if (mounted) {
       setState(() => _needsEula = !accepted);
     }
@@ -104,17 +106,17 @@ class _AppWrapperState extends State<AppWrapper> {
   Future<void> _showModelSetupDialog() async {
     // 延迟一下，确保 UI 已经完全渲染
     await Future.delayed(const Duration(milliseconds: 500));
-    
+
     if (!mounted) return;
-    
+
     final result = await ModelSelectionDialog.show(
       context,
       isFirstLaunch: true,
     );
-    
+
     // 无论是否选择了模型，都标记首次启动已完成
     await AppSettings.setFirstLaunchComplete();
-    
+
     if (result != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -123,7 +125,7 @@ class _AppWrapperState extends State<AppWrapper> {
         ),
       );
     }
-    
+
     if (mounted) {
       setState(() {
         _needsModelSetup = false;
@@ -161,7 +163,8 @@ class _AppWrapperState extends State<AppWrapper> {
           }
 
           // 处理支付宝绑定情况
-          if (params['alipay_auth_code'] != null && params['needs_binding'] == 'true') {
+          if (params['alipay_auth_code'] != null &&
+              params['needs_binding'] == 'true') {
             final authCode = params['alipay_auth_code']!;
             final userId = params['alipay_user_id'];
             final nickname = params['alipay_nickname'] ?? '';
@@ -204,7 +207,10 @@ class _AppWrapperState extends State<AppWrapper> {
 
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(welcomeMessage), backgroundColor: Colors.green),
+                SnackBar(
+                  content: Text(welcomeMessage),
+                  backgroundColor: Colors.green,
+                ),
               );
             }
 
@@ -231,7 +237,11 @@ class _AppWrapperState extends State<AppWrapper> {
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [CircularProgressIndicator(), SizedBox(height: 16), Text('正在初始化应用...')],
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('正在初始化应用...'),
+            ],
           ),
         ),
       );

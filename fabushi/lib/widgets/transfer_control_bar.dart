@@ -19,19 +19,28 @@ class TransferControlBar extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8, offset: Offset(0, -2)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: Offset(0, -2),
+          ),
         ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           // 暂停/继续按钮
-          if (status == TransferStatus.transferring || status == TransferStatus.paused)
+          if (status == TransferStatus.transferring ||
+              status == TransferStatus.paused)
             _buildControlButton(
               context: context,
-              icon: status == TransferStatus.transferring ? Icons.pause : Icons.play_arrow,
+              icon: status == TransferStatus.transferring
+                  ? Icons.pause
+                  : Icons.play_arrow,
               label: status == TransferStatus.transferring ? '暂停' : '继续',
-              color: status == TransferStatus.transferring ? Colors.orange : Colors.green,
+              color: status == TransferStatus.transferring
+                  ? Colors.orange
+                  : Colors.green,
               onPressed: onPauseResume,
             ),
 

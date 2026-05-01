@@ -129,7 +129,7 @@ class _VideoFeedViewInteractionButtonsState
             ),
           ),
           // 听经按钮 - 只在文字内容时显示
-          if (widget.contentType == ContentType.text) ...[  
+          if (widget.contentType == ContentType.text) ...[
             SizedBox(height: isMobile ? 16 : 20),
             _buildListenButton(iconSize, isMobile),
           ],
@@ -161,10 +161,7 @@ class _VideoFeedViewInteractionButtonsState
             colors: [Color(0xFF667eea), Color(0xFF764ba2)],
           ),
           shape: BoxShape.circle,
-          border: Border.all(
-            color: white.withValues(alpha: 0.3),
-            width: 1,
-          ),
+          border: Border.all(color: white.withValues(alpha: 0.3), width: 1),
           boxShadow: [
             BoxShadow(
               color: const Color(0xFF667eea).withValues(alpha: 0.3),
@@ -173,28 +170,25 @@ class _VideoFeedViewInteractionButtonsState
             ),
           ],
         ),
-        child: Icon(
-          Icons.headphones,
-          color: white,
-          size: iconSize * 0.85,
-        ),
+        child: Icon(Icons.headphones, color: white, size: iconSize * 0.85),
       ),
     );
   }
 
   Widget _buildAvatarWithFollow(double avatarSize, bool isMobile) {
     return GestureDetector(
-      onTap: widget.contentType == ContentType.text && widget.textContent != null
+      onTap:
+          widget.contentType == ContentType.text && widget.textContent != null
           ? () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => VideoFeedViewFullTextReader(
-                    bookTitle: widget.username,
-                    fullText: widget.textContent!,
-                    currentParagraph: widget.currentParagraph,
-                  ),
+              context,
+              MaterialPageRoute(
+                builder: (context) => VideoFeedViewFullTextReader(
+                  bookTitle: widget.username,
+                  fullText: widget.textContent!,
+                  currentParagraph: widget.currentParagraph,
                 ),
-              )
+              ),
+            )
           : null,
       child: SizedBox(
         width: avatarSize,
@@ -252,11 +246,7 @@ class _VideoFeedViewInteractionButtonsState
                       color: Colors.red,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.add,
-                      color: white,
-                      size: 14,
-                    ),
+                    child: const Icon(Icons.add, color: white, size: 14),
                   ),
                 ),
               ),

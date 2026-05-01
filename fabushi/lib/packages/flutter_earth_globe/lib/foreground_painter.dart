@@ -69,9 +69,14 @@ class ForegroundPainter extends CustomPainter {
   });
 
   Function(String pointId, Offset? hoverPoint, bool isHovering, bool isVisible)
-      hoverOverPoint;
-  Function(String connectionId, Offset? hoverPoint, bool isHovering,
-      bool isVisible) hoverOverConnection;
+  hoverOverPoint;
+  Function(
+    String connectionId,
+    Offset? hoverPoint,
+    bool isHovering,
+    bool isVisible,
+  )
+  hoverOverConnection;
   VoidCallback? onPointClicked;
   final List<AnimatedPointConnection> connections;
   final Offset? hoverPoint;
@@ -95,10 +100,16 @@ class ForegroundPainter extends CustomPainter {
 
     for (var point in points) {
       final pointPaint = Paint()..color = point.style.color;
-      vector.Vector3 cartesian3D =
-          getSpherePosition3D(point.coordinates, radius, rotationY, rotationZ);
-      Offset cartesian2D =
-          Offset(center.dx + cartesian3D.y, center.dy - cartesian3D.z);
+      vector.Vector3 cartesian3D = getSpherePosition3D(
+        point.coordinates,
+        radius,
+        rotationY,
+        rotationZ,
+      );
+      Offset cartesian2D = Offset(
+        center.dx + cartesian3D.y,
+        center.dy - cartesian3D.z,
+      );
 
       // final c2 = hoverOffsetToSphereCoordinates(
       //     cartesian2D, center, radius, rotationY, rotationZ);
@@ -112,8 +123,14 @@ class ForegroundPainter extends CustomPainter {
       //     'center: $center - point: ${point.coordinates} cartesian2D: $cartesian2D - cartesian3D: $cartesian3D');
 
       if (cartesian3D.x > 0) {
-        final rect = getRectOnSphere(cartesian3D, cartesian2D, center, radius,
-            zoomFactor, point.style.size);
+        final rect = getRectOnSphere(
+          cartesian3D,
+          cartesian2D,
+          center,
+          radius,
+          zoomFactor,
+          point.style.size,
+        );
         canvas.drawOval(rect, pointPaint);
         // if(rect.contains())
         if (localHover != null && rect.contains(localHover)) {
@@ -136,16 +153,29 @@ class ForegroundPainter extends CustomPainter {
                 point.label != null &&
                 point.label != '') &&
             point.labelBuilder == null) {
-          paintText(point.label ?? '', point.labelTextStyle, cartesian2D, size,
-              canvas);
+          paintText(
+            point.label ?? '',
+            point.labelTextStyle,
+            cartesian2D,
+            size,
+            canvas,
+          );
         }
       } else {
         hoverOverPoint(point.id, cartesian2D, false, false);
       }
     }
     for (var connection in connections) {
-      Map? info = drawAnimatedLine(canvas, connection, radius, rotationY,
-          rotationZ, connection.animationProgress, size, hoverPoint);
+      Map? info = drawAnimatedLine(
+        canvas,
+        connection,
+        radius,
+        rotationY,
+        rotationZ,
+        connection.animationProgress,
+        size,
+        hoverPoint,
+      );
 
       if (info?['path'] != null) {
         if (localHover != null &&

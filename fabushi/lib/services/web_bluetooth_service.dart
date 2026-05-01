@@ -52,8 +52,10 @@ class WebBluetoothService {
   bool get isRunning => _isRunning;
 
   // 蓝牙服务和特征UUID
-  static const String SERVICE_UUID = '0000180f-0000-1000-8000-00805f9b34fb'; // 示例UUID
-  static const String CHARACTERISTIC_UUID = '00002a19-0000-1000-8000-00805f9b34fb'; // 示例UUID
+  static const String SERVICE_UUID =
+      '0000180f-0000-1000-8000-00805f9b34fb'; // 示例UUID
+  static const String CHARACTERISTIC_UUID =
+      '00002a19-0000-1000-8000-00805f9b34fb'; // 示例UUID
 
   WebBluetoothService({
     required this.onProgress,
@@ -94,7 +96,9 @@ class WebBluetoothService {
         'optionalServices': [SERVICE_UUID],
       };
 
-      _device = await js_util.promiseToFuture(_requestBluetoothDevice(js_util.jsify(options)));
+      _device = await js_util.promiseToFuture(
+        _requestBluetoothDevice(js_util.jsify(options)),
+      );
       debugPrint('已连接到蓝牙设备: ${js_util.getProperty(_device, 'name')}');
       return true;
     } catch (e) {
@@ -122,7 +126,9 @@ class WebBluetoothService {
       );
 
       // 设置通知监听器
-      await js_util.promiseToFuture(js_util.callMethod(_characteristic, 'startNotifications', []));
+      await js_util.promiseToFuture(
+        js_util.callMethod(_characteristic, 'startNotifications', []),
+      );
 
       final onCharacteristicValueChanged = js_util.allowInterop((event) {
         final value = js_util.getProperty(event, 'target.value');
@@ -143,7 +149,10 @@ class WebBluetoothService {
   }
 
   /// 开始发送文件
-  Future<void> startSending({required List<PlatformFile> files, required bool isLoop}) async {
+  Future<void> startSending({
+    required List<PlatformFile> files,
+    required bool isLoop,
+  }) async {
     if (_isRunning) return;
     _isRunning = true;
     _sentCount = 0;
@@ -254,7 +263,11 @@ class WebBluetoothService {
   }
 
   /// 发送文件内容
-  Future<void> _sendFileContent(Uint8List fileBytes, String fileName, int fileSize) async {
+  Future<void> _sendFileContent(
+    Uint8List fileBytes,
+    String fileName,
+    int fileSize,
+  ) async {
     if (_characteristic == null) {
       debugPrint('未连接蓝牙特征');
       return;
@@ -268,20 +281,36 @@ class WebBluetoothService {
     for (var i = 0; i < fileBytes.length; i += chunkSize) {
       if (!_isRunning) break;
 
-      final end = (i + chunkSize < fileBytes.length) ? i + chunkSize : fileBytes.length;
+      final end = (i + chunkSize < fileBytes.length)
+          ? i + chunkSize
+          : fileBytes.length;
       final chunk = fileBytes.sublist(i, end);
 
       // 创建块头部
-      final header = jsonEncode({'i': sentChunks, 'n': fileName, 'total': totalChunks});
+      final header = jsonEncode({
+        'i': sentChunks,
+        'n': fileName,
+        'total': totalChunks,
+      });
 
       // 组合头部和数据
       final headerBytes = utf8.encode(header);
       final separator = utf8.encode('|');
-      final fullPacket = Uint8List(headerBytes.length + separator.length + chunk.length);
+      final fullPacket = Uint8List(
+        headerBytes.length + separator.length + chunk.length,
+      );
 
       fullPacket.setRange(0, headerBytes.length, headerBytes);
-      fullPacket.setRange(headerBytes.length, headerBytes.length + separator.length, separator);
-      fullPacket.setRange(headerBytes.length + separator.length, fullPacket.length, chunk);
+      fullPacket.setRange(
+        headerBytes.length,
+        headerBytes.length + separator.length,
+        separator,
+      );
+      fullPacket.setRange(
+        headerBytes.length + separator.length,
+        fullPacket.length,
+        chunk,
+      );
 
       try {
         await js_util.promiseToFuture(

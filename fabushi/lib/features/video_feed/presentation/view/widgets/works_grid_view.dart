@@ -7,18 +7,13 @@ class WorksGridView extends StatefulWidget {
   final List<LocalWorkModel> works;
   final VoidCallback? onDelete;
 
-  const WorksGridView({
-    required this.works,
-    this.onDelete,
-    super.key,
-  });
+  const WorksGridView({required this.works, this.onDelete, super.key});
 
   @override
   State<WorksGridView> createState() => _WorksGridViewState();
 }
 
 class _WorksGridViewState extends State<WorksGridView> {
-
   @override
   void dispose() {
     AudioStreamService.instance.stopPlayer();
@@ -125,7 +120,11 @@ class _WorksGridViewState extends State<WorksGridView> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.headphones, color: Colors.white, size: 14),
+                        const Icon(
+                          Icons.headphones,
+                          color: Colors.white,
+                          size: 14,
+                        ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
@@ -139,7 +138,10 @@ class _WorksGridViewState extends State<WorksGridView> {
                         ),
                         Text(
                           _formatDuration(work.durationMs),
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),

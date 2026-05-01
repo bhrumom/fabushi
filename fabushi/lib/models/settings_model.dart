@@ -43,7 +43,8 @@ class SettingsModel extends ChangeNotifier {
   String get localePreference => _localePreference;
 
   // 获取 MaterialApp 可直接使用的 Locale；null 表示跟随系统
-  Locale? get appLocale => AppLocalizations.localeFromPreference(_localePreference);
+  Locale? get appLocale =>
+      AppLocalizations.localeFromPreference(_localePreference);
 
   // 构造函数
   SettingsModel() {
@@ -59,8 +60,11 @@ class SettingsModel extends ChangeNotifier {
     _wifiSignalStrength = prefs.getInt('wifiSignalStrength') ?? 80;
     _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
     _selectedCountries = prefs.getStringList('selectedCountries') ?? [];
-    final savedLocalePreference = prefs.getString('localePreference') ?? AppLocalizations.systemLocaleCode;
-    _localePreference = AppLocalizations.isSupportedPreference(savedLocalePreference)
+    final savedLocalePreference =
+        prefs.getString('localePreference') ??
+        AppLocalizations.systemLocaleCode;
+    _localePreference =
+        AppLocalizations.isSupportedPreference(savedLocalePreference)
         ? savedLocalePreference
         : AppLocalizations.systemLocaleCode;
 
@@ -125,7 +129,9 @@ class SettingsModel extends ChangeNotifier {
 
   // 设置应用显示语言。传入 system 时跟随系统语言。
   Future<void> setLocalePreference(String value) async {
-    final nextValue = AppLocalizations.isSupportedPreference(value) ? value : AppLocalizations.systemLocaleCode;
+    final nextValue = AppLocalizations.isSupportedPreference(value)
+        ? value
+        : AppLocalizations.systemLocaleCode;
     if (_localePreference == nextValue) return;
     _localePreference = nextValue;
     await _saveSettings();

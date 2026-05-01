@@ -8,7 +8,7 @@ import '../services/llm_model_config.dart';
 import '../services/app_settings.dart';
 
 /// AI问经页面
-/// 
+///
 /// 用于对话式经文问答，支持本地AI模型推理
 class SutraAIPage extends StatefulWidget {
   const SutraAIPage({
@@ -32,18 +32,18 @@ class _SutraAIPageState extends State<SutraAIPage> {
   bool _isModelReady = false;
   String _currentResponse = '';
   StreamSubscription<String>? _streamSubscription;
-  
+
   // 模型选择相关
   List<LLMModelType> _availableModels = [];
   LLMModelType? _selectedModel;
-  
+
   // 预设问题
   final List<String> _presetQuestions = [
     '青少年案例对理解\'自由\'有何启示？',
     '阿德勒如何用\'被讨厌\'定义自由？',
     '为何说\'自由=被讨厌\'是自我觉醒的起点？',
   ];
-  
+
   // 快捷按钮
   final List<_QuickAction> _quickActions = [
     _QuickAction('全书总结', Icons.summarize),
@@ -56,43 +56,49 @@ class _SutraAIPageState extends State<SutraAIPage> {
     super.initState();
     _loadAvailableModels();
   }
-  
+
   /// 加载可用的对话模型
   Future<void> _loadAvailableModels() async {
-    final downloadedModels = await LLMModelManager.instance.getDownloadedModels();
-    
+    final downloadedModels = await LLMModelManager.instance
+        .getDownloadedModels();
+
     // 根据平台筛选可用模型
     final isMobile = Platform.isAndroid || Platform.isIOS;
-    final platformModels = LLMModelConfig.getChatModelsForPlatform(isMobile: isMobile);
+    final platformModels = LLMModelConfig.getChatModelsForPlatform(
+      isMobile: isMobile,
+    );
     final platformModelTypes = platformModels.map((c) => c.type).toSet();
-    
+
     // 只保留已下载且当前平台支持的模型
     final chatModels = downloadedModels.where((type) {
       return platformModelTypes.contains(type);
     }).toList();
-    
+
     // 加载上次选择的模型
     LLMModelType? savedModel;
     final savedModelName = await AppSettings.getSelectedModelName();
     if (savedModelName != null) {
       try {
-        savedModel = LLMModelType.values.firstWhere((t) => t.name == savedModelName);
+        savedModel = LLMModelType.values.firstWhere(
+          (t) => t.name == savedModelName,
+        );
         // 确保保存的模型在可用列表中
         if (!chatModels.contains(savedModel)) {
           savedModel = null;
         }
       } catch (_) {}
     }
-    
+
     if (mounted) {
       setState(() {
         _availableModels = chatModels;
-        _selectedModel = savedModel ?? (chatModels.isNotEmpty ? chatModels.first : null);
+        _selectedModel =
+            savedModel ?? (chatModels.isNotEmpty ? chatModels.first : null);
         _isModelReady = _selectedModel != null;
       });
     }
   }
-  
+
   @override
   void dispose() {
     _inputController.dispose();
@@ -100,53 +106,53 @@ class _SutraAIPageState extends State<SutraAIPage> {
     _streamSubscription?.cancel();
     super.dispose();
   }
-  
+
   /// 切换模型
   Future<void> _switchModel(LLMModelType type) async {
     if (type == _selectedModel) return;
-    
+
     // 保存选择
     await AppSettings.setSelectedModelName(type.name);
-    
+
     // 如果推理服务已初始化，需要重新初始化
     final inferenceService = LLMInferenceService.instance;
     if (inferenceService.isInitialized) {
       await inferenceService.dispose();
     }
-    
+
     if (mounted) {
       setState(() {
         _selectedModel = type;
       });
     }
   }
-  
+
   /// 发送消息
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty || _isGenerating) return;
-    
+
     HapticFeedback.lightImpact();
-    
+
     // 添加用户消息
     setState(() {
       _messages.add(_ChatMessage(text: text, isUser: true));
       _isGenerating = true;
       _currentResponse = '';
     });
-    
+
     _inputController.clear();
     _scrollToBottom();
-    
+
     // 构建提示词
     final prompt = _buildPrompt(text);
-    
+
     try {
       if (_selectedModel == null) {
         throw Exception('请先选择一个AI模型');
       }
-      
+
       final inferenceService = LLMInferenceService.instance;
-      
+
       if (!inferenceService.isInitialized) {
         // 初始化模型
         debugPrint('SutraAIPage: 开始初始化模型...');
@@ -155,11 +161,11 @@ class _SutraAIPageState extends State<SutraAIPage> {
         await inferenceService.initialize(modelPath);
         debugPrint('SutraAIPage: 模型初始化完成');
       }
-      
+
       debugPrint('SutraAIPage: 调用 generateStream, prompt长度=${prompt.length}');
       // 流式生成回答
       final stream = inferenceService.generateStream(prompt);
-      
+
       _streamSubscription = stream.listen(
         (token) {
           if (mounted) {
@@ -172,7 +178,9 @@ class _SutraAIPageState extends State<SutraAIPage> {
         onDone: () {
           if (mounted) {
             setState(() {
-              _messages.add(_ChatMessage(text: _currentResponse, isUser: false));
+              _messages.add(
+                _ChatMessage(text: _currentResponse, isUser: false),
+              );
               _currentResponse = '';
               _isGenerating = false;
             });
@@ -181,11 +189,13 @@ class _SutraAIPageState extends State<SutraAIPage> {
         onError: (error) {
           if (mounted) {
             setState(() {
-              _messages.add(_ChatMessage(
-                text: '生成失败: $error', 
-                isUser: false,
-                isError: true,
-              ));
+              _messages.add(
+                _ChatMessage(
+                  text: '生成失败: $error',
+                  isUser: false,
+                  isError: true,
+                ),
+              );
               _currentResponse = '';
               _isGenerating = false;
             });
@@ -198,39 +208,42 @@ class _SutraAIPageState extends State<SutraAIPage> {
       debugPrint('  错误类型: ${e.runtimeType}');
       debugPrint('  错误信息: $e');
       debugPrint('  堆栈: $stackTrace');
-      
+
       // 提取更友好的错误消息
       String errorMessage = '$e';
       if (errorMessage.contains('Could not load model')) {
-        errorMessage = '模型加载失败，请检查：\n'
+        errorMessage =
+            '模型加载失败，请检查：\n'
             '1. 设备内存是否充足（需要2GB+）\n'
             '2. 模型文件是否完整下载\n'
             '3. 详情请查看日志';
       } else if (errorMessage.contains('FileSystemException')) {
         errorMessage = '模型文件不存在，请重新下载';
       }
-      
+
       if (mounted) {
         setState(() {
-          _messages.add(_ChatMessage(
-            text: '无法连接AI模型:\n$errorMessage', 
-            isUser: false,
-            isError: true,
-          ));
+          _messages.add(
+            _ChatMessage(
+              text: '无法连接AI模型:\n$errorMessage',
+              isUser: false,
+              isError: true,
+            ),
+          );
           _isGenerating = false;
         });
       }
     }
   }
-  
+
   /// 构建提示词 (使用 ChatML 格式适配 Qwen-2.5-Instruct)
   String _buildPrompt(String question) {
     // 截取经文摘要（避免上下文过长，超出 nCtx=1024）
     // 中文约 1 token/字，300字 + 模板 + 问题 ≈ 400-500 token
-    final textSummary = widget.fullText.length > 300 
+    final textSummary = widget.fullText.length > 300
         ? widget.fullText.substring(0, 300) + '...'
         : widget.fullText;
-    
+
     return '''<|im_start|>system
 你是一位佛学大师和智慧导师，精通佛教经典。用户正在阅读《${widget.bookTitle}》，以下是经文内容摘要：
 
@@ -242,7 +255,7 @@ $question<|im_end|>
 <|im_start|>assistant
 ''';
   }
-  
+
   /// 滚动到底部
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -255,7 +268,7 @@ $question<|im_end|>
       }
     });
   }
-  
+
   /// 处理快捷操作
   void _handleQuickAction(String action) {
     switch (action) {
@@ -288,12 +301,12 @@ $question<|im_end|>
       ),
     );
   }
-  
+
   Widget _buildHeader() {
-    final currentConfig = _selectedModel != null 
+    final currentConfig = _selectedModel != null
         ? LLMModelConfig.getConfig(_selectedModel!)
         : null;
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
@@ -320,10 +333,7 @@ $question<|im_end|>
                 const SizedBox(height: 2),
                 Text(
                   '《${widget.bookTitle}》',
-                  style: const TextStyle(
-                    color: Colors.white54,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -361,14 +371,19 @@ $question<|im_end|>
                   value: type,
                   child: Row(
                     children: [
-                      Text(config.categoryIcon, style: const TextStyle(fontSize: 16)),
+                      Text(
+                        config.categoryIcon,
+                        style: const TextStyle(fontSize: 16),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           config.displayName,
                           style: TextStyle(
                             color: isSelected ? Colors.amber : Colors.white,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
                           ),
                         ),
                       ),
@@ -406,7 +421,7 @@ $question<|im_end|>
       ),
     );
   }
-  
+
   /// 显示无模型提示
   void _showNoModelHint() {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -416,13 +431,13 @@ $question<|im_end|>
       ),
     );
   }
-  
+
   /// 构建对话区域
   Widget _buildChatArea() {
     if (_messages.isEmpty && _currentResponse.isEmpty) {
       return _buildEmptyState();
     }
-    
+
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.all(16),
@@ -440,13 +455,13 @@ $question<|im_end|>
       },
     );
   }
-  
+
   /// 空状态
   Widget _buildEmptyState() {
-    final currentModelName = _selectedModel != null 
+    final currentModelName = _selectedModel != null
         ? LLMModelConfig.getConfig(_selectedModel!).displayName
         : null;
-    
+
     String hintText;
     if (_availableModels.isEmpty) {
       hintText = '请先在设置中下载AI模型';
@@ -455,7 +470,7 @@ $question<|im_end|>
     } else {
       hintText = '正在准备AI模型...';
     }
-    
+
     return Center(
       child: SingleChildScrollView(
         child: Column(
@@ -464,7 +479,7 @@ $question<|im_end|>
           children: [
             Icon(
               _availableModels.isEmpty ? Icons.download : Icons.auto_awesome,
-              color: _availableModels.isEmpty 
+              color: _availableModels.isEmpty
                   ? Colors.orange.withValues(alpha: 0.5)
                   : Colors.amber.withValues(alpha: 0.5),
               size: 48,
@@ -472,10 +487,7 @@ $question<|im_end|>
             const SizedBox(height: 12),
             Text(
               hintText,
-              style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 14,
-              ),
+              style: const TextStyle(color: Colors.white54, fontSize: 14),
               textAlign: TextAlign.center,
             ),
           ],
@@ -483,7 +495,7 @@ $question<|im_end|>
       ),
     );
   }
-  
+
   /// 构建消息气泡
   Widget _buildMessageBubble(_ChatMessage message, {bool isStreaming = false}) {
     return Padding(
@@ -493,8 +505,8 @@ $question<|im_end|>
         right: message.isUser ? 0 : 48,
       ),
       child: Row(
-        mainAxisAlignment: message.isUser 
-            ? MainAxisAlignment.end 
+        mainAxisAlignment: message.isUser
+            ? MainAxisAlignment.end
             : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -525,11 +537,11 @@ $question<|im_end|>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: message.isUser 
+                color: message.isUser
                     ? const Color(0xFF2D5A27)
-                    : message.isError 
-                        ? Colors.red.withValues(alpha: 0.2)
-                        : Colors.white.withValues(alpha: 0.1),
+                    : message.isError
+                    ? Colors.red.withValues(alpha: 0.2)
+                    : Colors.white.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Column(
@@ -564,75 +576,85 @@ $question<|im_end|>
       ),
     );
   }
-  
+
   /// 构建预设问题
   Widget _buildPresetQuestions() {
     if (_messages.isNotEmpty) return const SizedBox.shrink();
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: _presetQuestions.map((question) => 
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: GestureDetector(
-              onTap: () => _sendMessage(question),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.15),
-                  ),
-                ),
-                child: Text(
-                  question,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
+        children: _presetQuestions
+            .map(
+              (question) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: GestureDetector(
+                  onTap: () => _sendMessage(question),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.15),
+                      ),
+                    ),
+                    child: Text(
+                      question,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-        ).toList(),
+            )
+            .toList(),
       ),
     );
   }
-  
+
   /// 构建快捷操作按钮
   Widget _buildQuickActions() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
-        children: _quickActions.map((action) => 
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
-              onTap: () => _handleQuickAction(action.label),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  action.label,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
+        children: _quickActions
+            .map(
+              (action) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: GestureDetector(
+                  onTap: () => _handleQuickAction(action.label),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      action.label,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-        ).toList(),
+            )
+            .toList(),
       ),
     );
   }
-  
+
   /// 构建输入区域
   Widget _buildInputArea() {
     return Container(
@@ -640,9 +662,7 @@ $question<|im_end|>
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.3),
         border: Border(
-          top: BorderSide(
-            color: Colors.white.withValues(alpha: 0.1),
-          ),
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
         ),
       ),
       child: Row(
@@ -670,16 +690,14 @@ $question<|im_end|>
           ),
           const SizedBox(width: 8),
           GestureDetector(
-            onTap: _isGenerating 
-                ? null 
+            onTap: _isGenerating
+                ? null
                 : () => _sendMessage(_inputController.text),
             child: Container(
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: _isGenerating 
-                    ? Colors.grey 
-                    : const Color(0xFF4CAF50),
+                color: _isGenerating ? Colors.grey : const Color(0xFF4CAF50),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -700,7 +718,7 @@ class _ChatMessage {
   final String text;
   final bool isUser;
   final bool isError;
-  
+
   const _ChatMessage({
     required this.text,
     required this.isUser,
@@ -712,6 +730,6 @@ class _ChatMessage {
 class _QuickAction {
   final String label;
   final IconData icon;
-  
+
   const _QuickAction(this.label, this.icon);
 }

@@ -68,7 +68,9 @@ class AppleIapService {
 
   /// 初始化 IAP
   Future<bool> initialize() async {
-    debugPrint('AppleIapService: 进入 initialize(), 当前 _isInitialized = $_isInitialized');
+    debugPrint(
+      'AppleIapService: 进入 initialize(), 当前 _isInitialized = $_isInitialized',
+    );
     if (_isInitialized) {
       debugPrint('AppleIapService: 已经初始化过，跳过基本步骤，但重新尝试加载产品');
       await _loadProducts(); // 即使初始化过，也尝试重新加载一次产品
@@ -109,8 +111,12 @@ class AppleIapService {
       final response = await _iap.queryProductDetails(_productIds);
 
       if (response.notFoundIDs.isNotEmpty) {
-        debugPrint('AppleIapService: [警告] 未找到产品 (notFoundIDs): ${response.notFoundIDs}');
-        debugPrint('这可能意味着: 1. 商品 ID 填写错误; 2. 协议没签署; 3. 没在真机测试; 4. Bundle ID 不匹配');
+        debugPrint(
+          'AppleIapService: [警告] 未找到产品 (notFoundIDs): ${response.notFoundIDs}',
+        );
+        debugPrint(
+          '这可能意味着: 1. 商品 ID 填写错误; 2. 协议没签署; 3. 没在真机测试; 4. Bundle ID 不匹配',
+        );
       }
 
       if (response.error != null) {
@@ -144,7 +150,9 @@ class AppleIapService {
   /// 发起购买
   Future<bool> purchase(String priceType) async {
     debugPrint('AppleIapService: purchase() 被调用, priceType = $priceType');
-    debugPrint('AppleIapService: 当前 _isAvailable = $_isAvailable, 产品数量 = ${_products.length}');
+    debugPrint(
+      'AppleIapService: 当前 _isAvailable = $_isAvailable, 产品数量 = ${_products.length}',
+    );
 
     if (!_isAvailable) {
       debugPrint('AppleIapService: [错误] purchase() 失败，因为 _isAvailable 为 false');
@@ -154,7 +162,9 @@ class AppleIapService {
 
     final productId = getProductId(priceType);
     final product = getProduct(priceType);
-    debugPrint('AppleIapService: 匹配结果 for $productId -> ${product != null ? "找到" : "未找到"}');
+    debugPrint(
+      'AppleIapService: 匹配结果 for $productId -> ${product != null ? "找到" : "未找到"}',
+    );
 
     if (product == null) {
       debugPrint('AppleIapService: [错误] 无法在已加载列表中找到 $productId');
@@ -188,7 +198,9 @@ class AppleIapService {
   /// 处理购买更新
   void _onPurchaseUpdated(List<PurchaseDetails> purchaseDetailsList) {
     for (final purchase in purchaseDetailsList) {
-      debugPrint('AppleIapService: 购买更新 - ${purchase.productID} 状态: ${purchase.status}');
+      debugPrint(
+        'AppleIapService: 购买更新 - ${purchase.productID} 状态: ${purchase.status}',
+      );
 
       switch (purchase.status) {
         case PurchaseStatus.purchased:
@@ -216,7 +228,7 @@ class AppleIapService {
   /// 处理成功的购买
   void _handleSuccessfulPurchase(PurchaseDetails purchase) {
     final txId = purchase.purchaseID;
-    
+
     // 去重：防止同一笔交易被多次处理
     if (txId != null && _processedTransactionIds.contains(txId)) {
       debugPrint('AppleIapService: 交易 $txId 已处理过，跳过重复回调');
@@ -225,7 +237,7 @@ class AppleIapService {
     if (txId != null) {
       _processedTransactionIds.add(txId);
     }
-    
+
     debugPrint('AppleIapService: 购买成功 - ${purchase.productID}');
     debugPrint('AppleIapService: 交易ID: $txId');
     onPurchaseSuccess?.call(purchase);

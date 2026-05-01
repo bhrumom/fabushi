@@ -102,7 +102,9 @@ class _SearchExampleState extends State<SearchExample> {
                           setState(() => _results = []);
                         },
                       ),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               onSubmitted: (_) => _performSearch(),
             ),
@@ -138,12 +140,18 @@ class _SearchExampleState extends State<SearchExample> {
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: ListTile(
-            title: Text(item.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text(
+              item.title,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 4),
-                Text(item.category, style: TextStyle(color: Colors.blue[700], fontSize: 12)),
+                Text(
+                  item.category,
+                  style: TextStyle(color: Colors.blue[700], fontSize: 12),
+                ),
                 if (item.preview != null) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -178,14 +186,22 @@ class _SearchExampleState extends State<SearchExample> {
             children: [
               Text(
                 '分类: ${item.category}',
-                style: TextStyle(color: Colors.blue[700], fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.blue[700],
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 16),
               Text(item.content),
             ],
           ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
       ),
     );
   }

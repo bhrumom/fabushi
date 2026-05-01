@@ -47,22 +47,24 @@ class IOSBackgroundAudioHandler extends BaseAudioHandler {
       _loopCount = 0;
 
       // 设置媒体项信息
-      mediaItem.add(MediaItem(
-        id: 'dharma_sending',
-        title: '正在发送经文',
-        artist: fileName,
-        artUri: null,
-        duration: Duration.zero, // 未知时长
-      ));
+      mediaItem.add(
+        MediaItem(
+          id: 'dharma_sending',
+          title: '正在发送经文',
+          artist: fileName,
+          artUri: null,
+          duration: Duration.zero, // 未知时长
+        ),
+      );
 
       // 设置播放状态
-      playbackState.add(playbackState.value.copyWith(
-        controls: [
-          MediaControl.pause,
-        ],
-        playing: true,
-        processingState: AudioProcessingState.ready,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          controls: [MediaControl.pause],
+          playing: true,
+          processingState: AudioProcessingState.ready,
+        ),
+      );
 
       // 开始播放静音音频
       await _audioPlayer.play();
@@ -96,15 +98,19 @@ class IOSBackgroundAudioHandler extends BaseAudioHandler {
       }
 
       // 更新媒体控制中心显示
-      mediaItem.add(MediaItem(
-        id: 'dharma_sending',
-        title: title,
-        artist: '发送到: $currentCountry ($_sentCount/$_totalCount)',
-        artUri: null,
-        duration: Duration.zero,
-      ));
+      mediaItem.add(
+        MediaItem(
+          id: 'dharma_sending',
+          title: title,
+          artist: '发送到: $currentCountry ($_sentCount/$_totalCount)',
+          artUri: null,
+          duration: Duration.zero,
+        ),
+      );
 
-      debugPrint('📱 已更新 iOS 媒体控制中心: $currentCountry ($_sentCount/$_totalCount)');
+      debugPrint(
+        '📱 已更新 iOS 媒体控制中心: $currentCountry ($_sentCount/$_totalCount)',
+      );
     } catch (e) {
       debugPrint('❌ 更新 iOS 进度失败: $e');
     }
@@ -119,10 +125,12 @@ class IOSBackgroundAudioHandler extends BaseAudioHandler {
       _isPlaying = false;
 
       // 更新播放状态为已停止
-      playbackState.add(playbackState.value.copyWith(
-        playing: false,
-        processingState: AudioProcessingState.idle,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          playing: false,
+          processingState: AudioProcessingState.idle,
+        ),
+      );
 
       debugPrint('✅ iOS 后台音频已停止');
     } catch (e) {
@@ -142,13 +150,15 @@ class IOSBackgroundAudioHandler extends BaseAudioHandler {
           ? '已完成 $loopCount 轮，共发送到 $totalSent 个国家'
           : '已成功发送到 $totalSent 个国家';
 
-      mediaItem.add(MediaItem(
-        id: 'dharma_sending',
-        title: '✨ 发送完成',
-        artist: message,
-        artUri: null,
-        duration: Duration.zero,
-      ));
+      mediaItem.add(
+        MediaItem(
+          id: 'dharma_sending',
+          title: '✨ 发送完成',
+          artist: message,
+          artUri: null,
+          duration: Duration.zero,
+        ),
+      );
 
       // 2秒后停止音频
       await Future.delayed(const Duration(seconds: 2));

@@ -9,16 +9,14 @@ import 'package:global_dharma_sharing/features/video_feed/presentation/view/widg
 import 'package:global_dharma_sharing/services/like_service.dart';
 import 'package:global_dharma_sharing/services/content_stats_service.dart';
 import 'package:global_dharma_sharing/services/video_title_service.dart';
-import 'package:preload_page_view/preload_page_view.dart' hide PageScrollPhysics;
+import 'package:preload_page_view/preload_page_view.dart'
+    hide PageScrollPhysics;
 import 'package:video_player/video_player.dart';
 import 'package:global_dharma_sharing/providers/video_feed_visibility_notifier.dart';
 
 class VideoFeedView extends StatefulWidget {
-  const VideoFeedView({
-    super.key,
-    this.isTabActive = true,
-  });
-  
+  const VideoFeedView({super.key, this.isTabActive = true});
+
   /// 当前 tab 是否激活（用于控制 TTS 播放）
   final bool isTabActive;
 
@@ -26,11 +24,12 @@ class VideoFeedView extends StatefulWidget {
   State<VideoFeedView> createState() => _VideoFeedViewState();
 }
 
-class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserver {
+class _VideoFeedViewState extends State<VideoFeedView>
+    with WidgetsBindingObserver {
   /// 🚀 24小时优化：最大控制器缓存数量
   /// 减少到 2 个以确保极低内存占用（只保留当前和下一个）
   final int _maxCacheSize = 2;
-  
+
   /// 🧹 周期性内存清理定时器（每5分钟执行一次）
   Timer? _periodicCleanupTimer;
 
@@ -101,7 +100,7 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
       }
     }
   }
-  
+
   /// 🧹 启动周期性内存清理
   void _startPeriodicCleanup() {
     _periodicCleanupTimer?.cancel();
@@ -112,27 +111,29 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
     );
     debugPrint('🧹 24小时优化: 周期性清理已启动');
   }
-  
+
   /// 🧹 执行周期性清理
   void _performPeriodicCleanup() {
     if (!mounted) return;
-    
+
     debugPrint('🧹 执行周期性内存清理...');
-    
+
     // 清理除当前视频外的所有控制器
-    final currentVideoId = _videos.isNotEmpty && _currentPage < _videos.length 
-        ? _videos[_currentPage].id 
+    final currentVideoId = _videos.isNotEmpty && _currentPage < _videos.length
+        ? _videos[_currentPage].id
         : null;
-    
+
     final idsToDispose = _controllerCache.keys
         .where((id) => id != currentVideoId)
         .toList();
-    
+
     for (final id in idsToDispose) {
       _removeController(id);
     }
-    
-    debugPrint('🧹 清理完成: 释放 ${idsToDispose.length} 个控制器, 保留 ${_controllerCache.length} 个');
+
+    debugPrint(
+      '🧹 清理完成: 释放 ${idsToDispose.length} 个控制器, 保留 ${_controllerCache.length} 个',
+    );
   }
 
   @override
@@ -188,7 +189,8 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
     final controller = _getController(videoId);
 
     // If controller exists but has errors, dispose it
-    if (controller != null && (controller.value.hasError || !controller.value.isInitialized)) {
+    if (controller != null &&
+        (controller.value.hasError || !controller.value.isInitialized)) {
       await _removeController(videoId);
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
@@ -224,7 +226,9 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
   }
 
   /// Get or create a controller for a video
-  Future<VideoPlayerController?> _getOrCreateController(VideoEntity video) async {
+  Future<VideoPlayerController?> _getOrCreateController(
+    VideoEntity video,
+  ) async {
     // Skip controller creation for text content
     if (video.contentType == ContentType.text) {
       return null;
@@ -238,7 +242,9 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
 
     try {
       // Get cached file from the cubit
-      final videoFile = await context.read<VideoFeedCubit>().getCachedVideoFile(video.videoUrl);
+      final videoFile = await context.read<VideoFeedCubit>().getCachedVideoFile(
+        video.videoUrl,
+      );
 
       // Create a new controller
       final controller = VideoPlayerController.file(videoFile);
@@ -266,7 +272,9 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
   /// Play a controller if it exists and is initialized
   Future<void> _playController(String videoId) async {
     final controller = _controllerCache[videoId];
-    if (controller != null && controller.value.isInitialized && !controller.value.isPlaying) {
+    if (controller != null &&
+        controller.value.isInitialized &&
+        !controller.value.isPlaying) {
       try {
         await controller.play();
       } catch (e) {
@@ -278,7 +286,9 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
   /// Pause all controllers
   Future<void> _pauseAllControllers() async {
     // Create a copy of the controllers to avoid concurrent modification
-    final controllers = List<VideoPlayerController>.from(_controllerCache.values);
+    final controllers = List<VideoPlayerController>.from(
+      _controllerCache.values,
+    );
 
     for (final controller in controllers) {
       try {
@@ -358,7 +368,9 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
     }
 
     // Dispose controllers outside window
-    final idsToDispose = _controllerCache.keys.where((id) => !idsToKeep.contains(id)).toList();
+    final idsToDispose = _controllerCache.keys
+        .where((id) => !idsToKeep.contains(id))
+        .toList();
     for (final id in idsToDispose) {
       await _removeController(id);
     }
@@ -386,7 +398,7 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
 
     final previousPage = _currentPage;
     _currentPage = newPage;
-    
+
     // 使用 postFrameCallback 延迟 setState，避免在构建期间调用
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -456,7 +468,8 @@ class _VideoFeedViewState extends State<VideoFeedView> with WidgetsBindingObserv
                 key: ValueKey(_videos[index].id),
                 controller: _getController(_videos[index].id),
                 videoItem: _videos[index],
-                isVisible: widget.isTabActive && isVisible && index == _currentPage,
+                isVisible:
+                    widget.isTabActive && isVisible && index == _currentPage,
               ),
             );
           },

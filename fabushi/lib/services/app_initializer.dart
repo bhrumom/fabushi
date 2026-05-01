@@ -22,53 +22,53 @@ class AppInitializer {
     if (_isInitialized || _isInitializing) {
       return;
     }
-    
+
     _isInitializing = true;
 
     try {
       final optimizer = StartupOptimizer();
-      
+
       // ✅ 核心服务初始化（所有平台）
       optimizer.addInitTask(() async {
         UnifiedApiService().initialize();
         debugPrint('✅ API服务初始化完成');
       });
-      
+
       optimizer.addInitTask(() async {
         await _ensureDefaultSettings();
         debugPrint('✅ 默认设置加载完成');
       });
-      
+
       optimizer.addInitTask(() async {
         await LikeService().initialize();
         debugPrint('✅ 点赞服务初始化完成');
       });
-      
+
       // ⚠️ 以下服务仅在非Web平台初始化
       if (!kIsWeb) {
         optimizer.addInitTask(() async {
           await _retryPendingUploads();
           debugPrint('✅ 待上传数据重试完成');
         });
-        
+
         // 初始化内存管理器
         optimizer.addInitTask(() async {
           await MemoryManager.instance.initialize();
           debugPrint('✅ 内存管理器初始化完成');
         });
-        
+
         // 初始化统一保活服务（基于 audio_service + MediaSession）
         optimizer.addInitTask(() async {
           await KeepAliveService.instance.initialize();
           debugPrint('✅ 统一保活服务初始化完成');
         });
-        
+
         // 初始化 WorkManager 恢复机制（仅 Android）
         optimizer.addInitTask(() async {
           await WorkManagerKeepAlive.initialize();
           debugPrint('✅ WorkManager 初始化完成');
         });
-        
+
         // 检查是否需要恢复发送任务
         optimizer.addInitTask(() async {
           await _checkAndRecoverSendingTask();
@@ -77,16 +77,17 @@ class AppInitializer {
       } else {
         debugPrint('🌐 Web平台：跳过原生服务初始化');
       }
-      
+
       // 开始分批初始化
       await optimizer.startInitialization();
-      
+
       _isInitialized = true;
-      debugPrint('🚀 [AppInitializer] 初始化核心任务完成'); // Modified debugPrint message
-      
+      debugPrint(
+        '🚀 [AppInitializer] 初始化核心任务完成',
+      ); // Modified debugPrint message
+
       // LLM 模型按需加载：仅在用户点击目录「功德利益」时初始化
       // 不在启动时预加载，避免卡顿和 iOS 内存警告
-
     } catch (e) {
       debugPrint('应用初始化失败: $e');
       _isInitialized = true;
@@ -95,7 +96,7 @@ class AppInitializer {
       _isInitializing = false;
     }
   }
-  
+
   // 检查并恢复发送任务
   static Future<void> _checkAndRecoverSendingTask() async {
     try {

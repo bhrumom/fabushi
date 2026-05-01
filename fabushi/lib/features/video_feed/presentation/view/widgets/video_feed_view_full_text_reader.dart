@@ -21,7 +21,7 @@ class CharData {
   final String char;
   final String? pinyin;
   final CharType type;
-  
+
   const CharData(this.char, this.pinyin, this.type);
 }
 
@@ -29,14 +29,14 @@ class CharData {
 class ParagraphData {
   final List<CharData> chars;
   final bool isCurrentParagraph;
-  
+
   const ParagraphData(this.chars, this.isCurrentParagraph);
 }
 
 /// 预处理后的完整文本数据
 class ProcessedTextData {
   final List<ParagraphData> paragraphs;
-  
+
   const ProcessedTextData(this.paragraphs);
 }
 
@@ -51,21 +51,21 @@ class _PhraseTrieNode {
 
 class PhraseTrie {
   final _PhraseTrieNode _root = _PhraseTrieNode();
-  
+
   // 单例模式，全局共享
   static PhraseTrie? _instance;
   static PhraseTrie get instance {
     _instance ??= PhraseTrie._build();
     return _instance!;
   }
-  
+
   PhraseTrie._build() {
     // 构建 Trie 树
     for (final entry in BuddhistPinyinDictionary.phraseMap.entries) {
       _insert(entry.key, entry.value);
     }
   }
-  
+
   void _insert(String phrase, List<String> pinyinList) {
     var node = _root;
     for (int i = 0; i < phrase.length; i++) {
@@ -75,26 +75,29 @@ class PhraseTrie {
     }
     node.pinyinList = pinyinList;
   }
-  
+
   /// 从 text[startIndex] 开始匹配，返回最长匹配的词组和拼音
   /// 返回 null 表示无匹配
-  ({String phrase, List<String> pinyin})? matchLongest(String text, int startIndex) {
+  ({String phrase, List<String> pinyin})? matchLongest(
+    String text,
+    int startIndex,
+  ) {
     var node = _root;
     String? longestPhrase;
     List<String>? longestPinyin;
-    
+
     for (int i = startIndex; i < text.length; i++) {
       final char = text[i];
       final child = node.children[char];
       if (child == null) break;
-      
+
       node = child;
       if (node.pinyinList != null) {
         longestPhrase = text.substring(startIndex, i + 1);
         longestPinyin = node.pinyinList;
       }
     }
-    
+
     if (longestPhrase != null && longestPinyin != null) {
       return (phrase: longestPhrase, pinyin: longestPinyin);
     }
@@ -119,7 +122,7 @@ class BuddhistPinyinDictionary {
     '僧伽': ['sēng', 'qié'],
     '伽陀': ['qié', 'tuó'],
     '阿伽': ['ā', 'qié'],
-    
+
     // ===== 佛菩萨名号 =====
     '阿弥陀': ['ē', 'mí', 'tuó'],
     '释迦': ['shì', 'jiā'],
@@ -146,7 +149,7 @@ class BuddhistPinyinDictionary {
     '藥師': ['yào', 'shī'],
     '香云盖菩萨摩诃萨': ['xiāng', 'yún', 'gài', 'pú', 'sà', 'mó', 'hē', 'sà'],
     '本师释迦牟尼佛': ['běn', 'shī', 'shì', 'jiā', 'móu', 'ní', 'fó'],
-    
+
     // ===== 经典名称 =====
     '华严': ['huā', 'yán'],
     '華嚴': ['huā', 'yán'],
@@ -162,7 +165,7 @@ class BuddhistPinyinDictionary {
     '心经': ['xīn', 'jīng'],
     '心經': ['xīn', 'jīng'],
     '阿含': ['ā', 'hán'],
-    
+
     // ===== 佛教术语 =====
     '菩提': ['pú', 'tí'],
     '菩萨': ['pú', 'sà'],
@@ -200,7 +203,7 @@ class BuddhistPinyinDictionary {
     '須彌山': ['xū', 'mí', 'shān'],
     '忉利天': ['dāo', 'lì', 'tiān'],
     '兜率天': ['dōu', 'shuài', 'tiān'],
-    
+
     // ===== 咒语常见字组 =====
     '唵嘛呢': ['ōng', 'ma', 'ní'],
     '嘛呢叭': ['ma', 'ní', 'bā'],
@@ -216,7 +219,7 @@ class BuddhistPinyinDictionary {
     '怛侄他': ['dá', 'zhí', 'tuō'],
     '揭谛': ['jiē', 'dì'],
     '揭諦': ['jiē', 'dì'],
-    
+
     // ===== 诵经前仪式 =====
     '炉香乍爇': ['lú', 'xiāng', 'zhà', 'ruò'],
     '法界蒙薰': ['fǎ', 'jiè', 'méng', 'xūn'],
@@ -416,11 +419,14 @@ class SutraEpilogueData {
     'pinyin': 'sān guī yī',
     'times': '一遍',
     'content1': '自皈依佛．当愿众生．体解大道．发无上心。',
-    'content1Pinyin': 'zì guī yī fó．dāng yuàn zhòng shēng．tǐ jiě dà dào．fā wú shàng xīn。',
+    'content1Pinyin':
+        'zì guī yī fó．dāng yuàn zhòng shēng．tǐ jiě dà dào．fā wú shàng xīn。',
     'content2': '自皈依法．当愿众生．深入经藏．智慧如海。',
-    'content2Pinyin': 'zì guī yī fǎ．dāng yuàn zhòng shēng．shēn rù jīng zàng．zhì huì rú hǎi。',
+    'content2Pinyin':
+        'zì guī yī fǎ．dāng yuàn zhòng shēng．shēn rù jīng zàng．zhì huì rú hǎi。',
     'content3': '自皈依僧．当愿众生．统理大众．一切无碍．和南圣众。',
-    'content3Pinyin': 'zì guī yī sēng．dāng yuàn zhòng shēng．tǒng lǐ dà zhòng．yī qiè wú ài．hé nán shèng zhòng。',
+    'content3Pinyin':
+        'zì guī yī sēng．dāng yuàn zhòng shēng．tǒng lǐ dà zhòng．yī qiè wú ài．hé nán shèng zhòng。',
   };
 
   /// 结束说明
@@ -433,49 +439,60 @@ class SutraEpilogueData {
 
 class TextPreprocessor {
   /// 在 isolate 中预处理文本（避免阻塞 UI 线程）
-  static Future<ProcessedTextData> processAsync(String text, String? currentParagraph) async {
+  static Future<ProcessedTextData> processAsync(
+    String text,
+    String? currentParagraph,
+  ) async {
     return compute(_processText, _ProcessInput(text, currentParagraph));
   }
-  
+
   /// isolate 入口函数
   static ProcessedTextData _processText(_ProcessInput input) {
     final paragraphs = input.text.split(RegExp(r'[\n]+'));
     final trie = PhraseTrie.instance;
-    
+
     final processedParagraphs = <ParagraphData>[];
-    
+
     for (final paragraph in paragraphs) {
       if (paragraph.trim().isEmpty) continue;
-      
-      final isCurrentParagraph = input.currentParagraph != null && 
+
+      final isCurrentParagraph =
+          input.currentParagraph != null &&
           paragraph.contains(input.currentParagraph!);
-      
+
       final chars = _processParagraph(paragraph, trie);
       processedParagraphs.add(ParagraphData(chars, isCurrentParagraph));
     }
-    
+
     return ProcessedTextData(processedParagraphs);
   }
-  
+
   /// 处理单个段落
   static List<CharData> _processParagraph(String paragraph, PhraseTrie trie) {
     final chars = <CharData>[];
     int i = 0;
-    
+
     while (i < paragraph.length) {
       final char = paragraph[i];
-      
+
       // 使用 Trie 树匹配词组 O(k)
       final match = trie.matchLongest(paragraph, i);
-      
+
       if (match != null) {
         for (int j = 0; j < match.phrase.length; j++) {
-          chars.add(CharData(match.phrase[j], match.pinyin[j], CharType.chinese));
+          chars.add(
+            CharData(match.phrase[j], match.pinyin[j], CharType.chinese),
+          );
         }
         i += match.phrase.length;
       } else if (_isChinese(char)) {
-        final pinyin = BuddhistPinyinDictionary.singleCharOverride[char] ??
-            PinyinHelper.getPinyin(char, separator: '', format: PinyinFormat.WITH_TONE_MARK);
+        final pinyin =
+            BuddhistPinyinDictionary.singleCharOverride[char] ??
+            PinyinHelper.getPinyin(
+              char,
+              separator: '',
+              format: PinyinFormat.WITH_TONE_MARK,
+            );
         chars.add(CharData(char, pinyin, CharType.chinese));
         i++;
       } else if (char == ' ' || char == '\t') {
@@ -489,18 +506,21 @@ class TextPreprocessor {
         i++;
       }
     }
-    
+
     return chars;
   }
-  
+
   static bool _isChinese(String char) {
     if (char.isEmpty) return false;
     final code = char.codeUnitAt(0);
-    return (code >= 0x4E00 && code <= 0x9FFF) || (code >= 0x3400 && code <= 0x4DBF);
+    return (code >= 0x4E00 && code <= 0x9FFF) ||
+        (code >= 0x3400 && code <= 0x4DBF);
   }
-  
+
   static bool _isPunctuation(String char) {
-    const punctuations = '，。！？、；：""''（）【】《》…—·．';
+    const punctuations =
+        '，。！？、；：""'
+        '（）【】《》…—·．';
     return punctuations.contains(char);
   }
 }
@@ -508,7 +528,7 @@ class TextPreprocessor {
 class _ProcessInput {
   final String text;
   final String? currentParagraph;
-  
+
   const _ProcessInput(this.text, this.currentParagraph);
 }
 
@@ -518,34 +538,34 @@ class _ProcessInput {
 
 class _CachedWidgets {
   static const spaceWidget = SizedBox(width: 8);
-  
+
   static const pinyinStyle = TextStyle(
     fontSize: 12,
     color: Color(0xFF88C0D0),
     fontWeight: FontWeight.w500,
     height: 1.2,
   );
-  
+
   static const charStyle = TextStyle(
     fontSize: 28,
     color: Colors.white,
     fontWeight: FontWeight.w600,
     height: 1.2,
   );
-  
+
   static const punctuationStyle = TextStyle(
     fontSize: 28,
     color: Colors.white70,
     fontWeight: FontWeight.w400,
   );
-  
+
   static const preludePinyinStyle = TextStyle(
     fontSize: 12,
     color: Color(0xFF9370DB),
     fontWeight: FontWeight.w500,
     height: 1.2,
   );
-  
+
   static const preludeCharStyle = TextStyle(
     fontSize: 26,
     color: Color(0xFFB22222),
@@ -571,40 +591,41 @@ class VideoFeedViewFullTextReader extends StatefulWidget {
   final String? currentParagraph;
 
   @override
-  State<VideoFeedViewFullTextReader> createState() => _VideoFeedViewFullTextReaderState();
+  State<VideoFeedViewFullTextReader> createState() =>
+      _VideoFeedViewFullTextReaderState();
 }
 
-class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReader> 
+class _VideoFeedViewFullTextReaderState
+    extends State<VideoFeedViewFullTextReader>
     with SingleTickerProviderStateMixin {
   ProcessedTextData? _processedData;
   bool _isLoading = true;
-  
+
   // 可折叠区块状态（默认收起）
   bool _isPreludeExpanded = false;
   bool _isEpilogueExpanded = false;
-  
+
   // 延迟缓存的仪式内容（避免重复构建）
   Widget? _cachedPreludeContent;
   Widget? _cachedEpilogueContent;
-  
+
   // 目录相关状态
   SutraTableOfContents? _tableOfContents;
   int _currentParagraphIndex = 0;
-  
+
   // ScrollablePositionedList 控制器
   final ItemScrollController _itemScrollController = ItemScrollController();
-  final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
-  
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
+
   /// 获取缓存的诵经前仪式内容
-  Widget get _preludeContent => _cachedPreludeContent ??= RepaintBoundary(
-    child: _buildSutraPrelude(),
-  );
-  
+  Widget get _preludeContent =>
+      _cachedPreludeContent ??= RepaintBoundary(child: _buildSutraPrelude());
+
   /// 获取缓存的结束仪式内容
-  Widget get _epilogueContent => _cachedEpilogueContent ??= RepaintBoundary(
-    child: _buildSutraEpilogue(),
-  );
-  
+  Widget get _epilogueContent =>
+      _cachedEpilogueContent ??= RepaintBoundary(child: _buildSutraEpilogue());
+
   // ========= 功德利益识别与高亮 (基于轻量推荐引擎) =========
   final MeritBenefitService _meritService = MeritBenefitService.instance;
   // 每个段落的功德利益句高亮范围
@@ -613,10 +634,10 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   List<String> _rawParagraphs = [];
   // 全文分析是否已触发
   bool _fullTextAnalysisTriggered = false;
-  
+
   // ========= UI显示/隐藏控制 =========
-  bool _isUIVisible = true;  // 初始显示工具栏和悬浮按钮
-  
+  bool _isUIVisible = true; // 初始显示工具栏和悬浮按钮
+
   /// 切换UI显示/隐藏状态
   void _toggleUIVisibility() {
     HapticFeedback.lightImpact();
@@ -632,42 +653,46 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
     // 监听滚动位置变化
     _itemPositionsListener.itemPositions.addListener(_onPositionsChanged);
   }
-  
+
   @override
   void dispose() {
     _itemPositionsListener.itemPositions.removeListener(_onPositionsChanged);
     super.dispose();
   }
-  
+
   /// 根据可见项目更新当前段落索引
   void _onPositionsChanged() {
     final positions = _itemPositionsListener.itemPositions.value;
     if (positions.isEmpty) return;
-    
+
     // 找到第一个完全可见或部分可见的段落项
     // 跳过 index=0（诵经前仪式）
     final visibleParagraphs = positions
-        .where((pos) => pos.index > 0 && pos.index <= (_processedData?.paragraphs.length ?? 0))
+        .where(
+          (pos) =>
+              pos.index > 0 &&
+              pos.index <= (_processedData?.paragraphs.length ?? 0),
+        )
         .toList();
-    
+
     if (visibleParagraphs.isEmpty) return;
-    
+
     // 取最靠近顶部的可见段落
-    visibleParagraphs.sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
+    visibleParagraphs.sort(
+      (a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge),
+    );
     final topVisible = visibleParagraphs.first;
-    
+
     // index - 1 是因为 index=0 是诵经前仪式
     final newIndex = topVisible.index - 1;
-    
+
     if (newIndex != _currentParagraphIndex && newIndex >= 0) {
       setState(() {
         _currentParagraphIndex = newIndex;
       });
     }
-
   }
-  
-  
+
   /// 从全局缓存中获取段落的功德利益高亮（全文分析完成后可用）
   void _fillMeritHighlightsFromCache(int paragraphIndex) {
     if (_meritHighlights.containsKey(paragraphIndex)) return;
@@ -678,41 +703,44 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   Future<void> _preprocessText() async {
     // 异步解析目录
     final toc = SutraTableOfContents.parse(widget.fullText, widget.bookTitle);
-    
+
     // 保存原始段落文本（用于 LLM 识别）
-    _rawParagraphs = widget.fullText.split(RegExp(r'[\n]+'))
+    _rawParagraphs = widget.fullText
+        .split(RegExp(r'[\n]+'))
         .where((p) => p.trim().isNotEmpty)
         .toList();
-    
+
     // 异步预处理，不阻塞 UI
     final data = await TextPreprocessor.processAsync(
       widget.fullText,
       widget.currentParagraph,
     );
-    
+
     if (mounted) {
       setState(() {
         _processedData = data;
         _tableOfContents = toc;
         _isLoading = false;
       });
-      
+
       // 功德利益分析不在此处自动触发，仅在目录面板点击功德利益标签时触发
     }
   }
-  
+
   /// 全文功德利益分析（一次性，共用全局缓存）
   Future<void> _prefetchVisibleMerit() async {
     if (_rawParagraphs.isEmpty || _fullTextAnalysisTriggered) return;
     if (_tableOfContents == null) return;
-    
+
     _fullTextAnalysisTriggered = true;
-    
+
     try {
       // 一次性分析全文（共用全局缓存，基于毫秒级推荐引擎）
       final data = await _meritService.extractFromText(
-        widget.fullText, _tableOfContents!);
-      
+        widget.fullText,
+        _tableOfContents!,
+      );
+
       if (mounted) {
         // 将全文结果按段落索引分组到高亮缓存
         for (final sentence in data.sentences) {
@@ -721,10 +749,12 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
               .add(sentence);
         }
         setState(() {});
-        
+
         if (data.sentences.isNotEmpty) {
-          debugPrint('📿 Reader: 全文功德利益分析完成，'
-              '共 ${data.sentences.length} 个功德利益句');
+          debugPrint(
+            '📿 Reader: 全文功德利益分析完成，'
+            '共 ${data.sentences.length} 个功德利益句',
+          );
         }
       }
     } catch (e) {
@@ -785,12 +815,14 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                   // 悬浮按钮（AI + 听）
                   Positioned(
                     right: 16,
-                    bottom: _isUIVisible ? 72 : 16,  // 工具栏显示时上移
+                    bottom: _isUIVisible ? 72 : 16, // 工具栏显示时上移
                     child: AnimatedOpacity(
                       opacity: _isUIVisible ? 1.0 : 0.0,
                       duration: const Duration(milliseconds: 200),
                       child: AnimatedSlide(
-                        offset: _isUIVisible ? Offset.zero : const Offset(0, 0.5),
+                        offset: _isUIVisible
+                            ? Offset.zero
+                            : const Offset(0, 0.5),
                         duration: const Duration(milliseconds: 200),
                         curve: Curves.easeOutCubic,
                         child: _buildFloatingButtons(),
@@ -818,7 +850,6 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
       ),
     );
   }
-
 
   /// 构建悬浮按钮组（AI + 听）
   Widget _buildFloatingButtons() {
@@ -860,7 +891,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
       ],
     );
   }
-  
+
   /// 构建单个悬浮按钮
   Widget _buildFloatingButton({
     required String label,
@@ -896,16 +927,14 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
       ),
     );
   }
-  
+
   /// 打开AI问经页面
   void _openAIPage() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => SutraAIPage(
-          bookTitle: widget.bookTitle,
-          fullText: widget.fullText,
-        ),
+        builder: (context) =>
+            SutraAIPage(bookTitle: widget.bookTitle, fullText: widget.fullText),
       ),
     );
   }
@@ -938,9 +967,9 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             label: '书签',
             onTap: () {
               HapticFeedback.lightImpact();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('书签功能即将上线')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('书签功能即将上线')));
             },
           ),
           // 进度按钮
@@ -949,9 +978,9 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             label: '进度',
             onTap: () {
               HapticFeedback.lightImpact();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('进度功能即将上线')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('进度功能即将上线')));
             },
           ),
           // 亮度按钮
@@ -960,9 +989,9 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             label: '亮度',
             onTap: () {
               HapticFeedback.lightImpact();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('亮度设置即将上线')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('亮度设置即将上线')));
             },
           ),
           // 字体按钮
@@ -971,16 +1000,16 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             label: '字体',
             onTap: () {
               HapticFeedback.lightImpact();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('字体设置即将上线')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('字体设置即将上线')));
             },
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildToolbarButton({
     required IconData icon,
     required String label,
@@ -998,28 +1027,25 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             const SizedBox(height: 2),
             Text(
               label,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 11,
-              ),
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
             ),
           ],
         ),
       ),
     );
   }
-  
+
   /// 显示目录面板
   void _showTableOfContents() {
     HapticFeedback.lightImpact();
-    
+
     if (_tableOfContents == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('目录加载中...')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('目录加载中...')));
       return;
     }
-    
+
     SutraTocBottomSheet.show(
       context,
       tableOfContents: _tableOfContents!,
@@ -1029,11 +1055,11 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
       onMeritSentenceTap: _scrollToParagraph,
     );
   }
-  
+
   /// 滚动到指定段落（用于功德利益句点击跳转）
   void _scrollToParagraph(int paragraphIndex) {
     if (paragraphIndex >= (_processedData?.paragraphs.length ?? 0)) return;
-    
+
     if (_itemScrollController.isAttached) {
       _itemScrollController.scrollTo(
         index: paragraphIndex + 1,
@@ -1042,19 +1068,18 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
         curve: Curves.easeOutCubic,
       );
     }
-    
+
     setState(() {
       _currentParagraphIndex = paragraphIndex;
     });
   }
 
-  
   /// 滚动到指定章节（精确跳转）
   void _scrollToChapter(SutraChapter chapter) {
     HapticFeedback.lightImpact();
     final paragraphIndex = chapter.paragraphIndex;
     if (paragraphIndex >= (_processedData?.paragraphs.length ?? 0)) return;
-    
+
     // 精确跳转：index + 1 是因为列表中 index=0 是诵经前仪式
     // 经文段落从 index=1 开始
     if (_itemScrollController.isAttached) {
@@ -1065,7 +1090,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
         curve: Curves.easeOutCubic,
       );
     }
-    
+
     setState(() {
       _currentParagraphIndex = paragraphIndex;
     });
@@ -1075,7 +1100,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
     // 列表总项数 = 1（诵经前仪式） + 经文段落数 + 1（诵经结束仪式）
     final paragraphCount = _processedData!.paragraphs.length;
     final totalItems = 1 + paragraphCount + 1;
-    
+
     return ScrollablePositionedList.builder(
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
@@ -1092,7 +1117,8 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                   title: '诵经前仪式',
                   subtitle: '香赞・真言・开经偈',
                   isExpanded: _isPreludeExpanded,
-                  onToggle: () => setState(() => _isPreludeExpanded = !_isPreludeExpanded),
+                  onToggle: () =>
+                      setState(() => _isPreludeExpanded = !_isPreludeExpanded),
                   content: _preludeContent,
                 ),
                 const SizedBox(height: 32),
@@ -1124,7 +1150,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             ),
           );
         }
-        
+
         // index 1 ~ paragraphCount: 经文段落
         if (index <= paragraphCount) {
           final paragraphIndex = index - 1;
@@ -1134,7 +1160,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             child: _buildParagraphWidget(paragraph, paragraphIndex),
           );
         }
-        
+
         // 最后一项: 诵经结束仪式
         return Padding(
           padding: const EdgeInsets.all(20),
@@ -1158,7 +1184,8 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                 title: '诵经结束仪式',
                 subtitle: '补阙真言・回向偈・三皓依',
                 isExpanded: _isEpilogueExpanded,
-                onToggle: () => setState(() => _isEpilogueExpanded = !_isEpilogueExpanded),
+                onToggle: () =>
+                    setState(() => _isEpilogueExpanded = !_isEpilogueExpanded),
                 content: _epilogueContent,
               ),
               const SizedBox(height: 40),
@@ -1170,7 +1197,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   }
 
   /// 构建可折叠区块（极致优化版）
-  /// 
+  ///
   /// 优化点：
   /// - AnimatedSize: 仅展开时构建内容，收起时不占用内存
   /// - HapticFeedback: 点击时提供触觉反馈
@@ -1195,13 +1222,13 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: isExpanded 
-                  ? Colors.white.withValues(alpha: 0.12) 
+              color: isExpanded
+                  ? Colors.white.withValues(alpha: 0.12)
                   : Colors.white.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isExpanded 
-                    ? Colors.amber.withValues(alpha: 0.5) 
+                color: isExpanded
+                    ? Colors.amber.withValues(alpha: 0.5)
                     : Colors.amber.withValues(alpha: 0.3),
                 width: isExpanded ? 1.5 : 1,
               ),
@@ -1215,7 +1242,9 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
                   curve: Curves.easeOutCubic,
                   child: Icon(
                     Icons.chevron_right,
-                    color: isExpanded ? Colors.amber : Colors.amber.withValues(alpha: 0.8),
+                    color: isExpanded
+                        ? Colors.amber
+                        : Colors.amber.withValues(alpha: 0.8),
                     size: 28,
                   ),
                 ),
@@ -1267,7 +1296,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeOutCubic,
             alignment: Alignment.topCenter,
-            child: isExpanded 
+            child: isExpanded
                 ? Padding(
                     padding: const EdgeInsets.only(top: 20),
                     child: content,
@@ -1282,15 +1311,19 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   Widget _buildParagraphWidget(ParagraphData paragraph, int paragraphIndex) {
     // 获取该段落的功德利益句高亮范围
     final meritSentences = _meritHighlights[paragraphIndex] ?? [];
-    
+
     // 构建高亮字符索引集合
     final highlightedIndices = <int>{};
     for (final sentence in meritSentences) {
-      for (int i = sentence.startOffset; i < sentence.endOffset && i < paragraph.chars.length; i++) {
+      for (
+        int i = sentence.startOffset;
+        i < sentence.endOffset && i < paragraph.chars.length;
+        i++
+      ) {
         highlightedIndices.add(i);
       }
     }
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
       padding: const EdgeInsets.all(16),
@@ -1309,7 +1342,10 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
         runSpacing: 24,
         children: List.generate(paragraph.chars.length, (charIndex) {
           final isHighlighted = highlightedIndices.contains(charIndex);
-          return _buildCharWidget(paragraph.chars[charIndex], isHighlighted: isHighlighted);
+          return _buildCharWidget(
+            paragraph.chars[charIndex],
+            isHighlighted: isHighlighted,
+          );
         }),
       ),
     );
@@ -1323,20 +1359,15 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
       fontWeight: FontWeight.w600,
       height: 1.2,
     );
-    
+
     final highlightCharStyle = TextStyle(
       fontSize: 28,
       color: const Color(0xFFFFD700), // 金色
       fontWeight: FontWeight.w700,
       height: 1.2,
-      shadows: const [
-        Shadow(
-          color: Color(0x66FFD700),
-          blurRadius: 8,
-        ),
-      ],
+      shadows: const [Shadow(color: Color(0x66FFD700), blurRadius: 8)],
     );
-    
+
     switch (data.type) {
       case CharType.chinese:
         return Container(
@@ -1345,13 +1376,17 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                data.pinyin ?? '', 
-                style: isHighlighted ? highlightPinyinStyle : _CachedWidgets.pinyinStyle,
+                data.pinyin ?? '',
+                style: isHighlighted
+                    ? highlightPinyinStyle
+                    : _CachedWidgets.pinyinStyle,
               ),
               const SizedBox(height: 2),
               Text(
-                data.char, 
-                style: isHighlighted ? highlightCharStyle : _CachedWidgets.charStyle,
+                data.char,
+                style: isHighlighted
+                    ? highlightCharStyle
+                    : _CachedWidgets.charStyle,
               ),
             ],
           ),
@@ -1362,8 +1397,8 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
         return Padding(
           padding: const EdgeInsets.only(top: 20),
           child: Text(
-            data.char, 
-            style: isHighlighted 
+            data.char,
+            style: isHighlighted
                 ? highlightCharStyle.copyWith(fontSize: 28, shadows: null)
                 : _CachedWidgets.punctuationStyle,
           ),
@@ -1373,7 +1408,7 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
           padding: const EdgeInsets.only(top: 20),
           child: Text(
             data.char,
-            style: isHighlighted 
+            style: isHighlighted
                 ? highlightCharStyle.copyWith(fontSize: 24)
                 : const TextStyle(
                     fontSize: 24,
@@ -1523,15 +1558,25 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
 
       if (match != null) {
         for (int j = 0; j < match.phrase.length; j++) {
-          widgets.add(_buildPreludeCharWithPinyin(match.phrase[j], match.pinyin[j]));
+          widgets.add(
+            _buildPreludeCharWithPinyin(match.phrase[j], match.pinyin[j]),
+          );
         }
         i += match.phrase.length;
       } else if (_isChinese(char)) {
-        final pinyin = BuddhistPinyinDictionary.singleCharOverride[char] ??
-            PinyinHelper.getPinyin(char, separator: '', format: PinyinFormat.WITH_TONE_MARK);
+        final pinyin =
+            BuddhistPinyinDictionary.singleCharOverride[char] ??
+            PinyinHelper.getPinyin(
+              char,
+              separator: '',
+              format: PinyinFormat.WITH_TONE_MARK,
+            );
         widgets.add(_buildPreludeCharWithPinyin(char, pinyin));
         i++;
-      } else if (char == '．' || char == '。' || char == '，' || _isPunctuation(char)) {
+      } else if (char == '．' ||
+          char == '。' ||
+          char == '，' ||
+          _isPunctuation(char)) {
         widgets.add(_buildPreludePunctuation(char));
         i++;
       } else if (char == ' ' || char == '\t') {
@@ -1761,28 +1806,48 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildEpilogueVersePair(data['line1']!, data['line1Pinyin']!, data['line2']!, data['line2Pinyin']!),
+            _buildEpilogueVersePair(
+              data['line1']!,
+              data['line1Pinyin']!,
+              data['line2']!,
+              data['line2Pinyin']!,
+            ),
           ],
         ),
         const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildEpilogueVersePair(data['line3']!, data['line3Pinyin']!, data['line4']!, data['line4Pinyin']!),
+            _buildEpilogueVersePair(
+              data['line3']!,
+              data['line3Pinyin']!,
+              data['line4']!,
+              data['line4Pinyin']!,
+            ),
           ],
         ),
         const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildEpilogueVersePair(data['line5']!, data['line5Pinyin']!, data['line6']!, data['line6Pinyin']!),
+            _buildEpilogueVersePair(
+              data['line5']!,
+              data['line5Pinyin']!,
+              data['line6']!,
+              data['line6Pinyin']!,
+            ),
           ],
         ),
         const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildEpilogueVersePair(data['line7']!, data['line7Pinyin']!, data['line8']!, data['line8Pinyin']!),
+            _buildEpilogueVersePair(
+              data['line7']!,
+              data['line7Pinyin']!,
+              data['line8']!,
+              data['line8Pinyin']!,
+            ),
           ],
         ),
       ],
@@ -1790,7 +1855,12 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   }
 
   /// 构建偈子成对显示（两句并排）
-  Widget _buildEpilogueVersePair(String text1, String pinyin1, String text2, String pinyin2) {
+  Widget _buildEpilogueVersePair(
+    String text1,
+    String pinyin1,
+    String text2,
+    String pinyin2,
+  ) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1860,11 +1930,14 @@ class _VideoFeedViewFullTextReaderState extends State<VideoFeedViewFullTextReade
   bool _isChinese(String char) {
     if (char.isEmpty) return false;
     final code = char.codeUnitAt(0);
-    return (code >= 0x4E00 && code <= 0x9FFF) || (code >= 0x3400 && code <= 0x4DBF);
+    return (code >= 0x4E00 && code <= 0x9FFF) ||
+        (code >= 0x3400 && code <= 0x4DBF);
   }
 
   bool _isPunctuation(String char) {
-    const punctuations = '，。！？、；：""''（）【】《》…—·．';
+    const punctuations =
+        '，。！？、；：""'
+        '（）【】《》…—·．';
     return punctuations.contains(char);
   }
 }

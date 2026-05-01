@@ -11,7 +11,9 @@ final videoFeedGetIt = GetIt.instance;
 
 void setupVideoFeedDependencies() {
   // Firebase
-  videoFeedGetIt.registerLazySingleton<FirebaseFirestore>(() => FirebaseFirestore.instance);
+  videoFeedGetIt.registerLazySingleton<FirebaseFirestore>(
+    () => FirebaseFirestore.instance,
+  );
 
   // Services - Eager singleton for immediate preloading
   final textService = CloudflareTextService();
@@ -31,7 +33,9 @@ void setupVideoFeedDependencies() {
   );
 
   videoFeedGetIt.registerLazySingleton<FetchMoreVideosUseCase>(
-    () => FetchMoreVideosUseCase(repository: videoFeedGetIt<VideoFeedRepository>()),
+    () => FetchMoreVideosUseCase(
+      repository: videoFeedGetIt<VideoFeedRepository>(),
+    ),
   );
 
   // Cubits

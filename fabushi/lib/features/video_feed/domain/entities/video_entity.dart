@@ -47,4 +47,3 @@ class VideoEntity extends Equatable {
     filePath,
   ];
 }
-

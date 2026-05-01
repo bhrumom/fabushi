@@ -49,11 +49,17 @@ class Globe3DWidgetState extends State<Globe3DWidget> {
           children: [
             const Icon(Icons.public, size: 80, color: Colors.blue),
             const SizedBox(height: 20),
-            const Text('3D地球（桌面版）', style: TextStyle(color: Colors.white, fontSize: 20)),
+            const Text(
+              '3D地球（桌面版）',
+              style: TextStyle(color: Colors.white, fontSize: 20),
+            ),
             const SizedBox(height: 10),
             Text(
               '请使用 flutter run -d chrome 在浏览器中查看完整3D效果',
-              style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.7),
+                fontSize: 14,
+              ),
               textAlign: TextAlign.center,
             ),
           ],

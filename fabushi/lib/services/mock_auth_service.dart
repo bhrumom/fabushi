@@ -98,7 +98,11 @@ class MockAuthService {
     return {'success': true, 'message': '重置密码邮件已发送'};
   }
 
-  Future<Map<String, dynamic>> resetPassword(String email, String token, String newPassword) async {
+  Future<Map<String, dynamic>> resetPassword(
+    String email,
+    String token,
+    String newPassword,
+  ) async {
     debugPrint('🔄 模拟重置密码请求: $email');
 
     // 模拟网络延迟
@@ -137,7 +141,9 @@ class MockAuthService {
         'username': 'testuser',
         'email': 'test@example.com',
         'membershipType': 'premium',
-        'membershipExpiry': DateTime.now().add(const Duration(days: 25)).toIso8601String(),
+        'membershipExpiry': DateTime.now()
+            .add(const Duration(days: 25))
+            .toIso8601String(),
         'isAdmin': false,
       },
     };
@@ -170,7 +176,9 @@ class MockAuthService {
         'membership': {
           'type': 'trial',
           'isActive': true,
-          'expiresAt': DateTime.now().add(const Duration(days: 5)).toIso8601String(),
+          'expiresAt': DateTime.now()
+              .add(const Duration(days: 5))
+              .toIso8601String(),
           'daysRemaining': 5,
         },
         'hasStripeCustomer': false,
@@ -194,7 +202,9 @@ class MockAuthService {
         'success': true,
         'message': '兑换成功！获得月度会员',
         'membershipType': 'premium',
-        'expiresAt': DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+        'expiresAt': DateTime.now()
+            .add(const Duration(days: 30))
+            .toIso8601String(),
         'daysAdded': 30,
       };
     } else if (code == 'TRIAL7DAYS') {
@@ -202,18 +212,27 @@ class MockAuthService {
         'success': true,
         'message': '兑换成功！获得7天试用',
         'membershipType': 'trial',
-        'expiresAt': DateTime.now().add(const Duration(days: 7)).toIso8601String(),
+        'expiresAt': DateTime.now()
+            .add(const Duration(days: 7))
+            .toIso8601String(),
         'daysAdded': 7,
       };
     } else {
-      return {'success': false, 'message': '兑换码无效或已过期（测试兑换码：TEST123456, TRIAL7DAYS）'};
+      return {
+        'success': false,
+        'message': '兑换码无效或已过期（测试兑换码：TEST123456, TRIAL7DAYS）',
+      };
     }
   }
 
   // 获取测试账户信息
   static List<Map<String, String>> getTestAccounts() {
     return [
-      {'email': 'test@example.com', 'password': 'password123', 'type': '高级会员账户'},
+      {
+        'email': 'test@example.com',
+        'password': 'password123',
+        'type': '高级会员账户',
+      },
       {'email': 'admin@fabushi.com', 'password': 'admin123', 'type': '管理员账户'},
       {'email': 'user@test.com', 'password': 'test123', 'type': '普通用户账户'},
     ];

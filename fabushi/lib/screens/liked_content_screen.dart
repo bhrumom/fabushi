@@ -26,7 +26,11 @@ class _LikedContentScreenState extends State<LikedContentScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.favorite_border, size: 80, color: Colors.grey.shade400),
+                Icon(
+                  Icons.favorite_border,
+                  size: 80,
+                  color: Colors.grey.shade400,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   '还没有喜欢的内容',
@@ -58,10 +62,7 @@ class _LikedContentScreenState extends State<LikedContentScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('我的喜欢'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('我的喜欢'), centerTitle: true),
       body: content,
     );
   }
@@ -141,7 +142,10 @@ class _LikedContentScreenState extends State<LikedContentScreen> {
                     const SizedBox(height: 4),
                     Text(
                       _formatTime(item.likedAt),
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                   ],
                 ),

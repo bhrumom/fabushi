@@ -60,28 +60,28 @@ class RotatingGlobeState extends State<RotatingGlobe>
   late double rotationZ =
       0; // The rotation angle around the Z-axis of the sphere.
   late double
-      _lastRotationX; // The previous rotation angle around the X-axis of the sphere.
+  _lastRotationX; // The previous rotation angle around the X-axis of the sphere.
   late double
-      _lastRotationZ; // The previous rotation angle around the Z-axis of the sphere.
+  _lastRotationZ; // The previous rotation angle around the Z-axis of the sphere.
   late double rotationY =
       0; // The rotation angle around the Y-axis of the sphere.
   late double
-      _lastRotationY; // The previous rotation angle around the Y-axis of the sphere.
+  _lastRotationY; // The previous rotation angle around the Y-axis of the sphere.
   final GlobalKey _futureBuilderKey =
       GlobalKey(); // The key for the FutureBuilder widget.
 
   late Offset _lastFocalPoint; // The previous focal point of the interaction.
   late AnimationController
-      _lineMovingController; // The animation controller for line movement.
+  _lineMovingController; // The animation controller for line movement.
 
   double _angularVelocityX = 0.0; // The angular velocity around the X-axis.
   double _angularVelocityY = 0.0; // The angular velocity around the Y-axis.
   double _angularVelocityZ = 0.0; // The angular velocity around the Z-axis.
   late AnimationController
-      _decelerationController; // The animation controller for deceleration.
+  _decelerationController; // The animation controller for deceleration.
 
   AnimationController?
-      _dayNightCycleController; // The animation controller for day/night cycle.
+  _dayNightCycleController; // The animation controller for day/night cycle.
 
   double _targetRotationX = 0.0;
   double _targetRotationY = 0.0;
@@ -112,24 +112,24 @@ class RotatingGlobeState extends State<RotatingGlobe>
   @override
   void initState() {
     widget.controller.addListener(_update);
-    widget.controller.rotationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 1),
-    )..addListener(() {
-        if (mounted) {
-          setState(() {
-            rotationZ = (rotationZ -
-                    (widget.controller.rotationSpeed *
-                        ((math.pow((2 * math.pi), 2) / 360)))) %
-                (2 * math.pi);
-          });
-          if (widget.controller.rotationController.isCompleted) {
-            if (widget.controller.isRotating) {
-              widget.controller.rotationController.repeat();
+    widget.controller.rotationController =
+        AnimationController(vsync: this, duration: const Duration(seconds: 1))
+          ..addListener(() {
+            if (mounted) {
+              setState(() {
+                rotationZ =
+                    (rotationZ -
+                        (widget.controller.rotationSpeed *
+                            ((math.pow((2 * math.pi), 2) / 360)))) %
+                    (2 * math.pi);
+              });
+              if (widget.controller.rotationController.isCompleted) {
+                if (widget.controller.isRotating) {
+                  widget.controller.rotationController.repeat();
+                }
+              }
             }
-          }
-        }
-      });
+          });
 
     widget.controller.onPointConnectionAdded = _addConnection;
 
@@ -139,51 +139,56 @@ class RotatingGlobeState extends State<RotatingGlobe>
         startDayNightCycleAnimation;
     widget.controller.onStopDayNightCycleAnimation = stopDayNightCycleAnimation;
 
-    _lineMovingController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    )
-      ..addListener(() {
-        if (mounted) {
-          for (var connection in widget.controller.connections) {
-            if (connection.isMoving &&
-                connection.style.type != PointConnectionType.solid) {
-              double size = connection.style.type == PointConnectionType.dashed
-                  ? connection.style.dashSize
-                  : connection.style.dotSize;
-              setState(() {
-                connection.animationOffset = (_lineMovingController.value *
-                        (size + connection.style.spacing)) %
-                    (size + connection.style.spacing);
-              });
+    _lineMovingController =
+        AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 500),
+          )
+          ..addListener(() {
+            if (mounted) {
+              for (var connection in widget.controller.connections) {
+                if (connection.isMoving &&
+                    connection.style.type != PointConnectionType.solid) {
+                  double size =
+                      connection.style.type == PointConnectionType.dashed
+                      ? connection.style.dashSize
+                      : connection.style.dotSize;
+                  setState(() {
+                    connection.animationOffset =
+                        (_lineMovingController.value *
+                            (size + connection.style.spacing)) %
+                        (size + connection.style.spacing);
+                  });
+                }
+              }
             }
-          }
-        }
-      })
-      ..repeat();
+          })
+          ..repeat();
 
     rotationX = 0;
     rotationY = 0; // Initialize rotationY
     rotationZ = 0;
 
-    _decelerationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..addListener(() {
-        if (mounted) {
-          final t =
-              Curves.easeOutCubic.transform(_decelerationController.value);
+    _decelerationController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 800),
+        )..addListener(() {
+          if (mounted) {
+            final t = Curves.easeOutCubic.transform(
+              _decelerationController.value,
+            );
 
-          rotationX =
-              _initialRotationX + (_targetRotationX - _initialRotationX) * t;
-          rotationY =
-              _initialRotationY + (_targetRotationY - _initialRotationY) * t;
-          rotationZ =
-              _initialRotationZ + (_targetRotationZ - _initialRotationZ) * t;
+            rotationX =
+                _initialRotationX + (_targetRotationX - _initialRotationX) * t;
+            rotationY =
+                _initialRotationY + (_targetRotationY - _initialRotationY) * t;
+            rotationZ =
+                _initialRotationZ + (_targetRotationZ - _initialRotationZ) * t;
 
-          setState(() {});
-        }
-      });
+            setState(() {});
+          }
+        });
 
     // Initialize day/night cycle animation controller
     _initDayNightCycleController();
@@ -198,14 +203,15 @@ class RotatingGlobeState extends State<RotatingGlobe>
   /// Initialize the day/night cycle animation controller
   void _initDayNightCycleController() {
     if (widget.controller.useRealTimeSunPosition) {
-      _dayNightCycleController = AnimationController(
-        vsync: this,
-        duration: const Duration(seconds: 60), // Update every minute
-      )..addListener(() {
-          if (mounted && widget.controller.useRealTimeSunPosition) {
-            widget.controller.updateSunPositionFromRealTime();
-          }
-        });
+      _dayNightCycleController =
+          AnimationController(
+            vsync: this,
+            duration: const Duration(seconds: 60), // Update every minute
+          )..addListener(() {
+            if (mounted && widget.controller.useRealTimeSunPosition) {
+              widget.controller.updateSunPositionFromRealTime();
+            }
+          });
       _dayNightCycleController!.repeat();
     }
   }
@@ -213,8 +219,9 @@ class RotatingGlobeState extends State<RotatingGlobe>
   Duration _dayNightCycleDuration = const Duration(minutes: 1);
 
   /// Start the day/night cycle animation with custom speed
-  void startDayNightCycleAnimation(
-      {Duration cycleDuration = const Duration(minutes: 1)}) {
+  void startDayNightCycleAnimation({
+    Duration cycleDuration = const Duration(minutes: 1),
+  }) {
     // If controller exists and duration hasn't changed, just resume
     if (_dayNightCycleController != null &&
         _dayNightCycleDuration == cycleDuration &&
@@ -234,18 +241,19 @@ class RotatingGlobeState extends State<RotatingGlobe>
     // Calculate starting value based on current sun position
     final startValue = (180 - widget.controller.sunLongitude) / 360;
 
-    _dayNightCycleController = AnimationController(
-      vsync: this,
-      duration: cycleDuration,
-      value: startValue.clamp(0.0, 1.0),
-    )..addListener(() {
-        if (mounted) {
-          // Animate sun longitude from 180 to -180 degrees
-          widget.controller.sunLongitude =
-              180 - (_dayNightCycleController!.value * 360);
-          setState(() {});
-        }
-      });
+    _dayNightCycleController =
+        AnimationController(
+          vsync: this,
+          duration: cycleDuration,
+          value: startValue.clamp(0.0, 1.0),
+        )..addListener(() {
+          if (mounted) {
+            // Animate sun longitude from 180 to -180 degrees
+            widget.controller.sunLongitude =
+                180 - (_dayNightCycleController!.value * 360);
+            setState(() {});
+          }
+        });
     _dayNightCycleController!.repeat();
   }
 
@@ -255,8 +263,11 @@ class RotatingGlobeState extends State<RotatingGlobe>
   }
 
   /// Focus on the specified coordinates on the sphere.
-  void focusOnCoordinates(GlobeCoordinates coordinates,
-      {required bool animate, required Duration? duration}) {
+  void focusOnCoordinates(
+    GlobeCoordinates coordinates, {
+    required bool animate,
+    required Duration? duration,
+  }) {
     double latRad = radians(coordinates.latitude);
     double lonRad = radians(-coordinates.longitude);
     final targetRotationZ = -lonRad;
@@ -271,19 +282,17 @@ class RotatingGlobeState extends State<RotatingGlobe>
       final rX = targetRotationX - initialRotationX;
       final rY = targetRotationY - initialRotationY;
 
-      genericAnimationController = AnimationController(
-        vsync: this,
-        duration: duration,
-      )
-        ..addListener(() {
-          double animationFactor = genericAnimationController?.value ?? 1;
-          rotationX = initialRotationX + rX * animationFactor;
-          rotationY = initialRotationY + rY * animationFactor;
-          rotationZ = initialRotationZ + rZ * animationFactor;
+      genericAnimationController =
+          AnimationController(vsync: this, duration: duration)
+            ..addListener(() {
+              double animationFactor = genericAnimationController?.value ?? 1;
+              rotationX = initialRotationX + rX * animationFactor;
+              rotationY = initialRotationY + rY * animationFactor;
+              rotationZ = initialRotationZ + rZ * animationFactor;
 
-          setState(() {});
-        })
-        ..forward();
+              setState(() {});
+            })
+            ..forward();
     } else {
       rotationX = targetRotationX;
       rotationY = targetRotationY;
@@ -301,8 +310,11 @@ class RotatingGlobeState extends State<RotatingGlobe>
   }
 
   /// Add a connection to the sphere
-  _addConnection(AnimatedPointConnection connection,
-      {required bool animateDraw, required Duration animateDrawDuration}) {
+  _addConnection(
+    AnimatedPointConnection connection, {
+    required bool animateDraw,
+    required Duration animateDrawDuration,
+  }) {
     if (animateDraw) {
       final animation = AnimationController(
         vsync: this,
@@ -344,7 +356,8 @@ class RotatingGlobeState extends State<RotatingGlobe>
 
     // Calculate the angle between the point and the sun
     // Using spherical law of cosines
-    final cosAngle = math.sin(lat) * math.sin(sunLatRad) +
+    final cosAngle =
+        math.sin(lat) * math.sin(sunLatRad) +
         math.cos(lat) * math.cos(sunLatRad) * math.cos(lon - sunLonRad);
 
     // Convert to a 0-1 factor with smooth transition
@@ -366,7 +379,8 @@ class RotatingGlobeState extends State<RotatingGlobe>
     }
 
     // Check if day/night cycle is enabled and we have night surface
-    final hasDayNightCycle = widget.controller.isDayNightCycleEnabled &&
+    final hasDayNightCycle =
+        widget.controller.isDayNightCycleEnabled &&
         widget.controller.nightSurface != null &&
         widget.controller.nightSurfaceProcessed != null;
 
@@ -384,8 +398,11 @@ class RotatingGlobeState extends State<RotatingGlobe>
     final int wInt = width.toInt();
     final int hInt = height.toInt();
     final int totalPixels = wInt * hInt;
-    
-    if (_cachedPixels == null || _cachedWidth != wInt || _cachedHeight != hInt || _cachedPixels!.length != totalPixels) {
+
+    if (_cachedPixels == null ||
+        _cachedWidth != wInt ||
+        _cachedHeight != hInt ||
+        _cachedPixels!.length != totalPixels) {
       _cachedPixels = Uint32List(totalPixels);
       _cachedWidth = wInt;
       _cachedHeight = hInt;
@@ -413,13 +430,13 @@ class RotatingGlobeState extends State<RotatingGlobe>
         var zSquared = sphereRadius * sphereRadius - x * x - y * y;
         if (zSquared > 0) {
           var z = math.sqrt(zSquared);
-          
+
           // Zero-allocation matrix multiplication.
           // Apply X rotation (Row-by-column dot product equivalent)
           double x2 = rotX[0] * x + rotX[3] * y + rotX[6] * z;
           double y2 = rotX[1] * x + rotX[4] * y + rotX[7] * z;
           double z2 = rotX[2] * x + rotX[5] * y + rotX[8] * z;
-          
+
           // Apply Z rotation
           double x3 = rotZ[0] * x2 + rotZ[3] * y2 + rotZ[6] * z2;
           double y3 = rotZ[1] * x2 + rotZ[4] * y2 + rotZ[7] * z2;
@@ -443,13 +460,22 @@ class RotatingGlobeState extends State<RotatingGlobe>
           final fy = y0 - y0Floor;
 
           // Get day surface colors
-          final c00 = widget.controller.surfaceProcessed![
-              (y0ClampedFloor * surfaceWidth + x0ClampedFloor).toInt()];
-          final c10 = widget.controller.surfaceProcessed![
-              (y0ClampedFloor * surfaceWidth + x0Ceil).toInt()];
-          final c01 = widget.controller.surfaceProcessed![
-              (y0Ceil * surfaceWidth + x0ClampedFloor).toInt()];
-          final c11 = widget.controller
+          final c00 =
+              widget.controller.surfaceProcessed![(y0ClampedFloor *
+                          surfaceWidth +
+                      x0ClampedFloor)
+                  .toInt()];
+          final c10 =
+              widget.controller.surfaceProcessed![(y0ClampedFloor *
+                          surfaceWidth +
+                      x0Ceil)
+                  .toInt()];
+          final c01 =
+              widget.controller.surfaceProcessed![(y0Ceil * surfaceWidth +
+                      x0ClampedFloor)
+                  .toInt()];
+          final c11 = widget
+              .controller
               .surfaceProcessed![(y0Ceil * surfaceWidth + x0Ceil).toInt()];
 
           // Extract RGBA components for day surface
@@ -474,22 +500,26 @@ class RotatingGlobeState extends State<RotatingGlobe>
           final a11 = (c11 >> 24) & 0xFF;
 
           // Bilinear interpolation for day surface
-          var r = ((r00 * (1 - fx) + r10 * fx) * (1 - fy) +
-                  (r01 * (1 - fx) + r11 * fx) * fy)
-              .round()
-              .clamp(0, 255);
-          var g = ((g00 * (1 - fx) + g10 * fx) * (1 - fy) +
-                  (g01 * (1 - fx) + g11 * fx) * fy)
-              .round()
-              .clamp(0, 255);
-          var b = ((b00 * (1 - fx) + b10 * fx) * (1 - fy) +
-                  (b01 * (1 - fx) + b11 * fx) * fy)
-              .round()
-              .clamp(0, 255);
-          var a = ((a00 * (1 - fx) + a10 * fx) * (1 - fy) +
-                  (a01 * (1 - fx) + a11 * fx) * fy)
-              .round()
-              .clamp(0, 255);
+          var r =
+              ((r00 * (1 - fx) + r10 * fx) * (1 - fy) +
+                      (r01 * (1 - fx) + r11 * fx) * fy)
+                  .round()
+                  .clamp(0, 255);
+          var g =
+              ((g00 * (1 - fx) + g10 * fx) * (1 - fy) +
+                      (g01 * (1 - fx) + g11 * fx) * fy)
+                  .round()
+                  .clamp(0, 255);
+          var b =
+              ((b00 * (1 - fx) + b10 * fx) * (1 - fy) +
+                      (b01 * (1 - fx) + b11 * fx) * fy)
+                  .round()
+                  .clamp(0, 255);
+          var a =
+              ((a00 * (1 - fx) + a10 * fx) * (1 - fy) +
+                      (a01 * (1 - fx) + a11 * fx) * fy)
+                  .round()
+                  .clamp(0, 255);
 
           // Apply day/night blending if enabled
           if (hasDayNightCycle) {
@@ -497,8 +527,8 @@ class RotatingGlobeState extends State<RotatingGlobe>
 
             // Get night surface colors
             final nightWidth = widget.controller.nightSurface!.width.toDouble();
-            final nightHeight =
-                widget.controller.nightSurface!.height.toDouble();
+            final nightHeight = widget.controller.nightSurface!.height
+                .toDouble();
             final nightXRate = (nightWidth - 1) / (2.0 * math.pi);
             final nightYRate = (nightHeight - 1) / math.pi;
 
@@ -515,14 +545,24 @@ class RotatingGlobeState extends State<RotatingGlobe>
             final nfx = nx0 - nx0Floor;
             final nfy = ny0 - ny0Floor;
 
-            final nc00 = widget.controller.nightSurfaceProcessed![
-                (ny0ClampedFloor * nightWidth + nx0ClampedFloor).toInt()];
-            final nc10 = widget.controller.nightSurfaceProcessed![
-                (ny0ClampedFloor * nightWidth + nx0Ceil).toInt()];
-            final nc01 = widget.controller.nightSurfaceProcessed![
-                (ny0Ceil * nightWidth + nx0ClampedFloor).toInt()];
-            final nc11 = widget.controller.nightSurfaceProcessed![
-                (ny0Ceil * nightWidth + nx0Ceil).toInt()];
+            final nc00 =
+                widget.controller.nightSurfaceProcessed![(ny0ClampedFloor *
+                            nightWidth +
+                        nx0ClampedFloor)
+                    .toInt()];
+            final nc10 =
+                widget.controller.nightSurfaceProcessed![(ny0ClampedFloor *
+                            nightWidth +
+                        nx0Ceil)
+                    .toInt()];
+            final nc01 =
+                widget.controller.nightSurfaceProcessed![(ny0Ceil * nightWidth +
+                        nx0ClampedFloor)
+                    .toInt()];
+            final nc11 =
+                widget.controller.nightSurfaceProcessed![(ny0Ceil * nightWidth +
+                        nx0Ceil)
+                    .toInt()];
 
             // Extract RGBA components for night surface
             final nr00 = (nc00 >> 0) & 0xFF;
@@ -546,22 +586,26 @@ class RotatingGlobeState extends State<RotatingGlobe>
             final na11 = (nc11 >> 24) & 0xFF;
 
             // Bilinear interpolation for night surface
-            final nr = ((nr00 * (1 - nfx) + nr10 * nfx) * (1 - nfy) +
-                    (nr01 * (1 - nfx) + nr11 * nfx) * nfy)
-                .round()
-                .clamp(0, 255);
-            final ng = ((ng00 * (1 - nfx) + ng10 * nfx) * (1 - nfy) +
-                    (ng01 * (1 - nfx) + ng11 * nfx) * nfy)
-                .round()
-                .clamp(0, 255);
-            final nb = ((nb00 * (1 - nfx) + nb10 * nfx) * (1 - nfy) +
-                    (nb01 * (1 - nfx) + nb11 * nfx) * nfy)
-                .round()
-                .clamp(0, 255);
-            final na = ((na00 * (1 - nfx) + na10 * nfx) * (1 - nfy) +
-                    (na01 * (1 - nfx) + na11 * nfx) * nfy)
-                .round()
-                .clamp(0, 255);
+            final nr =
+                ((nr00 * (1 - nfx) + nr10 * nfx) * (1 - nfy) +
+                        (nr01 * (1 - nfx) + nr11 * nfx) * nfy)
+                    .round()
+                    .clamp(0, 255);
+            final ng =
+                ((ng00 * (1 - nfx) + ng10 * nfx) * (1 - nfy) +
+                        (ng01 * (1 - nfx) + ng11 * nfx) * nfy)
+                    .round()
+                    .clamp(0, 255);
+            final nb =
+                ((nb00 * (1 - nfx) + nb10 * nfx) * (1 - nfy) +
+                        (nb01 * (1 - nfx) + nb11 * nfx) * nfy)
+                    .round()
+                    .clamp(0, 255);
+            final na =
+                ((na00 * (1 - nfx) + na10 * nfx) * (1 - nfy) +
+                        (na01 * (1 - nfx) + na11 * nfx) * nfy)
+                    .round()
+                    .clamp(0, 255);
 
             // Blend day and night colors based on dayFactor
             r = (r * dayFactor + nr * (1 - dayFactor)).round().clamp(0, 255);
@@ -578,16 +622,21 @@ class RotatingGlobeState extends State<RotatingGlobe>
 
     final completer = Completer<SphereImage>();
     // We must clone the buffer since ui.decodeImageFromPixels acts asynchronously and we will reuse _cachedPixels on the next frame!
-    ui.decodeImageFromPixels(Uint8List.fromList(spherePixels.buffer.asUint8List()), width.toInt(),
-        height.toInt(), ui.PixelFormat.rgba8888, (image) {
-      final sphereImage = SphereImage(
-        image: image,
-        radius: sphereRadius,
-        origin: Offset(-minX, -minY),
-        offset: Offset(maxWidth / 2, maxHeight / 2),
-      );
-      completer.complete(sphereImage);
-    });
+    ui.decodeImageFromPixels(
+      Uint8List.fromList(spherePixels.buffer.asUint8List()),
+      width.toInt(),
+      height.toInt(),
+      ui.PixelFormat.rgba8888,
+      (image) {
+        final sphereImage = SphereImage(
+          image: image,
+          radius: sphereRadius,
+          origin: Offset(-minX, -minY),
+          offset: Offset(maxWidth / 2, maxHeight / 2),
+        );
+        completer.complete(sphereImage);
+      },
+    );
     return completer.future;
   }
 
@@ -625,8 +674,10 @@ class RotatingGlobeState extends State<RotatingGlobe>
 
   _onZoomUpdated(double scale) {
     final tempZoom = widget.controller.zoom + scale;
-    widget.controller.zoom =
-        tempZoom.clamp(widget.controller.minZoom, widget.controller.maxZoom);
+    widget.controller.zoom = tempZoom.clamp(
+      widget.controller.minZoom,
+      widget.controller.maxZoom,
+    );
     widget.onZoomChanged?.call(widget.controller.zoom);
     setState(() {});
   }
@@ -655,29 +706,36 @@ class RotatingGlobeState extends State<RotatingGlobe>
     }
     return Stack(
       children: [
-        LayoutBuilder(builder: (context, constraints) {
-          return widget.controller.background == null
-              ? Container()
-              : CustomPaint(
-                  painter: StarryBackgroundPainter(
-                    starTexture: widget.controller.background!,
-                    rotationZ:
-                        widget.controller.isBackgroundFollowingSphereRotation
-                            ? rotationZ *
-                                radiansToDegrees(widget.radius *
-                                    math.pow((2 * math.pi), 2) /
-                                    360)
-                            : 0,
-                    rotationY:
-                        widget.controller.isBackgroundFollowingSphereRotation
-                            ? rotationY *
-                                radiansToDegrees(widget.radius *
-                                    math.pow((2 * math.pi), 2) /
-                                    360)
-                            : 0,
-                  ),
-                  size: Size(constraints.maxWidth, constraints.maxHeight));
-        }),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            return widget.controller.background == null
+                ? Container()
+                : CustomPaint(
+                    painter: StarryBackgroundPainter(
+                      starTexture: widget.controller.background!,
+                      rotationZ:
+                          widget.controller.isBackgroundFollowingSphereRotation
+                          ? rotationZ *
+                                radiansToDegrees(
+                                  widget.radius *
+                                      math.pow((2 * math.pi), 2) /
+                                      360,
+                                )
+                          : 0,
+                      rotationY:
+                          widget.controller.isBackgroundFollowingSphereRotation
+                          ? rotationY *
+                                radiansToDegrees(
+                                  widget.radius *
+                                      math.pow((2 * math.pi), 2) /
+                                      360,
+                                )
+                          : 0,
+                    ),
+                    size: Size(constraints.maxWidth, constraints.maxHeight),
+                  );
+          },
+        ),
         Positioned(
           left: -left,
           top: -top,
@@ -711,11 +769,14 @@ class RotatingGlobeState extends State<RotatingGlobe>
               }
               final offset = details.focalPoint - _lastFocalPoint;
               rotationX = adjustModRotation(
-                  _lastRotationX + offset.dy / convertedRadius());
+                _lastRotationX + offset.dy / convertedRadius(),
+              );
               rotationZ = adjustModRotation(
-                  _lastRotationZ - offset.dx / convertedRadius());
+                _lastRotationZ - offset.dx / convertedRadius(),
+              );
               rotationY = adjustModRotation(
-                  _lastRotationY - offset.dy / convertedRadius());
+                _lastRotationY - offset.dy / convertedRadius(),
+              );
               setState(() {});
             },
             onInteractionEnd: (ScaleEndDetails details) {
@@ -744,8 +805,9 @@ class RotatingGlobeState extends State<RotatingGlobe>
               }
 
               if (widget.controller.isRotating) {
-                widget.controller.rotationController
-                    .forward(from: widget.controller.rotationController.value);
+                widget.controller.rotationController.forward(
+                  from: widget.controller.rotationController.value,
+                );
               }
             },
             child: GestureDetector(
@@ -755,7 +817,9 @@ class RotatingGlobeState extends State<RotatingGlobe>
                 child: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
                     final updatedCenter = Offset(
-                        constraints.maxWidth / 2, constraints.maxHeight / 2);
+                      constraints.maxWidth / 2,
+                      constraints.maxHeight / 2,
+                    );
                     if (updatedCenter != center) {
                       Future.delayed(Duration.zero, () {
                         setState(() {
@@ -771,233 +835,276 @@ class RotatingGlobeState extends State<RotatingGlobe>
                           child: FutureBuilder(
                             key: _futureBuilderKey,
                             future: buildSphere(
-                                constraints.maxWidth, constraints.maxHeight),
-                            builder: (BuildContext context,
-                                AsyncSnapshot<SphereImage?> snapshot) {
-                              if (snapshot.hasData) {
-                                final data = snapshot.data!;
-                                return CustomPaint(
-                                  willChange: true,
-                                  isComplex: true,
-                                  foregroundPainter: ForegroundPainter(
-                                    hoverOverConnection: (connectionId,
-                                        cartesian2D, isHovering, isVisible) {
-                                      if (!mounted) return;
-                                      bool changed = false;
-                                      if (isVisible) {
-                                        if (!visibleConnections
-                                            .containsKey(connectionId)) {
-                                          visibleConnections.putIfAbsent(
+                              constraints.maxWidth,
+                              constraints.maxHeight,
+                            ),
+                            builder:
+                                (
+                                  BuildContext context,
+                                  AsyncSnapshot<SphereImage?> snapshot,
+                                ) {
+                                  if (snapshot.hasData) {
+                                    final data = snapshot.data!;
+                                    return CustomPaint(
+                                      willChange: true,
+                                      isComplex: true,
+                                      foregroundPainter: ForegroundPainter(
+                                        hoverOverConnection:
+                                            (
                                               connectionId,
-                                              () => VisibleConnection(
-                                                  key: GlobalKey(),
-                                                  id: connectionId,
-                                                  position: cartesian2D,
-                                                  isVisible: isVisible,
-                                                  isHovering: isHovering));
-                                          changed = true;
-                                        } else {
-                                          visibleConnections.update(
-                                              connectionId,
-                                              (value) => value.copyWith(
-                                                  position: cartesian2D,
-                                                  isVisible: isVisible,
-                                                  isHovering: isHovering));
-                                          changed = true;
-                                        }
-                                      } else {
-                                        if (visibleConnections
-                                            .containsKey(connectionId)) {
-                                          visibleConnections
-                                              .remove(connectionId);
-                                          changed = true;
-                                        }
-                                      }
-                                      if (changed) {
-                                        Future.delayed(Duration.zero, () {
-                                          setState(() {});
-                                        });
-                                      }
-                                    },
-                                    hoverOverPoint: (pointId, cartesian2D,
-                                        isHovering, isVisisble) {
-                                      if (!mounted) return;
-                                      bool changed = false;
-                                      if (isVisisble) {
-                                        if (!visiblePoints
-                                            .containsKey(pointId)) {
-                                          visiblePoints.putIfAbsent(
+                                              cartesian2D,
+                                              isHovering,
+                                              isVisible,
+                                            ) {
+                                              if (!mounted) return;
+                                              bool changed = false;
+                                              if (isVisible) {
+                                                if (!visibleConnections
+                                                    .containsKey(
+                                                      connectionId,
+                                                    )) {
+                                                  visibleConnections
+                                                      .putIfAbsent(
+                                                        connectionId,
+                                                        () => VisibleConnection(
+                                                          key: GlobalKey(),
+                                                          id: connectionId,
+                                                          position: cartesian2D,
+                                                          isVisible: isVisible,
+                                                          isHovering:
+                                                              isHovering,
+                                                        ),
+                                                      );
+                                                  changed = true;
+                                                } else {
+                                                  visibleConnections.update(
+                                                    connectionId,
+                                                    (value) => value.copyWith(
+                                                      position: cartesian2D,
+                                                      isVisible: isVisible,
+                                                      isHovering: isHovering,
+                                                    ),
+                                                  );
+                                                  changed = true;
+                                                }
+                                              } else {
+                                                if (visibleConnections
+                                                    .containsKey(
+                                                      connectionId,
+                                                    )) {
+                                                  visibleConnections.remove(
+                                                    connectionId,
+                                                  );
+                                                  changed = true;
+                                                }
+                                              }
+                                              if (changed) {
+                                                Future.delayed(
+                                                  Duration.zero,
+                                                  () {
+                                                    setState(() {});
+                                                  },
+                                                );
+                                              }
+                                            },
+                                        hoverOverPoint:
+                                            (
                                               pointId,
-                                              () => VisiblePoint(
-                                                  key: GlobalKey(),
-                                                  id: pointId,
-                                                  position: cartesian2D,
-                                                  isVisible: isVisisble,
-                                                  isHovering: isHovering));
-                                          changed = true;
-                                        } else {
-                                          visiblePoints.update(
-                                              pointId,
-                                              (value) => value.copyWith(
-                                                  position: cartesian2D,
-                                                  isVisible: isVisisble,
-                                                  isHovering: isHovering));
-                                          changed = true;
-                                        }
-                                      } else {
-                                        if (visiblePoints
-                                            .containsKey(pointId)) {
-                                          visiblePoints.remove(pointId);
-                                          changed = true;
-                                        }
-                                      }
-                                      if (changed) {
-                                        Future.delayed(Duration.zero, () {
-                                          setState(() {});
-                                        });
-                                      }
-                                    },
-                                    connections: widget.controller.connections,
-                                    radius: convertedRadius(),
-                                    hoverPoint: hoveringPoint,
-                                    clickPoint: clickPoint,
-                                    onPointClicked: () {
-                                      setState(() {
-                                        clickPoint = null;
-                                      });
-                                    },
-                                    rotationZ: rotationZ,
-                                    rotationY: rotationY,
-                                    rotationX: rotationX,
-                                    zoomFactor: widget.controller.zoom,
-                                    points: widget.controller.points,
-                                  ),
-                                  painter: SpherePainter(
-                                    style: widget.controller.sphereStyle,
-                                    sphereImage: data,
-                                  ),
-                                  size: Size(constraints.maxWidth,
-                                      constraints.maxHeight),
-                                );
-                              } else {
-                                return Container();
-                              }
-                            },
+                                              cartesian2D,
+                                              isHovering,
+                                              isVisisble,
+                                            ) {
+                                              if (!mounted) return;
+                                              bool changed = false;
+                                              if (isVisisble) {
+                                                if (!visiblePoints.containsKey(
+                                                  pointId,
+                                                )) {
+                                                  visiblePoints.putIfAbsent(
+                                                    pointId,
+                                                    () => VisiblePoint(
+                                                      key: GlobalKey(),
+                                                      id: pointId,
+                                                      position: cartesian2D,
+                                                      isVisible: isVisisble,
+                                                      isHovering: isHovering,
+                                                    ),
+                                                  );
+                                                  changed = true;
+                                                } else {
+                                                  visiblePoints.update(
+                                                    pointId,
+                                                    (value) => value.copyWith(
+                                                      position: cartesian2D,
+                                                      isVisible: isVisisble,
+                                                      isHovering: isHovering,
+                                                    ),
+                                                  );
+                                                  changed = true;
+                                                }
+                                              } else {
+                                                if (visiblePoints.containsKey(
+                                                  pointId,
+                                                )) {
+                                                  visiblePoints.remove(pointId);
+                                                  changed = true;
+                                                }
+                                              }
+                                              if (changed) {
+                                                Future.delayed(
+                                                  Duration.zero,
+                                                  () {
+                                                    setState(() {});
+                                                  },
+                                                );
+                                              }
+                                            },
+                                        connections:
+                                            widget.controller.connections,
+                                        radius: convertedRadius(),
+                                        hoverPoint: hoveringPoint,
+                                        clickPoint: clickPoint,
+                                        onPointClicked: () {
+                                          setState(() {
+                                            clickPoint = null;
+                                          });
+                                        },
+                                        rotationZ: rotationZ,
+                                        rotationY: rotationY,
+                                        rotationX: rotationX,
+                                        zoomFactor: widget.controller.zoom,
+                                        points: widget.controller.points,
+                                      ),
+                                      painter: SpherePainter(
+                                        style: widget.controller.sphereStyle,
+                                        sphereImage: data,
+                                      ),
+                                      size: Size(
+                                        constraints.maxWidth,
+                                        constraints.maxHeight,
+                                      ),
+                                    );
+                                  } else {
+                                    return Container();
+                                  }
+                                },
                           ),
                         ),
                         if (visiblePoints.isNotEmpty)
                           ...visiblePoints.entries
-                              .map(
-                                (e) {
-                                  final point = widget.controller.points
-                                      .where(
-                                        (element) => element.id == e.key,
-                                      )
-                                      .firstOrNull;
-                                  final pos = e.value.position;
-                                  if (point == null ||
-                                      point.labelBuilder == null ||
-                                      pos == null) {
-                                    return null;
-                                  }
+                              .map((e) {
+                                final point = widget.controller.points
+                                    .where((element) => element.id == e.key)
+                                    .firstOrNull;
+                                final pos = e.value.position;
+                                if (point == null ||
+                                    point.labelBuilder == null ||
+                                    pos == null) {
+                                  return null;
+                                }
 
-                                  WidgetsBinding.instance
-                                      .addPostFrameCallback((_) {
-                                    final box = e.value.key.currentContext
-                                        ?.findRenderObject() as RenderBox?;
-                                    if ((e.value.size?.height !=
-                                                box?.size.height ||
-                                            e.value.size?.width !=
-                                                box?.size.width) &&
-                                        box?.size != null) {
-                                      if (visiblePoints.containsKey(e.key)) {
-                                        visiblePoints.update(
-                                            e.key,
-                                            (value) => value.copyWith(
-                                                  size: box?.size,
-                                                ));
-                                        setState(() {});
-                                      }
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  final box =
+                                      e.value.key.currentContext
+                                              ?.findRenderObject()
+                                          as RenderBox?;
+                                  if ((e.value.size?.height !=
+                                              box?.size.height ||
+                                          e.value.size?.width !=
+                                              box?.size.width) &&
+                                      box?.size != null) {
+                                    if (visiblePoints.containsKey(e.key)) {
+                                      visiblePoints.update(
+                                        e.key,
+                                        (value) =>
+                                            value.copyWith(size: box?.size),
+                                      );
+                                      setState(() {});
                                     }
-                                  });
+                                  }
+                                });
 
-                                  double width = e.value.size?.width ?? 0;
-                                  double height = e.value.size?.height ?? 0;
-                                  return Positioned(
-                                      key: e.value.key,
-                                      left: pos.dx -
-                                          point.labelOffset.dx -
-                                          (width / 2),
-                                      top: pos.dy -
-                                          point.labelOffset.dy -
-                                          height,
-                                      child: point.labelBuilder!(
-                                              context,
-                                              point,
-                                              e.value.isHovering,
-                                              e.value.isVisible) ??
-                                          Container());
-                                },
-                              )
+                                double width = e.value.size?.width ?? 0;
+                                double height = e.value.size?.height ?? 0;
+                                return Positioned(
+                                  key: e.value.key,
+                                  left:
+                                      pos.dx -
+                                      point.labelOffset.dx -
+                                      (width / 2),
+                                  top: pos.dy - point.labelOffset.dy - height,
+                                  child:
+                                      point.labelBuilder!(
+                                        context,
+                                        point,
+                                        e.value.isHovering,
+                                        e.value.isVisible,
+                                      ) ??
+                                      Container(),
+                                );
+                              })
                               .whereType<Widget>()
                               .toList(),
                         if (visibleConnections.isNotEmpty)
                           ...visibleConnections.entries
-                              .map(
-                                (e) {
-                                  final connection =
-                                      widget.controller.connections
-                                          .where(
-                                            (element) => element.id == e.key,
-                                          )
-                                          .firstOrNull;
-                                  final pos = e.value.position;
-                                  if (connection == null ||
-                                      connection.labelBuilder == null ||
-                                      pos == null) {
-                                    return null;
-                                  }
+                              .map((e) {
+                                final connection = widget.controller.connections
+                                    .where((element) => element.id == e.key)
+                                    .firstOrNull;
+                                final pos = e.value.position;
+                                if (connection == null ||
+                                    connection.labelBuilder == null ||
+                                    pos == null) {
+                                  return null;
+                                }
 
-                                  WidgetsBinding.instance
-                                      .addPostFrameCallback((_) {
-                                    final box = e.value.key.currentContext
-                                        ?.findRenderObject() as RenderBox?;
-                                    if ((e.value.size?.height !=
-                                                box?.size.height ||
-                                            e.value.size?.width !=
-                                                box?.size.width) &&
-                                        box?.size != null) {
-                                      if (visibleConnections
-                                          .containsKey(e.key)) {
-                                        visibleConnections.update(
-                                          e.key,
-                                          (value) => value.copyWith(
-                                            size: box?.size,
-                                          ),
-                                        );
-                                        setState(() {});
-                                      }
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  final box =
+                                      e.value.key.currentContext
+                                              ?.findRenderObject()
+                                          as RenderBox?;
+                                  if ((e.value.size?.height !=
+                                              box?.size.height ||
+                                          e.value.size?.width !=
+                                              box?.size.width) &&
+                                      box?.size != null) {
+                                    if (visibleConnections.containsKey(e.key)) {
+                                      visibleConnections.update(
+                                        e.key,
+                                        (value) =>
+                                            value.copyWith(size: box?.size),
+                                      );
+                                      setState(() {});
                                     }
-                                  });
+                                  }
+                                });
 
-                                  double width = e.value.size?.width ?? 0;
-                                  double height = e.value.size?.height ?? 0;
-                                  return Positioned(
-                                      key: e.value.key,
-                                      left: pos.dx -
-                                          connection.labelOffset.dx -
-                                          (width / 2),
-                                      top: pos.dy -
-                                          connection.labelOffset.dy -
-                                          height,
-                                      child: connection.labelBuilder!(
-                                              context,
-                                              connection,
-                                              e.value.isHovering,
-                                              e.value.isVisible) ??
-                                          Container());
-                                },
-                              )
+                                double width = e.value.size?.width ?? 0;
+                                double height = e.value.size?.height ?? 0;
+                                return Positioned(
+                                  key: e.value.key,
+                                  left:
+                                      pos.dx -
+                                      connection.labelOffset.dx -
+                                      (width / 2),
+                                  top:
+                                      pos.dy -
+                                      connection.labelOffset.dy -
+                                      height,
+                                  child:
+                                      connection.labelBuilder!(
+                                        context,
+                                        connection,
+                                        e.value.isHovering,
+                                        e.value.isVisible,
+                                      ) ??
+                                      Container(),
+                                );
+                              })
                               .whereType<Widget>()
                               .toList(),
                       ],
@@ -1007,7 +1114,7 @@ class RotatingGlobeState extends State<RotatingGlobe>
               ),
             ),
           ),
-        )
+        ),
       ],
     );
   }

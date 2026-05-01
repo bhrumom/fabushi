@@ -4,27 +4,27 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 自启动设置引导弹窗
-/// 
+///
 /// 引导用户开启厂商的自启动/后台运行白名单，
 /// 这是实现长时间后台运行的关键步骤。
 class AutoStartGuideDialog extends StatefulWidget {
   /// 是否在发送开始时显示（首次）
   final bool isFirstTime;
-  
-  const AutoStartGuideDialog({
-    super.key,
-    this.isFirstTime = false,
-  });
+
+  const AutoStartGuideDialog({super.key, this.isFirstTime = false});
 
   /// 显示自启动设置引导弹窗
-  /// 
+  ///
   /// [force] 为 true 时强制显示，否则只在首次使用时显示
-  static Future<void> showIfNeeded(BuildContext context, {bool force = false}) async {
+  static Future<void> showIfNeeded(
+    BuildContext context, {
+    bool force = false,
+  }) async {
     if (!Platform.isAndroid) return;
-    
+
     final prefs = await SharedPreferences.getInstance();
     final hasShown = prefs.getBool('auto_start_guide_shown') ?? false;
-    
+
     if (force || !hasShown) {
       if (context.mounted) {
         await showDialog(
@@ -43,19 +43,21 @@ class AutoStartGuideDialog extends StatefulWidget {
 
 class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
   static const _channel = MethodChannel('com.ombhrum.fabushi/device_info');
-  
+
   String _manufacturer = '';
   int _currentStep = 0;
-  
+
   @override
   void initState() {
     super.initState();
     _getManufacturer();
   }
-  
+
   Future<void> _getManufacturer() async {
     try {
-      final manufacturer = await _channel.invokeMethod<String>('getDeviceManufacturer');
+      final manufacturer = await _channel.invokeMethod<String>(
+        'getDeviceManufacturer',
+      );
       setState(() {
         _manufacturer = manufacturer?.toLowerCase() ?? '';
       });
@@ -67,17 +69,14 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return AlertDialog(
       title: Row(
         children: [
           Icon(Icons.security, color: theme.colorScheme.primary),
           const SizedBox(width: 8),
           const Expanded(
-            child: Text(
-              '开启后台运行权限',
-              style: TextStyle(fontSize: 18),
-            ),
+            child: Text('开启后台运行权限', style: TextStyle(fontSize: 18)),
           ),
         ],
       ),
@@ -97,7 +96,8 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, 
+                      Icon(
+                        Icons.info_outline,
                         color: theme.colorScheme.primary,
                         size: 20,
                       ),
@@ -113,7 +113,7 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
                 ),
                 const SizedBox(height: 16),
               ],
-              
+
               // 步骤列表
               _buildStepItem(
                 step: 1,
@@ -123,7 +123,7 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
                 onTap: _openAutoStartSettings,
               ),
               const SizedBox(height: 12),
-              
+
               _buildStepItem(
                 step: 2,
                 title: '关闭电池优化',
@@ -132,7 +132,7 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
                 onTap: _openBatteryOptimization,
               ),
               const SizedBox(height: 12),
-              
+
               _buildStepItem(
                 step: 3,
                 title: '锁定应用（可选）',
@@ -140,9 +140,9 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
                 buttonText: null,
                 onTap: null,
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // 提示信息
               Container(
                 padding: const EdgeInsets.all(12),
@@ -154,7 +154,8 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.warning_amber, 
+                    const Icon(
+                      Icons.warning_amber,
                       color: Colors.orange,
                       size: 20,
                     ),
@@ -190,7 +191,7 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
       ],
     );
   }
-  
+
   Widget _buildStepItem({
     required int step,
     required String title,
@@ -200,7 +201,7 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
   }) {
     final theme = Theme.of(context);
     final isCompleted = _currentStep >= step;
-    
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -214,22 +215,22 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
             width: 24,
             height: 24,
             decoration: BoxDecoration(
-              color: isCompleted 
-                ? theme.colorScheme.primary 
-                : theme.colorScheme.surfaceContainerHighest,
+              color: isCompleted
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.surfaceContainerHighest,
               shape: BoxShape.circle,
             ),
             child: Center(
               child: isCompleted
-                ? const Icon(Icons.check, size: 14, color: Colors.white)
-                : Text(
-                    '$step',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.onSurfaceVariant,
+                  ? const Icon(Icons.check, size: 14, color: Colors.white)
+                  : Text(
+                      '$step',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
             ),
           ),
           const SizedBox(width: 12),
@@ -266,7 +267,10 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
                 });
               },
               style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 minimumSize: Size.zero,
               ),
               child: Text(buttonText, style: const TextStyle(fontSize: 13)),
@@ -275,13 +279,15 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
       ),
     );
   }
-  
+
   String _getAutoStartDescription() {
     if (_manufacturer.contains('xiaomi') || _manufacturer.contains('redmi')) {
       return '在MIUI安全中心中开启本应用的自启动权限';
-    } else if (_manufacturer.contains('huawei') || _manufacturer.contains('honor')) {
+    } else if (_manufacturer.contains('huawei') ||
+        _manufacturer.contains('honor')) {
       return '在手机管家-应用启动管理中设置为手动管理';
-    } else if (_manufacturer.contains('oppo') || _manufacturer.contains('realme')) {
+    } else if (_manufacturer.contains('oppo') ||
+        _manufacturer.contains('realme')) {
       return '在手机管家-自启动管理中开启本应用';
     } else if (_manufacturer.contains('vivo')) {
       return '在i管家-后台管理中允许本应用后台运行';
@@ -291,7 +297,7 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
       return '在系统设置中允许本应用自启动';
     }
   }
-  
+
   Future<void> _openAutoStartSettings() async {
     try {
       await _channel.invokeMethod('openAutoStartSettings');
@@ -300,7 +306,7 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
       _showErrorSnackBar('无法打开设置，请手动前往设置页面');
     }
   }
-  
+
   Future<void> _openBatteryOptimization() async {
     try {
       await _channel.invokeMethod('openBatteryOptimization');
@@ -309,12 +315,12 @@ class _AutoStartGuideDialogState extends State<AutoStartGuideDialog> {
       _showErrorSnackBar('无法打开设置，请手动前往设置页面');
     }
   }
-  
+
   void _showErrorSnackBar(String message) {
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 }

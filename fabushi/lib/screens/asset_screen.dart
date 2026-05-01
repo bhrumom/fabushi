@@ -30,20 +30,21 @@ class _AssetScreenState extends State<AssetScreen> {
   Map<String, double> _downloadProgress = {};
   List<Map<String, dynamic>> _treeAssets = [];
   Set<String> _selectedAssets = {};
-  final DownloadedAssetsService _downloadedAssetsService = DownloadedAssetsService();
+  final DownloadedAssetsService _downloadedAssetsService =
+      DownloadedAssetsService();
   final DownloadManager _downloadManager = DownloadManager();
   Map<String, String> _assetToTaskMap = {};
   StreamSubscription<DownloadTask>? _downloadSubscription;
-  
+
   // 搜索相关
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
-  
+
   // 搜索防抖定时器
   Timer? _debounceTimer;
-  
+
   // 展开状态缓存
   final Set<String> _expandedGroups = {};
 
@@ -54,7 +55,7 @@ class _AssetScreenState extends State<AssetScreen> {
     print('素材来源: 本地资源文件');
     _initializeDownloadedAssetsService();
     _setupDownloadListener();
-    
+
     // 监听搜索输入变化
     _searchController.addListener(_onSearchChanged);
   }
@@ -84,10 +85,10 @@ class _AssetScreenState extends State<AssetScreen> {
       _searchResults.clear();
       return;
     }
-    
+
     final lowerQuery = query.toLowerCase();
     final results = <Map<String, dynamic>>[];
-    
+
     for (final group in _assetGroups.values) {
       for (final asset in group) {
         final name = (asset['name'] ?? '').toString().toLowerCase();
@@ -97,7 +98,7 @@ class _AssetScreenState extends State<AssetScreen> {
         }
       }
     }
-    
+
     _searchResults = results;
   }
 
@@ -128,12 +129,16 @@ class _AssetScreenState extends State<AssetScreen> {
                     backgroundColor: Colors.red,
                   ),
                 );
-              } else if (task.status == DownloadStatus.paused && task.error == '下载已取消') {
+              } else if (task.status == DownloadStatus.paused &&
+                  task.error == '下载已取消') {
                 _downloadingAssets.remove(task.assetPath);
                 _assetToTaskMap.remove(task.assetPath);
                 _downloadProgress.remove(task.assetPath);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('${task.fileName} 下载已取消'), backgroundColor: Colors.orange),
+                  SnackBar(
+                    content: Text('${task.fileName} 下载已取消'),
+                    backgroundColor: Colors.orange,
+                  ),
                 );
               }
             }
@@ -163,7 +168,9 @@ class _AssetScreenState extends State<AssetScreen> {
     });
 
     try {
-      final String manifestString = await rootBundle.loadString('assets/data/asset-manifest.json');
+      final String manifestString = await rootBundle.loadString(
+        'assets/data/asset-manifest.json',
+      );
       final List<dynamic> files = json.decode(manifestString);
 
       print('从本地加载的文件数量: ${files.length}');
@@ -231,13 +238,17 @@ class _AssetScreenState extends State<AssetScreen> {
 
   Future<void> _loadLocalR2FilesList() async {
     try {
-      final String r2FilesString = await rootBundle.loadString('assets/data/r2-files-list.json');
+      final String r2FilesString = await rootBundle.loadString(
+        'assets/data/r2-files-list.json',
+      );
       final Map<String, dynamic> r2Data = json.decode(r2FilesString);
       final List<dynamic> files = r2Data['objects'] ?? r2Data['files'] ?? [];
 
       print('从本地加载的R2文件数量: ${files.length}');
 
-      final Map<String, List<Map<String, dynamic>>> currentGroups = Map.from(_assetGroups);
+      final Map<String, List<Map<String, dynamic>>> currentGroups = Map.from(
+        _assetGroups,
+      );
 
       for (var fileInfo in files) {
         String key = fileInfo['key'];
@@ -344,9 +355,9 @@ class _AssetScreenState extends State<AssetScreen> {
         _isLoading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('成功获取 ${files.length} 个R2文件')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('成功获取 ${files.length} 个R2文件')));
     } catch (e) {
       print('查询R2存储桶文件失败: $e');
       setState(() {
@@ -354,9 +365,9 @@ class _AssetScreenState extends State<AssetScreen> {
         _error = '查询R2存储桶文件失败: $e';
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('查询R2文件失败: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('查询R2文件失败: $e')));
     }
   }
 
@@ -413,7 +424,13 @@ class _AssetScreenState extends State<AssetScreen> {
       final List<dynamic> savedFiles = json.decode(savedFilesStr);
 
       return savedFiles
-          .map((f) => {'name': f['name'], 'size': f['size'], 'timestamp': f['timestamp']})
+          .map(
+            (f) => {
+              'name': f['name'],
+              'size': f['size'],
+              'timestamp': f['timestamp'],
+            },
+          )
           .toList();
     } catch (e) {
       print('获取Web平台已保存文件失败: $e');
@@ -456,7 +473,9 @@ class _AssetScreenState extends State<AssetScreen> {
       _downloadProgress[assetPath] = 0.0;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('开始下载 $fileName')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('开始下载 $fileName')));
 
     try {
       if (!kIsWeb) {
@@ -487,9 +506,15 @@ class _AssetScreenState extends State<AssetScreen> {
       }
 
       print('从以下URL下载素材: $url');
-      print('平台: ${kIsWeb ? "Web" : "Native"}, 来源: $source, 环境: ${AppConfig.isProduction ? "生产" : "开发"}');
+      print(
+        '平台: ${kIsWeb ? "Web" : "Native"}, 来源: $source, 环境: ${AppConfig.isProduction ? "生产" : "开发"}',
+      );
 
-      final taskId = await _downloadManager.createTask(url, fileName, assetPath);
+      final taskId = await _downloadManager.createTask(
+        url,
+        fileName,
+        assetPath,
+      );
       _assetToTaskMap[assetPath] = taskId;
 
       _showDownloadDialog(taskId, fileName);
@@ -503,7 +528,10 @@ class _AssetScreenState extends State<AssetScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('下载 $fileName 失败: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('下载 $fileName 失败: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -535,8 +563,12 @@ class _AssetScreenState extends State<AssetScreen> {
 
           try {
             setState(() {
-              _downloadingAssets.removeWhere((asset) => asset.contains(fileName));
-              _downloadProgress.removeWhere((asset, progress) => asset.contains(fileName));
+              _downloadingAssets.removeWhere(
+                (asset) => asset.contains(fileName),
+              );
+              _downloadProgress.removeWhere(
+                (asset, progress) => asset.contains(fileName),
+              );
             });
             debugPrint('🧹 AssetScreen: 下载状态已清理');
           } catch (e) {
@@ -643,11 +675,17 @@ class _AssetScreenState extends State<AssetScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
+            borderSide: BorderSide(
+              color: Theme.of(context).primaryColor,
+              width: 2,
+            ),
           ),
           filled: true,
           fillColor: Colors.grey.shade50,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
         ),
       ),
     );
@@ -665,7 +703,10 @@ class _AssetScreenState extends State<AssetScreen> {
           children: [
             Text('加载失败: $_error', style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 16),
-            ElevatedButton(onPressed: _loadLocalAssets, child: const Text('重试')),
+            ElevatedButton(
+              onPressed: _loadLocalAssets,
+              child: const Text('重试'),
+            ),
           ],
         ),
       );
@@ -737,7 +778,10 @@ class _AssetScreenState extends State<AssetScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('素材列表', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                const Text(
+                  '素材列表',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
                 Text(
                   '选择您需要的素材，点击"选择发送"后将自动从云端服务器下载',
@@ -781,7 +825,9 @@ class _AssetScreenState extends State<AssetScreen> {
     final String fileName = assetInfo['name'];
     final bool isSelected = _selectedAssets.contains(assetPath);
     final String? description = assetInfo['description'];
-    final bool isDownloaded = _downloadedAssetsService.isAssetDownloaded(assetPath);
+    final bool isDownloaded = _downloadedAssetsService.isAssetDownloaded(
+      assetPath,
+    );
     final bool isDownloading = _downloadingAssets.contains(assetPath);
 
     // 性能优化：RepaintBoundary 隔离重绘区域
@@ -808,9 +854,15 @@ class _AssetScreenState extends State<AssetScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (isDownloaded)
-                  const Text('已下载', style: TextStyle(color: Colors.green, fontSize: 12)),
+                  const Text(
+                    '已下载',
+                    style: TextStyle(color: Colors.green, fontSize: 12),
+                  ),
                 if (description != null && description.isNotEmpty)
-                  Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                  Text(
+                    description,
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
               ],
             ),
             value: isSelected,
@@ -853,7 +905,6 @@ class _AssetScreenState extends State<AssetScreen> {
   }
 }
 
-
 /// 优化的展开组件 - 完全避免卡顿
 class _OptimizedExpansionTile extends StatefulWidget {
   final String title;
@@ -876,7 +927,8 @@ class _OptimizedExpansionTile extends StatefulWidget {
   });
 
   @override
-  State<_OptimizedExpansionTile> createState() => _OptimizedExpansionTileState();
+  State<_OptimizedExpansionTile> createState() =>
+      _OptimizedExpansionTileState();
 }
 
 class _OptimizedExpansionTileState extends State<_OptimizedExpansionTile> {
@@ -909,7 +961,7 @@ class _OptimizedExpansionTileState extends State<_OptimizedExpansionTile> {
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).primaryColor;
-    
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -933,18 +985,27 @@ class _OptimizedExpansionTileState extends State<_OptimizedExpansionTile> {
                       children: [
                         Text(
                           widget.title,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
                         ),
                         if (widget.subtitle != null)
                           Text(
                             widget.subtitle!,
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
                           ),
                       ],
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: primaryColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
@@ -1005,12 +1066,15 @@ class _LazyChildrenBuilderState extends State<_LazyChildrenBuilder> {
 
   void _loadMore() {
     if (_loadedCount >= widget.children.length) return;
-    
+
     // 性能优化：使用帧回调替代固定延迟，更精准地在下一帧渲染
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted && _loadedCount < widget.children.length) {
         setState(() {
-          _loadedCount = (_loadedCount + _batchSize).clamp(0, widget.children.length);
+          _loadedCount = (_loadedCount + _batchSize).clamp(
+            0,
+            widget.children.length,
+          );
         });
         if (_loadedCount < widget.children.length) {
           _loadMore();

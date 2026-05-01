@@ -35,13 +35,33 @@ class _ShopMallListViewState extends State<ShopMallListView> {
 
   // 模拟分类数据
   final List<Map<String, dynamic>> _categories = [
-    {'icon': Icons.auto_awesome, 'name': '功德法器', 'color': const Color(0xFFE74C3C)},
-    {'icon': Icons.temple_buddhist, 'name': '佛像供具', 'color': const Color(0xFFD4AF37)},
+    {
+      'icon': Icons.auto_awesome,
+      'name': '功德法器',
+      'color': const Color(0xFFE74C3C),
+    },
+    {
+      'icon': Icons.temple_buddhist,
+      'name': '佛像供具',
+      'color': const Color(0xFFD4AF37),
+    },
     {'icon': Icons.menu_book, 'name': '经书法物', 'color': const Color(0xFF667eea)},
-    {'icon': Icons.card_giftcard, 'name': '禅意礼品', 'color': const Color(0xFF11998e)},
+    {
+      'icon': Icons.card_giftcard,
+      'name': '禅意礼品',
+      'color': const Color(0xFF11998e),
+    },
     {'icon': Icons.spa, 'name': '香品香具', 'color': const Color(0xFF8E44AD)},
-    {'icon': Icons.self_improvement, 'name': '禅修用品', 'color': const Color(0xFFE67E22)},
-    {'icon': Icons.local_florist, 'name': '供花供果', 'color': const Color(0xFFE91E63)},
+    {
+      'icon': Icons.self_improvement,
+      'name': '禅修用品',
+      'color': const Color(0xFFE67E22),
+    },
+    {
+      'icon': Icons.local_florist,
+      'name': '供花供果',
+      'color': const Color(0xFFE91E63),
+    },
     {'icon': Icons.more_horiz, 'name': '更多分类', 'color': Colors.grey},
   ];
 
@@ -160,40 +180,31 @@ class _ShopMallListViewState extends State<ShopMallListView> {
               slivers: [
                 // 顶部间距（为固定搜索栏和标签栏留空间）
                 // TabBar (约50) + 搜索栏 (约40) + 间距 + 安全余量
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: 150),
-                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 150)),
 
                 // 用户功能菜单 (订单、地址、收藏)
-                SliverToBoxAdapter(
-                  child: _buildUserMenuSection(),
-                ),
+                SliverToBoxAdapter(child: _buildUserMenuSection()),
 
                 // Banner轮播
-                SliverToBoxAdapter(
-                  child: _buildBannerSection(),
-                ),
+                SliverToBoxAdapter(child: _buildBannerSection()),
 
                 // 分类入口
-                SliverToBoxAdapter(
-                  child: _buildCategorySection(),
-                ),
+                SliverToBoxAdapter(child: _buildCategorySection()),
 
                 // 热门推荐标题
-                SliverToBoxAdapter(
-                  child: _buildSectionTitle('🔥 热门推荐'),
-                ),
+                SliverToBoxAdapter(child: _buildSectionTitle('🔥 热门推荐')),
 
                 // 商品网格
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   sliver: SliverGrid(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 0.58, // 进一步调整比例以修复底部溢出
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 0.58, // 进一步调整比例以修复底部溢出
+                        ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) => _buildProductCard(_products[index]),
                       childCount: _products.length,
@@ -202,9 +213,7 @@ class _ShopMallListViewState extends State<ShopMallListView> {
                 ),
 
                 // 底部间距
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: 100),
-                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 100)),
               ],
             ),
           ),
@@ -215,7 +224,7 @@ class _ShopMallListViewState extends State<ShopMallListView> {
             left: 0,
             right: 0,
             child: Container(
-              padding: const EdgeInsets.only(top: 0), 
+              padding: const EdgeInsets.only(top: 0),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
@@ -254,9 +263,9 @@ class _ShopMallListViewState extends State<ShopMallListView> {
   Widget _buildUserMenuItem(IconData icon, String label, Color color) {
     return GestureDetector(
       onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$label功能开发中...')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$label功能开发中...')));
       },
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -295,10 +304,7 @@ class _ShopMallListViewState extends State<ShopMallListView> {
           const SizedBox(width: 8),
           const Text(
             '搜索商品、品牌...',
-            style: TextStyle(
-              color: Colors.white54,
-              fontSize: 13,
-            ),
+            style: TextStyle(color: Colors.white54, fontSize: 13),
           ),
           const Spacer(),
           Container(
@@ -384,7 +390,10 @@ class _ShopMallListViewState extends State<ShopMallListView> {
                           ),
                           const SizedBox(height: 16),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 6,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(4),
@@ -493,10 +502,14 @@ class _ShopMallListViewState extends State<ShopMallListView> {
                           width: 52,
                           height: 52,
                           decoration: BoxDecoration(
-                            color: (category['color'] as Color).withOpacity(0.15),
+                            color: (category['color'] as Color).withOpacity(
+                              0.15,
+                            ),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: (category['color'] as Color).withOpacity(0.3),
+                              color: (category['color'] as Color).withOpacity(
+                                0.3,
+                              ),
                               width: 1,
                             ),
                           ),
@@ -630,10 +643,15 @@ class _ShopMallListViewState extends State<ShopMallListView> {
                     top: 0,
                     left: 0,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 3,
+                      ),
                       decoration: const BoxDecoration(
                         color: Color(0xFFE74C3C), // 红色标签
-                        borderRadius: BorderRadius.only(bottomRight: Radius.circular(8)),
+                        borderRadius: BorderRadius.only(
+                          bottomRight: Radius.circular(8),
+                        ),
                       ),
                       child: Text(
                         product['tag'] as String,
@@ -673,47 +691,47 @@ class _ShopMallListViewState extends State<ShopMallListView> {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         // 价格区域
-                         Expanded(
-                           child: Column(
-                             crossAxisAlignment: CrossAxisAlignment.start,
-                             children: [
-                               Row(
-                                 crossAxisAlignment: CrossAxisAlignment.baseline,
-                                 textBaseline: TextBaseline.alphabetic,
-                                 children: [
-                                   const Text(
-                                     '¥',
-                                     style: TextStyle(
-                                       color: Color(0xFFFF4D4F), // 价格红
-                                       fontSize: 12,
-                                       fontWeight: FontWeight.bold,
-                                     ),
-                                   ),
-                                   Flexible(
-                                     child: Text(
-                                       '${(product['price'] as double).toStringAsFixed(0)}',
-                                       style: const TextStyle(
-                                         color: Color(0xFFFF4D4F),
-                                         fontSize: 18,
-                                         fontWeight: FontWeight.bold,
-                                       ),
-                                       overflow: TextOverflow.ellipsis,
-                                     ),
-                                   ),
-                                 ],
-                               ),
-                               const SizedBox(height: 2),
-                               Text(
-                                 '已售${product['sales']}',
-                                 style: TextStyle(
-                                   color: Colors.white.withOpacity(0.4),
-                                   fontSize: 10,
-                                 ),
-                               ),
-                             ],
-                           ),
-                         ),
-                         
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.baseline,
+                                textBaseline: TextBaseline.alphabetic,
+                                children: [
+                                  const Text(
+                                    '¥',
+                                    style: TextStyle(
+                                      color: Color(0xFFFF4D4F), // 价格红
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Flexible(
+                                    child: Text(
+                                      '${(product['price'] as double).toStringAsFixed(0)}',
+                                      style: const TextStyle(
+                                        color: Color(0xFFFF4D4F),
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '已售${product['sales']}',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.4),
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
                         // 购物车按钮
                         Container(
                           margin: const EdgeInsets.only(left: 4),

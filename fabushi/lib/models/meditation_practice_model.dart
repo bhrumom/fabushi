@@ -1,17 +1,17 @@
 /// 禅室修行功课模型
-/// 
+///
 /// 存储用户选定的修行功课信息
 /// 一旦选定后不可更改（锁定机制）
 class MeditationPractice {
   /// 经文标题
   final String title;
-  
+
   /// 文件路径（用于评论关联和内容加载）
   final String filePath;
-  
+
   /// 选定时间
   final DateTime selectedAt;
-  
+
   /// 是否已锁定（选定后即锁定）
   final bool isLocked;
 
@@ -45,7 +45,8 @@ class MeditationPractice {
   String get contentId => 'practice_${filePath.hashCode.abs()}';
 
   @override
-  String toString() => 'MeditationPractice(title: $title, filePath: $filePath, isLocked: $isLocked)';
+  String toString() =>
+      'MeditationPractice(title: $title, filePath: $filePath, isLocked: $isLocked)';
 }
 
 /// 可选修行功课列表项

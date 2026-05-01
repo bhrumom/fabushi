@@ -69,10 +69,7 @@ class PerformanceMonitor {
   }
 
   /// 测量操作耗时
-  Future<T> measure<T>(
-    String operation,
-    Future<T> Function() action,
-  ) async {
+  Future<T> measure<T>(String operation, Future<T> Function() action) async {
     final startTime = DateTime.now();
     try {
       return await action();
@@ -100,15 +97,21 @@ class PerformanceMonitor {
     debugPrint('💾 持久化操作: $_persistCount 次 ($persistRate/s)');
 
     if (_updateDurations.isNotEmpty) {
-      final avgUpdate = _updateDurations.reduce((a, b) => a + b) / _updateDurations.length;
+      final avgUpdate =
+          _updateDurations.reduce((a, b) => a + b) / _updateDurations.length;
       final maxUpdate = _updateDurations.reduce((a, b) => a > b ? a : b);
-      debugPrint('⚡ 更新耗时: 平均 ${avgUpdate.toStringAsFixed(1)}ms, 最大 ${maxUpdate}ms');
+      debugPrint(
+        '⚡ 更新耗时: 平均 ${avgUpdate.toStringAsFixed(1)}ms, 最大 ${maxUpdate}ms',
+      );
     }
 
     if (_persistDurations.isNotEmpty) {
-      final avgPersist = _persistDurations.reduce((a, b) => a + b) / _persistDurations.length;
+      final avgPersist =
+          _persistDurations.reduce((a, b) => a + b) / _persistDurations.length;
       final maxPersist = _persistDurations.reduce((a, b) => a > b ? a : b);
-      debugPrint('💾 持久化耗时: 平均 ${avgPersist.toStringAsFixed(1)}ms, 最大 ${maxPersist}ms');
+      debugPrint(
+        '💾 持久化耗时: 平均 ${avgPersist.toStringAsFixed(1)}ms, 最大 ${maxPersist}ms',
+      );
     }
 
     debugPrint('========================================');
@@ -125,12 +128,19 @@ class PerformanceMonitor {
     debugPrint('');
     debugPrint('📊 ========== 最终性能报告 ==========');
     debugPrint('⏱️ 总时长: ${elapsed}s');
-    debugPrint('📢 notifyListeners: $_notifyCount 次 (${(_notifyCount / elapsed).toStringAsFixed(1)}/s)');
-    debugPrint('🔄 Widget重建: $_widgetRebuildCount 次 (${(_widgetRebuildCount / elapsed).toStringAsFixed(1)}/s)');
-    debugPrint('💾 持久化操作: $_persistCount 次 (${(_persistCount / elapsed).toStringAsFixed(1)}/s)');
+    debugPrint(
+      '📢 notifyListeners: $_notifyCount 次 (${(_notifyCount / elapsed).toStringAsFixed(1)}/s)',
+    );
+    debugPrint(
+      '🔄 Widget重建: $_widgetRebuildCount 次 (${(_widgetRebuildCount / elapsed).toStringAsFixed(1)}/s)',
+    );
+    debugPrint(
+      '💾 持久化操作: $_persistCount 次 (${(_persistCount / elapsed).toStringAsFixed(1)}/s)',
+    );
 
     if (_updateDurations.isNotEmpty) {
-      final avgUpdate = _updateDurations.reduce((a, b) => a + b) / _updateDurations.length;
+      final avgUpdate =
+          _updateDurations.reduce((a, b) => a + b) / _updateDurations.length;
       final maxUpdate = _updateDurations.reduce((a, b) => a > b ? a : b);
       final minUpdate = _updateDurations.reduce((a, b) => a < b ? a : b);
       debugPrint('⚡ 更新耗时统计:');
@@ -140,7 +150,8 @@ class PerformanceMonitor {
     }
 
     if (_persistDurations.isNotEmpty) {
-      final avgPersist = _persistDurations.reduce((a, b) => a + b) / _persistDurations.length;
+      final avgPersist =
+          _persistDurations.reduce((a, b) => a + b) / _persistDurations.length;
       final maxPersist = _persistDurations.reduce((a, b) => a > b ? a : b);
       final minPersist = _persistDurations.reduce((a, b) => a < b ? a : b);
       debugPrint('💾 持久化耗时统计:');
@@ -218,7 +229,8 @@ class PerformanceMonitorWidget extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<PerformanceMonitorWidget> createState() => _PerformanceMonitorWidgetState();
+  State<PerformanceMonitorWidget> createState() =>
+      _PerformanceMonitorWidgetState();
 }
 
 class _PerformanceMonitorWidgetState extends State<PerformanceMonitorWidget> {

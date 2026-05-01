@@ -38,9 +38,19 @@ class VideoFeedScreen extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 64),
+                      const Icon(
+                        Icons.error_outline,
+                        color: Colors.red,
+                        size: 64,
+                      ),
                       const SizedBox(height: 16),
-                      Text('加载失败', style: const TextStyle(color: Colors.white, fontSize: 20)),
+                      Text(
+                        '加载失败',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                        ),
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         state.errorMessage,
@@ -60,7 +70,11 @@ class VideoFeedScreen extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.video_library_outlined, color: Colors.white54, size: 80),
+                      const Icon(
+                        Icons.video_library_outlined,
+                        color: Colors.white54,
+                        size: 80,
+                      ),
                       const SizedBox(height: 24),
                       const Text(
                         '暂无内容',
@@ -78,7 +92,8 @@ class VideoFeedScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 24),
                       ElevatedButton.icon(
-                        onPressed: () => context.read<VideoFeedCubit>().loadVideos(),
+                        onPressed: () =>
+                            context.read<VideoFeedCubit>().loadVideos(),
                         icon: const Icon(Icons.refresh),
                         label: const Text('重新加载'),
                         style: ElevatedButton.styleFrom(
