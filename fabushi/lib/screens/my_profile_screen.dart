@@ -7,6 +7,8 @@ import 'edit_profile_screen.dart';
 import 'douyin_login_screen.dart';
 import 'settings_screen.dart';
 import '../core/design_system/app_theme.dart';
+import '../l10n/app_localizations.dart';
+import '../widgets/language_selector_sheet.dart';
 import '../widgets/practice_entry_card.dart';
 import '../services/meditation_session_manager.dart';
 import 'practice_record_screen.dart';
@@ -99,6 +101,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       pinned: true,
       backgroundColor: const Color(0xFF121212),
       actions: [
+        IconButton(
+          tooltip: context.l10n.settingsLanguageTitle,
+          icon: const Icon(Icons.language, color: Colors.white),
+          onPressed: () => LanguageSelectorSheet.show(context),
+        ),
         if (user != null)
           IconButton(
             icon: const Icon(Icons.settings_outlined, color: Colors.white),

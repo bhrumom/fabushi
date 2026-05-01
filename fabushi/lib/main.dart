@@ -8,6 +8,7 @@ import 'dart:io';
 import 'firebase_options.dart';
 import 'core/di/injection.dart';
 import 'core/config/app_config.dart';
+import 'l10n/app_localizations.dart';
 import 'models/file_transfer_model.dart';
 import 'models/settings_model.dart';
 import 'models/auth_model.dart';
@@ -125,14 +126,23 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => VideoFeedVisibilityNotifier()),
         ChangeNotifierProvider(create: (_) => TtsMuteNotifier()..initialize()),
       ],
-      child: MaterialApp(
-        title: AppConfig.appName,
-        debugShowCheckedModeBanner: false,
-        routes: {'/login': (_) => const DouyinLoginScreen()},
-        theme: AppTheme.lightTheme, // Though we prefer dark for space theme
-        darkTheme: AppTheme.darkTheme,
-        themeMode: ThemeMode.dark, // Enforce Dark/Space theme
-        home: const AppWrapper(),
+      child: Consumer<SettingsModel>(
+        builder: (context, settings, _) {
+          return MaterialApp(
+            title: AppConfig.appName,
+            onGenerateTitle: (context) => context.l10n.appName,
+            debugShowCheckedModeBanner: false,
+            locale: settings.appLocale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            localeListResolutionCallback: AppLocalizations.localeListResolutionCallback,
+            routes: {'/login': (_) => const DouyinLoginScreen()},
+            theme: AppTheme.lightTheme, // Though we prefer dark for space theme
+            darkTheme: AppTheme.darkTheme,
+            themeMode: ThemeMode.dark, // Enforce Dark/Space theme
+            home: const AppWrapper(),
+          );
+        },
       ),
     );
   }
