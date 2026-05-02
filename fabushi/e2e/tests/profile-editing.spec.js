@@ -109,13 +109,41 @@ async function visibleTextSnapshot(page) {
 async function ensureLoginForm(page, testInfo) {
   await enableFlutterSemantics(page);
   const usernameField = page.getByPlaceholder('请输入用户名或邮箱').first();
-  if (await usernameField.isVisible({ timeout: 2500 }).catch(() => false)) return;
-  await maybeClick(page, '立即登录 / 注册');
-  if (await usernameField.isVisible({ timeout: 2500 }).catch(() => false)) return;
-  await tap(page, 0.5, 0.72);
-  if (await usernameField.isVisible({ timeout: 2500 }).catch(() => false)) return;
-  await tap(page, 0.5, 0.62);
-  if (await usernameField.isVisible({ timeout: 10000 }).catch(() => false)) return;
+  const visibleWithin = async (locator, timeout) => {
+    try {
+      await locator.waitFor({ state: 'visible', timeout });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+  const loginScreenMarkers = [
+    usernameField,
+    page.getByText('账号密码登录', { exact: true }).first(),
+    page.getByText('我已阅读并同意', { exact: true }).first(),
+    page.getByText('以游客身份继续', { exact: true }).first()
+  ];
+  const loginScreenReady = async (timeout = 2500) => {
+    for (const marker of loginScreenMarkers) {
+      if (await visibleWithin(marker, timeout)) return true;
+    }
+    return false;
+  };
+
+  if (await loginScreenReady()) return;
+
+  const openAttempts = [
+    () => maybeClick(page, '立即登录 / 注册'),
+    () => maybeClick(page, '立即登录'),
+    () => tap(page, 0.5, 0.72),
+    () => tap(page, 0.5, 0.62)
+  ];
+
+  for (const openLogin of openAttempts) {
+    await openLogin();
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    if (await loginScreenReady(3500)) return;
+  }
 
   const snapshot = await visibleTextSnapshot(page);
   await testInfo.attach('login-form-not-found-visible-text', {
@@ -136,6 +164,7 @@ async function fillByPlaceholderOrTap(page, placeholder, value, yRatio) {
   await tap(page, 0.5, yRatio);
   await page.keyboard.press('Control+A').catch(() => {});
   await page.keyboard.type(value, { delay: 10 });
+  await enableFlutterSemantics(page);
 }
 
 async function clickAgreementCandidates(page) {
