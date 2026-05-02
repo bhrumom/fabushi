@@ -1,0 +1,181 @@
+name: Explicit automerge
+
+on:
+  pull_request:
+    types:
+      - labeled
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to evaluate for automerge.
+        required: true
+        type: number
+
+concurrency:
+  group: automerge-${{ github.event.pull_request.number || inputs.pr_number || github.event.workflow_run.head_sha || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: read
+  checks: read
+  issues: write
+  pull-requests: write
+  statuses: read
+
+jobs:
+  automerge:
+    name: Merge explicitly authorized green PRs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Evaluate and merge authorized PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const autoMergeLabel = 'automerge';
+            const requiredWorkflowName = 'CI';
+            const requiredConclusion = 'success';
+            const sensitivePathPrefixes = [
+              '.github/workflows/',
+              '.github/actions/',
+              '.github/scripts/',
+            ];
+            const sensitivePathPatterns = [
+              /^fabushi\/web\/wrangler\.toml$/,
+              /^fabushi\/web\/.*\.sql$/,
+              /^fabushi\/lib\/models\/auth_model\.dart$/,
+              /^fabushi\/lib\/services\/.*auth.*\.dart$/,
+              /^fabushi\/lib\/services\/.*payment.*\.dart$/,
+              /^fabushi\/lib\/services\/.*alipay.*\.dart$/,
+              /^fabushi\/web\/.*auth.*\.js$/,
+              /^fabushi\/web\/.*payment.*\.js$/,
+              /^fabushi\/web\/.*alipay.*\.js$/,
+            ];
+
+            async function findPr() {
+              if (context.eventName === 'pull_request') {
+                return context.payload.pull_request;
+              }
+
+              if (context.eventName === 'workflow_dispatch') {
+                const pull_number = Number(core.getInput('pr_number'));
+                const { data } = await github.rest.pulls.get({ owner, repo, pull_number });
+                return data;
+              }
+
+              if (context.eventName === 'workflow_run') {
+                const workflowRun = context.payload.workflow_run;
+                if (workflowRun.conclusion !== requiredConclusion) {
+                  core.info(`CI conclusion is ${workflowRun.conclusion}; skipping.`);
+                  return null;
+                }
+                const { data: pulls } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                  owner,
+                  repo,
+                  commit_sha: workflowRun.head_sha,
+                });
+                return pulls.find((pr) => pr.state === 'open' && pr.base.ref === 'main') || null;
+              }
+
+              return null;
+            }
+
+            async function hasSuccessfulCi(headSha) {
+              const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
+                owner,
+                repo,
+                workflow_id: 'ci.yml',
+                head_sha: headSha,
+                status: 'completed',
+                per_page: 10,
+              });
+              return runs.workflow_runs.some(
+                (run) => run.name === requiredWorkflowName && run.conclusion === requiredConclusion,
+              );
+            }
+
+            async function hasSensitiveChanges(pull_number) {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner,
+                repo,
+                pull_number,
+                per_page: 100,
+              });
+              return files.some((file) => {
+                const filename = file.filename;
+                return sensitivePathPrefixes.some((prefix) => filename.startsWith(prefix)) ||
+                  sensitivePathPatterns.some((pattern) => pattern.test(filename));
+              });
+            }
+
+            const pr = await findPr();
+            if (!pr) {
+              core.info('No open main-targeting PR found for automerge evaluation.');
+              return;
+            }
+
+            const labels = pr.labels.map((label) => label.name);
+            if (!labels.includes(autoMergeLabel)) {
+              core.info(`PR #${pr.number} does not have the ${autoMergeLabel} label; skipping.`);
+              return;
+            }
+
+            if (pr.draft) {
+              core.info(`PR #${pr.number} is a draft; skipping.`);
+              return;
+            }
+
+            if (pr.head.repo.full_name !== `${owner}/${repo}`) {
+              core.info(`PR #${pr.number} comes from a fork; skipping automerge.`);
+              return;
+            }
+
+            if (await hasSensitiveChanges(pr.number)) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pr.number,
+                body: 'Automerge skipped: this PR changes protected CI/CD, auth, payment, deployment, or database files and needs a human merge.',
+              });
+              core.info(`PR #${pr.number} touches sensitive paths; skipping.`);
+              return;
+            }
+
+            const freshPr = (await github.rest.pulls.get({ owner, repo, pull_number: pr.number })).data;
+            if (freshPr.mergeable === false || freshPr.mergeable_state === 'dirty') {
+              core.setFailed(`PR #${pr.number} is not mergeable: ${freshPr.mergeable_state}`);
+              return;
+            }
+
+            if (!(await hasSuccessfulCi(freshPr.head.sha))) {
+              core.info(`PR #${pr.number} head ${freshPr.head.sha} does not have a successful CI run yet.`);
+              return;
+            }
+
+            await github.rest.pulls.merge({
+              owner,
+              repo,
+              pull_number: pr.number,
+              merge_method: 'squash',
+              commit_title: freshPr.title,
+              commit_message: `Automerge PR #${pr.number} after successful CI.`,
+              sha: freshPr.head.sha,
+            });
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pr.number,
+              body: `Automerge completed after successful ${requiredWorkflowName}. CD will run from main and gate production through staging E2E and native install smoke tests.`,
+            });

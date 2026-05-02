@@ -18,6 +18,10 @@ class AppWrapper extends StatefulWidget {
 }
 
 class _AppWrapperState extends State<AppWrapper> {
+  // 模型功能当前在产品内隐藏；启动时也不要再弹出模型选择引导。
+  // 后续重新开放模型功能时，将这里改为 true 即可恢复首启引导。
+  static bool get _modelSetupUiEnabled => false;
+
   bool _isInitialized = false;
   bool _initStarted = false;
   String? _initError;
@@ -57,9 +61,15 @@ class _AppWrapperState extends State<AppWrapper> {
       final needsEula = !await EulaService.isAccepted();
 
       // 5. 检查是否需要模型设置引导
-      final needsModelSetup =
-          await AppSettings.isFirstLaunch() &&
-          !await AppSettings.isModelSetupComplete();
+      final needsModelSetup = _modelSetupUiEnabled
+          ? await AppSettings.isFirstLaunch() &&
+                !await AppSettings.isModelSetupComplete()
+          : false;
+
+      if (!_modelSetupUiEnabled) {
+        await AppSettings.setFirstLaunchComplete();
+        await AppSettings.setModelSetupComplete(true);
+      }
 
       // If we are still mounted, update state to trigger rebuild to the main UI.
       if (mounted) {
