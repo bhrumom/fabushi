@@ -18,14 +18,21 @@ function apiUrl(path) {
   return new URL(path, env('STAGING_APP_URL')).toString();
 }
 
+function safeProjectName(testInfo) {
+  return testInfo.project.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+}
+
 test.describe('staging profile API flow', () => {
-  test('logs in with username, email, and phone, then updates profile fields without changing stable values', async ({ request }) => {
+  test.describe.configure({ mode: 'serial' });
+
+  test('logs in with username, email, and phone, then updates profile fields without changing stable values', async ({ request }, testInfo) => {
     for (const name of requiredEnv) env(name);
 
     const login = env('STAGING_TEST_LOGIN');
     const password = env('STAGING_TEST_PASSWORD');
     const email = env('STAGING_TEST_EMAIL');
     const phone = env('STAGING_TEST_PHONE');
+    const projectMarker = `${safeProjectName(testInfo)}-${Date.now()}`;
 
     async function passwordLogin(identifier) {
       const response = await request.post(apiUrl('/api/auth/login'), {
@@ -42,7 +49,7 @@ test.describe('staging profile API flow', () => {
     const usernameLogin = await passwordLogin(login);
     expect(usernameLogin.user?.username).toBe(login);
 
-    const seedMarker = `ci-seed-${Date.now()}`;
+    const seedMarker = `ci-seed-${projectMarker}`;
     const seedProfile = await request.post(apiUrl('/api/auth/update-profile'), {
       headers: { Authorization: `Bearer ${usernameLogin.token}` },
       data: {
@@ -74,7 +81,7 @@ test.describe('staging profile API flow', () => {
     expect(before.phoneNumber).toBe(phone);
     expect(before.hasPassword).toBe(true);
 
-    const marker = `ci-${Date.now()}`;
+    const marker = `ci-${projectMarker}`;
     const update = await request.post(apiUrl('/api/auth/update-profile'), {
       headers: { Authorization: `Bearer ${seededToken}` },
       data: {
