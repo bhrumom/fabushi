@@ -118,9 +118,13 @@ class AppLocalizations {
       const AppLocalizations(fallbackLocaleCode);
 
   static Locale? localeFromPreference(String code) {
-    if (code == systemLocaleCode) return null;
+    if (code == systemLocaleCode) {
+      return null;
+    }
     for (final option in languageOptions) {
-      if (option.code == code) return option.locale;
+      if (option.code == code) {
+        return option.locale;
+      }
     }
     return null;
   }
@@ -129,10 +133,14 @@ class AppLocalizations {
     List<Locale>? locales,
     Iterable<Locale> supportedLocales,
   ) {
-    if (locales == null || locales.isEmpty) return const Locale('en');
+    if (locales == null || locales.isEmpty) {
+      return const Locale('en');
+    }
     for (final locale in locales) {
       final resolved = resolveLocale(locale, supportedLocales);
-      if (resolved != null) return resolved;
+      if (resolved != null) {
+        return resolved;
+      }
     }
     return const Locale('en');
   }
@@ -169,7 +177,9 @@ class AppLocalizations {
       return 'zh-Hans';
     }
     for (final option in languageOptions) {
-      if (option.locale?.languageCode == languageCode) return option.code;
+      if (option.locale?.languageCode == languageCode) {
+        return option.code;
+      }
     }
     return fallbackLocaleCode;
   }
@@ -181,9 +191,13 @@ class AppLocalizations {
     String code,
     AppLocalizations localizations,
   ) {
-    if (code == systemLocaleCode) return localizations.languageSystem;
+    if (code == systemLocaleCode) {
+      return localizations.languageSystem;
+    }
     for (final option in languageOptions) {
-      if (option.code == code) return option.nativeName;
+      if (option.code == code) {
+        return option.nativeName;
+      }
     }
     return localizations.languageSystem;
   }
