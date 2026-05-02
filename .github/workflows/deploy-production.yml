@@ -16,6 +16,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
   deployments: write
   issues: write
 
@@ -217,6 +218,14 @@ jobs:
         with:
           name: staging-e2e-playwright-report
           path: fabushi/e2e/playwright-report
+          if-no-files-found: ignore
+
+      - name: Upload staging E2E test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-e2e-test-results
+          path: fabushi/e2e/test-results
           if-no-files-found: ignore
 
   android-native-install:
@@ -421,29 +430,43 @@ jobs:
     if: failure()
     runs-on: ubuntu-latest
     steps:
-      - name: Create GitHub issue for failed deployment
+      - name: Checkout failure notifier
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/scripts/**
+
+      - name: Create or update detailed CD failure issue
         uses: actions/github-script@v7
+        env:
+          SOURCE_SHA: ${{ needs.build-artifact.outputs.source_sha || github.event.workflow_run.head_sha || github.sha }}
         with:
           script: |
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const sourceSha = '${{ needs.build-artifact.outputs.source_sha }}' || context.sha;
-            const title = `CD failed for ${sourceSha.substring(0, 7)}`;
-            const body = [
-              '## CD failure',
-              '',
-              `- Source SHA: ${sourceSha}`,
-              `- Workflow run: ${runUrl}`,
-              '- Failed stage: check the workflow job list for the first failed job.',
-              '- Gates include staging API E2E, web/Android/iOS UI E2E, Android native install, and iOS native install.',
-              '',
-              '### Rollback',
-              '',
-              'Use Cloudflare Workers deployment history to roll back to the previous known-good production deployment, then rerun this workflow after fixing the failure.'
-            ].join('\n');
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              body,
-              labels: ['deployment-failure']
+            const { createOrUpdateFailureIssue } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/create-failure-issue.js`);
+            await createOrUpdateFailureIssue({
+              github,
+              context,
+              core,
+              kind: 'CD',
+              titlePrefix: 'CD failed for',
+              sourceSha: process.env.SOURCE_SHA || context.sha,
+              sourceRef: 'main',
+              labelName: 'deployment-failure',
+              labelColor: 'ededed',
+              labelDescription: 'Production deployment workflow failed',
+              notifyJobName: 'Notify deployment failure',
+              extraSections: [
+                '### Deployment gates',
+                '',
+                '- Staging API E2E',
+                '- Web, Android-profile, and iOS-profile Playwright UI E2E',
+                '- Android native install smoke',
+                '- iOS native install smoke',
+                '- Production deploy and smoke test',
+                '',
+                '### Rollback',
+                '',
+                'Use Cloudflare Workers deployment history to roll back to the previous known-good production deployment, then rerun this workflow after fixing the failure.',
+              ],
             });
