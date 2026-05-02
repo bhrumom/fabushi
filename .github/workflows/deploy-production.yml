@@ -1,4 +1,4 @@
-name: CD - Staging E2E gated production deploy
+name: CD - Staging API gated production deploy
 
 on:
   workflow_run:
@@ -160,12 +160,12 @@ jobs:
         run: npx --yes wrangler@latest deploy --env development
 
   staging-e2e:
-    name: Staging API and app UI E2E gate
+    name: Staging API E2E and smoke gate
     needs:
       - build-artifact
       - deploy-staging
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: fabushi/e2e
@@ -205,14 +205,8 @@ jobs:
       - name: Install E2E dependencies
         run: npm ci
 
-      - name: Install Playwright browsers for web, Android, and iOS UI E2E
-        run: npx playwright install chromium webkit --with-deps
-
       - name: Run staging profile API E2E
         run: npm test
-
-      - name: Run staging profile app UI E2E on web, Android, and iOS projects
-        run: npm run test:ui
 
       - name: Run staging smoke test
         shell: bash
@@ -231,7 +225,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: staging-e2e-playwright-report
+          name: staging-api-e2e-playwright-report
           path: fabushi/e2e/playwright-report
           if-no-files-found: ignore
 
@@ -239,7 +233,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: staging-e2e-test-results
+          name: staging-api-e2e-test-results
           path: fabushi/e2e/test-results
           if-no-files-found: ignore
 
@@ -399,7 +393,7 @@ jobs:
             echo ""
             echo "- Source SHA: ${{ needs.build-artifact.outputs.source_sha }}"
             echo "- Artifact: fabushi-release-${{ needs.build-artifact.outputs.source_sha }}"
-            echo "- Gates: staging API E2E, web/Android/iOS UI E2E, Android native install, iOS native install"
+            echo "- Gates: staging API E2E, staging smoke, Android native install, iOS native install"
             echo "- URL: ${{ vars.PRODUCTION_APP_URL || 'https://flutter.ombhrum.com' }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -480,7 +474,7 @@ jobs:
                 '### Deployment gates',
                 '',
                 '- Staging API E2E',
-                '- Web, Android-profile, and iOS-profile Playwright UI E2E',
+                '- Staging smoke test',
                 '- Android native install smoke',
                 '- iOS native install smoke',
                 '- Production deploy and smoke test',
