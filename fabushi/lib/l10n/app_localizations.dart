@@ -143,12 +143,14 @@ class AppLocalizations {
   ) {
     final canonicalCode = canonicalLocaleCode(locale);
     for (final supportedLocale in supportedLocales) {
-      if (canonicalLocaleCode(supportedLocale) == canonicalCode)
+      if (canonicalLocaleCode(supportedLocale) == canonicalCode) {
         return supportedLocale;
+      }
     }
     for (final supportedLocale in supportedLocales) {
-      if (supportedLocale.languageCode == locale.languageCode)
+      if (supportedLocale.languageCode == locale.languageCode) {
         return supportedLocale;
+      }
     }
     return null;
   }
@@ -161,8 +163,9 @@ class AppLocalizations {
       if (scriptCode == 'hant' ||
           countryCode == 'tw' ||
           countryCode == 'hk' ||
-          countryCode == 'mo')
+          countryCode == 'mo') {
         return 'zh-Hant';
+      }
       return 'zh-Hans';
     }
     for (final option in languageOptions) {
