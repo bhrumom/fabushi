@@ -132,7 +132,9 @@ class SettingsModel extends ChangeNotifier {
     final nextValue = AppLocalizations.isSupportedPreference(value)
         ? value
         : AppLocalizations.systemLocaleCode;
-    if (_localePreference == nextValue) return;
+    if (_localePreference == nextValue) {
+      return;
+    }
     _localePreference = nextValue;
     await _saveSettings();
     notifyListeners();
