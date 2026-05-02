@@ -13,12 +13,28 @@
           "value": "\"1.0\""
         },
         {
+          "name": "flutter.is_first_launch_v2",
+          "value": "false"
+        },
+        {
+          "name": "flutter.model_setup_complete",
+          "value": "true"
+        },
+        {
           "name": "eula_accepted",
           "value": "true"
         },
         {
           "name": "eula_accepted_version",
           "value": "1.0"
+        },
+        {
+          "name": "is_first_launch_v2",
+          "value": "false"
+        },
+        {
+          "name": "model_setup_complete",
+          "value": "true"
         }
       ]
     }
