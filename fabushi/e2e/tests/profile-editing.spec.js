@@ -55,6 +55,11 @@ async function tapProfileTab(page) {
   await enableFlutterSemantics(page);
 }
 
+async function openProfilePage(page) {
+  await page.goto('/?tab=profile', { waitUntil: 'networkidle' });
+  await enableFlutterSemantics(page);
+}
+
 async function clickText(page, text, options = {}) {
   const exact = options.exact ?? true;
   await enableFlutterSemantics(page);
@@ -96,7 +101,12 @@ async function visibleBox(locator, timeout = 1500) {
   }
 }
 
-async function ensureLoginForm(page) {
+async function visibleTextSnapshot(page) {
+  await enableFlutterSemantics(page);
+  return page.locator('body').innerText({ timeout: 2000 }).catch(() => 'unavailable');
+}
+
+async function ensureLoginForm(page, testInfo) {
   await enableFlutterSemantics(page);
   const usernameField = page.getByPlaceholder('请输入用户名或邮箱').first();
   if (await usernameField.isVisible({ timeout: 2500 }).catch(() => false)) return;
@@ -105,7 +115,14 @@ async function ensureLoginForm(page) {
   await tap(page, 0.5, 0.72);
   if (await usernameField.isVisible({ timeout: 2500 }).catch(() => false)) return;
   await tap(page, 0.5, 0.62);
-  await expect(usernameField).toBeVisible({ timeout: 10000 });
+  if (await usernameField.isVisible({ timeout: 10000 }).catch(() => false)) return;
+
+  const snapshot = await visibleTextSnapshot(page);
+  await testInfo.attach('login-form-not-found-visible-text', {
+    body: snapshot.slice(0, 4000),
+    contentType: 'text/plain'
+  });
+  throw new Error(`Login form did not open from profile page. Visible text snapshot: ${snapshot.slice(0, 1000)}`);
 }
 
 async function fillByPlaceholderOrTap(page, placeholder, value, yRatio) {
@@ -178,11 +195,6 @@ async function submitLogin(page) {
   await enableFlutterSemantics(page);
 }
 
-async function visibleTextSnapshot(page) {
-  await enableFlutterSemantics(page);
-  return page.locator('body').innerText({ timeout: 2000 }).catch(() => 'unavailable');
-}
-
 async function waitForPostLogin(page, stableUsername, timeout = 12000) {
   const deadline = Date.now() + timeout;
   const authenticatedMarkers = [
@@ -220,7 +232,7 @@ async function waitForPostLogin(page, stableUsername, timeout = 12000) {
       .isVisible()
       .catch(() => false);
     if (!loginFormVisible || sawSuccessToast) {
-      await tapProfileTab(page);
+      await openProfilePage(page);
       for (const marker of authenticatedMarkers) {
         if (await marker.isVisible().catch(() => false)) return true;
       }
@@ -253,7 +265,10 @@ async function loginThroughUi(page, testInfo, stableUsername) {
       .isVisible()
       .catch(() => false);
     if (!formVisible) {
-      await tapProfileTab(page);
+      await openProfilePage(page);
+      await ensureLoginForm(page, testInfo);
+      await fillByPlaceholderOrTap(page, '请输入用户名或邮箱', stableUsername, 0.41);
+      await fillByPlaceholderOrTap(page, '请输入密码', process.env.STAGING_TEST_PASSWORD, 0.49);
     }
   }
 
@@ -286,14 +301,10 @@ test.describe('staging profile editing flow', () => {
     const stableEmail = process.env.STAGING_TEST_EMAIL;
     const stablePhone = process.env.STAGING_TEST_PHONE;
 
-    await page.goto('/', { waitUntil: 'networkidle' });
-    await enableFlutterSemantics(page);
-
-    await clickText(page, '我的', { fallback: 'profile-tab' });
-    await ensureLoginForm(page);
+    await openProfilePage(page);
+    await ensureLoginForm(page, testInfo);
     await loginThroughUi(page, testInfo, stableUsername);
 
-    await clickText(page, '我的', { fallback: 'profile-tab' });
     await clickText(page, '编辑资料', { fallbackTap: [0.5, 0.48] });
     await expect(page.getByText('编辑资料', { exact: true })).toBeVisible({ timeout: 15000 });
 
@@ -310,7 +321,7 @@ test.describe('staging profile editing flow', () => {
     await clickText(page, '保存', { fallbackTap: [0.5, 0.86] });
     await expect(page.getByText('个人资料更新成功', { exact: false })).toBeVisible({ timeout: 15000 });
 
-    await clickText(page, '我的', { fallback: 'profile-tab' });
+    await openProfilePage(page);
     await expect(page.getByText(stableUsername, { exact: false })).toBeVisible({ timeout: 15000 });
 
     await testInfo.attach('updated-profile', {
@@ -318,9 +329,7 @@ test.describe('staging profile editing flow', () => {
       contentType: 'application/json'
     });
 
-    await page.reload({ waitUntil: 'networkidle' });
-    await enableFlutterSemantics(page);
-    await clickText(page, '我的', { fallback: 'profile-tab' });
+    await openProfilePage(page);
     await expect(page.getByText(stableUsername, { exact: false })).toBeVisible({ timeout: 15000 });
   });
 });
