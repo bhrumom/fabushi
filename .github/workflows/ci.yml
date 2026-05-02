@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   actions: read
   issues: write
   pull-requests: read
@@ -58,7 +58,8 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Check Dart formatting
+      - name: Apply Dart formatting
+        id: dart-format
         shell: bash
         run: |
           set -euo pipefail
@@ -70,9 +71,52 @@ jobs:
           done
           if [ "${#targets[@]}" -eq 0 ]; then
             echo "No Dart source directories found to format."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          dart format --set-exit-if-changed "${targets[@]}"
+
+          dart format "${targets[@]}"
+
+          if git diff --quiet -- "${targets[@]}"; then
+            echo "Dart formatting already matched the CI SDK."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "Dart formatter changed these files:"
+          git diff --name-only -- "${targets[@]}"
+          git diff -- "${targets[@]}" > dart-format.patch
+
+      - name: Upload Dart formatting patch
+        if: ${{ steps.dart-format.outputs.changed == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: dart-format-patch
+          path: fabushi/dart-format.patch
+          if-no-files-found: warn
+
+      - name: Commit Dart formatting changes on main
+        if: ${{ steps.dart-format.outputs.changed == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for path in lib test integration_test; do
+            if [ -e "$path" ]; then
+              git add "$path"
+            fi
+          done
+          git commit -m "style: apply dart format [skip ci]" || exit 0
+          git push
+
+      - name: Fail on uncommitted Dart formatting outside main pushes
+        if: ${{ steps.dart-format.outputs.changed == 'true' && !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        shell: bash
+        run: |
+          echo "::error::Dart formatting changed files. Run 'dart format lib test integration_test' with the CI Flutter SDK and commit the result."
+          exit 1
 
       - name: Analyze Flutter project
         run: flutter analyze lib/main.dart
@@ -236,6 +280,7 @@ jobs:
             const prNumber = process.env.PR_NUMBER;
             const prUrl = process.env.PR_URL;
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '';
             const runTitle = `${context.workflow} #${context.runNumber}`;
             const title = `CI failed for ${shortSha}`;
 
@@ -275,7 +320,7 @@ jobs:
                 '',
                 `- Workflow run: [${runTitle}](${runUrl})`,
                 `- Run ID: ${context.runId}`,
-                `- Attempt: ${context.runAttempt}`,
+                `- Attempt: ${runAttempt}`,
                 `- Trigger: ${context.eventName}`,
                 `- Source SHA: ${sourceSha}`,
                 `- Source ref: ${sourceRef}`,
