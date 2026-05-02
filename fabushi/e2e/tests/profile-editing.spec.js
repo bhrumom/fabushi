@@ -61,7 +61,7 @@ async function clickText(page, text, options = {}) {
   const locator = page.getByText(text, { exact }).first();
   try {
     await locator.waitFor({ state: 'visible', timeout: options.timeout ?? 15000 });
-    await locator.click();
+    await locator.click({ force: true });
   } catch (error) {
     if (options.fallback === 'profile-tab') {
       await tapProfileTab(page);
@@ -79,7 +79,7 @@ async function maybeClick(page, text) {
   await enableFlutterSemantics(page);
   const locator = page.getByText(text, { exact: true }).first();
   if (await locator.isVisible().catch(() => false)) {
-    await locator.click();
+    await locator.click({ force: true });
     await page.waitForTimeout(700);
     await enableFlutterSemantics(page);
     return true;
@@ -96,30 +96,23 @@ async function visibleBox(locator, timeout = 1500) {
   }
 }
 
-async function clickVisible(locator, timeout = 1500) {
-  try {
-    await locator.waitFor({ state: 'visible', timeout });
-    await locator.click({ timeout: 3000, force: true });
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
 async function ensureLoginForm(page) {
   await enableFlutterSemantics(page);
-  if (await page.getByPlaceholder('请输入用户名或邮箱').first().isVisible({ timeout: 2500 }).catch(() => false)) return;
+  const usernameField = page.getByPlaceholder('请输入用户名或邮箱').first();
+  if (await usernameField.isVisible({ timeout: 2500 }).catch(() => false)) return;
   await maybeClick(page, '立即登录 / 注册');
-  if (await page.getByPlaceholder('请输入用户名或邮箱').first().isVisible({ timeout: 2500 }).catch(() => false)) return;
+  if (await usernameField.isVisible({ timeout: 2500 }).catch(() => false)) return;
   await tap(page, 0.5, 0.72);
-  if (await page.getByPlaceholder('请输入用户名或邮箱').first().isVisible({ timeout: 2500 }).catch(() => false)) return;
+  if (await usernameField.isVisible({ timeout: 2500 }).catch(() => false)) return;
   await tap(page, 0.5, 0.62);
+  await expect(usernameField).toBeVisible({ timeout: 10000 });
 }
 
 async function fillByPlaceholderOrTap(page, placeholder, value, yRatio) {
   await enableFlutterSemantics(page);
   const locator = page.getByPlaceholder(placeholder).first();
   if (await locator.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await locator.click({ force: true });
     await locator.fill(value);
     return;
   }
@@ -128,92 +121,72 @@ async function fillByPlaceholderOrTap(page, placeholder, value, yRatio) {
   await page.keyboard.type(value, { delay: 10 });
 }
 
-async function clickAgreementNearLoginButton(page) {
-  const loginTextBox = await visibleBox(page.getByText('🔐 登录', { exact: true }).first(), 1200);
+async function clickAgreementCandidates(page) {
   const size = viewport(page);
-
-  if (loginTextBox) {
-    const loginCenterX = loginTextBox.x + loginTextBox.width / 2;
-    const loginCenterY = loginTextBox.y + loginTextBox.height / 2;
-    await page.mouse.click(Math.max(8, loginCenterX - 118), loginCenterY + 56);
-    await page.waitForTimeout(700);
-    await enableFlutterSemantics(page);
-    return true;
-  }
-
-  const passwordBox = await visibleBox(page.getByPlaceholder(/请输入密码|密码|password/i).first(), 1000);
-  if (passwordBox) {
-    await page.mouse.click(
-      Math.max(8, size.width / 2 - 118),
-      passwordBox.y + passwordBox.height + 106
-    );
-    await page.waitForTimeout(700);
-    await enableFlutterSemantics(page);
-    return true;
-  }
-
-  return false;
-}
-
-async function acceptAgreement(page) {
-  await enableFlutterSemantics(page);
-
-  // The text label itself is not tappable in Flutter; the checkbox to its left
-  // owns the GestureDetector. Prefer deriving the checkbox location from visible
-  // agreement text instead of trusting Flutter Web's occasionally imprecise
-  // generic semantics nodes.
-  const agreementLabelLocators = [
+  const labelLocators = [
     page.getByText('我已阅读并同意', { exact: true }).first(),
     page.getByText(/我已阅读并同意|我已阅读|同意.*协议|同意.*隐私|用户协议|隐私政策/i).first(),
     page.getByText(/agree|agreement|terms|privacy/i).first()
   ];
 
-  for (const label of agreementLabelLocators) {
-    const box = await visibleBox(label, 1200);
-    if (box) {
-      await page.mouse.click(Math.max(8, box.x - 18), box.y + box.height / 2);
-      await page.waitForTimeout(700);
-      await enableFlutterSemantics(page);
-      return;
+  for (const label of labelLocators) {
+    const box = await visibleBox(label, 1000);
+    if (!box) continue;
+    for (const offset of [34, 28, 22, 16, 10]) {
+      await page.mouse.click(Math.max(8, box.x - offset), box.y + box.height / 2);
+      await page.waitForTimeout(250);
     }
+    await enableFlutterSemantics(page);
+    return;
   }
 
-  if (await clickAgreementNearLoginButton(page)) return;
-
-  const checkboxLocators = [
-    page.getByRole('checkbox', { name: /我已阅读|同意|协议|隐私|agree|agreement|terms|privacy/i }).first(),
-    page.getByRole('checkbox').first(),
-    page.locator('[role="checkbox"]').first()
-  ];
-
-  for (const locator of checkboxLocators) {
-    if (await clickVisible(locator, 1000)) {
-      await page.waitForTimeout(700);
-      await enableFlutterSemantics(page);
-      return;
+  const passwordBox = await visibleBox(page.getByPlaceholder(/请输入密码|密码|password/i).first(), 1000);
+  if (passwordBox) {
+    const y = passwordBox.y + passwordBox.height + 106;
+    for (const x of [size.width / 2 - 128, size.width / 2 - 112, size.width * 0.18, size.width * 0.25]) {
+      await page.mouse.click(Math.max(8, x), y);
+      await page.waitForTimeout(250);
     }
+    await enableFlutterSemantics(page);
+    return;
   }
 
-  const size = viewport(page);
-  await page.mouse.click(Math.max(8, size.width / 2 - 118), size.height * 0.62);
-  await page.waitForTimeout(700);
+  for (const [xRatio, yRatio] of [
+    [0.18, 0.57],
+    [0.22, 0.57],
+    [0.18, 0.62],
+    [0.22, 0.62],
+    [0.18, 0.68],
+    [0.22, 0.68]
+  ]) {
+    await page.mouse.click(size.width * xRatio, size.height * yRatio);
+    await page.waitForTimeout(250);
+  }
   await enableFlutterSemantics(page);
 }
 
 async function submitLogin(page) {
   await enableFlutterSemantics(page);
   const login = page.getByText('🔐 登录', { exact: true }).first();
-  if (await login.isVisible().catch(() => false)) {
-    await login.click();
+  const box = await visibleBox(login, 1000);
+  if (box) {
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   } else {
     await tap(page, 0.5, 0.55);
   }
+  await page.waitForTimeout(1000);
+  await enableFlutterSemantics(page);
 }
 
-async function waitForPostLogin(page) {
-  const timeout = 20000;
+async function visibleTextSnapshot(page) {
+  await enableFlutterSemantics(page);
+  return page.locator('body').innerText({ timeout: 2000 }).catch(() => 'unavailable');
+}
+
+async function waitForPostLogin(page, stableUsername, timeout = 12000) {
   const deadline = Date.now() + timeout;
   const authenticatedMarkers = [
+    page.getByText(stableUsername, { exact: false }).first(),
     page.getByText('编辑资料', { exact: true }).first(),
     page.getByText('一门深入:', { exact: false }).first(),
     page.getByText('会员', { exact: true }).first(),
@@ -221,7 +194,7 @@ async function waitForPostLogin(page) {
     page.getByText('下载', { exact: true }).first()
   ];
   const loginFailure = page
-    .getByText(/登录失败|密码错误|用户不存在|账号不存在|密码不正确|网络错误|服务器错误/)
+    .getByText(/登录失败|登录时发生错误|密码错误|用户不存在|账号不存在|密码不正确|网络错误|服务器错误|获取用户信息失败|未登录/)
     .first();
   let sawSuccessToast = false;
 
@@ -238,31 +211,54 @@ async function waitForPostLogin(page) {
     }
 
     for (const marker of authenticatedMarkers) {
-      if (await marker.isVisible().catch(() => false)) return;
+      if (await marker.isVisible().catch(() => false)) return true;
     }
 
-    if (sawSuccessToast) {
-      const loginFormVisible = await page
-        .getByPlaceholder('请输入用户名或邮箱')
-        .first()
-        .isVisible()
-        .catch(() => false);
-      if (!loginFormVisible) {
-        await tapProfileTab(page);
-        for (const marker of authenticatedMarkers) {
-          if (await marker.isVisible().catch(() => false)) return;
-        }
+    const loginFormVisible = await page
+      .getByPlaceholder('请输入用户名或邮箱')
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (!loginFormVisible || sawSuccessToast) {
+      await tapProfileTab(page);
+      for (const marker of authenticatedMarkers) {
+        if (await marker.isVisible().catch(() => false)) return true;
       }
     }
 
     await page.waitForTimeout(300);
   }
 
-  throw new Error(
-    `Timed out waiting for authenticated profile screen${
-      sawSuccessToast ? ' after seeing the login success toast' : ''
-    }`
-  );
+  return false;
+}
+
+async function loginThroughUi(page, testInfo, stableUsername) {
+  await fillByPlaceholderOrTap(page, '请输入用户名或邮箱', stableUsername, 0.41);
+  await fillByPlaceholderOrTap(page, '请输入密码', process.env.STAGING_TEST_PASSWORD, 0.49);
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await clickAgreementCandidates(page);
+    await submitLogin(page);
+    if (await waitForPostLogin(page, stableUsername, attempt === 3 ? 20000 : 8000)) return;
+
+    const snapshot = await visibleTextSnapshot(page);
+    await testInfo.attach(`login-attempt-${attempt}-visible-text`, {
+      body: snapshot.slice(0, 4000),
+      contentType: 'text/plain'
+    });
+
+    const formVisible = await page
+      .getByPlaceholder('请输入用户名或邮箱')
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (!formVisible) {
+      await tapProfileTab(page);
+    }
+  }
+
+  const snapshot = await visibleTextSnapshot(page);
+  throw new Error(`Timed out waiting for authenticated profile screen. Visible text snapshot: ${snapshot.slice(0, 1000)}`);
 }
 
 function createTinyPng() {
@@ -295,12 +291,7 @@ test.describe('staging profile editing flow', () => {
 
     await clickText(page, '我的', { fallback: 'profile-tab' });
     await ensureLoginForm(page);
-
-    await fillByPlaceholderOrTap(page, '请输入用户名或邮箱', stableUsername, 0.41);
-    await fillByPlaceholderOrTap(page, '请输入密码', process.env.STAGING_TEST_PASSWORD, 0.49);
-    await acceptAgreement(page);
-    await submitLogin(page);
-    await waitForPostLogin(page);
+    await loginThroughUi(page, testInfo, stableUsername);
 
     await clickText(page, '我的', { fallback: 'profile-tab' });
     await clickText(page, '编辑资料', { fallbackTap: [0.5, 0.48] });
