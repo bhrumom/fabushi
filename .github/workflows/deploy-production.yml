@@ -9,9 +9,14 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Commit SHA to deploy. Leave empty to deploy the current default-branch SHA.
+        required: false
+        type: string
 
 concurrency:
-  group: cd-production-${{ github.event.workflow_run.head_sha || github.sha }}
+  group: cd-production-main
   cancel-in-progress: false
 
 permissions:
@@ -25,8 +30,9 @@ jobs:
     name: Build release artifact
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: fabushi
@@ -36,12 +42,19 @@ jobs:
       - name: Resolve source commit
         id: source
         working-directory: .
+        env:
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
+          set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            echo "source_sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+            source_sha="${{ github.event.workflow_run.head_sha }}"
+          elif [ -n "${INPUT_SOURCE_SHA:-}" ]; then
+            source_sha="$INPUT_SOURCE_SHA"
           else
-            echo "source_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            source_sha="${{ github.sha }}"
           fi
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "Resolved source SHA: $source_sha"
 
       - name: Checkout source
         uses: actions/checkout@v4
@@ -88,6 +101,7 @@ jobs:
     name: Deploy staging environment
     needs: build-artifact
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: development
       url: https://fabushi-flutter-web-dev.bhrumom.workers.dev
@@ -151,6 +165,7 @@ jobs:
       - build-artifact
       - deploy-staging
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: fabushi/e2e
@@ -234,6 +249,7 @@ jobs:
       - build-artifact
       - staging-e2e
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: fabushi
@@ -290,6 +306,7 @@ jobs:
       - build-artifact
       - staging-e2e
     runs-on: macos-15
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: fabushi
@@ -336,6 +353,7 @@ jobs:
       - android-native-install
       - ios-native-install
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: production
       url: ${{ vars.PRODUCTION_APP_URL || 'https://flutter.ombhrum.com' }}
@@ -391,6 +409,7 @@ jobs:
       - build-artifact
       - deploy-production
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       PRODUCTION_APP_URL: ${{ vars.PRODUCTION_APP_URL || 'https://flutter.ombhrum.com' }}
     steps:
@@ -429,6 +448,7 @@ jobs:
       - production-smoke
     if: failure()
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout failure notifier
         uses: actions/checkout@v4
