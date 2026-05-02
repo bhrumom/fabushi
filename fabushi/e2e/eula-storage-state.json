@@ -1,0 +1,26 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "https://fabushi-flutter-web-dev.bhrumom.workers.dev",
+      "localStorage": [
+        {
+          "name": "flutter.eula_accepted",
+          "value": "true"
+        },
+        {
+          "name": "flutter.eula_accepted_version",
+          "value": "1.0"
+        },
+        {
+          "name": "eula_accepted",
+          "value": "true"
+        },
+        {
+          "name": "eula_accepted_version",
+          "value": "1.0"
+        }
+      ]
+    }
+  ]
+}
