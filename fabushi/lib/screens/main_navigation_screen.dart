@@ -29,11 +29,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     super.initState();
     // 立即加载，由 GlobeHomeScreen 内部控制延迟
     _isGlobeReady = true;
+    _applyInitialTabFromUrl();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+  }
+
+  void _applyInitialTabFromUrl() {
+    final tab = Uri.base.queryParameters['tab']?.toLowerCase();
+    final initialIndex = switch (tab) {
+      'home' => 0,
+      'meditation' || 'meditation-room' || 'zen' => 1,
+      'profile' || 'me' || 'mine' => 2,
+      _ => 0,
+    };
+    _currentIndex = initialIndex;
+    _activatedScreens[initialIndex] = true;
   }
 
   /// 更新禅室页面可见性状态
