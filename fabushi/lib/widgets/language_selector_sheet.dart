@@ -72,9 +72,13 @@ class LanguageSelectorSheet extends StatelessWidget {
                     groupValue: settings.localePreference,
                     activeColor: Colors.cyan,
                     onChanged: (value) async {
-                      if (value == null) return;
+                      if (value == null) {
+                        return;
+                      }
                       await settings.setLocalePreference(value);
-                      if (context.mounted) Navigator.pop(context);
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                      }
                     },
                     title: Text(
                       isSystem ? l10n.languageSystem : option.nativeName,
