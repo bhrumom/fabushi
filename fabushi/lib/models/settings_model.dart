@@ -61,10 +61,10 @@ class SettingsModel extends ChangeNotifier {
     _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
     _selectedCountries = prefs.getStringList('selectedCountries') ?? [];
     final savedLocalePreference =
-        prefs.getString('localePreference') ??
-        AppLocalizations.systemLocaleCode;
-    _localePreference =
-        AppLocalizations.isSupportedPreference(savedLocalePreference)
+        prefs.getString('localePreference') ?? AppLocalizations.systemLocaleCode;
+    _localePreference = AppLocalizations.isSupportedPreference(
+      savedLocalePreference,
+    )
         ? savedLocalePreference
         : AppLocalizations.systemLocaleCode;
 
