@@ -33,7 +33,8 @@ class AppConfig {
   // API配置
   static const String primaryBackendUrl = 'https://flutter.ombhrum.com';
   static const String cloudflareWorkerProdUrl = 'https://flutter.ombhrum.com';
-  static const String cloudflareWorkerDevUrl = 'https://fabushi-flutter-web-dev.bhrumom.workers.dev';
+  static const String cloudflareWorkerDevUrl =
+      'https://fabushi-flutter-web-dev.bhrumom.workers.dev';
   static const String localDevUrl = 'http://localhost:8787';
 
   static String get currentBackendUrl {
