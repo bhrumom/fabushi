@@ -70,7 +70,10 @@ test('public practice records never return notes and respect field-level visibil
 
 test('leaderboard handler annotates social state for authenticated viewers without caching personal state', () => {
   assert.match(leaderboardHandler, /getOptionalViewerUsername/);
-  assert.match(leaderboardHandler, /EXISTS\([\s\S]*WHERE follower_username = \? AND following_username = mr\.username[\s\S]*\) as isFollowing/);
+  assert.match(
+    leaderboardHandler,
+    /EXISTS\([\s\S]*WHERE (?:\w+\.)?follower_username = \? AND (?:\w+\.)?following_username = mr\.username[\s\S]*\) as isFollowing/,
+  );
   assert.match(leaderboardHandler, /CASE WHEN mr\.username = \? THEN 1 ELSE 0 END as isSelf/);
   assert.match(leaderboardHandler, /if \(!viewerUsername\) \{/);
   assert.match(leaderboardHandler, /leaderboard:cache:v2/);
