@@ -1,0 +1,513 @@
+name: Publish CD packages to GitHub Release
+
+on:
+  workflow_run:
+    workflows:
+      - CD - Staging API gated production deploy
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      cd_run_id:
+        description: Completed CD workflow run id to publish. Leave empty to use the current run context when applicable.
+        required: false
+        type: string
+      source_sha:
+        description: Source commit SHA to use for release naming when CD artifacts do not include SOURCE_SHA.
+        required: false
+        type: string
+
+concurrency:
+  group: publish-cd-release-${{ github.event.workflow_run.id || inputs.cd_run_id || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  FLUTTER_VERSION: '3.41.9'
+
+jobs:
+  resolve-cd-context:
+    name: Resolve completed CD context
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      cd_run_id: ${{ steps.source.outputs.cd_run_id }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
+    steps:
+      - name: Resolve CD run id
+        id: cd-run
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_CD_RUN_ID: ${{ inputs.cd_run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            cd_run_id="$WORKFLOW_RUN_ID"
+          elif [ -n "${INPUT_CD_RUN_ID:-}" ]; then
+            cd_run_id="$INPUT_CD_RUN_ID"
+          else
+            echo "workflow_dispatch requires cd_run_id so the release job can download the completed CD artifacts." >&2
+            exit 1
+          fi
+          echo "cd_run_id=$cd_run_id" >> "$GITHUB_OUTPUT"
+          echo "Resolved CD run id: $cd_run_id"
+
+      - name: Download CD artifacts for source metadata
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.cd-run.outputs.cd_run_id }}
+          path: downloaded-cd-artifacts
+
+      - name: Resolve source commit
+        id: source
+        shell: bash
+        env:
+          CD_RUN_ID: ${{ steps.cd-run.outputs.cd_run_id }}
+          EVENT_SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          source_sha="${INPUT_SOURCE_SHA:-${EVENT_SOURCE_SHA:-}}"
+          if [ -z "$source_sha" ] && compgen -G 'downloaded-cd-artifacts/fabushi-release-*/SOURCE_SHA' > /dev/null; then
+            source_sha="$(cat downloaded-cd-artifacts/fabushi-release-*/SOURCE_SHA | head -n 1 | tr -d '[:space:]')"
+          fi
+          if [ -z "$source_sha" ]; then
+            echo "Unable to resolve source SHA from workflow event, input, or SOURCE_SHA artifact." >&2
+            exit 1
+          fi
+          echo "cd_run_id=$CD_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "Resolved source SHA: $source_sha"
+
+  build-android-packages:
+    name: Build Android release packages
+    needs: resolve-cd-context
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Build Android install packages
+        shell: bash
+        env:
+          GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
+        run: |
+          set -euo pipefail
+          cat >> android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8
+          kotlin.daemon.jvm.options=-Xmx3g
+          EOF
+          flutter pub get
+          flutter build apk --release --target-platform android-arm64
+          flutter build appbundle --release
+
+      - name: Stage Android release packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${{ needs.resolve-cd-context.outputs.source_sha }}"
+          short_sha="${short_sha:0:12}"
+          mkdir -p ../android-release-assets
+          cp build/app/outputs/flutter-apk/app-release.apk "../android-release-assets/fabushi-android-arm64-${short_sha}.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "../android-release-assets/fabushi-android-${short_sha}.aab"
+
+      - name: Upload Android release packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-android-packages
+          path: android-release-assets
+          if-no-files-found: error
+          retention-days: 30
+
+  build-ios-package:
+    name: Build signed iOS IPA
+    needs: resolve-cd-context
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: fabushi
+    env:
+      IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+      IOS_EXPORT_METHOD: ${{ vars.IOS_EXPORT_METHOD || 'app-store' }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Check iOS signing configuration
+        id: ios-signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in IOS_CERTIFICATE_P12_BASE64 IOS_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE_BASE64; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          mkdir -p ../ios-release-assets
+          if [ "${#missing[@]}" -gt 0 ]; then
+            {
+              echo "iOS IPA was not built because signing credentials are not configured."
+              echo ""
+              echo "Required repository secrets:"
+              printf -- '- %s\n' "${missing[@]}"
+              echo ""
+              echo "Optional TestFlight upload secrets:"
+              echo "- APP_STORE_CONNECT_API_KEY_ID"
+              echo "- APP_STORE_CONNECT_API_ISSUER_ID"
+              echo "- APP_STORE_CONNECT_API_KEY_BASE64"
+            } > ../ios-release-assets/IOS_SIGNING_NOT_CONFIGURED.txt
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install iOS signing identity and provisioning profile
+        if: steps.ios-signing.outputs.configured == 'true'
+        id: install-signing
+        shell: bash
+        env:
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          cert_path="$RUNNER_TEMP/ios_distribution.p12"
+          profile_path="$RUNNER_TEMP/fabushi.mobileprovision"
+          profile_plist="$RUNNER_TEMP/fabushi-profile.plist"
+          keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
+
+          printf '%s' "$IOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$cert_path"
+          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$profile_path"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$cert_path" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security list-keychains -d user -s "$keychain_path" login.keychain-db
+          security default-keychain -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          security cms -D -i "$profile_path" > "$profile_plist"
+          profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")"
+          profile_name="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$profile_plist")"
+          team_id="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$profile_plist")"
+          cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+
+          bundle_id="$(grep -m 1 'PRODUCT_BUNDLE_IDENTIFIER = ' ios/Runner.xcodeproj/project.pbxproj | sed -E 's/.*PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/\1/' | tr -d ' ')"
+          if [ -z "$bundle_id" ]; then
+            echo "Could not detect PRODUCT_BUNDLE_IDENTIFIER from ios/Runner.xcodeproj/project.pbxproj" >&2
+            exit 1
+          fi
+
+          {
+            echo "profile_name=$profile_name"
+            echo "team_id=$team_id"
+            echo "bundle_id=$bundle_id"
+          } >> "$GITHUB_OUTPUT"
+
+          cat > ios/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>destination</key>
+            <string>export</string>
+            <key>method</key>
+            <string>${IOS_EXPORT_METHOD}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>teamID</key>
+            <string>${team_id}</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${bundle_id}</key>
+              <string>${profile_name}</string>
+            </dict>
+            <key>stripSwiftSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+          cat >> ios/Flutter/Release.xcconfig <<EOF
+          DEVELOPMENT_TEAM=${team_id}
+          CODE_SIGN_STYLE=Manual
+          PROVISIONING_PROFILE_SPECIFIER=${profile_name}
+          EOF
+
+      - name: Build signed iOS IPA
+        if: steps.ios-signing.outputs.configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+
+          short_sha="${{ needs.resolve-cd-context.outputs.source_sha }}"
+          short_sha="${short_sha:0:12}"
+          ipa_path="$(find build/ios/ipa -name '*.ipa' -type f | head -n 1)"
+          if [ -z "$ipa_path" ]; then
+            echo "flutter build ipa completed but no IPA was found under build/ios/ipa" >&2
+            exit 1
+          fi
+          cp "$ipa_path" "../ios-release-assets/fabushi-ios-${short_sha}.ipa"
+
+      - name: Upload signed iOS IPA to App Store Connect
+        if: steps.ios-signing.outputs.configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_STORE_CONNECT_API_KEY_ID:-}" ] || [ -z "${APP_STORE_CONNECT_API_ISSUER_ID:-}" ] || [ -z "${APP_STORE_CONNECT_API_KEY_BASE64:-}" ]; then
+            echo "App Store Connect credentials are not configured; iOS IPA will be attached to GitHub Release only."
+            exit 0
+          fi
+
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+
+          ipa_path="$(find ../ios-release-assets -name '*.ipa' -type f | head -n 1)"
+          if [ -z "$ipa_path" ]; then
+            echo "No IPA found for App Store Connect upload." >&2
+            exit 1
+          fi
+
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$ipa_path" \
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+
+      - name: Upload iOS release package artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-ios-packages
+          path: ios-release-assets
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Publish validated CD packages
+    needs:
+      - resolve-cd-context
+      - build-android-packages
+      - build-ios-package
+    if: >-
+      always() &&
+      needs.resolve-cd-context.result == 'success' &&
+      needs.build-android-packages.result == 'success' &&
+      needs.build-ios-package.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download all CD artifacts
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.resolve-cd-context.outputs.cd_run_id }}
+          path: downloaded-cd-artifacts
+
+      - name: Download Android release packages
+        uses: actions/download-artifact@v4
+        with:
+          name: release-android-packages
+          path: built-native-packages/android
+
+      - name: Download iOS release packages
+        uses: actions/download-artifact@v4
+        with:
+          name: release-ios-packages
+          path: built-native-packages/ios
+
+      - name: Checkout source for version metadata
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/pubspec.yaml
+
+      - name: Prepare release assets
+        id: release-assets
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ needs.resolve-cd-context.outputs.source_sha }}
+          RUN_ID: ${{ needs.resolve-cd-context.outputs.cd_run_id }}
+        run: |
+          set -euo pipefail
+
+          source_sha="$SOURCE_SHA"
+          short_sha="${source_sha:0:12}"
+
+          app_version="unknown"
+          if [ -f fabushi/pubspec.yaml ]; then
+            app_version="$(awk '/^version:/ {print $2; exit}' fabushi/pubspec.yaml)"
+          fi
+          safe_version="$(printf '%s' "$app_version" | tr '+/' '--' | tr -cd '[:alnum:]._-')"
+          if [ -z "$safe_version" ] || [ "$safe_version" = "unknown" ]; then
+            tag="cd-$short_sha"
+            title="Fabushi CD $short_sha"
+          else
+            tag="v$safe_version-cd.$short_sha"
+            title="Fabushi $app_version ($short_sha)"
+          fi
+
+          mkdir -p release-assets
+
+          if compgen -G 'downloaded-cd-artifacts/fabushi-release-*' > /dev/null; then
+            web_zip="release-assets/fabushi-web-${short_sha}.zip"
+            (cd downloaded-cd-artifacts && zip -qr "../$web_zip" fabushi-release-*)
+          fi
+
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            case "$file" in
+              *.apk|*.aab|*.ipa|*.dmg|*.pkg|*.zip|*.msix|*.appx|*.exe|*.deb|*.rpm|*.AppImage|*.tar.gz|*.tgz)
+                base="$(basename "$file")"
+                if [ "$base" = "fabushi-web-${short_sha}.zip" ]; then
+                  continue
+                fi
+                safe_base="$(printf '%s' "$base" | tr ' ' '-' | tr -cd '[:alnum:]._+-')"
+                cp "$file" "release-assets/$safe_base"
+                ;;
+            esac
+          done < <(find built-native-packages downloaded-cd-artifacts -type f)
+
+          if [ -z "$(find release-assets -type f -print -quit)" ]; then
+            echo "No release package files were found or built." >&2
+            echo "Expected validated web artifact, Android APK/AAB, iOS IPA, or native package files such as .dmg, .msix, .deb, .rpm, .AppImage, .zip, .tar.gz." >&2
+            exit 1
+          fi
+
+          sha256sum release-assets/* > release-assets/SHA256SUMS.txt
+
+          {
+            echo "tag=$tag"
+            echo "title=$title"
+            echo "source_sha=$source_sha"
+            echo "short_sha=$short_sha"
+            echo "app_version=$app_version"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "# $title"
+            echo ""
+            echo "- Source SHA: $source_sha"
+            echo "- CD workflow run: $RUN_ID"
+            echo "- App version: $app_version"
+            echo ""
+            echo "## Assets"
+            echo ""
+            find release-assets -maxdepth 1 -type f -printf '- `%f`\n' | sort
+            echo ""
+            echo "## iOS distribution"
+            echo ""
+            if find release-assets -maxdepth 1 -name '*.ipa' -type f | grep -q .; then
+              echo "- Signed iOS IPA is attached."
+            else
+              echo "- iOS IPA was skipped because signing secrets are not configured or no IPA was produced."
+            fi
+            echo ""
+            echo "## Integrity"
+            echo ""
+            echo "SHA-256 checksums are attached in `SHA256SUMS.txt`."
+          } > release-notes.md
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release-assets.outputs.tag }}
+          TITLE: ${{ steps.release-assets.outputs.title }}
+          SOURCE_SHA: ${{ steps.release-assets.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "$TITLE" \
+              --notes-file release-notes.md \
+              --target "$SOURCE_SHA" \
+              --latest
+          else
+            gh release create "$TAG" release-assets/* \
+              --title "$TITLE" \
+              --notes-file release-notes.md \
+              --target "$SOURCE_SHA" \
+              --latest
+            exit 0
+          fi
+
+          gh release upload "$TAG" release-assets/* --clobber
+
+      - name: Write release summary
+        shell: bash
+        run: |
+          {
+            echo "## GitHub Release published"
+            echo ""
+            echo "- Tag: ${{ steps.release-assets.outputs.tag }}"
+            echo "- Source SHA: ${{ steps.release-assets.outputs.source_sha }}"
+            echo "- App version: ${{ steps.release-assets.outputs.app_version }}"
+            echo ""
+            echo "### Uploaded assets"
+            echo ""
+            find release-assets -maxdepth 1 -type f -printf '- `%f`\n' | sort
+          } >> "$GITHUB_STEP_SUMMARY"
