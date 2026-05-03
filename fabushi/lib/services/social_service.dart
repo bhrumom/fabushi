@@ -17,7 +17,9 @@ class SocialService {
       useAuth: true,
     );
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    if (response.statusCode >= 200 && response.statusCode < 300 && data['success'] == true) {
+    if (response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        data['success'] == true) {
       return data;
     }
     return null;
@@ -57,7 +59,10 @@ class SocialService {
   }
 
   Future<Map<String, dynamic>> fetchPracticePrivacy() async {
-    final response = await HttpService.get('$_baseUrl/practice-privacy', useAuth: true);
+    final response = await HttpService.get(
+      '$_baseUrl/practice-privacy',
+      useAuth: true,
+    );
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       return Map<String, dynamic>.from(data['privacy'] ?? {});
