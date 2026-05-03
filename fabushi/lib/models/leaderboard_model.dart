@@ -69,10 +69,26 @@ class LeaderboardEntry {
     );
   }
 
-  bool get isPracticePrivate => _asBool(privacy['isPrivate'] ?? privacy['is_private']);
-  bool get canShowPracticeName => !isPracticePrivate && _asBool(privacy['showPracticeName'] ?? privacy['show_practice_name'], fallback: true);
-  bool get canShowDuration => !isPracticePrivate && _asBool(privacy['showDuration'] ?? privacy['show_duration'], fallback: true);
-  bool get canShowChantCount => !isPracticePrivate && _asBool(privacy['showChantCount'] ?? privacy['show_chant_count'], fallback: true);
+  bool get isPracticePrivate =>
+      _asBool(privacy['isPrivate'] ?? privacy['is_private']);
+  bool get canShowPracticeName =>
+      !isPracticePrivate &&
+      _asBool(
+        privacy['showPracticeName'] ?? privacy['show_practice_name'],
+        fallback: true,
+      );
+  bool get canShowDuration =>
+      !isPracticePrivate &&
+      _asBool(
+        privacy['showDuration'] ?? privacy['show_duration'],
+        fallback: true,
+      );
+  bool get canShowChantCount =>
+      !isPracticePrivate &&
+      _asBool(
+        privacy['showChantCount'] ?? privacy['show_chant_count'],
+        fallback: true,
+      );
 
   static int _asInt(dynamic value) {
     if (value is int) return value;
