@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
   actions: read
   checks: read
   issues: write
@@ -106,26 +106,12 @@ jobs:
           path: fabushi/dart-format.patch
           if-no-files-found: warn
 
-      - name: Commit Dart formatting changes on main
-        if: ${{ steps.dart-format.outputs.changed == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          for path in lib test integration_test; do
-            if [ -e "$path" ]; then
-              git add "$path"
-            fi
-          done
-          git commit -m "style: apply dart format [skip ci]" || exit 0
-          git push
-
-      - name: Continue after CI-applied Dart formatting outside main pushes
-        if: ${{ steps.dart-format.outputs.changed == 'true' && !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      - name: Continue after CI-applied Dart formatting
+        if: ${{ steps.dart-format.outputs.changed == 'true' }}
         shell: bash
         run: |
           echo "::notice::Dart formatting changed files. CI will continue with the formatted workspace; the uploaded dart-format-patch artifact is informational."
+          echo "::notice::CI no longer pushes formatter commits directly to main because main is protected by merge queue rules."
 
       - name: Analyze Flutter project
         run: flutter analyze lib/main.dart
@@ -319,6 +305,7 @@ jobs:
                 '### CI notes',
                 '',
                 '- Dart format diffs are uploaded as `dart-format-patch` when formatter output differs from the committed code.',
+                '- CI runs with the formatter-applied workspace and does not push formatter commits directly to protected branches.',
                 '- Build and dry-run bundles are listed above when those jobs reach their upload steps.',
                 '- Merge queue runs are supported through the `merge_group` trigger.',
               ],
