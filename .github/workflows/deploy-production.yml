@@ -274,6 +274,32 @@ jobs:
           [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] && echo "Cloudflare account id configured: yes" || echo "Cloudflare account id configured: no"
           [ -n "${CLOUDFLARE_EMAIL:-}" ] && echo "Cloudflare email configured: yes" || echo "Cloudflare email configured: no"
 
+      - name: Disable production route mutation in CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('wrangler.toml')
+          text = path.read_text()
+          old = '''[env.production]
+          name = "fabushi-flutter-web-prod"
+          routes = [
+            { pattern = "flutter.ombhrum.com/*", zone_name = "ombhrum.com" }
+          ]
+          workers_dev = false'''
+          new = '''[env.production]
+          name = "fabushi-flutter-web-prod"
+          # Route is pre-provisioned in Cloudflare; CI deploys code/assets only.
+          workers_dev = false'''
+          if old in text:
+              text = text.replace(old, new)
+              path.write_text(text)
+              print('Removed production route management from CI deploy artifact')
+          else:
+              print('Production route management block not found; leaving wrangler.toml unchanged')
+          PY
+
       - name: Deploy production Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
