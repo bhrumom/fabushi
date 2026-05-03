@@ -25,7 +25,9 @@ pluginManagement {
         maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
         // 腾讯云镜像
         maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
-        // 官方仓库作为备选
+        // Fallback for CI when Chinese mirrors are unreachable
+        google()
+        mavenCentral()
         gradlePluginPortal()
     }
 }
@@ -38,6 +40,9 @@ dependencyResolutionManagement {
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/public") }
+        // Fallback for CI when Chinese mirrors are unreachable
+        google()
+        mavenCentral()
     }
 }
 
