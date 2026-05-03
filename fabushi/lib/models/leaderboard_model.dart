@@ -9,12 +9,17 @@ class LeaderboardEntry {
   final String? avatar;
   final int totalBytes;
   final int totalRecords;
-  final int totalCount;
-  final int totalDuration;
+  final int? totalCount;
+  final int? totalDuration;
   final int totalDays;
   final String? latestSutra;
   final String? latestRecordDate;
   final int rank;
+  final int followerCount;
+  final int followingCount;
+  final bool isFollowing;
+  final bool isSelf;
+  final Map<String, dynamic> privacy;
 
   LeaderboardEntry({
     required this.username,
@@ -28,6 +33,11 @@ class LeaderboardEntry {
     this.latestSutra,
     this.latestRecordDate,
     required this.rank,
+    this.followerCount = 0,
+    this.followingCount = 0,
+    this.isFollowing = false,
+    this.isSelf = false,
+    this.privacy = const {},
   });
 
   factory LeaderboardEntry.fromJson(Map<String, dynamic> json) {
@@ -38,20 +48,44 @@ class LeaderboardEntry {
       avatar: json['avatar'],
       totalBytes: _asInt(json['totalBytes']),
       totalRecords: _asInt(json['totalRecords']),
-      totalCount: _asInt(json['totalCount']),
-      totalDuration: _asInt(json['totalDuration']),
+      totalCount: json.containsKey('totalCount') && json['totalCount'] != null
+          ? _asInt(json['totalCount'])
+          : null,
+      totalDuration:
+          json.containsKey('totalDuration') && json['totalDuration'] != null
+          ? _asInt(json['totalDuration'])
+          : null,
       totalDays: _asInt(json['totalDays']),
       latestSutra: json['latestSutra'],
       latestRecordDate: json['latestRecordDate'],
       rank: _asInt(json['rank']),
+      followerCount: _asInt(json['followerCount'] ?? json['follower_count']),
+      followingCount: _asInt(json['followingCount'] ?? json['following_count']),
+      isFollowing: _asBool(json['isFollowing'] ?? json['is_following']),
+      isSelf: _asBool(json['isSelf'] ?? json['is_self']),
+      privacy: json['privacy'] is Map
+          ? Map<String, dynamic>.from(json['privacy'] as Map)
+          : const {},
     );
   }
+
+  bool get isPracticePrivate => _asBool(privacy['isPrivate'] ?? privacy['is_private']);
+  bool get canShowPracticeName => !isPracticePrivate && _asBool(privacy['showPracticeName'] ?? privacy['show_practice_name'], fallback: true);
+  bool get canShowDuration => !isPracticePrivate && _asBool(privacy['showDuration'] ?? privacy['show_duration'], fallback: true);
+  bool get canShowChantCount => !isPracticePrivate && _asBool(privacy['showChantCount'] ?? privacy['show_chant_count'], fallback: true);
 
   static int _asInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.round();
     if (value is String) return int.tryParse(value) ?? 0;
     return 0;
+  }
+
+  static bool _asBool(dynamic value, {bool fallback = false}) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) return value == 'true' || value == '1';
+    return fallback;
   }
 
   Map<String, dynamic> toJson() => {
@@ -66,12 +100,17 @@ class LeaderboardEntry {
     'latestSutra': latestSutra,
     'latestRecordDate': latestRecordDate,
     'rank': rank,
+    'followerCount': followerCount,
+    'followingCount': followingCount,
+    'isFollowing': isFollowing,
+    'isSelf': isSelf,
+    'privacy': privacy,
   };
 }
 
 class LeaderboardModel extends ChangeNotifier {
-  static const _cacheKey = 'global_leaderboard_cache_v2';
-  static const _timestampKey = 'global_leaderboard_timestamp_v2';
+  static const _cacheKey = 'global_leaderboard_cache_v3';
+  static const _timestampKey = 'global_leaderboard_timestamp_v3';
 
   final LeaderboardService _service = LeaderboardService();
   List<LeaderboardEntry> _entries = [];
