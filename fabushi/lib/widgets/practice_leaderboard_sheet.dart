@@ -4,6 +4,7 @@ import '../core/design_system/app_theme.dart';
 import '../models/leaderboard_model.dart';
 import '../services/leaderboard_service.dart';
 import 'co_practice_group_panel.dart';
+import 'follow_button.dart';
 
 class PracticeLeaderboardSheet extends StatefulWidget {
   const PracticeLeaderboardSheet({super.key});
@@ -104,19 +105,13 @@ class _PracticeLeaderboardSheetState extends State<PracticeLeaderboardSheet> {
                     indicatorSize: TabBarIndicatorSize.tab,
                     labelColor: Colors.black,
                     unselectedLabelColor: Colors.white60,
-                    tabs: const [
-                      Tab(text: '全球排行'),
-                      Tab(text: '小组排行'),
-                    ],
+                    tabs: const [Tab(text: '全球排行'), Tab(text: '小组排行')],
                   ),
                 ),
                 const SizedBox(height: 12),
                 Expanded(
                   child: TabBarView(
-                    children: [
-                      _buildGlobalLeaderboard(),
-                      const CoPracticeGroupPanel(),
-                    ],
+                    children: [_buildGlobalLeaderboard(), const CoPracticeGroupPanel()],
                   ),
                 ),
               ],
@@ -132,16 +127,12 @@ class _PracticeLeaderboardSheetState extends State<PracticeLeaderboardSheet> {
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: Color(0xFFD4AF37)),
-          );
+          return const Center(child: CircularProgressIndicator(color: Color(0xFFD4AF37)));
         }
 
         final entries = snapshot.data ?? [];
         if (entries.isEmpty) {
-          return const Center(
-            child: Text('暂无修行排行数据', style: TextStyle(color: Colors.white54)),
-          );
+          return const Center(child: Text('暂无修行排行数据', style: TextStyle(color: Colors.white54)));
         }
 
         return ListView.separated(
@@ -152,6 +143,7 @@ class _PracticeLeaderboardSheetState extends State<PracticeLeaderboardSheet> {
             return _PracticeLeaderboardTile(
               entry: entry,
               onTap: () => _showRecords(context, entry),
+              onFollowChanged: _refresh,
             );
           },
         );
@@ -169,9 +161,7 @@ class _PracticeLeaderboardSheetState extends State<PracticeLeaderboardSheet> {
       ),
       builder: (context) {
         return FutureBuilder<List<Map<String, dynamic>>>(
-          future: LeaderboardService().fetchPublicPracticeRecords(
-            entry.username,
-          ),
+          future: LeaderboardService().fetchPublicPracticeRecords(entry.username),
           builder: (context, snapshot) {
             final records = snapshot.data ?? [];
             return SafeArea(
@@ -181,75 +171,66 @@ class _PracticeLeaderboardSheetState extends State<PracticeLeaderboardSheet> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      '${entry.displayName} 的公开修行记录',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${entry.displayName} 的公开修行记录',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        FollowButton(
+                          username: entry.username,
+                          initialIsFollowing: entry.isFollowing,
+                          isSelf: entry.isSelf,
+                        ),
+                      ],
                     ),
+                    if (entry.isPracticePrivate) ...[
+                      const SizedBox(height: 12),
+                      const Text('对方已将功课记录设为私密', style: TextStyle(color: Colors.white54, fontSize: 13)),
+                    ],
                     const SizedBox(height: 12),
                     if (snapshot.connectionState == ConnectionState.waiting)
                       const Padding(
                         padding: EdgeInsets.all(28),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: Color(0xFFD4AF37),
-                          ),
-                        ),
+                        child: Center(child: CircularProgressIndicator(color: Color(0xFFD4AF37))),
                       )
                     else if (records.isEmpty)
                       const Padding(
                         padding: EdgeInsets.all(28),
-                        child: Center(
-                          child: Text(
-                            '暂无公开记录',
-                            style: TextStyle(color: Colors.white54),
-                          ),
-                        ),
+                        child: Center(child: Text('暂无公开记录', style: TextStyle(color: Colors.white54))),
                       )
                     else
                       ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.sizeOf(context).height * 0.48,
-                        ),
+                        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.48),
                         child: ListView.separated(
                           shrinkWrap: true,
                           itemCount: records.length,
-                          separatorBuilder: (context, index) =>
-                              const Divider(color: Colors.white10, height: 1),
+                          separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 1),
                           itemBuilder: (context, index) {
                             final record = records[index];
-                            final sutra =
-                                record['sutra_name']?.toString() ?? '修行功课';
-                            final date =
-                                record['record_date']?.toString() ?? '';
-                            final count = _asInt(record['chant_count']);
-                            final duration = _asInt(record['duration']);
-                            final localTime =
-                                record['local_time']?.toString() ?? '';
+                            final sutra = record['sutra_name']?.toString() ?? '修行功课';
+                            final date = record['record_date']?.toString() ?? '';
+                            final count = record['chant_count'] == null ? null : _asInt(record['chant_count']);
+                            final duration = record['duration'] == null ? null : _asInt(record['duration']);
+                            final localTime = record['local_time']?.toString() ?? '';
                             return ListTile(
                               contentPadding: EdgeInsets.zero,
-                              onTap: () => _showRecordDetail(
-                                context,
-                                record,
-                                publicOwner: entry.displayName,
-                              ),
-                              leading: const Icon(
-                                Icons.self_improvement,
-                                color: Color(0xFFD4AF37),
-                              ),
-                              title: Text(
-                                sutra,
-                                style: const TextStyle(color: Colors.white),
-                              ),
+                              onTap: () => _showRecordDetail(context, record, publicOwner: entry.displayName),
+                              leading: const Icon(Icons.self_improvement, color: Color(0xFFD4AF37)),
+                              title: Text(sutra, style: const TextStyle(color: Colors.white)),
                               subtitle: Text(
-                                '${_formatDateTime(date, localTime)} · ${_formatPracticeCount(count)} · ${_formatMinutes(duration)}',
-                                style: const TextStyle(
-                                  color: Colors.white54,
-                                  fontSize: 12,
-                                ),
+                                [
+                                  _formatDateTime(date, localTime),
+                                  if (count != null) _formatPracticeCount(count),
+                                  if (duration != null) _formatMinutes(duration),
+                                ].where((part) => part.isNotEmpty).join(' · '),
+                                style: const TextStyle(color: Colors.white54, fontSize: 12),
                               ),
                             );
                           },
@@ -265,25 +246,19 @@ class _PracticeLeaderboardSheetState extends State<PracticeLeaderboardSheet> {
     );
   }
 
-  void _showRecordDetail(
-    BuildContext context,
-    Map<String, dynamic> record, {
-    required String publicOwner,
-  }) {
+  void _showRecordDetail(BuildContext context, Map<String, dynamic> record, {required String publicOwner}) {
     final sutra = record['sutra_name']?.toString() ?? '修行功课';
     final date = record['record_date']?.toString() ?? '';
     final localTime = record['local_time']?.toString() ?? '';
-    final count = _asInt(record['chant_count']);
-    final duration = _asInt(record['duration']);
+    final count = record['chant_count'] == null ? null : _asInt(record['chant_count']);
+    final duration = record['duration'] == null ? null : _asInt(record['duration']);
     final source = _asInt(record['is_manual']) == 1 ? '补录' : '禅室';
     final createdAt = record['created_at']?.toString() ?? '';
 
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xFF1E1E1E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
       builder: (context) {
         return SafeArea(
           child: Padding(
@@ -292,25 +267,14 @@ class _PracticeLeaderboardSheetState extends State<PracticeLeaderboardSheet> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  '$publicOwner 的修行详情',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                Text('$publicOwner 的修行详情', style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 14),
                 _DetailRow(label: '功课', value: sutra),
-                _DetailRow(
-                  label: '时间',
-                  value: _formatDateTime(date, localTime),
-                ),
-                _DetailRow(label: '修行时长', value: _formatMinutes(duration)),
-                _DetailRow(label: '念诵遍数', value: _formatPracticeCount(count)),
+                _DetailRow(label: '时间', value: _formatDateTime(date, localTime)),
+                _DetailRow(label: '修行时长', value: duration == null ? '未公开' : _formatMinutes(duration)),
+                _DetailRow(label: '念诵遍数', value: count == null ? '未公开' : _formatPracticeCount(count)),
                 _DetailRow(label: '来源', value: source),
-                if (createdAt.isNotEmpty)
-                  _DetailRow(label: '同步时间', value: createdAt),
+                if (createdAt.isNotEmpty) _DetailRow(label: '同步时间', value: createdAt),
               ],
             ),
           ),
@@ -356,19 +320,8 @@ class _DetailRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 76,
-            child: Text(
-              label,
-              style: const TextStyle(color: Colors.white38, fontSize: 13),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value.isEmpty ? '-' : value,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-            ),
-          ),
+          SizedBox(width: 76, child: Text(label, style: const TextStyle(color: Colors.white38, fontSize: 13))),
+          Expanded(child: Text(value.isEmpty ? '-' : value, style: const TextStyle(color: Colors.white, fontSize: 14))),
         ],
       ),
     );
@@ -378,8 +331,9 @@ class _DetailRow extends StatelessWidget {
 class _PracticeLeaderboardTile extends StatelessWidget {
   final LeaderboardEntry entry;
   final VoidCallback onTap;
+  final VoidCallback onFollowChanged;
 
-  const _PracticeLeaderboardTile({required this.entry, required this.onTap});
+  const _PracticeLeaderboardTile({required this.entry, required this.onTap, required this.onFollowChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -400,26 +354,15 @@ class _PracticeLeaderboardTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      entry.displayName.isNotEmpty
-                          ? entry.displayName
-                          : entry.username,
+                      entry.displayName.isNotEmpty ? entry.displayName : entry.username,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      _subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 12,
-                      ),
-                    ),
+                    Text(_subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    const SizedBox(height: 3),
+                    Text('${entry.followerCount} 粉丝', style: const TextStyle(color: Colors.white38, fontSize: 11)),
                   ],
                 ),
               ),
@@ -428,17 +371,14 @@ class _PracticeLeaderboardTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    _formatMinutes(entry.totalDuration),
-                    style: const TextStyle(
-                      color: Color(0xFFD4AF37),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${entry.totalDays} 天',
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  Text(_durationText, style: const TextStyle(color: Color(0xFFD4AF37), fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  FollowButton(
+                    username: entry.username,
+                    initialIsFollowing: entry.isFollowing,
+                    isSelf: entry.isSelf,
+                    initialFollowerCount: null,
+                    onChanged: onFollowChanged,
                   ),
                 ],
               ),
@@ -447,6 +387,11 @@ class _PracticeLeaderboardTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String get _durationText {
+    if (entry.isPracticePrivate || entry.totalDuration == null) return '已私密';
+    return _formatMinutes(entry.totalDuration!);
   }
 
   String _formatMinutes(int minutes) {
@@ -458,6 +403,7 @@ class _PracticeLeaderboardTile extends StatelessWidget {
   }
 
   String get _subtitle {
+    if (entry.isPracticePrivate) return '功课记录已私密';
     final parts = <String>[
       if (entry.latestSutra?.isNotEmpty == true) entry.latestSutra!,
       if (entry.latestRecordDate?.isNotEmpty == true) entry.latestRecordDate!,
@@ -473,18 +419,10 @@ class _PracticeLeaderboardTile extends StatelessWidget {
         CircleAvatar(
           radius: 23,
           backgroundColor: Colors.white10,
-          backgroundImage: entry.avatar?.isNotEmpty == true
-              ? NetworkImage(entry.avatar!)
-              : null,
+          backgroundImage: entry.avatar?.isNotEmpty == true ? NetworkImage(entry.avatar!) : null,
           child: entry.avatar?.isNotEmpty == true
               ? null
-              : Text(
-                  entry.rank.toString(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+              : Text(entry.rank.toString(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         ),
         Positioned(
           right: -5,
@@ -498,14 +436,7 @@ class _PracticeLeaderboardTile extends StatelessWidget {
               border: Border.all(color: const Color(0xFF111111), width: 2),
             ),
             alignment: Alignment.center,
-            child: Text(
-              '${entry.rank}',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            child: Text('${entry.rank}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
           ),
         ),
       ],
