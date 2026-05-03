@@ -11,7 +11,7 @@ class LeaderboardService {
     try {
       final response = await HttpService.get(
         AppConfig.leaderboardUrl,
-        useAuth: false,
+        useAuth: true,
       );
 
       if (response.statusCode == 200) {
@@ -44,7 +44,7 @@ class LeaderboardService {
       final uri = Uri.parse(
         '${AppConfig.leaderboardUrl}/practice',
       ).replace(queryParameters: {'limit': '$limit'});
-      final response = await HttpService.get(uri.toString(), useAuth: false);
+      final response = await HttpService.get(uri.toString(), useAuth: true);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -71,7 +71,7 @@ class LeaderboardService {
       final uri = Uri.parse(
         '${AppConfig.leaderboardUrl}/practice/records',
       ).replace(queryParameters: {'username': username, 'limit': '30'});
-      final response = await HttpService.get(uri.toString(), useAuth: false);
+      final response = await HttpService.get(uri.toString(), useAuth: true);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
