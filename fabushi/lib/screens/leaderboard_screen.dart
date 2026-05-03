@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../models/leaderboard_model.dart';
 import '../widgets/space_background.dart';
+import '../widgets/follow_button.dart';
 import '../core/design_system/app_theme.dart';
 
 class LeaderboardScreen extends StatefulWidget {
@@ -112,12 +113,32 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         child: ListTile(
                           leading: _buildRankBadge(entry.rank),
                           title: Text(
-                            entry.username,
+                            entry.displayName.isNotEmpty ? entry.displayName : entry.username,
                             style: const TextStyle(color: Colors.white),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          trailing: Text(
-                            _formatBytes(entry.totalBytes),
-                            style: const TextStyle(color: Colors.white70),
+                          subtitle: Text(
+                            '${entry.followerCount} 粉丝 · @${entry.username}',
+                            style: const TextStyle(color: Colors.white38, fontSize: 12),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _formatBytes(entry.totalBytes),
+                                style: const TextStyle(color: Colors.white70),
+                              ),
+                              const SizedBox(width: 10),
+                              FollowButton(
+                                username: entry.username,
+                                initialIsFollowing: entry.isFollowing,
+                                isSelf: entry.isSelf,
+                                initialFollowerCount: null,
+                              ),
+                            ],
                           ),
                         ),
                       );
