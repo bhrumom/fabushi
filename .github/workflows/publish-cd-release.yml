@@ -292,6 +292,12 @@ jobs:
           PROVISIONING_PROFILE_SPECIFIER=${profile_name}
           EOF
 
+          # Override pbxproj automatic signing for CI release builds
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = "Apple Development";/CODE_SIGN_IDENTITY = "Apple Distribution";/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = \"\";/PROVISIONING_PROFILE_SPECIFIER = \"${profile_name}\";/g" ios/Runner.xcodeproj/project.pbxproj
+
       - name: Build signed iOS IPA
         if: steps.ios-signing.outputs.configured == 'true'
         shell: bash
