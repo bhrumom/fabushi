@@ -1,0 +1,148 @@
+name: Native smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Commit SHA to test. Leave empty to use the current ref.
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - fabushi/android/**
+      - fabushi/ios/**
+      - fabushi/lib/**
+      - fabushi/pubspec.yaml
+      - fabushi/pubspec.lock
+      - .github/workflows/native-smoke.yml
+      - .github/scripts/native-install-smoke.sh
+  schedule:
+    - cron: '20 10 * * 1'
+
+concurrency:
+  group: native-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-source:
+    name: Resolve source commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+    steps:
+      - name: Resolve source commit
+        id: source
+        env:
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_SOURCE_SHA:-}" ]; then
+            source_sha="$INPUT_SOURCE_SHA"
+          elif [ -n "${PR_HEAD_SHA:-}" ]; then
+            source_sha="$PR_HEAD_SHA"
+          else
+            source_sha="${{ github.sha }}"
+          fi
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "Resolved source SHA: $source_sha"
+
+  android-native-install:
+    name: Android native package install smoke
+    needs: resolve-source
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout Android source and native test helper
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+            /.github/scripts/**
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Increase Gradle heap for hosted runners
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8
+          kotlin.daemon.jvm.options=-Xmx3g
+          EOF
+
+      - name: Build Android debug APK for emulator install test
+        env:
+          GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
+        run: |
+          flutter pub get
+          flutter build apk --debug --target-platform android-x64
+
+      - name: Install and launch Android APK on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          script: cd fabushi && bash ../.github/scripts/native-install-smoke.sh android
+
+      - name: Upload Android native install diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-native-install-diagnostics
+          path: |
+            ${{ runner.temp }}/fabushi-android-logcat.txt
+          if-no-files-found: ignore
+
+  ios-native-build:
+    name: iOS native package build smoke
+    needs: resolve-source
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout iOS source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build iOS app without code signing
+        run: |
+          flutter pub get
+          flutter build ios --debug --no-codesign
