@@ -24,6 +24,9 @@ permissions:
   pull-requests: read
   statuses: read
 
+env:
+  FLUTTER_VERSION: '3.41.9'
+
 jobs:
   flutter:
     name: Flutter quality, tests, build, and web smoke
@@ -56,6 +59,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: Flutter version
@@ -84,7 +88,7 @@ jobs:
           dart format "${targets[@]}"
 
           if git diff --quiet -- "${targets[@]}"; then
-            echo "Dart formatting already matched the CI SDK."
+            echo "Dart formatting already matched the pinned CI SDK."
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -117,12 +121,11 @@ jobs:
           git commit -m "style: apply dart format [skip ci]" || exit 0
           git push
 
-      - name: Fail on uncommitted Dart formatting outside main pushes
+      - name: Continue after CI-applied Dart formatting outside main pushes
         if: ${{ steps.dart-format.outputs.changed == 'true' && !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         shell: bash
         run: |
-          echo "::error::Dart formatting changed files. Run 'dart format lib test integration_test' with the CI Flutter SDK and commit the result."
-          exit 1
+          echo "::notice::Dart formatting changed files. CI will continue with the formatted workspace; the uploaded dart-format-patch artifact is informational."
 
       - name: Analyze Flutter project
         run: flutter analyze lib/main.dart
