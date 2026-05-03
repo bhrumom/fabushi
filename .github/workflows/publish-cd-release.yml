@@ -1,0 +1,200 @@
+name: Publish CD packages to GitHub Release
+
+on:
+  workflow_run:
+    workflows:
+      - CD - Staging API gated production deploy
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      cd_run_id:
+        description: Completed CD workflow run id to publish. Leave empty to use the current run context when applicable.
+        required: false
+        type: string
+      source_sha:
+        description: Source commit SHA to use for release naming when CD artifacts do not include SOURCE_SHA.
+        required: false
+        type: string
+
+concurrency:
+  group: publish-cd-release-${{ github.event.workflow_run.id || inputs.cd_run_id || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish-release:
+    name: Publish validated CD packages
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Resolve CD run
+        id: cd-run
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_CD_RUN_ID: ${{ inputs.cd_run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            cd_run_id="$WORKFLOW_RUN_ID"
+          elif [ -n "${INPUT_CD_RUN_ID:-}" ]; then
+            cd_run_id="$INPUT_CD_RUN_ID"
+          else
+            echo "workflow_dispatch requires cd_run_id so the release job can download the completed CD artifacts." >&2
+            exit 1
+          fi
+          echo "cd_run_id=$cd_run_id" >> "$GITHUB_OUTPUT"
+          echo "Resolved CD run id: $cd_run_id"
+
+      - name: Download all CD artifacts
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.cd-run.outputs.cd_run_id }}
+          path: downloaded-cd-artifacts
+
+      - name: Checkout source for version metadata
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || inputs.source_sha || github.sha }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/pubspec.yaml
+
+      - name: Prepare release assets
+        id: release-assets
+        shell: bash
+        env:
+          EVENT_SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+          RUN_ID: ${{ steps.cd-run.outputs.cd_run_id }}
+        run: |
+          set -euo pipefail
+
+          source_sha="${INPUT_SOURCE_SHA:-${EVENT_SOURCE_SHA:-}}"
+          if [ -z "$source_sha" ] && [ -f downloaded-cd-artifacts/fabushi-release-*/SOURCE_SHA ]; then
+            source_sha="$(cat downloaded-cd-artifacts/fabushi-release-*/SOURCE_SHA | head -n 1 | tr -d '[:space:]')"
+          fi
+          if [ -z "$source_sha" ]; then
+            echo "Unable to resolve source SHA from workflow event, input, or SOURCE_SHA artifact." >&2
+            exit 1
+          fi
+          short_sha="${source_sha:0:12}"
+
+          app_version="unknown"
+          if [ -f fabushi/pubspec.yaml ]; then
+            app_version="$(awk '/^version:/ {print $2; exit}' fabushi/pubspec.yaml)"
+          fi
+          safe_version="$(printf '%s' "$app_version" | tr '+/' '--' | tr -cd '[:alnum:]._-')"
+          if [ -z "$safe_version" ] || [ "$safe_version" = "unknown" ]; then
+            tag="cd-$short_sha"
+            title="Fabushi CD $short_sha"
+          else
+            tag="v$safe_version-cd.$short_sha"
+            title="Fabushi $app_version ($short_sha)"
+          fi
+
+          mkdir -p release-assets
+
+          if compgen -G 'downloaded-cd-artifacts/fabushi-release-*' > /dev/null; then
+            web_zip="release-assets/fabushi-web-${short_sha}.zip"
+            (cd downloaded-cd-artifacts && zip -qr "../$web_zip" fabushi-release-*)
+          fi
+
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            case "$file" in
+              *.apk|*.aab|*.ipa|*.dmg|*.pkg|*.zip|*.msix|*.appx|*.exe|*.deb|*.rpm|*.AppImage|*.tar.gz|*.tgz)
+                base="$(basename "$file")"
+                # The validated web artifact is zipped above with a stable release name.
+                if [ "$base" = "fabushi-web-${short_sha}.zip" ]; then
+                  continue
+                fi
+                safe_base="$(printf '%s' "$base" | tr ' ' '-' | tr -cd '[:alnum:]._+-')"
+                cp "$file" "release-assets/${short_sha}-${safe_base}"
+                ;;
+            esac
+          done < <(find downloaded-cd-artifacts -type f)
+
+          if [ -z "$(find release-assets -type f -print -quit)" ]; then
+            echo "No release package files were found in the completed CD artifacts." >&2
+            echo "Expected at least the validated fabushi-release-* artifact or native packages such as .apk, .aab, .ipa, .dmg, .msix, .deb, .rpm, .AppImage, .zip, .tar.gz." >&2
+            exit 1
+          fi
+
+          sha256sum release-assets/* > release-assets/SHA256SUMS.txt
+
+          {
+            echo "tag=$tag"
+            echo "title=$title"
+            echo "source_sha=$source_sha"
+            echo "short_sha=$short_sha"
+            echo "app_version=$app_version"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "# $title"
+            echo ""
+            echo "- Source SHA: $source_sha"
+            echo "- CD workflow run: $RUN_ID"
+            echo "- App version: $app_version"
+            echo ""
+            echo "## Assets"
+            echo ""
+            find release-assets -maxdepth 1 -type f -printf '- `%f`\n' | sort
+            echo ""
+            echo "## Integrity"
+            echo ""
+            echo "SHA-256 checksums are attached in `SHA256SUMS.txt`."
+          } > release-notes.md
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release-assets.outputs.tag }}
+          TITLE: ${{ steps.release-assets.outputs.title }}
+          SOURCE_SHA: ${{ steps.release-assets.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "$TITLE" \
+              --notes-file release-notes.md \
+              --target "$SOURCE_SHA" \
+              --latest
+          else
+            gh release create "$TAG" release-assets/* \
+              --title "$TITLE" \
+              --notes-file release-notes.md \
+              --target "$SOURCE_SHA" \
+              --latest
+            exit 0
+          fi
+
+          gh release upload "$TAG" release-assets/* --clobber
+
+      - name: Write release summary
+        shell: bash
+        run: |
+          {
+            echo "## GitHub Release published"
+            echo ""
+            echo "- Tag: ${{ steps.release-assets.outputs.tag }}"
+            echo "- Source SHA: ${{ steps.release-assets.outputs.source_sha }}"
+            echo "- App version: ${{ steps.release-assets.outputs.app_version }}"
+            echo ""
+            echo "### Uploaded assets"
+            echo ""
+            find release-assets -maxdepth 1 -type f -printf '- `%f`\n' | sort
+          } >> "$GITHUB_STEP_SUMMARY"
