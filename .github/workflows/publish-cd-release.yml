@@ -27,6 +27,9 @@ permissions:
   contents: write
   actions: read
 
+env:
+  FLUTTER_VERSION: '3.41.9'
+
 jobs:
   publish-release:
     name: Publish validated CD packages
@@ -34,7 +37,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 55
     steps:
       - name: Resolve CD run
         id: cd-run
@@ -63,13 +66,43 @@ jobs:
           run-id: ${{ steps.cd-run.outputs.cd_run_id }}
           path: downloaded-cd-artifacts
 
-      - name: Checkout source for version metadata
+      - name: Checkout source for native packages and version metadata
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || inputs.source_sha || github.sha }}
           sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /fabushi/pubspec.yaml
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Build Android install packages
+        working-directory: fabushi
+        shell: bash
+        env:
+          GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
+        run: |
+          set -euo pipefail
+          cat >> android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8
+          kotlin.daemon.jvm.options=-Xmx3g
+          EOF
+          flutter pub get
+          flutter build apk --release --target-platform android-arm64
+          flutter build appbundle --release
 
       - name: Prepare release assets
         id: release-assets
@@ -82,7 +115,7 @@ jobs:
           set -euo pipefail
 
           source_sha="${INPUT_SOURCE_SHA:-${EVENT_SOURCE_SHA:-}}"
-          if [ -z "$source_sha" ] && [ -f downloaded-cd-artifacts/fabushi-release-*/SOURCE_SHA ]; then
+          if [ -z "$source_sha" ] && compgen -G 'downloaded-cd-artifacts/fabushi-release-*/SOURCE_SHA' > /dev/null; then
             source_sha="$(cat downloaded-cd-artifacts/fabushi-release-*/SOURCE_SHA | head -n 1 | tr -d '[:space:]')"
           fi
           if [ -z "$source_sha" ]; then
@@ -111,15 +144,22 @@ jobs:
             (cd downloaded-cd-artifacts && zip -qr "../$web_zip" fabushi-release-*)
           fi
 
+          if [ -f fabushi/build/app/outputs/flutter-apk/app-release.apk ]; then
+            cp fabushi/build/app/outputs/flutter-apk/app-release.apk "release-assets/fabushi-android-arm64-${short_sha}.apk"
+          fi
+          if [ -f fabushi/build/app/outputs/bundle/release/app-release.aab ]; then
+            cp fabushi/build/app/outputs/bundle/release/app-release.aab "release-assets/fabushi-android-${short_sha}.aab"
+          fi
+
           while IFS= read -r file; do
             [ -f "$file" ] || continue
             case "$file" in
               *.apk|*.aab|*.ipa|*.dmg|*.pkg|*.zip|*.msix|*.appx|*.exe|*.deb|*.rpm|*.AppImage|*.tar.gz|*.tgz)
                 base="$(basename "$file")"
-                # The validated web artifact is zipped above with a stable release name.
-                if [ "$base" = "fabushi-web-${short_sha}.zip" ]; then
-                  continue
-                fi
+                # The validated web and Android artifacts are staged above with stable release names.
+                case "$base" in
+                  fabushi-web-${short_sha}.zip|app-release.apk|app-release.aab) continue ;;
+                esac
                 safe_base="$(printf '%s' "$base" | tr ' ' '-' | tr -cd '[:alnum:]._+-')"
                 cp "$file" "release-assets/${short_sha}-${safe_base}"
                 ;;
@@ -127,8 +167,8 @@ jobs:
           done < <(find downloaded-cd-artifacts -type f)
 
           if [ -z "$(find release-assets -type f -print -quit)" ]; then
-            echo "No release package files were found in the completed CD artifacts." >&2
-            echo "Expected at least the validated fabushi-release-* artifact or native packages such as .apk, .aab, .ipa, .dmg, .msix, .deb, .rpm, .AppImage, .zip, .tar.gz." >&2
+            echo "No release package files were found or built." >&2
+            echo "Expected validated web artifact, Android APK/AAB, or native package files such as .ipa, .dmg, .msix, .deb, .rpm, .AppImage, .zip, .tar.gz." >&2
             exit 1
           fi
 
