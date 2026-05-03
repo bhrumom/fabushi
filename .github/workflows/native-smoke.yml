@@ -51,9 +51,58 @@ jobs:
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "Resolved source SHA: $source_sha"
 
+  android-native-build:
+    name: Android native package build smoke
+    needs: resolve-source
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout Android source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Increase Gradle heap for hosted runners
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8
+          kotlin.daemon.jvm.options=-Xmx3g
+          EOF
+
+      - name: Build Android debug APK package
+        env:
+          GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
+        run: |
+          flutter pub get
+          flutter build apk --debug --target-platform android-arm64
+
   android-native-install:
     name: Android native package install smoke
     needs: resolve-source
+    if: github.event_name != 'pull_request'
     runs-on: macos-13
     timeout-minutes: 45
     defaults:
