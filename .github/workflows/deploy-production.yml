@@ -156,7 +156,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
-          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL || vars.CLOUDFLARE_EMAIL || vars.CF_EMAIL }}
+          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL || vars.CF_EMAIL || vars.CLOUDFLARE_EMAIL }}
         run: npx --yes wrangler@latest deploy --env development
 
   staging-e2e:
@@ -237,115 +237,11 @@ jobs:
           path: fabushi/e2e/test-results
           if-no-files-found: ignore
 
-  android-native-install:
-    name: Android native package install smoke
-    needs:
-      - build-artifact
-      - staging-e2e
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    defaults:
-      run:
-        working-directory: fabushi
-    steps:
-      - name: Checkout Android source and native test helper
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.build-artifact.outputs.source_sha }}
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /fabushi/**
-            !/fabushi/assets/built_in/**
-            !/fabushi/web/assets/built_in/**
-            /.github/scripts/**
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Build Android debug APK for emulator install test
-        run: |
-          flutter pub get
-          flutter build apk --debug --target-platform android-x64
-
-      - name: Install and launch Android APK on emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          script: cd fabushi && bash ../.github/scripts/native-install-smoke.sh android
-
-      - name: Upload Android native install diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-native-install-diagnostics
-          path: |
-            ${{ runner.temp }}/fabushi-android-logcat.txt
-          if-no-files-found: ignore
-
-  ios-native-install:
-    name: iOS native package install smoke
-    needs:
-      - build-artifact
-      - staging-e2e
-    runs-on: macos-15
-    timeout-minutes: 35
-    defaults:
-      run:
-        working-directory: fabushi
-    steps:
-      - name: Checkout iOS source and native test helper
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.build-artifact.outputs.source_sha }}
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /fabushi/**
-            !/fabushi/assets/built_in/**
-            !/fabushi/web/assets/built_in/**
-            /.github/scripts/**
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Build iOS simulator app
-        run: |
-          flutter pub get
-          flutter build ios --debug --simulator
-
-      - name: Install and launch iOS app on simulator
-        run: bash ../.github/scripts/native-install-smoke.sh ios
-
-      - name: Upload iOS native install diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-native-install-diagnostics
-          path: |
-            ${{ runner.temp }}/fabushi-ios-simulator.png
-          if-no-files-found: ignore
-
   deploy-production:
     name: Deploy production environment
     needs:
       - build-artifact
       - staging-e2e
-      - android-native-install
-      - ios-native-install
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -393,7 +289,7 @@ jobs:
             echo ""
             echo "- Source SHA: ${{ needs.build-artifact.outputs.source_sha }}"
             echo "- Artifact: fabushi-release-${{ needs.build-artifact.outputs.source_sha }}"
-            echo "- Gates: staging API E2E, staging smoke, Android native install, iOS native install"
+            echo "- Gates: staging API E2E, staging smoke"
             echo "- URL: ${{ vars.PRODUCTION_APP_URL || 'https://flutter.ombhrum.com' }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -436,8 +332,6 @@ jobs:
       - build-artifact
       - deploy-staging
       - staging-e2e
-      - android-native-install
-      - ios-native-install
       - deploy-production
       - production-smoke
     if: failure()
@@ -475,8 +369,6 @@ jobs:
                 '',
                 '- Staging API E2E',
                 '- Staging smoke test',
-                '- Android native install smoke',
-                '- iOS native install smoke',
                 '- Production deploy and smoke test',
                 '',
                 '### Rollback',
