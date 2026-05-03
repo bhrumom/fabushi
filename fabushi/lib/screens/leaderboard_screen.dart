@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+
 import '../models/leaderboard_model.dart';
 import '../widgets/space_background.dart';
 import '../widgets/follow_button.dart';
