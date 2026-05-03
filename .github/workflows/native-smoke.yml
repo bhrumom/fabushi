@@ -54,8 +54,8 @@ jobs:
   android-native-install:
     name: Android native package install smoke
     needs: resolve-source
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
+    runs-on: macos-15
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: fabushi
@@ -97,15 +97,16 @@ jobs:
           GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
         run: |
           flutter pub get
-          flutter build apk --debug --target-platform android-x64
+          flutter build apk --debug --target-platform android-arm64
 
       - name: Install and launch Android APK on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           target: google_apis
-          arch: x86_64
+          arch: arm64-v8a
           profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: cd fabushi && bash ../.github/scripts/native-install-smoke.sh android
 
       - name: Upload Android native install diagnostics
