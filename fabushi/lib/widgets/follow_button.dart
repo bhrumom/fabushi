@@ -56,7 +56,7 @@ class _FollowButtonState extends State<FollowButton> {
     setState(() {
       _isFollowing = !_isFollowing;
       if (_followerCount != null) {
-        _followerCount = (_followerCount! + (_isFollowing ? 1 : -1)).clamp(0, 1 << 31);
+        _followerCount = (_followerCount! + (_isFollowing ? 1 : -1)).clamp(0, 1 << 31).toInt();
       }
     });
 
