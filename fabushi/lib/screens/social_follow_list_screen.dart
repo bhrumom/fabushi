@@ -47,7 +47,7 @@ class _SocialFollowListScreenState extends State<SocialFollowListScreen> {
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
-      initialIndex: widget.initialTabIndex.clamp(0, 1),
+      initialIndex: widget.initialTabIndex.clamp(0, 1).toInt(),
       child: Scaffold(
         backgroundColor: const Color(0xFF121212),
         appBar: AppBar(
