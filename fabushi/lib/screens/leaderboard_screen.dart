@@ -28,7 +28,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('全球布施排行榜', style: TextStyle(color: Colors.white)),
+          title: const Text(
+            '全球布施排行榜',
+            style: TextStyle(color: Colors.white),
+          ),
           backgroundColor: Colors.transparent,
           iconTheme: const IconThemeData(color: Colors.white),
           actions: [
@@ -83,8 +86,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                     Text(model.error!, textAlign: TextAlign.center),
                     const SizedBox(height: 16),
                     ElevatedButton(
-                      onPressed: () =>
-                          model.fetchLeaderboard(forceRefresh: true),
+                      onPressed: () => model.fetchLeaderboard(forceRefresh: true),
                       child: const Text('重试'),
                     ),
                   ],
@@ -94,7 +96,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
             if (model.entries.isEmpty) {
               return const Center(
-                child: Text('暂无排行榜数据', style: TextStyle(color: Colors.white70)),
+                child: Text(
+                  '暂无排行榜数据',
+                  style: TextStyle(color: Colors.white70),
+                ),
               );
             }
 
@@ -113,14 +118,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         child: ListTile(
                           leading: _buildRankBadge(entry.rank),
                           title: Text(
-                            entry.displayName.isNotEmpty ? entry.displayName : entry.username,
+                            entry.displayName.isNotEmpty
+                                ? entry.displayName
+                                : entry.username,
                             style: const TextStyle(color: Colors.white),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           subtitle: Text(
                             '${entry.followerCount} 粉丝 · @${entry.username}',
-                            style: const TextStyle(color: Colors.white38, fontSize: 12),
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 12,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
