@@ -229,6 +229,23 @@ jobs:
       - name: Validate Playwright configuration and test discovery
         run: npx playwright test --list
 
+  workflow-guardrails:
+    name: Workflow guardrails
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout workflow files
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/**
+            /.github/scripts/**
+
+      - name: Validate publish release workflow guardrail
+        shell: bash
+        run: bash .github/scripts/check-publish-cd-release.sh
+
   ci-result:
     name: CI result
     runs-on: ubuntu-latest
@@ -237,6 +254,7 @@ jobs:
       - flutter
       - worker
       - e2e-contract
+      - workflow-guardrails
     if: always()
     steps:
       - name: Check required CI jobs
@@ -255,6 +273,10 @@ jobs:
             echo "E2E contract job failed: ${{ needs.e2e-contract.result }}"
             exit 1
           fi
+          if [ "${{ needs.workflow-guardrails.result }}" != "success" ]; then
+            echo "Workflow guardrails job failed: ${{ needs.workflow-guardrails.result }}"
+            exit 1
+          fi
           echo "All CI checks passed."
 
   notify-ci-failure:
@@ -265,6 +287,7 @@ jobs:
       - flutter
       - worker
       - e2e-contract
+      - workflow-guardrails
       - ci-result
     if: failure()
     steps:
