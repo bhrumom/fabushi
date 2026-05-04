@@ -7,27 +7,40 @@ import re
 import sys
 
 workflow = Path('.github/workflows/publish-cd-release.yml').read_text(encoding='utf-8')
-match = re.search(
+
+checkout_match = re.search(
     r"- name: Checkout source for version metadata\n(?P<body>.*?)\n\s*- name: Prepare release assets",
     workflow,
     re.DOTALL,
 )
-
-if not match:
+if not checkout_match:
     sys.stderr.write('Could not find the version metadata checkout step in publish-cd-release.yml\n')
     raise SystemExit(1)
 
-body = match.group('body')
+checkout_body = checkout_match.group('body')
 missing = []
 for required in ('clean: false', 'path: version-metadata'):
-    if required not in body:
+    if required not in checkout_body:
+        missing.append(required)
+
+release_asset_requirements = (
+    'TESTFLIGHT_UPLOAD_STATUS.txt',
+    'IOS_SIGNING_NOT_CONFIGURED.txt',
+    'TestFlight upload:',
+    'accepted_by_app_store_connect',
+    'app_store_connect_upload_failed',
+    'app_store_connect_credentials_not_configured',
+    'ios_signing_not_configured',
+)
+for required in release_asset_requirements:
+    if required not in workflow:
         missing.append(required)
 
 if missing:
     sys.stderr.write(
-        'publish-cd-release.yml is missing required checkout guardrails: ' + ', '.join(missing) + '\n'
+        'publish-cd-release.yml is missing required release guardrails: ' + ', '.join(missing) + '\n'
     )
     raise SystemExit(1)
 
-print('publish-cd-release checkout guardrails are in place')
+print('publish-cd-release checkout and TestFlight evidence guardrails are in place')
 PY
