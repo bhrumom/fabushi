@@ -244,7 +244,7 @@ jobs:
 
       - name: Validate publish release workflow guardrail
         shell: bash
-        run: .github/scripts/check-publish-cd-release.sh
+        run: bash .github/scripts/check-publish-cd-release.sh
 
   ci-result:
     name: CI result
