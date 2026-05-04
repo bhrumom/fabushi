@@ -1,3 +1,4 @@
+// Prefer upstream repositories on CI runners, but keep regional mirrors first for local constrained networks.
 val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
 
 fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiMirrorRepositories() {
