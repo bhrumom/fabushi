@@ -1,25 +1,38 @@
+val preferOfficialRepositories = System.getenv("GITHUB_ACTIONS") == "true"
+
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiBuildMirrors() {
+    maven { url = uri("https://maven.aliyun.com/repository/google") }
+    maven { url = uri("https://maven.aliyun.com/repository/central") }
+    maven { url = uri("https://maven.aliyun.com/repository/public") }
+    maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+}
+
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiBuildUpstreamRepositories() {
+    google()
+    mavenCentral()
+}
+
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.configureFabushiBuildscriptRepositories() {
+    if (preferOfficialRepositories) {
+        addFabushiBuildUpstreamRepositories()
+        addFabushiBuildMirrors()
+        return
+    }
+
+    addFabushiBuildMirrors()
+    addFabushiBuildUpstreamRepositories()
+}
+
 buildscript {
     repositories {
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
-        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-        // Fallback for CI when Aliyun mirrors are unreachable
-        google()
-        mavenCentral()
+        configureFabushiBuildscriptRepositories()
     }
 }
 
 allprojects {
     buildscript {
         repositories {
-            maven { url = uri("https://maven.aliyun.com/repository/google") }
-            maven { url = uri("https://maven.aliyun.com/repository/central") }
-            maven { url = uri("https://maven.aliyun.com/repository/public") }
-            maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-            // Fallback for CI when Aliyun mirrors are unreachable
-            google()
-            mavenCentral()
+            configureFabushiBuildscriptRepositories()
         }
     }
 }
