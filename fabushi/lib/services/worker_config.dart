@@ -40,6 +40,9 @@ class WorkerConfig {
     'alipayNotify': '/api/alipay/notify',
     'alipayMembershipStatus': '/api/alipay/check-membership',
 
+    // 用户反馈
+    'submitFeedback': '/api/feedback',
+
     // 管理员相关
     'adminCheckStatus': '/api/admin/check-status',
     'adminCreateRedeemCode': '/api/admin/create-redeem-code',

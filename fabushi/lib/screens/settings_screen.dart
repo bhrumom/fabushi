@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'keep_alive_guide_screen.dart';
+import '../services/api_client.dart';
 import '../services/app_settings.dart';
 import '../services/llm_model_config.dart';
 import '../services/llm_model_manager.dart';
 import '../services/device_capability_service.dart';
+import '../services/worker_config.dart';
 import '../widgets/model_selection_dialog.dart';
 import '../models/auth_model.dart';
 
@@ -20,6 +23,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _defaultTtsMuted = true;
   bool _isLoading = true;
+  bool _isSubmittingFeedback = false;
 
   // 读诵匹配阈值（百分比形式，0.0 ~ 1.0）
   double _fastMatchThreshold = 0.50;
@@ -132,6 +136,203 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _setMatchThreshold(double value) async {
     setState(() => _matchThreshold = value);
     await AppSettings.setMatchThreshold(value);
+  }
+
+  String _feedbackPlatformLabel() {
+    if (kIsWeb) return 'web';
+    if (Platform.isAndroid) return 'android';
+    if (Platform.isIOS) return 'ios';
+    if (Platform.isMacOS) return 'macos';
+    if (Platform.isWindows) return 'windows';
+    if (Platform.isLinux) return 'linux';
+    return 'unknown';
+  }
+
+  Future<Map<String, dynamic>> _submitFeedback({
+    required String title,
+    required String description,
+    required String contact,
+  }) async {
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+
+    return ApiClient.instance.post(
+      WorkerConfig.getEndpoint('submitFeedback'),
+      body: {
+        'title': title,
+        'description': description,
+        if (contact.trim().isNotEmpty) 'contact': contact.trim(),
+        'page': 'settings_screen',
+        'platform': _feedbackPlatformLabel(),
+      },
+      token: authModel.authToken,
+    );
+  }
+
+  Future<void> _showFeedbackDialog() async {
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    final titleController = TextEditingController();
+    final descriptionController = TextEditingController();
+    final contactController = TextEditingController(
+      text: authModel.currentUser?.email ?? '',
+    );
+    String? validationMessage;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            Future<void> handleSubmit() async {
+              final title = titleController.text.trim();
+              final description = descriptionController.text.trim();
+              final contact = contactController.text.trim();
+
+              if (title.isEmpty) {
+                setDialogState(() => validationMessage = '请填写问题标题');
+                return;
+              }
+
+              if (description.isEmpty) {
+                setDialogState(() => validationMessage = '请填写问题描述');
+                return;
+              }
+
+              setDialogState(() => validationMessage = null);
+              if (mounted) {
+                setState(() => _isSubmittingFeedback = true);
+              }
+
+              final result = await _submitFeedback(
+                title: title,
+                description: description,
+                contact: contact,
+              );
+
+              if (!mounted) return;
+              setState(() => _isSubmittingFeedback = false);
+
+              if (Navigator.of(dialogContext).canPop()) {
+                Navigator.of(dialogContext).pop();
+              }
+
+              final success = result['success'] == true;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    success
+                        ? (result['message'] ?? '反馈已提交')
+                        : (result['error'] ?? '反馈提交失败，请稍后重试'),
+                  ),
+                  backgroundColor: success ? Colors.green : Colors.red,
+                ),
+              );
+            }
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E1E1E),
+              title: const Text('提交问题反馈', style: TextStyle(color: Colors.white)),
+              content: SizedBox(
+                width: 420,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '问题会自动同步到 GitHub Issue，方便后续跟进。',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: titleController,
+                        enabled: !_isSubmittingFeedback,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: '问题标题',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          hintText: '例如：收藏后没有提示',
+                          hintStyle: const TextStyle(color: Colors.white38),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.04),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: descriptionController,
+                        enabled: !_isSubmittingFeedback,
+                        style: const TextStyle(color: Colors.white),
+                        minLines: 4,
+                        maxLines: 8,
+                        decoration: InputDecoration(
+                          labelText: '问题描述',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          hintText: '请尽量写清楚发生了什么、你期待什么结果。',
+                          hintStyle: const TextStyle(color: Colors.white38),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.04),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: contactController,
+                        enabled: !_isSubmittingFeedback,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: '联系方式（选填）',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          hintText: '邮箱、微信或其他便于回访的信息',
+                          hintStyle: const TextStyle(color: Colors.white38),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.04),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      if (validationMessage != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          validationMessage!,
+                          style: const TextStyle(color: Colors.redAccent),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: _isSubmittingFeedback
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: _isSubmittingFeedback ? null : handleSubmit,
+                  child: _isSubmittingFeedback
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('提交反馈'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      titleController.dispose();
+      descriptionController.dispose();
+      contactController.dispose();
+    });
   }
 
   /// 显示删除模型确认对话框
@@ -252,27 +453,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.help_outline,
                     iconColor: Colors.orange,
                     title: '帮助与反馈',
-                    subtitle: '联系邮箱: support@ombhrum.com',
-                    onTap: () => showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        backgroundColor: const Color(0xFF1E1E1E),
-                        title: const Text(
-                          '帮助与反馈',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                        content: const Text(
-                          '如果您发现任何违规内容，或有任何建议，请联系我们：\n\n邮箱：support@ombhrum.com\n我们将会在24小时内处理您的反馈。',
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('确定'),
-                          ),
-                        ],
-                      ),
-                    ),
+                    subtitle: '提交问题或建议，自动同步到 GitHub',
+                    onTap: _showFeedbackDialog,
                   ),
 
                   _buildSettingItem(
