@@ -120,7 +120,9 @@ void main() {
         httpClient: FakeLikeHttpClient(
           onPost: (url, headers, body) async {
             capturedHeaders = headers;
-            capturedBody = jsonDecode(body! as String) as Map<String, dynamic>;
+            capturedBody = Map<String, dynamic>.from(
+              jsonDecode(body! as String) as Map,
+            );
             return jsonResponse('{"likeCount":9}', 200);
           },
         ),
