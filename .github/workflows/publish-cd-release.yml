@@ -214,6 +214,12 @@ jobs:
               echo "- APP_STORE_CONNECT_API_ISSUER_ID"
               echo "- APP_STORE_CONNECT_API_KEY_BASE64"
             } > ../ios-release-assets/IOS_SIGNING_NOT_CONFIGURED.txt
+            {
+              echo "status=skipped"
+              echo "reason=ios_signing_not_configured"
+              echo "source_sha=${{ needs.resolve-cd-context.outputs.source_sha }}"
+              echo "uploaded_at="
+            } > ../ios-release-assets/TESTFLIGHT_UPLOAD_STATUS.txt
             echo "configured=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -321,7 +327,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          status_file="../ios-release-assets/TESTFLIGHT_UPLOAD_STATUS.txt"
           if [ -z "${APP_STORE_CONNECT_API_KEY_ID:-}" ] || [ -z "${APP_STORE_CONNECT_API_ISSUER_ID:-}" ] || [ -z "${APP_STORE_CONNECT_API_KEY_BASE64:-}" ]; then
+            {
+              echo "status=skipped"
+              echo "reason=app_store_connect_credentials_not_configured"
+              echo "source_sha=${{ needs.resolve-cd-context.outputs.source_sha }}"
+              echo "uploaded_at="
+            } > "$status_file"
             echo "App Store Connect credentials are not configured; iOS IPA will be attached to GitHub Release only."
             exit 0
           fi
@@ -336,11 +349,27 @@ jobs:
             exit 1
           fi
 
-          xcrun altool --upload-app \
+          if xcrun altool --upload-app \
             --type ios \
             --file "$ipa_path" \
             --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
-            --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+            --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"; then
+            {
+              echo "status=uploaded"
+              echo "reason=accepted_by_app_store_connect"
+              echo "source_sha=${{ needs.resolve-cd-context.outputs.source_sha }}"
+              echo "uploaded_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            } > "$status_file"
+          else
+            status=$?
+            {
+              echo "status=failed"
+              echo "reason=app_store_connect_upload_failed"
+              echo "source_sha=${{ needs.resolve-cd-context.outputs.source_sha }}"
+              echo "uploaded_at="
+            } > "$status_file"
+            exit "$status"
+          fi
 
       - name: Upload iOS release package artifact
         if: always()
@@ -440,6 +469,12 @@ jobs:
             esac
           done < <(find built-native-packages downloaded-cd-artifacts -type f)
 
+          for metadata_file in TESTFLIGHT_UPLOAD_STATUS.txt IOS_SIGNING_NOT_CONFIGURED.txt; do
+            if [ -f "built-native-packages/ios/$metadata_file" ]; then
+              cp "built-native-packages/ios/$metadata_file" "release-assets/$metadata_file"
+            fi
+          done
+
           if [ -z "$(find release-assets -type f -print -quit)" ]; then
             echo "No release package files were found or built." >&2
             echo "Expected validated web artifact, Android APK/AAB, iOS IPA, or native package files such as .dmg, .msix, .deb, .rpm, .AppImage, .zip, .tar.gz." >&2
@@ -473,6 +508,27 @@ jobs:
               echo "- Signed iOS IPA is attached."
             else
               echo "- iOS IPA was skipped because signing secrets are not configured or no IPA was produced."
+            fi
+            if [ -f release-assets/TESTFLIGHT_UPLOAD_STATUS.txt ]; then
+              tf_status="$(awk -F= '$1 == "status" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
+              tf_reason="$(awk -F= '$1 == "reason" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
+              tf_uploaded_at="$(awk -F= '$1 == "uploaded_at" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
+              case "$tf_status" in
+                uploaded)
+                  echo "- TestFlight upload: uploaded${tf_uploaded_at:+ at $tf_uploaded_at}."
+                  ;;
+                skipped)
+                  echo "- TestFlight upload: skipped ($tf_reason)."
+                  ;;
+                failed)
+                  echo "- TestFlight upload: failed ($tf_reason)."
+                  ;;
+                *)
+                  echo "- TestFlight upload: status recorded in TESTFLIGHT_UPLOAD_STATUS.txt."
+                  ;;
+              esac
+            else
+              echo "- TestFlight upload: no explicit status artifact was generated."
             fi
             echo ""
             echo "## Integrity"
