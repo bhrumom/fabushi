@@ -388,6 +388,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
+          clean: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/pubspec.yaml
