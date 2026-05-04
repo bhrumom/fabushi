@@ -162,10 +162,9 @@ jobs:
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /fabushi/pubspec.yaml
-            /fabushi/pubspec.lock
-            /fabushi/android/**
-            /fabushi/lib/packages/**
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -198,8 +197,10 @@ jobs:
           GRADLE_OPTS: -Xmx4g -Dfile.encoding=UTF-8
         run: |
           set -euo pipefail
-          # Keep this aligned with the real package-release entrypoint from fabushi/.
-          ./android/gradlew -p android help --stacktrace
+          # There is no checked-in Android Gradle wrapper script in this repo,
+          # so use Flutter's config-only Android build to validate Gradle setup
+          # and repository resolution against the real app project structure.
+          flutter build apk --debug --config-only
 
   worker:
     name: Cloudflare Worker syntax and deploy dry-run
