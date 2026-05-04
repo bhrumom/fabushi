@@ -148,6 +148,59 @@ jobs:
           path: fabushi/build/web
           if-no-files-found: error
 
+  android-gradle-bootstrap:
+    name: Android Gradle bootstrap
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: flutter
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout Android build files
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/pubspec.yaml
+            /fabushi/pubspec.lock
+            /fabushi/android/**
+            /fabushi/lib/packages/**
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Write Android local.properties
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "flutter.sdk=$FLUTTER_ROOT"
+            echo "sdk.dir=$ANDROID_HOME"
+          } > android/local.properties
+
+      - name: Get Flutter dependencies for Android build scripts
+        run: flutter pub get
+
+      - name: Validate Android Gradle bootstrap
+        shell: bash
+        env:
+          GRADLE_OPTS: -Xmx4g -Dfile.encoding=UTF-8
+        run: |
+          set -euo pipefail
+          # Keep this aligned with the real package-release entrypoint from fabushi/.
+          ./android/gradlew -p android help --stacktrace
+
   worker:
     name: Cloudflare Worker syntax and deploy dry-run
     runs-on: ubuntu-latest
@@ -252,6 +305,7 @@ jobs:
     timeout-minutes: 5
     needs:
       - flutter
+      - android-gradle-bootstrap
       - worker
       - e2e-contract
       - workflow-guardrails
@@ -263,6 +317,10 @@ jobs:
           set -euo pipefail
           if [ "${{ needs.flutter.result }}" != "success" ]; then
             echo "Flutter job failed: ${{ needs.flutter.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.android-gradle-bootstrap.result }}" != "success" ]; then
+            echo "Android Gradle bootstrap job failed: ${{ needs.android-gradle-bootstrap.result }}"
             exit 1
           fi
           if [ "${{ needs.worker.result }}" != "success" ]; then
@@ -285,6 +343,7 @@ jobs:
     timeout-minutes: 10
     needs:
       - flutter
+      - android-gradle-bootstrap
       - worker
       - e2e-contract
       - workflow-guardrails
@@ -328,7 +387,8 @@ jobs:
                 '### CI notes',
                 '',
                 '- Dart format diffs are uploaded as `dart-format-patch` when formatter output differs from the committed code.',
-                '- CI runs with the formatter-applied workspace and does not push formatter commits directly to protected branches.',
+                '- CI runs with the formatter-applied workspace and does not push formatter commits directly to main because main is protected by merge queue rules.',
+                '- Android Gradle bootstrap now validates that GitHub Actions can resolve Android/Kotlin buildscript dependencies before release packaging workflows run.',
                 '- Build and dry-run bundles are listed above when those jobs reach their upload steps.',
                 '- Merge queue runs are supported through the `merge_group` trigger.',
               ],
