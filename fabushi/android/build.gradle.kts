@@ -1,7 +1,7 @@
-val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
-
 buildscript {
     repositories {
+        val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
+
         if (preferOfficialReposInCi) {
             google()
             mavenCentral()
@@ -22,6 +22,8 @@ buildscript {
 allprojects {
     buildscript {
         repositories {
+            val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
+
             if (preferOfficialReposInCi) {
                 google()
                 mavenCentral()
