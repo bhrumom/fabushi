@@ -1,9 +1,19 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:global_dharma_sharing/core/errors/exceptions.dart';
 import 'package:global_dharma_sharing/core/network/api_client.dart';
+
+http.Response jsonResponse(String body, int statusCode) {
+  return http.Response.bytes(
+    utf8.encode(body),
+    statusCode,
+    headers: {'content-type': 'application/json; charset=utf-8'},
+  );
+}
 
 void main() {
   group('ApiClient', () {
@@ -45,7 +55,7 @@ void main() {
     test('preserves auth failures from the backend', () async {
       final apiClient = ApiClient(
         client: MockClient(
-          (_) async => http.Response('{"message":"登录已过期"}', 401),
+          (_) async => jsonResponse('{"message":"登录已过期"}', 401),
         ),
       );
 
@@ -64,7 +74,7 @@ void main() {
     test('maps validation responses to ValidationException', () async {
       final apiClient = ApiClient(
         client: MockClient(
-          (_) async => http.Response('{"error":"验证码无效"}', 422),
+          (_) async => jsonResponse('{"error":"验证码无效"}', 422),
         ),
       );
 
@@ -83,7 +93,7 @@ void main() {
     test('maps server failures to ServerException', () async {
       final apiClient = ApiClient(
         client: MockClient(
-          (_) async => http.Response('{"message":"服务暂时不可用"}', 503),
+          (_) async => jsonResponse('{"message":"服务暂时不可用"}', 503),
         ),
       );
 
@@ -102,7 +112,7 @@ void main() {
     test('maps transport failures to NetworkException', () async {
       final apiClient = ApiClient(
         client: MockClient(
-          (_) async => throw const http.ClientException('socket closed'),
+          (_) async => throw http.ClientException('socket closed'),
         ),
       );
 
