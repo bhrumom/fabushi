@@ -3,8 +3,10 @@
 
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../core/config/app_config.dart';
 
 class HttpService {
@@ -15,6 +17,11 @@ class HttpService {
 
   // HTTP客户端
   static final http.Client _client = http.Client();
+
+  static String _safeTokenPreview(String token) {
+    final previewLength = token.length < 20 ? token.length : 20;
+    return '${token.substring(0, previewLength)}...';
+  }
 
   // 获取认证头
   static Future<Map<String, String>> _getHeaders({bool useAuth = false}) async {
@@ -28,7 +35,7 @@ class HttpService {
       if (token != null) {
         headers['Authorization'] = 'Bearer $token';
         print(
-          '🔐 HttpService: 添加认证头 Authorization: Bearer ${token.substring(0, 20)}...',
+          '🔐 HttpService: 添加认证头 Authorization: Bearer ${_safeTokenPreview(token)}',
         );
       } else {
         print('⚠️ HttpService: useAuth=true 但没有token');
@@ -44,7 +51,7 @@ class HttpService {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString(AppConfig.tokenStorageKey);
       if (token != null) {
-        print('🔑 HttpService: 成功获取token: ${token.substring(0, 20)}...');
+        print('🔑 HttpService: 成功获取token: ${_safeTokenPreview(token)}');
       } else {
         print('⚠️ HttpService: SharedPreferences中没有token');
       }
@@ -317,8 +324,16 @@ class HttpService {
 
   // 解析JSON响应
   static Map<String, dynamic> parseJsonResponse(http.Response response) {
+    if (response.body.trim().isEmpty) {
+      return <String, dynamic>{};
+    }
+
     try {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      throw const FormatException('Top-level JSON is not an object');
     } catch (e) {
       throw Exception('响应格式错误: 无法解析JSON');
     }
@@ -331,11 +346,19 @@ class HttpService {
 
   // 获取错误消息
   static String getErrorMessage(http.Response response) {
+    if (response.body.trim().isEmpty) {
+      return '服务器返回空响应';
+    }
+
     try {
       final data = parseJsonResponse(response);
-      return data['error'] ?? data['message'] ?? '未知错误';
+      final message = data['error'] ?? data['message'] ?? data['detail'];
+      if (message is String && message.isNotEmpty) {
+        return message;
+      }
+      return '未知错误';
     } catch (e) {
-      return '服务器响应格式错误';
+      return response.body.trim().isNotEmpty ? response.body.trim() : '服务器响应格式错误';
     }
   }
 
