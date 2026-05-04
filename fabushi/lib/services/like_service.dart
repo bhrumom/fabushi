@@ -1,15 +1,81 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../core/config/app_config.dart';
 import '../models/liked_item.dart';
+
+abstract class LikeHttpClient {
+  Future<http.Response> get(Uri url, {Map<String, String>? headers});
+
+  Future<http.Response> post(
+    Uri url, {
+    Map<String, String>? headers,
+    Object? body,
+  });
+}
+
+class DefaultLikeHttpClient implements LikeHttpClient {
+  @override
+  Future<http.Response> get(Uri url, {Map<String, String>? headers}) {
+    return http.get(url, headers: headers);
+  }
+
+  @override
+  Future<http.Response> post(
+    Uri url, {
+    Map<String, String>? headers,
+    Object? body,
+  }) {
+    return http.post(url, headers: headers, body: body);
+  }
+}
+
+abstract class LikeStorage {
+  Future<String?> read(String key);
+
+  Future<void> write(String key, String value);
+}
+
+class SharedPreferencesLikeStorage implements LikeStorage {
+  SharedPreferencesLikeStorage({
+    Future<SharedPreferences> Function()? preferencesProvider,
+  }) : _preferencesProvider =
+           preferencesProvider ?? SharedPreferences.getInstance;
+
+  final Future<SharedPreferences> Function() _preferencesProvider;
+
+  @override
+  Future<String?> read(String key) async {
+    final prefs = await _preferencesProvider();
+    return prefs.getString(key);
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    final prefs = await _preferencesProvider();
+    await prefs.setString(key, value);
+  }
+}
 
 class LikeService extends ChangeNotifier {
   static final LikeService _instance = LikeService._internal();
   factory LikeService() => _instance;
-  LikeService._internal();
 
+  LikeService._internal()
+    : _httpClient = DefaultLikeHttpClient(),
+      _storage = SharedPreferencesLikeStorage();
+
+  LikeService.withDependencies({
+    LikeHttpClient? httpClient,
+    LikeStorage? storage,
+  }) : _httpClient = httpClient ?? DefaultLikeHttpClient(),
+       _storage = storage ?? SharedPreferencesLikeStorage();
+
+  final LikeHttpClient _httpClient;
+  final LikeStorage _storage;
   final Map<String, LikedItem> _likedItems = {};
   final Map<String, int> _likeCounts = {};
   bool _isInitialized = false;
@@ -38,16 +104,49 @@ class LikeService extends ChangeNotifier {
     }
   }
 
+  Map<String, dynamic>? _tryParseBodyAsMap(String body) {
+    if (body.trim().isEmpty) {
+      return <String, dynamic>{};
+    }
+
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {
+      return null;
+    }
+
+    return null;
+  }
+
   Future<void> _loadLikedItems() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final jsonString = prefs.getString(_getStorageKey());
-      if (jsonString != null) {
-        final List<dynamic> jsonList = jsonDecode(jsonString);
-        _likedItems.clear();
-        for (var json in jsonList) {
-          final item = LikedItem.fromJson(json);
+      final jsonString = await _storage.read(_getStorageKey());
+      if (jsonString == null || jsonString.trim().isEmpty) {
+        return;
+      }
+
+      final decoded = jsonDecode(jsonString);
+      if (decoded is! List) {
+        return;
+      }
+
+      _likedItems.clear();
+      for (final itemJson in decoded) {
+        if (itemJson is! Map) {
+          continue;
+        }
+
+        try {
+          final item = LikedItem.fromJson(Map<String, dynamic>.from(itemJson));
           _likedItems[item.id] = item;
+        } catch (e) {
+          debugPrint('跳过格式错误的点赞缓存数据: $e');
         }
       }
     } catch (e) {
@@ -57,9 +156,8 @@ class LikeService extends ChangeNotifier {
 
   Future<void> _saveLikedItems() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
       final jsonList = _likedItems.values.map((item) => item.toJson()).toList();
-      await prefs.setString(_getStorageKey(), jsonEncode(jsonList));
+      await _storage.write(_getStorageKey(), jsonEncode(jsonList));
     } catch (e) {
       debugPrint('保存点赞数据失败: $e');
     }
@@ -93,12 +191,11 @@ class LikeService extends ChangeNotifier {
     await _saveLikedItems();
     notifyListeners();
 
-    // 同步到云端，点赞时额外发送标题和文件路径
     _syncToCloud(
       item.id,
       item.contentType,
       wasLiked ? 'unlike' : 'like',
-      title: item.username, // username 字段存储的是标题
+      title: item.username,
       filePath: item.filePath,
     );
   }
@@ -107,23 +204,35 @@ class LikeService extends ChangeNotifier {
     if (_authToken == null) return;
 
     try {
-      final response = await http.get(
+      final response = await _httpClient.get(
         Uri.parse('${AppConfig.apiUrl}/api/likes/my-likes'),
         headers: {'Authorization': 'Bearer $_authToken'},
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['likes'] != null) {
-          final List<dynamic> likes = data['likes'];
-          for (var like in likes) {
-            final item = LikedItem.fromJson(like);
-            _likedItems[item.id] = item;
-          }
-          await _saveLikedItems();
-          notifyListeners();
+      if (response.statusCode != 200) {
+        return;
+      }
+
+      final data = _tryParseBodyAsMap(response.body);
+      final likes = data?['likes'];
+      if (data?['success'] != true || likes is! List) {
+        return;
+      }
+
+      for (final like in likes) {
+        if (like is! Map) {
+          continue;
+        }
+
+        try {
+          final item = LikedItem.fromJson(Map<String, dynamic>.from(like));
+          _likedItems[item.id] = item;
+        } catch (e) {
+          debugPrint('跳过格式错误的云端点赞数据: $e');
         }
       }
+      await _saveLikedItems();
+      notifyListeners();
     } catch (e) {
       debugPrint('从云端加载点赞数据失败: $e');
     }
@@ -137,32 +246,40 @@ class LikeService extends ChangeNotifier {
     String? filePath,
   }) async {
     try {
-      final headers = {'Content-Type': 'application/json'};
+      final headers = <String, String>{'Content-Type': 'application/json'};
       if (_authToken != null) {
         headers['Authorization'] = 'Bearer $_authToken';
       }
 
-      final body = {
+      final body = <String, dynamic>{
         'contentId': contentId,
         'contentType': contentType,
         'action': action,
       };
 
-      // 点赞时额外发送标题和文件路径
       if (action == 'like') {
-        if (title != null) body['title'] = title;
-        if (filePath != null) body['filePath'] = filePath;
+        if (title != null) {
+          body['title'] = title;
+        }
+        if (filePath != null) {
+          body['filePath'] = filePath;
+        }
       }
 
-      final response = await http.post(
+      final response = await _httpClient.post(
         Uri.parse('${AppConfig.apiUrl}/api/likes/toggle'),
         headers: headers,
         body: jsonEncode(body),
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _likeCounts[contentId] = data['likeCount'] ?? 0;
+      if (response.statusCode != 200) {
+        return;
+      }
+
+      final data = _tryParseBodyAsMap(response.body);
+      final likeCount = data?['likeCount'];
+      if (likeCount is num) {
+        _likeCounts[contentId] = likeCount.toInt();
         notifyListeners();
       }
     } catch (e) {
@@ -174,20 +291,28 @@ class LikeService extends ChangeNotifier {
     if (contentIds.isEmpty) return;
 
     try {
-      final response = await http.post(
+      final response = await _httpClient.post(
         Uri.parse('${AppConfig.apiUrl}/api/likes/batch-counts'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'contentIds': contentIds}),
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final counts = data['likeCounts'] as Map<String, dynamic>;
-        counts.forEach((key, value) {
-          _likeCounts[key] = value as int;
-        });
-        notifyListeners();
+      if (response.statusCode != 200) {
+        return;
       }
+
+      final data = _tryParseBodyAsMap(response.body);
+      final counts = data?['likeCounts'];
+      if (counts is! Map) {
+        return;
+      }
+
+      counts.forEach((key, value) {
+        if (value is num) {
+          _likeCounts[key.toString()] = value.toInt();
+        }
+      });
+      notifyListeners();
     } catch (e) {
       debugPrint('获取点赞数失败: $e');
     }
@@ -205,7 +330,6 @@ class LikeService extends ChangeNotifier {
 
   LikedItem? getLikedItem(String id) => _likedItems[id];
 
-  // 获取用户评论被点赞的总数（用于"获赞"统计）
   int _receivedLikeCount = 0;
   int get receivedLikeCount => _receivedLikeCount;
 
@@ -213,17 +337,20 @@ class LikeService extends ChangeNotifier {
     if (_authToken == null) return;
 
     try {
-      final response = await http.get(
+      final response = await _httpClient.get(
         Uri.parse('${AppConfig.apiUrl}/api/likes/received-count'),
         headers: {'Authorization': 'Bearer $_authToken'},
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          _receivedLikeCount = data['receivedLikeCount'] ?? 0;
-          notifyListeners();
-        }
+      if (response.statusCode != 200) {
+        return;
+      }
+
+      final data = _tryParseBodyAsMap(response.body);
+      final receivedLikeCount = data?['receivedLikeCount'];
+      if (data?['success'] == true && receivedLikeCount is num) {
+        _receivedLikeCount = receivedLikeCount.toInt();
+        notifyListeners();
       }
     } catch (e) {
       debugPrint('获取被点赞数失败: $e');
