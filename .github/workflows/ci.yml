@@ -198,7 +198,7 @@ jobs:
           GRADLE_OPTS: -Xmx4g -Dfile.encoding=UTF-8
         run: |
           set -euo pipefail
-          ./android/gradlew -p android help --stacktrace
+          ./gradlew help --stacktrace
 
   worker:
     name: Cloudflare Worker syntax and deploy dry-run
