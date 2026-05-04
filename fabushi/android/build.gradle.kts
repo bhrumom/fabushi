@@ -1,4 +1,4 @@
-val preferOfficialRepositories = System.getenv("GITHUB_ACTIONS") == "true"
+val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
 
 fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiBuildMirrors() {
     maven { url = uri("https://maven.aliyun.com/repository/google") }
@@ -13,7 +13,7 @@ fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiBuildUpstreamReposi
 }
 
 fun org.gradle.api.artifacts.dsl.RepositoryHandler.configureFabushiBuildscriptRepositories() {
-    if (preferOfficialRepositories) {
+    if (preferOfficialReposInCi) {
         addFabushiBuildUpstreamRepositories()
         addFabushiBuildMirrors()
         return
