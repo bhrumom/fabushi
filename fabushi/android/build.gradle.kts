@@ -1,3 +1,4 @@
+// Keep Android buildscript dependency resolution consistent with settings.gradle.kts.
 val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
 
 fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiBuildMirrors() {
