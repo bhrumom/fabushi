@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
@@ -6,7 +8,11 @@ import 'package:global_dharma_sharing/services/http_service.dart';
 void main() {
   group('HttpService helpers', () {
     test('prefers backend error message from json response', () {
-      final response = http.Response('{"error":"验证码已过期"}', 422);
+      final response = http.Response.bytes(
+        utf8.encode('{"error":"验证码已过期"}'),
+        422,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
 
       expect(HttpService.getErrorMessage(response), '验证码已过期');
     });
