@@ -1,5 +1,34 @@
 val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
 
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiMirrorRepositories() {
+    maven { url = uri("https://maven.aliyun.com/repository/google") }
+    maven { url = uri("https://maven.aliyun.com/repository/central") }
+    maven { url = uri("https://maven.aliyun.com/repository/public") }
+    maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+    maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
+}
+
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiOfficialRepositories(includeGradlePluginPortal: Boolean = false) {
+    google()
+    mavenCentral()
+    if (includeGradlePluginPortal) {
+        gradlePluginPortal()
+    }
+}
+
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.configureFabushiRepositories(includeGradlePluginPortal: Boolean = false) {
+    if (preferOfficialReposInCi) {
+        // GitHub-hosted runners can reach upstream Maven reliably, so prefer it before the regional mirrors.
+        addFabushiOfficialRepositories(includeGradlePluginPortal)
+        addFabushiMirrorRepositories()
+        return
+    }
+
+    // Local and regional builds still keep the mirrors first to tolerate blocked upstream access.
+    addFabushiMirrorRepositories()
+    addFabushiOfficialRepositories(includeGradlePluginPortal)
+}
+
 pluginManagement {
     val flutterSdkPath = run {
         val properties = java.util.Properties()
@@ -20,24 +49,7 @@ pluginManagement {
     }
 
     repositories {
-        if (preferOfficialReposInCi) {
-            google()
-            mavenCentral()
-            gradlePluginPortal()
-        }
-
-        // 本地开发默认保留国内镜像优先级；CI 则先试官方源，避免镜像 502 阻塞发包。
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
-        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-        maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
-
-        if (!preferOfficialReposInCi) {
-            google()
-            mavenCentral()
-            gradlePluginPortal()
-        }
+        configureFabushiRepositories(includeGradlePluginPortal = true)
     }
 }
 
@@ -46,20 +58,7 @@ dependencyResolutionManagement {
     repositories {
         maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
         maven { url = uri("https://jitpack.io") }
-
-        if (preferOfficialReposInCi) {
-            google()
-            mavenCentral()
-        }
-
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
-
-        if (!preferOfficialReposInCi) {
-            google()
-            mavenCentral()
-        }
+        configureFabushiRepositories()
     }
 }
 
