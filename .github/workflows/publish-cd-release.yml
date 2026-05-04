@@ -477,26 +477,29 @@ jobs:
             echo ""
             echo "## Integrity"
             echo ""
-            echo "SHA-256 checksums are attached in `SHA256SUMS.txt`."
+            echo 'SHA-256 checksums are attached in `SHA256SUMS.txt`.'
           } > release-notes.md
 
       - name: Publish GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
           TAG: ${{ steps.release-assets.outputs.tag }}
           TITLE: ${{ steps.release-assets.outputs.title }}
           SOURCE_SHA: ${{ steps.release-assets.outputs.source_sha }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
             gh release edit "$TAG" \
+              --repo "$RELEASE_REPO" \
               --title "$TITLE" \
               --notes-file release-notes.md \
               --target "$SOURCE_SHA" \
               --latest
           else
             gh release create "$TAG" release-assets/* \
+              --repo "$RELEASE_REPO" \
               --title "$TITLE" \
               --notes-file release-notes.md \
               --target "$SOURCE_SHA" \
@@ -504,7 +507,7 @@ jobs:
             exit 0
           fi
 
-          gh release upload "$TAG" release-assets/* --clobber
+          gh release upload "$TAG" release-assets/* --repo "$RELEASE_REPO" --clobber
 
       - name: Write release summary
         shell: bash
