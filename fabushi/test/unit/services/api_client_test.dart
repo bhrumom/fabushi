@@ -1,15 +1,25 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:global_dharma_sharing/services/api_client.dart';
 
+http.Response jsonResponse(String body, int statusCode) {
+  return http.Response.bytes(
+    utf8.encode(body),
+    statusCode,
+    headers: {'content-type': 'application/json; charset=utf-8'},
+  );
+}
+
 void main() {
   group('legacy services ApiClient', () {
     test('keeps backend message and error key for auth failures', () async {
       final apiClient = ApiClient(
         httpClient: MockClient(
-          (_) async => http.Response('{"message":"登录已过期"}', 401),
+          (_) async => jsonResponse('{"message":"登录已过期"}', 401),
         ),
         baseUrlResolver: () async => 'https://example.com',
       );
@@ -51,7 +61,7 @@ void main() {
     test('maps transport failures to network error payloads', () async {
       final apiClient = ApiClient(
         httpClient: MockClient(
-          (_) async => throw const http.ClientException('socket closed'),
+          (_) async => throw http.ClientException('socket closed'),
         ),
         baseUrlResolver: () async => 'https://example.com',
       );
