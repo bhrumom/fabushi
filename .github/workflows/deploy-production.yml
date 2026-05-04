@@ -280,24 +280,34 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
           path = Path('wrangler.toml')
           text = path.read_text()
-          old = '''[env.production]
-          name = "fabushi-flutter-web-prod"
-          routes = [
-            { pattern = "flutter.ombhrum.com/*", zone_name = "ombhrum.com" }
-          ]
-          workers_dev = false'''
-          new = '''[env.production]
-          name = "fabushi-flutter-web-prod"
-          # Route is pre-provisioned in Cloudflare; CI deploys code/assets only.
-          workers_dev = false'''
-          if old in text:
-              text = text.replace(old, new)
-              path.write_text(text)
+          pattern = re.compile(
+              r'(?ms)^(\[env\.production\]\nname = "fabushi-flutter-web-prod"\n)(?:routes = \[\n(?:  .*\n)+?\]\n)?(workers_dev = false\n)'
+          )
+          replacement = (
+              '[env.production]\n'
+              'name = "fabushi-flutter-web-prod"\n'
+              '# Route is pre-provisioned in Cloudflare; CI deploys code/assets only.\n'
+              'workers_dev = false\n'
+          )
+          new_text, count = pattern.subn(replacement, text, count=1)
+          if count == 0:
+              raise SystemExit('Could not locate [env.production] block in wrangler.toml')
+
+          production_section = new_text.split('[env.production]\n', 1)[1].split('\n[[env.production.', 1)[0]
+          if 'routes =' in production_section:
+              raise SystemExit('Production routes still present after patch')
+
+          if new_text != text:
+              path.write_text(new_text)
               print('Removed production route management from CI deploy artifact')
           else:
-              print('Production route management block not found; leaving wrangler.toml unchanged')
+              print('Production route management already absent')
+
+          print('Verified production deploy artifact no longer mutates routes')
           PY
 
       - name: Deploy production Worker
