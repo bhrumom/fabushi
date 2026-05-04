@@ -1,3 +1,5 @@
+val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
+
 pluginManagement {
     val flutterSdkPath = run {
         val properties = java.util.Properties()
@@ -18,17 +20,24 @@ pluginManagement {
     }
 
     repositories {
-        // 阿里云镜像源优先（解决 dl.google.com 不可达问题）
+        if (preferOfficialReposInCi) {
+            google()
+            mavenCentral()
+            gradlePluginPortal()
+        }
+
+        // 本地开发默认保留国内镜像优先级；CI 则先试官方源，避免镜像 502 阻塞发包。
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/public") }
         maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-        // 腾讯云镜像
         maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
-        // Fallback for CI when Chinese mirrors are unreachable
-        google()
-        mavenCentral()
-        gradlePluginPortal()
+
+        if (!preferOfficialReposInCi) {
+            google()
+            mavenCentral()
+            gradlePluginPortal()
+        }
     }
 }
 
@@ -37,12 +46,20 @@ dependencyResolutionManagement {
     repositories {
         maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
         maven { url = uri("https://jitpack.io") }
+
+        if (preferOfficialReposInCi) {
+            google()
+            mavenCentral()
+        }
+
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/public") }
-        // Fallback for CI when Chinese mirrors are unreachable
-        google()
-        mavenCentral()
+
+        if (!preferOfficialReposInCi) {
+            google()
+            mavenCentral()
+        }
     }
 }
 
