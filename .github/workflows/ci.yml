@@ -198,6 +198,7 @@ jobs:
           GRADLE_OPTS: -Xmx4g -Dfile.encoding=UTF-8
         run: |
           set -euo pipefail
+          # Keep this aligned with the real package-release entrypoint: the job already runs from fabushi/.
           ./gradlew help --stacktrace
 
   worker:
