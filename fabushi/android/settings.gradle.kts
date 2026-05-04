@@ -1,3 +1,34 @@
+val preferOfficialRepositories = System.getenv("GITHUB_ACTIONS") == "true"
+
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiMirrorRepositories() {
+    maven { url = uri("https://maven.aliyun.com/repository/google") }
+    maven { url = uri("https://maven.aliyun.com/repository/central") }
+    maven { url = uri("https://maven.aliyun.com/repository/public") }
+    maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+    maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
+}
+
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiOfficialRepositories(includeGradlePluginPortal: Boolean = false) {
+    google()
+    mavenCentral()
+    if (includeGradlePluginPortal) {
+        gradlePluginPortal()
+    }
+}
+
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.configureFabushiRepositories(includeGradlePluginPortal: Boolean = false) {
+    if (preferOfficialRepositories) {
+        // GitHub-hosted runners can reach upstream Maven reliably, so prefer it before the regional mirrors.
+        addFabushiOfficialRepositories(includeGradlePluginPortal)
+        addFabushiMirrorRepositories()
+        return
+    }
+
+    // Local and regional builds still keep the mirrors first to tolerate blocked upstream access.
+    addFabushiMirrorRepositories()
+    addFabushiOfficialRepositories(includeGradlePluginPortal)
+}
+
 pluginManagement {
     val flutterSdkPath = run {
         val properties = java.util.Properties()
@@ -18,17 +49,7 @@ pluginManagement {
     }
 
     repositories {
-        // 阿里云镜像源优先（解决 dl.google.com 不可达问题）
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
-        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-        // 腾讯云镜像
-        maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
-        // Fallback for CI when Chinese mirrors are unreachable
-        google()
-        mavenCentral()
-        gradlePluginPortal()
+        configureFabushiRepositories(includeGradlePluginPortal = true)
     }
 }
 
@@ -37,12 +58,7 @@ dependencyResolutionManagement {
     repositories {
         maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
         maven { url = uri("https://jitpack.io") }
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
-        // Fallback for CI when Chinese mirrors are unreachable
-        google()
-        mavenCentral()
+        configureFabushiRepositories()
     }
 }
 
