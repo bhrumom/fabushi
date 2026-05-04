@@ -1,38 +1,41 @@
 val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
 
-fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiBuildMirrors() {
-    maven { url = uri("https://maven.aliyun.com/repository/google") }
-    maven { url = uri("https://maven.aliyun.com/repository/central") }
-    maven { url = uri("https://maven.aliyun.com/repository/public") }
-    maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-}
-
-fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiBuildUpstreamRepositories() {
-    google()
-    mavenCentral()
-}
-
-fun org.gradle.api.artifacts.dsl.RepositoryHandler.configureFabushiBuildscriptRepositories() {
-    if (preferOfficialReposInCi) {
-        addFabushiBuildUpstreamRepositories()
-        addFabushiBuildMirrors()
-        return
-    }
-
-    addFabushiBuildMirrors()
-    addFabushiBuildUpstreamRepositories()
-}
-
 buildscript {
     repositories {
-        configureFabushiBuildscriptRepositories()
+        if (preferOfficialReposInCi) {
+            google()
+            mavenCentral()
+        }
+
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/central") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+
+        if (!preferOfficialReposInCi) {
+            google()
+            mavenCentral()
+        }
     }
 }
 
 allprojects {
     buildscript {
         repositories {
-            configureFabushiBuildscriptRepositories()
+            if (preferOfficialReposInCi) {
+                google()
+                mavenCentral()
+            }
+
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/central") }
+            maven { url = uri("https://maven.aliyun.com/repository/public") }
+            maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+
+            if (!preferOfficialReposInCi) {
+                google()
+                mavenCentral()
+            }
         }
     }
 }
