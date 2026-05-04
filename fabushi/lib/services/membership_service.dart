@@ -1,36 +1,24 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 
 import '../core/config/app_config.dart';
-import 'app_settings.dart';
 import 'api_client.dart';
-import 'worker_config.dart';
 
 class MembershipService {
-  // API 客户端实例
-  late final ApiClient _apiClient;
+  final ApiRequester _apiClient;
 
-  MembershipService() {
-    _apiClient = ApiClient();
-  }
-
-  // 获取后端URL
-  Future<String> get baseUrl async {
-    return await AppSettings.getBackendUrl();
-  }
+  MembershipService({ApiRequester? apiClient})
+    : _apiClient = apiClient ?? ApiClient();
 
   Future<Map<String, dynamic>> getMembershipStatus(String token) async {
     try {
-      // 使用 /api/stripe/membership-status 端点
       final endpoint = Uri.parse(AppConfig.stripeMembershipStatusUrl).path;
       final response = await _apiClient.get(endpoint, token: token);
 
-      if (response != null) {
-        return {'success': true, 'membership': response};
-      } else {
-        return {'success': false, 'message': '获取会员状态失败'};
+      if (_isSuccess(response) && response['membership'] != null) {
+        return {'success': true, 'membership': response['membership']};
       }
+
+      return _failureResponse(response, '获取会员状态失败');
     } catch (e) {
       debugPrint('获取会员状态失败: $e');
       return {'success': false, 'message': '网络连接失败'};
@@ -45,21 +33,19 @@ class MembershipService {
       final endpoint = Uri.parse(AppConfig.stripeCreateSubscriptionUrl).path;
       final response = await _apiClient.post(
         endpoint,
-        body: {
-          'priceType': priceType, // monthly, quarterly, yearly
-        },
+        body: {'priceType': priceType},
         token: token,
       );
 
-      if (response['success'] == true) {
+      if (_isSuccess(response)) {
         return {
           'success': true,
           'paymentUrl': response['paymentUrl'],
           'sessionId': response['sessionId'],
         };
-      } else {
-        return {'success': false, 'message': response['message'] ?? '创建支付会话失败'};
       }
+
+      return _failureResponse(response, '创建支付会话失败');
     } catch (e) {
       debugPrint('创建支付会话失败: $e');
       return {'success': false, 'message': '网络连接失败'};
@@ -74,13 +60,11 @@ class MembershipService {
       final endpoint = Uri.parse(AppConfig.alipayCreateOrderUrl).path;
       final response = await _apiClient.post(
         endpoint,
-        body: {
-          'plan': plan, // monthly, quarterly, yearly
-        },
+        body: {'plan': plan},
         token: token,
       );
 
-      if (response['success'] == true) {
+      if (_isSuccess(response)) {
         return {
           'success': true,
           'qrCode': response['qrCode'],
@@ -89,35 +73,27 @@ class MembershipService {
           'plan': response['plan'],
           'orderString': response['orderString'],
         };
-      } else {
-        return {
-          'success': false,
-          'message': response['message'] ?? '创建支付宝订单失败',
-        };
       }
+
+      return _failureResponse(response, '创建支付宝订单失败');
     } catch (e) {
       debugPrint('创建支付宝订单失败: $e');
       return {'success': false, 'message': '网络连接失败'};
     }
   }
 
-  /// 创建支付宝Web端订单（电脑网站支付）
   Future<Map<String, dynamic>> createAlipayWebOrder(
     String token,
     String plan,
   ) async {
     try {
-      final endpoint = '/api/alipay/create-order';
       final response = await _apiClient.post(
-        endpoint,
-        body: {
-          'plan': plan,
-          'platform': 'web', // 标识为Web端支付
-        },
+        '/api/alipay/create-order',
+        body: {'plan': plan, 'platform': 'web'},
         token: token,
       );
 
-      if (response['success'] == true) {
+      if (_isSuccess(response)) {
         return {
           'success': true,
           'paymentUrl': response['paymentUrl'],
@@ -125,39 +101,37 @@ class MembershipService {
           'amount': response['amount'],
           'plan': response['plan'],
         };
-      } else {
-        return {
-          'success': false,
-          'message': response['message'] ?? '创建支付宝Web订单失败',
-        };
       }
+
+      return _failureResponse(response, '创建支付宝Web订单失败');
     } catch (e) {
       debugPrint('创建支付宝Web订单失败: $e');
       return {'success': false, 'message': '网络连接失败'};
     }
   }
 
-  /// 查询支付宝订单状态
   Future<Map<String, dynamic>> queryAlipayOrderStatus(
     String token,
     String orderId,
   ) async {
     try {
-      final endpoint = '/api/alipay/query-order?orderId=$orderId';
-      final response = await _apiClient.get(endpoint, token: token);
+      final response = await _apiClient.get(
+        Uri.parse(AppConfig.alipayQueryOrderUrl).path,
+        token: token,
+        queryParams: {'orderId': orderId},
+      );
 
-      if (response != null) {
+      if (_isSuccess(response)) {
         return response;
-      } else {
-        return {'success': false, 'message': '查询订单状态失败'};
       }
+
+      return _failureResponse(response, '查询订单状态失败');
     } catch (e) {
       debugPrint('查询支付宝订单状态失败: $e');
       return {'success': false, 'message': '网络连接失败'};
     }
   }
 
-  /// 查询Stripe会话状态
   Future<Map<String, dynamic>> queryStripeSessionStatus(
     String token,
     String sessionId,
@@ -170,11 +144,11 @@ class MembershipService {
         queryParams: {'sessionId': sessionId},
       );
 
-      if (response != null) {
+      if (_isSuccess(response)) {
         return response;
-      } else {
-        return {'success': false, 'message': '查询Stripe会话状态失败'};
       }
+
+      return _failureResponse(response, '查询Stripe会话状态失败');
     } catch (e) {
       debugPrint('查询Stripe会话状态失败: $e');
       return {'success': false, 'message': '网络连接失败'};
@@ -190,7 +164,7 @@ class MembershipService {
         token: token,
       );
 
-      if (response['success'] == true) {
+      if (_isSuccess(response)) {
         return {
           'success': true,
           'message': response['message'] ?? '兑换成功',
@@ -198,9 +172,9 @@ class MembershipService {
           'expiresAt': response['expiresAt'],
           'daysAdded': response['daysAdded'],
         };
-      } else {
-        return {'success': false, 'message': response['message'] ?? '兑换失败'};
       }
+
+      return _failureResponse(response, '兑换失败');
     } catch (e) {
       debugPrint('兑换码请求失败: $e');
       return {'success': false, 'message': '网络连接失败'};
@@ -218,23 +192,23 @@ class MembershipService {
       final response = await _apiClient.post(
         endpoint,
         body: {
-          'type': codeType, // trial_7, monthly, quarterly, yearly
+          'type': codeType,
           'quantity': quantity,
           'description': description,
         },
         token: token,
       );
 
-      if (response['success'] == true) {
+      if (_isSuccess(response)) {
         return {
           'success': true,
           'codes': response['codes'],
           'type': response['type'],
           'message': response['message'],
         };
-      } else {
-        return {'success': false, 'message': response['message'] ?? '生成兑换码失败'};
       }
+
+      return _failureResponse(response, '生成兑换码失败');
     } catch (e) {
       debugPrint('生成兑换码失败: $e');
       return {'success': false, 'message': '网络连接失败'};
@@ -246,26 +220,22 @@ class MembershipService {
       final endpoint = Uri.parse(AppConfig.adminCheckStatusUrl).path;
       final response = await _apiClient.get(endpoint, token: token);
 
-      if (response['success'] == true) {
+      if (_isSuccess(response)) {
         return {
           'success': true,
           'isAdmin': response['isAdmin'],
           'email': response['email'],
           'username': response['username'],
         };
-      } else {
-        return {
-          'success': false,
-          'message': response['message'] ?? '获取管理员状态失败',
-        };
       }
+
+      return _failureResponse(response, '获取管理员状态失败');
     } catch (e) {
       debugPrint('获取管理员状态失败: $e');
       return {'success': false, 'message': '网络连接失败'};
     }
   }
 
-  // 获取兑换码列表
   Future<Map<String, dynamic>> getRedeemCodes(
     String token, {
     int page = 1,
@@ -288,7 +258,7 @@ class MembershipService {
         queryParams: queryParams,
       );
 
-      if (response['success'] == true) {
+      if (_isSuccess(response)) {
         return {
           'success': true,
           'codes': response['codes'],
@@ -296,19 +266,15 @@ class MembershipService {
           'page': response['page'],
           'totalPages': response['totalPages'],
         };
-      } else {
-        return {
-          'success': false,
-          'message': response['message'] ?? '获取兑换码列表失败',
-        };
       }
+
+      return _failureResponse(response, '获取兑换码列表失败');
     } catch (e) {
       debugPrint('获取兑换码列表失败: $e');
       return {'success': false, 'message': '网络连接失败'};
     }
   }
 
-  /// Apple App Store Server API v2 收据验证
   Future<Map<String, dynamic>> verifyAppleReceipt(
     String token,
     String transactionId,
@@ -322,7 +288,7 @@ class MembershipService {
         token: token,
       );
 
-      if (response['success'] == true) {
+      if (_isSuccess(response)) {
         return {
           'success': true,
           'message': response['message'] ?? '会员激活成功',
@@ -330,16 +296,15 @@ class MembershipService {
           'expiresAt': response['expiresAt'],
           'alreadyProcessed': response['alreadyProcessed'] == true,
         };
-      } else {
-        return {'success': false, 'message': response['message'] ?? '收据验证失败'};
       }
+
+      return _failureResponse(response, '收据验证失败');
     } catch (e) {
       debugPrint('Apple IAP 收据验证失败: $e');
       return {'success': false, 'message': '网络连接失败'};
     }
   }
 
-  // 查询支付宝订单状态（无token版本）
   Future<Map<String, dynamic>> queryAlipayOrderPublic(String orderId) async {
     try {
       final endpoint = Uri.parse(AppConfig.alipayQueryOrderUrl).path;
@@ -348,52 +313,72 @@ class MembershipService {
         queryParams: {'orderId': orderId},
       );
 
-      if (response['success'] == true) {
+      if (_isSuccess(response)) {
         return {'success': true, 'order': response};
-      } else {
-        return {'success': false, 'message': response['message'] ?? '查询订单失败'};
       }
+
+      return _failureResponse(response, '查询订单失败');
     } catch (e) {
       debugPrint('查询支付宝订单失败: $e');
       return {'success': false, 'message': '网络连接失败'};
     }
   }
 
-  // 获取购买记录
   Future<Map<String, dynamic>> getPurchaseHistory(String token) async {
     try {
       final endpoint = Uri.parse(AppConfig.adminPurchaseHistoryUrl).path;
       final response = await _apiClient.get(endpoint, token: token);
 
-      if (response != null && response['purchases'] != null) {
+      if (_isSuccess(response) && response['purchases'] != null) {
         return {'success': true, 'purchases': response['purchases']};
-      } else {
-        return {'success': false, 'message': '获取购买记录失败'};
       }
+
+      return _failureResponse(response, '获取购买记录失败');
     } catch (e) {
       debugPrint('获取购买记录失败: $e');
       return {'success': false, 'message': '网络连接失败'};
     }
   }
 
-  // 获取兑换记录
   Future<Map<String, dynamic>> getRedeemHistory(String token) async {
     try {
       final endpoint = Uri.parse(AppConfig.adminRedeemHistoryUrl).path;
       final response = await _apiClient.get(endpoint, token: token);
 
-      if (response != null && response['redeems'] != null) {
+      if (_isSuccess(response) && response['redeems'] != null) {
         return {'success': true, 'redeems': response['redeems']};
-      } else {
-        return {'success': false, 'message': '获取兑换记录失败'};
       }
+
+      return _failureResponse(response, '获取兑换记录失败');
     } catch (e) {
       debugPrint('获取兑换记录失败: $e');
       return {'success': false, 'message': '网络连接失败'};
     }
   }
 
-  // 获取会员价格信息
+  bool _isSuccess(Map<String, dynamic> response) => response['success'] == true;
+
+  Map<String, dynamic> _failureResponse(
+    Map<String, dynamic> response,
+    String fallbackMessage,
+  ) {
+    return {
+      'success': false,
+      'message': _extractMessage(response, fallbackMessage),
+      if (response['statusCode'] != null) 'statusCode': response['statusCode'],
+      if (response['errorKey'] != null) 'errorKey': response['errorKey'],
+      if (response['details'] != null) 'details': response['details'],
+    };
+  }
+
+  String _extractMessage(
+    Map<String, dynamic> response,
+    String fallbackMessage,
+  ) {
+    final message = response['message'] ?? response['error'];
+    return message is String && message.isNotEmpty ? message : fallbackMessage;
+  }
+
   Map<String, Map<String, dynamic>> getMembershipPrices() {
     return {
       'monthly': {
@@ -417,7 +402,6 @@ class MembershipService {
     };
   }
 
-  // 获取试用会员信息
   Map<String, dynamic> getTrialMembership() {
     return {
       'name': '7天试用',
