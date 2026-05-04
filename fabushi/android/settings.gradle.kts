@@ -1,4 +1,4 @@
-val preferOfficialRepositories = System.getenv("GITHUB_ACTIONS") == "true"
+val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
 
 fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiMirrorRepositories() {
     maven { url = uri("https://maven.aliyun.com/repository/google") }
@@ -17,7 +17,7 @@ fun org.gradle.api.artifacts.dsl.RepositoryHandler.addFabushiOfficialRepositorie
 }
 
 fun org.gradle.api.artifacts.dsl.RepositoryHandler.configureFabushiRepositories(includeGradlePluginPortal: Boolean = false) {
-    if (preferOfficialRepositories) {
+    if (preferOfficialReposInCi) {
         // GitHub-hosted runners can reach upstream Maven reliably, so prefer it before the regional mirrors.
         addFabushiOfficialRepositories(includeGradlePluginPortal)
         addFabushiMirrorRepositories()
