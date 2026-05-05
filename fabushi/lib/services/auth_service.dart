@@ -46,6 +46,61 @@ class AuthService {
     };
   }
 
+  static UserModel buildLoginUser(
+    Map<String, dynamic> data, {
+    required String requestedIdentifier,
+  }) {
+    final rawUser = data['user'];
+    final user = rawUser is Map ? Map<String, dynamic>.from(rawUser) : <String, dynamic>{};
+    final resolvedUsername =
+        (user['username'] ?? data['username'] ?? requestedIdentifier).toString();
+    final resolvedEmail =
+        (user['email'] as String?) ??
+        (resolvedUsername.contains('@') ? resolvedUsername : '');
+    final membershipJson = user['membership'];
+
+    return UserModel(
+      username: resolvedUsername,
+      email: resolvedEmail,
+      emailVerified:
+          user['emailVerified'] as bool? ?? user['email_verified'] == true,
+      createdAt:
+          (user['createdAt'] ?? user['created_at'] ?? DateTime.now().toIso8601String())
+              .toString(),
+      wechatOpenid: user['wechatOpenid'] as String?,
+      wechatNickname: user['wechatNickname'] as String?,
+      wechatHeadimgurl: user['wechatHeadimgurl'] as String?,
+      wechatBoundAt: user['wechatBoundAt'] as String?,
+      alipayUserId: user['alipayUserId'] as String?,
+      alipayNickname: user['alipayNickname'] as String?,
+      alipayAvatar: user['alipayAvatar'] as String?,
+      alipayBoundAt: user['alipayBoundAt'] as String?,
+      nickname: user['nickname'] as String?,
+      avatar: user['avatar'] as String?,
+      phoneNumber: (user['phoneNumber'] ?? user['phone_number']) as String?,
+      firebaseUid: (user['firebaseUid'] ?? user['firebase_uid']) as String?,
+      mainPractice: user['mainPractice'] is Map
+          ? Map<String, dynamic>.from(user['mainPractice'] as Map)
+          : null,
+      membership: membershipJson is Map
+          ? MembershipInfo.fromJson(Map<String, dynamic>.from(membershipJson))
+          : MembershipInfo(type: 'expired', isActive: false),
+    );
+  }
+
+  void _refreshUserInfoAfterLogin(String token) {
+    print('开始后台异步刷新用户信息...');
+    _fetchUserInfo()
+        .then((fullUserInfo) async {
+          print('后台刷新成功，更新用户信息: ${fullUserInfo.membership.type}');
+          _currentUser = fullUserInfo;
+          await _saveAuth(token, fullUserInfo);
+        })
+        .catchError((e) {
+          print('后台刷新用户信息失败: $e');
+        });
+  }
+
   Future<void> initialize() async {
     await _loadStoredAuth();
   }
@@ -120,46 +175,25 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
         final token = data['token'] as String;
+        final userInfo = buildLoginUser(
+          data,
+          requestedIdentifier: username,
+        );
 
-        _currentToken = token;
-
-        UserModel userInfo;
         if (data.containsKey('user') && data['user'] != null) {
-          print('使用登录API返回的完整用户信息');
-          userInfo = UserModel.fromJson(data['user']);
+          print('使用登录API返回的用户信息，并允许后续资料刷新失败时继续登录');
         } else if (data.containsKey('username')) {
-          print('登录API返回基本信息，创建临时用户对象');
-          final usernameFromApi = data['username'] as String;
-          userInfo = UserModel(
-            username: usernameFromApi,
-            email: usernameFromApi.contains('@') ? usernameFromApi : '',
-            emailVerified: false,
-            createdAt: DateTime.now().toIso8601String(),
-            membership: MembershipInfo(type: 'expired', isActive: false),
-          );
-
-          await _saveAuth(token, userInfo);
-
-          print('开始后台异步刷新用户信息...');
-          _fetchUserInfo()
-              .then((fullUserInfo) async {
-                print('后台刷新成功，更新用户信息: ${fullUserInfo.membership.type}');
-                _currentUser = fullUserInfo;
-                await _saveAuth(token, fullUserInfo);
-              })
-              .catchError((e) {
-                print('后台刷新用户信息失败: $e');
-              });
-
-          return {'success': true, 'token': token, 'user': userInfo.toJson()};
+          print('登录API返回基本信息，先用最小用户资料完成登录');
         } else {
-          print('登录API未返回用户信息，同步请求用户详细信息');
-          userInfo = await _fetchUserInfo();
+          print('登录API未返回用户信息，回退到请求入参完成首屏登录');
         }
 
+        _currentToken = token;
+        _currentUser = userInfo;
         await _saveAuth(token, userInfo);
+        _refreshUserInfoAfterLogin(token);
 
         return {'success': true, 'token': token, 'user': userInfo.toJson()};
       }
@@ -167,6 +201,14 @@ class AuthService {
       return _failureFromResponse(response, '登录失败');
     } catch (e) {
       print('登录请求失败: $e');
+      if (_currentToken != null && _currentUser != null) {
+        print('登录接口已成功返回，保留当前会话并跳过附加资料刷新失败');
+        return {
+          'success': true,
+          'token': _currentToken,
+          'user': _currentUser!.toJson(),
+        };
+      }
       return {'success': false, 'error': '网络错误，请检查网络连接'};
     }
   }
