@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 
 import '../core/config/app_config.dart';
@@ -9,6 +11,20 @@ import '../core/design_system/app_theme.dart';
 import '../models/auth_model.dart';
 import '../services/http_service.dart';
 import '../services/meditation_session_manager.dart';
+
+class _PreparedAvatarUpload {
+  final String base64;
+  final String fileName;
+  final String contentType;
+  final bool wasCompressed;
+
+  const _PreparedAvatarUpload({
+    required this.base64,
+    required this.fileName,
+    required this.contentType,
+    required this.wasCompressed,
+  });
+}
 
 /// 编辑资料页面
 class EditProfileScreen extends StatefulWidget {
@@ -19,6 +35,8 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
+  static const int _maxAvatarBytes = 3 * 1024 * 1024;
+
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _usernameController;
   late TextEditingController _emailController;
@@ -82,22 +100,103 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       withData: true,
     );
     final file = result?.files.single;
-    final bytes = file?.bytes;
-    if (file == null || bytes == null) return;
+    if (file == null || file.bytes == null) return;
 
-    if (bytes.length > 3 * 1024 * 1024) {
+    final prepared = _prepareAvatarUpload(file);
+    if (prepared == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('头像图片不能超过 3MB')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('头像图片处理失败，请换一张图片重试')),
+      );
       return;
     }
 
     setState(() {
-      _pendingAvatarBase64 = base64Encode(bytes);
-      _pendingAvatarFileName = file.name;
-      _pendingAvatarContentType = _contentTypeForName(file.name);
+      _pendingAvatarBase64 = prepared.base64;
+      _pendingAvatarFileName = prepared.fileName;
+      _pendingAvatarContentType = prepared.contentType;
     });
+
+    if (prepared.wasCompressed && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('头像图片过大，已自动压缩到可上传大小')),
+      );
+    }
+  }
+
+  _PreparedAvatarUpload? _prepareAvatarUpload(PlatformFile file) {
+    final bytes = file.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      return null;
+    }
+
+    if (bytes.length <= _maxAvatarBytes) {
+      return _PreparedAvatarUpload(
+        base64: base64Encode(bytes),
+        fileName: file.name,
+        contentType: _contentTypeForName(file.name),
+        wasCompressed: false,
+      );
+    }
+
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) {
+      return null;
+    }
+
+    const qualities = [88, 80, 72, 64, 56, 48, 40, 32];
+    final originalMaxSide = decoded.width > decoded.height
+        ? decoded.width
+        : decoded.height;
+    var targetMaxSide = originalMaxSide > 1600 ? 1600 : originalMaxSide;
+    Uint8List? encodedBytes;
+
+    while (targetMaxSide >= 720) {
+      final resized = img.copyResize(
+        decoded,
+        width: decoded.width >= decoded.height ? targetMaxSide : null,
+        height: decoded.height > decoded.width ? targetMaxSide : null,
+        interpolation: img.Interpolation.average,
+      );
+
+      for (final quality in qualities) {
+        final candidate = Uint8List.fromList(
+          img.encodeJpg(resized, quality: quality),
+        );
+        if (candidate.length <= _maxAvatarBytes) {
+          encodedBytes = candidate;
+          break;
+        }
+      }
+
+      if (encodedBytes != null) {
+        break;
+      }
+
+      if (targetMaxSide == 720) {
+        break;
+      }
+      final nextSide = (targetMaxSide * 0.8).round();
+      targetMaxSide = nextSide < 720 ? 720 : nextSide;
+    }
+
+    if (encodedBytes == null) {
+      return null;
+    }
+
+    return _PreparedAvatarUpload(
+      base64: base64Encode(encodedBytes),
+      fileName: _compressedAvatarFileName(file.name),
+      contentType: 'image/jpeg',
+      wasCompressed: true,
+    );
+  }
+
+  String _compressedAvatarFileName(String originalName) {
+    final dotIndex = originalName.lastIndexOf('.');
+    final baseName = dotIndex > 0 ? originalName.substring(0, dotIndex) : originalName;
+    final safeBaseName = baseName.trim().isEmpty ? 'avatar' : baseName.trim();
+    return '${safeBaseName}_compressed.jpg';
   }
 
   String _contentTypeForName(String name) {
@@ -304,7 +403,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
           const SizedBox(height: 12),
           const Text(
-            '点击从本地选择头像',
+            '点击从本地选择头像，过大的图片会自动压缩',
             style: TextStyle(color: Colors.white54, fontSize: 12),
           ),
         ],
