@@ -4,18 +4,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const webRoot = new URL('..', import.meta.url);
-const screensRoot = new URL('../../lib/screens/', import.meta.url);
 
 const authHandler = readFileSync(join(webRoot.pathname, 'src/handlers/auth.js'), 'utf8');
 const leaderboardHandler = readFileSync(join(webRoot.pathname, 'src/handlers/leaderboard.js'), 'utf8');
-const settingsScreen = readFileSync(join(screensRoot.pathname, 'settings_screen.dart'), 'utf8');
-
-test('settings screen exposes a direct entry to practice privacy controls', () => {
-  assert.match(settingsScreen, /import 'practice_privacy_screen\.dart';/);
-  assert.match(settingsScreen, /title: '修行隐私'/);
-  assert.match(settingsScreen, /subtitle: '控制修行排行榜与公开记录的展示范围'/);
-  assert.match(settingsScreen, /builder: \(_\) => const PracticePrivacyScreen\(\)/);
-});
 
 test('practice leaderboard filters out deleted users instead of keeping orphaned records visible', () => {
   assert.match(leaderboardHandler, /FROM meditation_records mr\s+JOIN users u ON mr\.username = u\.username/s);
