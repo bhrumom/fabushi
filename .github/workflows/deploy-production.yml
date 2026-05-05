@@ -155,6 +155,13 @@ jobs:
               print('Development D1 database id placeholder not present')
           PY2
 
+      - name: Apply development D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL || vars.CF_EMAIL || vars.CLOUDFLARE_EMAIL }}
+        run: npx --yes wrangler@latest d1 migrations apply DB --env development --remote --yes
+
       - name: Deploy staging Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
@@ -178,6 +185,7 @@ jobs:
       STAGING_TEST_PASSWORD: ${{ secrets.STAGING_TEST_PASSWORD }}
       STAGING_TEST_EMAIL: ${{ vars.STAGING_TEST_EMAIL }}
       STAGING_TEST_PHONE: ${{ vars.STAGING_TEST_PHONE }}
+      STAGING_SOCIAL_TARGET_USERNAME: ${{ vars.STAGING_SOCIAL_TARGET_USERNAME }}
     steps:
       - name: Checkout E2E files
         uses: actions/checkout@v5
@@ -312,6 +320,13 @@ jobs:
 
           print('Verified production deploy artifact no longer mutates routes')
           PY2
+
+      - name: Apply production D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL || vars.CF_EMAIL || vars.CLOUDFLARE_EMAIL }}
+        run: npx --yes wrangler@latest d1 migrations apply DB --env production --remote --yes
 
       - name: Deploy production Worker
         env:
