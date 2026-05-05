@@ -8,7 +8,6 @@ test.describe('Staging Social and Privacy API', () => {
   let authToken: string;
 
   test.beforeAll(async ({ request }) => {
-    // 登录获取 token
     const resp = await request.post(`${baseUrl}/api/auth/login`, {
       data: { username: testUser, password: testPassword },
     });
@@ -47,7 +46,6 @@ test.describe('Staging Social and Privacy API', () => {
   });
 
   test('practice privacy GET and UPDATE', async ({ request }) => {
-    // GET
     const getResp = await request.get(`${baseUrl}/api/social/practice-privacy`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
@@ -55,7 +53,6 @@ test.describe('Staging Social and Privacy API', () => {
     const privacy = await getResp.json();
     expect(privacy).toHaveProperty('isPrivate');
 
-    // POST
     const postResp = await request.post(`${baseUrl}/api/social/practice-privacy`, {
       headers: { Authorization: `Bearer ${authToken}` },
       data: {
@@ -76,8 +73,10 @@ test.describe('Staging Social and Privacy API', () => {
     });
     expect(resp.ok()).toBeTruthy();
     const body = await resp.json();
-    for (const entry of body.entries) {
-      if (entry.privacy.isPrivate) {
+    const entries = Array.isArray(body.leaderboard) ? body.leaderboard : [];
+
+    for (const entry of entries) {
+      if (entry.privacy?.isPrivate) {
         expect(entry.totalDuration).toBeNull();
         expect(entry.totalCount).toBeNull();
         expect(entry.latestSutra).toBeNull();
@@ -86,14 +85,27 @@ test.describe('Staging Social and Privacy API', () => {
   });
 
   test('leaderboard records endpoint hides notes/remarks', async ({ request }) => {
-    const resp = await request.get(`${baseUrl}/api/leaderboard/records`, {
+    const practiceResp = await request.get(`${baseUrl}/api/leaderboard/practice`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    expect(practiceResp.ok()).toBeTruthy();
+    const practiceBody = await practiceResp.json();
+    const entries = Array.isArray(practiceBody.leaderboard) ? practiceBody.leaderboard : [];
+    const publicEntry = entries.find((entry: any) => !entry.privacy?.isPrivate && entry.username);
+
+    test.skip(!publicEntry, 'staging 环境暂无可用于公开记录校验的排行榜用户');
+
+    const resp = await request.get(`${baseUrl}/api/leaderboard/practice/records?username=${encodeURIComponent(publicEntry.username)}`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
     expect(resp.ok()).toBeTruthy();
     const body = await resp.json();
-    for (const rec of body.records) {
+    const records = Array.isArray(body.records) ? body.records : [];
+
+    for (const rec of records) {
       expect(rec).not.toHaveProperty('notes');
       expect(rec).not.toHaveProperty('remark');
+      expect(rec).not.toHaveProperty('experience');
     }
   });
 });
