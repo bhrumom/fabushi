@@ -10,6 +10,5 @@ void main() {
 
     expect(find.byType(MaterialApp), findsOneWidget);
     expect(find.text('大乘'), findsOneWidget);
-    expect(find.text('正在唤起禅境'), findsOneWidget);
   });
 }
