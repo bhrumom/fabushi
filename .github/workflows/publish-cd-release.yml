@@ -258,7 +258,7 @@ jobs:
           team_id="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$profile_plist")"
           cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
 
-          bundle_id="$(grep -m 1 'PRODUCT_BUNDLE_IDENTIFIER = ' ios/Runner.xcodeproj/project.pbxproj | sed -E 's/.*PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/\\1/' | tr -d ' ')"
+          bundle_id="$(grep -m 1 'PRODUCT_BUNDLE_IDENTIFIER = ' ios/Runner.xcodeproj/project.pbxproj | sed -E 's/.*PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/\1/' | tr -d ' ')"
           if [ -z "$bundle_id" ]; then
             echo "Could not detect PRODUCT_BUNDLE_IDENTIFIER from ios/Runner.xcodeproj/project.pbxproj" >&2
             exit 1
