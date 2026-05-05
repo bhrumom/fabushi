@@ -67,6 +67,40 @@ class AssetLoaderService {
     }
   }
 
+  /// 如果本机已经存在佛像模型，就提前把它放进内存缓存，避免首次进入禅室再阻塞等待。
+  ///
+  /// 这里不会触发网络请求，也不会在本地不存在时主动下载大文件。
+  static Future<void> prewarmBuddhaModelFromPersistentCache() async {
+    initialize();
+    const fileName = AppConfig.buddhaModelAssetPath;
+
+    if (_memoryCache.containsKey(fileName)) {
+      return;
+    }
+
+    try {
+      final cached = await _loadFromPersistentStorage(fileName);
+      if (cached == null || cached.isEmpty) {
+        return;
+      }
+
+      _assertAssetSizeIsValid(
+        fileName,
+        cached.lengthInBytes,
+        minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
+        source: 'persistent-prewarm',
+      );
+
+      _memoryCache[fileName] = cached;
+      debugPrint(
+        '⚡ [AssetLoader] 已预热本地佛像模型缓存: '
+        '$fileName (${cached.lengthInBytes} bytes)',
+      );
+    } catch (e) {
+      debugPrint('⚠️ [AssetLoader] 预热本地佛像模型失败: $e');
+    }
+  }
+
   /// 加载佛像模型
   ///
   /// 返回模型数据的 Uint8List,可以传递给 flutter_scene 解析
@@ -78,7 +112,6 @@ class AssetLoaderService {
     return await _loadAsset(
       AppConfig.buddhaModelAssetPath,
       onProgress: onProgress,
-      validateRemoteSize: true,
       minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
     );
   }
@@ -95,7 +128,6 @@ class AssetLoaderService {
     String fileName, {
     void Function(double progress)? onProgress,
     bool forceRefresh = false,
-    bool validateRemoteSize = false,
     int? minExpectedBytes,
   }) async {
     // 1. 检查内存缓存
@@ -108,7 +140,6 @@ class AssetLoaderService {
     // 2. 检查是否有正在进行的加载任务
     if (_loadingFutures.containsKey(fileName)) {
       debugPrint('⏳ [AssetLoader] 发现正在进行的加载任务，合并请求: $fileName');
-      // 注意：这里无法直接合并 onProgress，但后续请求会共享最终结果
       return _loadingFutures[fileName]!;
     }
 
@@ -117,7 +148,6 @@ class AssetLoaderService {
       fileName,
       onProgress: onProgress,
       forceRefresh: forceRefresh,
-      validateRemoteSize: validateRemoteSize,
       minExpectedBytes: minExpectedBytes,
     );
     _loadingFutures[fileName] = loadFuture;
@@ -126,7 +156,6 @@ class AssetLoaderService {
       final result = await loadFuture;
       return result;
     } finally {
-      // 任务完成后移除 Future 缓存
       _loadingFutures.remove(fileName);
     }
   }
@@ -136,17 +165,12 @@ class AssetLoaderService {
     String fileName, {
     void Function(double progress)? onProgress,
     bool forceRefresh = false,
-    bool validateRemoteSize = false,
     int? minExpectedBytes,
   }) async {
-    // 2.1 检查本地持久化文件（含完整性校验）
+    // 先读本地正式缓存。
+    // 这些文件在下载完成时已经做过完整性校验，这里不再为了“再确认一次”去发 HEAD 请求，
+    // 否则本机已有佛像时首次进入禅室仍会被网络校验卡住。
     if (!forceRefresh) {
-      if (validateRemoteSize) {
-        await _invalidatePersistentCacheIfStale(
-          fileName,
-          minExpectedBytes: minExpectedBytes,
-        );
-      }
       final cached = await _loadFromPersistentStorage(fileName);
       if (cached != null && cached.isNotEmpty) {
         _assertAssetSizeIsValid(
@@ -164,7 +188,7 @@ class AssetLoaderService {
       }
     }
 
-    // 3. 检查是否有未完成的下载（.downloading 文件）
+    // 检查是否有未完成的下载（.downloading 文件）
     if (!kIsWeb) {
       final hasPartial = await _hasPartialDownload(fileName);
       if (hasPartial) {
@@ -172,7 +196,6 @@ class AssetLoaderService {
       }
     }
 
-    // 4. 执行断点续传下载
     debugPrint('📥 [AssetLoader] 开始下载: $fileName');
     final data = await _downloadResumable(
       fileName,
@@ -187,9 +210,7 @@ class AssetLoaderService {
       source: 'download',
     );
 
-    // 5. 更新内存缓存
     _memoryCache[fileName] = data;
-
     return data;
   }
 
@@ -200,8 +221,6 @@ class AssetLoaderService {
         'Web platform does not support local storage directory',
       );
     }
-    // 使用 ApplicationSupportDirectory 而不是 CacheDirectory
-    // 这样系统清理或应用更新时不会删除模型文件
     final appDir = await getApplicationSupportDirectory();
     final modelDir = Directory('${appDir.path}/assets_cache/models');
     if (!await modelDir.exists()) {
@@ -223,79 +242,7 @@ class AssetLoaderService {
     }
   }
 
-  /// 通过 HEAD 请求获取服务端文件大小
-  static Future<int?> _getRemoteFileSize(String fileName) async {
-    try {
-      final url = '$cdnBaseUrl$fileName';
-      final response = await http
-          .head(Uri.parse(url))
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final contentLength = response.headers['content-length'];
-        if (contentLength != null) {
-          return int.tryParse(contentLength);
-        }
-      }
-    } catch (e) {
-      debugPrint('⚠️ [AssetLoader] HEAD 请求失败: $e');
-    }
-    return null;
-  }
-
-  static Future<void> _invalidatePersistentCacheIfStale(
-    String fileName, {
-    int? minExpectedBytes,
-  }) async {
-    if (kIsWeb) return;
-
-    try {
-      final remoteSize = await _getRemoteFileSize(fileName);
-      if (remoteSize == null || remoteSize <= 0) return;
-
-      _assertAssetSizeIsValid(
-        fileName,
-        remoteSize,
-        minExpectedBytes: minExpectedBytes,
-        source: 'remote-head',
-      );
-
-      final dir = await _getStorageDirectory();
-      final safeFileName = fileName.replaceAll('/', '_');
-      final file = File('${dir.path}/$safeFileName');
-      final tempFile = File('${dir.path}/$safeFileName.downloading');
-
-      if (await file.exists()) {
-        final localSize = await file.length();
-        if (localSize != remoteSize ||
-            (minExpectedBytes != null && localSize < minExpectedBytes)) {
-          debugPrint(
-            '♻️ [AssetLoader] 检测到佛像模型缓存过期，删除旧缓存: '
-            '$fileName (local=$localSize, remote=$remoteSize)',
-          );
-          await file.delete();
-          _memoryCache.remove(fileName);
-        }
-      }
-
-      if (await tempFile.exists()) {
-        final tempSize = await tempFile.length();
-        if (tempSize > remoteSize) {
-          debugPrint(
-            '♻️ [AssetLoader] 检测到临时下载文件与远端不匹配，删除续传缓存: '
-            '$fileName (temp=$tempSize, remote=$remoteSize)',
-          );
-          await tempFile.delete();
-        }
-      }
-    } catch (e) {
-      debugPrint('⚠️ [AssetLoader] 校验佛像模型缓存失败: $e');
-    }
-  }
-
   /// 从本地持久化存储加载
-  ///
-  /// 注意：已保存到正式文件路径的资源在下载完成时已通过完整性校验，
-  /// 这里不再发 HEAD 请求重复校验，避免不必要的网络延迟。
   static Future<Uint8List?> _loadFromPersistentStorage(String fileName) async {
     if (kIsWeb) return null;
 
@@ -309,7 +256,6 @@ class AssetLoaderService {
         if (length > 0) {
           return await file.readAsBytes();
         } else {
-          // 0字节文件，视为无效，删除
           await file.delete();
         }
       }
@@ -326,7 +272,6 @@ class AssetLoaderService {
     void Function(double progress)? onProgress,
     int? minExpectedBytes,
   }) async {
-    // Web 平台不支持文件操作，直接普通下载
     if (kIsWeb) {
       return _downloadSimple(
         fileName,
@@ -349,8 +294,6 @@ class AssetLoaderService {
 
     try {
       final client = http.Client();
-
-      // 先进行 HEAD 请求获取确切的总大小以防 client.send 剥离 Content-Length
       int? expectedContentLength;
       try {
         final headRes = await client
@@ -366,8 +309,6 @@ class AssetLoaderService {
       } catch (_) {}
 
       final request = http.Request('GET', Uri.parse(url));
-
-      // 添加 Range 头
       if (downloadedBytes > 0) {
         request.headers['Range'] = 'bytes=$downloadedBytes-';
       }
@@ -388,7 +329,6 @@ class AssetLoaderService {
           '📥 [AssetLoader] 总大小: $totalLength bytes (Stream: ${response.contentLength}, HEAD: $expectedContentLength)',
         );
 
-        // 如果是 200 OK，说明服务器不支持 Range 或返回了全部内容，需要重置
         final isResuming = response.statusCode == 206;
         final fileMode = isResuming ? FileMode.append : FileMode.write;
 
@@ -398,7 +338,6 @@ class AssetLoaderService {
         }
 
         final sink = tempFile.openWrite(mode: fileMode);
-
         int received = downloadedBytes;
 
         await for (final chunk in response.stream) {
@@ -407,7 +346,6 @@ class AssetLoaderService {
           if (totalLength > 0) {
             onProgress?.call(received / totalLength);
           } else {
-            // 如果真获取不到总大小，也提供一个伪装的变动进度以表明没有卡死
             onProgress?.call((received % 10000000) / 10000000.0 * 0.99);
           }
         }
@@ -416,7 +354,6 @@ class AssetLoaderService {
         await sink.close();
         client.close();
 
-        // 验证下载完整性
         final downloadedSize = await tempFile.length();
         if (totalLength > 0 && downloadedSize != totalLength) {
           debugPrint(
@@ -432,7 +369,6 @@ class AssetLoaderService {
           source: 'downloaded-file',
         );
 
-        // 下载完成，重命名为正式文件
         if (await finalFile.exists()) {
           await finalFile.delete();
         }
@@ -443,11 +379,9 @@ class AssetLoaderService {
 
         return await finalFile.readAsBytes();
       } else if (response.statusCode == 416) {
-        // Range Not Satisfiable - 可能已经下载完成了
         debugPrint('⚠️ [AssetLoader] Range 不满足 (416)，可能已下载完成，尝试验证');
         client.close();
         if (await tempFile.exists()) {
-          // 尝试直接使用现有临时文件
           await tempFile.rename(finalFile.path);
           return await finalFile.readAsBytes();
         }
@@ -458,7 +392,6 @@ class AssetLoaderService {
       }
     } catch (e) {
       debugPrint('❌ [AssetLoader] 下载出错: $e');
-      // 如果出错，保留 .downloading 文件以便下次续传
       rethrow;
     }
   }
@@ -509,7 +442,6 @@ class AssetLoaderService {
       }
     } catch (e) {
       debugPrint('❌ [AssetLoader] 简单下载失败: $e');
-      // 降级策略: 尝试从默认 CDN
       if (cdnBaseUrl != defaultCdnBaseUrl) {
         final fallbackUrl = '$defaultCdnBaseUrl$fileName';
         debugPrint('🔄 [AssetLoader] 尝试从默认 CDN 下载: $fallbackUrl');
@@ -561,7 +493,6 @@ class AssetLoaderService {
   static Future<void> forceRedownload() async {
     debugPrint('↻ [AssetLoader] 强制清除缓存并重新下载');
     await clearCache();
-    // 下次调用 loadBuddhaModel 时会自动下载
   }
 
   /// 清除所有缓存
@@ -585,12 +516,10 @@ class AssetLoaderService {
   static Future<int> getCacheSize() async {
     int size = 0;
 
-    // 内存缓存
     for (final data in _memoryCache.values) {
       size += data.length;
     }
 
-    // 文件缓存
     if (!kIsWeb) {
       try {
         final dir = await _getStorageDirectory();
