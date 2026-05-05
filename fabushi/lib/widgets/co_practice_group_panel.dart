@@ -70,6 +70,39 @@ class _CoPracticeGroupPanelState extends State<CoPracticeGroupPanel> {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFD4AF37).withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFFD4AF37).withValues(alpha: 0.24),
+            ),
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '共修小组入口',
+                style: TextStyle(
+                  color: Color(0xFFD4AF37),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              SizedBox(height: 6),
+              Text(
+                '先搜索小组名、组主或群号，点开后即可申请加入；创建者点开自己的小组，就能在详情页里看到待审批成员。',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
@@ -78,7 +111,7 @@ class _CoPracticeGroupPanelState extends State<CoPracticeGroupPanel> {
                 onChanged: _onSearchChanged,
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
-                  hintText: '搜索共修小组',
+                  hintText: '搜索小组名、组主或群号 #123',
                   hintStyle: const TextStyle(color: Colors.white38),
                   prefixIcon: const Icon(Icons.search, color: Colors.white54),
                   suffixIcon: _searchController.text.isEmpty
@@ -214,6 +247,18 @@ class _CoPracticeGroupTile extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 6,
                 children: [
+                  Text(
+                    '组主 ${group.ownerName}',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                  _InfoPill(icon: Icons.tag_outlined, text: '群号 #${group.id}'),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
                   _InfoPill(
                     icon: Icons.timer_outlined,
                     text: '累计 ${_formatMinutes(group.totalDuration)}',
@@ -230,6 +275,20 @@ class _CoPracticeGroupTile extends StatelessWidget {
                     icon: Icons.group_outlined,
                     text: '${group.memberCount} 人',
                   ),
+                  if (group.myRole == 'owner')
+                    _InfoPill(
+                      icon: Icons.admin_panel_settings_outlined,
+                      text: group.pendingCount > 0
+                          ? '待审批 ${group.pendingCount}'
+                          : '组主管理',
+                    ),
+                  if (group.myStatus == null ||
+                      group.myStatus == 'removed' ||
+                      group.myStatus == 'rejected')
+                    _InfoPill(
+                      icon: Icons.travel_explore_outlined,
+                      text: group.requireApproval ? '点开申请加入' : '点开直接加入',
+                    ),
                 ],
               ),
               if (group.myWarningMessage?.isNotEmpty == true) ...[
@@ -466,6 +525,14 @@ class _CoPracticeGroupDetailSheetState
                     runSpacing: 8,
                     children: [
                       _InfoPill(
+                        icon: Icons.person_outline,
+                        text: '组主 ${group.ownerName}',
+                      ),
+                      _InfoPill(
+                        icon: Icons.tag_outlined,
+                        text: '群号 #${group.id}',
+                      ),
+                      _InfoPill(
                         icon: Icons.timer_outlined,
                         text: '累计 ${_formatMinutes(group.totalDuration)}',
                       ),
@@ -478,6 +545,13 @@ class _CoPracticeGroupDetailSheetState
                         text:
                             '累计 ${group.cumulativeMissLimit} / 连续 ${group.consecutiveMissLimit}',
                       ),
+                      if (group.myRole == 'owner')
+                        _InfoPill(
+                          icon: Icons.mark_email_unread_outlined,
+                          text: group.pendingCount > 0
+                              ? '待审批 ${group.pendingCount} 人'
+                              : '暂无待审批',
+                        ),
                     ],
                   ),
                   if (group.myWarningMessage?.isNotEmpty == true) ...[
@@ -499,6 +573,39 @@ class _CoPracticeGroupDetailSheetState
                         ),
                       ),
                     ),
+                  if (group.myStatus == 'pending') ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.orange.withValues(alpha: 0.28),
+                        ),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons.hourglass_top,
+                            color: Colors.orange,
+                            size: 18,
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '申请已经发出，创建者点开这个小组详情页，就能在下方“待同意成员”里审批。',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   if (detail.pendingMembers.isNotEmpty) ...[
                     const SizedBox(height: 18),
                     const Text(
@@ -515,6 +622,38 @@ class _CoPracticeGroupDetailSheetState
                         isWorking: _isWorking,
                         onApprove: () => _review(member.username, true),
                         onReject: () => _review(member.username, false),
+                      ),
+                    ),
+                  ],
+                  if (group.myRole == 'owner' &&
+                      detail.pendingMembers.isEmpty) ...[
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons.admin_panel_settings_outlined,
+                            color: Color(0xFFD4AF37),
+                            size: 18,
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '这里就是小组管理与审批入口。别人申请加入后，会直接出现在这里。',
+                              style: TextStyle(
+                                color: Colors.white60,
+                                fontSize: 12,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
