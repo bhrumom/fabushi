@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,10 +9,12 @@ import '../screens/eula_screen.dart';
 import '../screens/main_navigation_screen.dart';
 import '../services/app_initializer.dart';
 import '../services/app_settings.dart';
+import '../services/asset_loader_service.dart';
 import '../services/error_report_service.dart';
 import '../services/eula_service.dart';
 import '../services/platform_service.dart';
 import '../widgets/model_selection_dialog.dart';
+import '../widgets/startup_splash_screen.dart';
 
 class AppWrapper extends StatefulWidget {
   const AppWrapper({Key? key}) : super(key: key);
@@ -25,6 +29,7 @@ class _AppWrapperState extends State<AppWrapper> {
   bool _isInitialized = false;
   bool _initStarted = false;
   bool _isSubmittingFeedback = false;
+  String _startupPhase = '正在唤起禅境';
   String? _initError;
   bool _needsModelSetup = false;
   bool _needsEula = false;
@@ -40,19 +45,49 @@ class _AppWrapperState extends State<AppWrapper> {
     }
   }
 
+  void _setStartupPhase(String phase) {
+    if (!mounted || _startupPhase == phase) {
+      return;
+    }
+    setState(() => _startupPhase = phase);
+  }
+
+  void _ensureBackgroundInitialization() {
+    if (AppInitializer.isInitialized) {
+      return;
+    }
+
+    unawaited(
+      _runStartupSideEffect(
+        stage: 'background_app_initializer',
+        action: AppInitializer.initialize,
+      ),
+    );
+  }
+
+  void _prewarmMeditationAssets() {
+    if (kIsWeb) {
+      return;
+    }
+
+    Future.delayed(const Duration(milliseconds: 450), () {
+      unawaited(AssetLoaderService.prewarmBuddhaModelFromPersistentCache());
+    });
+  }
+
   Future<void> _initializeApp() async {
     try {
       final authModel = Provider.of<AuthModel>(context, listen: false);
 
+      _setStartupPhase('正在恢复登录状态');
       final bool loggedInFromUrl = await _processUrlHash(authModel);
 
       if (!loggedInFromUrl) {
         await authModel.loadStoredAuth();
       }
 
-      if (!AppInitializer.isInitialized) {
-        await AppInitializer.initialize();
-      }
+      _setStartupPhase('正在整理本地设置');
+      _ensureBackgroundInitialization();
 
       final needsEula = !await _guardStartupStep<bool>(
         stage: 'check_eula_acceptance',
@@ -84,12 +119,15 @@ class _AppWrapperState extends State<AppWrapper> {
         );
       }
 
+      _setStartupPhase('正在展开首页');
       if (mounted) {
         setState(() {
           _isInitialized = true;
           _needsEula = needsEula;
           _needsModelSetup = needsModelSetup;
         });
+
+        _prewarmMeditationAssets();
 
         if (needsEula) {
           await _showEulaScreen();
@@ -460,18 +498,7 @@ class _AppWrapperState extends State<AppWrapper> {
   @override
   Widget build(BuildContext context) {
     if (!_isInitialized) {
-      return const Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('正在初始化应用...'),
-            ],
-          ),
-        ),
-      );
+      return StartupSplashScreen(phaseLabel: _startupPhase);
     }
 
     if (_initError != null) {
@@ -526,6 +553,7 @@ class _AppWrapperState extends State<AppWrapper> {
                             setState(() {
                               _initStarted = false;
                               _isInitialized = false;
+                              _startupPhase = '正在重新唤起禅境';
                               _initError = null;
                               _initReport = null;
                             });
