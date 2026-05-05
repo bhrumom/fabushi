@@ -281,8 +281,8 @@ jobs:
       - name: Install E2E dependencies
         run: npm ci
 
-      - name: Validate Playwright configuration and test discovery
-        run: npx playwright test --list
+      - name: Validate the staging E2E script used by CD
+        run: npm test -- --list
 
   workflow-guardrails:
     name: Workflow guardrails
