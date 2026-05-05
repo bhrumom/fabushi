@@ -6,11 +6,12 @@ from pathlib import Path
 import re
 import sys
 
-workflow = Path('.github/workflows/publish-cd-release.yml').read_text(encoding='utf-8')
+publish_workflow = Path('.github/workflows/publish-cd-release.yml').read_text(encoding='utf-8')
+deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(encoding='utf-8')
 
 checkout_match = re.search(
     r"- name: Checkout source for version metadata\n(?P<body>.*?)\n\s*- name: Prepare release assets",
-    workflow,
+    publish_workflow,
     re.DOTALL,
 )
 if not checkout_match:
@@ -33,14 +34,30 @@ release_asset_requirements = (
     'ios_signing_not_configured',
 )
 for required in release_asset_requirements:
-    if required not in workflow:
+    if required not in publish_workflow:
         missing.append(required)
+
+expected_migration_commands = (
+    'run: npx --yes wrangler@latest d1 migrations apply DB --env development --remote',
+    'run: npx --yes wrangler@latest d1 migrations apply DB --env production --remote',
+)
+for required in expected_migration_commands:
+    if required not in deploy_workflow:
+        missing.append(required)
+
+invalid_migration_commands = (
+    'run: npx --yes wrangler@latest d1 migrations apply DB --env development --remote --yes',
+    'run: npx --yes wrangler@latest d1 migrations apply DB --env production --remote --yes',
+)
+for invalid in invalid_migration_commands:
+    if invalid in deploy_workflow:
+        missing.append(f'invalid command still present: {invalid}')
 
 if missing:
     sys.stderr.write(
-        'publish-cd-release.yml is missing required release guardrails: ' + ', '.join(missing) + '\n'
+        'workflow guardrails are missing required protections: ' + ', '.join(missing) + '\n'
     )
     raise SystemExit(1)
 
-print('publish-cd-release checkout and TestFlight evidence guardrails are in place')
+print('publish release and deploy workflow guardrails are in place')
 PY
