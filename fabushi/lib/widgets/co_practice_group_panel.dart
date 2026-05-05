@@ -249,15 +249,9 @@ class _CoPracticeGroupTile extends StatelessWidget {
                 children: [
                   Text(
                     '组主 ${group.ownerName}',
-                    style: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 12,
-                    ),
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
                   ),
-                  _InfoPill(
-                    icon: Icons.tag_outlined,
-                    text: '群号 #${group.id}',
-                  ),
+                  _InfoPill(icon: Icons.tag_outlined, text: '群号 #${group.id}'),
                 ],
               ),
               const SizedBox(height: 10),
@@ -631,7 +625,8 @@ class _CoPracticeGroupDetailSheetState
                       ),
                     ),
                   ],
-                  if (group.myRole == 'owner' && detail.pendingMembers.isEmpty) ...[
+                  if (group.myRole == 'owner' &&
+                      detail.pendingMembers.isEmpty) ...[
                     const SizedBox(height: 18),
                     Container(
                       padding: const EdgeInsets.all(12),
