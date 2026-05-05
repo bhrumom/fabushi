@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'keep_alive_guide_screen.dart';
+import 'practice_privacy_screen.dart';
 import '../services/api_client.dart';
 import '../services/app_settings.dart';
 import '../services/llm_model_config.dart';
@@ -446,6 +447,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         );
                       }
                     },
+                  ),
+
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.visibility_outlined,
+                    iconColor: Colors.purpleAccent,
+                    title: '修行隐私',
+                    subtitle: '控制修行排行榜与公开记录的展示范围',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const PracticePrivacyScreen(),
+                      ),
+                    ),
                   ),
 
                   _buildSettingItem(
