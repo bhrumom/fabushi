@@ -1,12 +1,14 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../models/auth_model.dart';
+import '../screens/eula_screen.dart';
+import '../screens/main_navigation_screen.dart';
 import '../services/app_initializer.dart';
 import '../services/app_settings.dart';
+import '../services/error_report_service.dart';
 import '../services/eula_service.dart';
-import '../screens/main_navigation_screen.dart';
-import '../screens/eula_screen.dart';
 import '../services/platform_service.dart';
 import '../widgets/model_selection_dialog.dart';
 
@@ -18,21 +20,20 @@ class AppWrapper extends StatefulWidget {
 }
 
 class _AppWrapperState extends State<AppWrapper> {
-  // 模型功能当前在产品内隐藏；启动时也不要再弹出模型选择引导。
-  // 后续重新开放模型功能时，将这里改为 true 即可恢复首启引导。
   static bool get _modelSetupUiEnabled => false;
 
   bool _isInitialized = false;
   bool _initStarted = false;
+  bool _isSubmittingFeedback = false;
   String? _initError;
   bool _needsModelSetup = false;
   bool _needsEula = false;
+  AppErrorReport? _initReport;
   final PlatformService _platformService = PlatformServiceFactory.create();
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Ensure initialization runs only once.
     if (!_initStarted) {
       _initStarted = true;
       _initializeApp();
@@ -41,37 +42,48 @@ class _AppWrapperState extends State<AppWrapper> {
 
   Future<void> _initializeApp() async {
     try {
-      // didChangeDependencies is the safe place to use Provider.of with context.
       final authModel = Provider.of<AuthModel>(context, listen: false);
 
-      // 1. Highest priority: check for login info in the URL hash.
       final bool loggedInFromUrl = await _processUrlHash(authModel);
 
-      // 2. If not logged in from URL, try to load from local storage.
       if (!loggedInFromUrl) {
         await authModel.loadStoredAuth();
       }
 
-      // 3. Perform other general app initializations.
       if (!AppInitializer.isInitialized) {
         await AppInitializer.initialize();
       }
 
-      // 4. 检查是否需要 EULA 同意
-      final needsEula = !await EulaService.isAccepted();
+      final needsEula = !await _guardStartupStep<bool>(
+        stage: 'check_eula_acceptance',
+        action: EulaService.isAccepted,
+        fallbackValue: true,
+      );
 
-      // 5. 检查是否需要模型设置引导
-      final needsModelSetup = _modelSetupUiEnabled
-          ? await AppSettings.isFirstLaunch() &&
-                !await AppSettings.isModelSetupComplete()
-          : false;
-
-      if (!_modelSetupUiEnabled) {
-        await AppSettings.setFirstLaunchComplete();
-        await AppSettings.setModelSetupComplete(true);
+      bool needsModelSetup = false;
+      if (_modelSetupUiEnabled) {
+        final isFirstLaunch = await _guardStartupStep<bool>(
+          stage: 'check_first_launch',
+          action: AppSettings.isFirstLaunch,
+          fallbackValue: false,
+        );
+        final isModelSetupComplete = await _guardStartupStep<bool>(
+          stage: 'check_model_setup_complete',
+          action: AppSettings.isModelSetupComplete,
+          fallbackValue: true,
+        );
+        needsModelSetup = isFirstLaunch && !isModelSetupComplete;
+      } else {
+        await _runStartupSideEffect(
+          stage: 'mark_first_launch_complete',
+          action: AppSettings.setFirstLaunchComplete,
+        );
+        await _runStartupSideEffect(
+          stage: 'mark_model_setup_complete',
+          action: () => AppSettings.setModelSetupComplete(true),
+        );
       }
 
-      // If we are still mounted, update state to trigger rebuild to the main UI.
       if (mounted) {
         setState(() {
           _isInitialized = true;
@@ -79,29 +91,67 @@ class _AppWrapperState extends State<AppWrapper> {
           _needsModelSetup = needsModelSetup;
         });
 
-        // 首先检查 EULA
         if (needsEula) {
           await _showEulaScreen();
         }
 
-        // 然后显示模型选择引导
         if (needsModelSetup && mounted) {
           _showModelSetupDialog();
         }
       }
-    } catch (e) {
-      debugPrint('Error during app initialization: $e');
+    } catch (error, stackTrace) {
+      debugPrint('Error during app initialization: $error');
+      final report = await ErrorReportService.instance.recordError(
+        error,
+        stackTrace: stackTrace,
+        stage: 'app_wrapper_initialize',
+        source: 'AppWrapper._initializeApp',
+        fatal: true,
+      );
       if (mounted) {
         setState(() {
-          _initError = e.toString();
-          _isInitialized =
-              true; // Mark as initialized to show the error screen.
+          _initError = report.errorText;
+          _initReport = report;
+          _isInitialized = true;
         });
       }
     }
   }
 
-  /// 显示 EULA 同意页面
+  Future<T> _guardStartupStep<T>({
+    required String stage,
+    required Future<T> Function() action,
+    required T fallbackValue,
+  }) async {
+    try {
+      return await action();
+    } catch (error, stackTrace) {
+      await ErrorReportService.instance.recordError(
+        error,
+        stackTrace: stackTrace,
+        stage: stage,
+        source: 'AppWrapper.startupGuard',
+      );
+      return fallbackValue;
+    }
+  }
+
+  Future<void> _runStartupSideEffect({
+    required String stage,
+    required Future<void> Function() action,
+  }) async {
+    try {
+      await action();
+    } catch (error, stackTrace) {
+      await ErrorReportService.instance.recordError(
+        error,
+        stackTrace: stackTrace,
+        stage: stage,
+        source: 'AppWrapper.startupSideEffect',
+      );
+    }
+  }
+
   Future<void> _showEulaScreen() async {
     if (!mounted) return;
 
@@ -112,9 +162,7 @@ class _AppWrapperState extends State<AppWrapper> {
     }
   }
 
-  /// 显示首次启动模型选择引导
   Future<void> _showModelSetupDialog() async {
-    // 延迟一下，确保 UI 已经完全渲染
     await Future.delayed(const Duration(milliseconds: 500));
 
     if (!mounted) return;
@@ -124,8 +172,10 @@ class _AppWrapperState extends State<AppWrapper> {
       isFirstLaunch: true,
     );
 
-    // 无论是否选择了模型，都标记首次启动已完成
-    await AppSettings.setFirstLaunchComplete();
+    await _runStartupSideEffect(
+      stage: 'mark_first_launch_complete_after_dialog',
+      action: AppSettings.setFirstLaunchComplete,
+    );
 
     if (result != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -143,6 +193,184 @@ class _AppWrapperState extends State<AppWrapper> {
     }
   }
 
+  Future<void> _showStartupFeedbackDialog() async {
+    final report = _initReport ?? ErrorReportService.instance.lastReport;
+    if (report == null) {
+      return;
+    }
+
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    final titleController = TextEditingController(text: report.suggestedTitle);
+    final descriptionController = TextEditingController();
+    final contactController = TextEditingController(
+      text: authModel.currentUser?.email ?? '',
+    );
+    String? validationMessage;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            Future<void> handleSubmit() async {
+              final title = titleController.text.trim();
+              final description = descriptionController.text.trim();
+              final contact = contactController.text.trim();
+
+              if (title.isEmpty) {
+                setDialogState(() => validationMessage = '请填写问题标题');
+                return;
+              }
+
+              setDialogState(() => validationMessage = null);
+              if (mounted) {
+                setState(() => _isSubmittingFeedback = true);
+              }
+
+              final result = await ErrorReportService.instance.submitLastReport(
+                title: title,
+                userDescription: description,
+                contact: contact,
+                authToken: authModel.authToken,
+              );
+
+              if (!mounted) return;
+              setState(() => _isSubmittingFeedback = false);
+
+              if (Navigator.of(dialogContext).canPop()) {
+                Navigator.of(dialogContext).pop();
+              }
+
+              final success = result['success'] == true;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    success
+                        ? (result['message'] ?? '问题反馈已提交')
+                        : (result['error'] ?? '反馈提交失败，请稍后重试'),
+                  ),
+                  backgroundColor: success ? Colors.green : Colors.red,
+                ),
+              );
+            }
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E1E1E),
+              title: const Text('反馈启动异常', style: TextStyle(color: Colors.white)),
+              content: SizedBox(
+                width: 420,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '提交后会自动创建 GitHub Issue，并附带已采集到的错误信息。',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: titleController,
+                        enabled: !_isSubmittingFeedback,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: '问题标题',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.04),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: descriptionController,
+                        enabled: !_isSubmittingFeedback,
+                        style: const TextStyle(color: Colors.white),
+                        minLines: 3,
+                        maxLines: 6,
+                        decoration: InputDecoration(
+                          labelText: '补充说明（选填）',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          hintText: '比如：点击启动后立刻出现、是否刚更新版本、是否能稳定复现。',
+                          hintStyle: const TextStyle(color: Colors.white38),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.04),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: contactController,
+                        enabled: !_isSubmittingFeedback,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: '联系方式（选填）',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.04),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.04),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Text(
+                          '已采集摘要：${report.summary}',
+                          style: const TextStyle(color: Colors.white60, fontSize: 12),
+                        ),
+                      ),
+                      if (validationMessage != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          validationMessage!,
+                          style: const TextStyle(color: Colors.redAccent),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: _isSubmittingFeedback
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: _isSubmittingFeedback ? null : handleSubmit,
+                  child: _isSubmittingFeedback
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('提交反馈'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      titleController.dispose();
+      descriptionController.dispose();
+      contactController.dispose();
+    });
+  }
+
   Future<bool> _processUrlHash(AuthModel authModel) async {
     if (kIsWeb) {
       try {
@@ -151,12 +379,9 @@ class _AppWrapperState extends State<AppWrapper> {
         if (uri.fragment.isNotEmpty) {
           final params = Uri.splitQueryString(uri.fragment);
 
-          // 处理错误情况
           if (params['error'] != null) {
-            final error = params['error'];
             final errorMessage = params['error_message'] ?? '发生未知错误';
 
-            // 显示错误信息
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -167,12 +392,10 @@ class _AppWrapperState extends State<AppWrapper> {
               );
             }
 
-            // Clean the URL hash.
             _platformService.replaceHistoryState('/');
-            return false; // 不认为登录成功
+            return false;
           }
 
-          // 处理支付宝绑定情况
           if (params['alipay_auth_code'] != null &&
               params['needs_binding'] == 'true') {
             final authCode = params['alipay_auth_code']!;
@@ -180,7 +403,6 @@ class _AppWrapperState extends State<AppWrapper> {
             final nickname = params['alipay_nickname'] ?? '';
             final avatar = params['alipay_avatar'] ?? '';
 
-            // 导航到支付宝绑定页面
             if (mounted) {
               Navigator.of(context).pushNamed(
                 '/alipay-binding',
@@ -193,23 +415,18 @@ class _AppWrapperState extends State<AppWrapper> {
               );
             }
 
-            // Clean the URL hash.
             _platformService.replaceHistoryState('/');
-            return false; // 不自动登录，等待用户绑定
+            return false;
           }
 
-          // 处理直接登录情况 - 支持支付宝登录和其他登录方式
           final token = params['token'];
           final username = params['username'];
           final loginMethod = params['login_method'] ?? 'traditional';
 
           if (token != null && username != null) {
             await authModel.setTokenDirectly(token, username);
-
-            // Clean the URL hash.
             _platformService.replaceHistoryState('/');
 
-            // 显示成功消息
             String welcomeMessage = '登录成功！欢迎 $username';
             if (loginMethod == 'alipay') {
               welcomeMessage = '支付宝登录成功！欢迎 $username';
@@ -224,14 +441,14 @@ class _AppWrapperState extends State<AppWrapper> {
               );
             }
 
-            return true; // Signal that login was handled.
+            return true;
           }
         }
       } catch (e) {
         debugPrint('Error processing URL hash: $e');
       }
     }
-    return false; // Signal that login was not handled.
+    return false;
   }
 
   @override
@@ -267,44 +484,81 @@ class _AppWrapperState extends State<AppWrapper> {
               colors: [Color(0xFF667eea), Color(0xFF764ba2)],
             ),
           ),
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error, color: Colors.white, size: 48),
-                  const SizedBox(height: 16),
-                  const Text(
-                    '应用初始化失败',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+          child: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error, color: Colors.white, size: 48),
+                    const SizedBox(height: 16),
+                    const Text(
+                      '应用初始化失败',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '发生了一个错误: \n$_initError',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        _initStarted = false;
-                        _isInitialized = false;
-                        _initError = null;
-                      });
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF667eea),
+                    const SizedBox(height: 8),
+                    Text(
+                      '发生了一个错误：\n$_initError',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70),
                     ),
-                    child: const Text('重试'),
-                  ),
-                ],
+                    if (_initReport != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        '已自动保存错误快照，可直接提交反馈。',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white60, fontSize: 13),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              _initStarted = false;
+                              _isInitialized = false;
+                              _initError = null;
+                              _initReport = null;
+                            });
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: const Color(0xFF667eea),
+                          ),
+                          child: const Text('重试'),
+                        ),
+                        OutlinedButton(
+                          onPressed: _isSubmittingFeedback
+                              ? null
+                              : _showStartupFeedbackDialog,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white54),
+                          ),
+                          child: _isSubmittingFeedback
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('反馈此问题'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -312,7 +566,6 @@ class _AppWrapperState extends State<AppWrapper> {
       );
     }
 
-    // Initialization is complete, show the main screen.
     return const MainNavigationScreen();
   }
 }
