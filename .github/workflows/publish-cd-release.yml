@@ -43,6 +43,7 @@ jobs:
     outputs:
       cd_run_id: ${{ steps.source.outputs.cd_run_id }}
       source_sha: ${{ steps.source.outputs.source_sha }}
+      release_build_number: ${{ steps.source.outputs.release_build_number }}
     steps:
       - name: Resolve CD run id
         id: cd-run
@@ -88,9 +89,17 @@ jobs:
             echo "Unable to resolve source SHA from workflow event, input, or SOURCE_SHA artifact." >&2
             exit 1
           fi
+
+          release_build_number="${GITHUB_RUN_NUMBER:-}"
+          if ! [[ "$release_build_number" =~ ^[0-9]+$ ]] || [ "$release_build_number" -le 16 ]; then
+            release_build_number=17
+          fi
+
           echo "cd_run_id=$CD_RUN_ID" >> "$GITHUB_OUTPUT"
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "release_build_number=$release_build_number" >> "$GITHUB_OUTPUT"
           echo "Resolved source SHA: $source_sha"
+          echo "Resolved mobile build number: $release_build_number"
 
   build-android-packages:
     name: Build Android release packages
@@ -128,6 +137,7 @@ jobs:
         shell: bash
         env:
           GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
+          RELEASE_BUILD_NUMBER: ${{ needs.resolve-cd-context.outputs.release_build_number }}
         run: |
           set -euo pipefail
           cat >> android/gradle.properties <<'EOF'
@@ -135,8 +145,8 @@ jobs:
           kotlin.daemon.jvm.options=-Xmx3g
           EOF
           flutter pub get
-          flutter build apk --release --target-platform android-arm64
-          flutter build appbundle --release
+          flutter build apk --release --build-number "$RELEASE_BUILD_NUMBER" --target-platform android-arm64
+          flutter build appbundle --release --build-number "$RELEASE_BUILD_NUMBER"
 
       - name: Stage Android release packages
         shell: bash
@@ -172,6 +182,7 @@ jobs:
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
       APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      RELEASE_BUILD_NUMBER: ${{ needs.resolve-cd-context.outputs.release_build_number }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v5
@@ -219,6 +230,7 @@ jobs:
               echo "status=skipped"
               echo "reason=ios_signing_not_configured"
               echo "source_sha=${{ needs.resolve-cd-context.outputs.source_sha }}"
+              echo "build_number=$RELEASE_BUILD_NUMBER"
               echo "uploaded_at="
             } > ../ios-release-assets/TESTFLIGHT_UPLOAD_STATUS.txt
             echo "configured=false" >> "$GITHUB_OUTPUT"
@@ -312,7 +324,7 @@ jobs:
         run: |
           set -euo pipefail
           flutter pub get
-          flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+          flutter build ipa --release --build-number "$RELEASE_BUILD_NUMBER" --export-options-plist=ios/ExportOptions.plist
 
           short_sha="${{ needs.resolve-cd-context.outputs.source_sha }}"
           short_sha="${short_sha:0:12}"
@@ -334,6 +346,7 @@ jobs:
               echo "status=skipped"
               echo "reason=app_store_connect_credentials_not_configured"
               echo "source_sha=${{ needs.resolve-cd-context.outputs.source_sha }}"
+              echo "build_number=$RELEASE_BUILD_NUMBER"
               echo "uploaded_at="
             } > "$status_file"
             echo "App Store Connect credentials are not configured; iOS IPA will be attached to GitHub Release only."
@@ -359,6 +372,7 @@ jobs:
               echo "status=uploaded"
               echo "reason=accepted_by_app_store_connect"
               echo "source_sha=${{ needs.resolve-cd-context.outputs.source_sha }}"
+              echo "build_number=$RELEASE_BUILD_NUMBER"
               echo "uploaded_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
             } > "$status_file"
           else
@@ -367,6 +381,7 @@ jobs:
               echo "status=failed"
               echo "reason=app_store_connect_upload_failed"
               echo "source_sha=${{ needs.resolve-cd-context.outputs.source_sha }}"
+              echo "build_number=$RELEASE_BUILD_NUMBER"
               echo "uploaded_at="
             } > "$status_file"
             exit "$status"
@@ -430,16 +445,27 @@ jobs:
         env:
           SOURCE_SHA: ${{ needs.resolve-cd-context.outputs.source_sha }}
           RUN_ID: ${{ needs.resolve-cd-context.outputs.cd_run_id }}
+          RELEASE_BUILD_NUMBER: ${{ needs.resolve-cd-context.outputs.release_build_number }}
+          RELEASE_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
           source_sha="$SOURCE_SHA"
           short_sha="${source_sha:0:12}"
 
-          app_version="unknown"
+          raw_app_version="unknown"
+          version_name="unknown"
           if [ -f version-metadata/fabushi/pubspec.yaml ]; then
-            app_version="$(awk '/^version:/ {print $2; exit}' version-metadata/fabushi/pubspec.yaml)"
+            raw_app_version="$(awk '/^version:/ {print $2; exit}' version-metadata/fabushi/pubspec.yaml)"
+            version_name="${raw_app_version%%+*}"
           fi
+
+          app_version="$raw_app_version"
+          if [ -n "${RELEASE_BUILD_NUMBER:-}" ] && [ "$version_name" != "unknown" ]; then
+            app_version="${version_name}+${RELEASE_BUILD_NUMBER}"
+          fi
+
           safe_version="$(printf '%s' "$app_version" | tr '+/' '--' | tr -cd '[:alnum:]._-')"
           if [ -z "$safe_version" ] || [ "$safe_version" = "unknown" ]; then
             tag="cd-$short_sha"
@@ -448,6 +474,18 @@ jobs:
             tag="v$safe_version-cd.$short_sha"
             title="Fabushi $app_version ($short_sha)"
           fi
+
+          pr_title=""
+          pr_number=""
+          pr_body=""
+          pr_change_lines=""
+          if pr_json="$(gh api -H 'Accept: application/vnd.github+json' "/repos/$RELEASE_REPO/commits/$source_sha/pulls" 2>/dev/null)" && [ -n "$pr_json" ]; then
+            pr_number="$(printf '%s' "$pr_json" | jq -r '.[0].number // empty')"
+            pr_title="$(printf '%s' "$pr_json" | jq -r '.[0].title // empty')"
+            pr_body="$(printf '%s' "$pr_json" | jq -r '.[0].body // empty')"
+            pr_change_lines="$(printf '%s\n' "$pr_body" | awk '/^- / { print; count += 1; if (count == 6) exit }')"
+          fi
+          commit_subject="$(git -C version-metadata show -s --format=%s "$source_sha" 2>/dev/null || true)"
 
           mkdir -p release-assets
 
@@ -498,6 +536,20 @@ jobs:
             echo "- Source SHA: $source_sha"
             echo "- CD workflow run: $RUN_ID"
             echo "- App version: $app_version"
+            echo "- Mobile build number: ${RELEASE_BUILD_NUMBER:-unknown}"
+            echo ""
+            echo "## Included changes"
+            echo ""
+            if [ -n "$pr_number" ] && [ -n "$pr_title" ]; then
+              echo "- PR #$pr_number: $pr_title"
+            elif [ -n "$commit_subject" ]; then
+              echo "- Commit: $commit_subject"
+            else
+              echo "- This release packages the latest validated main branch source commit."
+            fi
+            if [ -n "$pr_change_lines" ]; then
+              printf '%s\n' "$pr_change_lines"
+            fi
             echo ""
             echo "## Assets"
             echo ""
@@ -514,6 +566,10 @@ jobs:
               tf_status="$(awk -F= '$1 == "status" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
               tf_reason="$(awk -F= '$1 == "reason" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
               tf_uploaded_at="$(awk -F= '$1 == "uploaded_at" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
+              tf_build_number="$(awk -F= '$1 == "build_number" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
+              if [ -n "$tf_build_number" ]; then
+                echo "- TestFlight build number: $tf_build_number"
+              fi
               case "$tf_status" in
                 uploaded)
                   echo "- TestFlight upload: uploaded${tf_uploaded_at:+ at $tf_uploaded_at}."
