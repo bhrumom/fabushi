@@ -20,6 +20,7 @@ class CoPracticeGroup {
   final int cumulativeMissLimit;
   final int consecutiveMissLimit;
   final int memberCount;
+  final int pendingCount;
   final int totalDuration;
   final int todayDuration;
   final String? myStatus;
@@ -38,6 +39,7 @@ class CoPracticeGroup {
     required this.cumulativeMissLimit,
     required this.consecutiveMissLimit,
     required this.memberCount,
+    required this.pendingCount,
     required this.totalDuration,
     required this.todayDuration,
     this.myStatus,
@@ -66,6 +68,7 @@ class CoPracticeGroup {
         json['consecutiveMissLimit'] ?? json['consecutive_miss_limit'],
       ),
       memberCount: _asInt(json['memberCount'] ?? json['member_count']),
+      pendingCount: _asInt(json['pendingCount'] ?? json['pending_count']),
       totalDuration: _asInt(json['totalDuration'] ?? json['total_duration']),
       todayDuration: _asInt(json['todayDuration'] ?? json['today_duration']),
       myStatus: (json['myStatus'] ?? json['my_status'])?.toString(),
