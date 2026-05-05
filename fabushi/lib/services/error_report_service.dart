@@ -143,7 +143,7 @@ class ErrorReportService {
           fatal: true,
           extra: {
             if (details.context != null)
-              'context': details.context.toDescription(),
+              'context': details.context?.toDescription(),
             if (details.library != null) 'library': details.library,
           },
         ),
