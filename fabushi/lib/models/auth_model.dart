@@ -86,7 +86,6 @@ class User {
 }
 
 class AuthModel extends ChangeNotifier {
-  // 服务实例
   final AuthService _authService = AuthService();
   final MembershipService _membershipService = MembershipService();
   final AlipayAuthService _alipayAuthService = AlipayAuthService();
@@ -108,6 +107,49 @@ class AuthModel extends ChangeNotifier {
     // Initialization is now handled by the UI layer (AppWrapper) to avoid race conditions.
   }
 
+  DateTime? _parseMembershipExpiry(dynamic expiresAt) {
+    if (expiresAt is! String || expiresAt.isEmpty) {
+      return null;
+    }
+    try {
+      return DateTime.parse(expiresAt);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  User _userFromServerPayload(
+    Map<String, dynamic> userJson, {
+    required bool isAdmin,
+    String? fallbackUsername,
+    String? fallbackEmail,
+    String? fallbackPhoneNumber,
+    String? fallbackFirebaseUid,
+    String? fallbackMembershipType,
+    DateTime? fallbackMembershipExpiry,
+  }) {
+    final membershipJson = userJson['membership'];
+    final membershipType = membershipJson is Map
+        ? membershipJson['type'] as String?
+        : fallbackMembershipType;
+    final membershipExpiry = membershipJson is Map
+        ? _parseMembershipExpiry(membershipJson['expiresAt']) ?? fallbackMembershipExpiry
+        : fallbackMembershipExpiry;
+
+    return User(
+      username: userJson['username'] ?? fallbackUsername ?? '',
+      email: userJson['email'] ?? fallbackEmail ?? '',
+      membershipType: membershipType,
+      membershipExpiry: membershipExpiry,
+      isAdmin: isAdmin,
+      alipayUserId: userJson['alipayUserId'] ?? userJson['alipay_user_id'],
+      nickname: userJson['nickname'],
+      avatar: userJson['avatar'],
+      phoneNumber: userJson['phoneNumber'] ?? userJson['phone_number'] ?? fallbackPhoneNumber,
+      firebaseUid: userJson['firebaseUid'] ?? userJson['firebase_uid'] ?? fallbackFirebaseUid,
+    );
+  }
+
   Future<void> _syncMeditationPracticeForCurrentUser() async {
     await MeditationSessionManager().switchUser(_currentUser?.username);
   }
@@ -123,7 +165,6 @@ class AuthModel extends ChangeNotifier {
         final userData = json.decode(userJsonString);
         _currentUser = User.fromJson(userData);
 
-        // 关键：设置 AuthService 的 token
         final basicUserModel = UserModel(
           username: _currentUser!.username,
           email: _currentUser!.email,
@@ -147,18 +188,14 @@ class AuthModel extends ChangeNotifier {
         await _syncMeditationPracticeForCurrentUser();
         unawaited(PracticeStatsService().flushPendingRecords());
 
-        // 初始化同步服务并拉取最新数据
         await SyncService().initialize();
-        SyncService().pullFromCloud(); // 后台异步同步
+        SyncService().pullFromCloud();
 
-        notifyListeners(); // 立即更新UI显示登录状态
-
-        // 后台异步刷新用户信息（不阻塞UI）
+        notifyListeners();
         refreshUserInfo();
       }
     } catch (e) {
       debugPrint('加载存储的认证信息失败: $e');
-      // 加载失败时清除状态
       _currentUser = null;
       _token = null;
       notifyListeners();
@@ -176,25 +213,27 @@ class AuthModel extends ChangeNotifier {
         _token = result['token'];
         final userJson = result['user'];
 
-        // 登录后，额外获取管理员状态
-        final adminStatusResult = await _membershipService.getAdminStats(
-          _token!,
-        );
+        final adminStatusResult = await _membershipService.getAdminStats(_token!);
         final bool isAdmin =
             adminStatusResult['success'] == true &&
             adminStatusResult['isAdmin'] == true;
 
-        final membershipJson = userJson['membership'] ?? {};
-        _currentUser = User(
-          username: userJson['username'] ?? '',
-          email: userJson['email'] ?? '',
-          membershipType: membershipJson['type'],
-          membershipExpiry: membershipJson['expiresAt'] != null
-              ? DateTime.parse(membershipJson['expiresAt'])
-              : null,
-          isAdmin: isAdmin,
-          alipayUserId: userJson['alipayUserId'],
-        );
+        if (userJson is Map<String, dynamic>) {
+          _currentUser = _userFromServerPayload(
+            userJson,
+            isAdmin: isAdmin,
+            fallbackUsername: username,
+            fallbackEmail: username.contains('@') ? username : '',
+          );
+        } else {
+          _currentUser = User(
+            username: username,
+            email: username.contains('@') ? username : '',
+            membershipType: null,
+            membershipExpiry: null,
+            isAdmin: isAdmin,
+          );
+        }
 
         await _storeAuth();
         PracticeStatsService().setAuthToken(_token);
@@ -202,14 +241,12 @@ class AuthModel extends ChangeNotifier {
         await _syncMeditationPracticeForCurrentUser();
         unawaited(PracticeStatsService().flushPendingRecords());
 
-        // 初始化同步服务并进行全量同步
         await SyncService().initialize();
-        SyncService().fullSync(); // 后台全量同步
+        SyncService().fullSync();
 
         _setLoading(false);
         notifyListeners();
 
-        // 后台异步刷新完整用户信息（包括会员信息）
         refreshUserInfo();
 
         return true;
@@ -243,7 +280,6 @@ class AuthModel extends ChangeNotifier {
       );
 
       if (result['success'] == true) {
-        // 注册成功后自动登录
         _setLoading(false);
         return await login(username, password);
       } else {
@@ -330,7 +366,6 @@ class AuthModel extends ChangeNotifier {
     try {
       debugPrint('🔄 开始刷新用户信息...');
 
-      // 先获取管理员状态
       final adminStatusResult = await _membershipService.getAdminStats(_token!);
       final bool isAdmin =
           adminStatusResult['success'] == true &&
@@ -338,7 +373,6 @@ class AuthModel extends ChangeNotifier {
 
       debugPrint('👤 管理员状态: $isAdmin');
 
-      // 再刷新用户信息
       await _authService.refreshUserInfo();
       final userModel = _authService.currentUser;
 
@@ -375,7 +409,6 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  // 支付宝登录相关方法
   Future<Map<String, dynamic>> getAlipayLoginUrl({String? platform}) async {
     try {
       return await _alipayAuthService.getAlipayLoginUrl(platform: platform);
@@ -397,7 +430,6 @@ class AuthModel extends ChangeNotifier {
         final username = result['username'] ?? '';
         final email = result['email'] ?? '';
 
-        // 先设置token到AuthService
         final basicUserModel = UserModel(
           username: username,
           email: email,
@@ -407,7 +439,6 @@ class AuthModel extends ChangeNotifier {
         );
         await _authService.setAuth(_token!, basicUserModel);
 
-        // 创建临时用户对象
         _currentUser = User(
           username: username,
           email: email,
@@ -423,7 +454,6 @@ class AuthModel extends ChangeNotifier {
         _setLoading(false);
         notifyListeners();
 
-        // 后台刷新完整用户信息（包括会员信息和管理员状态）
         refreshUserInfo();
         return true;
       } else {
@@ -438,7 +468,6 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  /// 支付宝一键注册（无需填写信息）- 从macOS回调参数直接注册
   Future<bool> alipayOneClickRegister(
     String alipayUserId,
     String? nickname,
@@ -450,7 +479,6 @@ class AuthModel extends ChangeNotifier {
     try {
       debugPrint('支付宝一键注册开始: alipayUserId=$alipayUserId');
 
-      // 直接调用一键注册API（授权码已在回调时使用）
       final result = await _alipayAuthService.alipayOneClickRegister(
         alipayUserId: alipayUserId,
         nickname: nickname,
@@ -462,12 +490,10 @@ class AuthModel extends ChangeNotifier {
       );
 
       if (result['success'] == true) {
-        // 注册成功后自动登录
         _token = result['token'];
         final username = result['username'];
         final email = result['email'];
 
-        // 创建基本用户模型
         final basicUserModel = UserModel(
           username: username,
           email: email ?? '',
@@ -476,10 +502,8 @@ class AuthModel extends ChangeNotifier {
           membership: MembershipInfo(type: 'trial', isActive: true),
         );
 
-        // 关键：先保存token到SharedPreferences，确保后续API调用能获取到token
         await _authService.setAuth(_token!, basicUserModel);
 
-        // 创建临时用户对象
         _currentUser = User(
           username: username,
           email: email ?? '',
@@ -488,14 +512,12 @@ class AuthModel extends ChangeNotifier {
           isAdmin: false,
         );
 
-        // 立即保存并通知UI
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
         await _syncMeditationPracticeForCurrentUser();
         _setLoading(false);
         notifyListeners();
 
-        // 后台异步刷新完整用户信息（包括会员信息和管理员状态）
         refreshUserInfo();
 
         return true;
@@ -511,7 +533,6 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  /// Apple登录 - 使用 Sign in with Apple
   Future<bool> appleLogin({
     required String identityToken,
     required String authorizationCode,
@@ -540,7 +561,6 @@ class AuthModel extends ChangeNotifier {
         final userJson = result['user'];
         final username = result['username'] ?? userJson?['username'] ?? '';
 
-        // 创建基本用户模型
         final basicUserModel = UserModel(
           username: username,
           email: userJson?['email'] ?? email ?? '',
@@ -554,16 +574,24 @@ class AuthModel extends ChangeNotifier {
 
         await _authService.setAuth(_token!, basicUserModel);
 
-        // 创建用户对象
-        _currentUser = User(
-          username: username,
-          email: userJson?['email'] ?? email ?? '',
-          membershipType: userJson?['membership']?['type'] ?? 'trial',
-          membershipExpiry: userJson?['membership']?['expiresAt'] != null
-              ? DateTime.parse(userJson['membership']['expiresAt'])
-              : DateTime.now().add(const Duration(days: 3)),
-          isAdmin: false,
-        );
+        if (userJson is Map<String, dynamic>) {
+          _currentUser = _userFromServerPayload(
+            userJson,
+            isAdmin: false,
+            fallbackUsername: username,
+            fallbackEmail: email ?? '',
+            fallbackMembershipType: 'trial',
+            fallbackMembershipExpiry: DateTime.now().add(const Duration(days: 3)),
+          );
+        } else {
+          _currentUser = User(
+            username: username,
+            email: email ?? '',
+            membershipType: 'trial',
+            membershipExpiry: DateTime.now().add(const Duration(days: 3)),
+            isAdmin: false,
+          );
+        }
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
@@ -571,10 +599,8 @@ class AuthModel extends ChangeNotifier {
         _setLoading(false);
         notifyListeners();
 
-        // 后台刷新完整用户信息
         refreshUserInfo();
 
-        // 初始化同步服务
         await SyncService().initialize();
         SyncService().fullSync();
 
@@ -593,7 +619,6 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  /// Firebase手机号登录 - 同步到D1后端
   Future<bool> firebasePhoneLogin({
     required String idToken,
     required String phoneNumber,
@@ -606,7 +631,6 @@ class AuthModel extends ChangeNotifier {
     try {
       debugPrint('📱 Firebase手机登录开始: phone=$phoneNumber, isNew=$isNewUser');
 
-      // 调用后端API同步Firebase用户到D1
       final result = await _authService.firebasePhoneLogin(
         idToken: idToken,
         phoneNumber: phoneNumber,
@@ -621,7 +645,6 @@ class AuthModel extends ChangeNotifier {
         final userJson = result['user'];
         final username = result['username'] ?? userJson?['username'] ?? '';
 
-        // 创建基本用户模型
         final basicUserModel = UserModel(
           username: username,
           email: userJson?['email'] ?? '',
@@ -631,22 +654,32 @@ class AuthModel extends ChangeNotifier {
             type: userJson?['membership']?['type'] ?? 'trial',
             isActive: true,
           ),
+          phoneNumber: phoneNumber,
         );
 
         await _authService.setAuth(_token!, basicUserModel);
 
-        // 创建用户对象
-        _currentUser = User(
-          username: username,
-          email: userJson?['email'] ?? '',
-          membershipType: userJson?['membership']?['type'] ?? 'trial',
-          membershipExpiry: userJson?['membership']?['expiresAt'] != null
-              ? DateTime.parse(userJson['membership']['expiresAt'])
-              : DateTime.now().add(const Duration(days: 3)),
-          isAdmin: false,
-          phoneNumber: phoneNumber,
-          firebaseUid: firebaseUid,
-        );
+        if (userJson is Map<String, dynamic>) {
+          _currentUser = _userFromServerPayload(
+            userJson,
+            isAdmin: false,
+            fallbackUsername: username,
+            fallbackPhoneNumber: phoneNumber,
+            fallbackFirebaseUid: firebaseUid,
+            fallbackMembershipType: 'trial',
+            fallbackMembershipExpiry: DateTime.now().add(const Duration(days: 3)),
+          );
+        } else {
+          _currentUser = User(
+            username: username,
+            email: userJson?['email'] ?? '',
+            membershipType: 'trial',
+            membershipExpiry: DateTime.now().add(const Duration(days: 3)),
+            isAdmin: false,
+            phoneNumber: phoneNumber,
+            firebaseUid: firebaseUid,
+          );
+        }
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
@@ -654,7 +687,6 @@ class AuthModel extends ChangeNotifier {
         _setLoading(false);
         notifyListeners();
 
-        // 后台刷新完整用户信息
         refreshUserInfo();
 
         debugPrint('✅ Firebase手机登录完成: $username');
@@ -685,35 +717,35 @@ class AuthModel extends ChangeNotifier {
         '支付宝注册开始: username=$username, email=$email, authCode=$authCode',
       );
 
-      // 首先尝试使用授权码直接登录（可能后端已经自动创建了用户）
       final loginResult = await _alipayAuthService.alipayLogin(authCode, null);
 
       debugPrint('支付宝登录结果: $loginResult');
 
       if (loginResult['success'] == true) {
-        // 如果登录成功，直接使用返回的用户信息
         _token = loginResult['token'];
         final userJson = loginResult['user'];
 
-        // 获取管理员状态
-        final adminStatusResult = await _membershipService.getAdminStats(
-          _token!,
-        );
+        final adminStatusResult = await _membershipService.getAdminStats(_token!);
         final bool isAdmin =
             adminStatusResult['success'] == true &&
             adminStatusResult['isAdmin'] == true;
 
-        final membershipJson = userJson['membership'] ?? {};
-        _currentUser = User(
-          username: userJson['username'] ?? '',
-          email: userJson['email'] ?? '',
-          membershipType: membershipJson['type'],
-          membershipExpiry: membershipJson['expiresAt'] != null
-              ? DateTime.parse(membershipJson['expiresAt'])
-              : null,
-          isAdmin: isAdmin,
-          alipayUserId: userJson['alipayUserId'],
-        );
+        if (userJson is Map<String, dynamic>) {
+          _currentUser = _userFromServerPayload(
+            userJson,
+            isAdmin: isAdmin,
+            fallbackUsername: userJson['username'] ?? username,
+            fallbackEmail: userJson['email'] ?? email,
+          );
+        } else {
+          _currentUser = User(
+            username: username,
+            email: email,
+            membershipType: 'trial',
+            membershipExpiry: DateTime.now().add(const Duration(days: 3)),
+            isAdmin: isAdmin,
+          );
+        }
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
@@ -723,12 +755,10 @@ class AuthModel extends ChangeNotifier {
         notifyListeners();
         return true;
       } else if (loginResult['needsRegistration'] == true) {
-        // 如果是新用户需要注册，使用支付宝用户信息自动注册
         final alipayUser = loginResult['alipayUser'];
 
         debugPrint('需要注册新用户，支付宝用户信息: $alipayUser');
 
-        // 生成默认的用户名和邮箱（如果未提供）
         final autoUsername = username.isNotEmpty
             ? username
             : (alipayUser?['nick_name'] ??
@@ -742,7 +772,7 @@ class AuthModel extends ChangeNotifier {
         final result = await _alipayAuthService.alipayRegister(
           alipayUserId: alipayUser?['user_id'] ?? authCode,
           username: autoUsername,
-          password: '', // 支付宝用户不需要密码
+          password: '',
           email: autoEmail,
           nickname: alipayUser?['nick_name'],
           avatar: alipayUser?['avatar'],
@@ -751,29 +781,32 @@ class AuthModel extends ChangeNotifier {
         debugPrint('支付宝注册结果: $result');
 
         if (result['success'] == true) {
-          // 注册成功后自动登录
           _token = result['token'];
           final userJson = result['user'];
 
-          // 获取管理员状态
-          final adminStatusResult = await _membershipService.getAdminStats(
-            _token!,
-          );
+          final adminStatusResult = await _membershipService.getAdminStats(_token!);
           final bool isAdmin =
               adminStatusResult['success'] == true &&
               adminStatusResult['isAdmin'] == true;
 
-          final membershipJson = userJson['membership'] ?? {};
-          _currentUser = User(
-            username: userJson['username'] ?? '',
-            email: userJson['email'] ?? '',
-            membershipType: membershipJson['type'],
-            membershipExpiry: membershipJson['expiresAt'] != null
-                ? DateTime.parse(membershipJson['expiresAt'])
-                : null,
-            isAdmin: isAdmin,
-            alipayUserId: userJson['alipayUserId'],
-          );
+          if (userJson is Map<String, dynamic>) {
+            _currentUser = _userFromServerPayload(
+              userJson,
+              isAdmin: isAdmin,
+              fallbackUsername: autoUsername,
+              fallbackEmail: autoEmail,
+              fallbackMembershipType: 'trial',
+              fallbackMembershipExpiry: DateTime.now().add(const Duration(days: 3)),
+            );
+          } else {
+            _currentUser = User(
+              username: autoUsername,
+              email: autoEmail,
+              membershipType: 'trial',
+              membershipExpiry: DateTime.now().add(const Duration(days: 3)),
+              isAdmin: isAdmin,
+            );
+          }
 
           await _storeAuth();
           await LikeService().initialize(userId: _currentUser!.username);
@@ -787,11 +820,9 @@ class AuthModel extends ChangeNotifier {
           return false;
         }
       } else {
-        // 登录失败 - 处理不同的错误类型
         String errorMessage = loginResult['error'] ?? '支付宝登录失败';
         String? errorCode = loginResult['code'];
 
-        // 根据错误代码提供更具体的错误信息
         if (errorCode == 'CODE_INVALID') {
           errorMessage = '支付宝授权码已过期或无效，请重新尝试登录';
         } else if (errorCode == 'CODE_REUSED') {
@@ -811,9 +842,7 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  // 直接从token设置认证状态（用于HTML页面登录同步）
   Future<void> setTokenDirectly(String token, String username) async {
-    // Create a basic user model for the service layer
     final basicUserModel = UserModel(
       username: username,
       email: '',
@@ -822,39 +851,30 @@ class AuthModel extends ChangeNotifier {
       membership: MembershipInfo(type: 'expired', isActive: false),
     );
 
-    // Update the AuthService singleton so subsequent API calls are authenticated.
     await _authService.setAuth(token, basicUserModel);
 
-    // Update this AuthModel's state to match.
     _token = token;
     _currentUser = User(
       username: username,
-      email: '', // Will be filled by refreshUserInfo
+      email: '',
       membershipType: null,
       membershipExpiry: null,
       isAdmin: false,
     );
 
-    // Store in AuthModel's storage (redundant but part of current design)
     await _storeAuth();
     await _syncMeditationPracticeForCurrentUser();
-
-    // Notify UI to show "logged in" state immediately.
     notifyListeners();
 
-    // In the background, fetch the full user details from the server.
     await refreshUserInfo();
   }
 
-  // 使用token直接登录（用于macOS支付宝登录）
   Future<void> loginWithToken(String token, String username) async {
     try {
       debugPrint('使用token登录: username=$username');
 
-      // 先设置 _token
       _token = token;
 
-      // 创建基本用户模型
       final basicUserModel = UserModel(
         username: username,
         email: '',
@@ -863,10 +883,8 @@ class AuthModel extends ChangeNotifier {
         membership: MembershipInfo(type: 'trial', isActive: true),
       );
 
-      // 关键：先设置token到AuthService（会保存到SharedPreferences）
       await _authService.setAuth(token, basicUserModel);
 
-      // 设置本地用户状态
       _currentUser = User(
         username: username,
         email: '',
@@ -875,16 +893,14 @@ class AuthModel extends ChangeNotifier {
         isAdmin: false,
       );
 
-      // 立即保存并通知UI
-      await _storeAuth();
-      await LikeService().initialize(userId: _currentUser!.username);
-      await _syncMeditationPracticeForCurrentUser();
-      notifyListeners();
+        await _storeAuth();
+        await LikeService().initialize(userId: _currentUser!.username);
+        await _syncMeditationPracticeForCurrentUser();
+        notifyListeners();
 
       debugPrint('✅ Token已设置，登录完成');
 
-      // 后台异步刷新完整用户信息
-      refreshUserInfo();
+      await refreshUserInfo();
     } catch (e) {
       debugPrint('使用token登录失败: $e');
     }
@@ -897,7 +913,6 @@ class AuthModel extends ChangeNotifier {
     try {
       final result = await _authService.deleteAccount();
       if (result['success'] == true) {
-        // 若云端注销成功，清除本地状态
         await logout();
         _setLoading(false);
         return {'success': true, 'message': '注销成功'};
@@ -925,10 +940,9 @@ class AuthModel extends ChangeNotifier {
       LikeService().setAuthToken(null);
       PracticeStatsService().setAuthToken(null);
       await LikeService().clearUserData();
-      await SyncService().clearSyncState(); // 清除同步状态
+      await SyncService().clearSyncState();
       await MeditationSessionManager().switchUser(null);
 
-      // 清除存储的认证信息
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('auth_token');
       await prefs.remove('user_data');
@@ -959,7 +973,6 @@ class AuthModel extends ChangeNotifier {
     _error = null;
   }
 
-  // 检查用户是否有权限执行某个操作
   bool hasPermission(String permission) {
     if (_currentUser == null) return false;
 
@@ -969,13 +982,12 @@ class AuthModel extends ChangeNotifier {
       case 'premium':
         return _currentUser!.hasPremiumMembership || _currentUser!.isAdmin;
       case 'basic':
-        return true; // 所有登录用户都有基本权限
+        return true;
       default:
         return false;
     }
   }
 
-  // 获取用户会员状态描述
   String getMembershipStatusText() {
     if (_currentUser == null) return '未登录';
     if (_currentUser!.membershipType == null ||
@@ -987,7 +999,6 @@ class AuthModel extends ChangeNotifier {
     return _currentUser!.membershipType ?? '普通用户';
   }
 
-  // 获取会员到期时间描述
   String? getMembershipExpiryText() {
     if (_currentUser?.membershipExpiry == null) return null;
 
@@ -1006,7 +1017,6 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  // 获取会员剩余天数
   int? getMembershipDaysRemaining() {
     if (_currentUser?.membershipExpiry == null) return null;
 
@@ -1014,7 +1024,7 @@ class AuthModel extends ChangeNotifier {
     final now = DateTime.now();
     final difference = expiry.difference(now);
 
-    if (difference.isNegative) return -1; // 已过期
+    if (difference.isNegative) return -1;
 
     return difference.inDays;
   }
