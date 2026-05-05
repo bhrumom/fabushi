@@ -25,6 +25,9 @@ permissions:
   deployments: write
   issues: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   build-artifact:
     name: Build release artifact
@@ -57,7 +60,7 @@ jobs:
           echo "Resolved source SHA: $source_sha"
 
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ steps.source.outputs.source_sha }}
           sparse-checkout-cone-mode: false
@@ -90,7 +93,7 @@ jobs:
           printf '%s\n' "${{ steps.source.outputs.source_sha }}" > ../release-artifact/SOURCE_SHA
 
       - name: Upload release artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fabushi-release-${{ steps.source.outputs.source_sha }}
           path: release-artifact
@@ -110,13 +113,13 @@ jobs:
         working-directory: release-artifact/fabushi/web
     steps:
       - name: Download release artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: fabushi-release-${{ needs.build-artifact.outputs.source_sha }}
           path: release-artifact
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -138,7 +141,7 @@ jobs:
           DEVELOPMENT_D1_DATABASE_ID: ${{ vars.DEVELOPMENT_D1_DATABASE_ID || vars.D1_DATABASE_ID || vars.CLOUDFLARE_D1_DATABASE_ID || '7b6318f0-fbc2-42f9-9887-85f878ae76d0' }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          python3 - <<'PY2'
           from pathlib import Path
           import os
           path = Path('wrangler.toml')
@@ -150,7 +153,7 @@ jobs:
               print('Patched development D1 database id placeholder')
           else:
               print('Development D1 database id placeholder not present')
-          PY
+          PY2
 
       - name: Deploy staging Worker
         env:
@@ -177,7 +180,7 @@ jobs:
       STAGING_TEST_PHONE: ${{ vars.STAGING_TEST_PHONE }}
     steps:
       - name: Checkout E2E files
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.build-artifact.outputs.source_sha }}
           sparse-checkout-cone-mode: false
@@ -198,7 +201,7 @@ jobs:
           exit "$missing"
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -223,7 +226,7 @@ jobs:
 
       - name: Upload staging E2E report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: staging-api-e2e-playwright-report
           path: fabushi/e2e/playwright-report
@@ -231,7 +234,7 @@ jobs:
 
       - name: Upload staging E2E test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: staging-api-e2e-test-results
           path: fabushi/e2e/test-results
@@ -252,13 +255,13 @@ jobs:
         working-directory: release-artifact/fabushi/web
     steps:
       - name: Download validated release artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: fabushi-release-${{ needs.build-artifact.outputs.source_sha }}
           path: release-artifact
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -278,7 +281,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          python3 - <<'PY2'
           from pathlib import Path
           import re
 
@@ -308,7 +311,7 @@ jobs:
               print('Production route management already absent')
 
           print('Verified production deploy artifact no longer mutates routes')
-          PY
+          PY2
 
       - name: Deploy production Worker
         env:
@@ -375,14 +378,14 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout failure notifier
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/scripts/**
 
       - name: Create or update detailed CD failure issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           SOURCE_SHA: ${{ needs.build-artifact.outputs.source_sha || github.event.workflow_run.head_sha || github.sha }}
         with:
