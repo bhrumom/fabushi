@@ -9,6 +9,7 @@ void main() {
     await tester.pump();
 
     expect(find.byType(MaterialApp), findsOneWidget);
-    expect(find.text('正在初始化应用...'), findsOneWidget);
+    expect(find.text('大乘'), findsOneWidget);
+    expect(find.text('正在唤起禅境'), findsOneWidget);
   });
 }
