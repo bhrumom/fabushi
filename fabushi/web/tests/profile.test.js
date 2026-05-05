@@ -160,6 +160,7 @@ test('handleUpdateProfile migrates username changes without direct in-place user
   const payload = await response.json();
   assert.equal(payload.success, true);
   assert.equal(payload.user.username, 'newname');
+  assert.equal(payload.user.nickname, 'newname');
   assert.ok(payload.token);
 
   assert.equal(db.users.has('oldname'), false);
@@ -173,4 +174,65 @@ test('handleUpdateProfile migrates username changes without direct in-place user
     sql.startsWith('UPDATE users SET') && sql.includes('username = ?')
   );
   assert.equal(directUsernameUpdate, undefined);
+});
+
+test('handleUpdateProfile keeps existing nickname in no-op response payload', async () => {
+  const db = createDbMock();
+  db.users.set('reader1', {
+    username: 'reader1',
+    email: 'reader1@example.com',
+    password_hash: '',
+    salt: '',
+    iterations: 0,
+    algo: '',
+    email_verified: 1,
+    alipay_user_id: null,
+    alipay_nickname: null,
+    alipay_avatar: null,
+    alipay_bound_at: null,
+    wechat_openid: null,
+    wechat_nickname: null,
+    wechat_headimgurl: null,
+    wechat_bound_at: null,
+    phone_number: null,
+    firebase_uid: null,
+    apple_user_id: null,
+    nickname: '般若行者',
+    avatar: null,
+    bio: null,
+    main_practice_title: null,
+    main_practice_file_path: null,
+    main_practice_selected_at: null,
+    membership_type: 'trial',
+    membership_expires_at: null,
+    free_trial_end_date: '2026-05-31T00:00:00Z',
+    stripe_customer_id: null,
+    subscription_id: null,
+    total_transferred_bytes: 0,
+    last_transfer_at: null,
+    sync_version: 1,
+    extra_data: null,
+    created_at: '2026-05-01T00:00:00Z',
+    updated_at: '2026-05-04T00:00:00Z'
+  });
+  db.emailMapping.set('reader1@example.com', 'reader1');
+
+  const env = { JWT_SECRET: 'test-secret' };
+  const token = await generateToken('reader1', env);
+  const request = new Request('https://flutter.ombhrum.com/api/auth/update-profile', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({})
+  });
+
+  const response = await handleUpdateProfile(request, env, db);
+  assert.equal(response.status, 200);
+
+  const payload = await response.json();
+  assert.equal(payload.message, '没有需要更新的字段');
+  assert.equal(payload.user.username, 'reader1');
+  assert.equal(payload.user.nickname, '般若行者');
 });
