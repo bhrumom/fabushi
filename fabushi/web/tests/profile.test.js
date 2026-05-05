@@ -32,54 +32,60 @@ function createDbMock() {
       return null;
     },
     prepare(sql) {
+      const execute = async (params = []) => {
+        statements.push({ sql, params });
+
+        if (/^BEGIN TRANSACTION/.test(sql) || /^COMMIT/.test(sql) || /^ROLLBACK/.test(sql)) {
+          return;
+        }
+
+        if (sql.startsWith('UPDATE users') && sql.includes('phone_number = NULL')) {
+          const [placeholderEmail, updatedAt, username] = params;
+          const user = users.get(username);
+          user.email = placeholderEmail;
+          user.phone_number = null;
+          user.firebase_uid = null;
+          user.apple_user_id = null;
+          user.alipay_user_id = null;
+          user.wechat_openid = null;
+          user.updated_at = updatedAt;
+          return;
+        }
+
+        if (sql.startsWith('INSERT INTO users')) {
+          const columnsSection = sql.slice(sql.indexOf('(') + 1, sql.indexOf(') VALUES'));
+          const columns = columnsSection.split(',').map((column) => column.trim());
+          const record = {};
+          columns.forEach((column, index) => {
+            record[column] = params[index];
+          });
+          users.set(record.username, record);
+          return;
+        }
+
+        if (sql.startsWith('DELETE FROM users')) {
+          users.delete(params[0]);
+          return;
+        }
+
+        if (sql.startsWith('DELETE FROM email_username_mapping')) {
+          emailMapping.delete(params[0]);
+          return;
+        }
+
+        if (sql.startsWith('INSERT OR REPLACE INTO email_username_mapping')) {
+          emailMapping.set(params[0], params[1]);
+        }
+      };
+
       return {
+        async run() {
+          return execute();
+        },
         bind(...params) {
           return {
             async run() {
-              statements.push({ sql, params });
-
-              if (/^BEGIN TRANSACTION/.test(sql) || /^COMMIT/.test(sql) || /^ROLLBACK/.test(sql)) {
-                return;
-              }
-
-              if (sql.startsWith('UPDATE users') && sql.includes('phone_number = NULL')) {
-                const [placeholderEmail, updatedAt, username] = params;
-                const user = users.get(username);
-                user.email = placeholderEmail;
-                user.phone_number = null;
-                user.firebase_uid = null;
-                user.apple_user_id = null;
-                user.alipay_user_id = null;
-                user.wechat_openid = null;
-                user.updated_at = updatedAt;
-                return;
-              }
-
-              if (sql.startsWith('INSERT INTO users')) {
-                const columnsSection = sql.slice(sql.indexOf('(') + 1, sql.indexOf(') VALUES'));
-                const columns = columnsSection.split(',').map((column) => column.trim());
-                const record = {};
-                columns.forEach((column, index) => {
-                  record[column] = params[index];
-                });
-                users.set(record.username, record);
-                return;
-              }
-
-              if (sql.startsWith('DELETE FROM users')) {
-                users.delete(params[0]);
-                return;
-              }
-
-              if (sql.startsWith('DELETE FROM email_username_mapping')) {
-                emailMapping.delete(params[0]);
-                return;
-              }
-
-              if (sql.startsWith('INSERT OR REPLACE INTO email_username_mapping')) {
-                emailMapping.set(params[0], params[1]);
-                return;
-              }
+              return execute(params);
             }
           };
         }
