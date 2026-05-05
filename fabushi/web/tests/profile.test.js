@@ -32,14 +32,16 @@ function createDbMock() {
       return null;
     },
     prepare(sql) {
+      const normalizedSql = sql.trimStart();
+
       const execute = async (params = []) => {
         statements.push({ sql, params });
 
-        if (/^BEGIN TRANSACTION/.test(sql) || /^COMMIT/.test(sql) || /^ROLLBACK/.test(sql)) {
+        if (/^BEGIN TRANSACTION/.test(normalizedSql) || /^COMMIT/.test(normalizedSql) || /^ROLLBACK/.test(normalizedSql)) {
           return;
         }
 
-        if (sql.startsWith('UPDATE users') && sql.includes('phone_number = NULL')) {
+        if (normalizedSql.startsWith('UPDATE users') && normalizedSql.includes('phone_number = NULL')) {
           const [placeholderEmail, updatedAt, username] = params;
           const user = users.get(username);
           user.email = placeholderEmail;
@@ -52,8 +54,8 @@ function createDbMock() {
           return;
         }
 
-        if (sql.startsWith('INSERT INTO users')) {
-          const columnsSection = sql.slice(sql.indexOf('(') + 1, sql.indexOf(') VALUES'));
+        if (normalizedSql.startsWith('INSERT INTO users')) {
+          const columnsSection = normalizedSql.slice(normalizedSql.indexOf('(') + 1, normalizedSql.indexOf(') VALUES'));
           const columns = columnsSection.split(',').map((column) => column.trim());
           const record = {};
           columns.forEach((column, index) => {
@@ -63,17 +65,17 @@ function createDbMock() {
           return;
         }
 
-        if (sql.startsWith('DELETE FROM users')) {
+        if (normalizedSql.startsWith('DELETE FROM users')) {
           users.delete(params[0]);
           return;
         }
 
-        if (sql.startsWith('DELETE FROM email_username_mapping')) {
+        if (normalizedSql.startsWith('DELETE FROM email_username_mapping')) {
           emailMapping.delete(params[0]);
           return;
         }
 
-        if (sql.startsWith('INSERT OR REPLACE INTO email_username_mapping')) {
+        if (normalizedSql.startsWith('INSERT OR REPLACE INTO email_username_mapping')) {
           emailMapping.set(params[0], params[1]);
         }
       };
