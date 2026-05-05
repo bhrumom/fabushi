@@ -6,11 +6,12 @@ from pathlib import Path
 import re
 import sys
 
-workflow = Path('.github/workflows/publish-cd-release.yml').read_text(encoding='utf-8')
+publish_workflow = Path('.github/workflows/publish-cd-release.yml').read_text(encoding='utf-8')
+deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(encoding='utf-8')
 
 checkout_match = re.search(
     r"- name: Checkout source for version metadata\n(?P<body>.*?)\n\s*- name: Prepare release assets",
-    workflow,
+    publish_workflow,
     re.DOTALL,
 )
 if not checkout_match:
@@ -33,14 +34,26 @@ release_asset_requirements = (
     'ios_signing_not_configured',
 )
 for required in release_asset_requirements:
-    if required not in workflow:
+    if required not in publish_workflow:
         missing.append(required)
+
+migration_steps = re.findall(
+    r"run:\s*(npx --yes wrangler@latest d1 migrations apply DB --env (development|production) --remote(?:\s+\S+)*)",
+    deploy_workflow,
+)
+
+if len(migration_steps) != 2:
+    missing.append('development/production D1 migration steps')
+
+for command, environment in migration_steps:
+    if command.strip().endswith('--yes'):
+        missing.append(f'{environment} D1 migration command should not pass wrangler --yes')
 
 if missing:
     sys.stderr.write(
-        'publish-cd-release.yml is missing required release guardrails: ' + ', '.join(missing) + '\n'
+        'workflow guardrails are missing required protections: ' + ', '.join(missing) + '\n'
     )
     raise SystemExit(1)
 
-print('publish-cd-release checkout and TestFlight evidence guardrails are in place')
+print('publish release and deploy workflow guardrails are in place')
 PY
