@@ -37,17 +37,21 @@ for required in release_asset_requirements:
     if required not in publish_workflow:
         missing.append(required)
 
-migration_steps = re.findall(
-    r"run:\s*(npx --yes wrangler@latest d1 migrations apply DB --env (development|production) --remote(?:\s+\S+)*)",
-    deploy_workflow,
+expected_migration_commands = (
+    'run: npx --yes wrangler@latest d1 migrations apply DB --env development --remote',
+    'run: npx --yes wrangler@latest d1 migrations apply DB --env production --remote',
 )
+for required in expected_migration_commands:
+    if required not in deploy_workflow:
+        missing.append(required)
 
-if len(migration_steps) != 2:
-    missing.append('development/production D1 migration steps')
-
-for command, environment in migration_steps:
-    if command.strip().endswith('--yes'):
-        missing.append(f'{environment} D1 migration command should not pass wrangler --yes')
+invalid_migration_commands = (
+    'run: npx --yes wrangler@latest d1 migrations apply DB --env development --remote --yes',
+    'run: npx --yes wrangler@latest d1 migrations apply DB --env production --remote --yes',
+)
+for invalid in invalid_migration_commands:
+    if invalid in deploy_workflow:
+        missing.append(f'invalid command still present: {invalid}')
 
 if missing:
     sys.stderr.write(
