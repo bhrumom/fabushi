@@ -205,6 +205,7 @@ jobs:
           PY
 
       - name: Upload beta state asset to the release
+        id: upload_state
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -212,18 +213,46 @@ jobs:
           RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
         run: |
           set -euo pipefail
-          gh release upload "$RELEASE_TAG" OFFICIAL_SITE_RELEASE_STATE.json --repo "$RELEASE_REPO" --clobber
+          upload_log="$(mktemp)"
+          if gh release upload "$RELEASE_TAG" OFFICIAL_SITE_RELEASE_STATE.json --repo "$RELEASE_REPO" --clobber 2>"$upload_log"; then
+            echo "uploaded=true" >> "$GITHUB_OUTPUT"
+            echo "immutable_release=false" >> "$GITHUB_OUTPUT"
+            rm -f "$upload_log"
+            exit 0
+          fi
+
+          if grep -q 'Cannot upload assets to an immutable release' "$upload_log"; then
+            cat "$upload_log"
+            echo "uploaded=false" >> "$GITHUB_OUTPUT"
+            echo "immutable_release=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release $RELEASE_TAG is immutable, so OFFICIAL_SITE_RELEASE_STATE.json was not uploaded. The official site will keep using release metadata and TestFlight status fallbacks."
+            rm -f "$upload_log"
+            exit 0
+          fi
+
+          cat "$upload_log" >&2
+          rm -f "$upload_log"
+          exit 1
 
       - name: Write summary
         shell: bash
         env:
           RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+          RELEASE_STATE_UPLOADED: ${{ steps.upload_state.outputs.uploaded }}
+          IMMUTABLE_RELEASE: ${{ steps.upload_state.outputs.immutable_release }}
         run: |
           {
             echo "## Official site beta state synced"
             echo ""
             echo "- Release tag: $RELEASE_TAG"
-            echo "- Asset: OFFICIAL_SITE_RELEASE_STATE.json"
+            if [ "$RELEASE_STATE_UPLOADED" = "true" ]; then
+              echo "- Asset: OFFICIAL_SITE_RELEASE_STATE.json uploaded to the GitHub Release"
+            elif [ "$IMMUTABLE_RELEASE" = "true" ]; then
+              echo "- Asset upload skipped because the GitHub Release is immutable"
+              echo "- Official site fallback remains available through release metadata and TESTFLIGHT_UPLOAD_STATUS.txt"
+            else
+              echo "- Asset: OFFICIAL_SITE_RELEASE_STATE.json was generated locally"
+            fi
             echo "- Android beta now points at the latest GitHub Release APK asset."
             echo "- iOS beta now points at the TestFlight public link when IOS_TESTFLIGHT_PUBLIC_URL is configured."
           } >> "$GITHUB_STEP_SUMMARY"
