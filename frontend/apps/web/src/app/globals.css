@@ -141,7 +141,9 @@ a {
 .faq-item p,
 .footer-copy,
 .empty-copy,
-.roadmap-list {
+.roadmap-list,
+.release-card p,
+.release-note {
   color: var(--muted);
   line-height: 1.75;
 }
@@ -153,7 +155,8 @@ a {
 }
 
 .hero-actions,
-.inline-cta {
+.inline-cta,
+.release-card-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
@@ -232,7 +235,8 @@ a {
 .architecture-grid > div,
 .download-card,
 .application-card,
-.preview-row {
+.preview-row,
+.release-card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -242,14 +246,16 @@ a {
 
 .feature-block h3,
 .architecture-grid h3,
-.download-card h2 {
+.download-card h2,
+.release-card h2 {
   margin: 0 0 10px;
 }
 
 .platform-strip,
 .editorial-list,
 .faq-list,
-.preview-list {
+.preview-list,
+.release-section-stack {
   display: grid;
   gap: 12px;
 }
@@ -262,7 +268,8 @@ a {
 
 .status-note-list p,
 .contact-card p,
-.editorial-row small {
+.editorial-row small,
+.release-mirror-block p {
   margin: 0;
   color: var(--muted);
   line-height: 1.7;
@@ -303,6 +310,51 @@ a {
 
 .download-card {
   display: block;
+}
+
+.release-card {
+  display: grid;
+  gap: 14px;
+}
+
+.release-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.release-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.release-update-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.75;
+}
+
+.release-update-list li + li {
+  margin-top: 8px;
+}
+
+.release-card-actions {
+  margin-top: 0;
+}
+
+.release-mirror-block {
+  display: grid;
+  gap: 12px;
+}
+
+.release-note {
+  margin: 0;
 }
 
 .application-card {
@@ -421,7 +473,8 @@ a {
   }
 
   .site-nav,
-  .site-footer {
+  .site-footer,
+  .release-card-header {
     flex-direction: column;
     align-items: flex-start;
   }
