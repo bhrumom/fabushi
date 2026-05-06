@@ -90,6 +90,12 @@ function createDbMock(options = {}) {
           return {
             async run() {
               return execute(params);
+            },
+            async first() {
+              return execute(params);
+            },
+            async all() {
+              return { results: (await execute(params)) ?? [] };
             }
           };
         },
