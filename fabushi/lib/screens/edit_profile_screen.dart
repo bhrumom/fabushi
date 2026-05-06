@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
 import '../core/design_system/app_theme.dart';
 import '../models/auth_model.dart';
+import '../services/error_report_service.dart';
 import '../services/http_service.dart';
 import '../services/meditation_session_manager.dart';
 
@@ -207,6 +208,88 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return 'image/jpeg';
   }
 
+  String _maskEmail(String value) {
+    if (value.isEmpty || !value.contains('@')) return value;
+    final parts = value.split('@');
+    final local = parts.first;
+    final domain = parts.sublist(1).join('@');
+    if (local.length <= 2) return '${local[0]}*@${domain}';
+    return '${local.substring(0, 2)}***@${domain}';
+  }
+
+  String _maskPhone(String value) {
+    if (value.length < 7) return value;
+    return '${value.substring(0, 3)}****${value.substring(value.length - 4)}';
+  }
+
+  String _trimPreview(String value, {int maxLength = 600}) {
+    final normalized = value.trim();
+    if (normalized.length <= maxLength) return normalized;
+    return '${normalized.substring(0, maxLength)}...';
+  }
+
+  Map<String, dynamic> _buildProfileFailureDiagnostics({
+    int? statusCode,
+    String? serverError,
+    String? responseBodyPreview,
+  }) {
+    final currentUser = context.read<AuthModel>().currentUser;
+    return {
+      'attemptedUsername': _usernameController.text.trim(),
+      'attemptedEmail': _maskEmail(_emailController.text.trim()),
+      'attemptedPhone': _maskPhone(_phoneController.text.trim()),
+      'changedUsername': currentUser?.username != _usernameController.text.trim(),
+      'changedEmail': currentUser?.email != _emailController.text.trim(),
+      'changedPhone': currentUser?.phoneNumber != _phoneController.text.trim(),
+      'hasPendingAvatarUpload': _pendingAvatarBase64 != null,
+      'hasPasswordSetupAttempt': !_hasPassword && _passwordController.text.isNotEmpty,
+      if (statusCode != null) 'statusCode': statusCode,
+      if (serverError != null && serverError.isNotEmpty) 'serverError': serverError,
+      if (responseBodyPreview != null && responseBodyPreview.isNotEmpty)
+        'responseBodyPreview': _trimPreview(responseBodyPreview),
+    };
+  }
+
+  Future<String?> _autoReportProfileFailure({
+    required String source,
+    Object? error,
+    StackTrace? stackTrace,
+    int? statusCode,
+    String? serverError,
+    String? responseBodyPreview,
+  }) async {
+    try {
+      await ErrorReportService.instance.recordError(
+        error ?? serverError ?? '个人资料更新失败',
+        stackTrace: stackTrace,
+        stage: 'profile_update',
+        source: source,
+        fatal: false,
+        extra: _buildProfileFailureDiagnostics(
+          statusCode: statusCode,
+          serverError: serverError,
+          responseBodyPreview: responseBodyPreview,
+        ),
+      );
+
+      final result = await ErrorReportService.instance.submitLastReport(
+        title: '编辑资料失败自动报告',
+        userDescription: '用户在编辑资料页保存资料时失败，客户端已自动补充请求上下文与服务端返回。',
+        contact: '',
+        authToken: context.read<AuthModel>().authToken,
+        page: 'edit_profile_screen',
+        category: 'profile_update_failure',
+      );
+
+      if (result['success'] == true && result['issueNumber'] != null) {
+        return '#${result['issueNumber']}';
+      }
+    } catch (_) {
+      // 自动上报失败时不再打断用户原始错误提示。
+    }
+    return null;
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -269,16 +352,34 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           Navigator.pop(context);
         }
       } else {
+        final serverError = (data['error'] ?? '更新失败').toString();
+        final reportRef = await _autoReportProfileFailure(
+          source: 'EditProfileScreen._saveProfile.response',
+          statusCode: response.statusCode,
+          serverError: serverError,
+          responseBodyPreview: response.body,
+        );
+        final message = reportRef == null
+            ? serverError
+            : '$serverError，已自动提交诊断 $reportRef';
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(data['error'] ?? '更新失败')));
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       if (!mounted) return;
       setState(() => _isLoading = false);
+      final reportRef = await _autoReportProfileFailure(
+        source: 'EditProfileScreen._saveProfile.exception',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      final message = reportRef == null
+          ? '更新失败: $e'
+          : '更新失败: $e，已自动提交诊断 $reportRef';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('更新失败: $e')));
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
