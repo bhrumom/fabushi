@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:global_dharma_sharing/models/leaderboard_model.dart';
 import 'package:global_dharma_sharing/widgets/follow_button.dart';
+import 'package:global_dharma_sharing/widgets/leaderboard_user_detail_sheet.dart';
 
 void main() {
   group('LeaderboardEntry social and privacy parsing', () {
@@ -91,6 +92,91 @@ void main() {
 
       expect(find.text('已关注'), findsOneWidget);
       expect(find.text('9 粉丝'), findsOneWidget);
+    });
+  });
+
+  group('LeaderboardUserDetailSheet', () {
+    testWidgets('renders summary and public records', (tester) async {
+      final entry = LeaderboardEntry.fromJson({
+        'username': 'alice',
+        'displayName': 'Alice',
+        'rank': 2,
+        'totalBytes': 2048,
+        'totalRecords': 3,
+        'totalCount': 9,
+        'totalDuration': 45,
+        'totalDays': 2,
+        'followerCount': 12,
+        'followingCount': 4,
+        'isFollowing': true,
+        'privacy': {'isPrivate': false},
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            backgroundColor: const Color(0xFF121212),
+            body: LeaderboardUserDetailSheet(
+              entry: entry,
+              highlightLabel: '累计布施',
+              highlightValue: '2.0 KB',
+              recordsLoader: (_) async => [
+                {
+                  'sutra_name': '心经',
+                  'record_date': '2026-05-06',
+                  'local_time': '08:00',
+                  'chant_count': 3,
+                  'duration': 15,
+                },
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Alice'), findsOneWidget);
+      expect(find.text('@alice'), findsOneWidget);
+      expect(find.text('累计布施'), findsOneWidget);
+      expect(find.text('2.0 KB'), findsOneWidget);
+      expect(find.text('12 粉丝 · 关注 4'), findsOneWidget);
+      expect(find.text('公开修行记录'), findsOneWidget);
+      expect(find.text('心经'), findsOneWidget);
+      expect(find.text('2026-05-06 08:00 · 3 遍 · 15 分钟'), findsOneWidget);
+    });
+
+    testWidgets('shows empty state when no records are public', (tester) async {
+      final entry = LeaderboardEntry.fromJson({
+        'username': 'bob',
+        'displayName': 'Bob',
+        'rank': 1,
+        'totalBytes': 0,
+        'totalRecords': 0,
+        'totalDays': 0,
+        'followerCount': 0,
+        'followingCount': 0,
+        'privacy': {'isPrivate': true},
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            backgroundColor: const Color(0xFF121212),
+            body: LeaderboardUserDetailSheet(
+              entry: entry,
+              highlightLabel: '修行时长',
+              highlightValue: '已私密',
+              recordsLoader: (_) async => const [],
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('对方已将功课记录设为私密'), findsOneWidget);
+      expect(find.text('暂无公开记录'), findsOneWidget);
     });
   });
 }
