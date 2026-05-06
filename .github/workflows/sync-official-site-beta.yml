@@ -4,7 +4,6 @@ on:
   release:
     types:
       - published
-      - released
       - edited
   workflow_dispatch:
     inputs:
@@ -51,7 +50,6 @@ jobs:
           import json
           import os
           import subprocess
-          import tempfile
           import urllib.request
           from datetime import datetime, timezone
 
