@@ -44,6 +44,14 @@ export default function ContactPage() {
           <li>公开开发进度、问题跟踪和可复查记录，优先走 GitHub 仓库。</li>
           <li>品牌介绍、专题内容和长期对外入口，统一落到官网域名。</li>
         </ol>
+        <div className="inline-cta">
+          <a className="primary-action" href="/apply">
+            去申请测试
+          </a>
+          <a className="secondary-action" href="/download">
+            回到下载页
+          </a>
+        </div>
       </section>
 
       <SiteFooter />
