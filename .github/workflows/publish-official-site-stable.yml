@@ -1,0 +1,177 @@
+name: Publish official site stable download state
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: GitHub Release tag to publish as the official site stable version.
+        required: true
+        type: string
+      android_asset_name:
+        description: Optional APK asset name. Leave empty to use the first APK in the release.
+        required: false
+        type: string
+      summary_override:
+        description: Optional one-line summary to prepend to the stable release update notes.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish-stable-state:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Generate stable state asset for the official site
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          ANDROID_ASSET_NAME: ${{ inputs.android_asset_name }}
+          SUMMARY_OVERRIDE: ${{ inputs.summary_override }}
+          OFFICIAL_SITE_GITHUB_MIRROR_BASES: ${{ vars.OFFICIAL_SITE_GITHUB_MIRROR_BASES || '' }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from datetime import datetime, timezone
+
+          release_repo = os.environ["RELEASE_REPO"]
+          release_tag = os.environ["RELEASE_TAG"]
+          requested_asset_name = os.environ.get("ANDROID_ASSET_NAME", "").strip()
+          summary_override = os.environ.get("SUMMARY_OVERRIDE", "").strip()
+          mirror_lines = [
+              line.strip()
+              for line in os.environ.get("OFFICIAL_SITE_GITHUB_MIRROR_BASES", "").splitlines()
+              if line.strip()
+          ]
+          if not mirror_lines:
+              mirror_lines = [
+                  "GitHub 镜像 1|https://mirror.ghproxy.com/https://github.com/",
+                  "GitHub 镜像 2|https://ghfast.top/https://github.com/",
+              ]
+
+          release = json.loads(
+              subprocess.check_output(
+                  ["gh", "api", f"repos/{release_repo}/releases/tags/{release_tag}"],
+                  text=True,
+              )
+          )
+          assets = release.get("assets", [])
+
+          apk_assets = [asset for asset in assets if asset.get("name", "").endswith(".apk")]
+          if not apk_assets:
+              raise SystemExit("No APK asset was found in the selected release.")
+
+          if requested_asset_name:
+              apk_asset = next(
+                  (asset for asset in apk_assets if asset.get("name") == requested_asset_name),
+                  None,
+              )
+              if apk_asset is None:
+                  raise SystemExit(f"APK asset '{requested_asset_name}' was not found in the selected release.")
+          else:
+              apk_asset = next((asset for asset in apk_assets if "arm64" in asset.get("name", "")), apk_assets[0])
+
+          def extract_summary(body: str | None, fallback: str) -> list[str]:
+              text = body or ""
+              marker = "## Included changes"
+              if marker in text:
+                  tail = text.split(marker, 1)[1]
+                  section = tail.split("\n## ", 1)[0]
+              else:
+                  section = text
+              lines = []
+              for raw_line in section.splitlines():
+                  line = raw_line.strip()
+                  if line.startswith("- "):
+                      cleaned = line[2:].strip()
+                      if cleaned:
+                          lines.append(cleaned)
+              return lines[:6] if lines else [fallback]
+
+          def build_mirror_links(primary_href: str) -> list[dict[str, str]]:
+              prefix = "https://github.com/"
+              if not primary_href.startswith(prefix):
+                  return []
+              path = primary_href[len(prefix):]
+              result: list[dict[str, str]] = []
+              for line in mirror_lines:
+                  label, separator, mirror_prefix = line.partition("|")
+                  if not separator or not label.strip() or not mirror_prefix.strip():
+                      continue
+                  result.append(
+                      {
+                          "label": label.strip(),
+                          "href": f"{mirror_prefix.strip()}{path}",
+                      }
+                  )
+              return result
+
+          summary = extract_summary(release.get("body"), release.get("name") or release_tag)
+          if summary_override:
+              summary = [summary_override, *summary]
+
+          release_url = release.get("html_url") or f"https://github.com/{release_repo}/releases/tag/{release_tag}"
+          state = {
+              "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "release": {
+                  "tag": release_tag,
+                  "title": release.get("name") or release_tag,
+                  "publishedAt": release.get("published_at"),
+              },
+              "channels": [
+                  {
+                      "platform": "Android",
+                      "audience": "stable",
+                      "status": "人工验证通过",
+                      "title": "Android 正式版",
+                      "description": "这个入口由人工验证后手动发布到官网，适合直接对外公开。",
+                      "primaryLabel": "下载 Android 正式版",
+                      "primaryHref": apk_asset["browser_download_url"],
+                      "version": release_tag,
+                      "publishedAt": release.get("published_at"),
+                      "updateSummary": summary,
+                      "mirrorLinks": build_mirror_links(apk_asset["browser_download_url"]),
+                      "note": "如果国内访问 GitHub 较慢，可以优先尝试镜像下载入口。",
+                      "releasePageHref": release_url,
+                  }
+              ],
+              "notes": [
+                  "正式版入口只会在人工验收通过后手动发布到官网。",
+                  "如果后续需要切换到新的正式版，只需要再次运行这个 workflow 并指定新的 release_tag。",
+              ],
+          }
+
+          with open("OFFICIAL_SITE_STABLE_RELEASE_STATE.json", "w", encoding="utf-8") as handle:
+              json.dump(state, handle, ensure_ascii=False, indent=2)
+              handle.write("\n")
+          PY
+
+      - name: Upload stable state asset to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" OFFICIAL_SITE_STABLE_RELEASE_STATE.json --repo "$RELEASE_REPO" --clobber
+
+      - name: Write summary
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          {
+            echo "## Official site stable state published"
+            echo ""
+            echo "- Release tag: $RELEASE_TAG"
+            echo "- Asset: OFFICIAL_SITE_STABLE_RELEASE_STATE.json"
+            echo "- This release is now eligible to appear as the stable download on the official site."
+          } >> "$GITHUB_STEP_SUMMARY"
