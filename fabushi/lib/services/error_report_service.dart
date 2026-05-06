@@ -61,9 +61,12 @@ class AppErrorReport {
     };
   }
 
-  String buildFeedbackDescription(String userDescription) {
+  String buildFeedbackDescription(
+    String userDescription, {
+    String intro = '应用在运行过程中出现异常，以下信息由客户端自动采集。',
+  }) {
     final lines = <String>[
-      '应用在启动过程中出现异常，以下信息由客户端自动采集。',
+      intro,
       '',
       if (userDescription.trim().isNotEmpty) ...[
         '### 用户补充说明',
@@ -197,6 +200,10 @@ class ErrorReportService {
     required String userDescription,
     required String contact,
     String? authToken,
+    String page = 'startup_failure_dialog',
+    String category = 'startup_crash',
+    bool autoCollected = true,
+    String descriptionIntro = '应用在运行过程中出现异常，以下信息由客户端自动采集。',
   }) async {
     final report = _lastReport;
     if (report == null) {
@@ -210,13 +217,16 @@ class ErrorReportService {
       WorkerConfig.getEndpoint('submitFeedback'),
       body: {
         'title': title.trim().isEmpty ? report.suggestedTitle : title.trim(),
-        'description': report.buildFeedbackDescription(userDescription),
+        'description': report.buildFeedbackDescription(
+          userDescription,
+          intro: descriptionIntro,
+        ),
         if (contact.trim().isNotEmpty) 'contact': contact.trim(),
-        'page': 'startup_failure_dialog',
+        'page': page,
         'platform': report.platform,
         'appVersion': report.appVersion,
-        'category': 'startup_crash',
-        'autoCollected': true,
+        'category': category,
+        'autoCollected': autoCollected,
         'diagnostics': report.toDiagnosticsPayload(),
       },
       token: authToken,

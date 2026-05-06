@@ -25,7 +25,7 @@ function safeProjectName(testInfo) {
 test.describe('staging profile API flow', () => {
   test.describe.configure({ mode: 'serial' });
 
-  test('logs in with username, email, and phone, then updates profile fields without changing stable values', async ({ request }, testInfo) => {
+  test('logs in with username, email, and phone, then updates profile fields and exercises username rename rollback', async ({ request }, testInfo) => {
     for (const name of requiredEnv) env(name);
 
     const login = env('STAGING_TEST_LOGIN');
@@ -41,7 +41,6 @@ test.describe('staging profile API flow', () => {
       expect(response.status(), `login failed for ${identifier}: ${await response.text()}`).toBe(200);
       const body = await response.json();
       expect(body.token).toBeTruthy();
-      expect(body.username).toBe(login);
       expect(body.user, 'login response must include user after staging deployment').toBeTruthy();
       return { token: body.token, user: body.user };
     }
@@ -109,5 +108,69 @@ test.describe('staging profile API flow', () => {
     expect(after.email).toBe(email);
     expect(after.phoneNumber).toBe(phone);
     expect(after.avatar).toContain(marker);
+
+    const renameSuffix = projectMarker.slice(-10);
+    const trimmedLogin = login.slice(0, Math.max(2, 31 - renameSuffix.length));
+    const renamedUsername = `${trimmedLogin}-${renameSuffix}`;
+
+    const renameResponse = await request.post(apiUrl('/api/auth/update-profile'), {
+      headers: { Authorization: `Bearer ${tokenAfterUpdate}` },
+      data: {
+        username: renamedUsername,
+        email,
+        phoneNumber: phone,
+        avatar: `https://example.com/fabushi-e2e-avatar-rename-${projectMarker}.png`
+      }
+    });
+    expect(renameResponse.status(), await renameResponse.text()).toBe(200);
+    const renamed = await renameResponse.json();
+    expect(renamed.success).toBe(true);
+    expect(renamed.user?.username).toBe(renamedUsername);
+    expect(renamed.token, 'username change should rotate a fresh token').toBeTruthy();
+
+    const renamedToken = renamed.token;
+    const renamedInfo = await request.get(apiUrl('/api/auth/user-info'), {
+      headers: { Authorization: `Bearer ${renamedToken}` }
+    });
+    expect(renamedInfo.status(), await renamedInfo.text()).toBe(200);
+    const renamedPayload = await renamedInfo.json();
+    expect(renamedPayload.username).toBe(renamedUsername);
+    expect(renamedPayload.email).toBe(email);
+    expect(renamedPayload.phoneNumber).toBe(phone);
+
+    const renamedLogin = await passwordLogin(renamedUsername);
+    expect(renamedLogin.user?.username).toBe(renamedUsername);
+    await passwordLogin(email);
+    await passwordLogin(phone);
+
+    const rollbackResponse = await request.post(apiUrl('/api/auth/update-profile'), {
+      headers: { Authorization: `Bearer ${renamedToken}` },
+      data: {
+        username: login,
+        email,
+        phoneNumber: phone,
+        avatar: `https://example.com/fabushi-e2e-avatar-rollback-${projectMarker}.png`
+      }
+    });
+    expect(rollbackResponse.status(), await rollbackResponse.text()).toBe(200);
+    const rolledBack = await rollbackResponse.json();
+    expect(rolledBack.success).toBe(true);
+    expect(rolledBack.user?.username).toBe(login);
+    expect(rolledBack.token, 'rolling back username should also issue a fresh token').toBeTruthy();
+
+    const rollbackToken = rolledBack.token;
+    const rollbackInfo = await request.get(apiUrl('/api/auth/user-info'), {
+      headers: { Authorization: `Bearer ${rollbackToken}` }
+    });
+    expect(rollbackInfo.status(), await rollbackInfo.text()).toBe(200);
+    const rollbackPayload = await rollbackInfo.json();
+    expect(rollbackPayload.username).toBe(login);
+    expect(rollbackPayload.email).toBe(email);
+    expect(rollbackPayload.phoneNumber).toBe(phone);
+
+    const finalUsernameLogin = await passwordLogin(login);
+    expect(finalUsernameLogin.user?.username).toBe(login);
+    await passwordLogin(email);
+    await passwordLogin(phone);
   });
 });
