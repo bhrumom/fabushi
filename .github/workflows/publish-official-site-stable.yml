@@ -18,6 +18,8 @@ on:
 
 permissions:
   contents: write
+  actions: read
+  issues: write
 
 jobs:
   publish-stable-state:
@@ -175,3 +177,54 @@ jobs:
             echo "- Asset: OFFICIAL_SITE_STABLE_RELEASE_STATE.json"
             echo "- This release is now eligible to appear as the stable download on the official site."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-stable-publish-failure:
+    name: Notify official site stable publish failure
+    needs:
+      - publish-stable-state
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout failure notifier
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/scripts/**
+
+      - name: Create or update official site stable publish failure issue
+        uses: actions/github-script@v8
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          ANDROID_ASSET_NAME: ${{ inputs.android_asset_name || '' }}
+        with:
+          script: |
+            const { createOrUpdateFailureIssue } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/create-failure-issue.js`);
+            await createOrUpdateFailureIssue({
+              github,
+              context,
+              core,
+              kind: 'official site stable publish',
+              titlePrefix: 'Official site stable publish failed for',
+              sourceSha: process.env.SOURCE_SHA || context.sha,
+              sourceRef: 'workflow_dispatch',
+              labelName: 'release-failure',
+              labelColor: 'b60205',
+              labelDescription: 'Official site release sync failed',
+              notifyJobName: 'Notify official site stable publish failure',
+              extraSections: [
+                '### Official site impact',
+                '',
+                '- 官网正式版下载入口不会切到这次人工验收通过的安装包。',
+                '- 正式版更新说明和国内镜像下载入口也不会随这次手动发布刷新。',
+                '',
+                '### Release context',
+                '',
+                `- Release tag: ${process.env.RELEASE_TAG || 'unknown'}`,
+                `- Requested Android asset: ${process.env.ANDROID_ASSET_NAME || 'auto-select first APK'}`,
+                '- Check whether the target release contains the intended APK asset and whether the manual inputs match the release assets.',
+                '- If metadata generation fails, also verify OFFICIAL_SITE_GITHUB_MIRROR_BASES formatting.',
+              ],
+            });
