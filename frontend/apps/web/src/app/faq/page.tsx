@@ -31,6 +31,14 @@ export default function FaqPage() {
             </details>
           ))}
         </div>
+        <div className="inline-cta">
+          <a className="secondary-action" href="/download">
+            去下载入口
+          </a>
+          <a className="secondary-action" href="/contact">
+            查看联系信息
+          </a>
+        </div>
       </section>
 
       <SiteFooter />
