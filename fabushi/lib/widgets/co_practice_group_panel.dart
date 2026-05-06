@@ -15,7 +15,7 @@ class CoPracticeGroupPanel extends StatefulWidget {
 class _CoPracticeGroupPanelState extends State<CoPracticeGroupPanel> {
   final _service = CoPracticeService();
   final _searchController = TextEditingController();
-  late Future<List<CoPracticeGroup>> _future;
+  late Future<CoPracticeGroupSearchResult> _future;
   Timer? _debounce;
 
   @override
@@ -31,8 +31,8 @@ class _CoPracticeGroupPanelState extends State<CoPracticeGroupPanel> {
     super.dispose();
   }
 
-  Future<List<CoPracticeGroup>> _load() {
-    return _service.searchGroups(query: _searchController.text.trim());
+  Future<CoPracticeGroupSearchResult> _load() {
+    return _service.searchGroupsWithStatus(query: _searchController.text.trim());
   }
 
   void _refresh() {
@@ -152,7 +152,7 @@ class _CoPracticeGroupPanelState extends State<CoPracticeGroupPanel> {
         ),
         const SizedBox(height: 12),
         Expanded(
-          child: FutureBuilder<List<CoPracticeGroup>>(
+          child: FutureBuilder<CoPracticeGroupSearchResult>(
             future: _future,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
@@ -161,7 +161,16 @@ class _CoPracticeGroupPanelState extends State<CoPracticeGroupPanel> {
                 );
               }
 
-              final groups = snapshot.data ?? [];
+              final result = snapshot.data;
+              final groups = result?.groups ?? [];
+              if (result?.hasError == true && groups.isEmpty) {
+                return _GroupLoadError(
+                  message: result!.errorMessage!,
+                  statusCode: result.statusCode,
+                  onRetry: _refresh,
+                );
+              }
+
               if (groups.isEmpty) {
                 return const Center(
                   child: Text(
@@ -398,6 +407,68 @@ class _WarningStrip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _GroupLoadError extends StatelessWidget {
+  final String message;
+  final int? statusCode;
+  final VoidCallback onRetry;
+
+  const _GroupLoadError({
+    required this.message,
+    required this.statusCode,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = statusCode == null ? message : 'HTTP $statusCode · $message';
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.error_outline,
+              color: Colors.orange,
+              size: 30,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '小组列表暂时加载失败',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              detail,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 12,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh, color: Color(0xFFD4AF37)),
+              label: const Text(
+                '重新加载',
+                style: TextStyle(color: Color(0xFFD4AF37)),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFFD4AF37)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
