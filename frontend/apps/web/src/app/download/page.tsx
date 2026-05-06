@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { brand, downloadOptions } from "@fabushi/shared";
+import { brand, downloadOptions, downloadStatusNotes } from "@fabushi/shared";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 
@@ -32,6 +32,11 @@ export default function DownloadPage() {
               <p>{item.description}</p>
               <strong>{item.ctaLabel}</strong>
             </a>
+          ))}
+        </div>
+        <div className="status-note-list">
+          {downloadStatusNotes.map((item) => (
+            <p key={item}>{item}</p>
           ))}
         </div>
       </section>
