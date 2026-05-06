@@ -43,6 +43,25 @@ function createDbMock(options = {}) {
           return;
         }
 
+        if (normalizedSql.startsWith('SELECT * FROM users WHERE username = ?')) {
+          const user = users.get(params[0]);
+          return user ? { ...user } : null;
+        }
+
+        if (normalizedSql.startsWith('SELECT username FROM email_username_mapping WHERE email = ?')) {
+          const username = emailMapping.get(params[0]);
+          return username ? { username } : null;
+        }
+
+        if (normalizedSql.startsWith('SELECT * FROM users WHERE phone_number = ?')) {
+          for (const user of users.values()) {
+            if (user.phone_number === params[0]) {
+              return { ...user };
+            }
+          }
+          return null;
+        }
+
         if (normalizedSql.startsWith('UPDATE users') && normalizedSql.includes('phone_number = NULL')) {
           const [placeholderEmail, updatedAt, username] = params;
           const user = users.get(username);
