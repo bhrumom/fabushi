@@ -4,6 +4,7 @@ import { SiteFooter } from "../components/site-footer";
 import { SiteHeader } from "../components/site-header";
 import { getAllArticles, getFeaturedArticles } from "../lib/content";
 import { getOfficialSiteReleaseCollection } from "../lib/official-site-releases";
+import { siteHref } from "../lib/site-url";
 
 async function getLeaderboardPreview() {
   try {
@@ -38,10 +39,10 @@ export default async function HomePage() {
           <h1>官网负责入口，小程序负责触达，主应用负责完整体验。</h1>
           <p className="lede">{brand.mission}</p>
           <div className="hero-actions">
-            <a className="primary-action" href="/download">
+            <a className="primary-action" href={siteHref("/download")}>
               查看下载入口
             </a>
-            <a className="secondary-action" href="/faq">
+            <a className="secondary-action" href={siteHref("/faq")}>
               查看常见问题
             </a>
           </div>
@@ -76,7 +77,7 @@ export default async function HomePage() {
         </div>
         <div className="platform-strip">
           {releasePreview.map((item) => (
-            <a key={`${item.audience}-${item.platform}`} className="platform-row" href={item.primaryHref}>
+            <a key={`${item.audience}-${item.platform}`} className="platform-row" href={siteHref(item.primaryHref)}>
               <div>
                 <span className="platform-name">{item.title}</span>
                 <p>{item.description}</p>
@@ -159,7 +160,7 @@ export default async function HomePage() {
         </div>
         <div className="editorial-list">
           {featuredArticles.map((item) => (
-            <a key={item.slug} className="editorial-row" href={`/insights/${item.slug}`}>
+            <a key={item.slug} className="editorial-row" href={siteHref(`/insights/${item.slug}`)}>
               <span>{item.category}</span>
               <div>
                 <strong>{item.title}</strong>
@@ -172,11 +173,8 @@ export default async function HomePage() {
           ))}
         </div>
         <div className="inline-cta">
-          <a className="secondary-action" href="/insights">
+          <a className="secondary-action" href={siteHref("/insights")}>
             查看全部 {allArticles.length} 篇内容
-          </a>
-          <a className="secondary-action" href="/feed.json">
-            查看内容 Feed
           </a>
         </div>
       </section>
@@ -195,10 +193,10 @@ export default async function HomePage() {
           ))}
         </div>
         <div className="inline-cta">
-          <a className="secondary-action" href="/faq">
+          <a className="secondary-action" href={siteHref("/faq")}>
             查看完整 FAQ
           </a>
-          <a className="secondary-action" href="/contact">
+          <a className="secondary-action" href={siteHref("/contact")}>
             联系我们
           </a>
         </div>
@@ -211,7 +209,7 @@ export default async function HomePage() {
         </div>
         <div className="contact-grid">
           {contactChannels.map((item) => (
-            <a key={item.label} className="contact-card" href={item.href}>
+            <a key={item.label} className="contact-card" href={siteHref(item.href)}>
               <span>{item.label}</span>
               <strong>{item.value}</strong>
               <p>{item.note}</p>

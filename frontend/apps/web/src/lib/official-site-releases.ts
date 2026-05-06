@@ -83,9 +83,6 @@ async function fetchJson<T>(url: string): Promise<T | null> {
       headers: {
         Accept: "application/vnd.github+json",
       },
-      next: {
-        revalidate: 300,
-      },
     });
 
     if (!response.ok) {
@@ -100,11 +97,7 @@ async function fetchJson<T>(url: string): Promise<T | null> {
 
 async function fetchText(url: string): Promise<string | null> {
   try {
-    const response = await fetch(url, {
-      next: {
-        revalidate: 300,
-      },
-    });
+    const response = await fetch(url);
 
     if (!response.ok) {
       return null;

@@ -3,6 +3,7 @@ import { brand } from "@fabushi/shared";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import { getAllArticles } from "../../lib/content";
+import { siteHref } from "../../lib/site-url";
 
 export const metadata: Metadata = {
   title: `内容专栏 | ${brand.name}`,
@@ -28,7 +29,7 @@ export default function InsightsIndexPage() {
       <section className="band">
         <div className="editorial-list">
           {articles.map((item) => (
-            <a key={item.slug} className="editorial-row" href={`/insights/${item.slug}`}>
+            <a key={item.slug} className="editorial-row" href={siteHref(`/insights/${item.slug}`)}>
               <span>{item.category}</span>
               <div>
                 <strong>{item.title}</strong>
@@ -39,11 +40,8 @@ export default function InsightsIndexPage() {
           ))}
         </div>
         <div className="inline-cta">
-          <a className="secondary-action" href="/apply">
+          <a className="secondary-action" href={siteHref("/apply")}>
             前往申请测试
-          </a>
-          <a className="secondary-action" href="/feed.json">
-            查看 JSON Feed
           </a>
         </div>
       </section>

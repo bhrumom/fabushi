@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { brand, contactChannels } from "@fabushi/shared";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
+import { siteHref } from "../../lib/site-url";
 
 export const metadata: Metadata = {
   title: `联系 | ${brand.name}`,
@@ -25,7 +26,7 @@ export default function ContactPage() {
       <section className="band">
         <div className="contact-grid">
           {contactChannels.map((item) => (
-            <a key={item.label} className="contact-card" href={item.href}>
+            <a key={item.label} className="contact-card" href={siteHref(item.href)}>
               <span>{item.label}</span>
               <strong>{item.value}</strong>
               <p>{item.note}</p>
@@ -45,10 +46,10 @@ export default function ContactPage() {
           <li>品牌介绍、专题内容和长期对外入口，统一落到官网域名。</li>
         </ol>
         <div className="inline-cta">
-          <a className="primary-action" href="/apply">
+          <a className="primary-action" href={siteHref("/apply")}>
             去申请测试
           </a>
-          <a className="secondary-action" href="/download">
+          <a className="secondary-action" href={siteHref("/download")}>
             回到下载页
           </a>
         </div>
