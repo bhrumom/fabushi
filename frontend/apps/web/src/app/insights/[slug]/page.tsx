@@ -36,7 +36,9 @@ export default function InsightArticlePage({ params }: { params: { slug: string 
           <p className="eyebrow">{article.category}</p>
           <h1>{article.title}</h1>
           <p className="lede">{article.description}</p>
-          <span className="article-date">{article.publishedAt}</span>
+          <span className="article-date">
+            {article.publishedAt} · {article.author} · {article.readTime}
+          </span>
         </div>
       </section>
 
