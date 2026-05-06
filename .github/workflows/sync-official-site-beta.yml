@@ -1,0 +1,229 @@
+name: Sync official site beta download state
+
+on:
+  release:
+    types:
+      - published
+      - released
+      - edited
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: GitHub Release tag to sync into the official site beta channel.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  sync-beta-state:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Resolve release tag
+        id: resolve
+        shell: bash
+        env:
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          EVENT_RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          release_tag="${INPUT_RELEASE_TAG:-${EVENT_RELEASE_TAG:-}}"
+          if [ -z "$release_tag" ]; then
+            echo "No release tag was provided or detected." >&2
+            exit 1
+          fi
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Generate beta state asset for the official site
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+          IOS_TESTFLIGHT_PUBLIC_URL: ${{ vars.IOS_TESTFLIGHT_PUBLIC_URL || '' }}
+          OFFICIAL_SITE_GITHUB_MIRROR_BASES: ${{ vars.OFFICIAL_SITE_GITHUB_MIRROR_BASES || '' }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import tempfile
+          import urllib.request
+          from datetime import datetime, timezone
+
+          release_repo = os.environ["RELEASE_REPO"]
+          release_tag = os.environ["RELEASE_TAG"]
+          ios_testflight_public_url = os.environ.get("IOS_TESTFLIGHT_PUBLIC_URL", "").strip()
+          mirror_lines = [
+              line.strip()
+              for line in os.environ.get("OFFICIAL_SITE_GITHUB_MIRROR_BASES", "").splitlines()
+              if line.strip()
+          ]
+          if not mirror_lines:
+              mirror_lines = [
+                  "GitHub 镜像 1|https://mirror.ghproxy.com/https://github.com/",
+                  "GitHub 镜像 2|https://ghfast.top/https://github.com/",
+              ]
+
+          release = json.loads(
+              subprocess.check_output(
+                  ["gh", "api", f"repos/{release_repo}/releases/tags/{release_tag}"],
+                  text=True,
+              )
+          )
+
+          assets = release.get("assets", [])
+          apk_assets = [asset for asset in assets if asset.get("name", "").endswith(".apk")]
+          if not apk_assets:
+              raise SystemExit("No APK asset was found in the selected release.")
+
+          apk_asset = next((asset for asset in apk_assets if "arm64" in asset.get("name", "")), apk_assets[0])
+
+          def extract_summary(body: str | None, fallback: str) -> list[str]:
+              text = body or ""
+              marker = "## Included changes"
+              if marker in text:
+                  tail = text.split(marker, 1)[1]
+                  section = tail.split("\n## ", 1)[0]
+              else:
+                  section = text
+              lines = []
+              for raw_line in section.splitlines():
+                  line = raw_line.strip()
+                  if line.startswith("- "):
+                      cleaned = line[2:].strip()
+                      if cleaned:
+                          lines.append(cleaned)
+              return lines[:6] if lines else [fallback]
+
+          def build_mirror_links(primary_href: str) -> list[dict[str, str]]:
+              prefix = "https://github.com/"
+              if not primary_href.startswith(prefix):
+                  return []
+              path = primary_href[len(prefix):]
+              result: list[dict[str, str]] = []
+              for line in mirror_lines:
+                  label, separator, mirror_prefix = line.partition("|")
+                  if not separator or not label.strip() or not mirror_prefix.strip():
+                      continue
+                  result.append(
+                      {
+                          "label": label.strip(),
+                          "href": f"{mirror_prefix.strip()}{path}",
+                      }
+                  )
+              return result
+
+          testflight_status = {}
+          testflight_asset = next(
+              (asset for asset in assets if asset.get("name") == "TESTFLIGHT_UPLOAD_STATUS.txt"),
+              None,
+          )
+          if testflight_asset:
+              with urllib.request.urlopen(testflight_asset["browser_download_url"]) as response:
+                  content = response.read().decode("utf-8")
+              for raw_line in content.splitlines():
+                  key, separator, value = raw_line.partition("=")
+                  if separator and key.strip():
+                      testflight_status[key.strip()] = value.strip()
+
+          summary = extract_summary(release.get("body"), release.get("name") or release_tag)
+          release_url = release.get("html_url") or f"https://github.com/{release_repo}/releases/tag/{release_tag}"
+
+          channels = [
+              {
+                  "platform": "Android",
+                  "audience": "beta",
+                  "status": "GitHub Release Beta",
+                  "title": "Android Beta",
+                  "description": "官网直接读取最新 GitHub Release 的 APK 安装包，安装包发布后这里会自动更新。",
+                  "primaryLabel": "下载 Android Beta",
+                  "primaryHref": apk_asset["browser_download_url"],
+                  "version": release_tag,
+                  "publishedAt": release.get("published_at"),
+                  "updateSummary": summary,
+                  "mirrorLinks": build_mirror_links(apk_asset["browser_download_url"]),
+                  "note": "国内访问 GitHub 较慢时，可以优先尝试镜像下载入口。",
+                  "releasePageHref": release_url,
+              }
+          ]
+
+          tf_status = testflight_status.get("status", "")
+          tf_uploaded_at = testflight_status.get("uploaded_at") or release.get("published_at")
+          tf_build_number = testflight_status.get("build_number") or release_tag
+          tf_uploaded = tf_status == "uploaded"
+          ios_primary_href = ios_testflight_public_url if tf_uploaded and ios_testflight_public_url else release_url
+          ios_primary_label = "加入 iOS TestFlight" if tf_uploaded and ios_testflight_public_url else "查看 iOS 发布状态"
+          ios_note = ""
+          if tf_uploaded and not ios_testflight_public_url:
+              ios_note = "已经上传到 TestFlight，但仓库变量 IOS_TESTFLIGHT_PUBLIC_URL 还没有配置公开加入链接。"
+          elif testflight_status.get("reason") == "app_store_connect_credentials_not_configured":
+              ios_note = "当前仓库还没有配置 App Store Connect 上传凭据。"
+          elif not tf_uploaded:
+              ios_note = "当前还没有拿到可公开加入的 TestFlight 入口。"
+
+          channels.append(
+              {
+                  "platform": "iOS",
+                  "audience": "beta",
+                  "status": "TestFlight 已开放" if tf_uploaded else "等待 TestFlight 可加入",
+                  "title": "iOS TestFlight Beta",
+                  "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
+                  "primaryLabel": ios_primary_label,
+                  "primaryHref": ios_primary_href,
+                  "version": tf_build_number,
+                  "publishedAt": tf_uploaded_at,
+                  "updateSummary": summary,
+                  "mirrorLinks": [],
+                  "note": ios_note,
+                  "releasePageHref": release_url,
+              }
+          )
+
+          state = {
+              "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "release": {
+                  "tag": release_tag,
+                  "title": release.get("name") or release_tag,
+                  "publishedAt": release.get("published_at"),
+              },
+              "channels": channels,
+              "notes": [
+                  "Android beta 下载链接来自最新 GitHub Release 的 APK 资产。",
+                  "iOS TestFlight 入口会在上传状态成功后和 Android beta 一起同步。",
+                  "镜像链接面向国内网络环境准备，如镜像暂时不可用请改用 GitHub 原始下载地址。",
+              ],
+          }
+
+          with open("OFFICIAL_SITE_RELEASE_STATE.json", "w", encoding="utf-8") as handle:
+              json.dump(state, handle, ensure_ascii=False, indent=2)
+              handle.write("\n")
+          PY
+
+      - name: Upload beta state asset to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" OFFICIAL_SITE_RELEASE_STATE.json --repo "$RELEASE_REPO" --clobber
+
+      - name: Write summary
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+        run: |
+          {
+            echo "## Official site beta state synced"
+            echo ""
+            echo "- Release tag: $RELEASE_TAG"
+            echo "- Asset: OFFICIAL_SITE_RELEASE_STATE.json"
+            echo "- Android beta now points at the latest GitHub Release APK asset."
+            echo "- iOS beta now points at the TestFlight public link when IOS_TESTFLIGHT_PUBLIC_URL is configured."
+          } >> "$GITHUB_STEP_SUMMARY"
