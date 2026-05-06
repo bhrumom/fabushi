@@ -1,4 +1,6 @@
-const RELEASES_API_URL = "https://api.github.com/repos/bhrumom/fabushi/releases?per_page=8";
+const officialSiteReleaseRepo = process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_REPO?.trim() || "bhrum/fabushi";
+const iosTestFlightPublicUrl = process.env.NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL?.trim() || "";
+const RELEASES_API_URL = `https://api.github.com/repos/${officialSiteReleaseRepo}/releases?per_page=8`;
 
 const DEFAULT_MIRROR_BASES = [
   {
@@ -280,17 +282,20 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
   const testFlightStatus = await loadTestFlightStatus(release);
   if (testFlightStatus) {
     const uploaded = testFlightStatus.status === "uploaded";
+    const primaryHref = uploaded && iosTestFlightPublicUrl ? iosTestFlightPublicUrl : release.html_url;
     channels.push({
       platform: "iOS",
       audience: "beta",
       status: uploaded ? "TestFlight 构建已上传" : "等待 TestFlight 可加入",
       title: "iOS TestFlight Beta",
       description:
-        uploaded
-          ? "iOS beta 已经上传到 TestFlight。下一次 beta 同步工作流完成后，这里会显示直接加入链接。"
+        uploaded && iosTestFlightPublicUrl
+          ? "iOS beta 已经上传到 TestFlight，点击即可打开公开加入页面。"
+          : uploaded
+            ? "iOS beta 已经上传到 TestFlight。配置公开加入链接后，这里会显示直接加入入口。"
           : "iOS beta 会在 TestFlight 上传成功后自动补到官网入口。",
-      primaryLabel: uploaded ? "查看 Beta 发布说明" : "等待 TestFlight 开放",
-      primaryHref: release.html_url,
+      primaryLabel: uploaded && iosTestFlightPublicUrl ? "加入 iOS TestFlight" : uploaded ? "查看 Beta 发布说明" : "等待 TestFlight 开放",
+      primaryHref,
       version: testFlightStatus.build_number || release.tag_name,
       publishedAt: testFlightStatus.uploaded_at || release.published_at || undefined,
       updateSummary: summary,
@@ -298,6 +303,8 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
       note:
         testFlightStatus.reason === "app_store_connect_credentials_not_configured"
           ? "当前仓库还没有配置 App Store Connect 上传凭据。"
+          : uploaded && iosTestFlightPublicUrl
+            ? "点击后会打开 Apple TestFlight 的公开加入页面。"
           : uploaded
             ? "一旦公开 TestFlight 加入链接被同步进发布资产，这里会自动切成可直接加入。"
             : "当前还没有可公开加入的 TestFlight 入口。",

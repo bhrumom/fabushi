@@ -1,0 +1,83 @@
+name: Deploy official site to Cloudflare Worker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - frontend/**
+      - .github/workflows/deploy-official-site-cloudflare.yml
+  release:
+    types:
+      - published
+      - edited
+  workflow_run:
+    workflows:
+      - Sync official site beta download state
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: deploy-official-site-cloudflare
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: cloudflare-worker
+      url: https://fabushi.ombhrum.com
+    steps:
+      - name: Checkout official site source
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /frontend/**
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.9.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build official site
+        working-directory: frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_SITE_ORIGIN: ${{ vars.OFFICIAL_SITE_ORIGIN || 'https://fabushi.ombhrum.com' }}
+          NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_REPO: ${{ vars.OFFICIAL_SITE_RELEASE_REPO || github.repository }}
+          NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL: ${{ vars.IOS_TESTFLIGHT_PUBLIC_URL || '' }}
+        run: pnpm build:web
+
+      - name: Deploy official site to Cloudflare Worker
+        working-directory: frontend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "Cloudflare credentials are not configured. Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID." >&2
+            exit 1
+          fi
+
+          npx --yes wrangler@latest deploy \
+            --name fabushi-official-site \
+            --assets apps/web/out \
+            --compatibility-date 2026-05-06 \
+            --domain fabushi.ombhrum.com
