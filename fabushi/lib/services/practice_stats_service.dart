@@ -442,6 +442,44 @@ class PracticeStatsService extends ChangeNotifier {
     ]);
   }
 
+  Future<bool> _sendRecordMutation({
+    required String method,
+    required int recordId,
+    Map<String, dynamic>? body,
+  }) async {
+    final url = await _baseUrl;
+    final uri = Uri.parse(
+      '$url/api/meditation/records',
+    ).replace(queryParameters: {'id': recordId.toString()});
+
+    late final http.Response response;
+    if (method == 'PUT') {
+      response = await http.put(
+        uri,
+        headers: _headers,
+        body: jsonEncode(body ?? const <String, dynamic>{}),
+      );
+    } else if (method == 'DELETE') {
+      response = await http.delete(uri, headers: _headers);
+    } else {
+      throw ArgumentError('Unsupported record mutation method: $method');
+    }
+
+    if (response.statusCode != 200) {
+      _lastError = '云端保存失败: HTTP ${response.statusCode}';
+      return false;
+    }
+
+    final data = jsonDecode(response.body);
+    if (data['success'] == true) {
+      _lastError = null;
+      return true;
+    }
+
+    _lastError = data['error']?.toString() ?? '云端保存失败';
+    return false;
+  }
+
   Future<bool> flushPendingRecords() async {
     if (_isFlushingPending) return _pendingSyncCount == 0;
     if (!await _ensureAuthToken()) return false;
@@ -714,6 +752,77 @@ class PracticeStatsService extends ChangeNotifier {
       localTime: localTime,
       notes: notes,
     );
+  }
+
+  Future<bool> updateRecord({
+    required int recordId,
+    required String sutra,
+    required int chantCount,
+    int duration = 0,
+    required bool isManual,
+    String sutraSource = 'custom',
+    String? recordDate,
+    String? localTime,
+    String? notes,
+    int? timezoneOffsetMinutes,
+    DateTime? startTime,
+    DateTime? endTime,
+  }) async {
+    _lastWriteQueued = false;
+    if (!await _ensureAuthToken()) return false;
+
+    try {
+      final updated = await _sendRecordMutation(
+        method: 'PUT',
+        recordId: recordId,
+        body: {
+          'sutra': sutra,
+          'sutraSource': sutraSource,
+          'chantCount': chantCount,
+          'duration': duration,
+          'isManual': isManual,
+          'recordDate': recordDate,
+          'localTime': localTime,
+          'notes': notes ?? '',
+          'timezoneOffsetMinutes':
+              timezoneOffsetMinutes ?? DateTime.now().timeZoneOffset.inMinutes,
+          if (startTime != null) 'startTime': startTime.toIso8601String(),
+          if (endTime != null) 'endTime': endTime.toIso8601String(),
+        },
+      );
+
+      if (updated) {
+        await _refreshAfterRecordMutation();
+        return true;
+      }
+    } catch (e) {
+      _lastError = '更新修行记录失败: $e';
+      debugPrint(_lastError);
+    }
+
+    return false;
+  }
+
+  Future<bool> deleteRecord(int recordId) async {
+    _lastWriteQueued = false;
+    if (!await _ensureAuthToken()) return false;
+
+    try {
+      final deleted = await _sendRecordMutation(
+        method: 'DELETE',
+        recordId: recordId,
+      );
+
+      if (deleted) {
+        await _refreshAfterRecordMutation();
+        return true;
+      }
+    } catch (e) {
+      _lastError = '删除修行记录失败: $e';
+      debugPrint(_lastError);
+    }
+
+    return false;
   }
 
   /// 同步禅室修行记录
