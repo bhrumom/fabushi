@@ -68,12 +68,70 @@ class _PracticeRecordScreenState extends State<PracticeRecordScreen> {
     if (changed == true) await _loadData();
   }
 
+  Future<void> _showEditRecordDialog(PracticeRecord record) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AddPracticeRecordDialog(initialRecord: record),
+    );
+    if (changed == true) await _loadData();
+  }
+
   Future<void> _showGoalDialog() async {
     final changed = await showDialog<bool>(
       context: context,
       builder: (context) => SetGoalDialog(initialSutra: _defaultSutra),
     );
     if (changed == true) await _loadData();
+  }
+
+  Future<void> _confirmDeleteRecord(PracticeRecord record) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text(
+          '删除记录',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          '将删除 ${record.sutraName} 这条修行记录，相关统计会同步更新。',
+          style: const TextStyle(color: Colors.white70, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消', style: TextStyle(color: Colors.white54)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('确认删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final deleted = await _service.deleteRecord(record.id);
+    if (!mounted) return;
+
+    if (deleted) {
+      await _loadData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('修行记录已删除'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_service.lastError ?? '删除失败，请检查网络后重试'),
+        ),
+      );
+    }
   }
 
   @override
@@ -419,7 +477,7 @@ class _PracticeRecordScreenState extends State<PracticeRecordScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
@@ -465,6 +523,44 @@ class _PracticeRecordScreenState extends State<PracticeRecordScreen> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          _showEditRecordDialog(record);
+                        },
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('编辑记录'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.2),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          _confirmDeleteRecord(record);
+                        },
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('删除记录'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
