@@ -1,16 +1,15 @@
 import type { MetadataRoute } from "next";
 import { getAllArticles } from "../lib/content";
-
-const baseUrl = "https://fabushi.ombhrum.com";
+import { siteUrl } from "../lib/site-url";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const routes: MetadataRoute.Sitemap = ["", "/download", "/apply", "/faq", "/contact", "/insights"].map((path) => ({
-    url: `${baseUrl}${path}`,
+  const routes: MetadataRoute.Sitemap = ["/", "/download", "/apply", "/faq", "/contact", "/insights"].map((path) => ({
+    url: siteUrl(path),
     lastModified: "2026-05-06",
   }));
 
   const articleRoutes = getAllArticles().map((article) => ({
-    url: `${baseUrl}/insights/${article.slug}`,
+    url: siteUrl(`/insights/${article.slug}`),
     lastModified: article.publishedAt,
   }));
 
