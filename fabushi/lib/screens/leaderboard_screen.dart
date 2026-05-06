@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/leaderboard_model.dart';
 import '../widgets/space_background.dart';
 import '../widgets/follow_button.dart';
+import '../widgets/leaderboard_user_detail_sheet.dart';
 import '../core/design_system/app_theme.dart';
 
 class LeaderboardScreen extends StatefulWidget {
@@ -117,6 +118,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         margin: const EdgeInsets.only(bottom: 8),
                         decoration: AppTheme.glassDecoration,
                         child: ListTile(
+                          onTap: () => LeaderboardUserDetailSheet.show(
+                            context,
+                            entry: entry,
+                            highlightLabel: '累计布施',
+                            highlightValue: _formatBytes(entry.totalBytes),
+                          ),
                           leading: _buildRankBadge(entry.rank),
                           title: Text(
                             entry.displayName.isNotEmpty
