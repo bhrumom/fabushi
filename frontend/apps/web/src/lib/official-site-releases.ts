@@ -177,8 +177,8 @@ function normalizeChannel(input: unknown): OfficialSiteChannel | null {
     : [];
 
   return {
-    platform: channel.platform,
-    audience: channel.audience,
+    platform: channel.platform as OfficialSiteChannel["platform"],
+    audience: channel.audience as OfficialSiteChannel["audience"],
     status: channel.status,
     title: channel.title,
     description: channel.description,
