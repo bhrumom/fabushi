@@ -327,9 +327,13 @@ export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteRe
   const publishedReleases = releases.filter((release) => !release.draft);
 
   const betaRelease = publishedReleases[0] ?? null;
+  const syncedBetaState = betaRelease
+    ? await loadStateAsset(betaRelease, "OFFICIAL_SITE_RELEASE_STATE.json")
+    : null;
   const betaState = betaRelease
-    ? (await loadStateAsset(betaRelease, "OFFICIAL_SITE_RELEASE_STATE.json")) ??
-      (await buildFallbackBetaState(betaRelease))
+    ? syncedBetaState && syncedBetaState.channels.length > 0
+      ? syncedBetaState
+      : await buildFallbackBetaState(betaRelease)
     : null;
 
   const stableRelease =
