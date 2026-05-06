@@ -1,0 +1,18 @@
+import type { MetadataRoute } from "next";
+import { getAllArticles } from "../lib/content";
+
+const baseUrl = "https://fabushi.ombhrum.com";
+
+export default function sitemap(): MetadataRoute.Sitemap {
+  const routes: MetadataRoute.Sitemap = ["", "/download", "/faq", "/insights"].map((path) => ({
+    url: `${baseUrl}${path}`,
+    lastModified: "2026-05-06",
+  }));
+
+  const articleRoutes = getAllArticles().map((article) => ({
+    url: `${baseUrl}/insights/${article.slug}`,
+    lastModified: article.publishedAt,
+  }));
+
+  return [...routes, ...articleRoutes];
+}
