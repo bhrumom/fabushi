@@ -1,14 +1,16 @@
 import { fabushiApiClient } from "@fabushi/api-client";
 import {
   brand,
+  contactChannels,
   downloadOptions,
+  downloadStatusNotes,
   faqItems,
   homeHighlights,
-  insightArticles,
   launchRoadmap,
 } from "@fabushi/shared";
 import { SiteFooter } from "../components/site-footer";
 import { SiteHeader } from "../components/site-header";
+import { getAllArticles, getFeaturedArticles } from "../lib/content";
 
 async function getLeaderboardPreview() {
   try {
@@ -27,6 +29,8 @@ async function getLeaderboardPreview() {
 
 export default async function HomePage() {
   const leaderboard = await getLeaderboardPreview();
+  const featuredArticles = getFeaturedArticles();
+  const allArticles = getAllArticles();
 
   return (
     <main className="page-shell">
@@ -87,6 +91,11 @@ export default async function HomePage() {
                 <span>{item.ctaLabel}</span>
               </div>
             </a>
+          ))}
+        </div>
+        <div className="status-note-list">
+          {downloadStatusNotes.map((item) => (
+            <p key={item}>{item}</p>
           ))}
         </div>
       </section>
@@ -154,15 +163,24 @@ export default async function HomePage() {
           <h2>官网不只是一张首页，还要能持续承接路线、更新和专题内容。</h2>
         </div>
         <div className="editorial-list">
-          {insightArticles.map((item) => (
+          {featuredArticles.map((item) => (
             <a key={item.slug} className="editorial-row" href={`/insights/${item.slug}`}>
               <span>{item.category}</span>
               <div>
                 <strong>{item.title}</strong>
                 <p>{item.description}</p>
+                <small>{item.author} · {item.readTime}</small>
               </div>
             </a>
           ))}
+        </div>
+        <div className="inline-cta">
+          <a className="secondary-action" href="/insights">
+            查看全部 {allArticles.length} 篇内容
+          </a>
+          <a className="secondary-action" href="/feed.json">
+            查看内容 Feed
+          </a>
         </div>
       </section>
 
@@ -183,6 +201,25 @@ export default async function HomePage() {
           <a className="secondary-action" href="/faq">
             查看完整 FAQ
           </a>
+          <a className="secondary-action" href="/contact">
+            联系我们
+          </a>
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="section-heading">
+          <p>联系</p>
+          <h2>在真实下载链接还没公开前，官网至少要给出明确、可信的联系入口。</h2>
+        </div>
+        <div className="contact-grid">
+          {contactChannels.map((item) => (
+            <a key={item.label} className="contact-card" href={item.href}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <p>{item.note}</p>
+            </a>
+          ))}
         </div>
       </section>
 
