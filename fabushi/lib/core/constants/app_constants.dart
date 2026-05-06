@@ -3,7 +3,7 @@ class AppConstants {
 
   // 应用信息
   static const String appName = '大乘';
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.0.0+16';
 
   // 支持的国家代码
   static const List<String> supportedCountries = [
