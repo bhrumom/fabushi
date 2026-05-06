@@ -252,6 +252,20 @@ a {
   gap: 12px;
 }
 
+.status-note-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.status-note-list p,
+.contact-card p,
+.editorial-row small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
 .platform-row,
 .editorial-row {
   display: grid;
@@ -287,6 +301,29 @@ a {
 
 .download-card {
   display: block;
+}
+
+.contact-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.contact-card {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.contact-card span,
+.contact-card strong {
+  display: block;
+}
+
+.contact-card strong {
+  margin: 8px 0 10px;
 }
 
 .roadmap-list {
