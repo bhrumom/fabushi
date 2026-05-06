@@ -6,6 +6,7 @@ import {
   getOfficialSiteReleaseCollection,
   type OfficialSiteChannel,
 } from "../../lib/official-site-releases";
+import { siteHref } from "../../lib/site-url";
 
 export const metadata: Metadata = {
   title: `下载入口 | ${brand.name}`,
@@ -56,11 +57,11 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
         </ul>
       )}
       <div className="release-card-actions">
-        <a className="primary-action" href={channel.primaryHref}>
+        <a className="primary-action" href={siteHref(channel.primaryHref)}>
           {channel.primaryLabel}
         </a>
         {channel.releasePageHref ? (
-          <a className="secondary-action" href={channel.releasePageHref}>
+          <a className="secondary-action" href={siteHref(channel.releasePageHref)}>
             查看 Release
           </a>
         ) : null}
@@ -70,7 +71,7 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
           <p>国内下载镜像</p>
           <div className="inline-cta">
             {channel.mirrorLinks.map((item) => (
-              <a key={item.href} className="secondary-action" href={item.href}>
+              <a key={item.href} className="secondary-action" href={siteHref(item.href)}>
                 {item.label}
               </a>
             ))}
@@ -146,10 +147,10 @@ export default async function DownloadPage() {
           <li>如果 iOS TestFlight 还没有公开加入链接，先查看 release 状态或联系支持邮箱。</li>
         </ol>
         <div className="inline-cta">
-          <a className="primary-action" href="/apply">
+          <a className="primary-action" href={siteHref("/apply")}>
             前往申请测试
           </a>
-          <a className="secondary-action" href="/contact">
+          <a className="secondary-action" href={siteHref("/contact")}>
             查看联系信息
           </a>
         </div>

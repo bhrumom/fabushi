@@ -4,6 +4,7 @@ import { brand } from "@fabushi/shared";
 import { SiteFooter } from "../../../components/site-footer";
 import { SiteHeader } from "../../../components/site-header";
 import { getAllArticles, getArticleBySlug } from "../../../lib/content";
+import { siteHref } from "../../../lib/site-url";
 
 type ArticlePageParams = Promise<{ slug: string }>;
 
@@ -54,10 +55,10 @@ export default async function InsightArticlePage({ params }: { params: ArticlePa
 
       <section className="band alt">
         <div className="inline-cta">
-          <a className="primary-action" href="/download">
+          <a className="primary-action" href={siteHref("/download")}>
             查看下载入口
           </a>
-          <a className="secondary-action" href="/faq">
+          <a className="secondary-action" href={siteHref("/faq")}>
             查看常见问题
           </a>
         </div>

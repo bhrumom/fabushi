@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { betaApplicationTracks, brand } from "@fabushi/shared";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
+import { siteHref } from "../../lib/site-url";
 
 export const metadata: Metadata = {
   title: `申请测试 | ${brand.name}`,
@@ -41,7 +42,7 @@ export default function ApplyPage() {
                   <li key={entry}>{entry}</li>
                 ))}
               </ol>
-              <a className="primary-action" href={item.ctaHref}>
+              <a className="primary-action" href={siteHref(item.ctaHref)}>
                 {item.ctaLabel}
               </a>
             </article>
@@ -60,10 +61,10 @@ export default function ApplyPage() {
           <li>如果你愿意持续反馈问题，也建议在申请邮件里直接写明。</li>
         </ol>
         <div className="inline-cta">
-          <a className="secondary-action" href="/download">
+          <a className="secondary-action" href={siteHref("/download")}>
             回到下载入口
           </a>
-          <a className="secondary-action" href="/contact">
+          <a className="secondary-action" href={siteHref("/contact")}>
             查看联系信息
           </a>
         </div>
