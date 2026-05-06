@@ -1,0 +1,17 @@
+{
+  "name": "@fabushi/frontend",
+  "private": true,
+  "packageManager": "pnpm@10.9.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @fabushi/web dev",
+    "build:web": "pnpm --filter @fabushi/web build",
+    "dev:mp": "pnpm --filter @fabushi/mp-wechat dev:weapp",
+    "build:mp": "pnpm --filter @fabushi/mp-wechat build:weapp",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "typescript": "^5.9.2"
+  }
+}

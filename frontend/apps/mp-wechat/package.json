@@ -1,0 +1,28 @@
+{
+  "name": "@fabushi/mp-wechat",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:weapp": "taro build --type weapp --watch",
+    "build:weapp": "taro build --type weapp",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fabushi/api-client": "workspace:*",
+    "@fabushi/shared": "workspace:*",
+    "@tarojs/components": "^4.1.5",
+    "@tarojs/helper": "^4.1.6",
+    "@tarojs/react": "^4.1.6",
+    "@tarojs/runtime": "^4.1.6",
+    "@tarojs/taro": "^4.1.6",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@tarojs/cli": "^4.1.6",
+    "@tarojs/plugin-platform-weapp": "^4.1.6",
+    "@tarojs/webpack5-runner": "^4.1.6",
+    "@types/react": "^19.1.4"
+  }
+}

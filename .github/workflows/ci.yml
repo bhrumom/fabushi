@@ -284,6 +284,38 @@ jobs:
       - name: Validate the staging E2E script used by CD
         run: npm test -- --list
 
+  frontend:
+    name: Frontend monorepo typecheck and Next.js build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout frontend workspace
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /frontend/**
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install frontend dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Run frontend typecheck
+        run: pnpm typecheck
+
+      - name: Build Next.js site
+        run: pnpm build:web
+
   workflow-guardrails:
     name: Workflow guardrails
     runs-on: ubuntu-latest
@@ -310,6 +342,7 @@ jobs:
       - android-gradle-bootstrap
       - worker
       - e2e-contract
+      - frontend
       - workflow-guardrails
     if: always()
     steps:
@@ -333,6 +366,10 @@ jobs:
             echo "E2E contract job failed: ${{ needs.e2e-contract.result }}"
             exit 1
           fi
+          if [ "${{ needs.frontend.result }}" != "success" ]; then
+            echo "Frontend job failed: ${{ needs.frontend.result }}"
+            exit 1
+          fi
           if [ "${{ needs.workflow-guardrails.result }}" != "success" ]; then
             echo "Workflow guardrails job failed: ${{ needs.workflow-guardrails.result }}"
             exit 1
@@ -348,6 +385,7 @@ jobs:
       - android-gradle-bootstrap
       - worker
       - e2e-contract
+      - frontend
       - workflow-guardrails
       - ci-result
     if: failure()
@@ -391,6 +429,7 @@ jobs:
                 '- Dart format diffs are uploaded as `dart-format-patch` when formatter output differs from the committed code.',
                 '- CI runs with the formatter-applied workspace and does not push formatter commits directly to main because main is protected by merge queue rules.',
                 '- Android Gradle bootstrap now validates that GitHub Actions can resolve Android/Kotlin buildscript dependencies before release packaging workflows run.',
+                '- The frontend monorepo is validated with pnpm install, recursive typecheck, and a Next.js production build before PRs can merge.',
                 '- Build and dry-run bundles are listed above when those jobs reach their upload steps.',
                 '- Merge queue runs are supported through the `merge_group` trigger.',
               ],
