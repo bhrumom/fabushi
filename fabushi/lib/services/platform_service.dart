@@ -143,9 +143,10 @@ class NativePlatformService implements PlatformService {
   void _handleDeepLink(String url) {
     debugPrint('NativePlatformService: 处理深度链接URL: $url');
 
-    // 检查是否是支付宝回调
+    // Tobias SDK 在 Android 上回调到 pubspec 里声明的 url_scheme。
     if (url.startsWith('com.ombhrum.fabushi://') ||
-        url.startsWith('globaldharma://')) {
+        url.startsWith('globaldharma://') ||
+        url.startsWith('fabushi://')) {
       if (_messageHandler != null) {
         _messageHandler!(url);
       }
