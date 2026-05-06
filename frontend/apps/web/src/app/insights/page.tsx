@@ -39,6 +39,9 @@ export default function InsightsIndexPage() {
           ))}
         </div>
         <div className="inline-cta">
+          <a className="secondary-action" href="/apply">
+            前往申请测试
+          </a>
           <a className="secondary-action" href="/feed.json">
             查看 JSON Feed
           </a>
