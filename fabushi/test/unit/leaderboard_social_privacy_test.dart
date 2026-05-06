@@ -167,7 +167,7 @@ void main() {
               entry: entry,
               highlightLabel: '修行时长',
               highlightValue: '已私密',
-              recordsLoader: (_) async => const [],
+              recordsLoader: (_) async => <Map<String, dynamic>>[],
             ),
           ),
         ),
