@@ -8,6 +8,7 @@ import sys
 
 publish_workflow = Path('.github/workflows/publish-cd-release.yml').read_text(encoding='utf-8')
 deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(encoding='utf-8')
+co_practice_migration = Path('fabushi/web/migrations/20260506_co_practice_groups.sql')
 
 checkout_match = re.search(
     r"- name: Checkout source for version metadata\n(?P<body>.*?)\n\s*- name: Prepare release assets",
@@ -52,6 +53,18 @@ invalid_migration_commands = (
 for invalid in invalid_migration_commands:
     if invalid in deploy_workflow:
         missing.append(f'invalid command still present: {invalid}')
+
+if not co_practice_migration.exists():
+    missing.append('fabushi/web/migrations/20260506_co_practice_groups.sql')
+else:
+    migration_text = co_practice_migration.read_text(encoding='utf-8')
+    for required in (
+        'CREATE TABLE IF NOT EXISTS meditation_groups',
+        'CREATE TABLE IF NOT EXISTS meditation_group_members',
+        'ALTER TABLE meditation_records ADD COLUMN local_time TEXT;',
+    ):
+        if required not in migration_text:
+            missing.append(f'co-practice migration missing: {required}')
 
 if missing:
     sys.stderr.write(

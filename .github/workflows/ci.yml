@@ -246,7 +246,7 @@ jobs:
         run: |
           set -euo pipefail
           printf '{"type":"module"}\n' > package.json
-          node --test tests/*.test.js
+          node --test --test-concurrency=1 tests/*.test.js
 
       - name: Validate Worker bundle with Wrangler dry-run
         run: npx --yes wrangler@latest deploy --dry-run --outdir ../../worker-dry-run
@@ -328,6 +328,7 @@ jobs:
           sparse-checkout: |
             /.github/workflows/**
             /.github/scripts/**
+            /fabushi/web/migrations/**
 
       - name: Validate publish release workflow guardrail
         shell: bash
