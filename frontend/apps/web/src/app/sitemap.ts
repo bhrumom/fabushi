@@ -4,7 +4,7 @@ import { getAllArticles } from "../lib/content";
 const baseUrl = "https://fabushi.ombhrum.com";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const routes: MetadataRoute.Sitemap = ["", "/download", "/faq", "/contact", "/insights"].map((path) => ({
+  const routes: MetadataRoute.Sitemap = ["", "/download", "/apply", "/faq", "/contact", "/insights"].map((path) => ({
     url: `${baseUrl}${path}`,
     lastModified: "2026-05-06",
   }));
