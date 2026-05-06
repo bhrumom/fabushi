@@ -221,7 +221,8 @@ a {
 
 .feature-grid,
 .architecture-grid,
-.download-grid {
+.download-grid,
+.application-grid {
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -230,6 +231,7 @@ a {
 .feature-block,
 .architecture-grid > div,
 .download-card,
+.application-card,
 .preview-row {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -301,6 +303,27 @@ a {
 
 .download-card {
   display: block;
+}
+
+.application-card {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.application-summary,
+.application-list {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.75;
+}
+
+.application-list {
+  padding-left: 20px;
+}
+
+.application-list li + li {
+  margin-top: 8px;
 }
 
 .contact-grid {
