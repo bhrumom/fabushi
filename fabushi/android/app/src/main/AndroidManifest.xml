@@ -96,6 +96,14 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- Tobias SDK 回调 scheme，需与 pubspec 中的 url_scheme 保持一致 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="fabushi"/>
+            </intent-filter>
             
             <!-- 支付宝登录回调深度链接 -->
             <intent-filter>
