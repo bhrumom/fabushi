@@ -1,0 +1,69 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 24px 48px;
+}
+
+.hero {
+  padding: 28px 0 24px;
+}
+
+.eyebrow {
+  display: block;
+  color: #8b3d0b;
+  font-size: 24px;
+  margin-bottom: 18px;
+}
+
+.title {
+  display: block;
+  color: #20150d;
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1.24;
+}
+
+.subtitle {
+  display: block;
+  margin-top: 20px;
+  color: #6d5a48;
+  font-size: 30px;
+  line-height: 1.65;
+}
+
+.section {
+  margin-top: 28px;
+}
+
+.section-title {
+  display: block;
+  margin-bottom: 16px;
+  color: #38251b;
+  font-size: 30px;
+  font-weight: 600;
+}
+
+.card {
+  background: rgba(255, 249, 239, 0.88);
+  border: 1px solid rgba(73, 47, 23, 0.12);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.card + .card {
+  margin-top: 14px;
+}
+
+.card-title {
+  display: block;
+  font-size: 32px;
+  font-weight: 600;
+  color: #20150d;
+}
+
+.card-copy {
+  display: block;
+  margin-top: 10px;
+  font-size: 28px;
+  line-height: 1.7;
+  color: #6d5a48;
+}
