@@ -32,6 +32,7 @@ class AlipayInAppBrowser extends InAppBrowser {
     // 拦截自定义 URL Scheme 重定向
     if (url.startsWith('com.ombhrum.fabushi://') ||
         url.startsWith('globaldharma://') ||
+        url.startsWith('fabushi://') ||
         url.startsWith('alipays://')) {
       debugPrint('拦截到 App Scheme 重定向，关闭浏览器并处理回调');
       onDeepLinkCaptured(url);
@@ -433,7 +434,8 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
 
       String urlWithoutScheme = decodedUrl
           .replaceFirst('com.ombhrum.fabushi://', '')
-          .replaceFirst('globaldharma://', '');
+          .replaceFirst('globaldharma://', '')
+          .replaceFirst('fabushi://', '');
 
       final queryParams = urlWithoutScheme.split('&');
       for (final param in queryParams) {
