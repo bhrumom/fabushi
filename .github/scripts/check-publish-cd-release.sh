@@ -61,10 +61,19 @@ else:
     for required in (
         'CREATE TABLE IF NOT EXISTS meditation_groups',
         'CREATE TABLE IF NOT EXISTS meditation_group_members',
-        'ALTER TABLE meditation_records ADD COLUMN local_time TEXT;',
+        'CREATE INDEX IF NOT EXISTS idx_meditation_group_members_status ON meditation_group_members(status);',
     ):
         if required not in migration_text:
             missing.append(f'co-practice migration missing: {required}')
+
+    for forbidden in (
+        'ALTER TABLE meditation_records ADD COLUMN local_time TEXT;',
+        'ALTER TABLE meditation_records ADD COLUMN timezone_offset_minutes INTEGER;',
+        'ALTER TABLE meditation_records ADD COLUMN start_time TEXT;',
+        'ALTER TABLE meditation_records ADD COLUMN end_time TEXT;',
+    ):
+        if forbidden in migration_text:
+            missing.append(f'co-practice migration should not re-add existing meditation_records columns: {forbidden}')
 
 if missing:
     sys.stderr.write(
