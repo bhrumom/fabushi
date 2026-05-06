@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { generateToken } from '../auth-utils.js';
 import { handleUpdateProfile } from '../src/handlers/profile.js';
+import { DatabaseService } from '../src/services/database.js';
 
 function createDbMock(options = {}) {
   const { nativeTransaction = false } = options;
@@ -91,6 +92,12 @@ function createDbMock(options = {}) {
               return execute(params);
             }
           };
+        },
+        first() {
+          return execute();
+        },
+        all() {
+          return { results: [] };
         }
       };
     }
@@ -110,11 +117,10 @@ function createDbMock(options = {}) {
   return db;
 }
 
-test('handleUpdateProfile migrates username changes without direct in-place username update', async () => {
-  const db = createDbMock();
-  db.users.set('oldname', {
-    username: 'oldname',
-    email: 'old@example.com',
+function seedUser(db, username, email, phoneNumber, extra = {}) {
+  db.users.set(username, {
+    username,
+    email,
     password_hash: '',
     salt: '',
     iterations: 0,
@@ -128,28 +134,42 @@ test('handleUpdateProfile migrates username changes without direct in-place user
     wechat_nickname: null,
     wechat_headimgurl: null,
     wechat_bound_at: null,
-    phone_number: '+8613800138000',
-    firebase_uid: 'firebase-uid-1',
+    phone_number: phoneNumber,
+    firebase_uid: extra.firebase_uid ?? null,
     apple_user_id: null,
-    nickname: 'oldname',
-    avatar: 'https://example.com/avatar.png',
+    nickname: username,
+    avatar: extra.avatar ?? null,
     bio: null,
-    main_practice_title: '心经',
-    main_practice_file_path: '/sutras/xinjing.md',
-    main_practice_selected_at: '2026-05-01T00:00:00Z',
+    main_practice_title: extra.main_practice_title ?? null,
+    main_practice_file_path: extra.main_practice_file_path ?? null,
+    main_practice_selected_at: extra.main_practice_selected_at ?? null,
     membership_type: 'trial',
     membership_expires_at: null,
     free_trial_end_date: '2026-05-31T00:00:00Z',
     stripe_customer_id: null,
     subscription_id: null,
-    total_transferred_bytes: 123,
-    last_transfer_at: '2026-05-04T00:00:00Z',
-    sync_version: 7,
+    total_transferred_bytes: extra.total_transferred_bytes ?? 0,
+    last_transfer_at: extra.last_transfer_at ?? null,
+    sync_version: extra.sync_version ?? 1,
     extra_data: null,
     created_at: '2026-05-01T00:00:00Z',
     updated_at: '2026-05-04T00:00:00Z'
   });
-  db.emailMapping.set('old@example.com', 'oldname');
+  db.emailMapping.set(email, username);
+}
+
+test('handleUpdateProfile migrates username changes without direct in-place username update', async () => {
+  const db = createDbMock();
+  seedUser(db, 'oldname', 'old@example.com', '+8613800138000', {
+    firebase_uid: 'firebase-uid-1',
+    avatar: 'https://example.com/avatar.png',
+    main_practice_title: '心经',
+    main_practice_file_path: '/sutras/xinjing.md',
+    main_practice_selected_at: '2026-05-01T00:00:00Z',
+    total_transferred_bytes: 123,
+    last_transfer_at: '2026-05-04T00:00:00Z',
+    sync_version: 7
+  });
 
   const env = { JWT_SECRET: 'test-secret' };
   const token = await generateToken('oldname', env);
@@ -205,44 +225,9 @@ test('handleUpdateProfile migrates username changes without direct in-place user
 
 test('handleUpdateProfile prefers native storage transactions when available', async () => {
   const db = createDbMock({ nativeTransaction: true });
-  db.users.set('nativeold', {
-    username: 'nativeold',
-    email: 'native@example.com',
-    password_hash: '',
-    salt: '',
-    iterations: 0,
-    algo: '',
-    email_verified: 1,
-    alipay_user_id: null,
-    alipay_nickname: null,
-    alipay_avatar: null,
-    alipay_bound_at: null,
-    wechat_openid: null,
-    wechat_nickname: null,
-    wechat_headimgurl: null,
-    wechat_bound_at: null,
-    phone_number: '+8613800138111',
-    firebase_uid: 'firebase-native-uid',
-    apple_user_id: null,
-    nickname: 'nativeold',
-    avatar: null,
-    bio: null,
-    main_practice_title: null,
-    main_practice_file_path: null,
-    main_practice_selected_at: null,
-    membership_type: 'trial',
-    membership_expires_at: null,
-    free_trial_end_date: '2026-05-31T00:00:00Z',
-    stripe_customer_id: null,
-    subscription_id: null,
-    total_transferred_bytes: 0,
-    last_transfer_at: null,
-    sync_version: 1,
-    extra_data: null,
-    created_at: '2026-05-01T00:00:00Z',
-    updated_at: '2026-05-04T00:00:00Z'
+  seedUser(db, 'nativeold', 'native@example.com', '+8613800138111', {
+    firebase_uid: 'firebase-native-uid'
   });
-  db.emailMapping.set('native@example.com', 'nativeold');
 
   const env = { JWT_SECRET: 'test-secret' };
   const token = await generateToken('nativeold', env);
@@ -272,6 +257,45 @@ test('handleUpdateProfile prefers native storage transactions when available', a
   assert.ok(db.statements.some(({ sql }) => sql === '__native_transaction__'));
   assert.equal(
     db.statements.some(({ sql }) => /^BEGIN TRANSACTION|^COMMIT|^ROLLBACK/.test(sql.trimStart())),
+    false
+  );
+});
+
+test('DatabaseService preserves native transaction access for profile updates', async () => {
+  const rawDb = createDbMock({ nativeTransaction: true });
+  seedUser(rawDb, 'wrappedold', 'wrapped@example.com', '+8613800138222', {
+    firebase_uid: 'firebase-wrapped-uid'
+  });
+  const db = new DatabaseService(rawDb);
+
+  const env = { JWT_SECRET: 'test-secret' };
+  const token = await generateToken('wrappedold', env);
+  const request = new Request('https://flutter.ombhrum.com/api/auth/update-profile', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      username: 'wrappednew',
+      email: 'wrapped@example.com',
+      phoneNumber: '+8613800138222'
+    })
+  });
+
+  const response = await handleUpdateProfile(request, env, db);
+  assert.equal(response.status, 200);
+
+  const payload = await response.json();
+  assert.equal(payload.success, true);
+  assert.equal(payload.user.username, 'wrappednew');
+  assert.ok(payload.token);
+  assert.equal(rawDb.users.has('wrappedold'), false);
+  assert.equal(rawDb.users.has('wrappednew'), true);
+  assert.equal(rawDb.emailMapping.get('wrapped@example.com'), 'wrappednew');
+  assert.ok(rawDb.statements.some(({ sql }) => sql === '__native_transaction__'));
+  assert.equal(
+    rawDb.statements.some(({ sql }) => /^BEGIN TRANSACTION|^COMMIT|^ROLLBACK/.test(sql.trimStart())),
     false
   );
 });
