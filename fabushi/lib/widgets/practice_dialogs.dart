@@ -4,8 +4,13 @@ import '../services/practice_stats_service.dart';
 /// 补录功课对话框
 class AddPracticeRecordDialog extends StatefulWidget {
   final String? initialSutra;
+  final PracticeRecord? initialRecord;
 
-  const AddPracticeRecordDialog({super.key, this.initialSutra});
+  const AddPracticeRecordDialog({
+    super.key,
+    this.initialSutra,
+    this.initialRecord,
+  });
 
   @override
   State<AddPracticeRecordDialog> createState() =>
@@ -21,10 +26,31 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
   TimeOfDay _selectedTime = TimeOfDay.now();
   bool _isLoading = false;
 
+  bool get _isEditing => widget.initialRecord != null;
+
   @override
   void initState() {
     super.initState();
-    if (widget.initialSutra != null) {
+    final initialRecord = widget.initialRecord;
+    if (initialRecord != null) {
+      _sutraController.text = initialRecord.sutraName;
+      _countController.text = initialRecord.chantCount.toString();
+      _durationController.text = initialRecord.duration.toString();
+      _notesController.text = initialRecord.notes ?? '';
+      final parsedDate = DateTime.tryParse(initialRecord.recordDate);
+      if (parsedDate != null) {
+        _selectedDate = parsedDate;
+      }
+      if (initialRecord.localTime?.isNotEmpty == true) {
+        final parts = initialRecord.localTime!.split(':');
+        if (parts.length == 2) {
+          _selectedTime = TimeOfDay(
+            hour: int.tryParse(parts[0]) ?? _selectedTime.hour,
+            minute: int.tryParse(parts[1]) ?? _selectedTime.minute,
+          );
+        }
+      }
+    } else if (widget.initialSutra != null) {
       _sutraController.text = widget.initialSutra!;
     }
   }
@@ -117,14 +143,30 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
     final timeStr =
         '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}';
 
-    final success = await service.addManualRecord(
-      sutra: sutra,
-      chantCount: count,
-      duration: duration,
-      recordDate: dateStr,
-      localTime: timeStr,
-      notes: notes.isEmpty ? null : notes,
-    );
+    final success = _isEditing
+        ? await service.updateRecord(
+            recordId: widget.initialRecord!.id,
+            sutra: sutra,
+            chantCount: count,
+            duration: duration,
+            recordDate: dateStr,
+            localTime: timeStr,
+            notes: notes.isEmpty ? null : notes,
+            isManual: widget.initialRecord!.isManual,
+            sutraSource: widget.initialRecord!.sutraSource,
+            timezoneOffsetMinutes:
+                widget.initialRecord!.timezoneOffsetMinutes,
+            startTime: widget.initialRecord!.startTime,
+            endTime: widget.initialRecord!.endTime,
+          )
+        : await service.addManualRecord(
+            sutra: sutra,
+            chantCount: count,
+            duration: duration,
+            recordDate: dateStr,
+            localTime: timeStr,
+            notes: notes.isEmpty ? null : notes,
+          );
 
     if (!mounted) return;
 
@@ -135,17 +177,25 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            service.lastWriteQueued ? '网络暂不可用，补录已加入云端待同步' : '功课已补录到云端',
+            _isEditing
+                ? '修行记录已更新'
+                : service.lastWriteQueued
+                    ? '网络暂不可用，补录已加入云端待同步'
+                    : '功课已补录到云端',
           ),
-          backgroundColor: service.lastWriteQueued
-              ? Colors.orange
-              : Colors.green,
+          backgroundColor: _isEditing
+              ? Colors.green
+              : service.lastWriteQueued
+                  ? Colors.orange
+                  : Colors.green,
         ),
       );
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('补录失败，请先登录并检查网络')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isEditing ? '更新失败，请检查网络后重试' : '补录失败，请先登录并检查网络'),
+        ),
+      );
     }
   }
 
@@ -160,9 +210,9 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              '补录功课',
-              style: TextStyle(
+            Text(
+              _isEditing ? '编辑记录' : '补录功课',
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -336,7 +386,7 @@ class _AddPracticeRecordDialogState extends State<AddPracticeRecordDialog> {
                               color: Colors.white,
                             ),
                           )
-                        : const Text('确认补录'),
+                        : Text(_isEditing ? '保存修改' : '确认补录'),
                   ),
                 ),
               ],
