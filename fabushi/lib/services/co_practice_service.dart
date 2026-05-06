@@ -29,6 +29,33 @@ class CoPracticeGroupCreationResult {
   bool get isSuccess => groupId != null;
 }
 
+class CoPracticeGroupSearchResult {
+  final List<CoPracticeGroup> groups;
+  final String? errorMessage;
+  final int? statusCode;
+
+  const CoPracticeGroupSearchResult._({
+    required this.groups,
+    this.errorMessage,
+    this.statusCode,
+  });
+
+  const CoPracticeGroupSearchResult.success(List<CoPracticeGroup> groups)
+    : this._(groups: groups);
+
+  const CoPracticeGroupSearchResult.failure(
+    String errorMessage, {
+    int? statusCode,
+  }) : this._(
+         groups: const [],
+         errorMessage: errorMessage,
+         statusCode: statusCode,
+       );
+
+  bool get hasError =>
+      errorMessage != null && errorMessage!.trim().isNotEmpty;
+}
+
 class CoPracticeService {
   static final CoPracticeService _instance = CoPracticeService._internal();
   factory CoPracticeService({
@@ -79,23 +106,41 @@ class CoPracticeService {
     String query = '',
     int limit = 30,
   }) async {
-    final baseUrl = await _baseUrl;
-    final uri = Uri.parse(
-      '$baseUrl/api/meditation/groups',
-    ).replace(queryParameters: {'query': query, 'limit': limit.toString()});
-    final response = await _httpClient.get(uri, headers: await _headers());
-    if (response.statusCode != 200) return [];
+    final result = await searchGroupsWithStatus(query: query, limit: limit);
+    return result.groups;
+  }
 
-    final data = _decodeJsonMap(response.body);
-    if (data['success'] != true) return [];
+  Future<CoPracticeGroupSearchResult> searchGroupsWithStatus({
+    String query = '',
+    int limit = 30,
+  }) async {
+    try {
+      final baseUrl = await _baseUrl;
+      final uri = Uri.parse(
+        '$baseUrl/api/meditation/groups',
+      ).replace(queryParameters: {'query': query, 'limit': limit.toString()});
+      final response = await _httpClient.get(uri, headers: await _headers());
+      final data = _decodeJsonMap(response.body);
+      if (response.statusCode != 200 || data['success'] != true) {
+        return CoPracticeGroupSearchResult.failure(
+          _extractErrorMessage(data, fallback: '获取共修小组失败'),
+          statusCode: response.statusCode,
+        );
+      }
 
-    final groups = data['data']?['groups'] as List<dynamic>? ?? [];
-    return groups
-        .map(
-          (item) =>
-              CoPracticeGroup.fromJson(Map<String, dynamic>.from(item as Map)),
-        )
-        .toList();
+      final groups = (data['data']?['groups'] as List<dynamic>? ?? [])
+          .map(
+            (item) => CoPracticeGroup.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ),
+          )
+          .toList();
+      return CoPracticeGroupSearchResult.success(groups);
+    } catch (_) {
+      return const CoPracticeGroupSearchResult.failure(
+        '获取共修小组失败，请检查网络后重试',
+      );
+    }
   }
 
   Future<CoPracticeGroupCreationResult> createGroup({
