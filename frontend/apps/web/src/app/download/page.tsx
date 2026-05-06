@@ -51,6 +51,14 @@ export default function DownloadPage() {
           <li>如果你更常在微信里传播或查看内容，优先关注小程序首期路线。</li>
           <li>如果你需要更完整、更沉浸的主体验，再申请 Flutter 主应用的测试入口。</li>
         </ol>
+        <div className="inline-cta">
+          <a className="primary-action" href="/apply">
+            前往申请测试
+          </a>
+          <a className="secondary-action" href="/contact">
+            查看联系信息
+          </a>
+        </div>
       </section>
 
       <SiteFooter />
