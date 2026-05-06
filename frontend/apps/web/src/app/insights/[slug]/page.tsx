@@ -43,7 +43,7 @@ export default function InsightArticlePage({ params }: { params: { slug: string 
       </section>
 
       <article className="article-body">
-        {article.body.map((paragraph) => (
+        {article.body.map((paragraph: string) => (
           <p key={paragraph}>{paragraph}</p>
         ))}
       </article>
