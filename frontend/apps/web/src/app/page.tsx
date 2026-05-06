@@ -1,5 +1,14 @@
 import { fabushiApiClient } from "@fabushi/api-client";
-import { brand, homeHighlights, launchRoadmap, primaryNavigation } from "@fabushi/shared";
+import {
+  brand,
+  downloadOptions,
+  faqItems,
+  homeHighlights,
+  insightArticles,
+  launchRoadmap,
+} from "@fabushi/shared";
+import { SiteFooter } from "../components/site-footer";
+import { SiteHeader } from "../components/site-header";
 
 async function getLeaderboardPreview() {
   try {
@@ -22,29 +31,27 @@ export default async function HomePage() {
   return (
     <main className="page-shell">
       <header className="hero">
-        <nav className="topbar">
-          <span className="brand-mark">{brand.englishName}</span>
-          <div className="nav-links">
-            {primaryNavigation.map((item) => (
-              <a key={item.href} href={item.href}>
-                {item.label}
-              </a>
-            ))}
-          </div>
-        </nav>
+        <SiteHeader />
 
         <div className="hero-copy">
-          <p className="eyebrow">Fabushi Official Site</p>
-          <h1>{brand.tagline}</h1>
+          <p className="eyebrow">法布施官网</p>
+          <p className="brand-kicker">{brand.name}</p>
+          <h1>官网负责入口，小程序负责触达，主应用负责完整体验。</h1>
           <p className="lede">{brand.mission}</p>
           <div className="hero-actions">
-            <a className="primary-action" href="#mini-program">
-              查看小程序规划
+            <a className="primary-action" href="/download">
+              查看下载入口
             </a>
-            <a className="secondary-action" href="#architecture">
-              查看技术架构
+            <a className="secondary-action" href="/faq">
+              查看常见问题
             </a>
           </div>
+        </div>
+
+        <div className="hero-panel">
+          <p>当前推进</p>
+          <strong>Next.js 官网 + Taro 微信小程序 + 现有 Workers API 共用</strong>
+          <span>前端新工作区已经拆出 monorepo，后续会沿着下载、FAQ、内容专栏和小程序首期链路继续推进。</span>
         </div>
       </header>
 
@@ -59,6 +66,27 @@ export default async function HomePage() {
               <h3>{item.title}</h3>
               <p>{item.description}</p>
             </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band cinematic">
+        <div className="section-heading">
+          <p>下载入口</p>
+          <h2>先把不同入口说清楚，用户才知道该去哪里开始。</h2>
+        </div>
+        <div className="platform-strip">
+          {downloadOptions.map((item) => (
+            <a key={item.platform} className="platform-row" href={item.ctaHref}>
+              <div>
+                <span className="platform-name">{item.platform}</span>
+                <p>{item.description}</p>
+              </div>
+              <div className="platform-meta">
+                <strong>{item.status}</strong>
+                <span>{item.ctaLabel}</span>
+              </div>
+            </a>
           ))}
         </div>
       </section>
@@ -103,7 +131,7 @@ export default async function HomePage() {
       <section className="band alt">
         <div className="section-heading">
           <p>接口复用</p>
-          <h2>当前官网已经直接接了现有排行榜接口，作为后端共用的第一块落地验证。</h2>
+          <h2>官网已经直接接了现有排行榜接口，作为“后端继续共用”的第一块落地验证。</h2>
         </div>
         <div className="preview-list">
           {leaderboard.length === 0 ? (
@@ -119,6 +147,46 @@ export default async function HomePage() {
           )}
         </div>
       </section>
+
+      <section className="band">
+        <div className="section-heading">
+          <p>内容专栏</p>
+          <h2>官网不只是一张首页，还要能持续承接路线、更新和专题内容。</h2>
+        </div>
+        <div className="editorial-list">
+          {insightArticles.map((item) => (
+            <a key={item.slug} className="editorial-row" href={`/insights/${item.slug}`}>
+              <span>{item.category}</span>
+              <div>
+                <strong>{item.title}</strong>
+                <p>{item.description}</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt">
+        <div className="section-heading">
+          <p>常见问题</p>
+          <h2>先把用户最容易问的几件事说清楚，官网才真正开始工作。</h2>
+        </div>
+        <div className="faq-list">
+          {faqItems.slice(0, 3).map((item) => (
+            <details key={item.question} className="faq-item">
+              <summary>{item.question}</summary>
+              <p>{item.answer}</p>
+            </details>
+          ))}
+        </div>
+        <div className="inline-cta">
+          <a className="secondary-action" href="/faq">
+            查看完整 FAQ
+          </a>
+        </div>
+      </section>
+
+      <SiteFooter />
     </main>
   );
 }
