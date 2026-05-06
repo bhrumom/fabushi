@@ -5,12 +5,15 @@ import { SiteFooter } from "../../../components/site-footer";
 import { SiteHeader } from "../../../components/site-header";
 import { getAllArticles, getArticleBySlug } from "../../../lib/content";
 
+type ArticlePageParams = Promise<{ slug: string }>;
+
 export function generateStaticParams() {
   return getAllArticles().map((article) => ({ slug: article.slug }));
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }): Metadata {
-  const article = getArticleBySlug(params.slug);
+export async function generateMetadata({ params }: { params: ArticlePageParams }): Promise<Metadata> {
+  const { slug } = await params;
+  const article = getArticleBySlug(slug);
   if (!article) {
     return {};
   }
@@ -21,8 +24,9 @@ export function generateMetadata({ params }: { params: { slug: string } }): Meta
   };
 }
 
-export default function InsightArticlePage({ params }: { params: { slug: string } }) {
-  const article = getArticleBySlug(params.slug);
+export default async function InsightArticlePage({ params }: { params: ArticlePageParams }) {
+  const { slug } = await params;
+  const article = getArticleBySlug(slug);
 
   if (!article) {
     notFound();
@@ -43,7 +47,7 @@ export default function InsightArticlePage({ params }: { params: { slug: string 
       </section>
 
       <article className="article-body">
-        {article.body.map((paragraph: string) => (
+        {article.body.map((paragraph) => (
           <p key={paragraph}>{paragraph}</p>
         ))}
       </article>
