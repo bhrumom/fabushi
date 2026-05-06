@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { brand, faqItems } from "@fabushi/shared";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
+import { siteHref } from "../../lib/site-url";
 
 export const metadata: Metadata = {
   title: `常见问题 | ${brand.name}`,
@@ -32,10 +33,10 @@ export default function FaqPage() {
           ))}
         </div>
         <div className="inline-cta">
-          <a className="secondary-action" href="/download">
+          <a className="secondary-action" href={siteHref("/download")}>
             去下载入口
           </a>
-          <a className="secondary-action" href="/contact">
+          <a className="secondary-action" href={siteHref("/contact")}>
             查看联系信息
           </a>
         </div>
