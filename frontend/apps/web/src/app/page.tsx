@@ -1,16 +1,9 @@
 import { fabushiApiClient } from "@fabushi/api-client";
-import {
-  brand,
-  contactChannels,
-  downloadOptions,
-  downloadStatusNotes,
-  faqItems,
-  homeHighlights,
-  launchRoadmap,
-} from "@fabushi/shared";
+import { brand, contactChannels, faqItems, homeHighlights, launchRoadmap } from "@fabushi/shared";
 import { SiteFooter } from "../components/site-footer";
 import { SiteHeader } from "../components/site-header";
 import { getAllArticles, getFeaturedArticles } from "../lib/content";
+import { getOfficialSiteReleaseCollection } from "../lib/official-site-releases";
 
 async function getLeaderboardPreview() {
   try {
@@ -31,6 +24,8 @@ export default async function HomePage() {
   const leaderboard = await getLeaderboardPreview();
   const featuredArticles = getFeaturedArticles();
   const allArticles = getAllArticles();
+  const releaseCollection = await getOfficialSiteReleaseCollection();
+  const releasePreview = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels].slice(0, 3);
 
   return (
     <main className="page-shell">
@@ -55,7 +50,7 @@ export default async function HomePage() {
         <div className="hero-panel">
           <p>当前推进</p>
           <strong>Next.js 官网 + Taro 微信小程序 + 现有 Workers API 共用</strong>
-          <span>前端新工作区已经拆出 monorepo，后续会沿着下载、FAQ、内容专栏和小程序首期链路继续推进。</span>
+          <span>现在官网会直接读取最新 beta 发布资产，并预留人工验收后的正式版发布入口。</span>
         </div>
       </header>
 
@@ -77,24 +72,24 @@ export default async function HomePage() {
       <section className="band cinematic">
         <div className="section-heading">
           <p>下载入口</p>
-          <h2>先把不同入口说清楚，用户才知道该去哪里开始。</h2>
+          <h2>beta 安装包和 TestFlight 状态已经能直接回流到官网入口里。</h2>
         </div>
         <div className="platform-strip">
-          {downloadOptions.map((item) => (
-            <a key={item.platform} className="platform-row" href={item.ctaHref}>
+          {releasePreview.map((item) => (
+            <a key={`${item.audience}-${item.platform}`} className="platform-row" href={item.primaryHref}>
               <div>
-                <span className="platform-name">{item.platform}</span>
+                <span className="platform-name">{item.title}</span>
                 <p>{item.description}</p>
               </div>
               <div className="platform-meta">
                 <strong>{item.status}</strong>
-                <span>{item.ctaLabel}</span>
+                <span>{item.primaryLabel}</span>
               </div>
             </a>
           ))}
         </div>
         <div className="status-note-list">
-          {downloadStatusNotes.map((item) => (
+          {releaseCollection.notes.map((item) => (
             <p key={item}>{item}</p>
           ))}
         </div>
@@ -169,7 +164,9 @@ export default async function HomePage() {
               <div>
                 <strong>{item.title}</strong>
                 <p>{item.description}</p>
-                <small>{item.author} · {item.readTime}</small>
+                <small>
+                  {item.author} · {item.readTime}
+                </small>
               </div>
             </a>
           ))}
@@ -210,7 +207,7 @@ export default async function HomePage() {
       <section className="band">
         <div className="section-heading">
           <p>联系</p>
-          <h2>在真实下载链接还没公开前，官网至少要给出明确、可信的联系入口。</h2>
+          <h2>除了下载入口之外，官网也要把支持、反馈和公开协作的去处讲清楚。</h2>
         </div>
         <div className="contact-grid">
           {contactChannels.map((item) => (
