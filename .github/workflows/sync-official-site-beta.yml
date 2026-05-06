@@ -14,6 +14,8 @@ on:
 
 permissions:
   contents: write
+  actions: read
+  issues: write
 
 jobs:
   sync-beta-state:
@@ -225,3 +227,53 @@ jobs:
             echo "- Android beta now points at the latest GitHub Release APK asset."
             echo "- iOS beta now points at the TestFlight public link when IOS_TESTFLIGHT_PUBLIC_URL is configured."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-beta-sync-failure:
+    name: Notify official site beta sync failure
+    needs:
+      - sync-beta-state
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout failure notifier
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/scripts/**
+
+      - name: Create or update official site beta sync failure issue
+        uses: actions/github-script@v8
+        env:
+          SOURCE_SHA: ${{ github.event.release.target_commitish || github.sha }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name || '' }}
+        with:
+          script: |
+            const { createOrUpdateFailureIssue } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/create-failure-issue.js`);
+            await createOrUpdateFailureIssue({
+              github,
+              context,
+              core,
+              kind: 'official site beta sync',
+              titlePrefix: 'Official site beta sync failed for',
+              sourceSha: process.env.SOURCE_SHA || context.sha,
+              sourceRef: 'release',
+              labelName: 'release-failure',
+              labelColor: 'b60205',
+              labelDescription: 'Official site release sync failed',
+              notifyJobName: 'Notify official site beta sync failure',
+              extraSections: [
+                '### Official site impact',
+                '',
+                '- Android beta 下载入口不会自动切到最新 GitHub Release APK。',
+                '- iOS TestFlight 状态不会自动同步到官网。',
+                '- 官网“这次更新了什么”和国内镜像下载入口也不会随本次 release 刷新。',
+                '',
+                '### Release context',
+                '',
+                `- Release tag: ${process.env.RELEASE_TAG || 'unknown'}`,
+                '- Check whether the selected release contains an APK asset and TESTFLIGHT_UPLOAD_STATUS.txt when iOS beta should be updated.',
+                '- Check whether IOS_TESTFLIGHT_PUBLIC_URL or OFFICIAL_SITE_GITHUB_MIRROR_BASES variables are malformed when the sync script fails during metadata generation.',
+              ],
+            });
