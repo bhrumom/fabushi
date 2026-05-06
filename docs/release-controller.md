@@ -114,6 +114,16 @@ Fabushi 当前主线发布依赖：
 - 新 migration 默认按对现有数据库安全的方式编写，避免在已存在列/表上重复失败
 - 如果某条 migration 是近期事故高发点，应同步给 guardrail 增加正向要求或反向拦截
 
+### GitHub Release 资产规则
+
+Fabushi 当前官网 beta 同步会读取 GitHub Release 资产，但 release 一旦进入 immutable 生命周期，就不能再靠 `gh release upload --clobber` 回写或覆盖资产。
+
+因此涉及 release 后处理时默认遵循：
+
+- 优先在发布时一次性生成需要的资产，而不是依赖 immutable 之后的补写
+- 如果 workflow 只是想补官网 beta 状态，而仓库逻辑已经存在 fallback，就把 immutable release 视为已识别外部约束，而不是继续把整条 workflow 打红
+- 对这类约束要在 step summary、issue 留言和运行手册里留下明确说明，避免后续重复误判为新的发布根因
+
 ### 发布闭环观察顺序
 
 每次主线修复合入后，按下列顺序复核：
