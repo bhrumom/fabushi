@@ -898,7 +898,7 @@ class _CreateCoPracticeGroupDialogState
     }
 
     setState(() => _isLoading = true);
-    final groupId = await CoPracticeService().createGroup(
+    final result = await CoPracticeService().createGroup(
       name: name,
       description: _descriptionController.text.trim(),
       requireApproval: _requireApproval,
@@ -910,11 +910,15 @@ class _CreateCoPracticeGroupDialogState
     setState(() => _isLoading = false);
 
     final messenger = ScaffoldMessenger.of(context);
-    if (groupId != null) {
+    if (result.groupId != null) {
       Navigator.of(context).pop(true);
       messenger.showSnackBar(const SnackBar(content: Text('共修小组已创建')));
     } else {
-      messenger.showSnackBar(const SnackBar(content: Text('创建失败，请先登录并检查网络')));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(result.errorMessage ?? '创建失败，请先登录并检查网络'),
+        ),
+      );
     }
   }
 
