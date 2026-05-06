@@ -33,9 +33,15 @@ export default function InsightsIndexPage() {
               <div>
                 <strong>{item.title}</strong>
                 <p>{item.description}</p>
+                <small>{item.author} · {item.readTime}</small>
               </div>
             </a>
           ))}
+        </div>
+        <div className="inline-cta">
+          <a className="secondary-action" href="/feed.json">
+            查看 JSON Feed
+          </a>
         </div>
       </section>
 
