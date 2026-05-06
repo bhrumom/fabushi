@@ -9,6 +9,8 @@ bool _asBool(dynamic value) => value == true || value == 1 || value == '1';
 
 String _asString(dynamic value) => value?.toString() ?? '';
 
+String _formatGroupCode(int id) => id.toString().padLeft(6, '0');
+
 class CoPracticeGroup {
   final int id;
   final String name;
@@ -47,6 +49,8 @@ class CoPracticeGroup {
     this.myWarningMessage,
     this.createdAt,
   });
+
+  String get publicCode => _formatGroupCode(id);
 
   factory CoPracticeGroup.fromJson(Map<String, dynamic> json) {
     return CoPracticeGroup(
