@@ -110,7 +110,7 @@ function createDbMock(options = {}) {
   return db;
 }
 
-test('handleUpdateProfile migrates username changes without direct in-place username update', async () => {
+test('handleUpdateProfile migrates username changes without direct in-place username update', { concurrency: false }, async () => {
   const db = createDbMock();
   db.users.set('oldname', {
     username: 'oldname',
@@ -203,7 +203,7 @@ test('handleUpdateProfile migrates username changes without direct in-place user
   }
 });
 
-test('handleUpdateProfile prefers native storage transactions when available', async () => {
+test('handleUpdateProfile prefers native storage transactions when available', { concurrency: false }, async () => {
   const db = createDbMock({ nativeTransaction: true });
   db.users.set('nativeold', {
     username: 'nativeold',
