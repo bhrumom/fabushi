@@ -92,7 +92,7 @@ class _CoPracticeGroupPanelState extends State<CoPracticeGroupPanel> {
               ),
               SizedBox(height: 6),
               Text(
-                '先搜索小组名、组主或群号，点开后即可申请加入；创建者点开自己的小组，就能在详情页里看到待审批成员。',
+                '先搜索小组名、组主或标准群号，点开后即可申请加入；创建者点开自己的小组，就能在详情页里看到待审批成员。',
                 style: TextStyle(
                   color: Colors.white70,
                   fontSize: 12,
@@ -111,7 +111,7 @@ class _CoPracticeGroupPanelState extends State<CoPracticeGroupPanel> {
                 onChanged: _onSearchChanged,
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
-                  hintText: '搜索小组名、组主或群号 #123',
+                  hintText: '搜索小组名、组主或群号 #000123',
                   hintStyle: const TextStyle(color: Colors.white38),
                   prefixIcon: const Icon(Icons.search, color: Colors.white54),
                   suffixIcon: _searchController.text.isEmpty
@@ -251,7 +251,10 @@ class _CoPracticeGroupTile extends StatelessWidget {
                     '组主 ${group.ownerName}',
                     style: const TextStyle(color: Colors.white54, fontSize: 12),
                   ),
-                  _InfoPill(icon: Icons.tag_outlined, text: '群号 #${group.id}'),
+                  _InfoPill(
+                    icon: Icons.tag_outlined,
+                    text: '群号 #${group.publicCode}',
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -530,7 +533,7 @@ class _CoPracticeGroupDetailSheetState
                       ),
                       _InfoPill(
                         icon: Icons.tag_outlined,
-                        text: '群号 #${group.id}',
+                        text: '群号 #${group.publicCode}',
                       ),
                       _InfoPill(
                         icon: Icons.timer_outlined,
