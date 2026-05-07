@@ -63,6 +63,15 @@ FLUTTER_WEB = "true"
 [assets]
 binding = "ASSETS"
 directory = "../build/web"
+run_worker_first = [
+  "/",
+  "/index.html",
+  "/flutter_bootstrap.js",
+  "/flutter_service_worker.js",
+  "/main.dart.js",
+  "/version.json",
+  "/api/*"
+]
 
 # 生产环境配置
 [env.production]
@@ -120,6 +129,15 @@ ALIPAY_RETURN_URL = "https://flutter.ombhrum.com/payment-success.html"
 [env.production.assets]
 binding = "ASSETS"
 directory = "../build/web"
+run_worker_first = [
+  "/",
+  "/index.html",
+  "/flutter_bootstrap.js",
+  "/flutter_service_worker.js",
+  "/main.dart.js",
+  "/version.json",
+  "/api/*"
+]
 
 # 开发环境配置
 [env.development]
@@ -167,6 +185,15 @@ WORKER_URL = "https://flutter.ombhrum.com"
 [env.development.assets]
 binding = "ASSETS"
 directory = "../build/web"
+run_worker_first = [
+  "/",
+  "/index.html",
+  "/flutter_bootstrap.js",
+  "/flutter_service_worker.js",
+  "/main.dart.js",
+  "/version.json",
+  "/api/*"
+]
 
 [observability.logs]
 enabled = true
