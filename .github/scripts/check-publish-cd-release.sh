@@ -40,9 +40,10 @@ for required in release_asset_requirements:
         missing.append(required)
 
 expected_deploy_requirements = (
-    'cp -R ../.github/scripts ../release-artifact/.github/scripts',
-    'run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB development',
-    'run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB production',
+    'mkdir -p ../release-artifact/github-scripts',
+    'cp -R ../.github/scripts/. ../release-artifact/github-scripts',
+    'run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB development',
+    'run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB production',
 )
 for required in expected_deploy_requirements:
     if required not in deploy_workflow:
@@ -60,10 +61,13 @@ for invalid in invalid_migration_commands:
 
 invalid_deploy_packaging = (
     'cp -R .github/scripts ../release-artifact/.github/scripts',
+    'cp -R ../.github/scripts ../release-artifact/.github/scripts',
+    'run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB development',
+    'run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB production',
 )
 for invalid in invalid_deploy_packaging:
     if invalid in deploy_workflow:
-        missing.append(f'invalid helper packaging still present: {invalid}')
+        missing.append(f'invalid helper artifact path still present: {invalid}')
 
 if not d1_retry_helper.exists():
     missing.append('.github/scripts/run-wrangler-d1-migrations.sh')
