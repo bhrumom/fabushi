@@ -279,7 +279,8 @@ h3,
 .evidence-card p,
 .definition-card p,
 .channel-card p,
-.channel-list {
+.channel-list,
+.governance-card p {
   color: var(--muted);
   line-height: 1.72;
 }
@@ -308,13 +309,14 @@ h3,
 .path-grid,
 .evidence-grid,
 .definition-grid,
-.channel-grid {
+.channel-grid,
+.governance-grid {
   display: grid;
   gap: 16px;
 }
 
 .hero-signal-bar {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   margin-top: 36px;
 }
 
@@ -333,7 +335,8 @@ h3,
 .path-card,
 .evidence-card,
 .definition-card,
-.channel-card {
+.channel-card,
+.governance-card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -344,7 +347,8 @@ h3,
 
 .path-card,
 .channel-card,
-.definition-card {
+.definition-card,
+.governance-card {
   display: grid;
   gap: 14px;
   align-content: start;
@@ -361,6 +365,10 @@ h3,
   background: linear-gradient(180deg, rgba(255, 250, 244, 0.92), rgba(247, 239, 228, 0.92));
 }
 
+.governance-card {
+  background: linear-gradient(180deg, rgba(255, 249, 241, 0.94), rgba(244, 235, 221, 0.9));
+}
+
 .path-card h3,
 .signal-chip strong,
 .hero-proof-row strong,
@@ -374,7 +382,8 @@ h3,
 .contact-card strong,
 .evidence-card strong,
 .definition-card h3,
-.channel-card h3 {
+.channel-card h3,
+.governance-card h3 {
   display: block;
   color: var(--ink);
 }
@@ -387,7 +396,8 @@ h3,
 .download-card h2,
 .release-card h2,
 .definition-card h3,
-.channel-card h3 {
+.channel-card h3,
+.governance-card h3 {
   margin: 0;
 }
 
@@ -406,7 +416,8 @@ h3,
 .use-case-block h3,
 .path-card h3,
 .definition-card h3,
-.channel-card h3 {
+.channel-card h3,
+.governance-card h3 {
   font-size: 1.35rem;
   line-height: 1.35;
 }
@@ -484,7 +495,8 @@ h3,
 .contact-grid,
 .evidence-grid,
 .definition-grid,
-.channel-grid {
+.channel-grid,
+.governance-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
