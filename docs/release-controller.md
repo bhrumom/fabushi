@@ -156,6 +156,17 @@ Fabushi 当前主线发布依赖：
 - 新 migration 默认按对现有数据库安全的方式编写，避免在已存在列/表上重复失败
 - 如果某条 migration 是近期事故高发点，应同步给 guardrail 增加正向要求或反向拦截
 
+### Cloudflare D1 瞬时故障重试规则
+
+Fabushi 主线 deploy 里的 `wrangler d1 migrations apply` 会直接碰到 Cloudflare 远端 D1 API。像 `Upstream service unavailable [code: 7009]` 这类平台侧瞬时故障，不应被误判成 schema SQL 根因，但也不能用无限重试把真实配置错误掩盖掉。
+
+默认要求：
+
+- 只对已知瞬时平台故障做有限次数重试与退避，不把所有失败都吞掉
+- SQL 语法、绑定缺失、数据库 id 错误、权限错误等非瞬时失败，首轮就必须直接失败
+- 重试 helper 要作为仓库脚本和 workflow guardrail 一起版本管理，避免后续又漂回裸跑 `wrangler d1 migrations apply`
+- 如果有限重试后仍失败，就把事项继续记为发布闭环阻塞，并在 issue / runbook / 下一轮调度里明确标注为“外部平台或迁移门禁仍未恢复”
+
 ### GitHub Release 资产规则
 
 Fabushi 当前官网 beta 同步会读取 GitHub Release 资产，但 release 一旦进入 immutable 生命周期，就不能再靠 `gh release upload --clobber` 回写或覆盖资产。

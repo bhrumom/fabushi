@@ -9,6 +9,7 @@ import sys
 publish_workflow = Path('.github/workflows/publish-cd-release.yml').read_text(encoding='utf-8')
 deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(encoding='utf-8')
 co_practice_migration = Path('fabushi/web/migrations/20260506_co_practice_groups.sql')
+d1_retry_helper = Path('.github/scripts/run-wrangler-d1-migrations.sh')
 
 checkout_match = re.search(
     r"- name: Checkout source for version metadata\n(?P<body>.*?)\n\s*- name: Prepare release assets",
@@ -38,21 +39,36 @@ for required in release_asset_requirements:
     if required not in publish_workflow:
         missing.append(required)
 
-expected_migration_commands = (
-    'run: npx --yes wrangler@latest d1 migrations apply DB --env development --remote',
-    'run: npx --yes wrangler@latest d1 migrations apply DB --env production --remote',
+expected_deploy_requirements = (
+    'cp -R .github/scripts ../release-artifact/.github/scripts',
+    'run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB development',
+    'run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB production',
 )
-for required in expected_migration_commands:
+for required in expected_deploy_requirements:
     if required not in deploy_workflow:
         missing.append(required)
 
 invalid_migration_commands = (
+    'run: npx --yes wrangler@latest d1 migrations apply DB --env development --remote',
+    'run: npx --yes wrangler@latest d1 migrations apply DB --env production --remote',
     'run: npx --yes wrangler@latest d1 migrations apply DB --env development --remote --yes',
     'run: npx --yes wrangler@latest d1 migrations apply DB --env production --remote --yes',
 )
 for invalid in invalid_migration_commands:
     if invalid in deploy_workflow:
         missing.append(f'invalid command still present: {invalid}')
+
+if not d1_retry_helper.exists():
+    missing.append('.github/scripts/run-wrangler-d1-migrations.sh')
+else:
+    helper_text = d1_retry_helper.read_text(encoding='utf-8')
+    for required in (
+        'Upstream service unavailable \\[code: 7009\\]',
+        'WRANGLER_D1_MAX_ATTEMPTS',
+        'npx --yes wrangler@latest d1 migrations apply',
+    ):
+        if required not in helper_text:
+            missing.append(f'd1 retry helper missing: {required}')
 
 if not co_practice_migration.exists():
     missing.append('fabushi/web/migrations/20260506_co_practice_groups.sql')
