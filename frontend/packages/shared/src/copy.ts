@@ -57,6 +57,30 @@ export const homeUseCases = [
   },
 ] as const;
 
+export const homeActionPaths = [
+  {
+    label: "第一次了解",
+    title: "先快速看懂 Fabushi 是什么，以及官网为什么这样组织。",
+    description: "如果你是第一次来到这里，先看 FAQ 和首页结构说明，判断这是不是你要找的产品方向。",
+    href: "/faq",
+    ctaLabel: "先看常见问题",
+  },
+  {
+    label: "准备进入",
+    title: "先确认当前是否有可公开下载或可申请的测试入口。",
+    description: "下载页会持续承接 Android beta、iOS TestFlight 和正式版的公开状态，避免用户在错误页面里兜圈。",
+    href: "/download",
+    ctaLabel: "查看下载状态",
+  },
+  {
+    label: "准备沟通",
+    title: "想申请测试、反馈问题或讨论合作时，直接进入正确通道。",
+    description: "把申请测试、支持反馈和合作询问拆成明确入口，能减少很多没有上下文的来回邮件。",
+    href: "/apply",
+    ctaLabel: "进入申请通道",
+  },
+] as const;
+
 export const primaryNavigation = [
   { label: "首页", href: "/" },
   { label: "下载", href: "/download" },
