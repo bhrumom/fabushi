@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'keep_alive_guide_screen.dart';
 import 'practice_privacy_screen.dart';
+import '../core/constants/app_constants.dart';
 import '../services/api_client.dart';
+import '../services/app_build_info_service.dart';
 import '../services/app_settings.dart';
 import '../services/llm_model_config.dart';
 import '../services/llm_model_manager.dart';
@@ -25,6 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _defaultTtsMuted = true;
   bool _isLoading = true;
   bool _isSubmittingFeedback = false;
+  String _appVersionLabel = AppConstants.appVersion;
 
   // 读诵匹配阈值（百分比形式，0.0 ~ 1.0）
   double _fastMatchThreshold = 0.50;
@@ -96,6 +99,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final defaultMuted = await AppSettings.getDefaultTtsMuted();
     final fastMatchThreshold = await AppSettings.getFastMatchThreshold();
     final matchThreshold = await AppSettings.getMatchThreshold();
+    final appVersionLabel = await AppBuildInfoService.instance.getVersionLabel();
 
     // 加载 AI 模型相关设置
     final deviceInfo = await DeviceCapabilityService.instance
@@ -116,6 +120,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _defaultTtsMuted = defaultMuted;
         _fastMatchThreshold = fastMatchThreshold;
         _matchThreshold = matchThreshold;
+        _appVersionLabel = appVersionLabel;
         _deviceInfo = deviceInfo;
         _modelStatus = modelStatus;
         _selectedModel = selectedModel;
@@ -164,6 +169,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (contact.trim().isNotEmpty) 'contact': contact.trim(),
         'page': 'settings_screen',
         'platform': _feedbackPlatformLabel(),
+        'appVersion': _appVersionLabel,
       },
       token: authModel.authToken,
     );
@@ -242,6 +248,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const Text(
                         '问题会自动同步到 GitHub Issue，方便后续跟进。',
                         style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '当前版本：$_appVersionLabel',
+                        style: const TextStyle(color: Colors.white54, fontSize: 12),
                       ),
                       const SizedBox(height: 16),
                       TextField(
@@ -477,11 +488,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.info_outline,
                     iconColor: Colors.blue,
                     title: '关于',
-                    subtitle: '版本 1.0.0',
+                    subtitle: '版本 $_appVersionLabel',
                     onTap: () => showAboutDialog(
                       context: context,
-                      applicationName: '大乘',
-                      applicationVersion: '1.0.0',
+                      applicationName: AppConstants.appName,
+                      applicationVersion: _appVersionLabel,
                       children: [const Text('传播佛法，利益众生')],
                     ),
                   ),
