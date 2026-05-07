@@ -3,7 +3,7 @@
 
 set -e
 
-echo "🚀 开始部署模块化后端 Worker"
+echo "🚀 开始部署模块化后端 Worker（旧项目，保留 secrets）"
 
 # 部署
 echo "📦 开始部署..."
