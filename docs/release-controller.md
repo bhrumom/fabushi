@@ -57,6 +57,32 @@
 - 前一个 PR 合入后，再让后一个 PR 基于最新 `main` 重新确认差异、checks 和合并顺序
 - 在 PR 线程或相关 issue 中明确记录这种顺序安排，避免后续巡检误把“都在排队”当成低风险状态
 
+### Queue-only 仓库合并推进规则
+
+当 direct merge 被仓库规则拒绝，并明确提示 `Changes must be made through the merge queue` 时，默认按“queue 是当前唯一剩余主线 gate”处理，而不是把 head checks 已绿误判成已经完成。
+
+默认处理方式：
+
+- 立即切换到 `auto-merge` 或等效 merge queue 路径，不让 PR 停在“绿了但没人继续推”的状态
+- 在 PR 线程或相关 issue 里明确记录：当前已无代码或评审阻塞，剩余 gate 是 merge queue 本身
+- 对 queue 状态的判断优先以 PR 页面、merge queue 事件和后续 mainline 结果为准，不把“曾经 enable auto-merge”本身当成完成证据
+- 对“历史 head 曾经绿过”和“当前 head 已满足必需门禁”要分开判断，避免拿旧提交的绿灯误替代最新提交的 queue 准入条件
+- 在 PR 真正 `merged` 之前，不关闭对应修复 issue，也不宣称问题已经进入主线
+- 等待 queue 外部结果期间，立即切去其他工位推进事项或新的小步升级；一旦 queue 出现 merge / fail 新信号，再立刻切回
+- PR 真正 merged 后，继续按 `main -> CI -> CD -> GitHub Release -> TestFlight` 顺序复核，而不是把 queue 放行为最终终点
+
+### 必需检查缺口与无 Head Checks PR 规则
+
+对文档、运行手册、提示词映射或其他轻量改动 PR，可能会出现 `head SHA` 没有关联 workflow runs、combined status 为空的情况。主控不能只看“有没有红灯”，还要先判断这在当前仓库规则下到底是不是允许状态。
+
+默认处理方式：
+
+- 先区分这是“本来就不会触发检查”，还是“按仓库保护规则本应触发却没有触发”
+- 如果仓库保护规则明确要求某个必需检查，例如 `CI result`，但当前 head 完全没有 workflow run 或 status 记录，就把它视为真实的触发/覆盖缺口，而不是普通等待
+- 进入这类缺口时，优先修复 workflow 触发条件、分支基线或 PR 形态；必要时通过基于最新 `main` 的替代分支和替代 PR 重新挂载必需门禁
+- 只有在仓库规则确实允许该类 PR 无额外检查时，才可继续按 review / auto-merge / merge queue 路径推进
+- 这类 PR 在真正 `merged` 前，仍然属于等待中的 PR 事项，不能因为 checks 为空就误判成失败，也不能因为没有红灯就误判成已闭环
+
 ### 3. Issue 治理工位
 
 负责：
