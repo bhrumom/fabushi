@@ -83,6 +83,18 @@
 - 只有在仓库规则确实允许该类 PR 无额外检查时，才可继续按 review / auto-merge / merge queue 路径推进
 - 这类 PR 在真正 `merged` 前，仍然属于等待中的 PR 事项，不能因为 checks 为空就误判成失败，也不能因为没有红灯就误判成已闭环
 
+### Draft PR 无检查收口规则
+
+当一条 draft PR 的当前 `head SHA` 既没有 workflow runs，也没有 combined status，而且工具链或接口又无法稳定把它转成 ready for review 时，不要把它当成普通等待位长期悬空。
+
+默认处理方式：
+
+- 先记录旧 draft 的 `head SHA`、缺失的必需检查名，以及“当前没有 runs / status”这个事实
+- 如果仓库规则要求 `CI result` 之类的必需门禁，而当前工具又无法直接把 draft 转正，就关闭旧 draft，并基于同一 `head branch` 立即重开一条 ready PR
+- 把这条新 ready PR 视为“重新挂载必需门禁”的动作，而不是重复开新需求；PR 描述或评论里要说明替代原因
+- 只有当新 ready PR 也继续没有 head checks 时，才进一步把问题升级为真实 workflow 触发缺口继续追
+- 旧 draft 与替代 ready PR 之间的关系要在评论、运行手册或主控记录里留痕，避免后续巡检误把旧 draft 继续当成活跃主线
+
 ### 3. Issue 治理工位
 
 负责：
