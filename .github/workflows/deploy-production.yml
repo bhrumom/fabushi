@@ -99,10 +99,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ../release-artifact/fabushi/build
-          mkdir -p ../release-artifact/.github
+          mkdir -p ../release-artifact/github-scripts
           cp -R build/web ../release-artifact/fabushi/build/web
           cp -R web ../release-artifact/fabushi/web
-          cp -R ../.github/scripts ../release-artifact/.github/scripts
+          cp -R ../.github/scripts/. ../release-artifact/github-scripts
           find ../release-artifact/fabushi/web -path '*/assets/built_in/*' -prune -exec rm -rf {} + || true
           printf '%s\n' "${{ steps.source.outputs.source_sha }}" > ../release-artifact/SOURCE_SHA
 
@@ -174,7 +174,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
           CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL || vars.CF_EMAIL || vars.CLOUDFLARE_EMAIL }}
-        run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB development
+        run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB development
 
       - name: Deploy staging Worker
         env:
@@ -340,7 +340,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
           CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL || vars.CF_EMAIL || vars.CLOUDFLARE_EMAIL }}
-        run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB production
+        run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB production
 
       - name: Deploy production Worker
         env:
