@@ -99,6 +99,26 @@ export default function ApplyPage() {
 
       <section className="band alt">
         <div className="section-heading">
+          <p>收到申请后</p>
+          <h2>官网先把处理顺序讲清楚，能减少对方发出邮件后的不确定感。</h2>
+        </div>
+        <ol className="roadmap-list">
+          <li>团队会先按 iOS、Android 和合作沟通分流，不同入口不会混在同一条处理队列里。</li>
+          <li>信息完整的申请更容易直接进入后续资格确认、设备核对或合作往来，而不是先来回补上下文。</li>
+          <li>如果当前轮次暂未开放，官网会优先通过下载页、FAQ 和后续邮件说明下一步状态，而不是让申请停在黑箱里。</li>
+        </ol>
+        <div className="inline-cta">
+          <a className="secondary-action" href={siteHref("/download")}>
+            先看下载状态
+          </a>
+          <a className="secondary-action" href={siteHref("/privacy")}>
+            查看隐私说明
+          </a>
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="section-heading">
           <p>申请建议</p>
           <h2>把基本信息一次带全，往返确认会少很多。</h2>
         </div>
