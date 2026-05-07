@@ -13,6 +13,50 @@ export const homeHighlights = [
   },
 ] as const;
 
+export const homeTrustSignals = [
+  {
+    title: "平台分工清晰",
+    summary: "官网负责解释与引导，小程序负责轻触达，主应用负责完整体验。",
+    description:
+      "用户第一次进入时就能知道该从哪里了解产品、从哪里申请测试、从哪里进入更深度的使用流程，减少入口混乱和跳失。",
+  },
+  {
+    title: "发布状态可见",
+    summary: "下载页会直接承接 beta 安装包、TestFlight 状态和正式版发布说明。",
+    description:
+      "官网不再只是静态等待名单，而是开始连接真实发布链路，让用户、合作方和搜索引擎都能看到当前可获得的入口。",
+  },
+  {
+    title: "内容能够持续累积",
+    summary: "除了首页，官网还承接路线、专题内容、更新说明和 FAQ。",
+    description:
+      "这让站点既能做品牌入口，也能沉淀长期可搜索、可引用、可分享的内容资产，而不是一页式说明页。",
+  },
+] as const;
+
+export const homeUseCases = [
+  {
+    audience: "新用户",
+    title: "先理解产品，再决定从哪个入口进入。",
+    description: "官网优先解释 Fabushi 是什么、适合谁、当前能做什么，以及 iOS、Android、微信小程序分别是什么状态。",
+  },
+  {
+    audience: "内测申请者",
+    title: "快速找到申请路径、下载状态和反馈方式。",
+    description: "把等待名单、测试资格、安装包说明和反馈邮箱放在一条清晰路径里，减少用户往返询问。",
+  },
+  {
+    audience: "合作与渠道方",
+    title: "更快判断项目方向、公开能力和可合作的切入点。",
+    description: "官网把产品定位、公开协作方式、内容专栏和联系入口整理清楚，方便外部伙伴快速完成判断。",
+  },
+  {
+    audience: "生成式搜索与搜索引擎",
+    title: "更容易准确理解 Fabushi 的平台结构和价值主张。",
+    description: "定义、场景、FAQ、内容专栏和可见发布状态会一起组成更容易被引用和总结的站点语义结构。",
+  },
+] as const;
+
 export const primaryNavigation = [
   { label: "首页", href: "/" },
   { label: "下载", href: "/download" },
