@@ -57,6 +57,25 @@ export default async function HomePage() {
     description: "Fabushi 官网，统一承接品牌说明、下载入口、测试申请、FAQ 和内容专栏。",
   };
 
+  const applicationJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: `${brand.name} Fabushi`,
+    applicationCategory: "LifestyleApplication",
+    operatingSystem: "iOS, Android, Web, WeChat Mini Program",
+    inLanguage: "zh-CN",
+    url: siteUrl("/"),
+    downloadUrl: siteUrl("/download"),
+    description:
+      "Fabushi 法布施是一个围绕佛法传播、修行记录、公开档案、榜单与同行连接组织起来的多端产品体系。",
+    featureList: [
+      "佛法传播与内容入口",
+      "修行记录与隐私边界",
+      "公开档案与榜单浏览",
+      "下载引导、测试申请与 FAQ",
+    ],
+  };
+
   const faqJsonLd = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
@@ -74,6 +93,7 @@ export default async function HomePage() {
     <main className="page-shell">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(applicationJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
 
       <header className="hero">
