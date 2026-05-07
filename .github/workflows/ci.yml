@@ -241,12 +241,24 @@ jobs:
             -not -path './build/*' \
             -print0 | xargs -0 -n1 node --check
 
+      - name: Run profile update D1 transaction regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '{"type":"module"}\n' > package.json
+          node tests/profile.test.js
+
       - name: Run Worker contract tests
         shell: bash
         run: |
           set -euo pipefail
           printf '{"type":"module"}\n' > package.json
-          node --test --test-concurrency=1 tests/*.test.js
+          find tests -maxdepth 1 -name '*.test.js' ! -name 'profile.test.js' -print0 | sort -z > /tmp/worker-tests
+          if [ ! -s /tmp/worker-tests ]; then
+            echo "No remaining Worker contract tests found."
+            exit 0
+          fi
+          xargs -0 node --test --test-concurrency=1 < /tmp/worker-tests
 
       - name: Validate Worker bundle with Wrangler dry-run
         run: npx --yes wrangler@latest deploy --dry-run --outdir ../../worker-dry-run

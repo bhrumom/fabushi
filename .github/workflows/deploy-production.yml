@@ -77,6 +77,18 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Run profile update D1 transaction regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '{"type":"module"}\n' > web/package.json
+          node web/tests/profile.test.js
+
       - name: Build Flutter web release
         run: |
           flutter pub get
