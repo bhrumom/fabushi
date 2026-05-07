@@ -115,6 +115,11 @@ export default async function DownloadPage() {
       description: "正式版只在人工验收完成后才会上架到官网，更适合不希望承担测试波动、需要更稳妥安装入口的人。",
     },
   ] as const;
+  const preInstallChecklist = [
+    "你现在更想优先体验最新改动，还是更想降低安装后的波动与反复更新。",
+    "你是否已经看过对应入口旁边的版本、更新时间和更新摘要，而不是只看按钮名称。",
+    "如果你准备反馈问题或申请资格，是否已经知道该走下载、申请测试还是联系支持这三条不同路径。",
+  ] as const;
 
   const downloadPageJsonLd = {
     "@context": "https://schema.org",
@@ -224,6 +229,18 @@ export default async function DownloadPage() {
 
       <section className="band alt">
         <div className="section-heading">
+          <p>安装前确认</p>
+          <h2>真正点下载前，先确认这三件事，能少走很多回头路。</h2>
+        </div>
+        <ol className="roadmap-list">
+          {preInstallChecklist.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="band">
+        <div className="section-heading">
           <p>同步说明</p>
           <h2>官网上的下载说明现在会跟着发布资产一起更新，而不是靠手工改文案。</h2>
         </div>
@@ -234,7 +251,7 @@ export default async function DownloadPage() {
         </div>
       </section>
 
-      <section className="band">
+      <section className="band alt">
         <div className="section-heading">
           <p>推荐路径</p>
           <h2>如果你现在只是第一次接触这个项目，建议先这样走。</h2>
