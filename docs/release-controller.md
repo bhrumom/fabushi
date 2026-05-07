@@ -65,6 +65,7 @@
 
 - 立即切换到 `auto-merge` 或等效 merge queue 路径，不让 PR 停在“绿了但没人继续推”的状态
 - 在 PR 线程或相关 issue 里明确记录：当前已无代码或评审阻塞，剩余 gate 是 merge queue 本身
+- 对 queue 状态的判断优先以 PR 页面、merge queue 事件和后续 mainline 结果为准，不把“曾经 enable auto-merge”本身当成完成证据
 - 在 PR 真正 `merged` 之前，不关闭对应修复 issue，也不宣称问题已经进入主线
 - 等待 queue 外部结果期间，立即切去其他工位推进事项或新的小步升级；一旦 queue 出现 merge / fail 新信号，再立刻切回
 - PR 真正 merged 后，继续按 `main -> CI -> CD -> GitHub Release -> TestFlight` 顺序复核，而不是把 queue 放行为最终终点
