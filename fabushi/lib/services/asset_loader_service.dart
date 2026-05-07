@@ -47,10 +47,10 @@ class _AssetCacheWrapper implements ClearableCache {
 /// 用于从 CDN 加载大型 3D 模型等资源,避免打包到应用中
 /// 实现断点续传和持久化缓存机制
 class AssetLoaderService {
-  static const String defaultCdnBaseUrl =
-      'https://flutter.ombhrum.com/r2?file=';
+  static String get defaultCdnBaseUrl =>
+      '${AppConfig.currentBackendUrl}/r2?file=';
 
-  static String cdnBaseUrl = defaultCdnBaseUrl;
+  static String get cdnBaseUrl => defaultCdnBaseUrl;
 
   // 内存缓存 (仅用于当前会话)
   static final Map<String, Uint8List> _memoryCache = {};

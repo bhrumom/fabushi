@@ -1127,7 +1127,7 @@ class _MembershipScreenState extends State<MembershipScreen>
                       ),
                       TextButton(
                         onPressed: () => launchUrl(
-                          Uri.parse('https://flutter.ombhrum.com/privacy'),
+                          Uri.parse('${AppConfig.publicWebUrl}/privacy'),
                         ),
                         child: const Text(
                           '隐私政策',

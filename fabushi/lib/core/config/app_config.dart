@@ -31,13 +31,21 @@ class AppConfig {
   static bool get isWeb => kIsWeb;
 
   // API配置
-  static const String primaryBackendUrl = 'https://flutter.ombhrum.com';
-  static const String cloudflareWorkerProdUrl = 'https://flutter.ombhrum.com';
+  static const String configuredApiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: '',
+  );
+  static const String primaryBackendUrl = 'https://api.ombhrum.com';
+  static const String cloudflareWorkerProdUrl = 'https://api.ombhrum.com';
   static const String cloudflareWorkerDevUrl =
       'https://fabushi-flutter-web-dev.bhrumom.workers.dev';
   static const String localDevUrl = 'http://localhost:8787';
+  static const String publicWebUrl = 'https://flutter.ombhrum.com';
 
   static String get currentBackendUrl {
+    if (configuredApiBaseUrl.isNotEmpty) {
+      return configuredApiBaseUrl;
+    }
     if (kIsWeb) {
       final currentUrl = Uri.base;
       final host = currentUrl.host;
@@ -45,7 +53,7 @@ class AppConfig {
         return localDevUrl;
       }
       if (host.contains('fabushi-flutter-web-dev')) {
-        return '${currentUrl.scheme}://${currentUrl.authority}';
+        return cloudflareWorkerDevUrl;
       }
       if (host.contains('fabushi-flutter-web-prod')) {
         return cloudflareWorkerProdUrl;
