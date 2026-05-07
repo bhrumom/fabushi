@@ -61,6 +61,26 @@ export default async function HomePage() {
       detail: "测试申请、支持反馈与公开协作都有明确去处，不用靠猜测联系路径。",
     },
   ] as const;
+  const definitionBlocks = [
+    {
+      label: "Fabushi 是什么",
+      title: "一个围绕佛法传播、修行记录与同行连接组织起来的数字产品体系。",
+      description:
+        "官网不是主应用的替代品，而是统一承接理解、下载、测试申请、内容更新与公开协作的第一入口。",
+    },
+    {
+      label: "现在已经开放什么",
+      title: "官网、FAQ、下载状态、申请测试与内容专栏已经开始协同工作。",
+      description:
+        "第一次接触项目的人，已经可以先在这里完成理解、判断与下一步动作，而不必先进入应用再摸索。",
+    },
+    {
+      label: "还在逐步开放什么",
+      title: "微信小程序首期能力与更完整的主应用体验会继续按节奏释放。",
+      description:
+        "这让站点可以真实同步当前状态，而不是过度承诺尚未公开的功能或入口。",
+    },
+  ] as const;
 
   const organizationJsonLd = {
     "@context": "https://schema.org",
@@ -214,7 +234,31 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="band" id="trust">
+      <section className="band" id="definition">
+        <div className="section-heading">
+          <p>先定义清楚</p>
+          <h2>让用户和搜索系统都先搞清楚 Fabushi 是什么、已经开放什么、还在推进什么。</h2>
+        </div>
+        <div className="definition-grid">
+          {definitionBlocks.map((item) => (
+            <article key={item.label} className="definition-card">
+              <span className="detail-label">{item.label}</span>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+            </article>
+          ))}
+        </div>
+        <div className="inline-cta">
+          <a className="secondary-action" href={siteHref("/faq")}>
+            继续看完整 FAQ
+          </a>
+          <a className="secondary-action" href={siteHref("/download")}>
+            查看当前下载状态
+          </a>
+        </div>
+      </section>
+
+      <section className="band alt" id="trust">
         <div className="section-heading">
           <p>为什么先做官网</p>
           <h2>先把入口、分工、状态和信任信息讲清楚，转化路径才不会在第一屏就断掉。</h2>
@@ -230,7 +274,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="band alt" id="audience">
+      <section className="band" id="audience">
         <div className="section-heading">
           <p>适用场景</p>
           <h2>Fabushi 官网应该同时服务首次到达、内测申请、合作判断和搜索理解这四种场景。</h2>
@@ -246,7 +290,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="band" id="channel-roles">
+      <section className="band alt" id="channel-roles">
         <div className="section-heading">
           <p>入口分工</p>
           <h2>不是每个人都该直接跳进同一个端里，官网要先告诉你该从哪里开始。</h2>
@@ -270,7 +314,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="band alt" id="capabilities">
+      <section className="band" id="capabilities">
         <div className="section-heading">
           <p>核心能力</p>
           <h2>产品体系不是三套彼此割裂的站点，而是一条从发现、触达到深度使用的连续路径。</h2>
