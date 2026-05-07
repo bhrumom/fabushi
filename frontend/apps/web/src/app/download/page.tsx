@@ -1,16 +1,27 @@
 import type { Metadata } from "next";
-import { brand } from "@fabushi/shared";
+import { brand, contactChannels } from "@fabushi/shared";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import {
   getOfficialSiteReleaseCollection,
   type OfficialSiteChannel,
 } from "../../lib/official-site-releases";
-import { siteHref } from "../../lib/site-url";
+import { siteHref, siteUrl } from "../../lib/site-url";
 
 export const metadata: Metadata = {
   title: `下载入口 | ${brand.name}`,
   description: "查看 Fabushi 官网上的 Android Beta、iOS TestFlight 与正式版发布状态。",
+  alternates: {
+    canonical: siteUrl("/download"),
+  },
+  keywords: [
+    "法布施下载",
+    "Fabushi 下载",
+    "Android Beta",
+    "iOS TestFlight",
+    "法布施官网",
+    "法布施正式版",
+  ],
 };
 
 function formatPublishedAt(value?: string) {
@@ -85,9 +96,44 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
 
 export default async function DownloadPage() {
   const releaseCollection = await getOfficialSiteReleaseCollection();
+  const allChannels = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels];
+  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
+
+  const downloadPageJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: `${brand.name} 下载入口`,
+    url: siteUrl("/download"),
+    inLanguage: "zh-CN",
+    description: "查看 Fabushi Android beta、iOS TestFlight 与正式版的当前可见下载状态。",
+    mainEntity: {
+      "@type": "ItemList",
+      itemListElement: allChannels.map((channel, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        item: {
+          "@type": "SoftwareApplication",
+          name: channel.title,
+          operatingSystem: channel.platform,
+          description: channel.description,
+          url: siteUrl("/download"),
+          downloadUrl: siteHref(channel.primaryHref),
+          applicationCategory: channel.audience === "stable" ? "ProductivityApplication" : "BetaSoftwareApplication",
+        },
+      })),
+    },
+    provider: {
+      "@type": "Organization",
+      name: `${brand.name} Fabushi`,
+      email: supportEmail,
+      url: siteUrl("/"),
+    },
+  };
 
   return (
     <main className="inner-page">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(downloadPageJsonLd) }} />
+
       <section className="inner-hero">
         <SiteHeader />
         <div className="inner-copy">
