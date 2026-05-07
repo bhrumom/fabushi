@@ -1,15 +1,15 @@
 export const homeHighlights = [
   {
-    title: "全球法布施传播",
-    description: "围绕内容传播、上传分享、回向记录与可见榜单，建立持续增长的善意网络。",
+    title: "传播入口更清楚",
+    description: "把项目定位、下载状态、申请测试和内容入口收拢到同一官网里，减少用户第一次接触时的理解成本。",
   },
   {
-    title: "修行记录与隐私控制",
-    description: "保留公开展示与私密修行的边界，让个人节奏与社交互动能自然共存。",
+    title: "修行记录更有边界",
+    description: "同时照顾公开传播、个人修行记录与隐私控制，让分享、回向与安静练习可以并存。",
   },
   {
-    title: "轻社群与共修关系",
-    description: "通过关注、排行榜、共修小组和公开档案，帮助用户更容易找到同行者。",
+    title: "多端协作不再割裂",
+    description: "官网负责理解与转化，小程序负责轻触达，主应用负责完整体验，三者围绕同一套品牌与发布节奏协同工作。",
   },
 ] as const;
 
@@ -68,9 +68,9 @@ export const primaryNavigation = [
 ] as const;
 
 export const launchRoadmap = [
-  "先上线官网，承接品牌介绍、功能说明、下载指引和后续活动落地页。",
-  "同步建设微信小程序首期版本，优先覆盖轻浏览、榜单、公开档案和基础登录。",
-  "继续把更重的创作、上传和沉浸式体验保留在 Flutter 主应用里。",
+  "先把官网做成稳定的公开入口，集中承接项目介绍、下载状态、FAQ、内容更新和联系路径。",
+  "同步推进微信小程序首期版本，优先覆盖轻浏览、榜单、公开档案和基础登录等轻场景触达能力。",
+  "继续把更完整的上传、沉浸式浏览、个人中心和重交互流程保留在 Flutter 主应用里。",
 ] as const;
 
 export const downloadOptions = [
@@ -105,36 +105,41 @@ export const downloadOptions = [
 ] as const;
 
 export const downloadStatusNotes = [
-  "当前仓库里还没有可直接公开挂出的 App Store、TestFlight 或 APK 正式下载直链。",
-  "官网先把各平台状态、职责和等待名单入口讲清楚，避免用户点进来却落到空页面。",
-  "一旦正式下载链接可公开，优先替换 downloadOptions 中的对应入口即可，不需要重做页面结构。",
+  "官网现在会直接承接 Android beta、iOS TestFlight 和正式版发布状态，不再只是一个泛泛的等待名单页面。",
+  "当正式下载链接尚未公开时，页面会优先说明状态、适用人群和下一步动作，避免用户点进来却找不到判断依据。",
+  "一旦正式下载链接可公开，优先替换对应入口即可，不需要重新改整页结构。",
 ] as const;
 
 export const faqItems = [
   {
+    question: "法布施 Fabushi 是什么？",
+    answer:
+      "Fabushi 是一个围绕佛法传播、修行记录、善意分享与社群连接组织起来的多端产品入口。官网负责解释与引导，小程序负责轻触达，主应用负责完整体验。",
+  },
+  {
     question: "官网、微信小程序和 Flutter 主应用分别承担什么角色？",
     answer:
-      "官网负责品牌说明、下载入口、FAQ 和内容运营；微信小程序负责微信生态里的轻触达；Flutter 主应用继续承接完整的沉浸式体验和重交互流程。",
+      "官网负责品牌说明、下载入口、FAQ、发布说明和内容运营；微信小程序负责微信生态里的轻浏览与轻交互；Flutter 主应用继续承接更完整的沉浸式体验和重交互流程。",
+  },
+  {
+    question: "Fabushi 现在可以下载吗？",
+    answer:
+      "可以先通过官网查看 Android beta、iOS TestFlight 与正式版的当前状态。可公开下载时，官网会直接给出入口；暂未公开时，会明确说明申请测试或等待下一步发布的方式。",
   },
   {
     question: "为什么不直接用 Flutter Web 同时做官网和小程序？",
     answer:
-      "官网需要更好的 SEO、内容结构和首屏控制，小程序又有自己的运行规范。拆成 Next.js + Taro 可以减少后续返工，同时继续复用现有后端与业务层。",
+      "官网需要更清晰的 SEO、内容结构、首屏表达和发布信息管理，小程序也有自己的运行规范。拆成 Next.js 官网和 Taro 小程序，可以减少后续返工，同时继续复用现有后端与业务层。",
   },
   {
-    question: "官网和小程序会不会变成两套完全分裂的系统？",
+    question: "Fabushi 适合哪些人先关注？",
     answer:
-      "不会。新前端 monorepo 会持续共享 API client、类型、品牌文案和部分纯业务逻辑，差异主要保留在各自的页面表现层。",
-  },
-  {
-    question: "小程序首期最先会上什么？",
-    answer:
-      "优先是轻浏览、榜单、公开档案和基础登录，先把传播入口和社交发现路径打通，再逐步补更复杂的内容创作与上传流程。",
+      "适合正在做佛法内容传播、需要安静记录修行、希望与共修同行者建立连接，或者想参与传播合作与渠道联动的人。官网会优先帮助这些人快速判断自己该走哪条入口。",
   },
   {
     question: "为什么下载页现在不再只是等待名单入口？",
     answer:
-      "因为官网已经开始直接读取 GitHub Release 的 Android beta 安装包、TestFlight 上传状态，以及人工验收后发布的正式版信息。这样下载页会跟着发布链路一起更新，而不是靠手动改文案。",
+      "因为官网已经开始直接读取 GitHub Release 的 Android beta 安装包、TestFlight 上传状态，以及人工验收后发布的正式版信息。这样下载页会跟着发布链路一起更新，而不是只靠手工改文案。",
   },
 ] as const;
 
@@ -143,19 +148,19 @@ export const contactChannels = [
     label: "支持邮箱",
     value: "support@fabushi.com",
     href: "mailto:support@fabushi.com",
-    note: "下载申请、测试资格、问题反馈和合作沟通统一从这里进入。",
+    note: "测试申请、下载问题、反馈收集和合作沟通统一从这里进入，避免入口分散。",
   },
   {
     label: "官网域名",
     value: "fabushi.ombhrum.com",
     href: "https://fabushi.ombhrum.com",
-    note: "后续会作为官网、专题页和正式下载指引的统一入口。",
+    note: "长期对外入口会统一收拢到官网，便于承接下载、FAQ、专题内容和活动页面。",
   },
   {
     label: "GitHub 仓库",
     value: "bhrumom/fabushi",
     href: "https://github.com/bhrumom/fabushi",
-    note: "适合查看项目进展、提交 issue 和跟踪公开开发记录。",
+    note: "适合查看公开开发记录、发布资产、issue 反馈与持续迭代进展。",
   },
 ] as const;
 
