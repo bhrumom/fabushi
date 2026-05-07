@@ -2,23 +2,42 @@ import type { Metadata } from "next";
 import { brand, faqItems } from "@fabushi/shared";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
-import { siteHref } from "../../lib/site-url";
+import { siteHref, siteUrl } from "../../lib/site-url";
 
 export const metadata: Metadata = {
   title: `常见问题 | ${brand.name}`,
-  description: "查看官网、微信小程序与主应用之间的职责划分，以及首期上线范围。",
+  description: "查看 Fabushi 是什么、是否可下载，以及官网、微信小程序与主应用分别承担什么角色。",
+  alternates: {
+    canonical: siteUrl("/faq"),
+  },
+  keywords: ["法布施 FAQ", "Fabushi 常见问题", "法布施下载", "法布施官网", "法布施小程序"],
 };
 
 export default function FaqPage() {
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqItems.map((item) => ({
+      "@type": "Question",
+      name: item.question,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: item.answer,
+      },
+    })),
+  };
+
   return (
     <main className="inner-page">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
+
       <section className="inner-hero">
         <SiteHeader />
         <div className="inner-copy">
           <p className="eyebrow">常见问题</p>
-          <h1>把最容易反复解释的问题写出来，官网才真正开始工作。</h1>
+          <h1>把用户最容易问的关键问题写清楚，官网才真正开始承担解释和转化的工作。</h1>
           <p className="lede">
-            这一页优先回答官网、微信小程序和 Flutter 主应用之间的关系，以及为什么当前要拆出新的前端 monorepo。
+            这一页优先回答 Fabushi 是什么、现在能否下载、适合哪些人先关注，以及官网、微信小程序和 Flutter 主应用之间的分工关系。
           </p>
         </div>
       </section>
