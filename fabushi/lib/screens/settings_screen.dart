@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'keep_alive_guide_screen.dart';
 import 'practice_privacy_screen.dart';
 import '../services/api_client.dart';
+import '../services/app_version_service.dart';
 import '../services/app_settings.dart';
 import '../services/llm_model_config.dart';
 import '../services/llm_model_manager.dart';
@@ -155,6 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String contact,
   }) async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
+    final appVersion = await AppVersionService.currentReportVersion();
 
     return ApiClient.instance.post(
       WorkerConfig.getEndpoint('submitFeedback'),
@@ -164,6 +166,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (contact.trim().isNotEmpty) 'contact': contact.trim(),
         'page': 'settings_screen',
         'platform': _feedbackPlatformLabel(),
+        'appVersion': appVersion,
       },
       token: authModel.authToken,
     );
