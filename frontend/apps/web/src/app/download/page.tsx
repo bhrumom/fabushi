@@ -98,6 +98,23 @@ export default async function DownloadPage() {
   const releaseCollection = await getOfficialSiteReleaseCollection();
   const allChannels = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels];
   const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
+  const recommendationPaths = [
+    {
+      label: "想最快看到最新改动",
+      title: "优先看 Android beta 或 iOS TestFlight。",
+      description: "这两条通道会最先承接最新一轮可公开测试的安装包和状态更新，适合愿意跟着版本节奏一起体验的人。",
+    },
+    {
+      label: "想先判断自己适不适合加入测试",
+      title: "先看版本说明、更新时间和适用提示，再决定要不要安装。",
+      description: "下载页现在会把版本、发布时间、更新摘要和补充说明直接写在入口旁边，避免你先下载再回头找上下文。",
+    },
+    {
+      label: "更看重稳定与人工验收",
+      title: "优先等正式版入口，而不是直接进入 beta。",
+      description: "正式版只在人工验收完成后才会上架到官网，更适合不希望承担测试波动、需要更稳妥安装入口的人。",
+    },
+  ] as const;
 
   const downloadPageJsonLd = {
     "@context": "https://schema.org",
@@ -172,6 +189,22 @@ export default async function DownloadPage() {
 
       <section className="band">
         <div className="section-heading">
+          <p>选择建议</p>
+          <h2>如果你不确定现在该点哪一个入口，先按你的风险偏好和目的来选。</h2>
+        </div>
+        <div className="path-grid">
+          {recommendationPaths.map((item) => (
+            <article key={item.title} className="path-card">
+              <span className="detail-label">{item.label}</span>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt">
+        <div className="section-heading">
           <p>同步说明</p>
           <h2>官网上的下载说明现在会跟着发布资产一起更新，而不是靠手工改文案。</h2>
         </div>
@@ -182,7 +215,7 @@ export default async function DownloadPage() {
         </div>
       </section>
 
-      <section className="band alt">
+      <section className="band">
         <div className="section-heading">
           <p>推荐路径</p>
           <h2>如果你现在只是第一次接触这个项目，建议先这样走。</h2>
