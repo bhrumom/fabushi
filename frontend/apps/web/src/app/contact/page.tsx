@@ -2,16 +2,47 @@ import type { Metadata } from "next";
 import { brand, contactChannels } from "@fabushi/shared";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
-import { siteHref } from "../../lib/site-url";
+import { siteHref, siteUrl } from "../../lib/site-url";
 
 export const metadata: Metadata = {
   title: `联系 | ${brand.name}`,
   description: "查看 Fabushi 的支持邮箱、官网域名和公开仓库入口。",
+  alternates: {
+    canonical: siteUrl("/contact"),
+  },
+  keywords: ["联系 Fabushi", "法布施支持邮箱", "法布施官网", "Fabushi GitHub", "法布施合作"],
 };
 
 export default function ContactPage() {
+  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
+  const contactPageJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ContactPage",
+    name: `${brand.name} 联系方式`,
+    url: siteUrl("/contact"),
+    inLanguage: "zh-CN",
+    description: "Fabushi 的支持邮箱、官网域名与公开仓库入口。",
+    mainEntity: {
+      "@type": "Organization",
+      name: `${brand.name} Fabushi`,
+      url: siteUrl("/"),
+      email: supportEmail,
+      sameAs: contactChannels.filter((item) => item.href.startsWith("https://")).map((item) => item.href),
+      contactPoint: [
+        {
+          "@type": "ContactPoint",
+          contactType: "customer support",
+          email: supportEmail,
+          availableLanguage: ["zh-CN"],
+        },
+      ],
+    },
+  };
+
   return (
     <main className="inner-page">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(contactPageJsonLd) }} />
+
       <section className="inner-hero">
         <SiteHeader />
         <div className="inner-copy">
