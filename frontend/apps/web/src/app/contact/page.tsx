@@ -87,6 +87,26 @@ export default function ContactPage() {
 
       <section className="band alt">
         <div className="section-heading">
+          <p>使用边界</p>
+          <h2>不同入口负责不同类型的沟通，提前说清楚会比事后转发更省力。</h2>
+        </div>
+        <ol className="roadmap-list">
+          <li>下载申请、测试资格、隐私边界和需要私下补充的信息，优先走支持邮箱。</li>
+          <li>公开开发进度、可复查的问题轨迹和发布资产，优先走 GitHub 仓库，不把私密申请混进公开线程。</li>
+          <li>官网域名继续负责统一承接品牌说明、FAQ、下载状态和对外内容入口，减少信息四散在不同平台里。</li>
+        </ol>
+        <div className="inline-cta">
+          <a className="secondary-action" href={siteHref("/privacy")}>
+            查看隐私说明
+          </a>
+          <a className="secondary-action" href={siteHref("/apply")}>
+            去申请测试
+          </a>
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="section-heading">
           <p>建议用途</p>
           <h2>把沟通入口的职责区分清楚，能减少很多来回确认。</h2>
         </div>
