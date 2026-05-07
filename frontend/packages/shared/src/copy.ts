@@ -13,14 +13,63 @@ export const homeHighlights = [
   },
 ] as const;
 
-export const primaryNavigation = [
-  { label: "首页", href: "/" },
-  { label: "下载", href: "/download" },
-  { label: "申请测试", href: "/apply" },
-  { label: "常见问题", href: "/faq" },
-  { label: "联系", href: "/contact" },
-  { label: "核心能力", href: "/#capabilities" },
-  { label: "内容专栏", href: "/insights" },
+export const trustHighlights = [
+  {
+    title: "发布状态回流官网",
+    value: "Release / TestFlight / 正式版同步",
+    description: "下载页可以直接承接 GitHub Release、TestFlight 上传状态和后续人工验收后的正式版入口。",
+  },
+  {
+    title: "三端分工清楚",
+    value: "官网 / 微信小程序 / 主应用",
+    description: "用户先看懂从哪里开始，再决定是轻触达、持续传播，还是进入完整沉浸式体验。",
+  },
+  {
+    title: "现有后端继续复用",
+    value: "Workers API + 共享类型",
+    description: "官网不是独立空壳，而是继续共用现有 API、业务模型和发布链路。",
+  },
+  {
+    title: "公开开发可追踪",
+    value: "GitHub 仓库持续公开",
+    description: "官网、下载状态、专题内容与项目推进可以在同一条公开记录里被追溯和验证。",
+  },
+] as const;
+
+export const audienceJourneys = [
+  {
+    title: "第一次了解法布施的人",
+    summary: "先通过官网快速理解产品定位、开放状态和当前最合适的入口。",
+    detail: "适合想知道这个项目到底解决什么问题、当前能不能加入、下一步应该从哪里开始的人。",
+  },
+  {
+    title: "已经在持续修行的人",
+    summary: "可以用主应用沉淀更完整的修行记录、公开档案和内容互动。",
+    detail: "如果你需要更完整的个人中心、内容创作和长期记录体验，主应用会是核心承接面。",
+  },
+  {
+    title: "希望传播或共修协作的人",
+    summary: "先从微信小程序和公开榜单进入轻触达，再逐步沉淀到更完整的关系链路里。",
+    detail: "这条路径更适合内容传播、活动扩散、公开发现和社群连接等轻量但高频的场景。",
+  },
+] as const;
+
+export const productSurfaceMap = [
+  {
+    title: "官网",
+    role: "品牌说明、下载入口、FAQ、专题内容",
+    bestFor: "初次认知、搜索收录、生成式搜索引用、活动落地页与长期对外入口。",
+  },
+  {
+    title: "微信小程序",
+    role: "轻浏览、榜单、公开档案、基础登录",
+    bestFor: "微信生态内的轻触达、社交发现和传播起点。",
+  },
+  {
+    title: "Flutter 主应用",
+    role: "完整体验、重交互、沉浸式内容与长期记录",
+    bestFor: "更完整的创作、上传、关系链与个人沉淀。",
+  },
 ] as const;
 
 export const launchRoadmap = [
