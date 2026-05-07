@@ -277,6 +277,7 @@ h3,
 .application-list,
 .path-card p,
 .evidence-card p,
+.definition-card p,
 .channel-card p,
 .channel-list {
   color: var(--muted);
@@ -306,6 +307,7 @@ h3,
 .contact-grid,
 .path-grid,
 .evidence-grid,
+.definition-grid,
 .channel-grid {
   display: grid;
   gap: 16px;
@@ -330,6 +332,7 @@ h3,
 .narrative-block,
 .path-card,
 .evidence-card,
+.definition-card,
 .channel-card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -340,7 +343,8 @@ h3,
 }
 
 .path-card,
-.channel-card {
+.channel-card,
+.definition-card {
   display: grid;
   gap: 14px;
   align-content: start;
@@ -351,6 +355,10 @@ h3,
   gap: 10px;
   align-content: start;
   background: var(--surface-strong);
+}
+
+.definition-card {
+  background: linear-gradient(180deg, rgba(255, 250, 244, 0.92), rgba(247, 239, 228, 0.92));
 }
 
 .path-card h3,
@@ -365,6 +373,7 @@ h3,
 .editorial-row strong,
 .contact-card strong,
 .evidence-card strong,
+.definition-card h3,
 .channel-card h3 {
   display: block;
   color: var(--ink);
@@ -377,6 +386,7 @@ h3,
 .architecture-grid h3,
 .download-card h2,
 .release-card h2,
+.definition-card h3,
 .channel-card h3 {
   margin: 0;
 }
@@ -395,6 +405,7 @@ h3,
 .narrative-block h3,
 .use-case-block h3,
 .path-card h3,
+.definition-card h3,
 .channel-card h3 {
   font-size: 1.35rem;
   line-height: 1.35;
@@ -472,6 +483,7 @@ h3,
 .application-grid,
 .contact-grid,
 .evidence-grid,
+.definition-grid,
 .channel-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
