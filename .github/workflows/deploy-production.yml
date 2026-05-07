@@ -102,7 +102,7 @@ jobs:
           mkdir -p ../release-artifact/.github
           cp -R build/web ../release-artifact/fabushi/build/web
           cp -R web ../release-artifact/fabushi/web
-          cp -R .github/scripts ../release-artifact/.github/scripts
+          cp -R ../.github/scripts ../release-artifact/.github/scripts
           find ../release-artifact/fabushi/web -path '*/assets/built_in/*' -prune -exec rm -rf {} + || true
           printf '%s\n' "${{ steps.source.outputs.source_sha }}" > ../release-artifact/SOURCE_SHA
 
