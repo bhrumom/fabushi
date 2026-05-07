@@ -81,6 +81,32 @@ export default async function HomePage() {
         "这让站点可以真实同步当前状态，而不是过度承诺尚未公开的功能或入口。",
     },
   ] as const;
+  const governanceFacts = [
+    {
+      label: "隐私边界",
+      title: "先把收集范围、用途、支持邮箱和用户控制权说清楚。",
+      description:
+        "用户在下载、申请测试或进入更完整的产品流程前，应该先知道哪些信息会被处理，以及出现问题时该找谁。",
+      href: "/privacy",
+      ctaLabel: "查看隐私说明",
+    },
+    {
+      label: "反馈与治理",
+      title: "FAQ、申请测试、公开仓库和联系入口形成闭环。",
+      description:
+        "把常见问题、测试申请、支持邮箱和公开协作入口放在可复查的位置，能减少“我该联系谁、该去哪一步”的犹豫。",
+      href: "/contact",
+      ctaLabel: "查看联系入口",
+    },
+    {
+      label: "发布节奏",
+      title: "下载状态、测试资格和公开说明保持同步更新。",
+      description:
+        "官网先说清楚当前开放什么、还在准备什么，让每次转化动作都有现实状态对应，而不是靠模糊承诺推进。",
+      href: "/download",
+      ctaLabel: "查看下载状态",
+    },
+  ] as const;
 
   const organizationJsonLd = {
     "@context": "https://schema.org",
@@ -133,12 +159,26 @@ export default async function HomePage() {
     })),
   };
 
+  const governanceJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    name: "Fabushi trust and governance",
+    itemListElement: governanceFacts.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.title,
+      description: item.description,
+      url: siteUrl(item.href),
+    })),
+  };
+
   return (
     <main className="page-shell">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(applicationJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(governanceJsonLd) }} />
 
       <header className="hero">
         <SiteHeader />
@@ -274,7 +314,26 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="band" id="audience">
+      <section className="band" id="governance">
+        <div className="section-heading">
+          <p>信任与治理</p>
+          <h2>品牌感只能让人停一下，真正推动申请、下载和长期使用的，是状态、边界和反馈机制都讲清楚。</h2>
+        </div>
+        <div className="governance-grid">
+          {governanceFacts.map((item) => (
+            <article key={item.label} className="governance-card">
+              <span className="detail-label">{item.label}</span>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <a className="path-link" href={siteHref(item.href)}>
+                {item.ctaLabel}
+              </a>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt" id="audience">
         <div className="section-heading">
           <p>适用场景</p>
           <h2>Fabushi 官网应该同时服务首次到达、内测申请、合作判断和搜索理解这四种场景。</h2>
@@ -290,7 +349,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="band alt" id="channel-roles">
+      <section className="band" id="channel-roles">
         <div className="section-heading">
           <p>入口分工</p>
           <h2>不是每个人都该直接跳进同一个端里，官网要先告诉你该从哪里开始。</h2>
@@ -314,7 +373,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="band" id="capabilities">
+      <section className="band alt" id="capabilities">
         <div className="section-heading">
           <p>核心能力</p>
           <h2>产品体系不是三套彼此割裂的站点，而是一条从发现、触达到深度使用的连续路径。</h2>
@@ -454,6 +513,9 @@ export default async function HomePage() {
         <div className="inline-cta">
           <a className="secondary-action" href={siteHref("/faq")}>
             查看完整 FAQ
+          </a>
+          <a className="secondary-action" href={siteHref("/privacy")}>
+            查看隐私说明
           </a>
           <a className="secondary-action" href={siteHref("/contact")}>
             联系我们
