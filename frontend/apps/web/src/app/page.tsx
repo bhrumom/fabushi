@@ -4,6 +4,7 @@ import {
   contactChannels,
   faqItems,
   homeActionPaths,
+  homeChannelRoles,
   homeHighlights,
   homeTrustSignals,
   homeUseCases,
@@ -38,6 +39,28 @@ export default async function HomePage() {
   const releasePreview = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels].slice(0, 3);
   const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
   const faqPreview = faqItems.slice(0, 4);
+  const siteEvidence = [
+    {
+      label: "可见下载状态",
+      value: releasePreview.length > 0 ? `${releasePreview.length} 个入口已同步` : "入口持续同步中",
+      detail: "首页和下载页会直接承接当前公开可见的 beta 与正式版状态。",
+    },
+    {
+      label: "公开内容积累",
+      value: `${allArticles.length} 篇内容已上线`,
+      detail: "路线说明、专题文章与更新内容会持续沉淀，而不是只靠一张首页解释项目。",
+    },
+    {
+      label: "问题预答复",
+      value: `${faqItems.length} 个 FAQ 已整理`,
+      detail: "把“这是什么、适合谁、是否能下载、各端怎么分工”提前写清楚。",
+    },
+    {
+      label: "稳定联系入口",
+      value: `${contactChannels.length} 条公开通道`,
+      detail: "测试申请、支持反馈与公开协作都有明确去处，不用靠猜测联系路径。",
+    },
+  ] as const;
 
   const organizationJsonLd = {
     "@context": "https://schema.org",
@@ -175,6 +198,22 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <section className="band alt" id="evidence">
+        <div className="section-heading">
+          <p>公开事实</p>
+          <h2>如果官网想建立信任，就要先给出可验证、可引用、可复查的公开信息。</h2>
+        </div>
+        <div className="evidence-grid">
+          {siteEvidence.map((item) => (
+            <article key={item.label} className="evidence-card">
+              <span className="detail-label">{item.label}</span>
+              <strong>{item.value}</strong>
+              <p>{item.detail}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section className="band" id="trust">
         <div className="section-heading">
           <p>为什么先做官网</p>
@@ -207,7 +246,31 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="band" id="capabilities">
+      <section className="band" id="channel-roles">
+        <div className="section-heading">
+          <p>入口分工</p>
+          <h2>不是每个人都该直接跳进同一个端里，官网要先告诉你该从哪里开始。</h2>
+        </div>
+        <div className="channel-grid">
+          {homeChannelRoles.map((item) => (
+            <article key={item.channel} className="channel-card">
+              <span className="detail-label">{item.channel}</span>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <ul className="channel-list">
+                {item.bestFor.map((entry) => (
+                  <li key={entry}>{entry}</li>
+                ))}
+              </ul>
+              <a className="path-link" href={siteHref(item.href)}>
+                {item.ctaLabel}
+              </a>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt" id="capabilities">
         <div className="section-heading">
           <p>核心能力</p>
           <h2>产品体系不是三套彼此割裂的站点，而是一条从发现、触达到深度使用的连续路径。</h2>
