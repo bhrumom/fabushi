@@ -192,7 +192,7 @@ jobs:
       run:
         working-directory: fabushi/e2e
     env:
-      STAGING_APP_URL: https://fabushi-flutter-web-dev.bhrumom.workers.dev
+      STAGING_API_URL: https://fabushi-flutter-web-dev.bhrumom.workers.dev
       STAGING_TEST_LOGIN: ${{ secrets.STAGING_TEST_LOGIN }}
       STAGING_TEST_PASSWORD: ${{ secrets.STAGING_TEST_PASSWORD }}
       STAGING_TEST_EMAIL: ${{ vars.STAGING_TEST_EMAIL }}
@@ -212,7 +212,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for name in STAGING_APP_URL STAGING_TEST_LOGIN STAGING_TEST_PASSWORD STAGING_TEST_EMAIL STAGING_TEST_PHONE; do
+          for name in STAGING_API_URL STAGING_TEST_LOGIN STAGING_TEST_PASSWORD STAGING_TEST_EMAIL STAGING_TEST_PHONE; do
             if [ -z "${!name:-}" ]; then
               echo "$name is not configured."
               missing=1
@@ -235,9 +235,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS "$STAGING_APP_URL" > /tmp/staging-index.html
-          test -s /tmp/staging-index.html
-          status=$(curl -sS -o /tmp/staging-auth.json -w '%{http_code}' "$STAGING_APP_URL/api/auth/user-info")
+          curl -fsS "$STAGING_API_URL/health" > /tmp/staging-health.json
+          test -s /tmp/staging-health.json
+          status=$(curl -sS -o /tmp/staging-auth.json -w '%{http_code}' "$STAGING_API_URL/api/auth/user-info")
           if [ "$status" != "401" ] && [ "$status" != "403" ]; then
             echo "Expected unauthenticated user-info to return 401 or 403, got $status"
             cat /tmp/staging-auth.json
@@ -269,7 +269,7 @@ jobs:
     timeout-minutes: 15
     environment:
       name: production
-      url: ${{ vars.PRODUCTION_APP_URL || 'https://flutter.ombhrum.com' }}
+      url: ${{ vars.PRODUCTION_API_URL || 'https://api.ombhrum.com' }}
     defaults:
       run:
         working-directory: release-artifact/fabushi/web
@@ -355,8 +355,8 @@ jobs:
             echo ""
             echo "- Source SHA: ${{ needs.build-artifact.outputs.source_sha }}"
             echo "- Artifact: fabushi-release-${{ needs.build-artifact.outputs.source_sha }}"
-            echo "- Gates: staging API E2E, staging smoke"
-            echo "- URL: ${{ vars.PRODUCTION_APP_URL || 'https://flutter.ombhrum.com' }}"
+            echo "- Gates: staging API E2E, staging API smoke"
+            echo "- URL: ${{ vars.PRODUCTION_API_URL || 'https://api.ombhrum.com' }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   production-smoke:
@@ -367,15 +367,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      PRODUCTION_APP_URL: ${{ vars.PRODUCTION_APP_URL || 'https://flutter.ombhrum.com' }}
+      PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL || 'https://api.ombhrum.com' }}
     steps:
-      - name: Smoke test production site and API auth boundary
+      - name: Smoke test production API health and auth boundary
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS "$PRODUCTION_APP_URL" > /tmp/production-index.html
-          test -s /tmp/production-index.html
-          status=$(curl -sS -o /tmp/production-auth.json -w '%{http_code}' "$PRODUCTION_APP_URL/api/auth/user-info")
+          curl -fsS "$PRODUCTION_API_URL/health" > /tmp/production-health.json
+          test -s /tmp/production-health.json
+          status=$(curl -sS -o /tmp/production-auth.json -w '%{http_code}' "$PRODUCTION_API_URL/api/auth/user-info")
           if [ "$status" != "401" ] && [ "$status" != "403" ]; then
             echo "Expected unauthenticated user-info to return 401 or 403, got $status"
             cat /tmp/production-auth.json
@@ -389,7 +389,7 @@ jobs:
             echo "## Production smoke test passed"
             echo ""
             echo "- Source SHA: ${{ needs.build-artifact.outputs.source_sha }}"
-            echo "- URL: $PRODUCTION_APP_URL"
+            echo "- URL: $PRODUCTION_API_URL"
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-failure:
@@ -434,8 +434,8 @@ jobs:
                 '### Deployment gates',
                 '',
                 '- Staging API E2E',
-                '- Staging smoke test',
-                '- Production deploy and smoke test',
+                '- Staging API smoke test',
+                '- Production deploy and API smoke test',
                 '',
                 '### Rollback',
                 '',

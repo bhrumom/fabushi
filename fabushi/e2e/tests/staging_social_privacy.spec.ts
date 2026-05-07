@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const baseUrl = process.env.STAGING_APP_URL;
+const apiBaseUrl = process.env.STAGING_API_URL;
 const testUser = process.env.STAGING_TEST_LOGIN;
 const testPassword = process.env.STAGING_TEST_PASSWORD;
 const configuredSocialTarget = process.env.STAGING_SOCIAL_TARGET_USERNAME?.trim() || null;
@@ -10,7 +10,7 @@ test.describe('Staging Social and Privacy API', () => {
   let followTargetUsername: string | null = configuredSocialTarget;
 
   test.beforeAll(async ({ request }) => {
-    const resp = await request.post(`${baseUrl}/api/auth/login`, {
+    const resp = await request.post(`${apiBaseUrl}/api/auth/login`, {
       data: { username: testUser, password: testPassword },
     });
     expect(resp.ok()).toBeTruthy();
@@ -18,7 +18,7 @@ test.describe('Staging Social and Privacy API', () => {
     authToken = body.token;
 
     if (!followTargetUsername) {
-      const leaderboardResp = await request.get(`${baseUrl}/api/leaderboard/practice`, {
+      const leaderboardResp = await request.get(`${apiBaseUrl}/api/leaderboard/practice`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       expect(leaderboardResp.ok()).toBeTruthy();
@@ -32,7 +32,7 @@ test.describe('Staging Social and Privacy API', () => {
   test('toggle follow/unfollow', async ({ request }) => {
     test.skip(!followTargetUsername, 'staging 环境暂无可关注的其他用户');
 
-    const resp = await request.post(`${baseUrl}/api/social/follow/toggle`, {
+    const resp = await request.post(`${apiBaseUrl}/api/social/follow/toggle`, {
       data: { username: followTargetUsername },
       headers: { Authorization: `Bearer ${authToken}` },
     });
@@ -43,7 +43,7 @@ test.describe('Staging Social and Privacy API', () => {
   });
 
   test('fetch follow list', async ({ request }) => {
-    const resp = await request.get(`${baseUrl}/api/social/follows?type=following&username=${testUser}`, {
+    const resp = await request.get(`${apiBaseUrl}/api/social/follows?type=following&username=${testUser}`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
     expect(resp.ok()).toBeTruthy();
@@ -52,7 +52,7 @@ test.describe('Staging Social and Privacy API', () => {
   });
 
   test('fetch follow summary', async ({ request }) => {
-    const resp = await request.get(`${baseUrl}/api/social/follow-summary?username=${testUser}`, {
+    const resp = await request.get(`${apiBaseUrl}/api/social/follow-summary?username=${testUser}`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
     expect(resp.ok()).toBeTruthy();
@@ -62,7 +62,7 @@ test.describe('Staging Social and Privacy API', () => {
   });
 
   test('practice privacy GET and UPDATE', async ({ request }) => {
-    const getResp = await request.get(`${baseUrl}/api/social/practice-privacy`, {
+    const getResp = await request.get(`${apiBaseUrl}/api/social/practice-privacy`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
     expect(getResp.ok()).toBeTruthy();
@@ -70,7 +70,7 @@ test.describe('Staging Social and Privacy API', () => {
     const privacy = getBody.privacy ?? getBody;
     expect(privacy).toHaveProperty('isPrivate');
 
-    const postResp = await request.post(`${baseUrl}/api/social/practice-privacy`, {
+    const postResp = await request.post(`${apiBaseUrl}/api/social/practice-privacy`, {
       headers: { Authorization: `Bearer ${authToken}` },
       data: {
         isPrivate: true,
@@ -87,7 +87,7 @@ test.describe('Staging Social and Privacy API', () => {
   });
 
   test('leaderboard practice records respect privacy', async ({ request }) => {
-    const resp = await request.get(`${baseUrl}/api/leaderboard/practice`, {
+    const resp = await request.get(`${apiBaseUrl}/api/leaderboard/practice`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
     expect(resp.ok()).toBeTruthy();
@@ -104,7 +104,7 @@ test.describe('Staging Social and Privacy API', () => {
   });
 
   test('leaderboard records endpoint hides notes/remarks', async ({ request }) => {
-    const practiceResp = await request.get(`${baseUrl}/api/leaderboard/practice`, {
+    const practiceResp = await request.get(`${apiBaseUrl}/api/leaderboard/practice`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
     expect(practiceResp.ok()).toBeTruthy();
@@ -114,7 +114,7 @@ test.describe('Staging Social and Privacy API', () => {
 
     test.skip(!publicEntry, 'staging 环境暂无可用于公开记录校验的排行榜用户');
 
-    const resp = await request.get(`${baseUrl}/api/leaderboard/practice/records?username=${encodeURIComponent(publicEntry.username)}`, {
+    const resp = await request.get(`${apiBaseUrl}/api/leaderboard/practice/records?username=${encodeURIComponent(publicEntry.username)}`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
     expect(resp.ok()).toBeTruthy();
