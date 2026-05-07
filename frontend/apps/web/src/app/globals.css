@@ -275,7 +275,10 @@ h3,
 .release-mirror-block p,
 .application-summary,
 .application-list,
-.path-card p {
+.path-card p,
+.evidence-card p,
+.channel-card p,
+.channel-list {
   color: var(--muted);
   line-height: 1.72;
 }
@@ -301,7 +304,9 @@ h3,
 .application-grid,
 .use-case-grid,
 .contact-grid,
-.path-grid {
+.path-grid,
+.evidence-grid,
+.channel-grid {
   display: grid;
   gap: 16px;
 }
@@ -323,7 +328,9 @@ h3,
 .use-case-block,
 .contact-card,
 .narrative-block,
-.path-card {
+.path-card,
+.evidence-card,
+.channel-card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -332,10 +339,18 @@ h3,
   backdrop-filter: blur(10px);
 }
 
-.path-card {
+.path-card,
+.channel-card {
   display: grid;
   gap: 14px;
   align-content: start;
+}
+
+.evidence-card {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  background: var(--surface-strong);
 }
 
 .path-card h3,
@@ -348,7 +363,9 @@ h3,
 .download-card h2,
 .release-card h2,
 .editorial-row strong,
-.contact-card strong {
+.contact-card strong,
+.evidence-card strong,
+.channel-card h3 {
   display: block;
   color: var(--ink);
 }
@@ -359,7 +376,8 @@ h3,
 .feature-block h3,
 .architecture-grid h3,
 .download-card h2,
-.release-card h2 {
+.release-card h2,
+.channel-card h3 {
   margin: 0;
 }
 
@@ -368,14 +386,16 @@ h3,
 }
 
 .signal-chip strong,
-.hero-proof-row strong {
+.hero-proof-row strong,
+.evidence-card strong {
   font-size: 1rem;
 }
 
 .hero-panel strong,
 .narrative-block h3,
 .use-case-block h3,
-.path-card h3 {
+.path-card h3,
+.channel-card h3 {
   font-size: 1.35rem;
   line-height: 1.35;
 }
@@ -410,6 +430,21 @@ h3,
   font-size: 0.95rem;
 }
 
+.channel-list,
+.release-update-list,
+.application-list,
+.roadmap-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.channel-list li + li,
+.release-update-list li + li,
+.application-list li + li,
+.roadmap-list li + li {
+  margin-top: 8px;
+}
+
 .band.alt {
   background: rgba(255, 249, 241, 0.5);
 }
@@ -435,7 +470,9 @@ h3,
 .architecture-grid,
 .download-grid,
 .application-grid,
-.contact-grid {
+.contact-grid,
+.evidence-grid,
+.channel-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
@@ -512,16 +549,8 @@ h3,
 .release-update-list,
 .application-list,
 .roadmap-list {
-  margin: 0;
-  padding-left: 20px;
   color: var(--muted);
   line-height: 1.75;
-}
-
-.release-update-list li + li,
-.application-list li + li,
-.roadmap-list li + li {
-  margin-top: 8px;
 }
 
 .release-card-actions {
