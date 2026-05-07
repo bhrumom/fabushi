@@ -2,16 +2,44 @@ import type { Metadata } from "next";
 import { betaApplicationTracks, brand } from "@fabushi/shared";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
-import { siteHref } from "../../lib/site-url";
+import { siteHref, siteUrl } from "../../lib/site-url";
 
 export const metadata: Metadata = {
   title: `申请测试 | ${brand.name}`,
   description: "查看 Fabushi 当前可申请的测试与合作入口，并按不同场景选择对应通道。",
+  alternates: {
+    canonical: siteUrl("/apply"),
+  },
+  keywords: ["法布施内测", "Fabushi 申请测试", "法布施 Android Beta", "法布施 TestFlight", "法布施合作"],
 };
 
 export default function ApplyPage() {
+  const applyPageJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: `${brand.name} 申请测试`,
+    url: siteUrl("/apply"),
+    inLanguage: "zh-CN",
+    description: "Fabushi 当前开放的 iOS、Android 与合作沟通申请通道。",
+    mainEntity: {
+      "@type": "ItemList",
+      itemListElement: betaApplicationTracks.map((item, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        item: {
+          "@type": "EntryPoint",
+          name: item.name,
+          description: item.summary,
+          urlTemplate: siteHref(item.ctaHref),
+        },
+      })),
+    },
+  };
+
   return (
     <main className="inner-page">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(applyPageJsonLd) }} />
+
       <section className="inner-hero">
         <SiteHeader />
         <div className="inner-copy">
