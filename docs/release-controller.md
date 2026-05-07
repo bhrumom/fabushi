@@ -46,6 +46,17 @@
 - PR 描述里说明为什么改、改了什么、如何验证、如何防复发
 - PR 合并后仍需继续回追 mainline CI / CD / Release / TestFlight
 
+### 无 Head Checks PR 的推进规则
+
+对文档、运行手册、提示词映射或其他受路径过滤影响的 PR，可能会出现 `head SHA` 没有关联 workflow runs、combined status 为空的情况。
+
+默认处理方式：
+
+- 先区分这是“本来就不会触发检查”，还是“按仓库规则本应触发却没有触发”
+- 如果属于 docs-only / path-filter 场景，且仓库保护规则也没有要求额外 checks，就继续按 review / auto-merge / merge queue 路径推进
+- 这类 PR 在真正 `merged` 前，仍然属于等待中的 PR 事项，不能因为 checks 为空就误判成失败，也不能因为没有红灯就误判成已闭环
+- 如果按仓库规则本应触发检查却完全没有运行记录，就把它视为 workflow 覆盖缺口，回到根因修复模式，补齐触发条件、路径规则或门禁说明
+
 ### Merge Queue 重叠改动处理规则
 
 当多个 open PR 同时修改同一组文件、同一条用户路径或同一个回归主题时，不要把它们当成彼此独立的绿灯直接一起送进 merge queue。
