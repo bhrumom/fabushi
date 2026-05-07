@@ -6,6 +6,7 @@ export function SiteFooter() {
       <div>
         <p className="footer-title">法布施 Fabushi</p>
         <p className="footer-copy">让佛法、修行与善意传播得更远。</p>
+        <p className="footer-copy">官网负责说明与入口，小程序负责轻触达，主应用负责更完整的长期体验。</p>
       </div>
       <div className="footer-links">
         <a href={siteHref("/download")}>下载入口</a>
