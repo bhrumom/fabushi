@@ -26,10 +26,29 @@ export default function FaqPage() {
       },
     })),
   };
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "首页",
+        item: siteUrl("/"),
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "常见问题",
+        item: siteUrl("/faq"),
+      },
+    ],
+  };
 
   return (
     <main className="inner-page">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
 
       <section className="inner-hero">
         <SiteHeader />
