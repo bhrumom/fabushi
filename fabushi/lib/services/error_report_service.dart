@@ -5,8 +5,8 @@ import 'dart:ui';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 
-import '../core/constants/app_constants.dart';
 import 'api_client.dart';
+import 'app_build_info_service.dart';
 import 'worker_config.dart';
 
 class AppErrorReport {
@@ -183,7 +183,7 @@ class ErrorReportService {
       stage: stage,
       source: source,
       platform: _platformLabel(),
-      appVersion: AppConstants.appVersion,
+      appVersion: await AppBuildInfoService.instance.getVersionLabel(),
       occurredAt: DateTime.now().toUtc(),
       fatal: fatal,
       deviceSummary: await _collectDeviceSummary(),
