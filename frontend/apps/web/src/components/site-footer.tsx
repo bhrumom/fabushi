@@ -11,6 +11,7 @@ export function SiteFooter() {
         <a href={siteHref("/download")}>下载入口</a>
         <a href={siteHref("/apply")}>申请测试</a>
         <a href={siteHref("/faq")}>常见问题</a>
+        <a href={siteHref("/privacy")}>隐私说明</a>
         <a href={siteHref("/contact")}>联系</a>
         <a href={siteHref("/insights")}>内容专栏</a>
         <a href="mailto:support@fabushi.com">support@fabushi.com</a>
