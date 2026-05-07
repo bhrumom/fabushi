@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import '../core/config/app_config.dart';
 
 /// 在线人数服务 - WebSocket 版本
 /// 管理用户在线状态并提供实时人数统计
 class OnlineCounterService {
-  static const String baseUrl = 'https://flutter.ombhrum.com';
-  static const String wsUrl = 'wss://flutter.ombhrum.com';
+  static String get baseUrl => AppConfig.currentBackendUrl;
+  static String get wsUrl =>
+      AppConfig.currentBackendUrl.replaceFirst(RegExp(r'^http'), 'ws');
   static const Duration heartbeatInterval = Duration(seconds: 30);
   static const Duration reconnectDelay = Duration(seconds: 5);
 

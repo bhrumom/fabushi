@@ -296,10 +296,7 @@ class _AssetScreenState extends State<AssetScreen> {
     });
 
     try {
-      final String baseUrl = AppConfig.isProduction
-          ? AppConfig.cloudflareWorkerProdUrl
-          : AppConfig.cloudflareWorkerDevUrl;
-      final String url = '$baseUrl/r2?list';
+      final String url = '${AppConfig.currentBackendUrl}/r2?list';
 
       print('查询R2存储桶文件列表: $url');
 
@@ -490,18 +487,13 @@ class _AssetScreenState extends State<AssetScreen> {
       final String url;
 
       if (source == 'r2') {
-        final String baseUrl = AppConfig.isProduction
-            ? AppConfig.cloudflareWorkerProdUrl
-            : AppConfig.cloudflareWorkerDevUrl;
-        url = '$baseUrl/r2?file=${Uri.encodeComponent(assetPath)}';
+        url =
+            '${AppConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(assetPath)}';
       } else {
         if (kIsWeb) {
           url = '/$assetPath';
         } else {
-          final String baseUrl = AppConfig.isProduction
-              ? AppConfig.cloudflareWorkerProdUrl
-              : AppConfig.cloudflareWorkerDevUrl;
-          url = '$baseUrl/$assetPath';
+          url = '${AppConfig.currentBackendUrl}/$assetPath';
         }
       }
 

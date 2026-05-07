@@ -111,10 +111,7 @@ class SharedAssetManager {
       if (kIsWeb) {
         url = '/$cleanAssetPath';
       } else {
-        final String baseUrl = AppConfig.isProduction
-            ? AppConfig.cloudflareWorkerProdUrl
-            : AppConfig.cloudflareWorkerDevUrl;
-        url = '$baseUrl/$cleanAssetPath';
+        url = '${AppConfig.currentBackendUrl}/$cleanAssetPath';
       }
     } else {
       url =

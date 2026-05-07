@@ -19,12 +19,20 @@ class AppConfig {
   static bool get isStaging => environment == 'staging';
 
   // API配置
-  static const String productionApiUrl = 'https://ombhrum.com';
-  static const String stagingApiUrl = 'https://staging.ombhrum.com';
+  static const String configuredApiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: '',
+  );
+  static const String productionApiUrl = 'https://api.ombhrum.com';
+  static const String stagingApiUrl = 'https://staging-api.ombhrum.com';
   static const String developmentApiUrl = 'http://localhost:8787';
+  static const String publicWebUrl = 'https://flutter.ombhrum.com';
 
   // 根据环境获取API URL
   static String get apiUrl {
+    if (configuredApiBaseUrl.isNotEmpty) {
+      return configuredApiBaseUrl;
+    }
     switch (environment) {
       case 'production':
         return productionApiUrl;
@@ -52,7 +60,7 @@ class AppConfig {
   static const bool enableFirebaseAuth = true;
   static const bool enableAlipay = true;
   static const bool enableVideoFeed = true;
-  static const bool enableDebugMode = !isProduction;
+  static bool get enableDebugMode => !isProduction;
 
   // 传输配置
   static const int fileChunkSize = 1024;
@@ -262,6 +270,6 @@ class AppConfig {
 
   // 日志配置
   static const bool enableLogging = true;
-  static const bool enableNetworkLogging = !isProduction;
-  static const bool enablePerformanceLogging = !isProduction;
+  static bool get enableNetworkLogging => !isProduction;
+  static bool get enablePerformanceLogging => !isProduction;
 }

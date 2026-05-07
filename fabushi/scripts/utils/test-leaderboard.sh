@@ -6,7 +6,7 @@ echo ""
 
 # 1. 测试排行榜 API
 echo "1️⃣ 测试排行榜 API..."
-RESPONSE=$(curl -s https://flutter.ombhrum.com/api/leaderboard)
+RESPONSE=$(curl -s https://api.ombhrum.com/api/leaderboard)
 echo "响应: $RESPONSE"
 echo ""
 

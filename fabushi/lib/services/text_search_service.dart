@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../core/config/app_config.dart';
 import '../utils/search_utils.dart';
 
 class TextItem {
@@ -50,7 +51,8 @@ class TextSearchService {
   List<TextItem> _items = [];
   bool _isIndexed = false;
 
-  TextSearchService({this.baseUrl = 'https://flutter.ombhrum.com'});
+  TextSearchService({String? baseUrl})
+    : baseUrl = baseUrl ?? AppConfig.currentBackendUrl;
 
   // 本地索引（用于离线搜索）
   Future<void> indexAssets() async {

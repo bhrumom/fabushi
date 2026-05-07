@@ -10,7 +10,7 @@ import 'package:global_dharma_sharing/services/shared_asset_manager.dart';
 
 class CloudflareTextService {
   static final _random = Random();
-  static const String baseUrl = 'https://flutter.ombhrum.com';
+  static String get baseUrl => AppConfig.currentBackendUrl;
   static List<Map<String, dynamic>>? _cachedManifest;
   static final List<Map<String, dynamic>> _preloadQueue = [];
   static bool _isPreloading = false;
