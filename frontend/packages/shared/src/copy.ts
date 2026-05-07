@@ -81,6 +81,33 @@ export const homeActionPaths = [
   },
 ] as const;
 
+export const homeChannelRoles = [
+  {
+    channel: "官网",
+    title: "先负责解释方向、建立信任、给出下载与沟通入口。",
+    description: "适合第一次接触 Fabushi、想先判断项目定位、想看下载状态，或需要专题内容和 FAQ 的访问者。",
+    bestFor: ["首页与 FAQ 快速理解", "查看下载状态与发布说明", "进入申请测试或合作沟通"],
+    href: "/",
+    ctaLabel: "继续浏览官网",
+  },
+  {
+    channel: "微信小程序",
+    title: "优先承接微信生态里的轻触达、轻浏览与公开信息分发。",
+    description: "适合想在微信里快速查看榜单、公开档案与轻量内容入口的人，不强求先进入完整主应用。",
+    bestFor: ["微信内轻触达", "公开档案与榜单浏览", "低门槛内容传播入口"],
+    href: "/insights/wechat-mini-program-phase-one",
+    ctaLabel: "查看小程序路线",
+  },
+  {
+    channel: "主应用",
+    title: "继续承接更完整的修行记录、上传分享、互动与沉浸式体验。",
+    description: "适合已经确定要深入使用 Fabushi、愿意参与测试，或需要完整个人流程与重交互能力的用户。",
+    bestFor: ["更完整的个人使用流程", "上传与互动等重交互场景", "参与 iOS / Android 内测"],
+    href: "/download",
+    ctaLabel: "查看主应用入口",
+  },
+] as const;
+
 export const primaryNavigation = [
   { label: "首页", href: "/" },
   { label: "下载", href: "/download" },
