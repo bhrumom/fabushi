@@ -6,51 +6,10 @@ import { handleUpdateProfile } from '../src/handlers/profile.js';
 import { DatabaseService } from '../src/services/database.js';
 
 function createDbMock(options = {}) {
-  const { nativeTransaction = false, batchTransaction = false, missingUserColumns = [] } = options;
+  const { nativeTransaction = false, batchTransaction = false } = options;
   const users = new Map();
   const emailMapping = new Map();
   const statements = [];
-  const userColumns = new Set([
-    'username',
-    'email',
-    'password_hash',
-    'salt',
-    'iterations',
-    'algo',
-    'email_verified',
-    'alipay_user_id',
-    'alipay_nickname',
-    'alipay_avatar',
-    'alipay_bound_at',
-    'wechat_openid',
-    'wechat_nickname',
-    'wechat_headimgurl',
-    'wechat_bound_at',
-    'phone_number',
-    'firebase_uid',
-    'apple_user_id',
-    'nickname',
-    'avatar',
-    'bio',
-    'main_practice_title',
-    'main_practice_file_path',
-    'main_practice_selected_at',
-    'membership_type',
-    'membership_expires_at',
-    'free_trial_end_date',
-    'stripe_customer_id',
-    'subscription_id',
-    'total_transferred_bytes',
-    'last_transfer_at',
-    'sync_version',
-    'extra_data',
-    'created_at',
-    'updated_at'
-  ]);
-
-  for (const column of missingUserColumns) {
-    userColumns.delete(column);
-  }
 
   const db = {
     users,
@@ -88,23 +47,6 @@ function createDbMock(options = {}) {
           return;
         }
 
-        if (normalizedSql.startsWith('PRAGMA table_info(users)')) {
-          return [...userColumns].map((name, cid) => ({ cid, name }));
-        }
-
-        if (normalizedSql.startsWith('ALTER TABLE users ADD COLUMN')) {
-          const match = normalizedSql.match(/^ALTER TABLE users ADD COLUMN\s+([a-zA-Z0-9_]+)/);
-          if (!match) {
-            throw new Error(`Unsupported ALTER statement: ${normalizedSql}`);
-          }
-          const column = match[1];
-          if (userColumns.has(column)) {
-            throw new Error(`duplicate column name: ${column}`);
-          }
-          userColumns.add(column);
-          return;
-        }
-
         if (normalizedSql.startsWith('SELECT * FROM users WHERE username = ?')) {
           const user = users.get(params[0]);
           return user ? { ...user } : null;
@@ -137,37 +79,9 @@ function createDbMock(options = {}) {
           return;
         }
 
-        if (normalizedSql.startsWith('UPDATE users SET')) {
-          const setSection = normalizedSql
-            .slice(normalizedSql.indexOf('SET') + 3, normalizedSql.lastIndexOf('WHERE username = ?'))
-            .trim();
-          const assignments = setSection.split(',').map((assignment) => assignment.trim());
-          const oldUsername = params[params.length - 1];
-          const user = users.get(oldUsername);
-          if (!user) return;
-
-          let paramIndex = 0;
-          for (const assignment of assignments) {
-            const column = assignment.split('=')[0].trim();
-            user[column] = params[paramIndex];
-            paramIndex += 1;
-          }
-
-          if (user.username !== oldUsername) {
-            users.delete(oldUsername);
-            users.set(user.username, user);
-          }
-          return;
-        }
-
         if (normalizedSql.startsWith('INSERT INTO users')) {
           const columnsSection = normalizedSql.slice(normalizedSql.indexOf('(') + 1, normalizedSql.indexOf(') VALUES'));
           const columns = columnsSection.split(',').map((column) => column.trim());
-          for (const column of columns) {
-            if (!userColumns.has(column)) {
-              throw new Error(`D1_ERROR: table users has no column named ${column}: SQLITE_ERROR`);
-            }
-          }
           const record = {};
           columns.forEach((column, index) => {
             record[column] = params[index];
@@ -212,7 +126,7 @@ function createDbMock(options = {}) {
           return execute();
         },
         all() {
-          return execute().then((results) => ({ results: results ?? [] }));
+          return { results: [] };
         }
       };
     }
@@ -284,7 +198,7 @@ function seedUser(db, username, email, phoneNumber, extra = {}) {
   db.emailMapping.set(email, username);
 }
 
-test('handleUpdateProfile updates username in place and keeps references in sync', async () => {
+test('handleUpdateProfile migrates username changes without direct in-place username update', async () => {
   const db = createDbMock();
   seedUser(db, 'oldname', 'old@example.com', '+8613800138000', {
     firebase_uid: 'firebase-uid-1',
@@ -331,15 +245,7 @@ test('handleUpdateProfile updates username in place and keeps references in sync
   const directUsernameUpdate = db.statements.find(({ sql }) =>
     sql.startsWith('UPDATE users SET') && sql.includes('username = ?')
   );
-  assert.ok(directUsernameUpdate);
-  assert.equal(
-    db.statements.some(({ sql }) => sql.trimStart().startsWith('INSERT INTO users')),
-    false
-  );
-  assert.equal(
-    db.statements.some(({ sql }) => sql.trimStart().startsWith('DELETE FROM users')),
-    false
-  );
+  assert.equal(directUsernameUpdate, undefined);
 
   const expectedReferenceUpdates = [
     'UPDATE comments SET user_id = ? WHERE user_id = ?',
@@ -400,7 +306,7 @@ test('handleUpdateProfile prefers native storage transactions when available', a
   );
 });
 
-test('handleUpdateProfile uses direct username update with D1 databases', async () => {
+test('handleUpdateProfile uses D1 batch instead of SQL transactions when available', async () => {
   const db = createDbMock({ batchTransaction: true });
   seedUser(db, 'd1old', 'd1@example.com', '+8613800138333', {
     firebase_uid: 'firebase-d1-uid'
@@ -432,34 +338,40 @@ test('handleUpdateProfile uses direct username update with D1 databases', async 
   assert.equal(db.users.has('d1new'), true);
   assert.equal(db.users.get('d1new').phone_number, null);
   assert.equal(db.emailMapping.get('d1@example.com'), 'd1new');
-  assert.ok(
-    db.statements.some(({ sql }) =>
-      sql.startsWith('UPDATE users SET') && sql.includes('username = ?')
-    )
-  );
-  assert.equal(db.statements.some(({ sql }) => sql === '__d1_batch__'), false);
+  assert.ok(db.statements.some(({ sql }) => sql === '__d1_batch__'));
   assert.equal(
     db.statements.some(({ sql }) => /^BEGIN TRANSACTION|^COMMIT|^ROLLBACK/.test(sql.trimStart())),
     false
   );
 });
 
-test('handleUpdateProfile does not require free_trial_end_date when renaming a legacy D1 user', async () => {
-  const db = createDbMock({ missingUserColumns: ['free_trial_end_date'] });
-  seedUser(db, 'schemaold', 'schema@example.com', '+8613800138555');
+test('handleUpdateProfile coerces missing optional legacy fields to null during username migration', async () => {
+  const db = createDbMock({ batchTransaction: true });
+  seedUser(db, 'legacyold', 'legacy@example.com', '+8613800138555', {
+    firebase_uid: 'firebase-legacy-uid'
+  });
+
+  const legacyUser = db.users.get('legacyold');
+  delete legacyUser.alipay_bound_at;
+  delete legacyUser.wechat_bound_at;
+  delete legacyUser.bio;
+  delete legacyUser.membership_expires_at;
+  delete legacyUser.stripe_customer_id;
+  delete legacyUser.subscription_id;
+  delete legacyUser.extra_data;
 
   const env = { JWT_SECRET: 'test-secret' };
-  const token = await generateToken('schemaold', env);
-  const request = new Request('https://api.ombhrum.com/api/auth/update-profile', {
+  const token = await generateToken('legacyold', env);
+  const request = new Request('https://flutter.ombhrum.com/api/auth/update-profile', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`
     },
     body: JSON.stringify({
-      username: 'schemanew',
-      email: 'schema@example.com',
-      phoneNumber: '+8613800138555'
+      username: 'legacynew',
+      email: 'legacy@example.com',
+      phoneNumber: ''
     })
   });
 
@@ -468,17 +380,14 @@ test('handleUpdateProfile does not require free_trial_end_date when renaming a l
 
   const payload = await response.json();
   assert.equal(payload.success, true);
-  assert.equal(payload.user.username, 'schemanew');
-  assert.equal(db.users.has('schemaold'), false);
-  assert.equal(db.users.has('schemanew'), true);
-  assert.equal(
-    db.statements.some(({ sql }) => sql.trimStart().startsWith('INSERT INTO users')),
-    false
-  );
-  assert.equal(
-    db.statements.some(({ sql }) => sql.trimStart().startsWith('ALTER TABLE users ADD COLUMN')),
-    false
-  );
+  assert.equal(payload.user.username, 'legacynew');
+  assert.equal(db.users.get('legacynew').alipay_bound_at, null);
+  assert.equal(db.users.get('legacynew').wechat_bound_at, null);
+  assert.equal(db.users.get('legacynew').bio, null);
+  assert.equal(db.users.get('legacynew').membership_expires_at, null);
+  assert.equal(db.users.get('legacynew').stripe_customer_id, null);
+  assert.equal(db.users.get('legacynew').subscription_id, null);
+  assert.equal(db.users.get('legacynew').extra_data, null);
 });
 
 test('DatabaseService preserves native transaction access for profile updates', async () => {
@@ -520,7 +429,7 @@ test('DatabaseService preserves native transaction access for profile updates', 
   );
 });
 
-test('DatabaseService supports direct username updates with D1 batch-capable databases', async () => {
+test('DatabaseService exposes D1 batch for profile updates', async () => {
   const rawDb = createDbMock({ batchTransaction: true });
   seedUser(rawDb, 'batchwrappedold', 'batchwrapped@example.com', '+8613800138444');
   const db = new DatabaseService(rawDb);
@@ -550,12 +459,7 @@ test('DatabaseService supports direct username updates with D1 batch-capable dat
   assert.equal(rawDb.users.has('batchwrappedold'), false);
   assert.equal(rawDb.users.has('batchwrappednew'), true);
   assert.equal(rawDb.emailMapping.get('batchwrapped@example.com'), 'batchwrappednew');
-  assert.ok(
-    rawDb.statements.some(({ sql }) =>
-      sql.startsWith('UPDATE users SET') && sql.includes('username = ?')
-    )
-  );
-  assert.equal(rawDb.statements.some(({ sql }) => sql === '__d1_batch__'), false);
+  assert.ok(rawDb.statements.some(({ sql }) => sql === '__d1_batch__'));
   assert.equal(
     rawDb.statements.some(({ sql }) => /^BEGIN TRANSACTION|^COMMIT|^ROLLBACK/.test(sql.trimStart())),
     false

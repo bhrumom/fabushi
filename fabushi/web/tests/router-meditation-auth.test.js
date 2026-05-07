@@ -68,12 +68,9 @@ test('router accepts signed JWTs on meditation endpoints by normalizing them for
 
 test('router rejects invalid signed JWTs before legacy meditation handlers can accept them', async () => {
   const token = await generateToken('meditator', TEST_ENV);
-  const parts = token.split('.');
-  const signature = parts[2];
-  const index = Math.floor(signature.length / 2);
-  const replacement = signature[index] === 'a' ? 'b' : 'a';
-  parts[2] = `${signature.slice(0, index)}${replacement}${signature.slice(index + 1)}`;
-  const tampered = parts.join('.');
+  const [header, payload, signature] = token.split('.');
+  const tamperedSignature = `${signature[0] === 'a' ? 'b' : 'a'}${signature.slice(1)}`;
+  const tampered = `${header}.${payload}.${tamperedSignature}`;
   const response = await route(
     new Request('https://flutter.ombhrum.com/api/meditation/goal?status=active', {
       headers: { Authorization: `Bearer ${tampered}` },
@@ -84,7 +81,7 @@ test('router rejects invalid signed JWTs before legacy meditation handlers can a
   );
 
   assert.equal(response.status, 401);
-  const payload = await response.json();
-  assert.equal(payload.success, false);
-  assert.match(payload.error, /认证失败/);
+  const body = await response.json();
+  assert.equal(body.success, false);
+  assert.match(body.error, /认证失败/);
 });

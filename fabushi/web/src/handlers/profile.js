@@ -189,6 +189,77 @@ async function uploadAvatarObject(request, env, username, imageBase64, fileName,
   return avatarUrlFor(request, key);
 }
 
+function migrationPlaceholderEmail(username) {
+  const normalized = String(username || 'user').replace(/[^a-zA-Z0-9._-]/g, '-');
+  return `${normalized}__rename__${Date.now()}@local.invalid`;
+}
+
+function getFinalProfileState(user, {
+  targetUsername,
+  newEmail,
+  newPhone,
+  finalAvatar,
+  passwordCreds,
+  practiceTitle,
+  practiceFilePath,
+  practiceSelectedAt,
+  updatedAt
+}) {
+  const email = newEmail !== undefined ? newEmail : normalizeOptionalString(user.email);
+  const phone = newPhone !== undefined ? newPhone : normalizeOptionalString(user.phone_number);
+  const practiceChanged = practiceTitle !== undefined;
+
+  const finalState = {
+    username: targetUsername,
+    email,
+    password_hash: passwordCreds?.passwordHash ?? user.password_hash ?? null,
+    salt: passwordCreds?.salt ?? user.salt ?? null,
+    iterations: passwordCreds?.iterations ?? user.iterations ?? null,
+    algo: passwordCreds?.algo ?? user.algo ?? null,
+    email_verified: newEmail !== undefined
+      ? (email ? 1 : 0)
+      : (user.email_verified ?? 0),
+    alipay_user_id: normalizeOptionalString(user.alipay_user_id),
+    alipay_nickname: normalizeOptionalString(user.alipay_nickname),
+    alipay_avatar: normalizeOptionalString(user.alipay_avatar),
+    alipay_bound_at: normalizeOptionalString(user.alipay_bound_at),
+    wechat_openid: normalizeOptionalString(user.wechat_openid),
+    wechat_nickname: normalizeOptionalString(user.wechat_nickname),
+    wechat_headimgurl: normalizeOptionalString(user.wechat_headimgurl),
+    wechat_bound_at: normalizeOptionalString(user.wechat_bound_at),
+    phone_number: phone,
+    firebase_uid: normalizeOptionalString(user.firebase_uid),
+    apple_user_id: normalizeOptionalString(user.apple_user_id),
+    nickname: targetUsername,
+    avatar: finalAvatar !== undefined ? finalAvatar : normalizeOptionalString(user.avatar),
+    bio: normalizeOptionalString(user.bio),
+    main_practice_title: practiceChanged
+      ? (practiceTitle ?? null)
+      : normalizeOptionalString(user.main_practice_title),
+    main_practice_file_path: practiceChanged
+      ? (practiceTitle ? practiceFilePath ?? null : null)
+      : normalizeOptionalString(user.main_practice_file_path),
+    main_practice_selected_at: practiceChanged
+      ? (practiceTitle ? practiceSelectedAt : null)
+      : normalizeOptionalString(user.main_practice_selected_at),
+    membership_type: user.membership_type || 'expired',
+    membership_expires_at: normalizeOptionalString(user.membership_expires_at),
+    free_trial_end_date: normalizeOptionalString(user.free_trial_end_date),
+    stripe_customer_id: normalizeOptionalString(user.stripe_customer_id),
+    subscription_id: normalizeOptionalString(user.subscription_id),
+    total_transferred_bytes: user.total_transferred_bytes ?? 0,
+    last_transfer_at: normalizeOptionalString(user.last_transfer_at),
+    sync_version: user.sync_version ?? 1,
+    extra_data: normalizeOptionalString(user.extra_data),
+    created_at: user.created_at || updatedAt,
+    updated_at: updatedAt
+  };
+
+  return Object.fromEntries(
+    Object.entries(finalState).map(([key, value]) => [key, value === undefined ? null : value])
+  );
+}
+
 function getNativeTransactionRunner(db) {
   const storage = db?.state?.storage;
   if (storage && typeof storage.transaction === 'function') {
@@ -199,6 +270,16 @@ function getNativeTransactionRunner(db) {
   }
   if (db && typeof db.transaction === 'function') {
     return (action) => db.transaction(action);
+  }
+  return null;
+}
+
+function getBatchRunner(db) {
+  if (db && typeof db.batch === 'function') {
+    return (statements) => db.batch(statements);
+  }
+  if (db?.db && typeof db.db.batch === 'function') {
+    return (statements) => db.db.batch(statements);
   }
   return null;
 }
@@ -224,41 +305,105 @@ async function migrateUsernameChange(db, user, {
   practiceSelectedAt,
   updatedAt
 }) {
-  const updates = ['username = ?', 'nickname = ?'];
-  const values = [targetUsername, targetUsername];
+  const finalState = getFinalProfileState(user, {
+    targetUsername,
+    newEmail,
+    newPhone,
+    finalAvatar,
+    passwordCreds,
+    practiceTitle,
+    practiceFilePath,
+    practiceSelectedAt,
+    updatedAt
+  });
 
-  if (newEmail !== undefined) {
-    updates.push('email = ?', 'email_verified = ?');
-    values.push(newEmail || '', newEmail ? 1 : 0);
+  const detachOldUserStatement = db.prepare(`
+    UPDATE users
+    SET email = ?, phone_number = NULL, firebase_uid = NULL, apple_user_id = NULL,
+        alipay_user_id = NULL, wechat_openid = NULL, updated_at = ?
+    WHERE username = ?
+  `).bind(
+    migrationPlaceholderEmail(oldUsername),
+    updatedAt,
+    oldUsername
+  );
+
+  const insertNewUserStatement = db.prepare(`
+    INSERT INTO users (
+      username, email, password_hash, salt, iterations, algo, email_verified,
+      alipay_user_id, alipay_nickname, alipay_avatar, alipay_bound_at,
+      wechat_openid, wechat_nickname, wechat_headimgurl, wechat_bound_at,
+      phone_number, firebase_uid, apple_user_id,
+      nickname, avatar, bio,
+      main_practice_title, main_practice_file_path, main_practice_selected_at,
+      membership_type, membership_expires_at, free_trial_end_date,
+      stripe_customer_id, subscription_id,
+      total_transferred_bytes, last_transfer_at,
+      sync_version, extra_data,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    finalState.username,
+    finalState.email,
+    finalState.password_hash,
+    finalState.salt,
+    finalState.iterations,
+    finalState.algo,
+    finalState.email_verified,
+    finalState.alipay_user_id,
+    finalState.alipay_nickname,
+    finalState.alipay_avatar,
+    finalState.alipay_bound_at,
+    finalState.wechat_openid,
+    finalState.wechat_nickname,
+    finalState.wechat_headimgurl,
+    finalState.wechat_bound_at,
+    finalState.phone_number,
+    finalState.firebase_uid,
+    finalState.apple_user_id,
+    finalState.nickname,
+    finalState.avatar,
+    finalState.bio,
+    finalState.main_practice_title,
+    finalState.main_practice_file_path,
+    finalState.main_practice_selected_at,
+    finalState.membership_type,
+    finalState.membership_expires_at,
+    finalState.free_trial_end_date,
+    finalState.stripe_customer_id,
+    finalState.subscription_id,
+    finalState.total_transferred_bytes,
+    finalState.last_transfer_at,
+    finalState.sync_version,
+    finalState.extra_data,
+    finalState.created_at,
+    finalState.updated_at
+  );
+
+  const deleteOldUserStatement = db.prepare('DELETE FROM users WHERE username = ?').bind(oldUsername);
+  const d1BatchStatements = [detachOldUserStatement, insertNewUserStatement];
+
+  if (user.email && user.email.toLowerCase() !== finalState.email) {
+    d1BatchStatements.push(db.prepare('DELETE FROM email_username_mapping WHERE email = ?').bind(user.email.toLowerCase()));
   }
-
-  if (newPhone !== undefined) {
-    updates.push('phone_number = ?');
-    values.push(newPhone);
+  if (finalState.email) {
+    d1BatchStatements.push(db.prepare('INSERT OR REPLACE INTO email_username_mapping (email, username) VALUES (?, ?)').bind(finalState.email, targetUsername));
   }
+  d1BatchStatements.push(deleteOldUserStatement);
 
-  if (finalAvatar !== undefined) {
-    updates.push('avatar = ?');
-    values.push(finalAvatar);
+  const runBatch = getBatchRunner(db);
+  if (runBatch) {
+    await runBatch(d1BatchStatements);
+    await updateUsernameReferences(db, oldUsername, targetUsername);
+    return;
   }
-
-  if (passwordCreds) {
-    updates.push('password_hash = ?', 'salt = ?', 'iterations = ?', 'algo = ?');
-    values.push(passwordCreds.passwordHash, passwordCreds.salt, passwordCreds.iterations, passwordCreds.algo);
-  }
-
-  if (practiceTitle !== undefined) {
-    updates.push('main_practice_title = ?', 'main_practice_file_path = ?', 'main_practice_selected_at = ?');
-    values.push(practiceTitle, practiceFilePath ?? null, practiceTitle ? practiceSelectedAt : null);
-  }
-
-  updates.push('updated_at = ?');
-  values.push(updatedAt, oldUsername);
 
   await runInTransaction(db, async () => {
-    await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE username = ?`).bind(...values).run();
+    await detachOldUserStatement.run();
+    await insertNewUserStatement.run();
     await updateUsernameReferences(db, oldUsername, targetUsername);
-    await applyEmailMapping(db, user.email, newEmail !== undefined ? newEmail : user.email, targetUsername);
+    await applyEmailMapping(db, user.email, finalState.email, targetUsername);
+    await deleteOldUserStatement.run();
   });
 }
 
