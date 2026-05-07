@@ -3,6 +3,7 @@ import {
   brand,
   contactChannels,
   faqItems,
+  homeActionPaths,
   homeHighlights,
   homeTrustSignals,
   homeUseCases,
@@ -154,6 +155,25 @@ export default async function HomePage() {
           </aside>
         </div>
       </header>
+
+      <section className="band quick-paths" id="paths">
+        <div className="section-heading">
+          <p>快速路径</p>
+          <h2>第一次来到这里，通常只需要先完成这三件事里的其中一件。</h2>
+        </div>
+        <div className="path-grid">
+          {homeActionPaths.map((item) => (
+            <article key={item.title} className="path-card">
+              <span className="detail-label">{item.label}</span>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <a className="path-link" href={siteHref(item.href)}>
+                {item.ctaLabel}
+              </a>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <section className="band" id="trust">
         <div className="section-heading">
