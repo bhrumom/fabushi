@@ -147,14 +147,16 @@ h3,
 
 .nav-cta,
 .primary-action,
-.secondary-action {
+.secondary-action,
+.path-link {
   border-radius: 999px;
   padding: 12px 20px;
   transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease;
 }
 
 .nav-cta,
-.primary-action {
+.primary-action,
+.path-link {
   background: var(--ink);
   color: #fffaf3;
 }
@@ -166,7 +168,8 @@ h3,
 
 .nav-cta:hover,
 .primary-action:hover,
-.secondary-action:hover {
+.secondary-action:hover,
+.path-link:hover {
   transform: translateY(-1px);
 }
 
@@ -271,7 +274,8 @@ h3,
 .editorial-row small,
 .release-mirror-block p,
 .application-summary,
-.application-list {
+.application-list,
+.path-card p {
   color: var(--muted);
   line-height: 1.72;
 }
@@ -296,7 +300,8 @@ h3,
 .download-grid,
 .application-grid,
 .use-case-grid,
-.contact-grid {
+.contact-grid,
+.path-grid {
   display: grid;
   gap: 16px;
 }
@@ -317,7 +322,8 @@ h3,
 .release-card,
 .use-case-block,
 .contact-card,
-.narrative-block {
+.narrative-block,
+.path-card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -326,6 +332,13 @@ h3,
   backdrop-filter: blur(10px);
 }
 
+.path-card {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.path-card h3,
 .signal-chip strong,
 .hero-proof-row strong,
 .narrative-block h3,
@@ -340,6 +353,20 @@ h3,
   color: var(--ink);
 }
 
+.path-card h3,
+.narrative-block h3,
+.use-case-block h3,
+.feature-block h3,
+.architecture-grid h3,
+.download-card h2,
+.release-card h2 {
+  margin: 0;
+}
+
+.path-link {
+  justify-self: start;
+}
+
 .signal-chip strong,
 .hero-proof-row strong {
   font-size: 1rem;
@@ -347,7 +374,8 @@ h3,
 
 .hero-panel strong,
 .narrative-block h3,
-.use-case-block h3 {
+.use-case-block h3,
+.path-card h3 {
   font-size: 1.35rem;
   line-height: 1.35;
 }
@@ -392,10 +420,15 @@ h3,
     linear-gradient(180deg, rgba(255, 244, 228, 0.82), rgba(237, 227, 214, 0.6));
 }
 
+.quick-paths {
+  padding-top: 12px;
+}
+
 .section-heading {
   margin-bottom: 28px;
 }
 
+.path-grid,
 .narrative-grid,
 .use-case-grid,
 .feature-grid,
@@ -404,15 +437,6 @@ h3,
 .application-grid,
 .contact-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-}
-
-.feature-block h3,
-.architecture-grid h3,
-.download-card h2,
-.release-card h2,
-.use-case-block h3,
-.narrative-block h3 {
-  margin: 0 0 10px;
 }
 
 .platform-strip,
