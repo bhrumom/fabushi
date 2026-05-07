@@ -46,6 +46,29 @@
 - PR 描述里说明为什么改、改了什么、如何验证、如何防复发
 - PR 合并后仍需继续回追 mainline CI / CD / Release / TestFlight
 
+### Merge Queue 重叠改动处理规则
+
+当多个 open PR 同时修改同一组文件、同一条用户路径或同一个回归主题时，不要把它们当成彼此独立的绿灯直接一起送进 merge queue。
+
+默认处理方式：
+
+- 先判断谁是主阻塞修复，谁是非阻塞补强或体验优化
+- 如果后者可能覆盖前者的文件或行为，就先暂停后者的自动推进，再等待前者落主线
+- 前一个 PR 合入后，再让后一个 PR 基于最新 `main` 重新确认差异、checks 和合并顺序
+- 在 PR 线程或相关 issue 中明确记录这种顺序安排，避免后续巡检误把“都在排队”当成低风险状态
+
+### Queue-only 仓库合并推进规则
+
+当 direct merge 被仓库规则拒绝，并明确提示 `Changes must be made through the merge queue` 时，默认按“queue 是当前唯一剩余主线 gate”处理，而不是把 head checks 已绿误判成已经完成。
+
+默认处理方式：
+
+- 立即切换到 `auto-merge` 或等效 merge queue 路径，不让 PR 停在“绿了但没人继续推”的状态
+- 在 PR 线程或相关 issue 里明确记录：当前已无代码或评审阻塞，剩余 gate 是 merge queue 本身
+- 在 PR 真正 `merged` 之前，不关闭对应修复 issue，也不宣称问题已经进入主线
+- 等待 queue 外部结果期间，立即切去其他工位推进事项或新的小步升级；一旦 queue 出现 merge / fail 新信号，再立刻切回
+- PR 真正 merged 后，继续按 `main -> CI -> CD -> GitHub Release -> TestFlight` 顺序复核，而不是把 queue 放行为最终终点
+
 ### 3. Issue 治理工位
 
 负责：
