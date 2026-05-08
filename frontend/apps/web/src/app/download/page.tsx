@@ -115,6 +115,23 @@ export default async function DownloadPage() {
       description: "正式版只在人工验收完成后才会上架到官网，更适合不希望承担测试波动、需要更稳妥安装入口的人。",
     },
   ] as const;
+  const platformFitGuidance = [
+    {
+      title: "Android Beta",
+      bestFor: "想最快跟上最新版本、愿意更早反馈问题的人。",
+      description: "如果你更在意尽快体验最新公开交付，而不是等到人工验收全部完成，Android beta 通常会是最先更新的入口。",
+    },
+    {
+      title: "iOS TestFlight",
+      bestFor: "已经明确想参与 iOS 内测，并愿意接受名额、审核和链接状态波动的人。",
+      description: "它更适合已经确认要深入体验完整主应用流程的用户，而不是只想随手点开看看的首次访问者。",
+    },
+    {
+      title: "正式版入口",
+      bestFor: "更希望先看人工验收结果、尽量减少安装后波动的人。",
+      description: "如果你主要想确认现在有没有相对稳定、可转发、可复用的下载入口，先等正式版通常比直接进入 beta 更合适。",
+    },
+  ] as const;
   const preInstallChecklist = [
     "你现在更想优先体验最新改动，还是更想降低安装后的波动与反复更新。",
     "你是否已经看过对应入口旁边的版本、更新时间和更新摘要，而不是只看按钮名称。",
@@ -213,6 +230,22 @@ export default async function DownloadPage() {
 
       <section className="band">
         <div className="section-heading">
+          <p>平台适配</p>
+          <h2>如果你是在比较 Android beta、iOS TestFlight 和正式版，先按你的使用阶段来选。</h2>
+        </div>
+        <div className="definition-grid">
+          {platformFitGuidance.map((item) => (
+            <article key={item.title} className="definition-card">
+              <h3>{item.title}</h3>
+              <p><strong>更适合谁：</strong>{item.bestFor}</p>
+              <p>{item.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt">
+        <div className="section-heading">
           <p>选择建议</p>
           <h2>如果你不确定现在该点哪一个入口，先按你的风险偏好和目的来选。</h2>
         </div>
@@ -227,7 +260,7 @@ export default async function DownloadPage() {
         </div>
       </section>
 
-      <section className="band alt">
+      <section className="band">
         <div className="section-heading">
           <p>安装前确认</p>
           <h2>真正点下载前，先确认这三件事，能少走很多回头路。</h2>
@@ -239,7 +272,7 @@ export default async function DownloadPage() {
         </ol>
       </section>
 
-      <section className="band">
+      <section className="band alt">
         <div className="section-heading">
           <p>同步说明</p>
           <h2>官网上的下载说明现在会跟着发布资产一起更新，而不是靠手工改文案。</h2>
@@ -251,7 +284,7 @@ export default async function DownloadPage() {
         </div>
       </section>
 
-      <section className="band alt">
+      <section className="band">
         <div className="section-heading">
           <p>推荐路径</p>
           <h2>如果你现在只是第一次接触这个项目，建议先这样走。</h2>
