@@ -425,6 +425,7 @@ jobs:
             /fabushi/web/src/handlers/auth.js
             /fabushi/web/src/handlers/password-login.js
             /fabushi/web/src/handlers/profile.js
+            /fabushi/web/src/handlers/thirdparty.js
             /fabushi/web/tests/auth-user-id.test.js
             /fabushi/web/tests/profile.test.js
 

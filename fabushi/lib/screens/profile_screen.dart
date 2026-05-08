@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/auth_model.dart';
-import '../models/user_model.dart';
-import '../services/membership_service.dart';
-import '../services/apple_iap_service.dart';
-import 'douyin_login_screen.dart';
-import 'membership_screen.dart';
-import '../widgets/common_widgets.dart';
 import '../core/design_system/app_theme.dart';
+import '../features/auth/application/auth_model.dart';
+import '../features/membership/data/membership_service.dart';
+import '../features/membership/presentation/screens/membership_screen.dart';
+import '../models/user_model.dart';
+import '../services/apple_iap_service.dart';
+import '../widgets/common_widgets.dart';
+import 'douyin_login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
