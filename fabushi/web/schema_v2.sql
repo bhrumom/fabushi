@@ -15,7 +15,7 @@
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id INTEGER PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
   email TEXT UNIQUE,
   password_hash TEXT,
@@ -312,7 +312,7 @@ CREATE INDEX IF NOT EXISTS idx_meditation_goals_status ON meditation_goals(statu
 CREATE INDEX IF NOT EXISTS idx_meditation_goals_sync_version ON meditation_goals(sync_version);
 
 CREATE TABLE IF NOT EXISTS meditation_groups (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
   owner_username TEXT,
