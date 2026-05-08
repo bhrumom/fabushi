@@ -29,6 +29,21 @@ const contactJourneys = [
   },
 ] as const;
 
+const contactBoundaries = [
+  {
+    title: "涉及个人信息或资格判断",
+    description: "像邮箱、设备信息、测试资格、下载失败截图这类内容，更适合走支持邮箱，不适合直接公开到 issue 里。",
+  },
+  {
+    title: "涉及公开问题、版本记录或站点建议",
+    description: "只要内容适合公开复查、也对后续协作有帮助，优先沉淀到 GitHub 会更清楚。",
+  },
+  {
+    title: "只是想确认正式入口和项目定位",
+    description: "先用官网页做转发和说明，通常比把同样的问题反复发给支持邮箱更高效。",
+  },
+] as const;
+
 const responseSignals = [
   {
     title: "先给出清楚的来意",
@@ -41,6 +56,24 @@ const responseSignals = [
   {
     title: "公开问题尽量沉淀到 GitHub",
     description: "这样更适合后续复查、团队协作和外部理解，也能提升站点的公开可信度。",
+  },
+] as const;
+
+const contactFaqs = [
+  {
+    question: "什么情况应该优先发支持邮箱？",
+    answer:
+      "凡是涉及测试资格、下载问题、设备环境、个人邮箱、账号信息或不适合公开暴露的内容，都更适合先发支持邮箱。",
+  },
+  {
+    question: "什么情况更适合提 GitHub issue？",
+    answer:
+      "如果问题可以公开复现、对后续版本记录有帮助，或者属于官网结构、文案和公开体验建议，优先沉淀到 GitHub 会更清楚。",
+  },
+  {
+    question: "联系时最好一次带上哪些信息？",
+    answer:
+      "至少带上你的目标、所用平台、机型或系统版本、触发场景，以及你最希望解决的问题。这样通常能减少很多来回确认。",
   },
 ] as const;
 
@@ -68,44 +101,58 @@ export const metadata: Metadata = {
 
 export default function ContactPage() {
   const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
-  const contactPageJsonLd = {
+  const structuredData = {
     "@context": "https://schema.org",
-    "@type": "ContactPage",
-    name: `${brand.name} 联系方式`,
-    url: contactUrl,
-    inLanguage: "zh-CN",
-    description: "Fabushi 的支持邮箱、官网域名与公开仓库入口。",
-    mainEntity: {
-      "@type": "Organization",
-      name: `${brand.name} Fabushi`,
-      url: siteUrl("/"),
-      email: supportEmail,
-      sameAs: contactChannels.filter((item) => item.href.startsWith("https://")).map((item) => item.href),
-      contactPoint: [
-        {
-          "@type": "ContactPoint",
-          contactType: "customer support",
-          email: supportEmail,
-          availableLanguage: ["zh-CN"],
-        },
-      ],
-    },
-  };
-  const breadcrumbJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: [
+    "@graph": [
       {
-        "@type": "ListItem",
-        position: 1,
-        name: "首页",
-        item: siteUrl("/"),
+        "@type": "ContactPage",
+        name: `${brand.name} 联系方式`,
+        url: contactUrl,
+        inLanguage: "zh-CN",
+        description: "Fabushi 的支持邮箱、官网域名与公开仓库入口。",
+        mainEntity: {
+          "@type": "Organization",
+          name: `${brand.name} Fabushi`,
+          url: siteUrl("/"),
+          email: supportEmail,
+          sameAs: contactChannels.filter((item) => item.href.startsWith("https://")).map((item) => item.href),
+          contactPoint: [
+            {
+              "@type": "ContactPoint",
+              contactType: "customer support",
+              email: supportEmail,
+              availableLanguage: ["zh-CN"],
+            },
+          ],
+        },
       },
       {
-        "@type": "ListItem",
-        position: 2,
-        name: "联系",
-        item: contactUrl,
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          {
+            "@type": "ListItem",
+            position: 1,
+            name: "首页",
+            item: siteUrl("/"),
+          },
+          {
+            "@type": "ListItem",
+            position: 2,
+            name: "联系",
+            item: contactUrl,
+          },
+        ],
+      },
+      {
+        "@type": "FAQPage",
+        mainEntity: contactFaqs.map((item) => ({
+          "@type": "Question",
+          name: item.question,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: item.answer,
+          },
+        })),
       },
     ],
   };
@@ -115,12 +162,7 @@ export default function ContactPage() {
       <script
         type="application/ld+json"
         suppressHydrationWarning
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(contactPageJsonLd) }}
-      />
-      <script
-        type="application/ld+json"
-        suppressHydrationWarning
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
 
       <section className="inner-hero">
@@ -170,6 +212,21 @@ export default function ContactPage() {
 
       <section className="band alt">
         <div className="section-heading">
+          <p>公开与私密边界</p>
+          <h2>把什么适合公开、什么适合私下联系写清楚，本身就是信任信息的一部分。</h2>
+        </div>
+        <div className="definition-grid">
+          {contactBoundaries.map((item) => (
+            <article key={item.title} className="definition-card">
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="section-heading">
           <p>联系前最好准备什么</p>
           <h2>把这些信息一次带全，往返确认通常会少很多。</h2>
         </div>
@@ -179,6 +236,21 @@ export default function ContactPage() {
               <strong>{item.title}</strong>
               <p>{item.description}</p>
             </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt">
+        <div className="section-heading">
+          <p>常见问题</p>
+          <h2>把联系边界和入口职责先写清楚，用户与搜索系统都更容易找到正确路径。</h2>
+        </div>
+        <div className="faq-list full">
+          {contactFaqs.map((item) => (
+            <details key={item.question} className="faq-item">
+              <summary>{item.question}</summary>
+              <p>{item.answer}</p>
+            </details>
           ))}
         </div>
         <div className="inline-cta">
