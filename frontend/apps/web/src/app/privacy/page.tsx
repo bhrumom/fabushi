@@ -4,6 +4,10 @@ import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import { siteHref, siteUrl } from "../../lib/site-url";
 
+const privacyUrl = siteUrl("/privacy");
+const privacyTitle = `隐私说明 | ${brand.name}`;
+const privacyDescription = "查看 Fabushi 对账户、设备、内容互动、支持通道和用户权利的公开隐私说明。";
+
 const privacySections = [
   {
     label: "账户与身份",
@@ -73,57 +77,119 @@ const privacySections = [
   },
 ] as const;
 
+const privacyFaqs = [
+  {
+    question: "申请测试时通常会收集哪些信息？",
+    answer:
+      "通常会收集你主动提供的邮箱、平台、设备信息和申请说明，用于资格判断、下载通知和后续反馈沟通。当前官网不会为了无关营销而额外扩大收集范围。",
+  },
+  {
+    question: "如果我只是浏览官网，会被要求先注册吗？",
+    answer:
+      "不会。官网的首要职责是解释产品、展示下载状态和整理常见问题，而不是要求所有访问者先注册账户后才能继续了解项目。",
+  },
+  {
+    question: "如果我想删除或确认与自己相关的信息，该怎么做？",
+    answer:
+      "可以直接通过支持邮箱联系，询问当前保留了哪些与你相关的申请或反馈信息，并提出更新或删除请求。在不影响必要安全与合规记录的前提下，会按说明处理。",
+  },
+] as const;
+
+const trustCommitments = [
+  {
+    title: "先说明边界，再承接转化",
+    description: "官网不会把隐私说明藏到看不见的位置，而是把它放进下载、FAQ、申请测试和联系路径里一起被看到。",
+  },
+  {
+    title: "尽量只收集完成当前动作所需的信息",
+    description: "不管是下载沟通、测试申请还是支持反馈，都会优先围绕当前动作所需范围来处理，而不是模糊扩大用途。",
+  },
+  {
+    title: "说明会跟着产品和站点变化一起更新",
+    description: "当官网新增关键入口、表单、状态同步方式或数据展示形式时，这页也会同步更新，保持可复查。",
+  },
+] as const;
+
 export const metadata: Metadata = {
-  title: `隐私说明 | ${brand.name}`,
-  description: "查看 Fabushi 对账户、设备、内容互动、支持通道和用户权利的公开隐私说明。",
+  title: privacyTitle,
+  description: privacyDescription,
   alternates: {
-    canonical: siteUrl("/privacy"),
+    canonical: privacyUrl,
   },
   keywords: ["Fabushi 隐私说明", "法布施隐私政策", "法布施支持", "法布施测试申请", "Fabushi 数据边界"],
+  openGraph: {
+    title: privacyTitle,
+    description: privacyDescription,
+    url: privacyUrl,
+    siteName: "Fabushi",
+    locale: "zh_CN",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: privacyTitle,
+    description: privacyDescription,
+  },
 };
 
 export default function PrivacyPage() {
   const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
   const supportHref = contactChannels.find((item) => item.href.startsWith("mailto:"))?.href ?? "mailto:support@fabushi.com";
 
-  const privacyPageJsonLd = {
+  const structuredData = {
     "@context": "https://schema.org",
-    "@type": "WebPage",
-    name: `${brand.name} 隐私说明`,
-    url: siteUrl("/privacy"),
-    inLanguage: "zh-CN",
-    description: "Fabushi 对账户、设备、内容互动、支持通道和用户权利的公开隐私说明。",
-    about: {
-      "@type": "Organization",
-      name: `${brand.name} Fabushi`,
-      url: siteUrl("/"),
-      email: supportEmail,
-    },
-  };
-
-  const breadcrumbJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: [
+    "@graph": [
       {
-        "@type": "ListItem",
-        position: 1,
-        name: "首页",
-        item: siteUrl("/"),
+        "@type": "WebPage",
+        name: `${brand.name} 隐私说明`,
+        url: privacyUrl,
+        inLanguage: "zh-CN",
+        description: privacyDescription,
+        about: {
+          "@type": "Organization",
+          name: `${brand.name} Fabushi`,
+          url: siteUrl("/"),
+          email: supportEmail,
+        },
       },
       {
-        "@type": "ListItem",
-        position: 2,
-        name: "隐私说明",
-        item: siteUrl("/privacy"),
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          {
+            "@type": "ListItem",
+            position: 1,
+            name: "首页",
+            item: siteUrl("/"),
+          },
+          {
+            "@type": "ListItem",
+            position: 2,
+            name: "隐私说明",
+            item: privacyUrl,
+          },
+        ],
+      },
+      {
+        "@type": "FAQPage",
+        mainEntity: privacyFaqs.map((item) => ({
+          "@type": "Question",
+          name: item.question,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: item.answer,
+          },
+        })),
       },
     ],
   };
 
   return (
     <main className="inner-page">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(privacyPageJsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
+      <script
+        type="application/ld+json"
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
 
       <section className="inner-hero">
         <SiteHeader />
@@ -153,6 +219,36 @@ export default function PrivacyPage() {
                 ))}
               </ul>
             </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt">
+        <div className="section-heading">
+          <p>公开承诺</p>
+          <h2>这页的任务不只是说明“会处理什么”，也要解释我们为什么这样组织官网与支持路径。</h2>
+        </div>
+        <div className="evidence-grid">
+          {trustCommitments.map((item) => (
+            <article key={item.title} className="evidence-card">
+              <strong>{item.title}</strong>
+              <p>{item.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="section-heading">
+          <p>常见问题</p>
+          <h2>把用户最常担心的数据与联系问题先回答出来，理解和转化都会更顺。</h2>
+        </div>
+        <div className="faq-list full">
+          {privacyFaqs.map((item) => (
+            <details key={item.question} className="faq-item">
+              <summary>{item.question}</summary>
+              <p>{item.answer}</p>
+            </details>
           ))}
         </div>
       </section>
