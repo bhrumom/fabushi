@@ -14,6 +14,8 @@ thirdparty_handler = Path('fabushi/web/src/handlers/thirdparty.js').read_text(en
 profile_test = Path('fabushi/web/tests/profile.test.js').read_text(encoding='utf-8')
 auth_user_id_test = Path('fabushi/web/tests/auth-user-id.test.js').read_text(encoding='utf-8')
 identity_migration = Path('fabushi/web/migrations/20260508_users_id_identity.sql').read_text(encoding='utf-8')
+payment_migration_path = Path('fabushi/web/migrations/20260508_users_customer_payment_columns.sql')
+payment_migration = payment_migration_path.read_text(encoding='utf-8')
 auth_route = Path('fabushi/web/src/routes/auth-routes.js').read_text(encoding='utf-8')
 membership_route = Path('fabushi/web/src/routes/membership-routes.js').read_text(encoding='utf-8')
 meditation_route = Path('fabushi/web/src/routes/meditation-routes.js').read_text(encoding='utf-8')
@@ -102,6 +104,16 @@ for required in (
 ):
     if required not in identity_migration:
         missing.append(f'identity migration missing: {required}')
+
+for required in (
+    'ALTER TABLE users ADD COLUMN stripe_customer_id TEXT',
+    'ALTER TABLE users ADD COLUMN subscription_id TEXT',
+):
+    if required not in payment_migration:
+        missing.append(f'payment migration missing: {required}')
+
+if payment_migration_path.name > '20260508_users_id_identity.sql':
+    missing.append('payment migration must sort before id identity migration')
 
 for required in (
     "'/api/auth/update-profile'",
