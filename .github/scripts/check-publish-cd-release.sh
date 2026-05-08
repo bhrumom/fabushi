@@ -10,12 +10,18 @@ auth_utils = Path('fabushi/web/auth-utils.js').read_text(encoding='utf-8')
 auth_handler = Path('fabushi/web/src/handlers/auth.js').read_text(encoding='utf-8')
 password_login = Path('fabushi/web/src/handlers/password-login.js').read_text(encoding='utf-8')
 profile_handler = Path('fabushi/web/src/handlers/profile.js').read_text(encoding='utf-8')
+thirdparty_handler = Path('fabushi/web/src/handlers/thirdparty.js').read_text(encoding='utf-8')
 profile_test = Path('fabushi/web/tests/profile.test.js').read_text(encoding='utf-8')
 auth_user_id_test = Path('fabushi/web/tests/auth-user-id.test.js').read_text(encoding='utf-8')
 identity_migration = Path('fabushi/web/migrations/20260508_users_id_identity.sql').read_text(encoding='utf-8')
 auth_route = Path('fabushi/web/src/routes/auth-routes.js').read_text(encoding='utf-8')
+membership_route = Path('fabushi/web/src/routes/membership-routes.js').read_text(encoding='utf-8')
+meditation_route = Path('fabushi/web/src/routes/meditation-routes.js').read_text(encoding='utf-8')
 account_contract = Path('fabushi/web/src/contracts/account-user.js').read_text(encoding='utf-8')
 account_repository = Path('fabushi/web/src/repositories/account-user-repository.js').read_text(encoding='utf-8')
+register_account_use_case = Path('fabushi/web/src/use-cases/account-registration.js').read_text(encoding='utf-8')
+bind_email_use_case = Path('fabushi/web/src/use-cases/bind-email.js').read_text(encoding='utf-8')
+delete_account_use_case = Path('fabushi/web/src/use-cases/delete-account.js').read_text(encoding='utf-8')
 update_profile_use_case = Path('fabushi/web/src/use-cases/update-profile.js').read_text(encoding='utf-8')
 
 missing = []
@@ -54,11 +60,20 @@ for required in (
         missing.append(f'password-login.js missing: {required}')
 
 for required in (
-    'generateToken({ id: user.id, username: user.username }, env)',
-    'resolveAuthenticatedUser',
+    'registerAccountCommand',
+    'getAuthenticatedUserInfo',
+    'deleteAccountCommand',
 ):
     if required not in auth_handler:
         missing.append(f'auth.js missing: {required}')
+
+for required in (
+    'bindEmailFromRequest',
+    'AccountUserRepository',
+    "jsonResponse({ error: apiError.message }, apiError.status)",
+):
+    if required not in thirdparty_handler:
+        missing.append(f'thirdparty.js missing: {required}')
 
 for required in (
     'handleUpdateProfile uses token userId before mismatched username fallback',
@@ -89,9 +104,26 @@ for required in (
     "'/api/auth/update-profile'",
     'handleGetUserInfo',
     'handleBindEmail',
+    'handleDeleteAccount',
 ):
     if required not in auth_route:
         missing.append(f'auth-routes.js missing: {required}')
+
+for required in (
+    "'/api/stripe/membership-status'",
+    "'/api/admin/purchase-history'",
+    'handleUseRedeemCode',
+):
+    if required not in membership_route:
+        missing.append(f'membership-routes.js missing: {required}')
+
+for required in (
+    "'/api/meditation/groups'",
+    'handleCreateMeditationGroup',
+    'handleSyncRecord',
+):
+    if required not in meditation_route:
+        missing.append(f'meditation-routes.js missing: {required}')
 
 for required in (
     'serializeAccountUser',
@@ -102,12 +134,37 @@ for required in (
         missing.append(f'account-user contract missing: {required}')
 
 for required in (
-    'resolveTokenUser',
-    'UPDATE users SET',
+    'createRegisteredUser',
+    'withTransaction',
+    'deleteAccountArtifacts',
     'INSERT OR REPLACE INTO email_username_mapping (email, username, user_id)',
 ):
     if required not in account_repository:
         missing.append(f'account-user repository missing: {required}')
+
+for required in (
+    'env.USERS_KV.get(`verify:${normalizedEmail}`)',
+    'repository.createRegisteredUser',
+    "return { message: '注册成功' }",
+):
+    if required not in register_account_use_case:
+        missing.append(f'account-registration use case missing: {required}')
+
+for required in (
+    'authenticateRequest',
+    'normalizeEmail',
+    "message: '邮箱绑定成功'",
+):
+    if required not in bind_email_use_case:
+        missing.append(f'bind-email use case missing: {required}')
+
+for required in (
+    'repository.withTransaction',
+    'repository.deleteAccountArtifacts',
+    "message: '账户已注销'",
+):
+    if required not in delete_account_use_case:
+        missing.append(f'delete-account use case missing: {required}')
 
 for required in (
     'normalizeProfileUpdateBody',
@@ -121,5 +178,5 @@ if missing:
     sys.stderr.write('workflow guardrails are missing required protections: ' + ', '.join(missing) + '\n')
     raise SystemExit(1)
 
-print('publish release and auth userId guardrails are in place')
+print('publish release and account layering guardrails are in place')
 PY
