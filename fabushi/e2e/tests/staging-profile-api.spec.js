@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 const requiredEnv = [
-  'STAGING_APP_URL',
+  'STAGING_API_URL',
   'STAGING_TEST_LOGIN',
   'STAGING_TEST_PASSWORD',
   'STAGING_TEST_EMAIL',
@@ -15,7 +15,7 @@ function env(name) {
 }
 
 function apiUrl(path) {
-  return new URL(path, env('STAGING_APP_URL')).toString();
+  return new URL(path, env('STAGING_API_URL')).toString();
 }
 
 function safeProjectName(testInfo) {
