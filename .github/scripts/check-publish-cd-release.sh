@@ -9,7 +9,12 @@ import sys
 publish_workflow = Path('.github/workflows/publish-cd-release.yml').read_text(encoding='utf-8')
 deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(encoding='utf-8')
 co_practice_migration = Path('fabushi/web/migrations/20260506_co_practice_groups.sql')
+free_trial_migration = Path('fabushi/web/migrations/20260508_users_free_trial_end_date.sql')
 d1_retry_helper = Path('.github/scripts/run-wrangler-d1-migrations.sh')
+schema_sql = Path('fabushi/web/schema.sql').read_text(encoding='utf-8')
+schema_v2_sql = Path('fabushi/web/schema_v2.sql').read_text(encoding='utf-8')
+profile_handler = Path('fabushi/web/src/handlers/profile.js').read_text(encoding='utf-8')
+profile_test = Path('fabushi/web/tests/profile.test.js').read_text(encoding='utf-8')
 
 checkout_match = re.search(
     r"- name: Checkout source for version metadata\n(?P<body>.*?)\n\s*- name: Prepare release assets",
@@ -101,6 +106,26 @@ else:
     ):
         if forbidden in migration_text:
             missing.append(f'co-practice migration should not re-add existing meditation_records columns: {forbidden}')
+
+if 'free_trial_end_date' not in schema_sql:
+    missing.append('schema.sql missing free_trial_end_date')
+if 'free_trial_end_date' not in schema_v2_sql:
+    missing.append('schema_v2.sql missing free_trial_end_date')
+if 'free_trial_end_date' not in profile_handler:
+    missing.append('profile.js missing free_trial_end_date usage')
+if 'free_trial_end_date' not in profile_test:
+    missing.append('profile.test.js missing free_trial_end_date fixture coverage')
+
+if not free_trial_migration.exists():
+    missing.append('fabushi/web/migrations/20260508_users_free_trial_end_date.sql')
+else:
+    migration_text = free_trial_migration.read_text(encoding='utf-8')
+    for required in (
+        'ALTER TABLE users ADD COLUMN free_trial_end_date TEXT;',
+        'profile username-rename flow',
+    ):
+        if required not in migration_text:
+            missing.append(f'free-trial migration missing: {required}')
 
 if missing:
     sys.stderr.write(
