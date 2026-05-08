@@ -195,6 +195,10 @@ jobs:
         working-directory: fabushi/e2e
     env:
       STAGING_API_URL: https://fabushi-flutter-web-dev.bhrumom.workers.dev
+      # Profile E2E currently calls staging API routes through an app-style base URL.
+      # Keep the default aligned with the API-only staging deployment until a
+      # separate staging frontend URL is provisioned, while still allowing an override.
+      STAGING_APP_URL: ${{ vars.STAGING_APP_URL || 'https://fabushi-flutter-web-dev.bhrumom.workers.dev' }}
       STAGING_TEST_LOGIN: ${{ secrets.STAGING_TEST_LOGIN }}
       STAGING_TEST_PASSWORD: ${{ secrets.STAGING_TEST_PASSWORD }}
       STAGING_TEST_EMAIL: ${{ vars.STAGING_TEST_EMAIL }}
@@ -214,7 +218,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for name in STAGING_API_URL STAGING_TEST_LOGIN STAGING_TEST_PASSWORD STAGING_TEST_EMAIL STAGING_TEST_PHONE; do
+          for name in STAGING_API_URL STAGING_APP_URL STAGING_TEST_LOGIN STAGING_TEST_PASSWORD STAGING_TEST_EMAIL STAGING_TEST_PHONE; do
             if [ -z "${!name:-}" ]; then
               echo "$name is not configured."
               missing=1
