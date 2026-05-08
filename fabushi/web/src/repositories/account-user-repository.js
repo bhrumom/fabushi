@@ -28,8 +28,24 @@ export class AccountUserRepository {
     return await this.db.getUserByPhone(phoneNumber);
   }
 
+  async getByFirebaseUid(firebaseUid) {
+    return await this.db.getUserByFirebaseUid(firebaseUid);
+  }
+
+  async getByAppleId(appleUserId) {
+    return await this.db.getUserByAppleId(appleUserId);
+  }
+
   async createRegisteredUser(user) {
     return await this.db.createUser(user);
+  }
+
+  async createPhoneUser(user) {
+    return await this.db.createPhoneUser(user);
+  }
+
+  async createAppleUser(user) {
+    return await this.db.createAppleUser(user);
   }
 
   async resolveTokenUser(tokenData) {
