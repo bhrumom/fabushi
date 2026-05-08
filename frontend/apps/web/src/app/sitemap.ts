@@ -7,35 +7,28 @@ export const dynamic = "force-static";
 const staticRoutes = ["/", "/download", "/apply", "/faq", "/privacy", "/contact", "/insights"] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const routes: MetadataRoute.Sitemap = staticRoutes.map((path) => ({
-    url: siteUrl(path),
-    lastModified: "2026-05-08",
-    changeFrequency:
-      path === "/"
-        ? "weekly"
-        : path === "/download" || path === "/faq"
-          ? "weekly"
-          : path === "/privacy"
-            ? "monthly"
-            : "monthly",
+  const pages: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
+    url: siteUrl(route),
+    lastModified: route === "/privacy" ? "2026-05-08" : new Date(),
+    changeFrequency: route === "/" ? "weekly" : route === "/download" || route === "/faq" ? "weekly" : "monthly",
     priority:
-      path === "/"
+      route === "/"
         ? 1
-        : path === "/download" || path === "/faq"
+        : route === "/download" || route === "/faq"
           ? 0.9
-          : path === "/apply"
+          : route === "/apply"
             ? 0.85
-            : path === "/privacy"
+            : route === "/privacy"
               ? 0.8
               : 0.75,
   }));
 
-  const articleRoutes: MetadataRoute.Sitemap = getAllArticles().map((article) => ({
+  const articlePages: MetadataRoute.Sitemap = getAllArticles().map((article) => ({
     url: siteUrl(`/insights/${article.slug}`),
-    lastModified: article.publishedAt,
+    lastModified: new Date(article.publishedAt),
     changeFrequency: "monthly",
     priority: article.featured ? 0.8 : 0.65,
   }));
 
-  return [...routes, ...articleRoutes];
+  return [...pages, ...articlePages];
 }
