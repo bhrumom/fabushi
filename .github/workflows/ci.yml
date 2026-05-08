@@ -340,10 +340,14 @@ jobs:
           sparse-checkout: |
             /.github/workflows/**
             /.github/scripts/**
+            /fabushi/web/auth-utils.js
             /fabushi/web/migrations/**
             /fabushi/web/schema.sql
             /fabushi/web/schema_v2.sql
+            /fabushi/web/src/handlers/auth.js
+            /fabushi/web/src/handlers/password-login.js
             /fabushi/web/src/handlers/profile.js
+            /fabushi/web/tests/auth-user-id.test.js
             /fabushi/web/tests/profile.test.js
 
       - name: Validate publish release workflow guardrail
