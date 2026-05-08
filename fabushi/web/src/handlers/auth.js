@@ -3,7 +3,7 @@ import { createPasswordHash, generateToken, verifyToken } from '../../auth-utils
 import { calculateTrialEndDate } from '../../stripe-config.js';
 import { handlePasswordLogin as handleLogin } from './password-login.js';
 import { handleUpdateProfile, handleUploadAvatar } from './profile.js';
-import { AccountUserRepository } from '../repositories/account-user-repository.js';
+import { AccountUserRepository } from '../repositories/account-user-command-repository.js';
 import { asApiError } from '../contracts/api-error.js';
 import { registerAccountCommand } from '../use-cases/account-registration.js';
 import { getAuthenticatedUserInfo } from '../use-cases/authenticated-user.js';
