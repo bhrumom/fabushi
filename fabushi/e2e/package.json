@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "playwright test tests/staging_social_privacy.spec.ts",
-    "test:ui": "playwright test tests/staging_social_privacy.spec.ts"
+    "test": "playwright test tests/staging-profile-api.spec.js tests/staging_social_privacy.spec.ts",
+    "test:ui": "playwright test tests/staging-profile-api.spec.js tests/staging_social_privacy.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0"
