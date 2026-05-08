@@ -60,6 +60,8 @@ for required in (
         missing.append(f'password-login.js missing: {required}')
 
 for required in (
+    'generateToken({ id: user.id, username: user.username }, env)',
+    'resolveAuthenticatedUser',
     'registerAccountCommand',
     'getAuthenticatedUserInfo',
     'deleteAccountCommand',
@@ -135,6 +137,7 @@ for required in (
 
 for required in (
     'createRegisteredUser',
+    'resolveTokenUser',
     'withTransaction',
     'deleteAccountArtifacts',
     'INSERT OR REPLACE INTO email_username_mapping (email, username, user_id)',
