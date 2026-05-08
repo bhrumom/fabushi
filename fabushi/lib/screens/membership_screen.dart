@@ -1,20 +1,20 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:provider/provider.dart';
-import 'dart:io' show Platform;
 import 'dart:async';
 import 'dart:convert';
-// 仅在Web平台上导入dart:html
-import 'package:universal_html/html.dart' as html;
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
-import '../models/auth_model.dart';
-import '../services/membership_service.dart';
+import 'package:provider/provider.dart';
+import 'package:universal_html/html.dart' as html;
+import 'package:url_launcher/url_launcher.dart';
+
+import '../core/config/app_config.dart';
+import '../features/auth/application/auth_model.dart';
+import '../features/membership/data/membership_service.dart';
+import '../models/user_model.dart';
 import '../services/alipay_service.dart';
 import '../services/apple_iap_service.dart';
-// import '../widgets/membership_dialog.dart';
-import '../core/config/app_config.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../models/user_model.dart';
 
 class MembershipScreen extends StatefulWidget {
   const MembershipScreen({Key? key}) : super(key: key);
@@ -782,7 +782,7 @@ class _MembershipScreenState extends State<MembershipScreen>
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  '登录后可以购买会员，享受更多高级功能',
+                  '登录后可以购买会员、管理订阅和查看历史记录',
                   style: TextStyle(fontSize: 14, color: Color(0xFF7f8c8d)),
                   textAlign: TextAlign.center,
                 ),
