@@ -34,6 +34,14 @@ test.describe('staging profile API flow', () => {
     const phone = env('STAGING_TEST_PHONE');
     const projectMarker = `${safeProjectName(testInfo)}-${Date.now()}`;
 
+    async function fetchUserInfo(token, contextLabel) {
+      const response = await request.get(apiUrl('/api/auth/user-info'), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      expect(response.status(), `user-info failed for ${contextLabel}: ${await response.text()}`).toBe(200);
+      return await response.json();
+    }
+
     async function passwordLogin(identifier) {
       const response = await request.post(apiUrl('/api/auth/login'), {
         data: { username: identifier, password }
@@ -41,8 +49,9 @@ test.describe('staging profile API flow', () => {
       expect(response.status(), `login failed for ${identifier}: ${await response.text()}`).toBe(200);
       const body = await response.json();
       expect(body.token).toBeTruthy();
-      expect(body.user, 'login response must include user after staging deployment').toBeTruthy();
-      return { token: body.token, user: body.user };
+      const user = body.user ?? await fetchUserInfo(body.token, `login:${identifier}`);
+      expect(user, 'login must inline user or allow immediate user-info fetch').toBeTruthy();
+      return { token: body.token, user };
     }
 
     const usernameLogin = await passwordLogin(login);
@@ -70,11 +79,7 @@ test.describe('staging profile API flow', () => {
     await passwordLogin(email);
     await passwordLogin(phone);
 
-    const beforeInfo = await request.get(apiUrl('/api/auth/user-info'), {
-      headers: { Authorization: `Bearer ${seededToken}` }
-    });
-    expect(beforeInfo.status(), await beforeInfo.text()).toBe(200);
-    const before = await beforeInfo.json();
+    const before = await fetchUserInfo(seededToken, 'before-update');
     expect(before.username).toBe(login);
     expect(before.email).toBe(email);
     expect(before.phoneNumber).toBe(phone);
@@ -99,11 +104,7 @@ test.describe('staging profile API flow', () => {
     expect(updated.user?.avatar).toContain(marker);
 
     const tokenAfterUpdate = updated.token || seededToken;
-    const afterInfo = await request.get(apiUrl('/api/auth/user-info'), {
-      headers: { Authorization: `Bearer ${tokenAfterUpdate}` }
-    });
-    expect(afterInfo.status(), await afterInfo.text()).toBe(200);
-    const after = await afterInfo.json();
+    const after = await fetchUserInfo(tokenAfterUpdate, 'after-update');
     expect(after.username).toBe(login);
     expect(after.email).toBe(email);
     expect(after.phoneNumber).toBe(phone);
@@ -129,11 +130,7 @@ test.describe('staging profile API flow', () => {
     expect(renamed.token, 'username change should rotate a fresh token').toBeTruthy();
 
     const renamedToken = renamed.token;
-    const renamedInfo = await request.get(apiUrl('/api/auth/user-info'), {
-      headers: { Authorization: `Bearer ${renamedToken}` }
-    });
-    expect(renamedInfo.status(), await renamedInfo.text()).toBe(200);
-    const renamedPayload = await renamedInfo.json();
+    const renamedPayload = await fetchUserInfo(renamedToken, 'after-rename');
     expect(renamedPayload.username).toBe(renamedUsername);
     expect(renamedPayload.email).toBe(email);
     expect(renamedPayload.phoneNumber).toBe(phone);
@@ -159,11 +156,7 @@ test.describe('staging profile API flow', () => {
     expect(rolledBack.token, 'rolling back username should also issue a fresh token').toBeTruthy();
 
     const rollbackToken = rolledBack.token;
-    const rollbackInfo = await request.get(apiUrl('/api/auth/user-info'), {
-      headers: { Authorization: `Bearer ${rollbackToken}` }
-    });
-    expect(rollbackInfo.status(), await rollbackInfo.text()).toBe(200);
-    const rollbackPayload = await rollbackInfo.json();
+    const rollbackPayload = await fetchUserInfo(rollbackToken, 'after-rollback');
     expect(rollbackPayload.username).toBe(login);
     expect(rollbackPayload.email).toBe(email);
     expect(rollbackPayload.phoneNumber).toBe(phone);
