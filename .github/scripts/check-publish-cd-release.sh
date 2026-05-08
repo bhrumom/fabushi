@@ -13,6 +13,10 @@ profile_handler = Path('fabushi/web/src/handlers/profile.js').read_text(encoding
 profile_test = Path('fabushi/web/tests/profile.test.js').read_text(encoding='utf-8')
 auth_user_id_test = Path('fabushi/web/tests/auth-user-id.test.js').read_text(encoding='utf-8')
 identity_migration = Path('fabushi/web/migrations/20260508_users_id_identity.sql').read_text(encoding='utf-8')
+auth_route = Path('fabushi/web/src/routes/auth-routes.js').read_text(encoding='utf-8')
+account_contract = Path('fabushi/web/src/contracts/account-user.js').read_text(encoding='utf-8')
+account_repository = Path('fabushi/web/src/repositories/account-user-repository.js').read_text(encoding='utf-8')
+update_profile_use_case = Path('fabushi/web/src/use-cases/update-profile.js').read_text(encoding='utf-8')
 
 missing = []
 
@@ -34,17 +38,17 @@ for required in (
         missing.append(f'auth-utils missing: {required}')
 
 for required in (
-    'getUserById',
-    'WHERE id = ?',
-    'existingUser.id !== currentUser.id',
-    'INSERT OR REPLACE INTO email_username_mapping (email, username, user_id)',
+    'AccountUserRepository',
+    'updateProfileFromRequest',
+    'serializeAccountUser',
 ):
     if required not in profile_handler:
         missing.append(f'profile.js missing: {required}')
 
 for required in (
-    'generateToken({ id: user.id, username: user.username }, env)',
-    'userId: user.id',
+    'loginWithPasswordCommand',
+    'AccountUserRepository',
+    'jsonResponse(payload)',
 ):
     if required not in password_login:
         missing.append(f'password-login.js missing: {required}')
@@ -80,6 +84,38 @@ for required in (
 ):
     if required not in identity_migration:
         missing.append(f'identity migration missing: {required}')
+
+for required in (
+    "'/api/auth/update-profile'",
+    'handleGetUserInfo',
+    'handleBindEmail',
+):
+    if required not in auth_route:
+        missing.append(f'auth-routes.js missing: {required}')
+
+for required in (
+    'serializeAccountUser',
+    'buildPasswordLoginPayload',
+    'buildProfileUpdatedPayload',
+):
+    if required not in account_contract:
+        missing.append(f'account-user contract missing: {required}')
+
+for required in (
+    'resolveTokenUser',
+    'UPDATE users SET',
+    'INSERT OR REPLACE INTO email_username_mapping (email, username, user_id)',
+):
+    if required not in account_repository:
+        missing.append(f'account-user repository missing: {required}')
+
+for required in (
+    'normalizeProfileUpdateBody',
+    'existingUser.id !== currentUser.id',
+    'buildProfileUpdatedPayload',
+):
+    if required not in update_profile_use_case:
+        missing.append(f'update-profile use case missing: {required}')
 
 if missing:
     sys.stderr.write('workflow guardrails are missing required protections: ' + ', '.join(missing) + '\n')

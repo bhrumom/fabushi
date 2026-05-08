@@ -29,10 +29,10 @@ env:
   FLUTTER_VERSION: '3.41.9'
 
 jobs:
-  flutter:
-    name: Flutter quality, tests, build, and web smoke
+  fast-checks:
+    name: Fast checks
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: fabushi
@@ -120,6 +120,34 @@ jobs:
       - name: Run Flutter tests
         run: flutter test
 
+  mobile-release-simulation:
+    name: Release simulation - mobile web build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: fast-checks
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout project files
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
       - name: Build web release
         run: flutter build web --release
 
@@ -150,10 +178,10 @@ jobs:
           if-no-files-found: error
 
   android-gradle-bootstrap:
-    name: Android Gradle bootstrap
+    name: Release simulation - Android Gradle bootstrap
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: flutter
+    needs: fast-checks
     defaults:
       run:
         working-directory: fabushi
@@ -198,16 +226,13 @@ jobs:
           GRADLE_OPTS: -Xmx4g -Dfile.encoding=UTF-8
         run: |
           set -euo pipefail
-          # There is no checked-in Android Gradle wrapper script in this repo,
-          # so use Flutter's config-only Android build to validate Gradle setup
-          # and repository resolution against the real app project structure.
           flutter build apk --debug --config-only
 
-  worker:
-    name: Cloudflare Worker syntax and deploy dry-run
+  worker-module-checks:
+    name: Module checks - Worker
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: flutter
+    needs: fast-checks
     defaults:
       run:
         working-directory: fabushi/web
@@ -219,12 +244,6 @@ jobs:
           sparse-checkout: |
             /fabushi/web/**
             !/fabushi/web/assets/built_in/**
-
-      - name: Download Flutter web build
-        uses: actions/download-artifact@v5
-        with:
-          name: flutter-web-build
-          path: fabushi/build/web
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -248,6 +267,28 @@ jobs:
           printf '{"type":"module"}\n' > package.json
           node tests/profile.test.js
 
+  worker-contract-checks:
+    name: Contract checks - Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: fast-checks
+    defaults:
+      run:
+        working-directory: fabushi/web
+    steps:
+      - name: Checkout Worker files
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/web/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
       - name: Run Worker contract tests
         shell: bash
         run: |
@@ -260,6 +301,36 @@ jobs:
           fi
           xargs -0 node --test --test-concurrency=1 < /tmp/worker-tests
 
+  worker-release-simulation:
+    name: Release simulation - Worker dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - mobile-release-simulation
+      - worker-module-checks
+    defaults:
+      run:
+        working-directory: fabushi/web
+    steps:
+      - name: Checkout Worker files
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/web/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Download Flutter web build
+        uses: actions/download-artifact@v5
+        with:
+          name: flutter-web-build
+          path: fabushi/build/web
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
       - name: Validate Worker bundle with Wrangler dry-run
         run: npx --yes wrangler@latest deploy --dry-run --outdir ../../worker-dry-run
 
@@ -270,10 +341,11 @@ jobs:
           path: worker-dry-run
           if-no-files-found: warn
 
-  e2e-contract:
-    name: Playwright E2E contract validation
+  e2e-release-simulation:
+    name: Release simulation - staging E2E contract validation
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: fast-checks
     defaults:
       run:
         working-directory: fabushi/e2e
@@ -296,10 +368,11 @@ jobs:
       - name: Validate the staging E2E script used by CD
         run: npm test -- --list
 
-  frontend:
-    name: Frontend monorepo typecheck and Next.js build
+  frontend-module-checks:
+    name: Module checks - Frontend
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: fast-checks
     defaults:
       run:
         working-directory: frontend
@@ -328,10 +401,11 @@ jobs:
       - name: Build Next.js site
         run: pnpm build:web
 
-  workflow-guardrails:
-    name: Workflow guardrails
+  workflow-contract-checks:
+    name: Contract checks - Workflow guardrails
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: fast-checks
     steps:
       - name: Checkout workflow files
         uses: actions/checkout@v5
@@ -344,6 +418,10 @@ jobs:
             /fabushi/web/migrations/**
             /fabushi/web/schema.sql
             /fabushi/web/schema_v2.sql
+            /fabushi/web/src/contracts/**
+            /fabushi/web/src/repositories/**
+            /fabushi/web/src/routes/**
+            /fabushi/web/src/use-cases/**
             /fabushi/web/src/handlers/auth.js
             /fabushi/web/src/handlers/password-login.js
             /fabushi/web/src/handlers/profile.js
@@ -354,45 +432,108 @@ jobs:
         shell: bash
         run: bash .github/scripts/check-publish-cd-release.sh
 
+  module-checks:
+    name: Module checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - worker-module-checks
+      - frontend-module-checks
+    steps:
+      - name: Confirm module check results
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.worker-module-checks.result }}" != "success" ]; then
+            echo "Worker module checks failed: ${{ needs.worker-module-checks.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.frontend-module-checks.result }}" != "success" ]; then
+            echo "Frontend module checks failed: ${{ needs.frontend-module-checks.result }}"
+            exit 1
+          fi
+
+  contract-checks:
+    name: Contract checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - worker-contract-checks
+      - workflow-contract-checks
+    steps:
+      - name: Confirm contract check results
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.worker-contract-checks.result }}" != "success" ]; then
+            echo "Worker contract checks failed: ${{ needs.worker-contract-checks.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.workflow-contract-checks.result }}" != "success" ]; then
+            echo "Workflow contract checks failed: ${{ needs.workflow-contract-checks.result }}"
+            exit 1
+          fi
+
+  release-simulation:
+    name: Release simulation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - mobile-release-simulation
+      - android-gradle-bootstrap
+      - worker-release-simulation
+      - e2e-release-simulation
+    steps:
+      - name: Confirm release simulation results
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.mobile-release-simulation.result }}" != "success" ]; then
+            echo "Mobile release simulation failed: ${{ needs.mobile-release-simulation.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.android-gradle-bootstrap.result }}" != "success" ]; then
+            echo "Android Gradle bootstrap failed: ${{ needs.android-gradle-bootstrap.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.worker-release-simulation.result }}" != "success" ]; then
+            echo "Worker dry-run failed: ${{ needs.worker-release-simulation.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.e2e-release-simulation.result }}" != "success" ]; then
+            echo "E2E release simulation failed: ${{ needs.e2e-release-simulation.result }}"
+            exit 1
+          fi
+
   ci-result:
     name: CI result
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
-      - flutter
-      - android-gradle-bootstrap
-      - worker
-      - e2e-contract
-      - frontend
-      - workflow-guardrails
+      - fast-checks
+      - module-checks
+      - contract-checks
+      - release-simulation
     if: always()
     steps:
       - name: Check required CI jobs
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ needs.flutter.result }}" != "success" ]; then
-            echo "Flutter job failed: ${{ needs.flutter.result }}"
+          if [ "${{ needs.fast-checks.result }}" != "success" ]; then
+            echo "Fast checks failed: ${{ needs.fast-checks.result }}"
             exit 1
           fi
-          if [ "${{ needs.android-gradle-bootstrap.result }}" != "success" ]; then
-            echo "Android Gradle bootstrap job failed: ${{ needs.android-gradle-bootstrap.result }}"
+          if [ "${{ needs.module-checks.result }}" != "success" ]; then
+            echo "Module checks failed: ${{ needs.module-checks.result }}"
             exit 1
           fi
-          if [ "${{ needs.worker.result }}" != "success" ]; then
-            echo "Worker job failed: ${{ needs.worker.result }}"
+          if [ "${{ needs.contract-checks.result }}" != "success" ]; then
+            echo "Contract checks failed: ${{ needs.contract-checks.result }}"
             exit 1
           fi
-          if [ "${{ needs.e2e-contract.result }}" != "success" ]; then
-            echo "E2E contract job failed: ${{ needs.e2e-contract.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.frontend.result }}" != "success" ]; then
-            echo "Frontend job failed: ${{ needs.frontend.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.workflow-guardrails.result }}" != "success" ]; then
-            echo "Workflow guardrails job failed: ${{ needs.workflow-guardrails.result }}"
+          if [ "${{ needs.release-simulation.result }}" != "success" ]; then
+            echo "Release simulation failed: ${{ needs.release-simulation.result }}"
             exit 1
           fi
           echo "All CI checks passed."
@@ -402,12 +543,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs:
-      - flutter
+      - fast-checks
+      - mobile-release-simulation
       - android-gradle-bootstrap
-      - worker
-      - e2e-contract
-      - frontend
-      - workflow-guardrails
+      - worker-module-checks
+      - worker-contract-checks
+      - worker-release-simulation
+      - e2e-release-simulation
+      - frontend-module-checks
+      - workflow-contract-checks
+      - module-checks
+      - contract-checks
+      - release-simulation
       - ci-result
     if: failure()
     steps:
@@ -445,13 +592,18 @@ jobs:
               labelDescription: 'CI workflow failed',
               notifyJobName: 'Notify CI failure',
               extraSections: [
+                '### CI gate order',
+                '',
+                '- Fast checks',
+                '- Module checks',
+                '- Contract checks',
+                '- Release simulation',
+                '',
                 '### CI notes',
                 '',
                 '- Dart format diffs are uploaded as `dart-format-patch` when formatter output differs from the committed code.',
                 '- CI runs with the formatter-applied workspace and does not push formatter commits directly to main because main is protected by merge queue rules.',
-                '- Android Gradle bootstrap now validates that GitHub Actions can resolve Android/Kotlin buildscript dependencies before release packaging workflows run.',
-                '- The frontend monorepo is validated with pnpm install, recursive typecheck, and a Next.js production build before PRs can merge.',
-                '- Build and dry-run bundles are listed above when those jobs reach their upload steps.',
+                '- Worker dry-run stays in release simulation so D1 / contract drift is caught before CD deploy starts.',
                 '- Merge queue runs are supported through the `merge_group` trigger.',
               ],
             });
