@@ -12,7 +12,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/api/"],
       },
     ],
-    host: new URL(siteUrl("/")).origin,
     sitemap: siteUrl("/sitemap.xml"),
+    host: new URL(siteUrl("/")).origin,
   };
 }
