@@ -1,8 +1,12 @@
+import { handleRegister, handleLogin, handleGetUserInfo, handleUpdateProfile, handleFirebasePhoneLogin, handleAppleLogin, handleDeleteAccount } from './handlers/auth.js';
 import { handleSendSmsCode, handleSmsLogin } from './handlers/sms.js';
 import { handleGetComments, handlePostComment, handleDeleteComment, handleGetTaggedPosts, handleGetHotFeed, handleGetPostDetail, handleBatchGetCommentCounts } from './handlers/comments.js';
+import { handleSendVerificationCode, handleForgotPassword, handleResetPassword } from './handlers/verification.js';
+import { handleGetWechatLoginUrl, handleGetAlipayLoginUrl, handleAlipayLogin, handleAlipayRegister, handleBindEmail, handleMacOSAlipayCallback, handleMobileAlipayCallback, handleGetAlipayAuthString, handleAlipaySDKLogin } from './handlers/thirdparty.js';
 import { handleCreateAlipayOrder, handleQueryAlipayOrder, handleAlipayNotify } from './handlers/payment.js';
 import { handleVerifyAppleReceipt } from './handlers/apple-iap.js';
-import { handleCreateRedeemCode } from './handlers/redeem.js';
+import { handleCreateRedeemCode, handleUseRedeemCode, handleGetPurchaseHistory, handleGetRedeemHistory } from './handlers/redeem.js';
+import { handleCheckMembershipStatus, handleCheckAlipayMembership } from './handlers/membership.js';
 import { handleMigrateKvToD1 } from './handlers/migration.js';
 import { handleCheckAdminStatus, handleListRedeemCodes, handleDeleteRedeemCode, handleGetAdminPrice } from './handlers/admin.js';
 import { handleGetAssetsList, handleR2List, handleR2Proxy } from './handlers/assets.js';
@@ -12,6 +16,7 @@ import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts, handleG
 import { handleToggleFavorite, handleGetMyFavorites, handleBatchCheckFavorites } from './handlers/favorites.js';
 import { handleBatchGetContentStats } from './handlers/content-stats.js';
 import { handleOnlineJoin, handleOnlineHeartbeat, handleOnlineLeave, handleOnlineCount } from './handlers/online.js';
+import { handleSyncRecord, handleGetRecords, handleUpdateRecord, handleDeleteRecord, handleGetStats, handleGetWeeklyStats, handleGetMonthlyStats, handleSetGoal, handleGetGoals, handleMeditationSettings, handleGetMeditationGroups, handleCreateMeditationGroup, handleJoinMeditationGroup, handleGetMeditationGroupDetail, handleReviewMeditationGroupJoin } from './handlers/meditation.js';
 import { handleGetSyncData, handlePushSyncData, handleGetSyncState } from './handlers/sync.js';
 import { handleToggleFollow, handleGetFollowList, handleGetFollowSummary, handleGetPracticePrivacy, handleUpdatePracticePrivacy } from './handlers/social.js';
 import { handleBuiltinMigration, handleFullTextSearch, handleGetCategories as handleBuiltinCategories } from '../migrate-builtin-handler-fixed.js';
@@ -103,6 +108,19 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/sms/send' && method === 'POST') return await handleSendSmsCode(request, env, db);
   if (pathname === '/api/sms/login' && method === 'POST') return await handleSmsLogin(request, env, db);
 
+  if (pathname === '/api/auth/register' && method === 'POST') return await handleRegister(request, env, db);
+  if (pathname === '/api/auth/login' && method === 'POST') return await handleLogin(request, env, db);
+  if (pathname === '/api/auth/user-info' && method === 'GET') return await handleGetUserInfo(request, env, db);
+  if (pathname === '/api/auth/send-verification-code' && method === 'POST') return await handleSendVerificationCode(request, env, ctx);
+  if (pathname === '/api/auth/forgot-password' && method === 'POST') return await handleForgotPassword(request, env, db);
+  if (pathname === '/api/auth/reset-password' && method === 'POST') return await handleResetPassword(request, env, db);
+  if (pathname === '/api/auth/bind-email' && method === 'POST') return await handleBindEmail(request, env, db);
+  if (pathname === '/api/auth/bind-email' && method === 'POST') return await handleBindEmail(request, env, db);
+  if (pathname === '/api/auth/update-profile' && method === 'POST') return await handleUpdateProfile(request, env, db);
+  if (pathname === '/api/auth/firebase-phone-login' && method === 'POST') return await handleFirebasePhoneLogin(request, env, db);
+  if (pathname === '/api/auth/apple-login' && method === 'POST') return await handleAppleLogin(request, env, db);
+  if (pathname === '/api/auth/delete' && method === 'DELETE') return await handleDeleteAccount(request, env, db);
+
   if (pathname === '/api/comments' && method === 'GET') return await handleGetComments(request, env, db);
   if (pathname === '/api/comments' && method === 'POST') return await handlePostComment(request, env, db);
   if (pathname === '/api/comments' && method === 'DELETE') return await handleDeleteComment(request, env, db);
@@ -112,14 +130,29 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/posts/detail' && method === 'GET') return await handleGetPostDetail(request, env, db);
   if (pathname === '/api/feed/hot' && method === 'GET') return await handleGetHotFeed(request, env, db);
 
+  if (pathname === '/api/auth/wechat/login-url' && method === 'GET') return await handleGetWechatLoginUrl(request, env);
+  if (pathname === '/api/auth/alipay/login-url' && method === 'GET') return await handleGetAlipayLoginUrl(request, env);
+  if (pathname === '/api/auth/alipay/login' && method === 'POST') return await handleAlipayLogin(request, env);
+  if (pathname === '/api/auth/alipay/register' && method === 'POST') return await handleAlipayRegister(request, env);
+  if (pathname === '/api/auth/alipay/macos-callback' && method === 'GET') return await handleMacOSAlipayCallback(request, env);
+  if (pathname === '/api/auth/alipay/mobile-callback' && method === 'GET') return await handleMobileAlipayCallback(request, env);
+  if (pathname === '/api/auth/alipay/auth-string' && method === 'GET') return await handleGetAlipayAuthString(request, env);
+  if (pathname === '/api/auth/alipay/sdk-login' && method === 'POST') return await handleAlipaySDKLogin(request, env);
+
   if (pathname === '/api/alipay/create-order' && method === 'POST') return await handleCreateAlipayOrder(request, env, db);
   if (pathname === '/api/alipay/query-order' && method === 'GET') return await handleQueryAlipayOrder(request, env, db);
   if (pathname === '/api/alipay/notify' && method === 'POST') return await handleAlipayNotify(request, env, db);
+  if (pathname === '/api/alipay/check-membership' && method === 'GET') return await handleCheckAlipayMembership(request, env, db);
   if (pathname === '/api/apple/verify-receipt' && method === 'POST') return await handleVerifyAppleReceipt(request, env, db);
+
+  if (pathname === '/api/stripe/membership-status' && method === 'GET') return await handleCheckMembershipStatus(request, env, db);
 
   if (pathname === '/api/feedback' && method === 'POST') return await handleSubmitFeedback(request, env, db);
 
   if (pathname === '/api/admin/create-redeem-code' && method === 'POST') return await handleCreateRedeemCode(request, env, db);
+  if (pathname === '/api/admin/use-redeem-code' && method === 'POST') return await handleUseRedeemCode(request, env, db);
+  if (pathname === '/api/admin/purchase-history' && method === 'GET') return await handleGetPurchaseHistory(request, env, db);
+  if (pathname === '/api/admin/redeem-history' && method === 'GET') return await handleGetRedeemHistory(request, env, db);
   if (pathname === '/api/admin/redeem-codes' && method === 'GET') return await handleListRedeemCodes(request, env, db);
   if (pathname === '/api/admin/delete-redeem-code' && method === 'DELETE') return await handleDeleteRedeemCode(request, env, db);
   if (pathname === '/api/admin/check-status' && method === 'GET') return await handleCheckAdminStatus(request, env, db);
@@ -161,6 +194,22 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/online/heartbeat' && method === 'POST') return await handleOnlineHeartbeat(request, env);
   if (pathname === '/api/online/leave' && method === 'POST') return await handleOnlineLeave(request, env);
   if (pathname === '/api/online/count' && method === 'GET') return await handleOnlineCount(request, env);
+
+  if (pathname === '/api/meditation/record' && method === 'POST') return await handleSyncRecord(request, env, db);
+  if (pathname === '/api/meditation/records' && method === 'GET') return await handleGetRecords(request, env, db);
+  if (pathname === '/api/meditation/records' && method === 'PUT') return await handleUpdateRecord(request, env, db);
+  if (pathname === '/api/meditation/records' && method === 'DELETE') return await handleDeleteRecord(request, env, db);
+  if (pathname === '/api/meditation/stats' && method === 'GET') return await handleGetStats(request, env, db);
+  if (pathname === '/api/meditation/weekly' && method === 'GET') return await handleGetWeeklyStats(request, env, db);
+  if (pathname === '/api/meditation/monthly' && method === 'GET') return await handleGetMonthlyStats(request, env, db);
+  if (pathname === '/api/meditation/goal' && method === 'POST') return await handleSetGoal(request, env, db);
+  if (pathname === '/api/meditation/goal' && method === 'GET') return await handleGetGoals(request, env, db);
+  if (pathname === '/api/meditation/settings' && (method === 'GET' || method === 'POST')) return await handleMeditationSettings(request, env, db);
+  if (pathname === '/api/meditation/groups' && method === 'GET') return await handleGetMeditationGroups(request, env, db);
+  if (pathname === '/api/meditation/groups' && method === 'POST') return await handleCreateMeditationGroup(request, env, db);
+  if (pathname === '/api/meditation/groups/join' && method === 'POST') return await handleJoinMeditationGroup(request, env, db);
+  if (pathname === '/api/meditation/groups/detail' && method === 'GET') return await handleGetMeditationGroupDetail(request, env, db);
+  if (pathname === '/api/meditation/groups/review' && method === 'POST') return await handleReviewMeditationGroupJoin(request, env, db);
 
   if (pathname === '/api/sync' && method === 'GET') return await handleGetSyncData(request, env, db);
   if (pathname === '/api/sync' && method === 'POST') return await handlePushSyncData(request, env, db);
