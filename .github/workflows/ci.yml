@@ -341,6 +341,10 @@ jobs:
             /.github/workflows/**
             /.github/scripts/**
             /fabushi/web/migrations/**
+            /fabushi/web/schema.sql
+            /fabushi/web/schema_v2.sql
+            /fabushi/web/src/handlers/profile.js
+            /fabushi/web/tests/profile.test.js
 
       - name: Validate publish release workflow guardrail
         shell: bash
