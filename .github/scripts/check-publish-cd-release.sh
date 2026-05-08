@@ -71,8 +71,10 @@ for required in (
         missing.append(f'auth-user-id.test.js missing: {required}')
 
 for required in (
-    'ALTER TABLE email_username_mapping ADD COLUMN user_id INTEGER;',
-    'ALTER TABLE alipay_bindings ADD COLUMN user_id INTEGER;',
+    'CREATE TABLE users__id_migration',
+    'rowid,',
+    'CREATE TABLE email_username_mapping__user_id_migration',
+    'CREATE TABLE alipay_bindings__user_id_migration',
     'idx_email_username_mapping_user_id',
     'idx_alipay_bindings_user_id',
 ):
