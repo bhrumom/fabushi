@@ -52,16 +52,25 @@ export class DatabaseService {
   }
 
   async createUser(userData) {
+    const userId = await this.generateUniqueUserId();
     await this.db.prepare(`
-      INSERT INTO users (username, email, password_hash, salt, iterations, algo, email_verified, membership_type, free_trial_end_date, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, username, email, password_hash, salt, iterations, algo, email_verified, membership_type, free_trial_end_date, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      userData.username, userData.email, userData.passwordHash, userData.salt,
-      userData.iterations, userData.algo, userData.emailVerified ? 1 : 0,
-      userData.membershipType, userData.freeTrialEndDate, userData.createdAt
+      userId,
+      userData.username,
+      userData.email,
+      userData.passwordHash,
+      userData.salt,
+      userData.iterations,
+      userData.algo,
+      userData.emailVerified ? 1 : 0,
+      userData.membershipType,
+      userData.freeTrialEndDate,
+      userData.createdAt
     ).run();
 
-    const createdUser = await this.getUser(userData.username);
+    const createdUser = await this.getUserById(userId);
     if (!createdUser) throw new Error('创建用户后无法重新读取 users.id');
 
     await this.db.prepare(
@@ -96,14 +105,21 @@ export class DatabaseService {
   }
 
   async createPhoneUser(userData) {
+    const userId = await this.generateUniqueUserId();
     await this.db.prepare(`
-      INSERT INTO users (username, email, phone_number, firebase_uid, password_hash, salt, iterations, algo, email_verified, membership_type, free_trial_end_date, created_at)
-      VALUES (?, ?, ?, ?, '', '', 0, '', 1, ?, ?, ?)
+      INSERT INTO users (id, username, email, phone_number, firebase_uid, password_hash, salt, iterations, algo, email_verified, membership_type, free_trial_end_date, created_at)
+      VALUES (?, ?, ?, ?, ?, '', '', 0, '', 1, ?, ?, ?)
     `).bind(
-      userData.username, userData.email, userData.phoneNumber, userData.firebaseUid,
-      userData.membershipType, userData.freeTrialEndDate, userData.createdAt
+      userId,
+      userData.username,
+      userData.email,
+      userData.phoneNumber,
+      userData.firebaseUid,
+      userData.membershipType,
+      userData.freeTrialEndDate,
+      userData.createdAt
     ).run();
-    return await this.getUser(userData.username);
+    return await this.getUserById(userId);
   }
 
   async getUserByAppleId(appleUserId) {
@@ -111,14 +127,21 @@ export class DatabaseService {
   }
 
   async createAppleUser(userData) {
+    const userId = await this.generateUniqueUserId();
     await this.db.prepare(`
-      INSERT INTO users (username, email, apple_user_id, nickname, password_hash, salt, iterations, algo, email_verified, membership_type, membership_expires_at, created_at)
-      VALUES (?, ?, ?, ?, '', '', 0, '', 1, ?, ?, ?)
+      INSERT INTO users (id, username, email, apple_user_id, nickname, password_hash, salt, iterations, algo, email_verified, membership_type, membership_expires_at, created_at)
+      VALUES (?, ?, ?, ?, ?, '', '', 0, '', 1, ?, ?, ?)
     `).bind(
-      userData.username, userData.email, userData.appleUserId, userData.nickname,
-      userData.membershipType, userData.membershipExpiresAt, userData.createdAt
+      userId,
+      userData.username,
+      userData.email,
+      userData.appleUserId,
+      userData.nickname,
+      userData.membershipType,
+      userData.membershipExpiresAt,
+      userData.createdAt
     ).run();
-    const createdUser = await this.getUser(userData.username);
+    const createdUser = await this.getUserById(userId);
     if (!createdUser) throw new Error('创建 Apple 用户后无法重新读取 users.id');
     if (userData.email) {
       await this.db.prepare(
@@ -127,4 +150,39 @@ export class DatabaseService {
     }
     return createdUser;
   }
+
+  async generateUniqueUserId() {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const candidate = generateSixDigitId();
+      const existing = await this.getUserById(candidate);
+      if (!existing) return candidate;
+    }
+    throw new Error('无法生成可用的 6 位用户 ID');
+  }
+}
+
+function generateSixDigitId() {
+  while (true) {
+    const candidate = Math.floor(100000 + Math.random() * 900000);
+    if (!hasObviousPattern(candidate)) {
+      return candidate;
+    }
+  }
+}
+
+function hasObviousPattern(value) {
+  const text = String(value);
+  if (!/^\d{6}$/.test(text)) return true;
+  if (/^(\d)\1{5}$/.test(text)) return true;
+
+  let ascending = true;
+  let descending = true;
+  for (let index = 1; index < text.length; index += 1) {
+    const previous = Number(text[index - 1]);
+    const current = Number(text[index]);
+    if (current !== previous + 1) ascending = false;
+    if (current !== previous - 1) descending = false;
+  }
+
+  return ascending || descending;
 }
