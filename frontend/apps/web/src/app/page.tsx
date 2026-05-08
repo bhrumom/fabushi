@@ -107,6 +107,34 @@ export default async function HomePage() {
       ctaLabel: "查看下载状态",
     },
   ] as const;
+  const entryReadiness = [
+    {
+      label: "现在适合继续往下走",
+      title: "你已经准备好进入下载、申请或联系路径。",
+      description:
+        "如果你符合这些情况，官网应该帮助你尽快做决定，而不是继续把你留在抽象介绍里。",
+      bullets: [
+        "你已经明确想判断当前有没有适合自己的下载或测试入口。",
+        "你愿意接受 beta 节奏，或者愿意先进入申请与反馈流程。",
+        "你需要先把官网、小程序和主应用的分工看清楚，再进入具体入口。",
+      ],
+      href: "/download",
+      ctaLabel: "去看下载状态",
+    },
+    {
+      label: "现在更适合先理解和观望",
+      title: "你不必因为看见入口就立刻下载或申请。",
+      description:
+        "如果你更符合这些情况，先看 FAQ、隐私说明和路径定义，反而更能减少误判、反复和落差。",
+      bullets: [
+        "你现在只接受稳定正式版，不希望承担测试波动或资格等待。",
+        "你还没判断清楚自己是来下载、申请测试、反馈问题，还是只想先了解项目。",
+        "你期待官网已经覆盖所有深度功能体验，而不是先承担说明、筛选和引导角色。",
+      ],
+      href: "/faq",
+      ctaLabel: "先看 FAQ",
+    },
+  ] as const;
 
   const organizationJsonLd = {
     "@context": "https://schema.org",
@@ -344,6 +372,30 @@ export default async function HomePage() {
               <span className="detail-label">{item.audience}</span>
               <h3>{item.title}</h3>
               <p>{item.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band" id="readiness">
+        <div className="section-heading">
+          <p>进入判断</p>
+          <h2>官网不该默认每个访问者都应该立刻下载，它更应该先帮人判断“现在适不适合继续往下走”。</h2>
+        </div>
+        <div className="compare-grid">
+          {entryReadiness.map((item) => (
+            <article key={item.label} className="compare-card">
+              <span className="detail-label">{item.label}</span>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <ul className="compare-list">
+                {item.bullets.map((entry) => (
+                  <li key={entry}>{entry}</li>
+                ))}
+              </ul>
+              <a className="path-link" href={siteHref(item.href)}>
+                {item.ctaLabel}
+              </a>
             </article>
           ))}
         </div>
