@@ -72,7 +72,7 @@ for required in (
 
 for required in (
     'CREATE TABLE users__id_migration',
-    'SELECT\n  rowid,',
+    'rowid,',
     'CREATE TABLE email_username_mapping__user_id_migration',
     'CREATE TABLE alipay_bindings__user_id_migration',
     'idx_email_username_mapping_user_id',
