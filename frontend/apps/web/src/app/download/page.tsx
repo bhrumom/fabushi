@@ -65,6 +65,35 @@ const platformFitGuidance = [
   },
 ] as const;
 
+const entryGuardrails = [
+  {
+    label: "可以直接进入测试版",
+    title: "你更适合先体验最新公开进度，而不是等到所有事情都变稳定。",
+    description:
+      "如果你符合这些条件，先进入 Beta 通常更有效，因为官网已经在帮你同步状态、版本和镜像说明。",
+    bullets: [
+      "你愿意更早体验版本更新，也愿意接受偶发波动和更频繁的变更。",
+      "你有明确的设备、平台和关注模块，准备在体验后给出反馈。",
+      "你更在意尽快参与当前进度，而不是把它当成一个马上就要推荐给更多人的稳定入口。",
+    ],
+    href: "/download#beta-channels",
+    ctaLabel: "直接看 Beta 入口",
+  },
+  {
+    label: "先别急着点测试版",
+    title: "你更适合先等正式版，或者先通过申请与 FAQ 把路径判断清楚。",
+    description:
+      "如果你更符合这些情况，先理解边界和阶段，会比直接进入测试版更省时间，也更不容易产生预期落差。",
+    bullets: [
+      "你现在只接受稳定、可复用、适合转发的正式下载入口。",
+      "你还没决定自己是来下载、申请资格、反馈问题，还是只想先了解项目。",
+      "你不打算承担 beta 节奏，也不希望遇到需要镜像、资格或后续沟通才能解决的安装问题。",
+    ],
+    href: "/apply",
+    ctaLabel: "先去申请或了解",
+  },
+] as const;
+
 const preInstallChecklist = [
   "你现在更想优先体验最新改动，还是更想降低安装后的波动与反复更新。",
   "你是否已经看过对应入口旁边的版本、更新时间和更新摘要，而不是只看按钮名称。",
@@ -300,7 +329,31 @@ export default async function DownloadPage() {
         </div>
       </section>
 
-      <section className="band">
+      <section className="band" id="download-fit">
+        <div className="section-heading">
+          <p>适合谁先下</p>
+          <h2>下载页也应该先帮你排除不合适的路径，而不是默认每个人都该先点测试版。</h2>
+        </div>
+        <div className="compare-grid">
+          {entryGuardrails.map((item) => (
+            <article key={item.label} className="compare-card">
+              <span className="detail-label">{item.label}</span>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <ul className="compare-list">
+                {item.bullets.map((entry) => (
+                  <li key={entry}>{entry}</li>
+                ))}
+              </ul>
+              <a className="path-link" href={siteHref(item.href)}>
+                {item.ctaLabel}
+              </a>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band" id="beta-channels">
         <div className="section-heading">
           <p>Beta 渠道</p>
           <h2>安装包发布完成后，这里的测试入口会自动跟上最新一轮交付结果。</h2>
@@ -312,7 +365,7 @@ export default async function DownloadPage() {
         </div>
       </section>
 
-      <section className="band alt">
+      <section className="band alt" id="stable-channels">
         <div className="section-heading">
           <p>正式版</p>
           <h2>正式版入口只在人工验收通过后，由手动 GitHub Action 发布到官网。</h2>
