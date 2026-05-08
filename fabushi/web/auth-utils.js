@@ -134,6 +134,18 @@ async function verifyToken(token, env) {
   }
 }
 
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    }
+  });
+}
+
 export {
   base64UrlEncode,
   base64UrlDecodeToArray,
@@ -142,5 +154,6 @@ export {
   createPasswordHash,
   verifyPassword,
   generateToken,
-  verifyToken
+  verifyToken,
+  jsonResponse
 };
