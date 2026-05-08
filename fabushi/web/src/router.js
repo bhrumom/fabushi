@@ -90,12 +90,12 @@ export async function route(request, env, db, ctx) {
     return authResponse;
   }
 
-  const membershipResponse = await routeMembershipRequest({ pathname, method, request, env, db });
+  const membershipResponse = await routeMembershipRequest({ pathname, method, request, env, db, ctx });
   if (membershipResponse) {
     return membershipResponse;
   }
 
-  const meditationResponse = await routeMeditationRequest({ pathname, method, request, env, db });
+  const meditationResponse = await routeMeditationRequest({ pathname, method, request, env, db, ctx });
   if (meditationResponse) {
     return meditationResponse;
   }
