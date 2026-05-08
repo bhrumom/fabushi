@@ -19,10 +19,11 @@ membership_route = Path('fabushi/web/src/routes/membership-routes.js').read_text
 meditation_route = Path('fabushi/web/src/routes/meditation-routes.js').read_text(encoding='utf-8')
 account_contract = Path('fabushi/web/src/contracts/account-user.js').read_text(encoding='utf-8')
 account_repository = Path('fabushi/web/src/repositories/account-user-repository.js').read_text(encoding='utf-8')
+account_command_repository = Path('fabushi/web/src/repositories/account-user-command-repository.js').read_text(encoding='utf-8')
+update_profile_use_case = Path('fabushi/web/src/use-cases/update-profile.js').read_text(encoding='utf-8')
 register_account_use_case = Path('fabushi/web/src/use-cases/account-registration.js').read_text(encoding='utf-8')
 bind_email_use_case = Path('fabushi/web/src/use-cases/bind-email.js').read_text(encoding='utf-8')
 delete_account_use_case = Path('fabushi/web/src/use-cases/delete-account.js').read_text(encoding='utf-8')
-update_profile_use_case = Path('fabushi/web/src/use-cases/update-profile.js').read_text(encoding='utf-8')
 
 missing = []
 
@@ -136,14 +137,28 @@ for required in (
         missing.append(f'account-user contract missing: {required}')
 
 for required in (
-    'createRegisteredUser',
     'resolveTokenUser',
-    'withTransaction',
-    'deleteAccountArtifacts',
+    'UPDATE users SET',
     'INSERT OR REPLACE INTO email_username_mapping (email, username, user_id)',
 ):
     if required not in account_repository:
         missing.append(f'account-user repository missing: {required}')
+
+for required in (
+    'createRegisteredUser',
+    'withTransaction',
+    'deleteAccountArtifacts',
+):
+    if required not in account_command_repository:
+        missing.append(f'account-user command repository missing: {required}')
+
+for required in (
+    'normalizeProfileUpdateBody',
+    'existingUser.id !== currentUser.id',
+    'buildProfileUpdatedPayload',
+):
+    if required not in update_profile_use_case:
+        missing.append(f'update-profile use case missing: {required}')
 
 for required in (
     'env.USERS_KV.get(`verify:${normalizedEmail}`)',
@@ -169,17 +184,9 @@ for required in (
     if required not in delete_account_use_case:
         missing.append(f'delete-account use case missing: {required}')
 
-for required in (
-    'normalizeProfileUpdateBody',
-    'existingUser.id !== currentUser.id',
-    'buildProfileUpdatedPayload',
-):
-    if required not in update_profile_use_case:
-        missing.append(f'update-profile use case missing: {required}')
-
 if missing:
     sys.stderr.write('workflow guardrails are missing required protections: ' + ', '.join(missing) + '\n')
     raise SystemExit(1)
 
-print('publish release and account layering guardrails are in place')
+print('publish release and auth userId guardrails are in place')
 PY
