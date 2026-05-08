@@ -10,6 +10,7 @@ publish_workflow = Path('.github/workflows/publish-cd-release.yml').read_text(en
 deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(encoding='utf-8')
 co_practice_migration = Path('fabushi/web/migrations/20260506_co_practice_groups.sql')
 free_trial_migration = Path('fabushi/web/migrations/20260508_users_free_trial_end_date.sql')
+payment_columns_migration = Path('fabushi/web/migrations/20260508_users_payment_columns.sql')
 d1_retry_helper = Path('.github/scripts/run-wrangler-d1-migrations.sh')
 schema_sql = Path('fabushi/web/schema.sql').read_text(encoding='utf-8')
 schema_v2_sql = Path('fabushi/web/schema_v2.sql').read_text(encoding='utf-8')
@@ -126,6 +127,28 @@ else:
     ):
         if required not in migration_text:
             missing.append(f'free-trial migration missing: {required}')
+
+for payment_field in ('stripe_customer_id', 'subscription_id'):
+    if payment_field not in schema_sql:
+        missing.append(f'schema.sql missing {payment_field}')
+    if payment_field not in schema_v2_sql:
+        missing.append(f'schema_v2.sql missing {payment_field}')
+    if payment_field not in profile_handler:
+        missing.append(f'profile.js missing {payment_field} usage')
+    if payment_field not in profile_test:
+        missing.append(f'profile.test.js missing {payment_field} fixture coverage')
+
+if not payment_columns_migration.exists():
+    missing.append('fabushi/web/migrations/20260508_users_payment_columns.sql')
+else:
+    migration_text = payment_columns_migration.read_text(encoding='utf-8')
+    for required in (
+        'ALTER TABLE users ADD COLUMN stripe_customer_id TEXT;',
+        'ALTER TABLE users ADD COLUMN subscription_id TEXT;',
+        'profile username-rename flow',
+    ):
+        if required not in migration_text:
+            missing.append(f'payment columns migration missing: {required}')
 
 if missing:
     sys.stderr.write(
