@@ -1,5 +1,5 @@
 import { jsonResponse } from '../utils/response.js';
-import { createPasswordHash, generateToken, verifyToken } from '../../auth-utils.js';
+import { createPasswordHash, verifyToken } from '../../auth-utils.js';
 
 function normalizeOptionalString(value) {
   if (value === undefined) return undefined;
@@ -8,19 +8,19 @@ function normalizeOptionalString(value) {
   return normalized.length > 0 ? normalized : null;
 }
 
-function normalizeUsername(value) {
-  const username = normalizeOptionalString(value);
-  if (!username) return username;
-  if (username.includes('@')) {
-    throw new Error('用户名不能包含 @，邮箱请填写到邮箱字段');
+function normalizeDisplayName(value) {
+  const name = normalizeOptionalString(value);
+  if (!name) return name;
+  if (name.includes('@')) {
+    throw new Error('昵称不能包含 @，邮箱请填写到邮箱字段');
   }
-  if (/\s/.test(username)) {
-    throw new Error('用户名不能包含空格');
+  if (/\s/.test(name)) {
+    throw new Error('昵称不能包含空格');
   }
-  if (username.length < 2 || username.length > 32) {
-    throw new Error('用户名长度需为 2-32 个字符');
+  if (name.length < 2 || name.length > 32) {
+    throw new Error('昵称长度需为 2-32 个字符');
   }
-  return username;
+  return name;
 }
 
 function normalizeEmail(value) {
@@ -96,45 +96,6 @@ async function safeRun(db, sql, ...params) {
   }
 }
 
-async function updateUsernameReferences(db, oldUsername, newUsername) {
-  const updates = [
-    ['UPDATE email_username_mapping SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE alipay_bindings SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE orders SET user_id = ? WHERE user_id = ?', newUsername, oldUsername],
-    ['UPDATE orders SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE purchase_history SET user_id = ? WHERE user_id = ?', newUsername, oldUsername],
-    ['UPDATE purchase_history SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE redeem_history SET user_id = ? WHERE user_id = ?', newUsername, oldUsername],
-    ['UPDATE redeem_history SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE memberships SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE meditation_records SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE meditation_goals SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE meditation_settings SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE meditation_group_members SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE meditation_groups SET owner_username = ? WHERE owner_username = ?', newUsername, oldUsername],
-    ['UPDATE user_follows SET follower_username = ? WHERE follower_username = ?', newUsername, oldUsername],
-    ['UPDATE user_follows SET following_username = ? WHERE following_username = ?', newUsername, oldUsername],
-    ['UPDATE user_practice_privacy SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE notifications SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE notifications SET related_username = ? WHERE related_username = ?', newUsername, oldUsername],
-    ['UPDATE sync_log SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE user_sync_state SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE comments SET user_id = ? WHERE user_id = ?', newUsername, oldUsername],
-    ['UPDATE comments SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE likes SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE favorites SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE content_likes SET user_id = ? WHERE user_id = ?', newUsername, oldUsername],
-    ['UPDATE content_likes SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE content_favorites SET username = ? WHERE username = ?', newUsername, oldUsername],
-    ['UPDATE content_reports SET reporter_user_id = ? WHERE reporter_user_id = ?', newUsername, oldUsername],
-    ['UPDATE user_blocks SET blocked_user_id = ? WHERE blocked_user_id = ?', newUsername, oldUsername]
-  ];
-
-  for (const [sql, ...params] of updates) {
-    await safeRun(db, sql, ...params);
-  }
-}
-
 async function applyEmailMapping(db, oldEmail, newEmail, username) {
   if (oldEmail && oldEmail.toLowerCase() !== newEmail) {
     await safeRun(db, 'DELETE FROM email_username_mapping WHERE email = ?', oldEmail.toLowerCase());
@@ -189,224 +150,6 @@ async function uploadAvatarObject(request, env, username, imageBase64, fileName,
   return avatarUrlFor(request, key);
 }
 
-function migrationPlaceholderEmail(username) {
-  const normalized = String(username || 'user').replace(/[^a-zA-Z0-9._-]/g, '-');
-  return `${normalized}__rename__${Date.now()}@local.invalid`;
-}
-
-function getFinalProfileState(user, {
-  targetUsername,
-  newEmail,
-  newPhone,
-  finalAvatar,
-  passwordCreds,
-  practiceTitle,
-  practiceFilePath,
-  practiceSelectedAt,
-  updatedAt
-}) {
-  const email = newEmail !== undefined ? newEmail : normalizeOptionalString(user.email);
-  const phone = newPhone !== undefined ? newPhone : normalizeOptionalString(user.phone_number);
-  const practiceChanged = practiceTitle !== undefined;
-
-  const finalState = {
-    username: targetUsername,
-    email,
-    password_hash: passwordCreds?.passwordHash ?? user.password_hash ?? null,
-    salt: passwordCreds?.salt ?? user.salt ?? null,
-    iterations: passwordCreds?.iterations ?? user.iterations ?? null,
-    algo: passwordCreds?.algo ?? user.algo ?? null,
-    email_verified: newEmail !== undefined
-      ? (email ? 1 : 0)
-      : (user.email_verified ?? 0),
-    alipay_user_id: normalizeOptionalString(user.alipay_user_id),
-    alipay_nickname: normalizeOptionalString(user.alipay_nickname),
-    alipay_avatar: normalizeOptionalString(user.alipay_avatar),
-    alipay_bound_at: normalizeOptionalString(user.alipay_bound_at),
-    wechat_openid: normalizeOptionalString(user.wechat_openid),
-    wechat_nickname: normalizeOptionalString(user.wechat_nickname),
-    wechat_headimgurl: normalizeOptionalString(user.wechat_headimgurl),
-    wechat_bound_at: normalizeOptionalString(user.wechat_bound_at),
-    phone_number: phone,
-    firebase_uid: normalizeOptionalString(user.firebase_uid),
-    apple_user_id: normalizeOptionalString(user.apple_user_id),
-    nickname: targetUsername,
-    avatar: finalAvatar !== undefined ? finalAvatar : normalizeOptionalString(user.avatar),
-    bio: normalizeOptionalString(user.bio),
-    main_practice_title: practiceChanged
-      ? (practiceTitle ?? null)
-      : normalizeOptionalString(user.main_practice_title),
-    main_practice_file_path: practiceChanged
-      ? (practiceTitle ? practiceFilePath ?? null : null)
-      : normalizeOptionalString(user.main_practice_file_path),
-    main_practice_selected_at: practiceChanged
-      ? (practiceTitle ? practiceSelectedAt : null)
-      : normalizeOptionalString(user.main_practice_selected_at),
-    membership_type: user.membership_type || 'expired',
-    membership_expires_at: normalizeOptionalString(user.membership_expires_at),
-    free_trial_end_date: normalizeOptionalString(user.free_trial_end_date),
-    stripe_customer_id: normalizeOptionalString(user.stripe_customer_id),
-    subscription_id: normalizeOptionalString(user.subscription_id),
-    total_transferred_bytes: user.total_transferred_bytes ?? 0,
-    last_transfer_at: normalizeOptionalString(user.last_transfer_at),
-    sync_version: user.sync_version ?? 1,
-    extra_data: normalizeOptionalString(user.extra_data),
-    created_at: user.created_at || updatedAt,
-    updated_at: updatedAt
-  };
-
-  return Object.fromEntries(
-    Object.entries(finalState).map(([key, value]) => [key, value === undefined ? null : value])
-  );
-}
-
-function getNativeTransactionRunner(db) {
-  const storage = db?.state?.storage;
-  if (storage && typeof storage.transaction === 'function') {
-    return (action) => storage.transaction(action);
-  }
-  if (storage && typeof storage.transactionSync === 'function') {
-    return (action) => storage.transactionSync(action);
-  }
-  if (db && typeof db.transaction === 'function') {
-    return (action) => db.transaction(action);
-  }
-  return null;
-}
-
-function getBatchRunner(db) {
-  if (db && typeof db.batch === 'function') {
-    return (statements) => db.batch(statements);
-  }
-  if (db?.db && typeof db.db.batch === 'function') {
-    return (statements) => db.db.batch(statements);
-  }
-  return null;
-}
-
-async function runInTransaction(db, action) {
-  const nativeTransaction = getNativeTransactionRunner(db);
-  if (nativeTransaction) {
-    return nativeTransaction(action);
-  }
-
-  return action();
-}
-
-async function migrateUsernameChange(db, user, {
-  oldUsername,
-  targetUsername,
-  newEmail,
-  newPhone,
-  finalAvatar,
-  passwordCreds,
-  practiceTitle,
-  practiceFilePath,
-  practiceSelectedAt,
-  updatedAt
-}) {
-  const finalState = getFinalProfileState(user, {
-    targetUsername,
-    newEmail,
-    newPhone,
-    finalAvatar,
-    passwordCreds,
-    practiceTitle,
-    practiceFilePath,
-    practiceSelectedAt,
-    updatedAt
-  });
-
-  const detachOldUserStatement = db.prepare(`
-    UPDATE users
-    SET email = ?, phone_number = NULL, firebase_uid = NULL, apple_user_id = NULL,
-        alipay_user_id = NULL, wechat_openid = NULL, updated_at = ?
-    WHERE username = ?
-  `).bind(
-    migrationPlaceholderEmail(oldUsername),
-    updatedAt,
-    oldUsername
-  );
-
-  const insertNewUserStatement = db.prepare(`
-    INSERT INTO users (
-      username, email, password_hash, salt, iterations, algo, email_verified,
-      alipay_user_id, alipay_nickname, alipay_avatar, alipay_bound_at,
-      wechat_openid, wechat_nickname, wechat_headimgurl, wechat_bound_at,
-      phone_number, firebase_uid, apple_user_id,
-      nickname, avatar, bio,
-      main_practice_title, main_practice_file_path, main_practice_selected_at,
-      membership_type, membership_expires_at, free_trial_end_date,
-      stripe_customer_id, subscription_id,
-      total_transferred_bytes, last_transfer_at,
-      sync_version, extra_data,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(
-    finalState.username,
-    finalState.email,
-    finalState.password_hash,
-    finalState.salt,
-    finalState.iterations,
-    finalState.algo,
-    finalState.email_verified,
-    finalState.alipay_user_id,
-    finalState.alipay_nickname,
-    finalState.alipay_avatar,
-    finalState.alipay_bound_at,
-    finalState.wechat_openid,
-    finalState.wechat_nickname,
-    finalState.wechat_headimgurl,
-    finalState.wechat_bound_at,
-    finalState.phone_number,
-    finalState.firebase_uid,
-    finalState.apple_user_id,
-    finalState.nickname,
-    finalState.avatar,
-    finalState.bio,
-    finalState.main_practice_title,
-    finalState.main_practice_file_path,
-    finalState.main_practice_selected_at,
-    finalState.membership_type,
-    finalState.membership_expires_at,
-    finalState.free_trial_end_date,
-    finalState.stripe_customer_id,
-    finalState.subscription_id,
-    finalState.total_transferred_bytes,
-    finalState.last_transfer_at,
-    finalState.sync_version,
-    finalState.extra_data,
-    finalState.created_at,
-    finalState.updated_at
-  );
-
-  const deleteOldUserStatement = db.prepare('DELETE FROM users WHERE username = ?').bind(oldUsername);
-  const d1BatchStatements = [detachOldUserStatement, insertNewUserStatement];
-
-  if (user.email && user.email.toLowerCase() !== finalState.email) {
-    d1BatchStatements.push(db.prepare('DELETE FROM email_username_mapping WHERE email = ?').bind(user.email.toLowerCase()));
-  }
-  if (finalState.email) {
-    d1BatchStatements.push(db.prepare('INSERT OR REPLACE INTO email_username_mapping (email, username) VALUES (?, ?)').bind(finalState.email, targetUsername));
-  }
-  d1BatchStatements.push(deleteOldUserStatement);
-
-  const runBatch = getBatchRunner(db);
-  if (runBatch) {
-    await runBatch(d1BatchStatements);
-    await updateUsernameReferences(db, oldUsername, targetUsername);
-    return;
-  }
-
-  await runInTransaction(db, async () => {
-    await detachOldUserStatement.run();
-    await insertNewUserStatement.run();
-    await updateUsernameReferences(db, oldUsername, targetUsername);
-    await applyEmailMapping(db, user.email, finalState.email, targetUsername);
-    await deleteOldUserStatement.run();
-  });
-}
-
 export async function handleUploadAvatar(request, env, db) {
   try {
     const auth = await authenticate(request, env, db);
@@ -420,7 +163,7 @@ export async function handleUploadAvatar(request, env, db) {
     const avatarUrl = await uploadAvatarObject(request, env, auth.user.username, imageBase64, fileName, contentType);
 
     await db.prepare('UPDATE users SET avatar = ?, nickname = ?, updated_at = ? WHERE username = ?')
-      .bind(avatarUrl, auth.user.username, new Date().toISOString(), auth.user.username)
+      .bind(avatarUrl, auth.user.nickname || auth.user.username, new Date().toISOString(), auth.user.username)
       .run();
 
     const updatedUser = await db.getUser(auth.user.username);
@@ -441,41 +184,37 @@ export async function handleUpdateProfile(request, env, db) {
     if (auth.error) return auth.error;
 
     const body = await request.json();
-    let newUsername;
+    const rawDisplayName = body.nickname !== undefined ? body.nickname : body.username;
+    let displayName;
     let newEmail;
     let newPhone;
     try {
-      newUsername = body.username !== undefined ? normalizeUsername(body.username) : undefined;
+      displayName = rawDisplayName !== undefined ? normalizeDisplayName(rawDisplayName) : undefined;
       newEmail = body.email !== undefined ? normalizeEmail(body.email) : undefined;
       newPhone = body.phoneNumber !== undefined ? normalizePhone(body.phoneNumber) : undefined;
     } catch (validationError) {
       return jsonResponse({ error: validationError.message }, 400);
     }
 
-    const oldUsername = auth.user.username;
-    const targetUsername = newUsername || oldUsername;
-    const usernameChanged = targetUsername !== oldUsername;
+    if (rawDisplayName !== undefined && !displayName) {
+      return jsonResponse({ error: '请输入昵称' }, 400);
+    }
+
+    const stableUsername = auth.user.username;
     const updates = [];
     const values = [];
     const updatedAt = new Date().toISOString();
 
-    if (newUsername !== undefined && newUsername !== oldUsername) {
-      const existingUser = await db.getUser(newUsername);
-      if (existingUser) {
-        return jsonResponse({ error: '用户名已存在' }, 400);
-      }
-    }
-
     if (newEmail !== undefined && newEmail) {
       const existingEmailUser = await db.getUserByEmail(newEmail);
-      if (existingEmailUser && existingEmailUser.username !== oldUsername) {
+      if (existingEmailUser && existingEmailUser.username !== stableUsername) {
         return jsonResponse({ error: '该邮箱已被其他账号使用' }, 400);
       }
     }
 
     if (newPhone !== undefined && newPhone) {
       const existingPhoneUser = await db.getUserByPhone(newPhone);
-      if (existingPhoneUser && existingPhoneUser.username !== oldUsername) {
+      if (existingPhoneUser && existingPhoneUser.username !== stableUsername) {
         return jsonResponse({ error: '该手机号已被其他账号使用' }, 400);
       }
     }
@@ -489,7 +228,7 @@ export async function handleUpdateProfile(request, env, db) {
       finalAvatar = await uploadAvatarObject(
         request,
         env,
-        targetUsername,
+        stableUsername,
         body.avatarData.imageBase64,
         body.avatarData.fileName,
         body.avatarData.contentType
@@ -514,9 +253,9 @@ export async function handleUpdateProfile(request, env, db) {
     const practiceFilePath = mainPractice?.filePath ?? body.mainPracticeFilePath;
     const practiceSelectedAt = mainPractice?.selectedAt ?? updatedAt;
 
-    if (!usernameChanged && newUsername !== undefined) {
+    if (displayName !== undefined) {
       updates.push('nickname = ?');
-      values.push(newUsername);
+      values.push(displayName);
     }
 
     if (newEmail !== undefined) {
@@ -550,42 +289,25 @@ export async function handleUpdateProfile(request, env, db) {
       values.push(practiceTitle ? practiceSelectedAt : null);
     }
 
-    if (!usernameChanged && updates.length === 0) {
+    if (updates.length === 0) {
       return jsonResponse({ message: '没有需要更新的字段', user: serializeUser(auth.user) });
     }
 
-    if (usernameChanged) {
-      await migrateUsernameChange(db, auth.user, {
-        oldUsername,
-        targetUsername,
-        newEmail,
-        newPhone,
-        finalAvatar,
-        passwordCreds,
-        practiceTitle,
-        practiceFilePath,
-        practiceSelectedAt,
-        updatedAt
-      });
-    } else {
-      updates.push('updated_at = ?');
-      values.push(updatedAt);
-      values.push(oldUsername);
+    updates.push('updated_at = ?');
+    values.push(updatedAt);
+    values.push(stableUsername);
 
-      await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE username = ?`).bind(...values).run();
+    await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE username = ?`).bind(...values).run();
 
-      if (newEmail !== undefined) {
-        await applyEmailMapping(db, auth.user.email, newEmail, targetUsername);
-      }
+    if (newEmail !== undefined) {
+      await applyEmailMapping(db, auth.user.email, newEmail, stableUsername);
     }
 
-    const updatedUser = await db.getUser(targetUsername);
-    const token = usernameChanged ? await generateToken(targetUsername, env) : undefined;
+    const updatedUser = await db.getUser(stableUsername);
 
     return jsonResponse({
       success: true,
       message: '个人资料更新成功',
-      token,
       user: updatedUser ? serializeUser(updatedUser) : null
     });
   } catch (error) {
