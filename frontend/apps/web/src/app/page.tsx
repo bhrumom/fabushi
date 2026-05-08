@@ -38,7 +38,7 @@ export default async function HomePage() {
   const releaseCollection = await getOfficialSiteReleaseCollection();
   const releasePreview = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels].slice(0, 3);
   const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
-  const faqPreview = faqItems.slice(0, 4);
+  const faqPreview = faqItems.slice(0, 5);
   const siteEvidence = [
     {
       label: "可见下载状态",
