@@ -24,7 +24,7 @@ void main() {
         expect(request.url.queryParameters['query'], '晨课');
         expect(request.headers['Authorization'], 'Bearer test-token');
         return http.Response(
-          '{"success":true,"data":{"groups":[{"id":21,"name":"晨课共修","description":"每天一起完成早课","ownerUsername":"owner1","ownerName":"发起人","requireApproval":true,"dailyGoalMinutes":30,"cumulativeMissLimit":7,"consecutiveMissLimit":3,"memberCount":5,"pendingCount":2,"totalDuration":180,"todayDuration":45}]}}',
+          '{"success":true,"data":{"groups":[{"id":21,"groupNo":12345,"name":"晨课共修","description":"每天一起完成早课","ownerUsername":"owner1","ownerName":"发起人","requireApproval":true,"dailyGoalMinutes":30,"cumulativeMissLimit":7,"consecutiveMissLimit":3,"memberCount":5,"pendingCount":2,"totalDuration":180,"todayDuration":45}]}}',
           200,
           headers: const {'content-type': 'application/json'},
         );
@@ -38,7 +38,7 @@ void main() {
     expect(result.groups, hasLength(1));
     expect(result.groups.single.name, '晨课共修');
     expect(result.groups.single.ownerName, '发起人');
-    expect(result.groups.single.publicCode, '000021');
+    expect(result.groups.single.publicCode, '12345');
   });
 
   test('searchGroupsWithStatus surfaces backend error messages', () async {
@@ -135,5 +135,56 @@ void main() {
     expect(result.isSuccess, isFalse);
     expect(result.errorMessage, '创建共修小组失败');
     expect(result.statusCode, 400);
+  });
+
+  test('joinGroup returns pending review message on success', () async {
+    final service = createService(
+      MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/api/meditation/groups/join');
+        expect(request.headers['Authorization'], 'Bearer test-token');
+        return http.Response(
+          '{"success":true,"data":{"status":"pending","message":"已提交加入申请，等待同意"}}',
+          200,
+          headers: const {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final message = await service.joinGroup(42);
+
+    expect(message, '已提交加入申请，等待同意');
+  });
+
+  test('joinGroup surfaces backend error messages', () async {
+    final service = createService(
+      MockClient(
+        (_) async => http.Response(
+          '{"success":false,"error":"请先登录后再申请加入"}',
+          401,
+          headers: const {'content-type': 'application/json'},
+        ),
+      ),
+    );
+
+    final message = await service.joinGroup(42);
+
+    expect(message, '请先登录后再申请加入');
+  });
+
+  test('joinGroup returns readable fallback for empty server errors', () async {
+    final service = createService(
+      MockClient(
+        (_) async => http.Response(
+          '{"success":false}',
+          500,
+          headers: const {'content-type': 'application/json'},
+        ),
+      ),
+    );
+
+    final message = await service.joinGroup(42);
+
+    expect(message, '申请加入失败，服务器暂时不可用');
   });
 }

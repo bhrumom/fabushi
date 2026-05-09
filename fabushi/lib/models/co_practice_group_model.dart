@@ -9,10 +9,11 @@ bool _asBool(dynamic value) => value == true || value == 1 || value == '1';
 
 String _asString(dynamic value) => value?.toString() ?? '';
 
-String _formatGroupCode(int id) => id.toString().padLeft(6, '0');
+String _formatGroupCode(int id) => id.toString().padLeft(5, '0');
 
 class CoPracticeGroup {
   final int id;
+  final int groupNo;
   final String name;
   final String description;
   final String ownerUsername;
@@ -32,6 +33,7 @@ class CoPracticeGroup {
 
   const CoPracticeGroup({
     required this.id,
+    required this.groupNo,
     required this.name,
     required this.description,
     required this.ownerUsername,
@@ -50,11 +52,13 @@ class CoPracticeGroup {
     this.createdAt,
   });
 
-  String get publicCode => _formatGroupCode(id);
+  String get publicCode => _formatGroupCode(groupNo > 0 ? groupNo : id);
 
   factory CoPracticeGroup.fromJson(Map<String, dynamic> json) {
+    final id = _asInt(json['id']);
     return CoPracticeGroup(
-      id: _asInt(json['id']),
+      id: id,
+      groupNo: _asInt(json['groupNo'] ?? json['group_no']),
       name: _asString(json['name']),
       description: _asString(json['description']),
       ownerUsername: _asString(json['ownerUsername'] ?? json['owner_username']),
