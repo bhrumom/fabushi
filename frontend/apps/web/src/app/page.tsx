@@ -1,15 +1,5 @@
 import { fabushiApiClient } from "@fabushi/api-client";
-import {
-  brand,
-  contactChannels,
-  faqItems,
-  homeActionPaths,
-  homeChannelRoles,
-  homeHighlights,
-  homeTrustSignals,
-  homeUseCases,
-  launchRoadmap,
-} from "@fabushi/shared";
+import { brand, contactChannels, faqItems, homeHighlights, homeUseCases } from "@fabushi/shared";
 import { SiteFooter } from "../components/site-footer";
 import { SiteHeader } from "../components/site-header";
 import { getAllArticles, getFeaturedArticles } from "../lib/content";
@@ -38,336 +28,157 @@ export default async function HomePage() {
   const releaseCollection = await getOfficialSiteReleaseCollection();
   const releasePreview = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels].slice(0, 3);
   const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
-  const faqPreview = faqItems.slice(0, 5);
-  const siteEvidence = [
-    {
-      label: "可见下载状态",
-      value: releasePreview.length > 0 ? `${releasePreview.length} 个入口已同步` : "入口持续同步中",
-      detail: "首页和下载页会直接承接当前公开可见的 beta 与正式版状态。",
-    },
-    {
-      label: "公开内容积累",
-      value: `${allArticles.length} 篇内容已上线`,
-      detail: "路线说明、专题文章与更新内容会持续沉淀，而不是只靠一张首页解释项目。",
-    },
-    {
-      label: "问题预答复",
-      value: `${faqItems.length} 个 FAQ 已整理`,
-      detail: "把“这是什么、适合谁、是否能下载、各端怎么分工”提前写清楚。",
-    },
-    {
-      label: "稳定联系入口",
-      value: `${contactChannels.length} 条公开通道`,
-      detail: "测试申请、支持反馈与公开协作都有明确去处，不用靠猜测联系路径。",
-    },
-  ] as const;
-  const definitionBlocks = [
-    {
-      label: "Fabushi 是什么",
-      title: "一个围绕佛法传播、修行记录与同行连接组织起来的数字产品体系。",
-      description:
-        "官网不是主应用的替代品，而是统一承接理解、下载、测试申请、内容更新与公开协作的第一入口。",
-    },
-    {
-      label: "现在已经开放什么",
-      title: "官网、FAQ、下载状态、申请测试与内容专栏已经开始协同工作。",
-      description:
-        "第一次接触项目的人，已经可以先在这里完成理解、判断与下一步动作，而不必先进入应用再摸索。",
-    },
-    {
-      label: "还在逐步开放什么",
-      title: "微信小程序首期能力与更完整的主应用体验会继续按节奏释放。",
-      description:
-        "这让站点可以真实同步当前状态，而不是过度承诺尚未公开的功能或入口。",
-    },
-  ] as const;
-  const governanceFacts = [
-    {
-      label: "隐私边界",
-      title: "先把收集范围、用途、支持邮箱和用户控制权说清楚。",
-      description:
-        "用户在下载、申请测试或进入更完整的产品流程前，应该先知道哪些信息会被处理，以及出现问题时该找谁。",
-      href: "/privacy",
-      ctaLabel: "查看隐私说明",
-    },
-    {
-      label: "反馈与治理",
-      title: "FAQ、申请测试、公开仓库和联系入口形成闭环。",
-      description:
-        "把常见问题、测试申请、支持邮箱和公开协作入口放在可复查的位置，能减少“我该联系谁、该去哪一步”的犹豫。",
-      href: "/contact",
-      ctaLabel: "查看联系入口",
-    },
-    {
-      label: "发布节奏",
-      title: "下载状态、测试资格和公开说明保持同步更新。",
-      description:
-        "官网先说清楚当前开放什么、还在准备什么，让每次转化动作都有现实状态对应，而不是靠模糊承诺推进。",
-      href: "/download",
-      ctaLabel: "查看下载状态",
-    },
-  ] as const;
-  const entryReadiness = [
-    {
-      label: "现在适合继续往下走",
-      title: "你已经准备好进入下载、申请或联系路径。",
-      description:
-        "如果你符合这些情况，官网应该帮助你尽快做决定，而不是继续把你留在抽象介绍里。",
-      bullets: [
-        "你已经明确想判断当前有没有适合自己的下载或测试入口。",
-        "你愿意接受 beta 节奏，或者愿意先进入申请与反馈流程。",
-        "你需要先把官网、小程序和主应用的分工看清楚，再进入具体入口。",
-      ],
-      href: "/download",
-      ctaLabel: "去看下载状态",
-    },
-    {
-      label: "现在更适合先理解和观望",
-      title: "你不必因为看见入口就立刻下载或申请。",
-      description:
-        "如果你更符合这些情况，先看 FAQ、隐私说明和路径定义，反而更能减少误判、反复和落差。",
-      bullets: [
-        "你现在只接受稳定正式版，不希望承担测试波动或资格等待。",
-        "你还没判断清楚自己是来下载、申请测试、反馈问题，还是只想先了解项目。",
-        "你期待官网已经覆盖所有深度功能体验，而不是先承担说明、筛选和引导角色。",
-      ],
-      href: "/faq",
-      ctaLabel: "先看 FAQ",
-    },
-  ] as const;
+  const faqPreview = faqItems.slice(0, 4);
 
-  const organizationJsonLd = {
+  const structuredData = {
     "@context": "https://schema.org",
-    "@type": "Organization",
-    name: `${brand.name} Fabushi`,
-    url: siteUrl("/"),
-    email: supportEmail,
-    description: brand.mission,
-    sameAs: contactChannels.filter((item) => item.href.startsWith("https://")).map((item) => item.href),
-  };
-
-  const websiteJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    name: `${brand.name} Fabushi`,
-    url: siteUrl("/"),
-    inLanguage: "zh-CN",
-    description: "Fabushi 官网，统一承接品牌说明、下载入口、测试申请、FAQ 和内容专栏。",
-  };
-
-  const applicationJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    name: `${brand.name} Fabushi`,
-    applicationCategory: "LifestyleApplication",
-    operatingSystem: "iOS, Android, Web, WeChat Mini Program",
-    inLanguage: "zh-CN",
-    url: siteUrl("/"),
-    downloadUrl: siteUrl("/download"),
-    description:
-      "Fabushi 法布施是一个围绕佛法传播、修行记录、公开档案、榜单与同行连接组织起来的多端产品体系。",
-    featureList: [
-      "佛法传播与内容入口",
-      "修行记录与隐私边界",
-      "公开档案与榜单浏览",
-      "下载引导、测试申请与 FAQ",
-    ],
-  };
-
-  const faqJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: faqPreview.map((item) => ({
-      "@type": "Question",
-      name: item.question,
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: item.answer,
+    "@graph": [
+      {
+        "@type": "Organization",
+        name: `${brand.name} Fabushi`,
+        url: siteUrl("/"),
+        email: supportEmail,
+        description: brand.mission,
+        sameAs: contactChannels.filter((item) => item.href.startsWith("https://")).map((item) => item.href),
       },
-    })),
-  };
-
-  const governanceJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "ItemList",
-    name: "Fabushi trust and governance",
-    itemListElement: governanceFacts.map((item, index) => ({
-      "@type": "ListItem",
-      position: index + 1,
-      name: item.title,
-      description: item.description,
-      url: siteUrl(item.href),
-    })),
+      {
+        "@type": "WebSite",
+        name: `${brand.name} 官网`,
+        url: siteUrl("/"),
+        inLanguage: "zh-CN",
+        description: "Fabushi 官网，统一承接品牌说明、下载入口、测试申请、FAQ 与内容专栏。",
+      },
+      {
+        "@type": "SoftwareApplication",
+        name: `${brand.name} Fabushi`,
+        applicationCategory: "LifestyleApplication",
+        operatingSystem: "iOS, Android, Web, WeChat Mini Program",
+        url: siteUrl("/download"),
+        description:
+          "围绕佛法传播、修行记录、公开档案、榜单与同行连接构建的多端产品体系。",
+      },
+      {
+        "@type": "FAQPage",
+        mainEntity: faqPreview.map((item) => ({
+          "@type": "Question",
+          name: item.question,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: item.answer,
+          },
+        })),
+      },
+    ],
   };
 
   return (
     <main className="page-shell">
-      <script type="application/ld+json" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} />
-      <script type="application/ld+json" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
-      <script type="application/ld+json" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: JSON.stringify(applicationJsonLd) }} />
-      <script type="application/ld+json" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
-      <script type="application/ld+json" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: JSON.stringify(governanceJsonLd) }} />
+      <script
+        type="application/ld+json"
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
 
       <header className="hero">
         <SiteHeader />
 
-        <div className="hero-stage">
-          <div className="hero-copy">
-            <p className="eyebrow">法布施官网 · 品牌入口 / 下载引导 / 内容专栏</p>
-            <p className="brand-kicker">
-              {brand.name}
-              <span>Fabushi</span>
-            </p>
-            <h1>把佛法传播、修行记录与同行连接，放进一个更清晰的数字入口。</h1>
-            <p className="lede">
-              官网先负责解释方向、建立信任、呈现下载状态与内容路线；微信小程序负责轻触达；主应用继续承接上传、互动与沉浸式体验。
-            </p>
-            <div className="hero-actions">
-              <a className="primary-action" href={siteHref("/download")}>
-                查看下载入口
-              </a>
-              <a className="secondary-action" href={siteHref("/apply")}>
-                申请测试资格
-              </a>
-              <a className="secondary-action" href={siteHref("/faq")}>
-                查看常见问题
-              </a>
-            </div>
-            <div className="hero-signal-bar">
-              {homeTrustSignals.map((item) => (
-                <article key={item.title} className="signal-chip">
-                  <span className="detail-label">{item.title}</span>
-                  <strong>{item.summary}</strong>
-                </article>
-              ))}
-            </div>
+        <div className="hero-center">
+          <div className="app-mark" aria-hidden="true">
+            <span>法</span>
           </div>
-
-          <aside className="hero-aside">
-            <div className="hero-panel">
-              <p>一句话理解</p>
-              <strong>{brand.name} 是一个围绕佛法传播、修行记录与同行连接展开的数字产品体系。</strong>
-              <span>
-                官网负责说明与引导，小程序负责微信生态触达，Flutter 主应用承接更完整的浏览、上传、互动与个人使用流程。
-              </span>
-            </div>
-            <div className="hero-proof-list">
-              <p className="detail-label">当前公开入口</p>
-              {releasePreview.map((item) => (
-                <a key={`${item.audience}-${item.platform}`} className="hero-proof-row" href={siteHref(item.primaryHref)}>
-                  <div>
-                    <strong>{item.title}</strong>
-                    <span>{item.description}</span>
-                  </div>
-                  <em>{item.status}</em>
-                </a>
-              ))}
-            </div>
-          </aside>
+          <p className="eyebrow">Fabushi official site</p>
+          <h1>{brand.name}</h1>
+          <p className="hero-subtitle">{brand.tagline}</p>
+          <p className="lede">
+            一个面向佛法传播、修行记录与同行连接的数字入口。官网负责把项目定位、下载状态、测试申请和常见问题讲清楚，让第一次到达的人也能知道下一步该去哪里。
+          </p>
+          <div className="hero-actions">
+            <a className="primary-action" href={siteHref("/download")}>
+              查看下载入口
+            </a>
+            <a className="secondary-action" href={siteHref("/apply")}>
+              申请测试资格
+            </a>
+          </div>
+          <div className="trust-strip" aria-label="当前官网状态">
+            <span>官网</span>
+            <span>下载状态</span>
+            <span>测试申请</span>
+            <span>内容专栏</span>
+          </div>
         </div>
       </header>
 
-      <section className="band quick-paths" id="paths">
-        <div className="section-heading">
-          <p>快速路径</p>
-          <h2>第一次来到这里，通常只需要先完成这三件事里的其中一件。</h2>
+      <section className="showcase-band" id="experience">
+        <div className="product-frame" aria-label="Fabushi 官网体验预览">
+          <div className="frame-sidebar">
+            <span className="window-dot red" />
+            <span className="window-dot yellow" />
+            <span className="window-dot green" />
+            <strong>Fabushi</strong>
+            <nav>
+              <span className="active">下载状态</span>
+              <span>共修连接</span>
+              <span>内容专栏</span>
+              <span>FAQ</span>
+            </nav>
+          </div>
+          <div className="frame-main">
+            <div className="frame-topbar">
+              <span>今日入口</span>
+              <strong>{releasePreview.length > 0 ? `${releasePreview.length} 个发布入口` : "发布入口同步中"}</strong>
+            </div>
+            <div className="conversation">
+              <p>我第一次看到 Fabushi，应该先做什么？</p>
+              <article>
+                <strong>先确认当前状态。</strong>
+                <span>官网会把下载、内测、内容路线和支持入口放在同一处，减少来回寻找。</span>
+              </article>
+            </div>
+            <div className="status-board">
+              {releasePreview.length === 0 ? (
+                <div className="status-card">
+                  <span>发布</span>
+                  <strong>入口持续同步中</strong>
+                </div>
+              ) : (
+                releasePreview.map((item) => (
+                  <a key={`${item.audience}-${item.platform}`} className="status-card" href={siteHref(item.primaryHref)}>
+                    <span>{item.platform}</span>
+                    <strong>{item.status}</strong>
+                  </a>
+                ))
+              )}
+            </div>
+          </div>
         </div>
-        <div className="path-grid">
-          {homeActionPaths.map((item) => (
-            <article key={item.title} className="path-card">
-              <span className="detail-label">{item.label}</span>
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-              <a className="path-link" href={siteHref(item.href)}>
-                {item.ctaLabel}
-              </a>
+      </section>
+
+      <section className="band feature-story" id="capabilities">
+        <div className="section-heading">
+          <p>核心能力</p>
+          <h2>把理解、触达和深度使用连成一条清晰路径。</h2>
+        </div>
+        <div className="feature-rows">
+          {homeHighlights.map((item, index) => (
+            <article key={item.title} className="feature-row">
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <div>
+                <h3>{item.title}</h3>
+                <p>{item.description}</p>
+              </div>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="band alt" id="evidence">
+      <section className="band dark-band" id="audience">
         <div className="section-heading">
-          <p>公开事实</p>
-          <h2>如果官网想建立信任，就要先给出可验证、可引用、可复查的公开信息。</h2>
-        </div>
-        <div className="evidence-grid">
-          {siteEvidence.map((item) => (
-            <article key={item.label} className="evidence-card">
-              <span className="detail-label">{item.label}</span>
-              <strong>{item.value}</strong>
-              <p>{item.detail}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band" id="definition">
-        <div className="section-heading">
-          <p>先定义清楚</p>
-          <h2>让用户和搜索系统都先搞清楚 Fabushi 是什么、已经开放什么、还在推进什么。</h2>
-        </div>
-        <div className="definition-grid">
-          {definitionBlocks.map((item) => (
-            <article key={item.label} className="definition-card">
-              <span className="detail-label">{item.label}</span>
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-            </article>
-          ))}
-        </div>
-        <div className="inline-cta">
-          <a className="secondary-action" href={siteHref("/faq")}>
-            继续看完整 FAQ
-          </a>
-          <a className="secondary-action" href={siteHref("/download")}>
-            查看当前下载状态
-          </a>
-        </div>
-      </section>
-
-      <section className="band alt" id="trust">
-        <div className="section-heading">
-          <p>为什么先做官网</p>
-          <h2>先把入口、分工、状态和信任信息讲清楚，转化路径才不会在第一屏就断掉。</h2>
-        </div>
-        <div className="narrative-grid">
-          {homeTrustSignals.map((item) => (
-            <article key={item.title} className="narrative-block">
-              <span className="detail-label">{item.title}</span>
-              <h3>{item.summary}</h3>
-              <p>{item.description}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band" id="governance">
-        <div className="section-heading">
-          <p>信任与治理</p>
-          <h2>品牌感只能让人停一下，真正推动申请、下载和长期使用的，是状态、边界和反馈机制都讲清楚。</h2>
-        </div>
-        <div className="governance-grid">
-          {governanceFacts.map((item) => (
-            <article key={item.label} className="governance-card">
-              <span className="detail-label">{item.label}</span>
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-              <a className="path-link" href={siteHref(item.href)}>
-                {item.ctaLabel}
-              </a>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band alt" id="audience">
-        <div className="section-heading">
-          <p>适用场景</p>
-          <h2>Fabushi 官网应该同时服务首次到达、内测申请、合作判断和搜索理解这四种场景。</h2>
+          <p>适合谁</p>
+          <h2>官网先服务真实到达场景，而不是堆满抽象介绍。</h2>
         </div>
         <div className="use-case-grid">
-          {homeUseCases.map((item) => (
+          {homeUseCases.slice(0, 4).map((item) => (
             <article key={item.audience} className="use-case-block">
               <span className="detail-label">{item.audience}</span>
               <h3>{item.title}</h3>
@@ -377,73 +188,10 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="band" id="readiness">
+      <section className="band" id="download">
         <div className="section-heading">
-          <p>进入判断</p>
-          <h2>官网不该默认每个访问者都应该立刻下载，它更应该先帮人判断“现在适不适合继续往下走”。</h2>
-        </div>
-        <div className="compare-grid">
-          {entryReadiness.map((item) => (
-            <article key={item.label} className="compare-card">
-              <span className="detail-label">{item.label}</span>
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-              <ul className="compare-list">
-                {item.bullets.map((entry) => (
-                  <li key={entry}>{entry}</li>
-                ))}
-              </ul>
-              <a className="path-link" href={siteHref(item.href)}>
-                {item.ctaLabel}
-              </a>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band" id="channel-roles">
-        <div className="section-heading">
-          <p>入口分工</p>
-          <h2>不是每个人都该直接跳进同一个端里，官网要先告诉你该从哪里开始。</h2>
-        </div>
-        <div className="channel-grid">
-          {homeChannelRoles.map((item) => (
-            <article key={item.channel} className="channel-card">
-              <span className="detail-label">{item.channel}</span>
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-              <ul className="channel-list">
-                {item.bestFor.map((entry) => (
-                  <li key={entry}>{entry}</li>
-                ))}
-              </ul>
-              <a className="path-link" href={siteHref(item.href)}>
-                {item.ctaLabel}
-              </a>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band alt" id="capabilities">
-        <div className="section-heading">
-          <p>核心能力</p>
-          <h2>产品体系不是三套彼此割裂的站点，而是一条从发现、触达到深度使用的连续路径。</h2>
-        </div>
-        <div className="feature-grid">
-          {homeHighlights.map((item) => (
-            <article key={item.title} className="feature-block">
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band cinematic">
-        <div className="section-heading">
-          <p>下载入口</p>
-          <h2>官网已经开始把公开可见的发布状态直接拉回页面，减少“想下载却找不到入口”的摩擦。</h2>
+          <p>下载与申请</p>
+          <h2>当前能做什么，直接给出入口。</h2>
         </div>
         <div className="platform-strip">
           {releasePreview.map((item) => (
@@ -458,75 +206,23 @@ export default async function HomePage() {
               </div>
             </a>
           ))}
-        </div>
-        <div className="status-note-list">
-          {releaseCollection.notes.map((item) => (
-            <p key={item}>{item}</p>
-          ))}
-        </div>
-      </section>
-
-      <section className="band alt" id="mini-program">
-        <div className="section-heading">
-          <p>微信小程序</p>
-          <h2>首期优先覆盖轻浏览、榜单、公开档案与基础登录，把最容易传播的场景先跑通。</h2>
-        </div>
-        <ol className="roadmap-list">
-          {launchRoadmap.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="band" id="architecture">
-        <div className="section-heading">
-          <p>技术架构</p>
-          <h2>一个前端 monorepo，共享接口层、类型、文案和部分纯业务逻辑，让官网与小程序各自发挥但不分家。</h2>
-        </div>
-        <div className="architecture-grid">
-          <div>
-            <h3>apps/web</h3>
-            <p>Next.js 官网，负责 SEO、落地页、功能说明、下载引导和后续内容运营。</p>
-          </div>
-          <div>
-            <h3>apps/mp-wechat</h3>
-            <p>Taro 微信小程序，围绕微信生态内的轻触达和轻交互。</p>
-          </div>
-          <div>
-            <h3>packages/shared</h3>
-            <p>品牌信息、导航、固定文案、内容结构与纯前端通用工具。</p>
-          </div>
-          <div>
-            <h3>packages/api-client</h3>
-            <p>统一对接现有 flutter.ombhrum.com API 与共享类型。</p>
-          </div>
+          <a className="platform-row accent-row" href={siteHref("/apply")}>
+            <div>
+              <span className="platform-name">测试与反馈</span>
+              <p>适合想参与 iOS、Android 或合作沟通的人，直接进入申请路径。</p>
+            </div>
+            <div className="platform-meta">
+              <strong>开放申请</strong>
+              <span>提交意向</span>
+            </div>
+          </a>
         </div>
       </section>
 
-      <section className="band alt">
-        <div className="section-heading">
-          <p>接口复用</p>
-          <h2>官网已经直接接入现有排行榜接口，证明它不是孤立宣传页，而是会逐步承接真实产品数据的入口层。</h2>
-        </div>
-        <div className="preview-list">
-          {leaderboard.length === 0 ? (
-            <p className="empty-copy">当前没有拉到排行榜预览，页面仍会稳定展示其余静态与内容型模块。</p>
-          ) : (
-            leaderboard.map((item, index) => (
-              <div key={item.username} className="preview-row">
-                <span>#{index + 1}</span>
-                <strong>{item.displayName || item.username}</strong>
-                <span>{item.totalBytes.toLocaleString()} bytes</span>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      <section className="band">
+      <section className="band content-band" id="insights">
         <div className="section-heading">
           <p>内容专栏</p>
-          <h2>官网不只是一张首页，它还要持续承接路线、更新、专题内容和后续可引用的公开信息。</h2>
+          <h2>路线、更新和说明沉淀成可复查的公开内容。</h2>
         </div>
         <div className="editorial-list">
           {featuredArticles.map((item) => (
@@ -549,10 +245,10 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="band alt">
+      <section className="band faq-band" id="faq">
         <div className="section-heading">
           <p>常见问题</p>
-          <h2>把用户最容易问的关键问题提前说清楚，也是在补强搜索和生成式引用最爱抓取的结构化信息。</h2>
+          <h2>把用户最容易卡住的问题提前回答。</h2>
         </div>
         <div className="faq-list">
           {faqPreview.map((item) => (
@@ -562,32 +258,14 @@ export default async function HomePage() {
             </details>
           ))}
         </div>
-        <div className="inline-cta">
-          <a className="secondary-action" href={siteHref("/faq")}>
-            查看完整 FAQ
+        <div className="contact-strip">
+          <div>
+            <span className="detail-label">公开数据</span>
+            <strong>{leaderboard.length > 0 ? "排行榜预览已接入" : "静态信息可稳定访问"}</strong>
+          </div>
+          <a className="primary-action" href={`mailto:${supportEmail}`}>
+            联系支持
           </a>
-          <a className="secondary-action" href={siteHref("/privacy")}>
-            查看隐私说明
-          </a>
-          <a className="secondary-action" href={siteHref("/contact")}>
-            联系我们
-          </a>
-        </div>
-      </section>
-
-      <section className="band">
-        <div className="section-heading">
-          <p>联系</p>
-          <h2>除了下载入口之外，官网也要把支持、反馈和公开协作的去处讲清楚。</h2>
-        </div>
-        <div className="contact-grid">
-          {contactChannels.map((item) => (
-            <a key={item.label} className="contact-card" href={siteHref(item.href)}>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-              <p>{item.note}</p>
-            </a>
-          ))}
         </div>
       </section>
 
