@@ -421,12 +421,14 @@ jobs:
             /fabushi/web/src/contracts/**
             /fabushi/web/src/repositories/**
             /fabushi/web/src/routes/**
+            /fabushi/web/src/services/database.js
             /fabushi/web/src/use-cases/**
             /fabushi/web/src/handlers/auth.js
             /fabushi/web/src/handlers/password-login.js
             /fabushi/web/src/handlers/profile.js
             /fabushi/web/src/handlers/thirdparty.js
             /fabushi/web/tests/auth-user-id.test.js
+            /fabushi/web/tests/database-user-id.test.js
             /fabushi/web/tests/profile.test.js
 
       - name: Validate publish release workflow guardrail
