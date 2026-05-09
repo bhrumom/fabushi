@@ -11,8 +11,10 @@ auth_handler = Path('fabushi/web/src/handlers/auth.js').read_text(encoding='utf-
 password_login = Path('fabushi/web/src/handlers/password-login.js').read_text(encoding='utf-8')
 profile_handler = Path('fabushi/web/src/handlers/profile.js').read_text(encoding='utf-8')
 thirdparty_handler = Path('fabushi/web/src/handlers/thirdparty.js').read_text(encoding='utf-8')
+database_service = Path('fabushi/web/src/services/database.js').read_text(encoding='utf-8')
 profile_test = Path('fabushi/web/tests/profile.test.js').read_text(encoding='utf-8')
 auth_user_id_test = Path('fabushi/web/tests/auth-user-id.test.js').read_text(encoding='utf-8')
+database_user_id_test = Path('fabushi/web/tests/database-user-id.test.js').read_text(encoding='utf-8')
 identity_migration = Path('fabushi/web/migrations/20260508_users_id_identity.sql').read_text(encoding='utf-8')
 payment_migration_path = Path('fabushi/web/migrations/20260508_users_payment_columns.sql')
 payment_migration = payment_migration_path.read_text(encoding='utf-8')
@@ -81,6 +83,25 @@ for required in (
         missing.append(f'thirdparty.js missing: {required}')
 
 for required in (
+    'export const USER_ID_CUSTOM_EPOCH_MS = Date.UTC(2025, 0, 1);',
+    'export const USER_ID_MAX_WORKER_ID',
+    'export const USER_ID_MAX_SEQUENCE',
+    'export function generateSnowflakeUserId',
+    'const candidate = generateSnowflakeUserId();',
+    "无法生成可用的雪花式用户 ID",
+):
+    if required not in database_service:
+        missing.append(f'database.js missing: {required}')
+
+for forbidden in (
+    'generateSixDigitId',
+    'hasObviousPattern',
+    '6 位用户 ID',
+):
+    if forbidden in database_service:
+        missing.append(f'database.js should not contain: {forbidden}')
+
+for required in (
     'handleUpdateProfile uses token userId before mismatched username fallback',
     'handleUpdateProfile treats legacy username payload as display name and keeps identity username stable',
 ):
@@ -93,6 +114,14 @@ for required in (
 ):
     if required not in auth_user_id_test:
         missing.append(f'auth-user-id.test.js missing: {required}')
+
+for required in (
+    'snowflake user ids stay monotonic and within safe integer range',
+    'snowflake user ids roll forward after one-millisecond sequence is exhausted',
+    'snowflake worker id normalization keeps ids deterministic',
+):
+    if required not in database_user_id_test:
+        missing.append(f'database-user-id.test.js missing: {required}')
 
 for required in (
     'PRAGMA defer_foreign_keys = ON;',
