@@ -34,7 +34,7 @@ env:
 
 jobs:
   resolve-cd-context:
-    name: Resolve completed CD context
+    name: Resolve completed CD context and mobile changes
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
@@ -44,6 +44,9 @@ jobs:
       cd_run_id: ${{ steps.source.outputs.cd_run_id }}
       source_sha: ${{ steps.source.outputs.source_sha }}
       release_build_number: ${{ steps.source.outputs.release_build_number }}
+      android_changed: ${{ steps.mobile-changes.outputs.android_changed }}
+      ios_changed: ${{ steps.mobile-changes.outputs.ios_changed }}
+      mobile_changed: ${{ steps.mobile-changes.outputs.mobile_changed }}
     steps:
       - name: Resolve CD run id
         id: cd-run
@@ -101,9 +104,72 @@ jobs:
           echo "Resolved source SHA: $source_sha"
           echo "Resolved mobile build number: $release_build_number"
 
+      - name: Checkout source for change detection
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.source.outputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Detect changed mobile package targets
+        id: mobile-changes
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          changed_files="changed-files.txt"
+          if git rev-parse "$SOURCE_SHA^" >/dev/null 2>&1; then
+            git diff --name-only "$SOURCE_SHA^" "$SOURCE_SHA" > "$changed_files"
+          else
+            git diff-tree --root --no-commit-id --name-only -r "$SOURCE_SHA" > "$changed_files"
+          fi
+
+          android_changed=false
+          ios_changed=false
+
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            case "$path" in
+              fabushi/android/*)
+                android_changed=true
+                ;;
+              fabushi/ios/*)
+                ios_changed=true
+                ;;
+              fabushi/lib/*|fabushi/assets/*|fabushi/fonts/*|fabushi/pubspec.yaml|fabushi/pubspec.lock)
+                android_changed=true
+                ios_changed=true
+                ;;
+            esac
+          done < "$changed_files"
+
+          mobile_changed=false
+          if [ "$android_changed" = "true" ] || [ "$ios_changed" = "true" ]; then
+            mobile_changed=true
+          fi
+
+          {
+            echo "android_changed=$android_changed"
+            echo "ios_changed=$ios_changed"
+            echo "mobile_changed=$mobile_changed"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Mobile package change detection"
+            echo ""
+            echo "- Source SHA: $SOURCE_SHA"
+            echo "- Android package changed: $android_changed"
+            echo "- iOS package changed: $ios_changed"
+            echo ""
+            echo "### Changed files"
+            echo ""
+            sed 's/^/- `/' "$changed_files" | sed 's/$/`/' || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build-android-packages:
     name: Build Android release packages
     needs: resolve-cd-context
+    if: needs.resolve-cd-context.outputs.android_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     defaults:
@@ -169,6 +235,7 @@ jobs:
   build-ios-package:
     name: Build signed iOS IPA
     needs: resolve-cd-context
+    if: needs.resolve-cd-context.outputs.ios_changed == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     defaults:
@@ -265,9 +332,9 @@ jobs:
 
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           security cms -D -i "$profile_path" > "$profile_plist"
-          profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")"
           profile_name="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$profile_plist")"
           team_id="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$profile_plist")"
+          profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")"
           cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
 
           bundle_id="$(grep -m 1 'PRODUCT_BUNDLE_IDENTIFIER = ' ios/Runner.xcodeproj/project.pbxproj | sed -E 's/.*PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/\1/' | tr -d ' ')"
@@ -275,12 +342,6 @@ jobs:
             echo "Could not detect PRODUCT_BUNDLE_IDENTIFIER from ios/Runner.xcodeproj/project.pbxproj" >&2
             exit 1
           fi
-
-          {
-            echo "profile_name=$profile_name"
-            echo "team_id=$team_id"
-            echo "bundle_id=$bundle_id"
-          } >> "$GITHUB_OUTPUT"
 
           cat > ios/ExportOptions.plist <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -312,7 +373,6 @@ jobs:
           PROVISIONING_PROFILE_SPECIFIER=${profile_name}
           EOF
 
-          # Override pbxproj automatic signing for CI release builds
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_IDENTITY = "Apple Development";/CODE_SIGN_IDENTITY = "Apple Distribution";/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";/g' ios/Runner.xcodeproj/project.pbxproj
@@ -363,11 +423,7 @@ jobs:
             exit 1
           fi
 
-          if xcrun altool --upload-app \
-            --type ios \
-            --file "$ipa_path" \
-            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
-            --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"; then
+          if xcrun altool --upload-app --type ios --file "$ipa_path" --apiKey "$APP_STORE_CONNECT_API_KEY_ID" --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"; then
             {
               echo "status=uploaded"
               echo "reason=accepted_by_app_store_connect"
@@ -397,7 +453,7 @@ jobs:
           retention-days: 30
 
   publish-release:
-    name: Publish validated CD packages
+    name: Publish changed mobile packages
     needs:
       - resolve-cd-context
       - build-android-packages
@@ -405,25 +461,21 @@ jobs:
     if: >-
       always() &&
       needs.resolve-cd-context.result == 'success' &&
-      needs.build-android-packages.result == 'success' &&
-      needs.build-ios-package.result == 'success'
+      needs.resolve-cd-context.outputs.mobile_changed == 'true' &&
+      (needs.resolve-cd-context.outputs.android_changed != 'true' || needs.build-android-packages.result == 'success') &&
+      (needs.resolve-cd-context.outputs.ios_changed != 'true' || needs.build-ios-package.result == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Download all CD artifacts
-        uses: actions/download-artifact@v5
-        with:
-          github-token: ${{ github.token }}
-          run-id: ${{ needs.resolve-cd-context.outputs.cd_run_id }}
-          path: downloaded-cd-artifacts
-
       - name: Download Android release packages
+        if: needs.resolve-cd-context.outputs.android_changed == 'true'
         uses: actions/download-artifact@v5
         with:
           name: release-android-packages
           path: built-native-packages/android
 
       - name: Download iOS release packages
+        if: needs.resolve-cd-context.outputs.ios_changed == 'true'
         uses: actions/download-artifact@v5
         with:
           name: release-ios-packages
@@ -447,6 +499,8 @@ jobs:
           RUN_ID: ${{ needs.resolve-cd-context.outputs.cd_run_id }}
           RELEASE_BUILD_NUMBER: ${{ needs.resolve-cd-context.outputs.release_build_number }}
           RELEASE_REPO: ${{ github.repository }}
+          ANDROID_CHANGED: ${{ needs.resolve-cd-context.outputs.android_changed }}
+          IOS_CHANGED: ${{ needs.resolve-cd-context.outputs.ios_changed }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -468,11 +522,11 @@ jobs:
 
           safe_version="$(printf '%s' "$app_version" | tr '+/' '--' | tr -cd '[:alnum:]._-')"
           if [ -z "$safe_version" ] || [ "$safe_version" = "unknown" ]; then
-            tag="cd-$short_sha"
-            title="Fabushi CD $short_sha"
+            tag="cd-mobile-$short_sha"
+            title="Fabushi mobile CD $short_sha"
           else
-            tag="v$safe_version-cd.$short_sha"
-            title="Fabushi $app_version ($short_sha)"
+            tag="v$safe_version-mobile.$short_sha"
+            title="Fabushi mobile $app_version ($short_sha)"
           fi
 
           pr_title=""
@@ -487,36 +541,30 @@ jobs:
           fi
           commit_subject="$(git -C version-metadata show -s --format=%s "$source_sha" 2>/dev/null || true)"
 
-          mkdir -p release-assets
-
-          if compgen -G 'downloaded-cd-artifacts/fabushi-release-*' > /dev/null; then
-            web_zip="release-assets/fabushi-web-${short_sha}.zip"
-            (cd downloaded-cd-artifacts && zip -qr "../$web_zip" fabushi-release-*)
-          fi
+          mkdir -p release-assets built-native-packages
 
           while IFS= read -r file; do
             [ -f "$file" ] || continue
             case "$file" in
-              *.apk|*.aab|*.ipa|*.dmg|*.pkg|*.zip|*.msix|*.appx|*.exe|*.deb|*.rpm|*.AppImage|*.tar.gz|*.tgz)
+              *.apk|*.aab|*.ipa)
                 base="$(basename "$file")"
-                if [ "$base" = "fabushi-web-${short_sha}.zip" ]; then
-                  continue
-                fi
                 safe_base="$(printf '%s' "$base" | tr ' ' '-' | tr -cd '[:alnum:]._+-')"
                 cp "$file" "release-assets/$safe_base"
                 ;;
             esac
-          done < <(find built-native-packages downloaded-cd-artifacts -type f)
+          done < <(find built-native-packages -type f 2>/dev/null)
 
-          for metadata_file in TESTFLIGHT_UPLOAD_STATUS.txt IOS_SIGNING_NOT_CONFIGURED.txt; do
-            if [ -f "built-native-packages/ios/$metadata_file" ]; then
-              cp "built-native-packages/ios/$metadata_file" "release-assets/$metadata_file"
-            fi
-          done
+          if [ "$IOS_CHANGED" = "true" ]; then
+            for metadata_file in TESTFLIGHT_UPLOAD_STATUS.txt IOS_SIGNING_NOT_CONFIGURED.txt; do
+              if [ -f "built-native-packages/ios/$metadata_file" ]; then
+                cp "built-native-packages/ios/$metadata_file" "release-assets/$metadata_file"
+              fi
+            done
+          fi
 
           if [ -z "$(find release-assets -type f -print -quit)" ]; then
-            echo "No release package files were found or built." >&2
-            echo "Expected validated web artifact, Android APK/AAB, iOS IPA, or native package files such as .dmg, .msix, .deb, .rpm, .AppImage, .zip, .tar.gz." >&2
+            echo "No mobile release package files were found or built." >&2
+            echo "Expected Android APK/AAB, iOS IPA, or iOS signing/TestFlight status artifacts." >&2
             exit 1
           fi
 
@@ -537,6 +585,8 @@ jobs:
             echo "- CD workflow run: $RUN_ID"
             echo "- App version: $app_version"
             echo "- Mobile build number: ${RELEASE_BUILD_NUMBER:-unknown}"
+            echo "- Android package changed: $ANDROID_CHANGED"
+            echo "- iOS package changed: $IOS_CHANGED"
             echo ""
             echo "## Included changes"
             echo ""
@@ -555,37 +605,44 @@ jobs:
             echo ""
             find release-assets -maxdepth 1 -type f -printf '- `%f`\n' | sort
             echo ""
-            echo "## iOS distribution"
+            echo "## Platform publishing"
             echo ""
-            if find release-assets -maxdepth 1 -name '*.ipa' -type f | grep -q .; then
-              echo "- Signed iOS IPA is attached."
+            if [ "$ANDROID_CHANGED" = "true" ]; then
+              echo "- Android packages were built and attached."
             else
-              echo "- iOS IPA was skipped because signing secrets are not configured or no IPA was produced."
+              echo "- Android packages were skipped because Android-specific or shared mobile code did not change."
             fi
-            if [ -f release-assets/TESTFLIGHT_UPLOAD_STATUS.txt ]; then
-              tf_status="$(awk -F= '$1 == "status" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
-              tf_reason="$(awk -F= '$1 == "reason" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
-              tf_uploaded_at="$(awk -F= '$1 == "uploaded_at" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
-              tf_build_number="$(awk -F= '$1 == "build_number" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
-              if [ -n "$tf_build_number" ]; then
-                echo "- TestFlight build number: $tf_build_number"
+            if [ "$IOS_CHANGED" = "true" ]; then
+              if find release-assets -maxdepth 1 -name '*.ipa' -type f | grep -q .; then
+                echo "- Signed iOS IPA is attached."
+              else
+                echo "- iOS IPA was not attached because signing secrets are not configured or no IPA was produced."
               fi
-              case "$tf_status" in
-                uploaded)
-                  echo "- TestFlight upload: uploaded${tf_uploaded_at:+ at $tf_uploaded_at}."
-                  ;;
-                skipped)
-                  echo "- TestFlight upload: skipped ($tf_reason)."
-                  ;;
-                failed)
-                  echo "- TestFlight upload: failed ($tf_reason)."
-                  ;;
-                *)
-                  echo "- TestFlight upload: status recorded in TESTFLIGHT_UPLOAD_STATUS.txt."
-                  ;;
-              esac
+              if [ -f release-assets/TESTFLIGHT_UPLOAD_STATUS.txt ]; then
+                tf_status="$(awk -F= '$1 == "status" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
+                tf_reason="$(awk -F= '$1 == "reason" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
+                tf_uploaded_at="$(awk -F= '$1 == "uploaded_at" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
+                tf_build_number="$(awk -F= '$1 == "build_number" { print $2 }' release-assets/TESTFLIGHT_UPLOAD_STATUS.txt)"
+                if [ -n "$tf_build_number" ]; then
+                  echo "- TestFlight build number: $tf_build_number"
+                fi
+                case "$tf_status" in
+                  uploaded)
+                    echo "- TestFlight upload: uploaded${tf_uploaded_at:+ at $tf_uploaded_at}."
+                    ;;
+                  skipped)
+                    echo "- TestFlight upload: skipped ($tf_reason)."
+                    ;;
+                  failed)
+                    echo "- TestFlight upload: failed ($tf_reason)."
+                    ;;
+                  *)
+                    echo "- TestFlight upload: status recorded in TESTFLIGHT_UPLOAD_STATUS.txt."
+                    ;;
+                esac
+              fi
             else
-              echo "- TestFlight upload: no explicit status artifact was generated."
+              echo "- iOS packages were skipped because iOS-specific or shared mobile code did not change."
             fi
             echo ""
             echo "## Integrity"
@@ -631,6 +688,8 @@ jobs:
             echo "- Tag: ${{ steps.release-assets.outputs.tag }}"
             echo "- Source SHA: ${{ steps.release-assets.outputs.source_sha }}"
             echo "- App version: ${{ steps.release-assets.outputs.app_version }}"
+            echo "- Android package changed: ${{ needs.resolve-cd-context.outputs.android_changed }}"
+            echo "- iOS package changed: ${{ needs.resolve-cd-context.outputs.ios_changed }}"
             echo ""
             echo "### Uploaded assets"
             echo ""
@@ -679,13 +738,13 @@ jobs:
                 '### Release gates',
                 '',
                 '- Completed production CD workflow artifact',
-                '- Android APK/AAB build',
-                '- Signed iOS IPA build and optional App Store Connect upload',
+                '- Android package build only when Android-specific or shared mobile code changes',
+                '- iOS package build only when iOS-specific or shared mobile code changes',
                 '- GitHub Release asset preparation and publish',
                 '',
                 '### Source CD context',
                 '',
                 `- CD workflow run ID: ${process.env.CD_RUN_ID || 'unknown'}`,
-                '- This workflow publishes install packages only after the main production CD workflow succeeds.',
+                '- This workflow publishes install packages only after the main production CD workflow succeeds and mobile package inputs changed.',
               ],
             });
