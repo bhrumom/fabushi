@@ -193,17 +193,30 @@ class CoPracticeService {
   }
 
   Future<String?> joinGroup(int groupId) async {
-    final baseUrl = await _baseUrl;
-    final response = await _httpClient.post(
-      Uri.parse('$baseUrl/api/meditation/groups/join'),
-      headers: await _headers(),
-      body: jsonEncode({'groupId': groupId}),
-    );
+    try {
+      final baseUrl = await _baseUrl;
+      final response = await _httpClient.post(
+        Uri.parse('$baseUrl/api/meditation/groups/join'),
+        headers: await _headers(),
+        body: jsonEncode({'groupId': groupId}),
+      );
 
-    if (response.statusCode != 200) return null;
-    final data = _decodeJsonMap(response.body);
-    if (data['success'] != true) return null;
-    return data['data']?['message']?.toString() ?? '已提交';
+      final data = _decodeJsonMap(response.body);
+      if (response.statusCode != 200 || data['success'] != true) {
+        return _extractErrorMessage(
+          data,
+          fallback: _joinFailureFallback(response.statusCode),
+        );
+      }
+
+      final status = data['data']?['status']?.toString();
+      final message = data['data']?['message']?.toString().trim();
+      return message?.isNotEmpty == true
+          ? message!
+          : _joinSuccessFallback(status);
+    } catch (_) {
+      return '申请加入失败，请检查网络后重试';
+    }
   }
 
   Future<CoPracticeGroupDetail?> fetchGroupDetail(int groupId) async {
@@ -266,5 +279,26 @@ class CoPracticeService {
       return message.trim();
     }
     return fallback;
+  }
+
+  String _joinFailureFallback(int statusCode) {
+    if (statusCode == 401 || statusCode == 403) {
+      return '请先登录后再申请加入';
+    }
+    if (statusCode == 404) {
+      return '小组不存在或已被删除';
+    }
+    if (statusCode >= 500) {
+      return '申请加入失败，服务器暂时不可用';
+    }
+    return '申请加入失败，请稍后再试';
+  }
+
+  String _joinSuccessFallback(String? status) {
+    return switch (status) {
+      'pending' => '申请已提交，等待群主审核',
+      'active' => '已加入共修小组',
+      _ => '申请已提交',
+    };
   }
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { brand } from "@fabushi/shared";
+import { brand, contactChannels } from "@fabushi/shared";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import {
@@ -45,6 +45,59 @@ const releasePrinciples = [
     summary: "更强调稳定性和人工确认，不会因为有构建产物就立刻公开挂出。",
     bullets: ["必须经过人工验收后才会发布", "更适合第一次安装或对稳定性更敏感的人", "官网只展示已经确认可公开分发的入口"],
   },
+] as const;
+
+const platformFitGuidance = [
+  {
+    title: "Android Beta",
+    bestFor: "想最快跟上最新版本、愿意更早反馈问题的人。",
+    description: "如果你更在意尽快体验最新公开交付，而不是等到人工验收全部完成，Android beta 通常会是最先更新的入口。",
+  },
+  {
+    title: "iOS TestFlight",
+    bestFor: "已经明确想参与 iOS 内测，并愿意接受名额、审核和链接状态波动的人。",
+    description: "它更适合已经确认要深入体验完整主应用流程的用户，而不是只想随手点开看看的首次访问者。",
+  },
+  {
+    title: "正式版入口",
+    bestFor: "更希望先看人工验收结果、尽量减少安装后波动的人。",
+    description: "如果你主要想确认现在有没有相对稳定、可转发、可复用的下载入口，先等正式版通常比直接进入 beta 更合适。",
+  },
+] as const;
+
+const entryGuardrails = [
+  {
+    label: "可以直接进入测试版",
+    title: "你更适合先体验最新公开进度，而不是等到所有事情都变稳定。",
+    description:
+      "如果你符合这些条件，先进入 Beta 通常更有效，因为官网已经在帮你同步状态、版本和镜像说明。",
+    bullets: [
+      "你愿意更早体验版本更新，也愿意接受偶发波动和更频繁的变更。",
+      "你有明确的设备、平台和关注模块，准备在体验后给出反馈。",
+      "你更在意尽快参与当前进度，而不是把它当成一个马上就要推荐给更多人的稳定入口。",
+    ],
+    href: "/download#beta-channels",
+    ctaLabel: "直接看 Beta 入口",
+  },
+  {
+    label: "先别急着点测试版",
+    title: "你更适合先等正式版，或者先通过申请与 FAQ 把路径判断清楚。",
+    description:
+      "如果你更符合这些情况，先理解边界和阶段，会比直接进入测试版更省时间，也更不容易产生预期落差。",
+    bullets: [
+      "你现在只接受稳定、可复用、适合转发的正式下载入口。",
+      "你还没决定自己是来下载、申请资格、反馈问题，还是只想先了解项目。",
+      "你不打算承担 beta 节奏，也不希望遇到需要镜像、资格或后续沟通才能解决的安装问题。",
+    ],
+    href: "/apply",
+    ctaLabel: "先去申请或了解",
+  },
+] as const;
+
+const preInstallChecklist = [
+  "你现在更想优先体验最新改动，还是更想降低安装后的波动与反复更新。",
+  "你是否已经看过对应入口旁边的版本、更新时间和更新摘要，而不是只看按钮名称。",
+  "如果你准备反馈问题或申请资格，是否已经知道该走下载、申请测试还是联系支持这三条不同路径。",
 ] as const;
 
 const downloadFaqs = [
@@ -159,6 +212,8 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
 
 export default async function DownloadPage() {
   const releaseCollection = await getOfficialSiteReleaseCollection();
+  const allChannels = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels];
+  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
 
   const structuredData = {
     "@context": "https://schema.org",
@@ -176,6 +231,28 @@ export default async function DownloadPage() {
         url: downloadUrl,
         description: downloadDescription,
         inLanguage: "zh-CN",
+        mainEntity: {
+          "@type": "ItemList",
+          itemListElement: allChannels.map((channel, index) => ({
+            "@type": "ListItem",
+            position: index + 1,
+            item: {
+              "@type": "SoftwareApplication",
+              name: channel.title,
+              operatingSystem: channel.platform,
+              description: channel.description,
+              url: downloadUrl,
+              downloadUrl: siteHref(channel.primaryHref),
+              applicationCategory: channel.audience === "stable" ? "ProductivityApplication" : "BetaSoftwareApplication",
+            },
+          })),
+        },
+      },
+      {
+        "@type": "Organization",
+        name: `${brand.name} Fabushi`,
+        url: siteUrl("/"),
+        email: supportEmail,
       },
       {
         "@type": "FAQPage",
@@ -252,7 +329,31 @@ export default async function DownloadPage() {
         </div>
       </section>
 
-      <section className="band">
+      <section className="band" id="download-fit">
+        <div className="section-heading">
+          <p>适合谁先下</p>
+          <h2>下载页也应该先帮你排除不合适的路径，而不是默认每个人都该先点测试版。</h2>
+        </div>
+        <div className="compare-grid">
+          {entryGuardrails.map((item) => (
+            <article key={item.label} className="compare-card">
+              <span className="detail-label">{item.label}</span>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <ul className="compare-list">
+                {item.bullets.map((entry) => (
+                  <li key={entry}>{entry}</li>
+                ))}
+              </ul>
+              <a className="path-link" href={siteHref(item.href)}>
+                {item.ctaLabel}
+              </a>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band" id="beta-channels">
         <div className="section-heading">
           <p>Beta 渠道</p>
           <h2>安装包发布完成后，这里的测试入口会自动跟上最新一轮交付结果。</h2>
@@ -264,7 +365,7 @@ export default async function DownloadPage() {
         </div>
       </section>
 
-      <section className="band alt">
+      <section className="band alt" id="stable-channels">
         <div className="section-heading">
           <p>正式版</p>
           <h2>正式版入口只在人工验收通过后，由手动 GitHub Action 发布到官网。</h2>
@@ -274,6 +375,34 @@ export default async function DownloadPage() {
             <ReleaseChannelCard key={`${channel.audience}-${channel.platform}`} channel={channel} />
           ))}
         </div>
+      </section>
+
+      <section className="band">
+        <div className="section-heading">
+          <p>平台适配</p>
+          <h2>如果你是在比较 Android Beta、iOS TestFlight 和正式版，先按你的使用阶段来选。</h2>
+        </div>
+        <div className="definition-grid">
+          {platformFitGuidance.map((item) => (
+            <article key={item.title} className="definition-card">
+              <h3>{item.title}</h3>
+              <p><strong>更适合谁：</strong>{item.bestFor}</p>
+              <p>{item.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt">
+        <div className="section-heading">
+          <p>安装前确认</p>
+          <h2>真正点下载前，先确认这三件事，能少走很多回头路。</h2>
+        </div>
+        <ol className="roadmap-list">
+          {preInstallChecklist.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ol>
       </section>
 
       <section className="band">
