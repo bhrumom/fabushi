@@ -112,6 +112,7 @@ for forbidden in (
     'PRAGMA foreign_keys = OFF;',
     'DROP TABLE users;',
     'ALTER TABLE users__id_migration RENAME TO users;',
+    'binding.id,',
 ):
     if forbidden in identity_migration:
         missing.append(f'identity migration should not contain: {forbidden}')
