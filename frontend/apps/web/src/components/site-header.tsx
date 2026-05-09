@@ -1,6 +1,10 @@
 import { primaryNavigation } from "@fabushi/shared";
 import { siteHref } from "../lib/site-url";
 
+const compactNavigation = primaryNavigation.filter((item) =>
+  ["/download", "/faq", "/contact", "/insights"].includes(item.href),
+);
+
 export function SiteHeader() {
   return (
     <nav className="site-nav" aria-label="主导航">
@@ -10,7 +14,7 @@ export function SiteHeader() {
       </a>
       <div className="site-nav-cluster">
         <div className="site-nav-links">
-          {primaryNavigation.map((item) => (
+          {compactNavigation.map((item) => (
             <a key={item.href} href={siteHref(item.href)}>
               {item.label}
             </a>
