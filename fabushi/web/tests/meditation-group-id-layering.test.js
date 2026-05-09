@@ -96,7 +96,7 @@ test('creating meditation group uses snowflake internal id and random external g
     },
     body: JSON.stringify({
       name: '昨修小绔',
-      description: '日每共修,
+      description: '日每共修',
       dailyGoalMinutes: 30,
       cumulativeMissLimit: 7,
       consecutiveMissLimit: 3,
