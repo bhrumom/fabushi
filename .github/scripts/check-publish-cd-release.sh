@@ -124,15 +124,27 @@ for required in (
         missing.append(f'database-user-id.test.js missing: {required}')
 
 for required in (
-    'CREATE TABLE users__id_migration',
-    'rowid,',
-    'CREATE TABLE email_username_mapping__user_id_migration',
-    'CREATE TABLE alipay_bindings__user_id_migration',
+    'PRAGMA defer_foreign_keys = ON;',
+    'ALTER TABLE email_username_mapping RENAME TO email_username_mapping__legacy;',
+    'ALTER TABLE alipay_bindings RENAME TO alipay_bindings__legacy;',
+    'ALTER TABLE users RENAME TO users__legacy;',
+    'DROP TABLE users__legacy;',
+    'CREATE TABLE email_username_mapping (',
+    'CREATE TABLE alipay_bindings (',
     'idx_email_username_mapping_user_id',
     'idx_alipay_bindings_user_id',
 ):
     if required not in identity_migration:
         missing.append(f'identity migration missing: {required}')
+
+for forbidden in (
+    'PRAGMA foreign_keys = OFF;',
+    'DROP TABLE users;',
+    'ALTER TABLE users__id_migration RENAME TO users;',
+    'binding.id,',
+):
+    if forbidden in identity_migration:
+        missing.append(f'identity migration should not contain: {forbidden}')
 
 for required in (
     'ALTER TABLE users ADD COLUMN stripe_customer_id TEXT',
