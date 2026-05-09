@@ -56,30 +56,6 @@ class CoPracticeGroupSearchResult {
       errorMessage != null && errorMessage!.trim().isNotEmpty;
 }
 
-class CoPracticeGroupJoinResult {
-  final bool isSuccess;
-  final String message;
-  final String? status;
-  final int? statusCode;
-
-  const CoPracticeGroupJoinResult._({
-    required this.isSuccess,
-    required this.message,
-    this.status,
-    this.statusCode,
-  });
-
-  const CoPracticeGroupJoinResult.success({
-    required String message,
-    String? status,
-  }) : this._(isSuccess: true, message: message, status: status);
-
-  const CoPracticeGroupJoinResult.failure(
-    String message, {
-    int? statusCode,
-  }) : this._(isSuccess: false, message: message, statusCode: statusCode);
-}
-
 class CoPracticeService {
   static final CoPracticeService _instance = CoPracticeService._internal();
   factory CoPracticeService({
@@ -216,7 +192,7 @@ class CoPracticeService {
     }
   }
 
-  Future<CoPracticeGroupJoinResult> joinGroup(int groupId) async {
+  Future<String?> joinGroup(int groupId) async {
     try {
       final baseUrl = await _baseUrl;
       final response = await _httpClient.post(
@@ -227,27 +203,19 @@ class CoPracticeService {
 
       final data = _decodeJsonMap(response.body);
       if (response.statusCode != 200 || data['success'] != true) {
-        return CoPracticeGroupJoinResult.failure(
-          _extractErrorMessage(
-            data,
-            fallback: _joinFailureFallback(response.statusCode),
-          ),
-          statusCode: response.statusCode,
+        return _extractErrorMessage(
+          data,
+          fallback: _joinFailureFallback(response.statusCode),
         );
       }
 
       final status = data['data']?['status']?.toString();
       final message = data['data']?['message']?.toString().trim();
-      return CoPracticeGroupJoinResult.success(
-        status: status,
-        message: message?.isNotEmpty == true
-            ? message!
-            : _joinSuccessFallback(status),
-      );
+      return message?.isNotEmpty == true
+          ? message!
+          : _joinSuccessFallback(status);
     } catch (_) {
-      return const CoPracticeGroupJoinResult.failure(
-        '申请加入失败，请检查网络后重试',
-      );
+      return '申请加入失败，请检查网络后重试';
     }
   }
 
