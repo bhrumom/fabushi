@@ -1,15 +1,110 @@
 export const homeHighlights = [
   {
-    title: "传播佛法",
-    description: "上传、分享、回向，让善意被看见。",
+    title: "传播入口更清楚",
+    description: "把项目定位、下载状态、申请测试和内容入口收拢到同一官网里，减少用户第一次接触时的理解成本。",
   },
   {
-    title: "记录修行",
-    description: "公开或私密记录，保留自己的节奏。",
+    title: "修行记录更有边界",
+    description: "同时照顾公开传播、个人修行记录与隐私控制，让分享、回向与安静练习可以并存。",
   },
   {
-    title: "找到同行者",
-    description: "通过关注、榜单和共修关系连接彼此。",
+    title: "多端协作不再割裂",
+    description: "官网负责理解与转化，小程序负责轻触达，主应用负责完整体验，三者围绕同一套品牌与发布节奏协同工作。",
+  },
+] as const;
+
+export const homeTrustSignals = [
+  {
+    title: "平台分工清晰",
+    summary: "官网负责解释与引导，小程序负责轻触达，主应用负责完整体验。",
+    description:
+      "用户第一次进入时就能知道该从哪里了解产品、从哪里申请测试、从哪里进入更深度的使用流程，减少入口混乱和跳失。",
+  },
+  {
+    title: "发布状态可见",
+    summary: "下载页会直接承接 beta 安装包、TestFlight 状态和正式版发布说明。",
+    description:
+      "官网不再只是静态等待名单，而是开始连接真实发布链路，让用户、合作方和搜索引擎都能看到当前可获得的入口。",
+  },
+  {
+    title: "内容能够持续累积",
+    summary: "除了首页，官网还承接路线、专题内容、更新说明和 FAQ。",
+    description:
+      "这让站点既能做品牌入口，也能沉淀长期可搜索、可引用、可分享的内容资产，而不是一页式说明页。",
+  },
+] as const;
+
+export const homeUseCases = [
+  {
+    audience: "新用户",
+    title: "先理解产品，再决定从哪个入口进入。",
+    description: "官网优先解释 Fabushi 是什么、适合谁、当前能做什么，以及 iOS、Android、微信小程序分别是什么状态。",
+  },
+  {
+    audience: "内测申请者",
+    title: "快速找到申请路径、下载状态和反馈方式。",
+    description: "把等待名单、测试资格、安装包说明和反馈邮箱放在一条清晰路径里，减少用户往返询问。",
+  },
+  {
+    audience: "合作与渠道方",
+    title: "更快判断项目方向、公开能力和可合作的切入点。",
+    description: "官网把产品定位、公开协作方式、内容专栏和联系入口整理清楚，方便外部伙伴快速完成判断。",
+  },
+  {
+    audience: "生成式搜索与搜索引擎",
+    title: "更容易准确理解 Fabushi 的平台结构和价值主张。",
+    description: "定义、场景、FAQ、内容专栏和可见发布状态会一起组成更容易被引用和总结的站点语义结构。",
+  },
+] as const;
+
+export const homeActionPaths = [
+  {
+    label: "第一次了解",
+    title: "先快速看懂 Fabushi 是什么，以及官网为什么这样组织。",
+    description: "如果你是第一次来到这里，先看 FAQ 和首页结构说明，判断这是不是你要找的产品方向。",
+    href: "/faq",
+    ctaLabel: "先看常见问题",
+  },
+  {
+    label: "准备进入",
+    title: "先确认当前是否有可公开下载或可申请的测试入口。",
+    description: "下载页会持续承接 Android beta、iOS TestFlight 和正式版的公开状态，避免用户在错误页面里兜圈。",
+    href: "/download",
+    ctaLabel: "查看下载状态",
+  },
+  {
+    label: "准备沟通",
+    title: "想申请测试、反馈问题或讨论合作时，直接进入正确通道。",
+    description: "把申请测试、支持反馈和合作询问拆成明确入口，能减少很多没有上下文的来回邮件。",
+    href: "/apply",
+    ctaLabel: "进入申请通道",
+  },
+] as const;
+
+export const homeChannelRoles = [
+  {
+    channel: "官网",
+    title: "先负责解释方向、建立信任、给出下载与沟通入口。",
+    description: "适合第一次接触 Fabushi、想先判断项目定位、想看下载状态，或需要专题内容和 FAQ 的访问者。",
+    bestFor: ["首页与 FAQ 快速理解", "查看下载状态与发布说明", "进入申请测试或合作沟通"],
+    href: "/",
+    ctaLabel: "继续浏览官网",
+  },
+  {
+    channel: "微信小程序",
+    title: "优先承接微信生态里的轻触达、轻浏览与公开信息分发。",
+    description: "适合想在微信里快速查看榜单、公开档案与轻量内容入口的人，不强求先进入完整主应用。",
+    bestFor: ["微信内轻触达", "公开档案与榜单浏览", "低门槛内容传播入口"],
+    href: "/insights/wechat-mini-program-phase-one",
+    ctaLabel: "查看小程序路线",
+  },
+  {
+    channel: "主应用",
+    title: "继续承接更完整的修行记录、上传分享、互动与沉浸式体验。",
+    description: "适合已经确定要深入使用 Fabushi、愿意参与测试，或需要完整个人流程与重交互能力的用户。",
+    bestFor: ["更完整的个人使用流程", "上传与互动等重交互场景", "参与 iOS / Android 内测"],
+    href: "/download",
+    ctaLabel: "查看主应用入口",
   },
 ] as const;
 
@@ -17,79 +112,95 @@ export const primaryNavigation = [
   { label: "首页", href: "/" },
   { label: "下载", href: "/download" },
   { label: "申请测试", href: "/apply" },
-  { label: "FAQ", href: "/faq" },
+  { label: "常见问题", href: "/faq" },
   { label: "联系", href: "/contact" },
   { label: "核心能力", href: "/#capabilities" },
-  { label: "内容", href: "/insights" },
+  { label: "内容专栏", href: "/insights" },
 ] as const;
 
 export const launchRoadmap = [
-  "官网先承接介绍、下载、FAQ 和活动入口。",
-  "微信小程序优先做轻浏览、榜单和公开档案。",
-  "Flutter 主应用继续承接完整体验。",
+  "先把官网做成稳定的公开入口，集中承接项目介绍、下载状态、FAQ、内容更新和联系路径。",
+  "同步推进微信小程序首期版本，优先覆盖轻浏览、榜单、公开档案和基础登录等轻场景触达能力。",
+  "继续把更完整的上传、沉浸式浏览、个人中心和重交互流程保留在 Flutter 主应用里。",
 ] as const;
 
 export const downloadOptions = [
   {
     platform: "iOS",
     status: "内测准备中",
-    description: "完整主应用体验，开放后通过 TestFlight 参与。",
+    description: "保留沉浸式内容浏览、上传分享、完整个人中心和重交互流程。",
     ctaLabel: "加入 iOS 等待名单",
     ctaHref: "mailto:support@fabushi.com?subject=Fabushi%20iOS%20TestFlight",
   },
   {
     platform: "Android",
     status: "封闭测试中",
-    description: "优先体验传播、榜单、档案与上传流程。",
+    description: "优先承接传播、榜单、公开档案与上传相关的完整主应用体验。",
     ctaLabel: "加入 Android 等待名单",
     ctaHref: "mailto:support@fabushi.com?subject=Fabushi%20Android%20Beta",
   },
   {
     platform: "微信小程序",
-    status: "规划中",
-    description: "轻浏览、榜单和微信生态触达。",
+    status: "首期规划中",
+    description: "聚焦轻浏览、榜单、公开档案和微信生态内的便捷触达。",
     ctaLabel: "查看小程序路线",
     ctaHref: "/insights/wechat-mini-program-phase-one",
   },
   {
     platform: "Web 官网",
-    status: "建设中",
-    description: "品牌说明、下载引导、FAQ 与专题内容。",
+    status: "本轮建设中",
+    description: "负责品牌说明、下载引导、FAQ、专题内容与活动落地页。",
     ctaLabel: "浏览官网路线",
     ctaHref: "/insights/official-site-structure",
   },
 ] as const;
 
 export const downloadStatusNotes = [
-  "当前还没有可公开挂出的 App Store、TestFlight 或 APK 正式直链。",
-  "官网先展示真实状态和等待名单入口。",
-  "正式链接可公开后，直接替换对应入口。",
+  "官网现在会直接承接 Android beta、iOS TestFlight 和正式版发布状态，不再只是一个泛泛的等待名单页面。",
+  "当正式下载链接尚未公开时，页面会优先说明状态、适用人群和下一步动作，避免用户点进来却找不到判断依据。",
+  "一旦正式下载链接可公开，优先替换对应入口即可，不需要重新改整页结构。",
 ] as const;
 
 export const faqItems = [
   {
-    question: "官网、微信小程序和主应用分别做什么？",
+    question: "法布施 Fabushi 是什么？",
     answer:
-      "官网负责介绍、下载、FAQ 和内容；微信小程序负责轻触达；主应用承接完整体验。",
+      "Fabushi 是一个围绕佛法传播、修行记录、善意分享与社群连接组织起来的多端产品入口。官网负责解释与引导，小程序负责轻触达，主应用负责完整体验。",
   },
   {
-    question: "为什么不直接用 Flutter Web 做官网？",
+    question: "官网、微信小程序和 Flutter 主应用分别承担什么角色？",
     answer:
-      "官网更需要 SEO、内容结构和首屏速度，所以使用 Next.js。",
+      "官网负责品牌说明、下载入口、FAQ、发布说明和内容运营；微信小程序负责微信生态里的轻浏览与轻交互；Flutter 主应用继续承接更完整的沉浸式体验和重交互流程。",
   },
   {
-    question: "官网和小程序会不会分裂？",
+    question: "Fabushi 现在可以下载吗？",
     answer:
-      "不会。前端会共享 API、类型、品牌文案和部分业务逻辑。",
+      "可以先通过官网查看 Android beta、iOS TestFlight 与正式版的当前状态。可公开下载时，官网会直接给出入口；暂未公开时，会明确说明申请测试或等待下一步发布的方式。",
   },
   {
-    question: "小程序首期会上什么？",
-    answer: "轻浏览、榜单、公开档案和基础登录。",
+    question: "为什么不直接用 Flutter Web 同时做官网和小程序？",
+    answer:
+      "官网需要更清晰的 SEO、内容结构、首屏表达和发布信息管理，小程序也有自己的运行规范。拆成 Next.js 官网和 Taro 小程序，可以减少后续返工，同时继续复用现有后端与业务层。",
   },
   {
-    question: "为什么下载页不只是等待名单？",
+    question: "Fabushi 适合哪些人先关注？",
     answer:
-      "下载页会逐步接入 Android beta、TestFlight 状态和正式版信息。",
+      "适合正在做佛法内容传播、需要安静记录修行、希望与共修同行者建立连接，或者想参与传播合作与渠道联动的人。官网会优先帮助这些人快速判断自己该走哪条入口。",
+  },
+  {
+    question: "为什么下载页现在不再只是等待名单入口？",
+    answer:
+      "因为官网已经开始直接读取 GitHub Release 的 Android beta 安装包、TestFlight 上传状态，以及人工验收后发布的正式版信息。这样下载页会跟着发布链路一起更新，而不是只靠手工改文案。",
+  },
+  {
+    question: "Fabushi 会怎么处理测试申请、下载反馈和联系信息？",
+    answer:
+      "官网会优先把支持邮箱、隐私说明、申请测试和联系页串起来。你主动提交的邮箱、设备信息和问题说明，主要用于资格判断、下载沟通、问题排查和后续支持，而不是为了无关营销扩大收集范围。",
+  },
+  {
+    question: "如果我现在还不准备下载，官网还有什么价值？",
+    answer:
+      "有。官网除了下载入口，还负责解释产品定位、整理 FAQ、同步发布状态、沉淀内容专栏与专题说明。即使暂时不下载，你也可以先通过这些页面判断 Fabushi 是否值得继续关注。",
   },
 ] as const;
 
@@ -98,30 +209,30 @@ export const contactChannels = [
     label: "支持邮箱",
     value: "support@fabushi.com",
     href: "mailto:support@fabushi.com",
-    note: "测试申请、问题反馈、合作沟通。",
+    note: "测试申请、下载问题、反馈收集和合作沟通统一从这里进入，避免入口分散。",
   },
   {
     label: "官网域名",
     value: "fabushi.ombhrum.com",
     href: "https://fabushi.ombhrum.com",
-    note: "官网和正式下载入口。",
+    note: "长期对外入口会统一收拢到官网，便于承接下载、FAQ、专题内容和活动页面。",
   },
   {
     label: "GitHub 仓库",
     value: "bhrumom/fabushi",
     href: "https://github.com/bhrumom/fabushi",
-    note: "查看进展、提交 issue。",
+    note: "适合查看公开开发记录、发布资产、issue 反馈与持续迭代进展。",
   },
 ] as const;
 
 export const betaApplicationTracks = [
   {
     name: "iOS TestFlight",
-    summary: "适合优先体验完整主应用流程的用户。",
+    summary: "适合想优先体验完整主应用流程，并愿意接受内测节奏的用户。",
     checklist: [
-      "留下常用邮箱",
-      "说明关注内容传播、修行记录还是社交发现",
-      "说明是否愿意反馈问题",
+      "附上你的常用邮箱",
+      "说明你更关注内容传播、修行记录还是社交发现",
+      "写明你是否愿意反馈 bug 和体验问题",
     ],
     ctaLabel: "申请 iOS 内测",
     ctaHref:
@@ -129,11 +240,11 @@ export const betaApplicationTracks = [
   },
   {
     name: "Android Beta",
-    summary: "适合优先体验 Android 主流程的用户。",
+    summary: "适合想尽快体验传播、榜单、公开档案和上传相关完整主流程的用户。",
     checklist: [
-      "留下常用邮箱",
-      "说明 Android 机型或系统版本",
-      "说明最想体验的模块",
+      "附上你的常用邮箱",
+      "说明你的 Android 机型或系统版本",
+      "写明你最想优先体验哪个模块",
     ],
     ctaLabel: "申请 Android 内测",
     ctaHref:
@@ -141,11 +252,11 @@ export const betaApplicationTracks = [
   },
   {
     name: "合作与渠道",
-    summary: "适合讨论内容、渠道或活动合作。",
+    summary: "适合想讨论传播合作、内容共建、渠道联动或活动承接的人。",
     checklist: [
-      "留下姓名或组织名称",
-      "说明合作方向",
-      "留下回联方式",
+      "附上你的姓名或组织名称",
+      "说明合作方向或渠道资源",
+      "留下可回联的邮箱或微信说明",
     ],
     ctaLabel: "发起合作沟通",
     ctaHref:
