@@ -10,6 +10,10 @@ node_modules/
 .env
 .env.local
 
+# Next.js frontend build artifacts
+frontend/apps/web/.next/
+frontend/apps/web/out/
+
 # Flutter/Dart 相关
 .dart_tool/
 .packages

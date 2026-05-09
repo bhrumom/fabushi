@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { brand } from "@fabushi/shared";
 import { siteUrl } from "../lib/site-url";
 import "./globals.css";
-import "./screenshot-hero.css";
 
 const homeUrl = siteUrl("/");
 const siteTitle = `${brand.name} Fabushi | 佛法传播、修行记录与共修连接平台`;
