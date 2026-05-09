@@ -43,7 +43,7 @@ export class AccountUserRepository extends BaseAccountUserRepository {
       return await storage.transaction(async () => await action());
     }
 
-    // Cloudflare D1 / Durable Object SQLite rejects explicit SQL BEGIN/COMMIT
+    // Cloudflare storage may reject explicit SQL transaction-control
     // statements. When a JavaScript transaction API is unavailable, keep the
     // deletion flow idempotent and run the cleanup directly instead of failing
     // before the first DELETE.
