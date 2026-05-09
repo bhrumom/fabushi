@@ -86,7 +86,7 @@ function createGroupDbMock() {
   };
 }
 
-test('creating meditation group uses snowflake internal id and random external groupNo', async () => {
+test('creating meditation group uses snowflake internal id and short external groupNo', async () => {
   const db = createGroupDbMock();
   const request = new Request('https://example.com/api/meditation/groups', {
     method: 'POST',
@@ -116,7 +116,7 @@ test('creating meditation group uses snowflake internal id and random external g
 
   assert.equal(payload.success, true);
   assert.equal(Number.isSafeInteger(payload.data.groupId), true);
-  assert.match(String(payload.data.groupNo), /^\d{8}$/);
+  assert.match(String(payload.data.groupNo), /^\d{5}$/);
   assert.notEqual(payload.data.groupId, payload.data.groupNo);
   assert.equal(db.state.groups[0].id, payload.data.groupId);
   assert.equal(db.state.groups[0].group_no, payload.data.groupNo);
