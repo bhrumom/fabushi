@@ -2,7 +2,7 @@ import { primaryNavigation } from "@fabushi/shared";
 import { siteHref } from "../lib/site-url";
 
 const compactNavigation = primaryNavigation.filter((item) =>
-  ["/download", "/faq", "/contact", "/insights"].includes(item.href),
+  ["/download", "/apply", "/faq", "/contact"].includes(item.href),
 );
 
 export function SiteHeader() {
@@ -20,8 +20,8 @@ export function SiteHeader() {
             </a>
           ))}
         </div>
-        <a className="nav-action" href={siteHref("/download")}>
-          下载入口
+        <a className="nav-action" href={siteHref("/apply")}>
+          申请测试
         </a>
       </div>
     </nav>

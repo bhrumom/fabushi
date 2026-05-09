@@ -740,6 +740,95 @@ a {
   font-weight: 700;
 }
 
+.home-shell .hero,
+.home-shell .band {
+  padding-bottom: clamp(64px, 9vw, 112px);
+}
+
+.home-shell .hero {
+  min-height: auto;
+  gap: 28px;
+}
+
+.home-shell .hero-stage,
+.home-shell .band > .section-heading,
+.home-shell .editorial-feature-grid,
+.home-shell .platform-list,
+.home-shell .faq-shell,
+.home-shell .cta-panel {
+  width: min(100%, 1160px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.home-shell .hero-copy {
+  padding-top: clamp(64px, 9vw, 112px);
+  padding-bottom: clamp(32px, 6vw, 72px);
+}
+
+.home-shell .hero-copy h1 {
+  max-width: 8ch;
+  font-size: clamp(4rem, 10vw, 7.8rem);
+}
+
+.home-shell .lede {
+  max-width: 31rem;
+  color: var(--muted-strong);
+  font-size: clamp(1.08rem, 1.6vw, 1.24rem);
+}
+
+.home-shell .hero-actions {
+  margin-top: 28px;
+}
+
+.home-shell .primary-action,
+.home-shell .secondary-action,
+.home-shell .nav-action {
+  border-radius: 999px;
+}
+
+.home-shell .hero-visual {
+  min-height: 460px;
+}
+
+.home-shell .hero-console {
+  width: min(100%, 420px);
+  border-radius: 32px;
+}
+
+.home-shell .hero-console-line {
+  grid-template-columns: 48px minmax(0, 1fr);
+}
+
+.home-shell .section-heading {
+  margin-bottom: 24px;
+}
+
+.home-shell .section-heading h2,
+.home-shell .cta-panel h2 {
+  max-width: 12ch;
+}
+
+.home-shell .editorial-feature-grid {
+  gap: clamp(18px, 3vw, 36px);
+}
+
+.home-shell .feature-column p,
+.home-shell .platform-row p,
+.home-shell .contact-card p,
+.home-shell .faq-item p {
+  max-width: 34rem;
+}
+
+.home-shell .platform-row.refined {
+  padding: 26px 0;
+}
+
+.home-shell .cta-panel {
+  padding: clamp(28px, 5vw, 48px);
+  border-radius: 32px;
+}
+
 @keyframes slowPulse {
   0%,
   100% {
@@ -774,6 +863,10 @@ a {
 
   .hero-visual {
     min-height: 420px;
+  }
+
+  .home-shell .hero-copy h1 {
+    max-width: 10ch;
   }
 }
 
@@ -818,5 +911,18 @@ a {
   .statement-card,
   .contact-card.minimal {
     min-height: auto;
+  }
+
+  .home-shell .hero-copy {
+    padding-top: 42px;
+  }
+
+  .home-shell .hero-copy h1 {
+    max-width: none;
+    font-size: clamp(3.3rem, 16vw, 4.9rem);
+  }
+
+  .home-shell .hero-visual {
+    min-height: 360px;
   }
 }
