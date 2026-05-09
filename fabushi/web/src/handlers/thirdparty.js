@@ -1,5 +1,7 @@
 import { jsonResponse } from '../utils/response.js';
-import { verifyToken, generateToken } from '../../auth-utils.js';
+import { AccountUserRepository } from '../repositories/account-user-repository.js';
+import { asApiError } from '../contracts/api-error.js';
+import { bindEmailFromRequest } from '../use-cases/bind-email.js';
 
 // 微信登录URL
 export async function handleGetWechatLoginUrl(request, env) {
@@ -45,36 +47,15 @@ export async function handleAlipayRegister(request, env) {
 
 // 绑定邮箱
 export async function handleBindEmail(request, env, db) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return jsonResponse({ error: '未提供认证信息' }, 401);
+  const repository = new AccountUserRepository(db);
+
+  try {
+    const payload = await bindEmailFromRequest(request, env, repository);
+    return jsonResponse(payload);
+  } catch (error) {
+    const apiError = asApiError(error, '邮箱绑定失败');
+    return jsonResponse({ error: apiError.message }, apiError.status);
   }
-
-  const token = authHeader.substring(7);
-  const tokenData = await verifyToken(token, env);
-  if (!tokenData) return jsonResponse({ error: '认证失败' }, 401);
-
-  const { email, verificationCode } = await request.json();
-  if (!email || !verificationCode) {
-    return jsonResponse({ error: '邮箱与验证码不能为空' }, 400);
-  }
-
-  const normalizedEmail = email.toLowerCase();
-  const verifyData = await env.USERS_KV.get(`verify:${normalizedEmail}`);
-  if (!verifyData) return jsonResponse({ error: '验证码不存在或已过期' }, 400);
-
-  const { code, expiry } = JSON.parse(verifyData);
-  if (Date.now() > expiry || verificationCode !== code) {
-    return jsonResponse({ error: '验证码错误或已过期' }, 400);
-  }
-
-  const existing = await db.getUserByEmail(normalizedEmail);
-  if (existing) return jsonResponse({ error: '该邮箱已被其他账号绑定' }, 400);
-
-  await db.updateUser(tokenData.username, { email: normalizedEmail, email_verified: 1 });
-  await env.USERS_KV.delete(`verify:${normalizedEmail}`);
-
-  return jsonResponse({ message: '邮箱绑定成功', email: normalizedEmail });
 }
 
 // 获取支付宝SDK授权字符串

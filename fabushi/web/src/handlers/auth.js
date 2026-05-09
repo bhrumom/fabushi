@@ -3,11 +3,21 @@ import { createPasswordHash, generateToken, verifyToken } from '../../auth-utils
 import { calculateTrialEndDate } from '../../stripe-config.js';
 import { handlePasswordLogin as handleLogin } from './password-login.js';
 import { handleUpdateProfile, handleUploadAvatar } from './profile.js';
+import { AccountUserRepository } from '../repositories/account-user-command-repository.js';
+import { asApiError } from '../contracts/api-error.js';
+import { registerAccountCommand } from '../use-cases/account-registration.js';
+import { getAuthenticatedUserInfo } from '../use-cases/authenticated-user.js';
+import { deleteAccountCommand } from '../use-cases/delete-account.js';
 
 export { handleLogin, handleUpdateProfile, handleUploadAvatar };
 
 function serializeUser(user) {
+  const userNo = user.user_no ?? user.id ?? null;
+
   return {
+    id: user.id,
+    userId: user.id,
+    userNo,
     username: user.username,
     email: user.email || '',
     nickname: user.nickname || user.username,
@@ -32,148 +42,41 @@ function serializeUser(user) {
   };
 }
 
-async function safeRun(db, sql, ...params) {
-  try {
-    await db.prepare(sql).bind(...params).run();
-  } catch (error) {
-    console.warn('账户删除引用清理跳过:', error?.message || error);
+async function resolveAuthenticatedUser(db, tokenData) {
+  if (tokenData?.userId !== undefined && tokenData?.userId !== null && db.getUserById) {
+    const user = await db.getUserById(tokenData.userId);
+    if (user) return user;
   }
-}
-
-async function runInTransaction(db, action) {
-  await db.prepare('BEGIN TRANSACTION').run();
-  try {
-    const result = await action();
-    await db.prepare('COMMIT').run();
-    return result;
-  } catch (error) {
-    try {
-      await db.prepare('ROLLBACK').run();
-    } catch (rollbackError) {
-      console.warn('账户删除事务回滚失败:', rollbackError?.message || rollbackError);
-    }
-    throw error;
+  if (tokenData?.username) {
+    return await db.getUser(tokenData.username);
   }
-}
-
-async function deleteUserArtifacts(db, username, email) {
-  const normalizedEmail = String(email || '').trim().toLowerCase();
-  const deletions = [
-    ['DELETE FROM meditation_group_members WHERE group_id IN (SELECT id FROM meditation_groups WHERE owner_username = ?)', username],
-    ['DELETE FROM meditation_groups WHERE owner_username = ?', username],
-    ['DELETE FROM meditation_group_members WHERE username = ?', username],
-    ['DELETE FROM meditation_records WHERE username = ?', username],
-    ['DELETE FROM meditation_goals WHERE username = ?', username],
-    ['DELETE FROM meditation_settings WHERE username = ?', username],
-    ['DELETE FROM user_practice_privacy WHERE username = ?', username],
-    ['DELETE FROM user_follows WHERE follower_username = ? OR following_username = ?', username, username],
-    ['DELETE FROM notifications WHERE username = ? OR related_username = ?', username, username],
-    ['DELETE FROM sync_log WHERE username = ?', username],
-    ['DELETE FROM user_sync_state WHERE username = ?', username],
-    ['DELETE FROM comments WHERE user_id = ? OR username = ?', username, username],
-    ['DELETE FROM likes WHERE username = ?', username],
-    ['DELETE FROM favorites WHERE username = ?', username],
-    ['DELETE FROM content_likes WHERE user_id = ? OR username = ?', username, username],
-    ['DELETE FROM content_favorites WHERE username = ?', username],
-    ['DELETE FROM content_reports WHERE reporter_user_id = ?', username],
-    ['DELETE FROM user_blocks WHERE blocked_user_id = ?', username],
-    ['DELETE FROM email_username_mapping WHERE username = ?', username],
-  ];
-
-  if (normalizedEmail) {
-    deletions.push(['DELETE FROM email_username_mapping WHERE email = ?', normalizedEmail]);
-  }
-
-  for (const [sql, ...params] of deletions) {
-    await safeRun(db, sql, ...params);
-  }
-}
-
-async function clearLeaderboardCaches(env) {
-  await Promise.allSettled([
-    env.USERS_KV?.delete('leaderboard:cache'),
-    env.USERS_KV?.delete('leaderboard:cache:v2'),
-    env.USERS_KV?.delete('leaderboard:practice:v2'),
-    env.USERS_KV?.delete('leaderboard:practice:v3'),
-    env.USERS_KV?.delete('leaderboard:practice:v4')
-  ]);
+  return null;
 }
 
 // 注册
 export async function handleRegister(request, env, db) {
-  const { username, email, password, verificationCode } = await request.json();
+  const repository = new AccountUserRepository(db);
 
-  if (!username || !email || !password || !verificationCode) {
-    return jsonResponse({ error: '缺少必要字段' }, 400);
+  try {
+    const payload = await registerAccountCommand(await request.json(), env, repository);
+    return jsonResponse(payload, 201);
+  } catch (error) {
+    const apiError = asApiError(error, '注册失败');
+    return jsonResponse({ error: apiError.message }, apiError.status);
   }
-
-  const normalizedUsername = String(username).trim();
-  const normalizedEmail = String(email).trim().toLowerCase();
-
-  if (normalizedUsername.includes('@') || /\s/.test(normalizedUsername)) {
-    return jsonResponse({ error: '用户名不能包含 @ 或空格' }, 400);
-  }
-
-  const verifyData = await env.USERS_KV.get(`verify:${normalizedEmail}`);
-  if (!verifyData) {
-    return jsonResponse({ error: '验证码不存在或已过期' }, 400);
-  }
-
-  const { code, expiry } = JSON.parse(verifyData);
-  if (Date.now() > expiry || verificationCode !== code) {
-    return jsonResponse({ error: '验证码错误或已过期' }, 400);
-  }
-
-  const existingUser = await db.getUser(normalizedUsername);
-  if (existingUser) {
-    return jsonResponse({ error: '用户名已存在' }, 400);
-  }
-
-  const existingEmail = await db.getUserByEmail(normalizedEmail);
-  if (existingEmail) {
-    return jsonResponse({ error: '该邮箱已被注册' }, 400);
-  }
-
-  const creds = await createPasswordHash(password);
-  const trialEndDate = calculateTrialEndDate();
-
-  await db.createUser({
-    username: normalizedUsername,
-    email: normalizedEmail,
-    passwordHash: creds.passwordHash,
-    salt: creds.salt,
-    iterations: creds.iterations,
-    algo: creds.algo,
-    emailVerified: true,
-    membershipType: 'trial',
-    freeTrialEndDate: trialEndDate.toISOString(),
-    createdAt: new Date().toISOString()
-  });
-
-  await env.USERS_KV.delete(`verify:${normalizedEmail}`);
-
-  return jsonResponse({ message: '注册成功' }, 201);
 }
 
 // 获取用户信息
 export async function handleGetUserInfo(request, env, db) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return jsonResponse({ error: '未提供认证信息' }, 401);
-  }
+  const repository = new AccountUserRepository(db);
 
-  const token = authHeader.substring(7);
-  const tokenData = await verifyToken(token, env);
-  if (!tokenData) {
-    return jsonResponse({ error: '认证失败' }, 401);
+  try {
+    const payload = await getAuthenticatedUserInfo(request, env, repository);
+    return jsonResponse(payload);
+  } catch (error) {
+    const apiError = asApiError(error, '获取用户信息失败');
+    return jsonResponse({ error: apiError.message }, apiError.status);
   }
-
-  const user = await db.getUser(tokenData.username);
-  if (!user) {
-    return jsonResponse({ error: '用户不存在' }, 404);
-  }
-
-  return jsonResponse(serializeUser(user));
 }
 
 // Firebase手机号登录/注册
@@ -190,31 +93,31 @@ export async function handleFirebasePhoneLogin(request, env, db) {
       user = await db.getUserByFirebaseUid(firebaseUid);
     }
 
-    let token;
-    let username;
-
     if (user) {
       if (user.firebase_uid !== firebaseUid || user.phone_number !== phoneNumber) {
-        await db.prepare(`
-          UPDATE users SET firebase_uid = ?, phone_number = ?, updated_at = ?
-          WHERE username = ?
-        `).bind(firebaseUid, phoneNumber, new Date().toISOString(), user.username).run();
-        user = await db.getUser(user.username);
+        if (db.updateUserById) {
+          await db.updateUserById(user.id, { firebase_uid: firebaseUid, phone_number: phoneNumber });
+        } else {
+          await db.prepare(`
+            UPDATE users SET firebase_uid = ?, phone_number = ?, updated_at = ?
+            WHERE username = ?
+          `).bind(firebaseUid, phoneNumber, new Date().toISOString(), user.username).run();
+        }
+        user = db.getUserById ? await db.getUserById(user.id) : await db.getUser(user.username);
       }
-
-      username = user.username;
-      token = await generateToken(username, env);
 
       return jsonResponse({
         success: true,
-        token,
-        username,
+        token: await generateToken({ id: user.id, username: user.username }, env),
+        username: user.username,
+        userId: user.id,
+        userNo: user.user_no ?? user.id ?? null,
         isNewUser: false,
         user: serializeUser(user)
       });
     }
 
-    username = `user_${Date.now().toString(36)}`;
+    const username = `user_${Date.now().toString(36)}`;
     const email = `${firebaseUid}@phone.user`;
     const trialEndDate = calculateTrialEndDate();
 
@@ -228,20 +131,29 @@ export async function handleFirebasePhoneLogin(request, env, db) {
       createdAt: new Date().toISOString()
     });
 
-    token = await generateToken(username, env);
-    const createdUser = await db.getUser(username);
+    const createdUser = db.getUserById
+      ? await db.getUserByEmail(email)
+      : await db.getUser(username);
+    const fallbackUser = createdUser || {
+      id: null,
+      user_no: null,
+      username,
+      email,
+      phone_number: phoneNumber,
+      membership_type: 'trial',
+      free_trial_end_date: trialEndDate.toISOString(),
+      created_at: new Date().toISOString(),
+      email_verified: 1
+    };
 
     return jsonResponse({
       success: true,
-      token,
+      token: await generateToken({ id: createdUser?.id, username }, env),
       username,
+      userId: createdUser?.id,
+      userNo: createdUser?.user_no ?? createdUser?.id ?? null,
       isNewUser: isNewUser ?? true,
-      user: createdUser ? serializeUser(createdUser) : {
-        username,
-        email,
-        phoneNumber,
-        membership: { type: 'trial', expiresAt: trialEndDate.toISOString() }
-      }
+      user: serializeUser(fallbackUser)
     });
   } catch (error) {
     console.error('Firebase手机登录失败:', error);
@@ -290,16 +202,28 @@ export async function handleAppleLogin(request, env, db) {
     let user = await db.getUserByAppleId(appleUserId);
 
     if (user) {
-      const username = user.username;
-      const token = await generateToken(username, env);
       const updates = {};
       if (appleEmail && !user.email) updates.email = appleEmail;
       const fullName = [givenName, familyName].filter(Boolean).join(' ');
-      if (fullName && !user.nickname) updates.nickname = username;
-      if (Object.keys(updates).length > 0) await db.updateUser(username, updates);
-      user = await db.getUser(username);
+      if (fullName && !user.nickname) updates.nickname = user.username;
+      if (Object.keys(updates).length > 0) {
+        if (db.updateUserById) {
+          await db.updateUserById(user.id, updates);
+        } else {
+          await db.updateUser(user.username, updates);
+        }
+        user = db.getUserById ? await db.getUserById(user.id) : await db.getUser(user.username);
+      }
 
-      return jsonResponse({ success: true, token, username, isNewUser: false, user: serializeUser(user) });
+      return jsonResponse({
+        success: true,
+        token: await generateToken({ id: user.id, username: user.username }, env),
+        username: user.username,
+        userId: user.id,
+        userNo: user.user_no ?? user.id ?? null,
+        isNewUser: false,
+        user: serializeUser(user)
+      });
     }
 
     const username = `apple_${Date.now().toString(36)}`;
@@ -308,10 +232,23 @@ export async function handleAppleLogin(request, env, db) {
 
     const existingEmailUser = await db.db.prepare('SELECT * FROM users WHERE email = ?').bind(userEmail).first();
     if (existingEmailUser) {
-      await db.updateUser(existingEmailUser.username, { apple_user_id: appleUserId, nickname: existingEmailUser.username });
-      const token = await generateToken(existingEmailUser.username, env);
-      const updated = await db.getUser(existingEmailUser.username);
-      return jsonResponse({ success: true, token, username: existingEmailUser.username, isNewUser: false, user: serializeUser(updated) });
+      const updates = { apple_user_id: appleUserId };
+      if (!existingEmailUser.nickname) updates.nickname = existingEmailUser.username;
+      if (db.updateUserById) {
+        await db.updateUserById(existingEmailUser.id, updates);
+      } else {
+        await db.updateUser(existingEmailUser.username, updates);
+      }
+      const updated = db.getUserById ? await db.getUserById(existingEmailUser.id) : await db.getUser(existingEmailUser.username);
+      return jsonResponse({
+        success: true,
+        token: await generateToken({ id: updated.id, username: updated.username }, env),
+        username: updated.username,
+        userId: updated.id,
+        userNo: updated.user_no ?? updated.id ?? null,
+        isNewUser: false,
+        user: serializeUser(updated)
+      });
     }
 
     await db.createAppleUser({
@@ -324,9 +261,16 @@ export async function handleAppleLogin(request, env, db) {
       createdAt: new Date().toISOString()
     });
 
-    const token = await generateToken(username, env);
     const createdUser = await db.getUser(username);
-    return jsonResponse({ success: true, token, username, isNewUser: true, user: serializeUser(createdUser) });
+    return jsonResponse({
+      success: true,
+      token: await generateToken({ id: createdUser?.id, username }, env),
+      username,
+      userId: createdUser?.id,
+      userNo: createdUser?.user_no ?? createdUser?.id ?? null,
+      isNewUser: true,
+      user: serializeUser(createdUser)
+    });
   } catch (error) {
     console.error('Apple登录失败:', error);
     return jsonResponse({ error: 'Apple登录失败: ' + error.message }, 500);
@@ -335,38 +279,15 @@ export async function handleAppleLogin(request, env, db) {
 
 // 注销账户
 export async function handleDeleteAccount(request, env, db) {
+  const repository = new AccountUserRepository(db);
+
   try {
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return jsonResponse({ error: '未提供认证信息' }, 401);
-    }
-
-    const token = authHeader.substring(7);
-    const tokenData = await verifyToken(token, env);
-    if (!tokenData) {
-      return jsonResponse({ error: '认证失效，请重新登录' }, 401);
-    }
-
-    const user = await db.getUser(tokenData.username);
-    if (!user) {
-      return jsonResponse({ error: '用户不存在' }, 404);
-    }
-
-    await runInTransaction(db, async () => {
-      await deleteUserArtifacts(db, tokenData.username, user.email);
-
-      if (db.deleteUser) {
-        await db.deleteUser(tokenData.username);
-      } else {
-        await db.prepare('DELETE FROM users WHERE username = ?').bind(tokenData.username).run();
-      }
-    });
-
-    await clearLeaderboardCaches(env);
-
-    return jsonResponse({ success: true, message: '账户已注销' }, 200);
+    const payload = await deleteAccountCommand(request, env, repository);
+    return jsonResponse(payload, 200);
   } catch (error) {
+    const apiError = asApiError(error, '注销账户失败');
     console.error('注销账户失败:', error);
-    return jsonResponse({ error: '服务器错误: ' + error.message }, 500);
+    const message = apiError.status >= 500 ? '注销账户失败，请稍后重试' : apiError.message;
+    return jsonResponse({ error: message }, apiError.status);
   }
 }

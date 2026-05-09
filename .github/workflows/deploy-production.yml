@@ -99,10 +99,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ../release-artifact/fabushi/build
-          mkdir -p ../release-artifact/.github
+          mkdir -p ../release-artifact/github-scripts
           cp -R build/web ../release-artifact/fabushi/build/web
           cp -R web ../release-artifact/fabushi/web
-          cp -R .github/scripts ../release-artifact/.github/scripts
+          cp -R ../.github/scripts/. ../release-artifact/github-scripts
           find ../release-artifact/fabushi/web -path '*/assets/built_in/*' -prune -exec rm -rf {} + || true
           printf '%s\n' "${{ steps.source.outputs.source_sha }}" > ../release-artifact/SOURCE_SHA
 
@@ -174,7 +174,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
           CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL || vars.CF_EMAIL || vars.CLOUDFLARE_EMAIL }}
-        run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB development
+        run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB development
 
       - name: Deploy staging Worker
         env:
@@ -195,6 +195,10 @@ jobs:
         working-directory: fabushi/e2e
     env:
       STAGING_API_URL: https://fabushi-flutter-web-dev.bhrumom.workers.dev
+      # Profile E2E currently calls staging API routes through an app-style base URL.
+      # Keep the default aligned with the API-only staging deployment until a
+      # separate staging frontend URL is provisioned, while still allowing an override.
+      STAGING_APP_URL: ${{ vars.STAGING_APP_URL || 'https://fabushi-flutter-web-dev.bhrumom.workers.dev' }}
       STAGING_TEST_LOGIN: ${{ secrets.STAGING_TEST_LOGIN }}
       STAGING_TEST_PASSWORD: ${{ secrets.STAGING_TEST_PASSWORD }}
       STAGING_TEST_EMAIL: ${{ vars.STAGING_TEST_EMAIL }}
@@ -214,7 +218,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for name in STAGING_API_URL STAGING_TEST_LOGIN STAGING_TEST_PASSWORD STAGING_TEST_EMAIL STAGING_TEST_PHONE; do
+          for name in STAGING_API_URL STAGING_APP_URL STAGING_TEST_LOGIN STAGING_TEST_PASSWORD STAGING_TEST_EMAIL STAGING_TEST_PHONE; do
             if [ -z "${!name:-}" ]; then
               echo "$name is not configured."
               missing=1
@@ -340,7 +344,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
           CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL || vars.CF_EMAIL || vars.CLOUDFLARE_EMAIL }}
-        run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB production
+        run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB production
 
       - name: Deploy production Worker
         env:
