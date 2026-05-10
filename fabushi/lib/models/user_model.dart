@@ -1,11 +1,20 @@
 // 用户数据模型
 // 定义用户相关的数据结构
 
+int? _parseOptionalInt(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value.toString());
+}
+
 class UserModel {
   final String username;
+  final int? userNo;
   final String? email;
   final bool emailVerified;
   final String createdAt;
+  final String? usernameChangedAt;
   final String? wechatOpenid;
   final String? wechatNickname;
   final String? wechatHeadimgurl;
@@ -23,9 +32,11 @@ class UserModel {
 
   UserModel({
     required this.username,
+    this.userNo,
     this.email,
     required this.emailVerified,
     required this.createdAt,
+    this.usernameChangedAt,
     this.wechatOpenid,
     this.wechatNickname,
     this.wechatHeadimgurl,
@@ -46,9 +57,11 @@ class UserModel {
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
       username: json['username'] as String,
+      userNo: _parseOptionalInt(json['userNo'] ?? json['user_no'] ?? json['id']),
       email: json['email'] as String?,
       emailVerified: json['emailVerified'] as bool? ?? false,
       createdAt: json['createdAt'] as String,
+      usernameChangedAt: json['usernameChangedAt'] as String? ?? json['username_changed_at'] as String?,
       wechatOpenid: json['wechatOpenid'] as String?,
       wechatNickname: json['wechatNickname'] as String?,
       wechatHeadimgurl: json['wechatHeadimgurl'] as String?,
@@ -72,9 +85,11 @@ class UserModel {
   Map<String, dynamic> toJson() {
     return {
       'username': username,
+      'userNo': userNo,
       'email': email,
       'emailVerified': emailVerified,
       'createdAt': createdAt,
+      'usernameChangedAt': usernameChangedAt,
       'wechatOpenid': wechatOpenid,
       'wechatNickname': wechatNickname,
       'wechatHeadimgurl': wechatHeadimgurl,
@@ -95,9 +110,11 @@ class UserModel {
   // 复制并修改部分字段
   UserModel copyWith({
     String? username,
+    int? userNo,
     String? email,
     bool? emailVerified,
     String? createdAt,
+    String? usernameChangedAt,
     String? wechatOpenid,
     String? wechatNickname,
     String? wechatHeadimgurl,
@@ -115,9 +132,11 @@ class UserModel {
   }) {
     return UserModel(
       username: username ?? this.username,
+      userNo: userNo ?? this.userNo,
       email: email ?? this.email,
       emailVerified: emailVerified ?? this.emailVerified,
       createdAt: createdAt ?? this.createdAt,
+      usernameChangedAt: usernameChangedAt ?? this.usernameChangedAt,
       wechatOpenid: wechatOpenid ?? this.wechatOpenid,
       wechatNickname: wechatNickname ?? this.wechatNickname,
       wechatHeadimgurl: wechatHeadimgurl ?? this.wechatHeadimgurl,
