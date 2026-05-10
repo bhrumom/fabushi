@@ -45,12 +45,22 @@ for required in (
     'Checkout source for change detection',
     'sparse-checkout-cone-mode: false',
     'sparse-checkout: |\n            /.github/**',
+    'mobile_reasons=()',
+    'fabushi/web/src/*|fabushi/web/migrations/*|fabushi/web/tests/*|fabushi/web/auth-utils.js',
+    'runtime/API/account-impacting input changed',
+    'PR metadata indicates account/auth/user/payment behavior needs fresh install packages',
+    '(account|auth|login|logout|profile|user[ -]?id|membership|subscription|payment|billing|identity|credential|token|session|force[- ]?mobile[- ]?release|mobile[- ]?release|账号|账户|登录|用户|会员|支付)',
+    'Android package build when Android, shared app, release pipeline, or account/API runtime inputs changed',
+    'iOS package build when iOS, shared app, release pipeline, or account/API runtime inputs changed',
 ):
     if required not in publish_release_workflow:
         missing.append(f'publish release workflow missing: {required}')
 
 for forbidden in (
     '      - name: Checkout source for change detection\n        uses: actions/checkout@v5\n        with:\n          ref: ${{ steps.source.outputs.source_sha }}\n          fetch-depth: 0\n\n      - name: Detect changed mobile package targets',
+    '- Android package build only when Android-specific or shared mobile code changes',
+    '- iOS package build only when iOS-specific or shared mobile code changes',
+    '- This workflow publishes install packages only after the main production CD workflow succeeds and mobile package inputs changed.',
 ):
     if forbidden in publish_release_workflow:
         missing.append(f'publish release workflow should not contain: {forbidden}')
