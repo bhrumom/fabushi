@@ -109,6 +109,9 @@ jobs:
         with:
           ref: ${{ steps.source.outputs.source_sha }}
           fetch-depth: 0
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/**
 
       - name: Detect changed mobile package targets
         id: mobile-changes
