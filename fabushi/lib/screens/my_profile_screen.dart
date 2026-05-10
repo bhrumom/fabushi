@@ -233,6 +233,14 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                     ),
                                   ),
                                 ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  '学号 ${user.userNo?.toString() ?? '--'}',
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 13,
+                                  ),
+                                ),
                                 const SizedBox(height: 6),
                                 Row(
                                   children: [
