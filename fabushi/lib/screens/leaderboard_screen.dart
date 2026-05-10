@@ -8,6 +8,25 @@ import '../widgets/follow_button.dart';
 import '../widgets/leaderboard_user_detail_sheet.dart';
 import '../core/design_system/app_theme.dart';
 
+String formatLeaderboardBytes(int bytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+
+  double value = bytes.toDouble();
+  var unitIndex = 0;
+
+  while (value >= 1000 && unitIndex < units.length - 1) {
+    value /= 1000;
+    unitIndex += 1;
+  }
+
+  var formatted = value >= 100 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
+  if (formatted.endsWith('.0')) {
+    formatted = formatted.substring(0, formatted.length - 2);
+  }
+
+  return '$formatted ${units[unitIndex]}';
+}
+
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
 
@@ -122,7 +141,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                             context,
                             entry: entry,
                             highlightLabel: '累计布施',
-                            highlightValue: _formatBytes(entry.totalBytes),
+                            highlightValue: formatLeaderboardBytes(entry.totalBytes),
                           ),
                           leading: _buildRankBadge(entry.rank),
                           title: Text(
@@ -146,7 +165,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                _formatBytes(entry.totalBytes),
+                                formatLeaderboardBytes(entry.totalBytes),
                                 style: const TextStyle(color: Colors.white70),
                               ),
                               const SizedBox(width: 10),
@@ -215,17 +234,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         ),
       ),
     );
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    }
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
   String _formatUpdateTime(DateTime time) {
