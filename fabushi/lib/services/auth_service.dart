@@ -31,6 +31,13 @@ class AuthService {
     return '${token.substring(0, previewLength)}...';
   }
 
+  int? _parseOptionalInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
   Map<String, dynamic> _failureFromResponse(
     dynamic response,
     String fallbackMessage,
@@ -61,12 +68,14 @@ class AuthService {
 
     return UserModel(
       username: resolvedUsername,
+      userNo: _instance._parseOptionalInt(user['userNo'] ?? user['user_no'] ?? user['id'] ?? data['userNo'] ?? data['userId']),
       email: resolvedEmail,
       emailVerified:
           user['emailVerified'] as bool? ?? user['email_verified'] == true,
       createdAt:
           (user['createdAt'] ?? user['created_at'] ?? DateTime.now().toIso8601String())
               .toString(),
+      usernameChangedAt: (user['usernameChangedAt'] ?? user['username_changed_at']) as String?,
       wechatOpenid: user['wechatOpenid'] as String?,
       wechatNickname: user['wechatNickname'] as String?,
       wechatHeadimgurl: user['wechatHeadimgurl'] as String?,
@@ -354,9 +363,11 @@ class AuthService {
 
         return UserModel(
           username: data['username'] ?? '',
+          userNo: _parseOptionalInt(data['userNo'] ?? data['user_no'] ?? data['id'] ?? data['userId']),
           email: data['email'] ?? '',
           emailVerified: true,
           createdAt: DateTime.now().toIso8601String(),
+          usernameChangedAt: data['usernameChangedAt'] ?? data['username_changed_at'],
           nickname: data['nickname'],
           avatar: data['avatar'],
           phoneNumber: data['phoneNumber'] ?? data['phone_number'],
@@ -544,9 +555,11 @@ class AuthService {
 
           final userInfo = UserModel(
             username: data['username'] ?? userJson?['username'] ?? '',
+            userNo: _parseOptionalInt(userJson?['userNo'] ?? userJson?['user_no'] ?? userJson?['id'] ?? data['userNo'] ?? data['userId']),
             email: userJson?['email'] ?? email ?? '',
             emailVerified: true,
             createdAt: DateTime.now().toIso8601String(),
+            usernameChangedAt: userJson?['usernameChangedAt'] ?? userJson?['username_changed_at'],
             membership: MembershipInfo(
               type: userJson?['membership']?['type'] ?? 'trial',
               isActive: true,
@@ -600,9 +613,11 @@ class AuthService {
 
           final userInfo = UserModel(
             username: data['username'] ?? userJson?['username'] ?? '',
+            userNo: _parseOptionalInt(userJson?['userNo'] ?? userJson?['user_no'] ?? userJson?['id'] ?? data['userNo'] ?? data['userId']),
             email: userJson?['email'] ?? '',
             emailVerified: true,
             createdAt: DateTime.now().toIso8601String(),
+            usernameChangedAt: userJson?['usernameChangedAt'] ?? userJson?['username_changed_at'],
             membership: MembershipInfo(
               type: userJson?['membership']?['type'] ?? 'trial',
               isActive: true,
