@@ -11,6 +11,24 @@ class AlipayAuthService {
     return await AppSettings.getBackendUrl();
   }
 
+  Map<String, dynamic> _successAuthPayload(
+    Map<String, dynamic> data, {
+    bool defaultOneClick = false,
+  }) {
+    return {
+      'success': true,
+      'token': data['token'],
+      'username': data['username'] ?? data['user']?['username'],
+      'email': data['email'] ?? data['user']?['email'],
+      'user': data['user'],
+      'isNewUser': data['isNewUser'] ?? false,
+      'needsRegistration': data['needsRegistration'] ?? false,
+      'alipayUser': data['alipayUser'],
+      'message': data['message'],
+      'isOneClick': data['isOneClick'] ?? defaultOneClick,
+    };
+  }
+
   /// 获取支付宝登录授权URL
   Future<Map<String, dynamic>> getAlipayLoginUrl({String? platform}) async {
     try {
@@ -110,15 +128,8 @@ class AlipayAuthService {
       }
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': data['success'] ?? false,
-          'token': data['token'],
-          'username': data['username'],
-          'isNewUser': data['isNewUser'] ?? false,
-          'needsRegistration': data['needsRegistration'] ?? false,
-          'alipayUser': data['alipayUser'],
-        };
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return _successAuthPayload(data);
       } else {
         final data = jsonDecode(response.body);
         return {'success': false, 'message': data['error'] ?? 'SDK登录失败'};
@@ -151,16 +162,8 @@ class AlipayAuthService {
       }
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'token': data['token'],
-          'username': data['username'],
-          'email': data['email'],
-          'isNewUser': data['isNewUser'] ?? false,
-          'needsRegistration': data['needsRegistration'] ?? false,
-          'alipayUser': data['alipayUser'],
-        };
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return _successAuthPayload(data);
       } else if (response.statusCode == 202) {
         // 新用户需要注册
         final data = jsonDecode(response.body);
@@ -205,13 +208,8 @@ class AlipayAuthService {
       );
 
       if (response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'token': data['token'],
-          'username': data['username'],
-          'message': data['message'],
-        };
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return _successAuthPayload(data);
       } else {
         final data = jsonDecode(response.body);
         return {'success': false, 'message': data['error'] ?? '支付宝注册失败'};
@@ -242,15 +240,8 @@ class AlipayAuthService {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'token': data['token'],
-          'username': data['username'],
-          'email': data['email'],
-          'message': data['message'] ?? '一键注册成功',
-          'isOneClick': data['isOneClick'] ?? true,
-        };
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return _successAuthPayload(data, defaultOneClick: true);
       } else {
         final data = jsonDecode(response.body);
         return {'success': false, 'message': data['error'] ?? '支付宝一键注册失败'};
