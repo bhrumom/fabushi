@@ -223,6 +223,16 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                     color: Colors.white,
                                   ),
                                 ),
+                                if (user.displayName != user.username) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '@${user.username}',
+                                    style: const TextStyle(
+                                      color: Colors.white54,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
                                 const SizedBox(height: 6),
                                 Row(
                                   children: [
