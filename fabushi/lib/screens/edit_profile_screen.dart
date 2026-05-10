@@ -592,9 +592,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Text(
-              '个人主页默认优先显示“显示名称”，用户名用于登录和账号标识。',
+              '昵称用于主页展示；用户名用于登录和账号标识，并且一年只能修改一次。',
               style: TextStyle(color: Colors.white38, fontSize: 12),
             ),
+          ),
+          _divider(),
+          _buildInfoItem(
+            label: '学号',
+            value: user?.userNo?.toString() ?? '未生成',
+            showArrow: false,
           ),
           _divider(),
           _buildFormItem(
