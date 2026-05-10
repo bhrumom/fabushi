@@ -118,6 +118,8 @@ jobs:
         shell: bash
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          RELEASE_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           changed_files="changed-files.txt"
@@ -129,22 +131,63 @@ jobs:
 
           android_changed=false
           ios_changed=false
+          mobile_reasons=()
+
+          add_android() {
+            android_changed=true
+            mobile_reasons+=("Android: $1")
+          }
+
+          add_ios() {
+            ios_changed=true
+            mobile_reasons+=("iOS: $1")
+          }
+
+          add_both() {
+            android_changed=true
+            ios_changed=true
+            mobile_reasons+=("Android+iOS: $1")
+          }
 
           while IFS= read -r path; do
             [ -n "$path" ] || continue
             case "$path" in
               fabushi/android/*)
-                android_changed=true
+                add_android "Android platform package input changed: $path"
                 ;;
               fabushi/ios/*)
-                ios_changed=true
+                add_ios "iOS platform package input changed: $path"
                 ;;
-              fabushi/lib/*|fabushi/assets/*|fabushi/fonts/*|fabushi/pubspec.yaml|fabushi/pubspec.lock)
-                android_changed=true
-                ios_changed=true
+              fabushi/lib/*|fabushi/assets/*|fabushi/fonts/*|fabushi/pubspec.yaml|fabushi/pubspec.lock|fabushi/analysis_options.yaml|fabushi/l10n.yaml)
+                add_both "shared Flutter package input changed: $path"
+                ;;
+              fabushi/test/*|fabushi/integration_test/*|fabushi/e2e/*)
+                add_both "mobile test or release gate changed: $path"
+                ;;
+              fabushi/web/src/*|fabushi/web/migrations/*|fabushi/web/tests/*|fabushi/web/auth-utils.js|fabushi/web/wrangler.toml|fabushi/web/wrangler.*.toml|fabushi/web/package.json|fabushi/web/package-lock.json|fabushi/web/pnpm-lock.yaml|fabushi/web/yarn.lock)
+                add_both "runtime/API/account-impacting input changed: $path"
+                ;;
+              workers/*|worker/*|functions/*|api/*|server/*|migrations/*|drizzle/*|supabase/*|cloudflare/*|wrangler.toml|wrangler.*.toml|package.json|package-lock.json|pnpm-lock.yaml|yarn.lock)
+                add_both "runtime/API/account-impacting input changed: $path"
+                ;;
+              .github/workflows/publish-cd-release.yml|.github/workflows/deploy-production.yml|.github/scripts/*)
+                add_both "release or deployment pipeline changed: $path"
                 ;;
             esac
           done < "$changed_files"
+
+          pr_json=""
+          if command -v gh >/dev/null 2>&1 && [ -n "${RELEASE_REPO:-}" ]; then
+            pr_json="$(gh api -H 'Accept: application/vnd.github+json' "/repos/$RELEASE_REPO/commits/$SOURCE_SHA/pulls" 2>/dev/null || true)"
+          fi
+
+          if [ -n "$pr_json" ] && command -v jq >/dev/null 2>&1; then
+            pr_title_body="$(printf '%s' "$pr_json" | jq -r '.[0] | [.title // "", .body // ""] | join("\n")')"
+            pr_labels="$(printf '%s' "$pr_json" | jq -r '.[0].labels[]?.name // empty' | tr '\n' ' ')"
+            if printf '%s\n%s\n' "$pr_title_body" "$pr_labels" | grep -Eiq '(account|auth|login|logout|profile|user[ -]?id|membership|subscription|payment|billing|identity|credential|token|session|force[- ]?mobile[- ]?release|mobile[- ]?release|账号|账户|登录|用户|会员|支付)'; then
+              add_both "PR metadata indicates account/auth/user/payment behavior needs fresh install packages"
+            fi
+          fi
 
           mobile_changed=false
           if [ "$android_changed" = "true" ] || [ "$ios_changed" = "true" ]; then
@@ -163,6 +206,14 @@ jobs:
             echo "- Source SHA: $SOURCE_SHA"
             echo "- Android package changed: $android_changed"
             echo "- iOS package changed: $ios_changed"
+            echo ""
+            echo "### Detection reasons"
+            echo ""
+            if [ "${#mobile_reasons[@]}" -gt 0 ]; then
+              printf '%s\n' "${mobile_reasons[@]}" | awk '!seen[$0]++ { printf "- `%s`\n", $0 }'
+            else
+              echo "- No mobile-affecting app, account/API, or release-pipeline inputs matched."
+            fi
             echo ""
             echo "### Changed files"
             echo ""
@@ -613,7 +664,7 @@ jobs:
             if [ "$ANDROID_CHANGED" = "true" ]; then
               echo "- Android packages were built and attached."
             else
-              echo "- Android packages were skipped because Android-specific or shared mobile code did not change."
+              echo "- Android packages were skipped because no Android or shared mobile-affecting inputs changed."
             fi
             if [ "$IOS_CHANGED" = "true" ]; then
               if find release-assets -maxdepth 1 -name '*.ipa' -type f | grep -q .; then
@@ -645,7 +696,7 @@ jobs:
                 esac
               fi
             else
-              echo "- iOS packages were skipped because iOS-specific or shared mobile code did not change."
+              echo "- iOS packages were skipped because no iOS or shared mobile-affecting inputs changed."
             fi
             echo ""
             echo "## Integrity"
@@ -741,13 +792,13 @@ jobs:
                 '### Release gates',
                 '',
                 '- Completed production CD workflow artifact',
-                '- Android package build only when Android-specific or shared mobile code changes',
-                '- iOS package build only when iOS-specific or shared mobile code changes',
+                '- Android package build when Android, shared app, release pipeline, or account/API runtime inputs changed',
+                '- iOS package build when iOS, shared app, release pipeline, or account/API runtime inputs changed',
                 '- GitHub Release asset preparation and publish',
                 '',
                 '### Source CD context',
                 '',
                 `- CD workflow run ID: ${process.env.CD_RUN_ID || 'unknown'}`,
-                '- This workflow publishes install packages only after the main production CD workflow succeeds and mobile package inputs changed.',
+                '- This workflow publishes install packages after the main production CD workflow succeeds and the change detector finds mobile-affecting app, release, account, auth, or API inputs.',
               ],
             });
