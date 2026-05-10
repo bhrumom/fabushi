@@ -29,10 +29,219 @@ env:
   FLUTTER_VERSION: '3.41.9'
 
 jobs:
+  detect-changes:
+    name: Detect changed code areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      app_changed: ${{ steps.classify.outputs.app_changed }}
+      android_changed: ${{ steps.classify.outputs.android_changed }}
+      worker_changed: ${{ steps.classify.outputs.worker_changed }}
+      frontend_changed: ${{ steps.classify.outputs.frontend_changed }}
+      workflow_guard_changed: ${{ steps.classify.outputs.workflow_guard_changed }}
+    steps:
+      - name: Checkout diff inputs
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/**
+            /.github/scripts/**
+            /fabushi/analysis_options.yaml
+            /fabushi/l10n.yaml
+            /fabushi/pubspec.yaml
+            /fabushi/pubspec.lock
+            /fabushi/lib/**
+            /fabushi/test/**
+            /fabushi/integration_test/**
+            /fabushi/assets/**
+            !/fabushi/assets/built_in/**
+            /fabushi/fonts/**
+            /fabushi/android/**
+            /fabushi/ios/**
+            /fabushi/web/**
+            !/fabushi/web/assets/built_in/**
+            /fabushi/e2e/**
+            /frontend/**
+
+      - name: Resolve diff range
+        id: range
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          base_sha=""
+          head_sha=""
+
+          case "$EVENT_NAME" in
+            pull_request)
+              base_sha="$PR_BASE_SHA"
+              head_sha="$PR_HEAD_SHA"
+              ;;
+            merge_group)
+              base_sha="$MG_BASE_SHA"
+              head_sha="$MG_HEAD_SHA"
+              ;;
+            push)
+              base_sha="$BEFORE_SHA"
+              head_sha="${AFTER_SHA:-$GITHUB_SHA_VALUE}"
+              if [ -z "$base_sha" ] || [ "$base_sha" = "0000000000000000000000000000000000000000" ]; then
+                base_sha=""
+              fi
+              ;;
+            workflow_dispatch)
+              head_sha="$(git rev-parse HEAD)"
+              base_sha="$(git rev-parse HEAD^ 2>/dev/null || true)"
+              ;;
+            *)
+              head_sha="$GITHUB_SHA_VALUE"
+              base_sha="$(git rev-parse HEAD^ 2>/dev/null || true)"
+              ;;
+          esac
+
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Classify changed code areas
+        id: classify
+        shell: bash
+        env:
+          BASE_SHA: ${{ steps.range.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.range.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+
+          changed_files="changed-files.txt"
+          if [ -n "$BASE_SHA" ] && git rev-parse "$BASE_SHA" >/dev/null 2>&1; then
+            git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$changed_files"
+          else
+            git diff-tree --root --no-commit-id --name-only -r "$HEAD_SHA" > "$changed_files"
+          fi
+
+          app_changed=false
+          android_changed=false
+          worker_changed=false
+          frontend_changed=false
+          workflow_guard_changed=false
+
+          app_reasons=()
+          android_reasons=()
+          worker_reasons=()
+          frontend_reasons=()
+          guard_reasons=()
+
+          mark_app() {
+            app_changed=true
+            app_reasons+=("$1")
+          }
+
+          mark_android() {
+            android_changed=true
+            android_reasons+=("$1")
+          }
+
+          mark_worker() {
+            worker_changed=true
+            worker_reasons+=("$1")
+          }
+
+          mark_frontend() {
+            frontend_changed=true
+            frontend_reasons+=("$1")
+          }
+
+          mark_guard() {
+            workflow_guard_changed=true
+            guard_reasons+=("$1")
+          }
+
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            case "$path" in
+              fabushi/android/*)
+                mark_app "mobile platform input changed: $path"
+                mark_android "android build input changed: $path"
+                ;;
+              fabushi/ios/*)
+                mark_app "mobile platform input changed: $path"
+                ;;
+              fabushi/lib/*|fabushi/test/*|fabushi/integration_test/*|fabushi/assets/*|fabushi/fonts/*|fabushi/pubspec.yaml|fabushi/pubspec.lock|fabushi/analysis_options.yaml|fabushi/l10n.yaml)
+                mark_app "shared Flutter app input changed: $path"
+                mark_android "android build depends on shared Flutter app input: $path"
+                ;;
+              fabushi/web/*|fabushi/e2e/*)
+                mark_worker "worker or deploy gate input changed: $path"
+                mark_guard "workflow guardrails cover worker/deploy path: $path"
+                ;;
+              frontend/*)
+                mark_frontend "frontend workspace input changed: $path"
+                ;;
+              .github/workflows/*|.github/workflows/*/*|.github/scripts/*|.github/scripts/*/*)
+                mark_worker "deployment or package-release workflow input changed: $path"
+                mark_guard "workflow guardrail input changed: $path"
+                ;;
+            esac
+          done < "$changed_files"
+
+          {
+            echo "app_changed=$app_changed"
+            echo "android_changed=$android_changed"
+            echo "worker_changed=$worker_changed"
+            echo "frontend_changed=$frontend_changed"
+            echo "workflow_guard_changed=$workflow_guard_changed"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Changed code area detection"
+            echo ""
+            echo "- App changed: $app_changed"
+            echo "- Android build changed: $android_changed"
+            echo "- Worker or deploy runtime changed: $worker_changed"
+            echo "- Frontend changed: $frontend_changed"
+            echo "- Workflow guardrails changed: $workflow_guard_changed"
+            echo ""
+            echo "### Reasons"
+            echo ""
+            if [ "${#app_reasons[@]}" -gt 0 ]; then
+              printf '%s\n' "${app_reasons[@]}" | awk '!seen[$0]++ { printf "- App: `%s`\n", $0 }'
+            fi
+            if [ "${#android_reasons[@]}" -gt 0 ]; then
+              printf '%s\n' "${android_reasons[@]}" | awk '!seen[$0]++ { printf "- Android: `%s`\n", $0 }'
+            fi
+            if [ "${#worker_reasons[@]}" -gt 0 ]; then
+              printf '%s\n' "${worker_reasons[@]}" | awk '!seen[$0]++ { printf "- Worker/CD: `%s`\n", $0 }'
+            fi
+            if [ "${#frontend_reasons[@]}" -gt 0 ]; then
+              printf '%s\n' "${frontend_reasons[@]}" | awk '!seen[$0]++ { printf "- Frontend: `%s`\n", $0 }'
+            fi
+            if [ "${#guard_reasons[@]}" -gt 0 ]; then
+              printf '%s\n' "${guard_reasons[@]}" | awk '!seen[$0]++ { printf "- Guardrail: `%s`\n", $0 }'
+            fi
+            if [ ! -s "$changed_files" ]; then
+              echo "- No changed files were detected."
+            fi
+            echo ""
+            echo "### Changed files"
+            echo ""
+            sed 's/^/- `/' "$changed_files" | sed 's/$/`/' || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
   fast-checks:
     name: Fast checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: detect-changes
+    if: needs.detect-changes.outputs.app_changed == 'true'
     defaults:
       run:
         working-directory: fabushi
@@ -52,9 +261,6 @@ jobs:
             /fabushi/assets/**
             !/fabushi/assets/built_in/**
             /fabushi/fonts/**
-            /fabushi/web/**
-            !/fabushi/web/assets/built_in/**
-            /fabushi/e2e/**
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -124,7 +330,8 @@ jobs:
     name: Release simulation - mobile web build
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: fast-checks
+    needs: detect-changes
+    if: needs.detect-changes.outputs.app_changed == 'true' || needs.detect-changes.outputs.worker_changed == 'true'
     defaults:
       run:
         working-directory: fabushi
@@ -181,7 +388,8 @@ jobs:
     name: Release simulation - Android Gradle bootstrap
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: fast-checks
+    needs: detect-changes
+    if: needs.detect-changes.outputs.android_changed == 'true'
     defaults:
       run:
         working-directory: fabushi
@@ -232,7 +440,8 @@ jobs:
     name: Module checks - Worker
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: fast-checks
+    needs: detect-changes
+    if: needs.detect-changes.outputs.worker_changed == 'true'
     defaults:
       run:
         working-directory: fabushi/web
@@ -271,7 +480,8 @@ jobs:
     name: Contract checks - Worker
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: fast-checks
+    needs: detect-changes
+    if: needs.detect-changes.outputs.worker_changed == 'true'
     defaults:
       run:
         working-directory: fabushi/web
@@ -306,8 +516,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs:
+      - detect-changes
       - mobile-release-simulation
       - worker-module-checks
+    if: needs.detect-changes.outputs.worker_changed == 'true'
     defaults:
       run:
         working-directory: fabushi/web
@@ -345,7 +557,8 @@ jobs:
     name: Release simulation - staging E2E contract validation
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: fast-checks
+    needs: detect-changes
+    if: needs.detect-changes.outputs.worker_changed == 'true'
     defaults:
       run:
         working-directory: fabushi/e2e
@@ -372,7 +585,8 @@ jobs:
     name: Module checks - Frontend
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: fast-checks
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend_changed == 'true'
     defaults:
       run:
         working-directory: frontend
@@ -405,7 +619,8 @@ jobs:
     name: Contract checks - Workflow guardrails
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: fast-checks
+    needs: detect-changes
+    if: needs.detect-changes.outputs.workflow_guard_changed == 'true'
     steps:
       - name: Checkout workflow files
         uses: actions/checkout@v5
@@ -440,6 +655,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
+      - detect-changes
       - worker-module-checks
       - frontend-module-checks
     steps:
@@ -447,20 +663,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ needs.worker-module-checks.result }}" != "success" ]; then
-            echo "Worker module checks failed: ${{ needs.worker-module-checks.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.frontend-module-checks.result }}" != "success" ]; then
-            echo "Frontend module checks failed: ${{ needs.frontend-module-checks.result }}"
-            exit 1
-          fi
+          for pair in \
+            "Worker module checks:${{ needs.worker-module-checks.result }}" \
+            "Frontend module checks:${{ needs.frontend-module-checks.result }}"
+          do
+            name="${pair%%:*}"
+            result="${pair#*:}"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "$name failed: $result"
+              exit 1
+            fi
+          done
 
   contract-checks:
     name: Contract checks
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
+      - detect-changes
       - worker-contract-checks
       - workflow-contract-checks
     steps:
@@ -468,20 +688,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ needs.worker-contract-checks.result }}" != "success" ]; then
-            echo "Worker contract checks failed: ${{ needs.worker-contract-checks.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.workflow-contract-checks.result }}" != "success" ]; then
-            echo "Workflow contract checks failed: ${{ needs.workflow-contract-checks.result }}"
-            exit 1
-          fi
+          for pair in \
+            "Worker contract checks:${{ needs.worker-contract-checks.result }}" \
+            "Workflow contract checks:${{ needs.workflow-contract-checks.result }}"
+          do
+            name="${pair%%:*}"
+            result="${pair#*:}"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "$name failed: $result"
+              exit 1
+            fi
+          done
 
   release-simulation:
     name: Release simulation
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
+      - detect-changes
       - mobile-release-simulation
       - android-gradle-bootstrap
       - worker-release-simulation
@@ -491,28 +715,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ needs.mobile-release-simulation.result }}" != "success" ]; then
-            echo "Mobile release simulation failed: ${{ needs.mobile-release-simulation.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.android-gradle-bootstrap.result }}" != "success" ]; then
-            echo "Android Gradle bootstrap failed: ${{ needs.android-gradle-bootstrap.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.worker-release-simulation.result }}" != "success" ]; then
-            echo "Worker dry-run failed: ${{ needs.worker-release-simulation.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.e2e-release-simulation.result }}" != "success" ]; then
-            echo "E2E release simulation failed: ${{ needs.e2e-release-simulation.result }}"
-            exit 1
-          fi
+          for pair in \
+            "Mobile release simulation:${{ needs.mobile-release-simulation.result }}" \
+            "Android Gradle bootstrap:${{ needs.android-gradle-bootstrap.result }}" \
+            "Worker dry-run:${{ needs.worker-release-simulation.result }}" \
+            "E2E release simulation:${{ needs.e2e-release-simulation.result }}"
+          do
+            name="${pair%%:*}"
+            result="${pair#*:}"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "$name failed: $result"
+              exit 1
+            fi
+          done
 
   ci-result:
     name: CI result
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
+      - detect-changes
       - fast-checks
       - module-checks
       - contract-checks
@@ -523,29 +745,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ needs.fast-checks.result }}" != "success" ]; then
-            echo "Fast checks failed: ${{ needs.fast-checks.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.module-checks.result }}" != "success" ]; then
-            echo "Module checks failed: ${{ needs.module-checks.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.contract-checks.result }}" != "success" ]; then
-            echo "Contract checks failed: ${{ needs.contract-checks.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.release-simulation.result }}" != "success" ]; then
-            echo "Release simulation failed: ${{ needs.release-simulation.result }}"
-            exit 1
-          fi
-          echo "All CI checks passed."
+          for pair in \
+            "Fast checks:${{ needs.fast-checks.result }}" \
+            "Module checks:${{ needs.module-checks.result }}" \
+            "Contract checks:${{ needs.contract-checks.result }}" \
+            "Release simulation:${{ needs.release-simulation.result }}"
+          do
+            name="${pair%%:*}"
+            result="${pair#*:}"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "$name failed: $result"
+              exit 1
+            fi
+          done
+          echo "Relevant CI checks passed or were intentionally skipped."
 
   notify-ci-failure:
     name: Notify CI failure
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs:
+      - detect-changes
       - fast-checks
       - mobile-release-simulation
       - android-gradle-bootstrap
@@ -597,16 +817,17 @@ jobs:
               extraSections: [
                 '### CI gate order',
                 '',
-                '- Fast checks',
-                '- Module checks',
-                '- Contract checks',
-                '- Release simulation',
+                '- Detect changed code areas',
+                '- Fast checks only for app-affecting changes',
+                '- Module checks only for touched worker/frontend areas',
+                '- Contract checks only for touched worker/workflow guardrail areas',
+                '- Release simulation only for touched deploy-relevant areas',
                 '',
                 '### CI notes',
                 '',
                 '- Dart format diffs are uploaded as `dart-format-patch` when formatter output differs from the committed code.',
                 '- CI runs with the formatter-applied workspace and does not push formatter commits directly to main because main is protected by merge queue rules.',
-                '- Worker dry-run stays in release simulation so D1 / contract drift is caught before CD deploy starts.',
+                '- Worker dry-run stays in release simulation so D1 / contract drift is caught before CD deploy starts when worker/deploy inputs change.',
                 '- Merge queue runs are supported through the `merge_group` trigger.',
               ],
             });
