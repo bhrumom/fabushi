@@ -41,6 +41,7 @@ jobs:
         working-directory: fabushi
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
+      deploy_changed: ${{ steps.deploy-changes.outputs.deploy_changed }}
     steps:
       - name: Resolve source commit
         id: source
@@ -63,6 +64,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ steps.source.outputs.source_sha }}
+          fetch-depth: 0
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
@@ -71,18 +73,89 @@ jobs:
             /.github/workflows/**
             /.github/scripts/**
 
+      - name: Detect deploy-relevant changes
+        id: deploy-changes
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+
+          changed_files="changed-files.txt"
+          if git rev-parse "$SOURCE_SHA^" >/dev/null 2>&1; then
+            git diff --name-only "$SOURCE_SHA^" "$SOURCE_SHA" > "$changed_files"
+          else
+            git diff-tree --root --no-commit-id --name-only -r "$SOURCE_SHA" > "$changed_files"
+          fi
+
+          deploy_changed=false
+          reasons=()
+
+          mark_deploy() {
+            deploy_changed=true
+            reasons+=("$1")
+          }
+
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            case "$path" in
+              fabushi/lib/*|fabushi/assets/*|fabushi/fonts/*|fabushi/pubspec.yaml|fabushi/pubspec.lock|fabushi/analysis_options.yaml|fabushi/l10n.yaml)
+                mark_deploy "shared Flutter deploy input changed: $path"
+                ;;
+              fabushi/android/*|fabushi/ios/*)
+                mark_deploy "mobile platform input changed and should keep deploy artifact honest: $path"
+                ;;
+              fabushi/web/*|fabushi/e2e/*)
+                mark_deploy "worker runtime or staging gate input changed: $path"
+                ;;
+              .github/workflows/deploy-production.yml|.github/scripts/*)
+                mark_deploy "deployment pipeline input changed: $path"
+                ;;
+            esac
+          done < "$changed_files"
+
+          echo "deploy_changed=$deploy_changed" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Deploy change detection"
+            echo ""
+            echo "- Source SHA: $SOURCE_SHA"
+            echo "- Deploy changed: $deploy_changed"
+            echo ""
+            echo "### Reasons"
+            echo ""
+            if [ "${#reasons[@]}" -gt 0 ]; then
+              printf '%s\n' "${reasons[@]}" | awk '!seen[$0]++ { printf "- `%s`\n", $0 }'
+            else
+              echo "- No deploy-relevant inputs changed. This CD run will stop before artifact build and environment deploy steps."
+            fi
+            echo ""
+            echo "### Changed files"
+            echo ""
+            sed 's/^/- `/' "$changed_files" | sed 's/$/`/' || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Skip deploy build when inputs are unchanged
+        if: steps.deploy-changes.outputs.deploy_changed != 'true'
+        shell: bash
+        run: |
+          echo "No deploy-relevant inputs changed; skipping release artifact build and downstream environment deploy jobs."
+
       - name: Set up Flutter
+        if: steps.deploy-changes.outputs.deploy_changed == 'true'
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
       - name: Set up Node.js
+        if: steps.deploy-changes.outputs.deploy_changed == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: 24
 
       - name: Run profile update D1 transaction regression
+        if: steps.deploy-changes.outputs.deploy_changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -90,11 +163,13 @@ jobs:
           node web/tests/profile.test.js
 
       - name: Build Flutter web release
+        if: steps.deploy-changes.outputs.deploy_changed == 'true'
         run: |
           flutter pub get
           flutter build web --release
 
       - name: Package release artifact
+        if: steps.deploy-changes.outputs.deploy_changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -107,6 +182,7 @@ jobs:
           printf '%s\n' "${{ steps.source.outputs.source_sha }}" > ../release-artifact/SOURCE_SHA
 
       - name: Upload release artifact
+        if: steps.deploy-changes.outputs.deploy_changed == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: fabushi-release-${{ steps.source.outputs.source_sha }}
@@ -117,6 +193,7 @@ jobs:
   deploy-staging:
     name: Deploy staging environment
     needs: build-artifact
+    if: needs.build-artifact.outputs.deploy_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -188,6 +265,7 @@ jobs:
     needs:
       - build-artifact
       - deploy-staging
+    if: needs.build-artifact.outputs.deploy_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -195,9 +273,6 @@ jobs:
         working-directory: fabushi/e2e
     env:
       STAGING_API_URL: https://fabushi-flutter-web-dev.bhrumom.workers.dev
-      # Profile E2E currently calls staging API routes through an app-style base URL.
-      # Keep the default aligned with the API-only staging deployment until a
-      # separate staging frontend URL is provisioned, while still allowing an override.
       STAGING_APP_URL: ${{ vars.STAGING_APP_URL || 'https://fabushi-flutter-web-dev.bhrumom.workers.dev' }}
       STAGING_TEST_LOGIN: ${{ secrets.STAGING_TEST_LOGIN }}
       STAGING_TEST_PASSWORD: ${{ secrets.STAGING_TEST_PASSWORD }}
@@ -271,6 +346,7 @@ jobs:
     needs:
       - build-artifact
       - staging-e2e
+    if: needs.build-artifact.outputs.deploy_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -370,6 +446,7 @@ jobs:
     needs:
       - build-artifact
       - deploy-production
+    if: needs.build-artifact.outputs.deploy_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -439,6 +516,7 @@ jobs:
               extraSections: [
                 '### Deployment gates',
                 '',
+                '- Detect deploy-relevant changes before building artifacts',
                 '- Staging API E2E',
                 '- Staging API smoke test',
                 '- Production deploy and API smoke test',
