@@ -39,6 +39,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   static const int _maxAvatarBytes = 3 * 1024 * 1024;
 
   final _formKey = GlobalKey<FormState>();
+  late TextEditingController _displayNameController;
   late TextEditingController _usernameController;
   late TextEditingController _emailController;
   late TextEditingController _phoneController;
@@ -57,6 +58,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void initState() {
     super.initState();
     final user = context.read<AuthModel>().currentUser;
+    _displayNameController = TextEditingController(text: user?.nickname ?? '');
     _usernameController = TextEditingController(text: user?.username ?? '');
     _emailController = TextEditingController(text: user?.email ?? '');
     _phoneController = TextEditingController(text: user?.phoneNumber ?? '');
@@ -68,6 +70,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   void dispose() {
+    _displayNameController.dispose();
     _usernameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
@@ -235,9 +238,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }) {
     final currentUser = context.read<AuthModel>().currentUser;
     return {
+      'attemptedDisplayName': _displayNameController.text.trim(),
       'attemptedUsername': _usernameController.text.trim(),
       'attemptedEmail': _maskEmail(_emailController.text.trim()),
       'attemptedPhone': _maskPhone(_phoneController.text.trim()),
+      'changedDisplayName': currentUser?.nickname != _displayNameController.text.trim(),
       'changedUsername': currentUser?.username != _usernameController.text.trim(),
       'changedEmail': currentUser?.email != _emailController.text.trim(),
       'changedPhone': currentUser?.phoneNumber != _phoneController.text.trim(),
@@ -295,12 +300,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     setState(() => _isLoading = true);
 
+    final authModel = context.read<AuthModel>();
+    final currentUser = authModel.currentUser;
+    final trimmedDisplayName = _displayNameController.text.trim();
     final body = <String, dynamic>{
       'username': _usernameController.text.trim(),
       'email': _emailController.text.trim(),
       'phoneNumber': _phoneController.text.trim(),
       'avatar': _avatarController.text.trim(),
     };
+
+    if (trimmedDisplayName.isNotEmpty || currentUser?.nickname?.isNotEmpty == true) {
+      body['displayName'] = trimmedDisplayName;
+    }
 
     if (!_hasPassword && _passwordController.text.isNotEmpty) {
       body['password'] = _passwordController.text;
@@ -335,7 +347,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   _usernameController.text.trim())
             : _usernameController.text.trim();
 
-        final authModel = context.read<AuthModel>();
         if (token != null) {
           await authModel.loginWithToken(token, updatedUsername);
         } else {
@@ -441,6 +452,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Widget _buildAvatarSection(User? user) {
+    final fallbackName = user?.displayName ?? user?.username ?? '';
+
     return GestureDetector(
       onTap: _pickAvatar,
       child: Column(
@@ -467,9 +480,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         _pendingAvatarBase64 == null)
                     ? Center(
                         child: Text(
-                          (user?.username.isNotEmpty == true
-                                  ? user!.username[0]
-                                  : '?')
+                          (fallbackName.isNotEmpty ? fallbackName[0] : '?')
                               .toUpperCase(),
                           style: const TextStyle(
                             color: Colors.white,
@@ -529,6 +540,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Widget _buildFormSection(User? user) {
+    final currentDisplayName = user?.displayName ?? user?.username ?? '未设置';
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -537,6 +550,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ),
       child: Column(
         children: [
+          _buildFormItem(
+            label: '显示名称',
+            child: TextFormField(
+              controller: _displayNameController,
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: user?.nickname?.isNotEmpty == true
+                    ? '请输入对外显示的名称'
+                    : '当前对外显示: $currentDisplayName',
+                hintStyle: const TextStyle(color: Colors.white38),
+              ),
+            ),
+          ),
+          _divider(),
           _buildFormItem(
             label: '用户名',
             child: TextFormField(
@@ -559,6 +587,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 }
                 return null;
               },
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Text(
+              '个人主页默认优先显示“显示名称”，用户名用于登录和账号标识。',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
             ),
           ),
           _divider(),
