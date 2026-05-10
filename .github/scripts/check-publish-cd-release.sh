@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 
 deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(encoding='utf-8')
+publish_release_workflow = Path('.github/workflows/publish-cd-release.yml').read_text(encoding='utf-8')
 auth_utils = Path('fabushi/web/auth-utils.js').read_text(encoding='utf-8')
 auth_handler = Path('fabushi/web/src/handlers/auth.js').read_text(encoding='utf-8')
 password_login = Path('fabushi/web/src/handlers/password-login.js').read_text(encoding='utf-8')
@@ -39,6 +40,20 @@ for required in (
 ):
     if required not in deploy_workflow:
         missing.append(f'deploy workflow missing: {required}')
+
+for required in (
+    'Checkout source for change detection',
+    'sparse-checkout-cone-mode: false',
+    'sparse-checkout: |\n            /.github/**',
+):
+    if required not in publish_release_workflow:
+        missing.append(f'publish release workflow missing: {required}')
+
+for forbidden in (
+    '      - name: Checkout source for change detection\n        uses: actions/checkout@v5\n        with:\n          ref: ${{ steps.source.outputs.source_sha }}\n          fetch-depth: 0\n\n      - name: Detect changed mobile package targets',
+):
+    if forbidden in publish_release_workflow:
+        missing.append(f'publish release workflow should not contain: {forbidden}')
 
 for required in (
     'env?.DB?.prepare',
