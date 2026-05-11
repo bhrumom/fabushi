@@ -5,9 +5,9 @@ import { siteUrl } from "../lib/site-url";
 import "./globals.css";
 
 const homeUrl = siteUrl("/");
-const siteTitle = `${brand.name} Fabushi | 佛法传播、修行记录与共修连接平台`;
+const siteTitle = `${brand.name} Fabushi | 经文听诵、禅修与全球法布施`;
 const siteDescription =
-  "Fabushi 法布施官网，统一承接佛法传播、修行记录、下载入口、测试申请、FAQ、隐私说明与内容专栏。";
+  "Fabushi 法布施提供经文听诵、禅修冥想、法流视频、修行记录与 Android / iOS 下载入口。";
 
 export const metadata: Metadata = {
   title: siteTitle,
