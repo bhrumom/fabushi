@@ -13,6 +13,7 @@ import 'user_model.dart';
 
 class User {
   final String username;
+  final int? userNo;
   final String email;
   final String? membershipType;
   final DateTime? membershipExpiry;
@@ -22,9 +23,11 @@ class User {
   final String? avatar;
   final String? phoneNumber;
   final String? firebaseUid;
+  final String? usernameChangedAt;
 
   User({
     required this.username,
+    this.userNo,
     required this.email,
     this.membershipType,
     this.membershipExpiry,
@@ -34,11 +37,20 @@ class User {
     this.avatar,
     this.phoneNumber,
     this.firebaseUid,
+    this.usernameChangedAt,
   });
+
+  static int? _parseOptionalInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       username: json['username'] ?? '',
+      userNo: _parseOptionalInt(json['userNo'] ?? json['user_no'] ?? json['id']),
       email: json['email'] ?? '',
       membershipType: json['membershipType'],
       membershipExpiry: json['membershipExpiry'] != null
@@ -50,12 +62,14 @@ class User {
       avatar: json['avatar'],
       phoneNumber: json['phoneNumber'],
       firebaseUid: json['firebaseUid'],
+      usernameChangedAt: json['usernameChangedAt'] ?? json['username_changed_at'],
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'username': username,
+      'userNo': userNo,
       'email': email,
       'membershipType': membershipType,
       'membershipExpiry': membershipExpiry?.toIso8601String(),
@@ -65,6 +79,7 @@ class User {
       'avatar': avatar,
       'phoneNumber': phoneNumber,
       'firebaseUid': firebaseUid,
+      'usernameChangedAt': usernameChangedAt,
     };
   }
 
@@ -138,6 +153,7 @@ class AuthModel extends ChangeNotifier {
 
     return User(
       username: userJson['username'] ?? fallbackUsername ?? '',
+      userNo: User._parseOptionalInt(userJson['userNo'] ?? userJson['user_no'] ?? userJson['id']),
       email: userJson['email'] ?? fallbackEmail ?? '',
       membershipType: membershipType,
       membershipExpiry: membershipExpiry,
@@ -147,6 +163,7 @@ class AuthModel extends ChangeNotifier {
       avatar: userJson['avatar'],
       phoneNumber: userJson['phoneNumber'] ?? userJson['phone_number'] ?? fallbackPhoneNumber,
       firebaseUid: userJson['firebaseUid'] ?? userJson['firebase_uid'] ?? fallbackFirebaseUid,
+      usernameChangedAt: userJson['usernameChangedAt'] ?? userJson['username_changed_at'],
     );
   }
 
@@ -167,9 +184,11 @@ class AuthModel extends ChangeNotifier {
 
         final basicUserModel = UserModel(
           username: _currentUser!.username,
+          userNo: _currentUser!.userNo,
           email: _currentUser!.email,
           emailVerified: true,
           createdAt: DateTime.now().toIso8601String(),
+          usernameChangedAt: _currentUser!.usernameChangedAt,
           membership: MembershipInfo(
             type: _currentUser!.membershipType ?? 'expired',
             isActive: _currentUser!.hasPremiumMembership,
@@ -383,6 +402,7 @@ class AuthModel extends ChangeNotifier {
 
         _currentUser = User(
           username: userModel.username,
+          userNo: userModel.userNo,
           email: userModel.email ?? '',
           membershipType: userModel.membership.type,
           membershipExpiry: userModel.membership.expiresAt != null
@@ -394,6 +414,7 @@ class AuthModel extends ChangeNotifier {
           avatar: userModel.avatarUrl,
           phoneNumber: userModel.phoneNumber,
           firebaseUid: userModel.firebaseUid,
+          usernameChangedAt: userModel.usernameChangedAt,
         );
 
         await _storeAuth();
