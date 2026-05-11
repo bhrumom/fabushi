@@ -6,8 +6,8 @@ import { getAllArticles } from "../../lib/content";
 import { siteHref } from "../../lib/site-url";
 
 export const metadata: Metadata = {
-  title: `内容专栏 | ${brand.name}`,
-  description: "查看 Fabushi 官网、小程序与主应用演进相关的路线、专题与结构说明。",
+  title: `更新记录 | ${brand.name}`,
+  description: "查看 Fabushi 发布、路线和产品更新。",
 };
 
 export default function InsightsIndexPage() {
@@ -19,10 +19,8 @@ export default function InsightsIndexPage() {
         <SiteHeader />
         <div className="inner-copy">
           <p className="eyebrow">内容专栏</p>
-          <h1>把产品路线、结构判断和阶段性设计写成长期可复用的内容资产。</h1>
-          <p className="lede">
-            官网需要承接的不只是首页视觉，还包括路线、专题、更新说明和长期积累的结构化内容。
-          </p>
+          <h1>产品更新和路线说明。</h1>
+          <p className="lede">只保留和下载、体验、后续版本有关的内容。</p>
         </div>
       </section>
 

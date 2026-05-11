@@ -62,9 +62,10 @@ jobs:
         working-directory: fabushi
     steps:
       - name: Checkout Android source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-source.outputs.source_sha }}
+          persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
@@ -110,9 +111,10 @@ jobs:
         working-directory: fabushi
     steps:
       - name: Checkout Android source and native test helper
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-source.outputs.source_sha }}
+          persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
@@ -177,9 +179,10 @@ jobs:
         working-directory: fabushi
     steps:
       - name: Checkout iOS source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-source.outputs.source_sha }}
+          persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
