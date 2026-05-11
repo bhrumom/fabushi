@@ -116,6 +116,14 @@ class AssetLoaderService {
     );
   }
 
+  static Future<void> evictBuddhaModelCache() async {
+    _memoryCache.remove(AppConfig.buddhaModelAssetPath);
+    await _deletePersistentAsset(
+      AppConfig.buddhaModelAssetPath,
+      includePartial: true,
+    );
+  }
+
   // 正在进行的加载任务，防止并发下载同一资源
   static final Map<String, Future<Uint8List>> _loadingFutures = {};
 
@@ -167,6 +175,10 @@ class AssetLoaderService {
     bool forceRefresh = false,
     int? minExpectedBytes,
   }) async {
+    if (forceRefresh && !kIsWeb) {
+      await _deletePersistentAsset(fileName, includePartial: true);
+    }
+
     // 先读本地正式缓存。
     // 这些文件在下载完成时已经做过完整性校验，这里不再为了“再确认一次”去发 HEAD 请求，
     // 否则本机已有佛像时首次进入禅室仍会被网络校验卡住。
@@ -280,7 +292,7 @@ class AssetLoaderService {
       );
     }
 
-    final url = '$cdnBaseUrl$fileName';
+    final url = '$cdnBaseUrl${Uri.encodeComponent(fileName)}';
     final dir = await _getStorageDirectory();
     final safeFileName = fileName.replaceAll('/', '_');
     final finalFile = File('${dir.path}/$safeFileName');
@@ -292,8 +304,8 @@ class AssetLoaderService {
       debugPrint('🔄 [AssetLoader] 发现未完成下载，已下载: $downloadedBytes bytes，尝试断点续传');
     }
 
+    final client = http.Client();
     try {
-      final client = http.Client();
       int? expectedContentLength;
       try {
         final headRes = await client
@@ -308,6 +320,36 @@ class AssetLoaderService {
         }
       } catch (_) {}
 
+      if (expectedContentLength != null && downloadedBytes > 0) {
+        if (downloadedBytes == expectedContentLength) {
+          _assertAssetSizeIsValid(
+            fileName,
+            downloadedBytes,
+            minExpectedBytes: minExpectedBytes,
+            source: 'complete-partial-file',
+          );
+          if (await finalFile.exists()) {
+            await finalFile.delete();
+          }
+          await tempFile.rename(finalFile.path);
+          debugPrint(
+            '✅ [AssetLoader] 未完成文件已完整，直接转为正式缓存: '
+            '${finalFile.path} ($downloadedBytes bytes)',
+          );
+          onProgress?.call(1.0);
+          return await finalFile.readAsBytes();
+        }
+
+        if (downloadedBytes > expectedContentLength) {
+          debugPrint(
+            '⚠️ [AssetLoader] 未完成文件大于远端对象，删除后重新下载: '
+            '$downloadedBytes > $expectedContentLength',
+          );
+          await tempFile.delete();
+          downloadedBytes = 0;
+        }
+      }
+
       final request = http.Request('GET', Uri.parse(url));
       if (downloadedBytes > 0) {
         request.headers['Range'] = 'bytes=$downloadedBytes-';
@@ -316,9 +358,21 @@ class AssetLoaderService {
       final response = await client.send(request);
 
       if (response.statusCode == 200 || response.statusCode == 206) {
-        final streamContentLength =
-            response.contentLength ?? expectedContentLength ?? 0;
-        final totalLength = streamContentLength + downloadedBytes;
+        final isResuming = response.statusCode == 206;
+        if (!isResuming && downloadedBytes > 0) {
+          debugPrint('⚠️ [AssetLoader] 服务器未续传 (返回 200)，重新开始下载');
+          downloadedBytes = 0;
+          if (await tempFile.exists()) {
+            await tempFile.delete();
+          }
+        }
+
+        final totalLength = isResuming
+            ? _parseTotalLengthFromContentRange(
+                  response.headers['content-range'],
+                ) ??
+                ((response.contentLength ?? 0) + downloadedBytes)
+            : response.contentLength ?? expectedContentLength ?? 0;
         _assertAssetSizeIsValid(
           fileName,
           totalLength,
@@ -329,14 +383,7 @@ class AssetLoaderService {
           '📥 [AssetLoader] 总大小: $totalLength bytes (Stream: ${response.contentLength}, HEAD: $expectedContentLength)',
         );
 
-        final isResuming = response.statusCode == 206;
         final fileMode = isResuming ? FileMode.append : FileMode.write;
-
-        if (!isResuming && downloadedBytes > 0) {
-          debugPrint('⚠️ [AssetLoader] 服务器不支持断点续传 (返回 200)，重新开始下载');
-          downloadedBytes = 0;
-        }
-
         final sink = tempFile.openWrite(mode: fileMode);
         int received = downloadedBytes;
 
@@ -344,7 +391,7 @@ class AssetLoaderService {
           sink.add(chunk);
           received += chunk.length;
           if (totalLength > 0) {
-            onProgress?.call(received / totalLength);
+            onProgress?.call((received / totalLength).clamp(0.0, 1.0));
           } else {
             onProgress?.call((received % 10000000) / 10000000.0 * 0.99);
           }
@@ -379,20 +426,37 @@ class AssetLoaderService {
 
         return await finalFile.readAsBytes();
       } else if (response.statusCode == 416) {
-        debugPrint('⚠️ [AssetLoader] Range 不满足 (416)，可能已下载完成，尝试验证');
-        client.close();
-        if (await tempFile.exists()) {
+        debugPrint('⚠️ [AssetLoader] Range 不满足 (416)，验证未完成文件');
+        final downloadedSize = await tempFile.exists()
+            ? await tempFile.length()
+            : 0;
+        if (expectedContentLength != null &&
+            downloadedSize == expectedContentLength) {
+          _assertAssetSizeIsValid(
+            fileName,
+            downloadedSize,
+            minExpectedBytes: minExpectedBytes,
+            source: 'range-416-complete-file',
+          );
+          if (await finalFile.exists()) {
+            await finalFile.delete();
+          }
           await tempFile.rename(finalFile.path);
+          onProgress?.call(1.0);
           return await finalFile.readAsBytes();
+        }
+        if (await tempFile.exists()) {
+          await tempFile.delete();
         }
         throw Exception('下载失败: HTTP 416');
       } else {
-        client.close();
         throw Exception('下载失败: HTTP ${response.statusCode}');
       }
     } catch (e) {
       debugPrint('❌ [AssetLoader] 下载出错: $e');
       rethrow;
+    } finally {
+      client.close();
     }
   }
 
@@ -402,7 +466,7 @@ class AssetLoaderService {
     void Function(double progress)? onProgress,
     int? minExpectedBytes,
   }) async {
-    final url = '$cdnBaseUrl$fileName';
+    final url = '$cdnBaseUrl${Uri.encodeComponent(fileName)}';
     try {
       final client = http.Client();
       final request = http.Request('GET', Uri.parse(url));
@@ -443,7 +507,8 @@ class AssetLoaderService {
     } catch (e) {
       debugPrint('❌ [AssetLoader] 简单下载失败: $e');
       if (cdnBaseUrl != defaultCdnBaseUrl) {
-        final fallbackUrl = '$defaultCdnBaseUrl$fileName';
+        final fallbackUrl =
+            '$defaultCdnBaseUrl${Uri.encodeComponent(fileName)}';
         debugPrint('🔄 [AssetLoader] 尝试从默认 CDN 下载: $fallbackUrl');
         final response = await http.get(Uri.parse(fallbackUrl));
         if (response.statusCode == 200) {
@@ -458,6 +523,37 @@ class AssetLoaderService {
         }
       }
       rethrow;
+    }
+  }
+
+  static int? _parseTotalLengthFromContentRange(String? contentRange) {
+    if (contentRange == null) return null;
+    final match = RegExp(r'/(\d+)$').firstMatch(contentRange);
+    if (match == null) return null;
+    return int.tryParse(match.group(1)!);
+  }
+
+  static Future<void> _deletePersistentAsset(
+    String fileName, {
+    required bool includePartial,
+  }) async {
+    if (kIsWeb) return;
+
+    try {
+      final dir = await _getStorageDirectory();
+      final safeFileName = fileName.replaceAll('/', '_');
+      final files = [
+        File('${dir.path}/$safeFileName'),
+        if (includePartial) File('${dir.path}/$safeFileName.downloading'),
+      ];
+
+      for (final file in files) {
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ [AssetLoader] 删除本地资源缓存失败: $e');
     }
   }
 

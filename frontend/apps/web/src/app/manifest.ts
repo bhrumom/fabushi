@@ -5,12 +5,12 @@ export const dynamic = "force-static";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "法布施 Fabushi 官网",
+    name: "法布施 Fabushi",
     short_name: "Fabushi",
-    description: "Fabushi 官网，统一承接佛法传播、修行记录、下载入口、测试申请与内容专栏。",
+    description: "经文听诵、禅修冥想、法流视频与全球法布施。",
     start_url: siteHref("/"),
     display: "standalone",
-    background_color: "#f6f1e8",
-    theme_color: "#19140f",
+    background_color: "#05070d",
+    theme_color: "#101827",
   };
 }

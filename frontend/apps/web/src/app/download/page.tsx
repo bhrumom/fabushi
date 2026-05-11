@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { brand, contactChannels } from "@fabushi/shared";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
+import { ZenOrbit } from "../../components/zen-orbit";
 import {
   getOfficialSiteReleaseCollection,
   type OfficialSiteChannel,
@@ -9,119 +10,28 @@ import {
 import { siteHref, siteUrl } from "../../lib/site-url";
 
 const downloadUrl = siteUrl("/download");
-const downloadTitle = `下载入口 | ${brand.name}`;
-const downloadDescription =
-  "查看 Fabushi 官网上的 Android Beta、iOS TestFlight 与正式版发布状态，并根据你的场景选择合适入口。";
-
-const decisionPaths = [
-  {
-    title: "想先体验最新进度",
-    recommendation: "优先看 Beta 渠道",
-    description: "适合愿意更早体验新版本、也能接受内测节奏和偶发问题的人。",
-    checkpoints: ["Android Beta 会跟随最新 GitHub Release 自动同步", "iOS Beta 会在 TestFlight 上传成功后补到官网", "如果你准备反馈问题，这条路径最合适"],
-  },
-  {
-    title: "想要更稳的安装体验",
-    recommendation: "等待正式版入口",
-    description: "适合第一次接触项目、暂时不想承担测试波动，或者准备推荐给更多人的用户。",
-    checkpoints: ["正式版只在人工验收通过后才会上线", "官网不会提前挂出未经确认的正式安装包", "入口一旦公开，会直接替换为正式版下载路径"],
-  },
-  {
-    title: "先判断自己该走哪条路",
-    recommendation: "先看推荐路径和 FAQ",
-    description: "适合还不确定自己是来下载、申请资格，还是先了解发布状态的人。",
-    checkpoints: ["先分清 Beta 与正式版的职责差异", "下载慢时优先尝试镜像链接", "还没有公开入口时，直接去申请测试或联系支持"],
-  },
-] as const;
-
-const releasePrinciples = [
-  {
-    title: "Beta 测试版",
-    summary: "更快同步、更适合早期反馈，也更可能跟着交付节奏持续变化。",
-    bullets: ["入口优先由自动同步链路更新", "适合主动体验新功能和报告问题的人", "下载说明会跟着 release 资产一起刷新"],
-  },
-  {
-    title: "正式版",
-    summary: "更强调稳定性和人工确认，不会因为有构建产物就立刻公开挂出。",
-    bullets: ["必须经过人工验收后才会发布", "更适合第一次安装或对稳定性更敏感的人", "官网只展示已经确认可公开分发的入口"],
-  },
-] as const;
-
-const platformFitGuidance = [
-  {
-    title: "Android Beta",
-    bestFor: "想最快跟上最新版本、愿意更早反馈问题的人。",
-    description: "如果你更在意尽快体验最新公开交付，而不是等到人工验收全部完成，Android beta 通常会是最先更新的入口。",
-  },
-  {
-    title: "iOS TestFlight",
-    bestFor: "已经明确想参与 iOS 内测，并愿意接受名额、审核和链接状态波动的人。",
-    description: "它更适合已经确认要深入体验完整主应用流程的用户，而不是只想随手点开看看的首次访问者。",
-  },
-  {
-    title: "正式版入口",
-    bestFor: "更希望先看人工验收结果、尽量减少安装后波动的人。",
-    description: "如果你主要想确认现在有没有相对稳定、可转发、可复用的下载入口，先等正式版通常比直接进入 beta 更合适。",
-  },
-] as const;
-
-const entryGuardrails = [
-  {
-    label: "可以直接进入测试版",
-    title: "你更适合先体验最新公开进度，而不是等到所有事情都变稳定。",
-    description:
-      "如果你符合这些条件，先进入 Beta 通常更有效，因为官网已经在帮你同步状态、版本和镜像说明。",
-    bullets: [
-      "你愿意更早体验版本更新，也愿意接受偶发波动和更频繁的变更。",
-      "你有明确的设备、平台和关注模块，准备在体验后给出反馈。",
-      "你更在意尽快参与当前进度，而不是把它当成一个马上就要推荐给更多人的稳定入口。",
-    ],
-    href: "/download#beta-channels",
-    ctaLabel: "直接看 Beta 入口",
-  },
-  {
-    label: "先别急着点测试版",
-    title: "你更适合先等正式版，或者先通过申请与 FAQ 把路径判断清楚。",
-    description:
-      "如果你更符合这些情况，先理解边界和阶段，会比直接进入测试版更省时间，也更不容易产生预期落差。",
-    bullets: [
-      "你现在只接受稳定、可复用、适合转发的正式下载入口。",
-      "你还没决定自己是来下载、申请资格、反馈问题，还是只想先了解项目。",
-      "你不打算承担 beta 节奏，也不希望遇到需要镜像、资格或后续沟通才能解决的安装问题。",
-    ],
-    href: "/apply",
-    ctaLabel: "先去申请或了解",
-  },
-] as const;
-
-const preInstallChecklist = [
-  "你现在更想优先体验最新改动，还是更想降低安装后的波动与反复更新。",
-  "你是否已经看过对应入口旁边的版本、更新时间和更新摘要，而不是只看按钮名称。",
-  "如果你准备反馈问题或申请资格，是否已经知道该走下载、申请测试还是联系支持这三条不同路径。",
-] as const;
+const downloadTitle = `下载 | ${brand.name}`;
+const downloadDescription = "选择 Fabushi Android Beta、iOS TestFlight 或正式版入口。";
 
 const downloadFaqs = [
   {
-    question: "我应该优先下 Beta，还是等正式版？",
-    answer:
-      "如果你愿意更早体验最新进度，并能接受测试节奏，优先看 Beta。若你更在意稳定性、或者准备第一次接触项目，建议先等正式版入口。",
+    question: "我应该先点哪个入口？",
+    answer: "想尽快体验新版本，先看 Beta；想要更稳，等正式版；不确定时先申请测试。",
   },
   {
-    question: "为什么官网不把所有构建产物都直接挂出来？",
-    answer:
-      "因为下载页的职责不是展示所有产物，而是只给用户当前真正适合点击的入口。正式版尤其需要经过人工验收，避免用户拿到还不适合公开分发的安装包。",
+    question: "Android 下载慢怎么办？",
+    answer: "优先尝试卡片里的镜像链接；如果仍不可用，把平台和错误截图发到支持邮箱。",
   },
   {
-    question: "如果页面上还没有公开入口，我下一步该做什么？",
-    answer:
-      "先看当前 release 状态和推荐路径。如果是想参与体验，可以直接申请测试；如果是想确认发布时间或下载问题，优先联系支持邮箱。",
+    question: "iOS 为什么可能跳到 TestFlight？",
+    answer: "iOS 内测通过 Apple TestFlight 分发。公开加入链接开放后，下载页会直接显示。",
   },
 ] as const;
 
 export const metadata: Metadata = {
   title: downloadTitle,
   description: downloadDescription,
-  keywords: ["Fabushi 下载", "法布施下载", "Android Beta", "iOS TestFlight", "正式版发布"],
+  keywords: ["Fabushi 下载", "法布施下载", "Android Beta", "iOS TestFlight"],
   alternates: {
     canonical: downloadUrl,
   },
@@ -141,14 +51,10 @@ export const metadata: Metadata = {
 };
 
 function formatPublishedAt(value?: string) {
-  if (!value) {
-    return null;
-  }
+  if (!value) return null;
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
+  if (Number.isNaN(date.getTime())) return value;
 
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
@@ -173,15 +79,8 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
       {(channel.version || publishedAt) && (
         <div className="release-card-meta">
           {channel.version ? <span>版本 {channel.version}</span> : null}
-          {publishedAt ? <span>更新于 {publishedAt}</span> : null}
+          {publishedAt ? <span>{publishedAt}</span> : null}
         </div>
-      )}
-      {channel.updateSummary.length > 0 && (
-        <ul className="release-update-list">
-          {channel.updateSummary.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
       )}
       <div className="release-card-actions">
         <a className="primary-action" href={siteHref(channel.primaryHref)}>
@@ -189,20 +88,17 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
         </a>
         {channel.releasePageHref ? (
           <a className="secondary-action" href={siteHref(channel.releasePageHref)}>
-            查看 Release
+            Release
           </a>
         ) : null}
       </div>
       {channel.mirrorLinks.length > 0 && (
-        <div className="release-mirror-block">
-          <p>国内下载镜像</p>
-          <div className="inline-cta">
-            {channel.mirrorLinks.map((item) => (
-              <a key={item.href} className="secondary-action" href={siteHref(item.href)}>
-                {item.label}
-              </a>
-            ))}
-          </div>
+        <div className="mirror-links" aria-label={`${channel.title} 镜像下载`}>
+          {channel.mirrorLinks.map((item) => (
+            <a key={item.href} href={siteHref(item.href)}>
+              {item.label}
+            </a>
+          ))}
         </div>
       )}
       {channel.note ? <p className="release-note">{channel.note}</p> : null}
@@ -212,47 +108,35 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
 
 export default async function DownloadPage() {
   const releaseCollection = await getOfficialSiteReleaseCollection();
-  const allChannels = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels];
+  const betaChannels = releaseCollection.betaChannels;
+  const stableChannels = releaseCollection.stableChannels;
+  const allChannels = [...betaChannels, ...stableChannels];
   const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
+  const notes = releaseCollection.notes.slice(0, 3);
 
   const structuredData = {
     "@context": "https://schema.org",
     "@graph": [
       {
-        "@type": "BreadcrumbList",
-        itemListElement: [
-          { "@type": "ListItem", position: 1, name: "首页", item: siteUrl("/") },
-          { "@type": "ListItem", position: 2, name: "下载入口", item: downloadUrl },
-        ],
-      },
-      {
         "@type": "CollectionPage",
-        name: `${brand.name} 下载入口`,
+        name: `${brand.name} 下载`,
         url: downloadUrl,
         description: downloadDescription,
         inLanguage: "zh-CN",
-        mainEntity: {
-          "@type": "ItemList",
-          itemListElement: allChannels.map((channel, index) => ({
-            "@type": "ListItem",
-            position: index + 1,
-            item: {
-              "@type": "SoftwareApplication",
-              name: channel.title,
-              operatingSystem: channel.platform,
-              description: channel.description,
-              url: downloadUrl,
-              downloadUrl: siteHref(channel.primaryHref),
-              applicationCategory: channel.audience === "stable" ? "ProductivityApplication" : "BetaSoftwareApplication",
-            },
-          })),
-        },
       },
       {
-        "@type": "Organization",
-        name: `${brand.name} Fabushi`,
-        url: siteUrl("/"),
-        email: supportEmail,
+        "@type": "ItemList",
+        itemListElement: allChannels.map((channel, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          item: {
+            "@type": "SoftwareApplication",
+            name: channel.title,
+            operatingSystem: channel.platform,
+            downloadUrl: siteHref(channel.primaryHref),
+            description: channel.description,
+          },
+        })),
       },
       {
         "@type": "FAQPage",
@@ -276,171 +160,75 @@ export default async function DownloadPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
 
-      <section className="inner-hero">
+      <section className="inner-hero download-hero">
         <SiteHeader />
+        <ZenOrbit />
         <div className="inner-copy">
-          <p className="eyebrow">下载入口</p>
-          <h1>把入口分清楚，比把所有包一股脑挂出来更重要。</h1>
-          <p className="lede">
-            这页的任务不是堆下载按钮，而是先帮你判断：现在该去 Beta、该等正式版，还是该先申请测试资格。
-            Android Beta、iOS TestFlight 与正式版发布状态都会在这里持续同步。
-          </p>
+          <p className="eyebrow">下载</p>
+          <h1>选择你的入口。</h1>
+          <p className="lede">Android Beta、iOS TestFlight 和正式版状态会在这里同步。</p>
         </div>
       </section>
 
-      <section className="band">
-        <div className="section-heading">
-          <p>先做判断</p>
-          <h2>如果你只想知道下一步该点哪里，先按场景选路径，而不是先猜平台状态。</h2>
+      <section className="band compact-band" id="beta-channels">
+        <div className="section-heading tight">
+          <p>Beta</p>
+          <h2>优先体验最新进度。</h2>
         </div>
-        <div className="decision-grid">
-          {decisionPaths.map((item) => (
-            <article key={item.title} className="decision-card">
-              <p className="eyebrow">{item.title}</p>
-              <h3>{item.recommendation}</h3>
-              <p>{item.description}</p>
-              <ul className="decision-list">
-                {item.checkpoints.map((entry) => (
-                  <li key={entry}>{entry}</li>
-                ))}
-              </ul>
+        <div className="download-grid">
+          {betaChannels.length > 0 ? (
+            betaChannels.map((channel) => (
+              <ReleaseChannelCard key={`${channel.audience}-${channel.platform}`} channel={channel} />
+            ))
+          ) : (
+            <article className="release-card">
+              <div className="release-card-header">
+                <div>
+                  <p className="eyebrow">测试版</p>
+                  <h2>Beta 同步中</h2>
+                </div>
+                <span className="download-status">暂未开放</span>
+              </div>
+              <p>当前还没有可公开点击的 Beta 入口。可以先提交测试申请。</p>
+              <div className="release-card-actions">
+                <a className="primary-action" href={siteHref("/apply")}>
+                  申请测试
+                </a>
+              </div>
             </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band alt">
-        <div className="section-heading">
-          <p>版本差异</p>
-          <h2>Beta 和正式版的区别，不只是“能不能下载”，而是入口更新方式和适合人群完全不同。</h2>
-        </div>
-        <div className="compare-grid">
-          {releasePrinciples.map((item) => (
-            <article key={item.title} className="compare-card">
-              <h3>{item.title}</h3>
-              <p>{item.summary}</p>
-              <ul className="compare-list">
-                {item.bullets.map((entry) => (
-                  <li key={entry}>{entry}</li>
-                ))}
-              </ul>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band" id="download-fit">
-        <div className="section-heading">
-          <p>适合谁先下</p>
-          <h2>下载页也应该先帮你排除不合适的路径，而不是默认每个人都该先点测试版。</h2>
-        </div>
-        <div className="compare-grid">
-          {entryGuardrails.map((item) => (
-            <article key={item.label} className="compare-card">
-              <span className="detail-label">{item.label}</span>
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-              <ul className="compare-list">
-                {item.bullets.map((entry) => (
-                  <li key={entry}>{entry}</li>
-                ))}
-              </ul>
-              <a className="path-link" href={siteHref(item.href)}>
-                {item.ctaLabel}
-              </a>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band" id="beta-channels">
-        <div className="section-heading">
-          <p>Beta 渠道</p>
-          <h2>安装包发布完成后，这里的测试入口会自动跟上最新一轮交付结果。</h2>
-        </div>
-        <div className="release-section-stack">
-          {releaseCollection.betaChannels.map((channel) => (
-            <ReleaseChannelCard key={`${channel.audience}-${channel.platform}`} channel={channel} />
-          ))}
+          )}
         </div>
       </section>
 
       <section className="band alt" id="stable-channels">
-        <div className="section-heading">
+        <div className="section-heading tight">
           <p>正式版</p>
-          <h2>正式版入口只在人工验收通过后，由手动 GitHub Action 发布到官网。</h2>
+          <h2>适合想要更稳安装的人。</h2>
         </div>
-        <div className="release-section-stack">
-          {releaseCollection.stableChannels.map((channel) => (
+        <div className="download-grid">
+          {stableChannels.map((channel) => (
             <ReleaseChannelCard key={`${channel.audience}-${channel.platform}`} channel={channel} />
           ))}
         </div>
       </section>
 
       <section className="band">
-        <div className="section-heading">
-          <p>平台适配</p>
-          <h2>如果你是在比较 Android Beta、iOS TestFlight 和正式版，先按你的使用阶段来选。</h2>
+        <div className="section-heading tight">
+          <p>说明</p>
+          <h2>下载前只看这三条。</h2>
         </div>
-        <div className="definition-grid">
-          {platformFitGuidance.map((item) => (
-            <article key={item.title} className="definition-card">
-              <h3>{item.title}</h3>
-              <p><strong>更适合谁：</strong>{item.bestFor}</p>
-              <p>{item.description}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band alt">
-        <div className="section-heading">
-          <p>安装前确认</p>
-          <h2>真正点下载前，先确认这三件事，能少走很多回头路。</h2>
-        </div>
-        <ol className="roadmap-list">
-          {preInstallChecklist.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="band">
-        <div className="section-heading">
-          <p>同步说明</p>
-          <h2>官网上的下载说明现在会跟着发布资产一起更新，而不是靠手工改文案。</h2>
-        </div>
-        <div className="status-note-list">
-          {releaseCollection.notes.map((item) => (
+        <div className="note-grid">
+          {notes.map((item) => (
             <p key={item}>{item}</p>
           ))}
+          <p>遇到下载或安装问题，发邮件到 {supportEmail}。</p>
         </div>
       </section>
 
       <section className="band alt">
-        <div className="section-heading">
-          <p>推荐路径</p>
-          <h2>如果你现在只是第一次接触这个项目，建议先这样走。</h2>
-        </div>
-        <ol className="roadmap-list">
-          <li>先看官网判断当前开放的是测试版，还是已经过人工验收的正式版。</li>
-          <li>如果你愿意更早体验新版本，再进入 Beta；如果更在意稳定性，就等正式版入口。</li>
-          <li>如果下载较慢，优先尝试页面里的镜像链接；如果还没有公开入口，直接申请测试或联系支持。</li>
-        </ol>
-        <div className="inline-cta">
-          <a className="primary-action" href={siteHref("/apply")}>
-            前往申请测试
-          </a>
-          <a className="secondary-action" href={siteHref("/contact")}>
-            查看联系信息
-          </a>
-        </div>
-      </section>
-
-      <section className="band">
-        <div className="section-heading">
-          <p>常见问题</p>
-          <h2>把下载前最容易犹豫的几个问题先回答出来，用户和搜索系统都更容易做出正确判断。</h2>
+        <div className="section-heading tight">
+          <p>FAQ</p>
+          <h2>少一点犹豫。</h2>
         </div>
         <div className="faq-list full">
           {downloadFaqs.map((item) => (

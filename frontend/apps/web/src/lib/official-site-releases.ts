@@ -67,12 +67,12 @@ const DEFAULT_STABLE_CHANNELS: OfficialSiteChannel[] = [
     audience: "stable",
     status: "待人工验证",
     title: "Android 正式版",
-    description: "正式版会在人工验收通过后，通过手动 GitHub Action 发布到官网。",
+    description: "正式版会在人工验收通过后开放，适合首次安装和转发。",
     primaryLabel: "等待正式版上线",
     primaryHref: "/contact",
     updateSummary: [
       "当前官网还没有挂出已经过人工验证的正式版安装包。",
-      "验证完成后，维护者可以通过手动 GitHub Action 把指定 release 发布为官网正式版。",
+      "验证完成后，这里会切换为可公开下载的正式版入口。",
     ],
     mirrorLinks: [],
     note: "正式版上线后，这里会显示 APK 原始下载地址和面向国内用户的镜像链接。",
@@ -267,7 +267,7 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
       audience: "beta",
       status: "GitHub Release Beta",
       title: "Android Beta",
-      description: "直接使用最新 GitHub Release 的 APK 安装包，发布后官网会自动跟到这个入口。",
+      description: "最新 Android 测试包，适合尽快体验新版本并反馈问题。",
       primaryLabel: "下载 Android Beta",
       primaryHref: apkAsset.browser_download_url,
       version: release.tag_name,
@@ -292,7 +292,7 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
         uploaded && iosTestFlightPublicUrl
           ? "iOS beta 已经上传到 TestFlight，点击即可打开公开加入页面。"
           : uploaded
-            ? "iOS beta 已经上传到 TestFlight。配置公开加入链接后，这里会显示直接加入入口。"
+            ? "iOS beta 已经上传到 TestFlight。公开加入链接开放后可直接加入。"
           : "iOS beta 会在 TestFlight 上传成功后自动补到官网入口。",
       primaryLabel: uploaded && iosTestFlightPublicUrl ? "加入 iOS TestFlight" : uploaded ? "查看 Beta 发布说明" : "等待 TestFlight 开放",
       primaryHref,
@@ -315,8 +315,8 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
   return {
     channels,
     notes: [
-      "Android beta 下载入口会优先读取最新 GitHub Release 的 APK 资产。",
-      "iOS beta 会在 TestFlight 上传状态成功后，随官网同步资产一起显示。",
+      "Android Beta 会优先显示最新 APK。",
+      "iOS TestFlight 可加入时会显示直接入口。",
       "国内访问 GitHub 较慢时，可以优先尝试页面里给出的镜像下载入口。",
     ],
   };
@@ -351,8 +351,8 @@ export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteRe
       betaState?.notes?.length
         ? betaState.notes
         : [
-            "当前官网还没有拿到最新 beta 的同步资产，页面会先回退到 GitHub Release 基本信息。",
-            "TestFlight 公共加入链接需要在发布同步工作流里配置后，才能直接显示在官网。",
+            "当前 Beta 入口会先显示公开发布记录里的可用信息。",
+            "TestFlight 公共加入链接开放后会显示直接入口。",
           ],
   };
 }

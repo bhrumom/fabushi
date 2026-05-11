@@ -167,7 +167,133 @@ class _WebBuddhaRoomPainter extends CustomPainter {
 
     _drawHalo(canvas, center.translate(0, -70), size);
     _drawBuddha(canvas, center.translate(0, -4), size);
+    _drawOfferingSets(canvas, size);
     _drawIncense(canvas, Offset(center.dx, size.height * 0.82));
+  }
+
+  void _drawOfferingSets(Canvas canvas, Size size) {
+    final y = size.height * 0.79;
+    final spread = (size.width * 0.25).clamp(96.0, 156.0).toDouble();
+    _drawOfferingSet(canvas, Offset(size.width / 2 - spread, y), mirror: false);
+    _drawOfferingSet(canvas, Offset(size.width / 2 + spread, y), mirror: true);
+  }
+
+  void _drawOfferingSet(Canvas canvas, Offset center, {required bool mirror}) {
+    final scale = mirror ? -1.0 : 1.0;
+    final shadow = Paint()
+      ..color = const Color(0x55000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+    canvas.drawOval(
+      Rect.fromCenter(center: center.translate(0, 30), width: 106, height: 18),
+      shadow,
+    );
+
+    final trayPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        center.translate(-44, 14),
+        center.translate(44, 36),
+        const [Color(0xFFFFD36A), Color(0xFF7A4314), Color(0xFFD4AF37)],
+      );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: center.translate(0, 22), width: 94, height: 20),
+        const Radius.circular(10),
+      ),
+      trayPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: center.translate(0, 12), width: 82, height: 18),
+      Paint()..color = const Color(0xAA2B1306),
+    );
+
+    _drawOfferingLamp(canvas, center.translate(scale * 34, -18));
+    _drawOfferingFlowers(canvas, center.translate(scale * -18, -18));
+    _drawOfferingFruit(canvas, center.translate(scale * 7, 0));
+  }
+
+  void _drawOfferingLamp(Canvas canvas, Offset center) {
+    for (var i = 2; i >= 0; i--) {
+      canvas.drawCircle(
+        center.translate(0, -12),
+        15.0 + i * 9,
+        Paint()
+          ..color = Color.lerp(
+            const Color(0x33FFF2A8),
+            const Color(0x00FF8A24),
+            i / 2,
+          )!
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8 + i * 4),
+      );
+    }
+    final flame = Path()
+      ..moveTo(center.dx, center.dy - 30)
+      ..cubicTo(center.dx + 11, center.dy - 19, center.dx + 6, center.dy - 7, center.dx, center.dy - 4)
+      ..cubicTo(center.dx - 8, center.dy - 10, center.dx - 8, center.dy - 21, center.dx, center.dy - 30)
+      ..close();
+    canvas.drawPath(
+      flame,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          center.translate(0, -16),
+          20,
+          const [Color(0xFFFFF5B7), Color(0xFFFF8A24), Color(0x00FF8A24)],
+        ),
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: center.translate(0, 2), width: 30, height: 12),
+      Paint()..color = const Color(0xFFD4AF37),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: center.translate(0, 11), width: 22, height: 20),
+        const Radius.circular(6),
+      ),
+      Paint()..color = const Color(0xFF74420F),
+    );
+  }
+
+  void _drawOfferingFlowers(Canvas canvas, Offset center) {
+    final stemPaint = Paint()
+      ..color = const Color(0xFF426A2B)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    for (final dx in const [-10.0, 0.0, 10.0]) {
+      canvas.drawLine(center.translate(dx * 0.25, 14), center.translate(dx, -18), stemPaint);
+      for (var i = 0; i < 6; i++) {
+        canvas.save();
+        canvas.translate(center.dx + dx, center.dy - 20);
+        canvas.rotate(i * math.pi / 3);
+        canvas.drawOval(
+          const Rect.fromLTWH(-4, -11, 8, 13),
+          Paint()..color = const Color(0xFFEBA7C8),
+        );
+        canvas.restore();
+      }
+      canvas.drawCircle(center.translate(dx, -20), 3.5, Paint()..color = const Color(0xFFFFE16A));
+    }
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: center.translate(0, 16), width: 26, height: 18),
+        const Radius.circular(6),
+      ),
+      Paint()..color = const Color(0xFF7B3E19),
+    );
+  }
+
+  void _drawOfferingFruit(Canvas canvas, Offset center) {
+    final fruits = <MapEntry<Offset, Color>>[
+      const MapEntry(Offset(-12, 2), Color(0xFFFFC34D)),
+      const MapEntry(Offset(0, -7), Color(0xFFD83A2E)),
+      const MapEntry(Offset(13, 3), Color(0xFFFFB13B)),
+    ];
+    for (final fruit in fruits) {
+      canvas.drawCircle(center + fruit.key, 10, Paint()..color = fruit.value);
+      canvas.drawCircle(
+        center + fruit.key.translate(-3, -3),
+        3,
+        Paint()..color = const Color(0x66FFFFFF),
+      );
+    }
   }
 
   void _drawHalo(Canvas canvas, Offset center, Size size) {
