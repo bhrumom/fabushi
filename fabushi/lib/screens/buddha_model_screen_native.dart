@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -322,35 +323,26 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
   Future<void> _loadModel() async {
     const maxRetries = 3;
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _loadFailed = false;
+        _loadingProgress = 0.0;
+      });
+    }
+
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      var modelDataLoaded = false;
       try {
-        if (mounted) {
-          setState(() {
-            _isLoading = true;
-            _loadFailed = false;
-            _loadingProgress = 0.0;
-          });
-        }
         final modelData = await AssetLoaderService.loadBuddhaModel(
           onProgress: (progress) {
             if (mounted) setState(() => _loadingProgress = progress);
           },
         );
+        modelDataLoaded = true;
         if (!mounted) return;
 
-        final node = await Node.fromFlatbuffer(modelData.buffer.asByteData());
-        _retuneBuddhaMaterials(node);
-
-        // 从 .model flatbuffer 自动解析边界框并计算适配矩阵
-        // 无论更换什么模型，都能自动居中和缩放
-        final bounds = ModelAutoFit.computeBoundsFromModelBytes(modelData);
-        final originalTransform = node.localTransform.clone();
-        node.localTransform = ModelAutoFit.computeFitTransform(
-          bounds,
-          originalTransform: originalTransform,
-        );
-
-        scene.add(node);
+        await _buildBuddhaNode(modelData);
 
         if (mounted) {
           setState(() {
@@ -360,7 +352,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         }
         return;
       } catch (e) {
-        debugPrint('❌ 模型加载失败 (尝试 \$attempt): \$e');
+        debugPrint('❌ 模型加载失败 (尝试 $attempt): $e');
+        if (modelDataLoaded) {
+          await AssetLoaderService.evictBuddhaModelCache();
+        }
         if (attempt < maxRetries) {
           await Future.delayed(Duration(seconds: 1 << attempt));
         } else {
@@ -373,6 +368,22 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         }
       }
     }
+  }
+
+  Future<void> _buildBuddhaNode(Uint8List modelData) async {
+    final node = await Node.fromFlatbuffer(modelData.buffer.asByteData());
+    _retuneBuddhaMaterials(node);
+
+    // 从 .model flatbuffer 自动解析边界框并计算适配矩阵
+    // 无论更换什么模型，都能自动居中和缩放
+    final bounds = ModelAutoFit.computeBoundsFromModelBytes(modelData);
+    final originalTransform = node.localTransform.clone();
+    node.localTransform = ModelAutoFit.computeFitTransform(
+      bounds,
+      originalTransform: originalTransform,
+    );
+
+    scene.add(node);
   }
 
   @override
