@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:global_dharma_sharing/models/leaderboard_model.dart';
+import 'package:global_dharma_sharing/screens/leaderboard_screen.dart';
 import 'package:global_dharma_sharing/widgets/follow_button.dart';
 import 'package:global_dharma_sharing/widgets/leaderboard_user_detail_sheet.dart';
 
@@ -58,6 +59,15 @@ void main() {
       expect(entry.canShowPracticeName, isFalse);
       expect(entry.canShowDuration, isFalse);
       expect(entry.canShowChantCount, isFalse);
+    });
+  });
+
+  group('Leaderboard byte formatting', () {
+    test('compacts decimal transfer units for leaderboard display', () {
+      expect(formatLeaderboardBytes(999), '999 B');
+      expect(formatLeaderboardBytes(1530), '1.5 KB');
+      expect(formatLeaderboardBytes(2000 * 1000 * 1000), '2 GB');
+      expect(formatLeaderboardBytes(2000 * 1000 * 1000 * 1000), '2 TB');
     });
   });
 
