@@ -91,10 +91,10 @@ export const contactChannels = [
     note: "长期公开入口，适合转发下载页和常见问题。",
   },
   {
-    label: "GitHub 仓库",
-    value: "bhrumom/fabushi",
-    href: "https://github.com/bhrumom/fabushi",
-    note: "查看发布记录、公开 issue 和开发进展。",
+    label: "公开项目",
+    value: "fabushi.ombhrum.com",
+    href: "https://fabushi.ombhrum.com",
+    note: "查看项目进展、功能更新和最新发布动态。",
   },
 ] as const;
 

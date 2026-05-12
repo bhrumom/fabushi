@@ -7,15 +7,6 @@ on:
     paths:
       - frontend/**
       - .github/workflows/deploy-official-site-cloudflare.yml
-  release:
-    types:
-      - published
-      - edited
-  workflow_run:
-    workflows:
-      - Sync official site beta download state
-    types:
-      - completed
   workflow_dispatch:
 
 permissions:
