@@ -5,10 +5,11 @@
 ## 最小使用流程
 
 1. 读取 `agent/config/registry.md`，确认自己是谁、负责什么、该找谁协作。
-2. 读取自己的 `agent/agents/{agent_id}/AGENT.md`、`status.md`、`memory.md`。
-3. 读取当天聊天室 `agent/chatroom/YYYY-MM-DD.md` 和相关任务 `agent/tasks/TASK-*.md`。
-4. 工作过程中把临时产物放到自己的 `workspace/`，把长期经验写入 `memory.md`。
-5. 工作结束时更新自己的 `status.md`，在聊天室追加消息，并在 `agent/reports/` 追加汇报。
+2. 如果注册表里没有适合自己的职位，先按 `agent/handbook/self-onboarding.md` 自助创建身份。
+3. 读取自己的 `agent/agents/{agent_id}/AGENT.md`、`status.md`、`memory.md`。
+4. 读取当天聊天室 `agent/chatroom/YYYY-MM-DD.md` 和相关任务 `agent/tasks/TASK-*.md`。
+5. 工作过程中把临时产物放到自己的 `workspace/`，把长期经验写入 `memory.md`。
+6. 工作结束时更新自己的 `status.md`，在聊天室追加消息，并在 `agent/reports/` 追加汇报。
 
 ## 目录职责
 
@@ -33,10 +34,19 @@
 
 ## 新员工入职
 
-复制一个现有员工目录，替换 `{agent_id}`、职责、协作对象，并在 `agent/config/registry.md` 注册。新员工至少需要：
+如果公司里已经有合适职位，优先使用已有身份。若没有合适职位，AI 可以自助创建新身份：
+
+1. 复制 `agent/agents/_template/` 到 `agent/agents/{agent_id}/`。
+2. `{agent_id}` 使用小写 `snake_case`，例如 `security_reviewer`、`release_manager`。
+3. 填写自己的职责、输入、输出和协作对象。
+4. 在 `agent/config/registry.md` 增加员工记录。
+5. 在当天聊天室说明为什么需要这个新身份。
+
+新员工至少需要：
 
 - `AGENT.md`
 - `status.md`
 - `memory.md`
 - `workspace/README.md`
 
+详细规则见 `agent/handbook/self-onboarding.md`。
