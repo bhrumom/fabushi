@@ -240,6 +240,46 @@ export default async function DownloadPage() {
         </div>
       </section>
 
+      {releaseCollection.releases.length > 0 && (
+        <section className="band" id="release-changelog">
+          <div className="section-heading tight">
+            <p>更新日志</p>
+            <h2>最近更新了什么。</h2>
+          </div>
+          <div className="changelog-timeline">
+            {releaseCollection.releases.map((entry) => (
+              <article key={entry.tag} className="changelog-entry">
+                <div className="changelog-meta">
+                  <h3>
+                    <a href={entry.htmlUrl} target="_blank" rel="noopener noreferrer">
+                      {entry.title}
+                    </a>
+                  </h3>
+                  <time dateTime={entry.publishedAt}>
+                    {formatPublishedAt(entry.publishedAt)}
+                  </time>
+                </div>
+                {entry.summary.length > 0 && (
+                  <ul>
+                    {entry.summary.map((line, i) => (
+                      <li key={i}>{line}</li>
+                    ))}
+                  </ul>
+                )}
+                <a
+                  className="secondary-action"
+                  href={entry.htmlUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  查看完整发布说明
+                </a>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       <SiteFooter />
     </main>
   );

@@ -576,12 +576,78 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  capture-screenshots:
+    name: Capture product screenshots
+    needs: resolve-cd-context
+    if: needs.resolve-cd-context.outputs.mobile_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Build Flutter web
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build web --release --base-href /
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install Playwright Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx playwright install chromium --with-deps
+
+      - name: Capture screenshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../release-screenshots
+          node e2e/scripts/capture-release-screenshots.mjs \
+            --web-dir=build/web \
+            --output=../release-screenshots
+
+      - name: Upload screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-product-screenshots
+          path: release-screenshots
+          if-no-files-found: warn
+          retention-days: 30
+
   publish-release:
     name: Publish changed mobile packages
     needs:
       - resolve-cd-context
       - build-android-packages
       - build-ios-package
+      - capture-screenshots
     if: >-
       always() &&
       needs.resolve-cd-context.result == 'success' &&
@@ -604,6 +670,13 @@ jobs:
         with:
           name: release-ios-packages
           path: built-native-packages/ios
+
+      - name: Download product screenshots
+        if: needs.capture-screenshots.result == 'success'
+        uses: actions/download-artifact@v5
+        with:
+          name: release-product-screenshots
+          path: release-screenshots
 
       - name: Checkout source for version metadata
         uses: actions/checkout@v5
@@ -678,6 +751,18 @@ jobs:
                 ;;
             esac
           done < <(find built-native-packages -type f 2>/dev/null)
+
+          if [ -d release-screenshots ]; then
+            while IFS= read -r file; do
+              [ -f "$file" ] || continue
+              case "$file" in
+                *.png)
+                  base="$(basename "$file")"
+                  cp "$file" "release-assets/$base"
+                  ;;
+              esac
+            done < <(find release-screenshots -type f 2>/dev/null)
+          fi
 
           if [ "$IOS_CHANGED" = "true" ]; then
             for metadata_file in TESTFLIGHT_UPLOAD_STATUS.txt IOS_SIGNING_NOT_CONFIGURED.txt; do
