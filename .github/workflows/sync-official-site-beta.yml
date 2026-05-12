@@ -77,6 +77,40 @@ jobs:
           )
 
           assets = release.get("assets", [])
+
+          # Detect screenshots in release assets
+          screenshots = {}
+          screenshot_assets = [
+              asset for asset in assets
+              if asset.get("name", "").startswith("screenshot-") and asset.get("name", "").endswith(".png")
+          ]
+          for asset in screenshot_assets:
+              name = asset["name"].replace("screenshot-", "").replace(".png", "")
+              screenshots[name] = asset["browser_download_url"]
+
+          # Fetch recent releases for changelog
+          releases_list = []
+          try:
+              all_releases = json.loads(
+                  subprocess.check_output(
+                      ["gh", "api", f"repos/{release_repo}/releases?per_page=5"],
+                      text=True,
+                  )
+              )
+              for rel in all_releases:
+                  if rel.get("draft"):
+                      continue
+                  rel_summary = extract_summary(rel.get("body"), rel.get("name") or rel.get("tag_name"))
+                  releases_list.append({
+                      "tag": rel["tag_name"],
+                      "title": rel.get("name") or rel["tag_name"],
+                      "publishedAt": rel.get("published_at"),
+                      "htmlUrl": rel.get("html_url") or f"https://github.com/{release_repo}/releases/tag/{rel['tag_name']}",
+                      "summary": rel_summary,
+                  })
+          except Exception:
+              pass
+
           apk_assets = [asset for asset in assets if asset.get("name", "").endswith(".apk")]
           if not apk_assets:
               raise SystemExit("No APK asset was found in the selected release.")
@@ -192,6 +226,8 @@ jobs:
                   "publishedAt": release.get("published_at"),
               },
               "channels": channels,
+              "screenshots": screenshots,
+              "releases": releases_list,
               "notes": [
                   "Android beta 下载链接来自最新发布版本的 APK 资产。",
                   "iOS TestFlight 入口会在上传状态成功后和 Android beta 一起同步。",
