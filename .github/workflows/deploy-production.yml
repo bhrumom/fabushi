@@ -77,12 +77,6 @@ jobs:
             /.github/workflows/**
             /.github/scripts/**
 
-      - name: Seed stale llama gitlink metadata for checkout cleanup
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config --local submodule.fabushi/native_libs/llama.cpp.url https://github.com/ggerganov/llama.cpp.git
-
       - name: Detect deploy-relevant changes
         id: deploy-changes
         shell: bash
