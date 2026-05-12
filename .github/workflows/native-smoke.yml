@@ -71,6 +71,8 @@ jobs:
             /fabushi/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+            !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -120,6 +122,8 @@ jobs:
             /fabushi/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+            !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
             /.github/scripts/**
 
       - name: Set up Java
@@ -188,6 +192,8 @@ jobs:
             /fabushi/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+            !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
