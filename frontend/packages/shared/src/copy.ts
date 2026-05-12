@@ -46,9 +46,9 @@ export const primaryNavigation = [
 
 export const faqItems = [
   {
-    question: "Fabushi 是什么？",
+    question: "大乘 是什么？",
     answer:
-      "Fabushi 是一款佛教修行应用，提供经文听诵、全球法布施、禅修冥想、法流视频和修行记录。",
+      "大乘 是一款佛教修行应用，提供经文听诵、全球法布施、禅修冥想、法流视频和修行记录。",
   },
   {
     question: "现在可以下载吗？",
@@ -73,15 +73,15 @@ export const faqItems = [
   {
     question: "下载或安装遇到问题怎么办？",
     answer:
-      "可以通过 support@fabushi.com 联系支持。请附上平台、系统版本、错误截图或发生步骤。",
+      "可以通过 support@ombhrum.com 联系支持。请附上平台、系统版本、错误截图或发生步骤。",
   },
 ] as const;
 
 export const contactChannels = [
   {
     label: "支持邮箱",
-    value: "support@fabushi.com",
-    href: "mailto:support@fabushi.com",
+    value: "support@ombhrum.com",
+    href: "mailto:support@ombhrum.com",
     note: "下载问题、测试申请、账号支持和合作沟通。",
   },
   {
@@ -109,7 +109,7 @@ export const betaApplicationTracks = [
     ],
     ctaLabel: "申请 iOS 内测",
     ctaHref:
-      "mailto:support@fabushi.com?subject=Fabushi%20iOS%20Beta%20Application&body=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%88%91%E6%83%B3%E7%94%B3%E8%AF%B7%20Fabushi%20iOS%20%E5%86%85%E6%B5%8B%E3%80%82%0A%0A%E5%B8%B8%E7%94%A8%E9%82%AE%E7%AE%B1%EF%BC%9A%0A%E5%85%B3%E6%B3%A8%E7%82%B9%EF%BC%9A%0A%E6%98%AF%E5%90%A6%E6%84%BF%E6%84%8F%E5%8F%8D%E9%A6%88%E9%97%AE%E9%A2%98%EF%BC%9A%0A",
+      "mailto:support@ombhrum.com?subject=Fabushi%20iOS%20Beta%20Application&body=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%88%91%E6%83%B3%E7%94%B3%E8%AF%B7%20Fabushi%20iOS%20%E5%86%85%E6%B5%8B%E3%80%82%0A%0A%E5%B8%B8%E7%94%A8%E9%82%AE%E7%AE%B1%EF%BC%9A%0A%E5%85%B3%E6%B3%A8%E7%82%B9%EF%BC%9A%0A%E6%98%AF%E5%90%A6%E6%84%BF%E6%84%8F%E5%8F%8D%E9%A6%88%E9%97%AE%E9%A2%98%EF%BC%9A%0A",
   },
   {
     name: "Android Beta",
@@ -121,7 +121,7 @@ export const betaApplicationTracks = [
     ],
     ctaLabel: "申请 Android 内测",
     ctaHref:
-      "mailto:support@fabushi.com?subject=Fabushi%20Android%20Beta%20Application&body=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%88%91%E6%83%B3%E7%94%B3%E8%AF%B7%20Fabushi%20Android%20%E5%86%85%E6%B5%8B%E3%80%82%0A%0A%E5%B8%B8%E7%94%A8%E9%82%AE%E7%AE%B1%EF%BC%9A%0AAndroid%20%E6%9C%BA%E5%9E%8B%2F%E7%B3%BB%E7%BB%9F%E7%89%88%E6%9C%AC%EF%BC%9A%0A%E6%9C%80%E6%83%B3%E4%BD%93%E9%AA%8C%E7%9A%84%E6%A8%A1%E5%9D%97%EF%BC%9A%0A",
+      "mailto:support@ombhrum.com?subject=Fabushi%20Android%20Beta%20Application&body=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%88%91%E6%83%B3%E7%94%B3%E8%AF%B7%20Fabushi%20Android%20%E5%86%85%E6%B5%8B%E3%80%82%0A%0A%E5%B8%B8%E7%94%A8%E9%82%AE%E7%AE%B1%EF%BC%9A%0AAndroid%20%E6%9C%BA%E5%9E%8B%2F%E7%B3%BB%E7%BB%9F%E7%89%88%E6%9C%AC%EF%BC%9A%0A%E6%9C%80%E6%83%B3%E4%BD%93%E9%AA%8C%E7%9A%84%E6%A8%A1%E5%9D%97%EF%BC%9A%0A",
   },
   {
     name: "合作与渠道",
@@ -133,6 +133,6 @@ export const betaApplicationTracks = [
     ],
     ctaLabel: "发起合作沟通",
     ctaHref:
-      "mailto:support@fabushi.com?subject=Fabushi%20Partnership%20Inquiry&body=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%88%91%E6%83%B3%E5%92%8C%20Fabushi%20%E8%AE%A8%E8%AE%BA%E5%90%88%E4%BD%9C%E3%80%82%0A%0A%E5%A7%93%E5%90%8D%E6%88%96%E7%BB%84%E7%BB%87%E5%90%8D%E7%A7%B0%EF%BC%9A%0A%E5%90%88%E4%BD%9C%E6%96%B9%E5%90%91%EF%BC%9A%0A%E5%9B%9E%E8%81%94%E6%96%B9%E5%BC%8F%EF%BC%9A%0A",
+      "mailto:support@ombhrum.com?subject=Fabushi%20Partnership%20Inquiry&body=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%88%91%E6%83%B3%E5%92%8C%20Fabushi%20%E8%AE%A8%E8%AE%BA%E5%90%88%E4%BD%9C%E3%80%82%0A%0A%E5%A7%93%E5%90%8D%E6%88%96%E7%BB%84%E7%BB%87%E5%90%8D%E7%A7%B0%EF%BC%9A%0A%E5%90%88%E4%BD%9C%E6%96%B9%E5%90%91%EF%BC%9A%0A%E5%9B%9E%E8%81%94%E6%96%B9%E5%BC%8F%EF%BC%9A%0A",
   },
 ] as const;

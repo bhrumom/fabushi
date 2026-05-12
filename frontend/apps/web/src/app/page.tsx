@@ -31,7 +31,7 @@ const productMoments = [
 export default async function HomePage() {
   const releaseCollection = await getOfficialSiteReleaseCollection();
   const channels = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels].slice(0, 3);
-  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
+  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
   const directChannel = releaseCollection.betaChannels.find((item) => !item.primaryHref.startsWith("/contact"));
   const primaryHref = directChannel?.primaryHref ?? "/download";
   const primaryLabel = directChannel?.primaryLabel ?? "查看下载入口";
@@ -42,14 +42,14 @@ export default async function HomePage() {
     "@graph": [
       {
         "@type": "Organization",
-        name: `${brand.name} Fabushi`,
+        name: `${brand.name} 大乘`,
         url: siteUrl("/"),
         email: supportEmail,
         description: brand.mission,
       },
       {
         "@type": "SoftwareApplication",
-        name: `${brand.name} Fabushi`,
+        name: `${brand.name} 大乘`,
         applicationCategory: "LifestyleApplication",
         operatingSystem: "iOS, Android, Web",
         url: siteUrl("/download"),
@@ -83,7 +83,7 @@ export default async function HomePage() {
           <section className="hero-copy" aria-labelledby="home-title">
             <div className="brand-kicker">
               <img src={siteHref("/product/app-icon.png")} alt="" />
-              <span>Fabushi</span>
+              <span>大乘</span>
             </div>
             <h1 id="home-title">法布施</h1>
             <p className="hero-subtitle">{brand.tagline}</p>
@@ -113,14 +113,14 @@ export default async function HomePage() {
             </div>
           </section>
 
-          <section className="hero-visual" aria-label="Fabushi 产品预览">
+          <section className="hero-visual" aria-label="大乘 产品预览">
             <ZenOrbit />
             <div className="phone-stack">
               <div className="phone-frame main-phone">
-                <img src={siteHref("/product/home.png")} alt="Fabushi 全球法布施界面预览" />
+                <img src={siteHref("/product/home.png")} alt="大乘 全球法布施界面预览" />
               </div>
               <div className="phone-frame side-phone">
-                <img src={siteHref("/product/video.png")} alt="Fabushi 法流视频界面预览" />
+                <img src={siteHref("/product/video.png")} alt="大乘 法流视频界面预览" />
               </div>
             </div>
           </section>

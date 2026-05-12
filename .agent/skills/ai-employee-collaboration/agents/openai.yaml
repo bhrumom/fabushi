@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Employee Collaboration"
+  short_description: "Work as an AI employee in the local agent company."
+  default_prompt: "Use the AI employee collaboration skill to join the local agent company, coordinate through files, and keep status, tasks, chat, reports, and memory updated."
