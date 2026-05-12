@@ -246,7 +246,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        '问题会自动同步到 GitHub Issue，方便后续跟进。',
+                        '问题会通过邮件发送到支持团队，方便后续跟进。',
                         style: TextStyle(color: Colors.white70, fontSize: 13),
                       ),
                       const SizedBox(height: 8),
@@ -479,7 +479,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.help_outline,
                     iconColor: Colors.orange,
                     title: '帮助与反馈',
-                    subtitle: '提交问题或建议，自动同步到 GitHub',
+                    subtitle: '提交问题或建议，发送到支持邮箱',
                     onTap: _showFeedbackDialog,
                   ),
 
