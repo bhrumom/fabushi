@@ -4,7 +4,7 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div>
-        <p className="footer-title">法布施 Fabushi</p>
+        <p className="footer-title">法布施 大乘</p>
         <p className="footer-copy">经文、禅修、法流与全球法布施。</p>
       </div>
       <div className="footer-links">
@@ -14,7 +14,7 @@ export function SiteFooter() {
         <a href={siteHref("/privacy")}>隐私说明</a>
         <a href={siteHref("/contact")}>联系</a>
         <a href={siteHref("/insights")}>内容专栏</a>
-        <a href="mailto:support@fabushi.com">support@fabushi.com</a>
+        <a href="mailto:support@ombhrum.com">support@ombhrum.com</a>
       </div>
     </footer>
   );

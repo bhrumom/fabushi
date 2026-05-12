@@ -5,16 +5,16 @@ import { siteUrl } from "../lib/site-url";
 import "./globals.css";
 
 const homeUrl = siteUrl("/");
-const siteTitle = `${brand.name} Fabushi | 经文听诵、禅修与全球法布施`;
+const siteTitle = `${brand.name} 大乘 | 经文听诵、禅修与全球法布施`;
 const siteDescription =
-  "Fabushi 法布施提供经文听诵、禅修冥想、法流视频、修行记录与 Android / iOS 下载入口。";
+  "大乘 法布施提供经文听诵、禅修冥想、法流视频、修行记录与 Android / iOS 下载入口。";
 
 export const metadata: Metadata = {
   title: siteTitle,
   description: siteDescription,
   keywords: [
     "法布施",
-    "Fabushi",
+    "大乘",
     "佛法传播",
     "修行记录",
     "共修",
@@ -25,10 +25,10 @@ export const metadata: Metadata = {
     "TestFlight",
     "微信小程序",
   ],
-  applicationName: `${brand.name} Fabushi`,
-  authors: [{ name: "Fabushi" }],
-  creator: "Fabushi",
-  publisher: "Fabushi",
+  applicationName: `${brand.name} 大乘`,
+  authors: [{ name: "大乘" }],
+  creator: "大乘",
+  publisher: "大乘",
   metadataBase: new URL(homeUrl),
   alternates: {
     canonical: homeUrl,
@@ -39,7 +39,7 @@ export const metadata: Metadata = {
     title: siteTitle,
     description: siteDescription,
     url: homeUrl,
-    siteName: "Fabushi",
+    siteName: "大乘",
     locale: "zh_CN",
     type: "website",
   },
