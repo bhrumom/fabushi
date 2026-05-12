@@ -61,6 +61,7 @@ jobs:
           echo "Resolved source SHA: $source_sha"
 
       - name: Checkout source
+        continue-on-error: true
         uses: actions/checkout@v5
         with:
           ref: ${{ steps.source.outputs.source_sha }}
@@ -71,8 +72,16 @@ jobs:
             /fabushi/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+            !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
             /.github/workflows/**
             /.github/scripts/**
+
+      - name: Seed stale llama gitlink metadata for checkout cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --local submodule.fabushi/native_libs/llama.cpp.url https://github.com/ggerganov/llama.cpp.git
 
       - name: Detect deploy-relevant changes
         id: deploy-changes
