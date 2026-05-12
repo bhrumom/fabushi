@@ -49,8 +49,26 @@ export interface OfficialSiteChannel {
   releasePageHref?: string;
 }
 
+export interface OfficialSiteScreenshots {
+  home?: string | null;
+  meditation?: string | null;
+  sutra?: string | null;
+  video?: string | null;
+  capturedAt?: string;
+}
+
+export interface OfficialSiteReleaseEntry {
+  tag: string;
+  title: string;
+  publishedAt: string;
+  htmlUrl: string;
+  summary: string[];
+}
+
 interface OfficialSiteReleaseAssetState {
   channels: OfficialSiteChannel[];
+  screenshots?: OfficialSiteScreenshots;
+  releases?: OfficialSiteReleaseEntry[];
   notes?: string[];
   generatedAt?: string;
 }
@@ -58,8 +76,17 @@ interface OfficialSiteReleaseAssetState {
 export interface OfficialSiteReleaseCollection {
   betaChannels: OfficialSiteChannel[];
   stableChannels: OfficialSiteChannel[];
+  screenshots: OfficialSiteScreenshots;
+  releases: OfficialSiteReleaseEntry[];
   notes: string[];
 }
+
+export const FALLBACK_SCREENSHOTS: Record<string, string> = {
+  home: "/product/home.png",
+  meditation: "/product/home.png",
+  sutra: "/product/sutra.png",
+  video: "/product/video.png",
+};
 
 const DEFAULT_STABLE_CHANNELS: OfficialSiteChannel[] = [
   {
@@ -192,6 +219,41 @@ function normalizeChannel(input: unknown): OfficialSiteChannel | null {
   };
 }
 
+function normalizeScreenshots(input: unknown): OfficialSiteScreenshots | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const obj = input as Record<string, unknown>;
+  const screenshots: OfficialSiteScreenshots = {};
+  let hasAny = false;
+  for (const key of ["home", "meditation", "sutra", "video"]) {
+    const value = obj[key];
+    if (typeof value === "string" && value.length > 0) {
+      screenshots[key as keyof OfficialSiteScreenshots] = value;
+      hasAny = true;
+    }
+  }
+  if (typeof obj.capturedAt === "string" && obj.capturedAt.length > 0) {
+    screenshots.capturedAt = obj.capturedAt;
+    hasAny = true;
+  }
+  return hasAny ? screenshots : undefined;
+}
+
+function normalizeReleaseEntries(input: unknown): OfficialSiteReleaseEntry[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map((item) => ({
+      tag: typeof item.tag === "string" ? item.tag : "",
+      title: typeof item.title === "string" ? item.title : typeof item.tag === "string" ? item.tag : "",
+      publishedAt: typeof item.publishedAt === "string" ? item.publishedAt : "",
+      htmlUrl: typeof item.htmlUrl === "string" ? item.htmlUrl : "",
+      summary: Array.isArray(item.summary)
+        ? item.summary.filter((s): s is string => typeof s === "string" && s.length > 0)
+        : [],
+    }))
+    .filter((entry) => entry.tag.length > 0);
+}
+
 function normalizeState(input: unknown): OfficialSiteReleaseAssetState | null {
   if (!input || typeof input !== "object") {
     return null;
@@ -206,9 +268,13 @@ function normalizeState(input: unknown): OfficialSiteReleaseAssetState | null {
   const notes = Array.isArray(state.notes)
     ? state.notes.filter((item): item is string => typeof item === "string" && item.length > 0)
     : [];
+  const screenshots = normalizeScreenshots(state.screenshots);
+  const releases = normalizeReleaseEntries(state.releases);
 
   return {
     channels,
+    screenshots,
+    releases,
     notes,
     generatedAt:
       typeof state.generatedAt === "string" && state.generatedAt.length > 0 ? state.generatedAt : undefined,
@@ -330,10 +396,12 @@ export async function getReleaseCollectionClient(): Promise<OfficialSiteReleaseC
     return {
       betaChannels: (data.betaChannels ?? []).map(normalizeChannel).filter(Boolean) as OfficialSiteChannel[],
       stableChannels: (data.stableChannels ?? []).map(normalizeChannel).filter(Boolean) as OfficialSiteChannel[],
+      screenshots: normalizeScreenshots(data.screenshots) ?? {},
+      releases: normalizeReleaseEntries(data.releases),
       notes: Array.isArray(data.notes) ? data.notes : [],
     };
   } catch {
-    return { betaChannels: [], stableChannels: [], notes: [] };
+    return { betaChannels: [], stableChannels: [], screenshots: {}, releases: [], notes: [] };
   }
 }
 
@@ -362,6 +430,8 @@ export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteRe
   return {
     betaChannels: betaState?.channels ?? [],
     stableChannels: stableState?.channels?.length ? stableState.channels : DEFAULT_STABLE_CHANNELS,
+    screenshots: betaState?.screenshots ?? {},
+    releases: betaState?.releases ?? [],
     notes:
       betaState?.notes?.length
         ? betaState.notes

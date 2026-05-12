@@ -2,40 +2,47 @@ import { brand, contactChannels, faqItems, homeHighlights } from "@fabushi/share
 import { SiteFooter } from "../components/site-footer";
 import { SiteHeader } from "../components/site-header";
 import { ZenOrbit } from "../components/zen-orbit";
-import { getOfficialSiteReleaseCollection } from "../lib/official-site-releases";
+import {
+  getOfficialSiteReleaseCollection,
+  FALLBACK_SCREENSHOTS,
+  type OfficialSiteScreenshots,
+} from "../lib/official-site-releases";
 import { siteHref, siteUrl } from "../lib/site-url";
 
-const productMoments = [
-  {
-    title: "经文听诵",
-    description: "读经、听诵、进度保存。",
-    image: "/product/sutra.png",
-  },
-  {
-    title: "全球法布施",
-    description: "一键发送，看见善意抵达世界。",
-    image: "/product/home.png",
-  },
-  {
-    title: "禅修冥想",
-    description: "禅室、计时、修行记录。",
-    image: "/product/home.png",
-  },
-  {
-    title: "法流视频",
-    description: "滑动浏览佛法内容。",
-    image: "/product/video.png",
-  },
-] as const;
+interface ProductMoment {
+  title: string;
+  description: string;
+  image: string;
+}
+
+function resolveProductMoments(screenshots: OfficialSiteScreenshots): ProductMoment[] {
+  const moments: { title: string; description: string; screenshotKey: string }[] = [
+    { title: "经文听诵", description: "读经、听诵、进度保存。", screenshotKey: "sutra" },
+    { title: "全球法布施", description: "一键发送，看见善意抵达世界。", screenshotKey: "home" },
+    { title: "禅修冥想", description: "禅室、计时、修行记录。", screenshotKey: "meditation" },
+    { title: "法流视频", description: "滑动浏览佛法内容。", screenshotKey: "video" },
+  ];
+
+  return moments.map((m) => ({
+    title: m.title,
+    description: m.description,
+    image: (screenshots[m.screenshotKey as keyof OfficialSiteScreenshots] as string)
+      ?? FALLBACK_SCREENSHOTS[m.screenshotKey]
+      ?? "/product/home.png",
+  }));
+}
 
 export default async function HomePage() {
   const releaseCollection = await getOfficialSiteReleaseCollection();
+  const productMoments = resolveProductMoments(releaseCollection.screenshots);
   const channels = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels].slice(0, 3);
   const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
   const directChannel = releaseCollection.betaChannels.find((item) => !item.primaryHref.startsWith("/contact"));
   const primaryHref = directChannel?.primaryHref ?? "/download";
   const primaryLabel = directChannel?.primaryLabel ?? "查看下载入口";
   const faqPreview = faqItems.slice(0, 4);
+  const mainScreenshot = (releaseCollection.screenshots?.home as string) ?? FALLBACK_SCREENSHOTS.home;
+  const sideScreenshot = (releaseCollection.screenshots?.video as string) ?? FALLBACK_SCREENSHOTS.video;
 
   const structuredData = {
     "@context": "https://schema.org",
@@ -117,10 +124,10 @@ export default async function HomePage() {
             <ZenOrbit />
             <div className="phone-stack">
               <div className="phone-frame main-phone">
-                <img src={siteHref("/product/home.png")} alt="大乘 全球法布施界面预览" />
+                <img src={siteHref(mainScreenshot)} alt="大乘 全球法布施界面预览" />
               </div>
               <div className="phone-frame side-phone">
-                <img src={siteHref("/product/video.png")} alt="大乘 法流视频界面预览" />
+                <img src={siteHref(sideScreenshot)} alt="大乘 法流视频界面预览" />
               </div>
             </div>
           </section>
