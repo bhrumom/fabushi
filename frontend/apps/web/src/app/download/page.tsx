@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { brand, contactChannels } from "@fabushi/shared";
+import { DownloadClient } from "../../components/download-client";
+import type { DownloadChannel } from "../../components/download-client";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import { ZenOrbit } from "../../components/zen-orbit";
@@ -172,15 +174,13 @@ export default async function DownloadPage() {
 
       <section className="band compact-band" id="beta-channels">
         <div className="section-heading tight">
-          <p>Beta</p>
-          <h2>优先体验最新进度。</h2>
+          <p>下载</p>
+          <h2>选择适合你的入口。</h2>
         </div>
-        <div className="download-grid">
-          {betaChannels.length > 0 ? (
-            betaChannels.map((channel) => (
-              <ReleaseChannelCard key={`${channel.audience}-${channel.platform}`} channel={channel} />
-            ))
-          ) : (
+        {betaChannels.length > 0 ? (
+          <DownloadClient channels={betaChannels as DownloadChannel[]} />
+        ) : (
+          <div className="download-grid">
             <article className="release-card">
               <div className="release-card-header">
                 <div>
@@ -196,8 +196,8 @@ export default async function DownloadPage() {
                 </a>
               </div>
             </article>
-          )}
-        </div>
+          </div>
+        )}
       </section>
 
       <section className="band alt" id="stable-channels">

@@ -4,11 +4,11 @@ const RELEASES_API_URL = `https://api.github.com/repos/${officialSiteReleaseRepo
 
 const DEFAULT_MIRROR_BASES = [
   {
-    label: "GitHub 镜像 1",
+    label: "国内镜像 1",
     prefix: "https://mirror.ghproxy.com/https://github.com/",
   },
   {
-    label: "GitHub 镜像 2",
+    label: "国内镜像 2",
     prefix: "https://ghfast.top/https://github.com/",
   },
 ] as const;
@@ -265,7 +265,7 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
     channels.push({
       platform: "Android",
       audience: "beta",
-      status: "GitHub Release Beta",
+      status: "Beta 自动同步",
       title: "Android Beta",
       description: "最新 Android 测试包，适合尽快体验新版本并反馈问题。",
       primaryLabel: "下载 Android Beta",
@@ -274,7 +274,7 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
       publishedAt: release.published_at ?? undefined,
       updateSummary: summary,
       mirrorLinks: buildMirrorLinks(apkAsset.browser_download_url),
-      note: "如镜像暂时不可用，请改用 GitHub 原始下载链接。",
+      note: "如镜像暂时不可用，请使用原始下载链接。",
       releasePageHref: release.html_url,
     });
   }
@@ -317,9 +317,24 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
     notes: [
       "Android Beta 会优先显示最新 APK。",
       "iOS TestFlight 可加入时会显示直接入口。",
-      "国内访问 GitHub 较慢时，可以优先尝试页面里给出的镜像下载入口。",
+      "国内访问较慢时，可以优先尝试页面里给出的镜像下载入口。",
     ],
   };
+}
+
+export async function getReleaseCollectionClient(): Promise<OfficialSiteReleaseCollection> {
+  try {
+    const res = await fetch("/api/releases.json");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return {
+      betaChannels: (data.betaChannels ?? []).map(normalizeChannel).filter(Boolean) as OfficialSiteChannel[],
+      stableChannels: (data.stableChannels ?? []).map(normalizeChannel).filter(Boolean) as OfficialSiteChannel[],
+      notes: Array.isArray(data.notes) ? data.notes : [],
+    };
+  } catch {
+    return { betaChannels: [], stableChannels: [], notes: [] };
+  }
 }
 
 export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteReleaseCollection> {

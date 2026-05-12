@@ -65,8 +65,8 @@ jobs:
           ]
           if not mirror_lines:
               mirror_lines = [
-                  "GitHub 镜像 1|https://mirror.ghproxy.com/https://github.com/",
-                  "GitHub 镜像 2|https://ghfast.top/https://github.com/",
+                  "国内镜像 1|https://mirror.ghproxy.com/https://github.com/",
+                  "国内镜像 2|https://ghfast.top/https://github.com/",
               ]
 
           release = json.loads(
@@ -138,16 +138,16 @@ jobs:
               {
                   "platform": "Android",
                   "audience": "beta",
-                  "status": "GitHub Release Beta",
+                  "status": "Beta 自动同步",
                   "title": "Android Beta",
-                  "description": "官网直接读取最新 GitHub Release 的 APK 安装包，安装包发布后这里会自动更新。",
+                  "description": "官网直接读取最新发布版本的 APK 安装包，安装包发布后这里会自动更新。",
                   "primaryLabel": "下载 Android Beta",
                   "primaryHref": apk_asset["browser_download_url"],
                   "version": release_tag,
                   "publishedAt": release.get("published_at"),
                   "updateSummary": summary,
                   "mirrorLinks": build_mirror_links(apk_asset["browser_download_url"]),
-                  "note": "国内访问 GitHub 较慢时，可以优先尝试镜像下载入口。",
+                  "note": "国内访问较慢时，可以优先尝试镜像下载入口。",
                   "releasePageHref": release_url,
               }
           ]
@@ -193,9 +193,9 @@ jobs:
               },
               "channels": channels,
               "notes": [
-                  "Android beta 下载链接来自最新 GitHub Release 的 APK 资产。",
+                  "Android beta 下载链接来自最新发布版本的 APK 资产。",
                   "iOS TestFlight 入口会在上传状态成功后和 Android beta 一起同步。",
-                  "镜像链接面向国内网络环境准备，如镜像暂时不可用请改用 GitHub 原始下载地址。",
+                  "镜像链接面向国内网络环境准备，如镜像暂时不可用请使用原始下载地址。",
               ],
           }
 
@@ -233,6 +233,32 @@ jobs:
           cat "$upload_log" >&2
           rm -f "$upload_log"
           exit 1
+
+      - name: Push beta state to official site repo
+        id: push_state
+        if: steps.upload_state.outputs.uploaded == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          token: ${{ secrets.OFFICIAL_SITE_RELEASE_PAT || github.token }}
+
+      - name: Copy state to public API and commit
+        if: steps.push_state.outcome == 'success'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          cp OFFICIAL_SITE_RELEASE_STATE.json frontend/apps/web/public/api/releases.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add frontend/apps/web/public/api/releases.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: sync beta release state for $RELEASE_TAG"
+          git push origin main
 
       - name: Write summary
         shell: bash
@@ -295,7 +321,7 @@ jobs:
               extraSections: [
                 '### Official site impact',
                 '',
-                '- Android beta 下载入口不会自动切到最新 GitHub Release APK。',
+                '- Android beta 下载入口不会自动切到最新发布版本 APK。',
                 '- iOS TestFlight 状态不会自动同步到官网。',
                 '- 官网“这次更新了什么”和国内镜像下载入口也不会随本次 release 刷新。',
                 '',

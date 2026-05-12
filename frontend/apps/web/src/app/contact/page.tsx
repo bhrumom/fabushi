@@ -6,7 +6,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 
 const contactUrl = siteUrl("/contact");
 const contactTitle = `联系 | ${brand.name}`;
-const contactDescription = "Fabushi 支持邮箱、官网域名和 GitHub 仓库入口。";
+const contactDescription = "大乘 支持邮箱、官网域名和公开项目入口。";
 
 export const metadata: Metadata = {
   title: contactTitle,
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   alternates: {
     canonical: contactUrl,
   },
-  keywords: ["联系 Fabushi", "法布施支持邮箱", "Fabushi GitHub"],
+  keywords: ["联系 Fabushi", "法布施支持邮箱", "Fabushi 联系方式"],
   openGraph: {
     title: contactTitle,
     description: contactDescription,
