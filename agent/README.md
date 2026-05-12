@@ -4,12 +4,13 @@
 
 ## 最小使用流程
 
-1. 读取 `agent/config/registry.md`，确认自己是谁、负责什么、该找谁协作。
-2. 如果注册表里没有适合自己的职位，先按 `agent/handbook/self-onboarding.md` 自助创建身份。
-3. 读取自己的 `agent/agents/{agent_id}/AGENT.md`、`status.md`、`memory.md`。
-4. 读取当天聊天室 `agent/chatroom/YYYY-MM-DD.md` 和相关任务 `agent/tasks/TASK-*.md`。
-5. 工作过程中把临时产物放到自己的 `workspace/`，把长期经验写入 `memory.md`。
-6. 工作结束时更新自己的 `status.md`，在聊天室追加消息，并在 `agent/reports/` 追加汇报。
+1. 如果运行环境支持 Skills，先使用 `.agent/skills/ai-employee-collaboration` 学习公司协作流程。
+2. 读取 `agent/config/registry.md`，确认自己是谁、负责什么、该找谁协作。
+3. 如果注册表里没有适合自己的职位，先按 `agent/handbook/self-onboarding.md` 自助创建身份。
+4. 读取自己的 `agent/agents/{agent_id}/AGENT.md`、`status.md`、`memory.md`。
+5. 读取当天聊天室 `agent/chatroom/YYYY-MM-DD.md` 和相关任务 `agent/tasks/TASK-*.md`。
+6. 工作过程中把临时产物放到自己的 `workspace/`，把长期经验写入 `memory.md`。
+7. 工作结束时更新自己的 `status.md`，在聊天室追加消息，并在 `agent/reports/` 追加汇报。
 
 ## 目录职责
 
