@@ -645,7 +645,7 @@ jobs:
             app_version="${version_name}+${RELEASE_BUILD_NUMBER}"
           fi
 
-          safe_version="$(printf '%s' "$app_version" | tr '+/' '--' | tr -cd '[:alnum:]._-')"
+          safe_version="$(printf '%s' "$app_version" | tr '+/' '--' | tr -cd '[:alnum:]._-' )"
           if [ -z "$safe_version" ] || [ "$safe_version" = "unknown" ]; then
             tag="cd-mobile-$short_sha"
             title="Fabushi mobile CD $short_sha"
