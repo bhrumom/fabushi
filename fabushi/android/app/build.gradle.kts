@@ -62,13 +62,9 @@ android {
 
     buildTypes {
         release {
-            if (!keystorePropertiesFile.exists()) {
-                throw GradleException(
-                    "Release signing requires android/key.properties. " +
-                        "Build debug for local installs or provide the release keystore for publish builds."
-                )
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
             }
-            signingConfig = signingConfigs.getByName("release")
         }
     }
 
