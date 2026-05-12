@@ -62,6 +62,7 @@ jobs:
         working-directory: fabushi
     steps:
       - name: Checkout Android source
+        continue-on-error: true
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-source.outputs.source_sha }}
@@ -71,6 +72,14 @@ jobs:
             /fabushi/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+            !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
+
+      - name: Seed stale llama gitlink metadata for checkout cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --local submodule.fabushi/native_libs/llama.cpp.url https://github.com/ggerganov/llama.cpp.git
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -111,6 +120,7 @@ jobs:
         working-directory: fabushi
     steps:
       - name: Checkout Android source and native test helper
+        continue-on-error: true
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-source.outputs.source_sha }}
@@ -120,7 +130,15 @@ jobs:
             /fabushi/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+            !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
             /.github/scripts/**
+
+      - name: Seed stale llama gitlink metadata for checkout cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --local submodule.fabushi/native_libs/llama.cpp.url https://github.com/ggerganov/llama.cpp.git
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -179,6 +197,7 @@ jobs:
         working-directory: fabushi
     steps:
       - name: Checkout iOS source
+        continue-on-error: true
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-source.outputs.source_sha }}
@@ -188,6 +207,14 @@ jobs:
             /fabushi/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+            !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
+
+      - name: Seed stale llama gitlink metadata for checkout cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --local submodule.fabushi/native_libs/llama.cpp.url https://github.com/ggerganov/llama.cpp.git
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
