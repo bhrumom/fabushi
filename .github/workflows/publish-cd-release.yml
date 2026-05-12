@@ -270,7 +270,8 @@ jobs:
               exit 1
             fi
           done
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/release-keystore.jks
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release-keystore.jks
+          chmod 600 android/app/release-keystore.jks
           cat > android/key.properties <<EOF
           storePassword=$ANDROID_KEYSTORE_PASSWORD
           keyPassword=$ANDROID_KEY_PASSWORD
@@ -284,6 +285,23 @@ jobs:
           flutter pub get
           flutter build apk --release --build-number "$RELEASE_BUILD_NUMBER" --target-platform android-arm64
           flutter build appbundle --release --build-number "$RELEASE_BUILD_NUMBER"
+
+      - name: Upload Android app bundle to Google Play
+        uses: r0adkll/upload-google-play@v1.1.5
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.GOOGLE_PLAY_PACKAGE_NAME || 'com.ombhrum.fabushi' }}
+          GOOGLE_PLAY_TRACKS: ${{ vars.GOOGLE_PLAY_TRACKS || 'production' }}
+          GOOGLE_PLAY_RELEASE_STATUS: ${{ vars.GOOGLE_PLAY_RELEASE_STATUS || 'completed' }}
+          GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW: ${{ vars.GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW || 'true' }}
+        with:
+          serviceAccountJsonPlainText: ${{ env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.GOOGLE_PLAY_PACKAGE_NAME }}
+          releaseFiles: fabushi/build/app/outputs/bundle/release/app-release.aab
+          tracks: ${{ env.GOOGLE_PLAY_TRACKS }}
+          status: ${{ env.GOOGLE_PLAY_RELEASE_STATUS }}
+          releaseName: ${{ needs.resolve-cd-context.outputs.release_build_number }}-${{ needs.resolve-cd-context.outputs.source_sha }}
+          changesNotSentForReview: ${{ env.GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW }}
 
       - name: Stage Android release packages
         shell: bash
