@@ -108,6 +108,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ steps.source.outputs.source_sha }}
+          persist-credentials: false
           fetch-depth: 0
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -234,6 +235,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
+          persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
@@ -286,6 +288,39 @@ jobs:
           flutter build apk --release --build-number "$RELEASE_BUILD_NUMBER" --target-platform android-arm64
           flutter build appbundle --release --build-number "$RELEASE_BUILD_NUMBER"
 
+      - name: Normalize Google Play review handoff
+        id: google-play-review
+        shell: bash
+        env:
+          GOOGLE_PLAY_TRACKS: ${{ vars.GOOGLE_PLAY_TRACKS || 'production' }}
+          GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW: ${{ vars.GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW }}
+        run: |
+          set -euo pipefail
+          changes_not_sent_for_review="${GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW:-}"
+          track="${GOOGLE_PLAY_TRACKS:-production}"
+
+          if [ -z "$changes_not_sent_for_review" ]; then
+            changes_not_sent_for_review=true
+          fi
+
+          case "$track:$changes_not_sent_for_review" in
+            production:true|production:TRUE|production:True|production:1|production:yes|production:YES)
+              changes_not_sent_for_review=true
+              ;;
+            production:*)
+              echo "Google Play production uploads require changesNotSentForReview=true; forcing manual review handoff."
+              changes_not_sent_for_review=true
+              ;;
+          esac
+
+          echo "changes_not_sent_for_review=$changes_not_sent_for_review" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Google Play publish mode"
+            echo ""
+            echo "- Track: $track"
+            echo "- changesNotSentForReview: $changes_not_sent_for_review"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload Android app bundle to Google Play
         uses: r0adkll/upload-google-play@v1.1.5
         env:
@@ -293,7 +328,6 @@ jobs:
           GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.GOOGLE_PLAY_PACKAGE_NAME || 'com.ombhrum.fabushi' }}
           GOOGLE_PLAY_TRACKS: ${{ vars.GOOGLE_PLAY_TRACKS || 'production' }}
           GOOGLE_PLAY_RELEASE_STATUS: ${{ vars.GOOGLE_PLAY_RELEASE_STATUS || 'completed' }}
-          GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW: ${{ vars.GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW || 'true' }}
         with:
           serviceAccountJsonPlainText: ${{ env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: ${{ env.GOOGLE_PLAY_PACKAGE_NAME }}
@@ -301,7 +335,7 @@ jobs:
           tracks: ${{ env.GOOGLE_PLAY_TRACKS }}
           status: ${{ env.GOOGLE_PLAY_RELEASE_STATUS }}
           releaseName: ${{ needs.resolve-cd-context.outputs.release_build_number }}-${{ needs.resolve-cd-context.outputs.source_sha }}
-          changesNotSentForReview: ${{ env.GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW }}
+          changesNotSentForReview: ${{ steps.google-play-review.outputs.changes_not_sent_for_review }}
 
       - name: Stage Android release packages
         shell: bash
@@ -344,6 +378,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
+          persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
@@ -574,6 +609,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
+          persist-credentials: false
           clean: false
           path: version-metadata
           sparse-checkout-cone-mode: false
@@ -799,6 +835,7 @@ jobs:
       - name: Checkout failure notifier
         uses: actions/checkout@v5
         with:
+          persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/scripts/**
