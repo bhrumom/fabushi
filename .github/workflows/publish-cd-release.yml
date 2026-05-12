@@ -293,7 +293,7 @@ jobs:
           GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.GOOGLE_PLAY_PACKAGE_NAME || 'com.ombhrum.fabushi' }}
           GOOGLE_PLAY_TRACKS: ${{ vars.GOOGLE_PLAY_TRACKS || 'production' }}
           GOOGLE_PLAY_RELEASE_STATUS: ${{ vars.GOOGLE_PLAY_RELEASE_STATUS || 'completed' }}
-          GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW: ${{ vars.GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW || 'false' }}
+          GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW: ${{ vars.GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW || 'true' }}
         with:
           serviceAccountJsonPlainText: ${{ env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: ${{ env.GOOGLE_PLAY_PACKAGE_NAME }}
