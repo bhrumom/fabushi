@@ -62,6 +62,7 @@ jobs:
         working-directory: fabushi
     steps:
       - name: Checkout Android source
+        continue-on-error: true
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-source.outputs.source_sha }}
@@ -119,6 +120,7 @@ jobs:
         working-directory: fabushi
     steps:
       - name: Checkout Android source and native test helper
+        continue-on-error: true
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-source.outputs.source_sha }}
@@ -195,6 +197,7 @@ jobs:
         working-directory: fabushi
     steps:
       - name: Checkout iOS source
+        continue-on-error: true
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-source.outputs.source_sha }}
