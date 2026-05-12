@@ -133,6 +133,98 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
+  int? _parseTokenUserNo(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) {
+        return null;
+      }
+      final normalizedPayload = base64.normalize(
+        parts[1].replaceAll('-', '+').replaceAll('_', '/'),
+      );
+      final payload = jsonDecode(
+        utf8.decode(base64.decode(normalizedPayload)),
+      );
+      if (payload is Map) {
+        return User._parseOptionalInt(
+          payload['userNo'] ??
+              payload['user_no'] ??
+              payload['userId'] ??
+              payload['user_id'] ??
+              payload['id'],
+        );
+      }
+    } catch (_) {
+      // Ignore token parsing failures and fall back to server or cached state.
+    }
+    return null;
+  }
+
+  User _buildBootstrapUser(
+    String token,
+    String username, {
+    Map<String, dynamic>? userJson,
+    User? fallbackUser,
+    String? fallbackEmail,
+    String? fallbackPhoneNumber,
+    String? fallbackFirebaseUid,
+    String? fallbackMembershipType,
+    DateTime? fallbackMembershipExpiry,
+  }) {
+    if (userJson != null) {
+      return _userFromServerPayload(
+        userJson,
+        isAdmin: fallbackUser?.isAdmin ?? false,
+        fallbackUsername: username,
+        fallbackEmail: fallbackEmail ?? fallbackUser?.email,
+        fallbackPhoneNumber: fallbackPhoneNumber ?? fallbackUser?.phoneNumber,
+        fallbackFirebaseUid: fallbackFirebaseUid ?? fallbackUser?.firebaseUid,
+        fallbackMembershipType:
+            fallbackMembershipType ?? fallbackUser?.membershipType,
+        fallbackMembershipExpiry:
+            fallbackMembershipExpiry ?? fallbackUser?.membershipExpiry,
+      );
+    }
+
+    return User(
+      username: username,
+      userNo: _parseTokenUserNo(token) ?? fallbackUser?.userNo,
+      email: fallbackEmail ?? fallbackUser?.email ?? '',
+      membershipType: fallbackMembershipType ?? fallbackUser?.membershipType,
+      membershipExpiry:
+          fallbackMembershipExpiry ?? fallbackUser?.membershipExpiry,
+      isAdmin: fallbackUser?.isAdmin ?? false,
+      alipayUserId: fallbackUser?.alipayUserId,
+      nickname: fallbackUser?.nickname,
+      avatar: fallbackUser?.avatar,
+      phoneNumber: fallbackPhoneNumber ?? fallbackUser?.phoneNumber,
+      firebaseUid: fallbackFirebaseUid ?? fallbackUser?.firebaseUid,
+      usernameChangedAt: fallbackUser?.usernameChangedAt,
+    );
+  }
+
+  UserModel _buildStoredUserModel(User user) {
+    final membershipType = user.membershipType ?? 'expired';
+    return UserModel(
+      username: user.username,
+      userNo: user.userNo,
+      email: user.email,
+      emailVerified: true,
+      createdAt: DateTime.now().toIso8601String(),
+      usernameChangedAt: user.usernameChangedAt,
+      membership: MembershipInfo(
+        type: membershipType,
+        isActive: user.membershipExpiry?.isAfter(DateTime.now()) ?? false,
+        expiresAt: user.membershipExpiry?.toIso8601String(),
+      ),
+      alipayUserId: user.alipayUserId,
+      nickname: user.nickname,
+      avatar: user.avatar,
+      phoneNumber: user.phoneNumber,
+      firebaseUid: user.firebaseUid,
+    );
+  }
+
   User _userFromServerPayload(
     Map<String, dynamic> userJson, {
     required bool isAdmin,
@@ -148,12 +240,15 @@ class AuthModel extends ChangeNotifier {
         ? membershipJson['type'] as String?
         : fallbackMembershipType;
     final membershipExpiry = membershipJson is Map
-        ? _parseMembershipExpiry(membershipJson['expiresAt']) ?? fallbackMembershipExpiry
+        ? _parseMembershipExpiry(membershipJson['expiresAt']) ??
+              fallbackMembershipExpiry
         : fallbackMembershipExpiry;
 
     return User(
       username: userJson['username'] ?? fallbackUsername ?? '',
-      userNo: User._parseOptionalInt(userJson['userNo'] ?? userJson['user_no'] ?? userJson['id']),
+      userNo: User._parseOptionalInt(
+        userJson['userNo'] ?? userJson['user_no'] ?? userJson['id'],
+      ),
       email: userJson['email'] ?? fallbackEmail ?? '',
       membershipType: membershipType,
       membershipExpiry: membershipExpiry,
@@ -161,9 +256,12 @@ class AuthModel extends ChangeNotifier {
       alipayUserId: userJson['alipayUserId'] ?? userJson['alipay_user_id'],
       nickname: userJson['nickname'],
       avatar: userJson['avatar'],
-      phoneNumber: userJson['phoneNumber'] ?? userJson['phone_number'] ?? fallbackPhoneNumber,
-      firebaseUid: userJson['firebaseUid'] ?? userJson['firebase_uid'] ?? fallbackFirebaseUid,
-      usernameChangedAt: userJson['usernameChangedAt'] ?? userJson['username_changed_at'],
+      phoneNumber:
+          userJson['phoneNumber'] ?? userJson['phone_number'] ?? fallbackPhoneNumber,
+      firebaseUid:
+          userJson['firebaseUid'] ?? userJson['firebase_uid'] ?? fallbackFirebaseUid,
+      usernameChangedAt:
+          userJson['usernameChangedAt'] ?? userJson['username_changed_at'],
     );
   }
 
@@ -450,23 +548,28 @@ class AuthModel extends ChangeNotifier {
         _token = result['token'];
         final username = result['username'] ?? '';
         final email = result['email'] ?? '';
+        final userJson = result['user'];
+        final trialExpiry = DateTime.now().add(const Duration(days: 3));
+        final bootstrapUser = userJson is Map
+            ? _buildBootstrapUser(
+                _token!,
+                username,
+                userJson: Map<String, dynamic>.from(userJson as Map),
+                fallbackEmail: email,
+                fallbackMembershipType: 'trial',
+                fallbackMembershipExpiry: trialExpiry,
+              )
+            : _buildBootstrapUser(
+                _token!,
+                username,
+                fallbackEmail: email,
+                fallbackMembershipType: 'trial',
+                fallbackMembershipExpiry: trialExpiry,
+              );
 
-        final basicUserModel = UserModel(
-          username: username,
-          email: email,
-          emailVerified: true,
-          createdAt: DateTime.now().toIso8601String(),
-          membership: MembershipInfo(type: 'trial', isActive: true),
-        );
-        await _authService.setAuth(_token!, basicUserModel);
+        await _authService.setAuth(_token!, _buildStoredUserModel(bootstrapUser));
 
-        _currentUser = User(
-          username: username,
-          email: email,
-          membershipType: 'trial',
-          membershipExpiry: DateTime.now().add(const Duration(days: 3)),
-          isAdmin: false,
-        );
+        _currentUser = bootstrapUser;
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
@@ -514,24 +617,28 @@ class AuthModel extends ChangeNotifier {
         _token = result['token'];
         final username = result['username'];
         final email = result['email'];
+        final userJson = result['user'];
+        final trialExpiry = DateTime.now().add(const Duration(days: 3));
+        final bootstrapUser = userJson is Map
+            ? _buildBootstrapUser(
+                _token!,
+                username,
+                userJson: Map<String, dynamic>.from(userJson as Map),
+                fallbackEmail: email ?? '',
+                fallbackMembershipType: 'trial',
+                fallbackMembershipExpiry: trialExpiry,
+              )
+            : _buildBootstrapUser(
+                _token!,
+                username,
+                fallbackEmail: email ?? '',
+                fallbackMembershipType: 'trial',
+                fallbackMembershipExpiry: trialExpiry,
+              );
 
-        final basicUserModel = UserModel(
-          username: username,
-          email: email ?? '',
-          emailVerified: true,
-          createdAt: DateTime.now().toIso8601String(),
-          membership: MembershipInfo(type: 'trial', isActive: true),
-        );
+        await _authService.setAuth(_token!, _buildStoredUserModel(bootstrapUser));
 
-        await _authService.setAuth(_token!, basicUserModel);
-
-        _currentUser = User(
-          username: username,
-          email: email ?? '',
-          membershipType: 'trial',
-          membershipExpiry: DateTime.now().add(const Duration(days: 3)),
-          isAdmin: false,
-        );
+        _currentUser = bootstrapUser;
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
@@ -581,38 +688,27 @@ class AuthModel extends ChangeNotifier {
         _token = result['token'];
         final userJson = result['user'];
         final username = result['username'] ?? userJson?['username'] ?? '';
+        final trialExpiry = DateTime.now().add(const Duration(days: 3));
+        final bootstrapUser = userJson is Map<String, dynamic>
+            ? _buildBootstrapUser(
+                _token!,
+                username,
+                userJson: userJson,
+                fallbackEmail: email ?? '',
+                fallbackMembershipType: 'trial',
+                fallbackMembershipExpiry: trialExpiry,
+              )
+            : _buildBootstrapUser(
+                _token!,
+                username,
+                fallbackEmail: email ?? '',
+                fallbackMembershipType: 'trial',
+                fallbackMembershipExpiry: trialExpiry,
+              );
 
-        final basicUserModel = UserModel(
-          username: username,
-          email: userJson?['email'] ?? email ?? '',
-          emailVerified: true,
-          createdAt: DateTime.now().toIso8601String(),
-          membership: MembershipInfo(
-            type: userJson?['membership']?['type'] ?? 'trial',
-            isActive: true,
-          ),
-        );
+        await _authService.setAuth(_token!, _buildStoredUserModel(bootstrapUser));
 
-        await _authService.setAuth(_token!, basicUserModel);
-
-        if (userJson is Map<String, dynamic>) {
-          _currentUser = _userFromServerPayload(
-            userJson,
-            isAdmin: false,
-            fallbackUsername: username,
-            fallbackEmail: email ?? '',
-            fallbackMembershipType: 'trial',
-            fallbackMembershipExpiry: DateTime.now().add(const Duration(days: 3)),
-          );
-        } else {
-          _currentUser = User(
-            username: username,
-            email: email ?? '',
-            membershipType: 'trial',
-            membershipExpiry: DateTime.now().add(const Duration(days: 3)),
-            isAdmin: false,
-          );
-        }
+        _currentUser = bootstrapUser;
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
@@ -665,42 +761,29 @@ class AuthModel extends ChangeNotifier {
         _token = result['token'];
         final userJson = result['user'];
         final username = result['username'] ?? userJson?['username'] ?? '';
+        final trialExpiry = DateTime.now().add(const Duration(days: 3));
+        final bootstrapUser = userJson is Map<String, dynamic>
+            ? _buildBootstrapUser(
+                _token!,
+                username,
+                userJson: userJson,
+                fallbackPhoneNumber: phoneNumber,
+                fallbackFirebaseUid: firebaseUid,
+                fallbackMembershipType: 'trial',
+                fallbackMembershipExpiry: trialExpiry,
+              )
+            : _buildBootstrapUser(
+                _token!,
+                username,
+                fallbackPhoneNumber: phoneNumber,
+                fallbackFirebaseUid: firebaseUid,
+                fallbackMembershipType: 'trial',
+                fallbackMembershipExpiry: trialExpiry,
+              );
 
-        final basicUserModel = UserModel(
-          username: username,
-          email: userJson?['email'] ?? '',
-          emailVerified: true,
-          createdAt: DateTime.now().toIso8601String(),
-          membership: MembershipInfo(
-            type: userJson?['membership']?['type'] ?? 'trial',
-            isActive: true,
-          ),
-          phoneNumber: phoneNumber,
-        );
+        await _authService.setAuth(_token!, _buildStoredUserModel(bootstrapUser));
 
-        await _authService.setAuth(_token!, basicUserModel);
-
-        if (userJson is Map<String, dynamic>) {
-          _currentUser = _userFromServerPayload(
-            userJson,
-            isAdmin: false,
-            fallbackUsername: username,
-            fallbackPhoneNumber: phoneNumber,
-            fallbackFirebaseUid: firebaseUid,
-            fallbackMembershipType: 'trial',
-            fallbackMembershipExpiry: DateTime.now().add(const Duration(days: 3)),
-          );
-        } else {
-          _currentUser = User(
-            username: username,
-            email: userJson?['email'] ?? '',
-            membershipType: 'trial',
-            membershipExpiry: DateTime.now().add(const Duration(days: 3)),
-            isAdmin: false,
-            phoneNumber: phoneNumber,
-            firebaseUid: firebaseUid,
-          );
-        }
+        _currentUser = bootstrapUser;
 
         await _storeAuth();
         await LikeService().initialize(userId: _currentUser!.username);
@@ -863,25 +946,22 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  Future<void> setTokenDirectly(String token, String username) async {
-    final basicUserModel = UserModel(
-      username: username,
-      email: '',
-      emailVerified: false,
-      createdAt: DateTime.now().toIso8601String(),
-      membership: MembershipInfo(type: 'expired', isActive: false),
+  Future<void> setTokenDirectly(
+    String token,
+    String username, {
+    Map<String, dynamic>? userJson,
+  }) async {
+    final bootstrapUser = _buildBootstrapUser(
+      token,
+      username,
+      userJson: userJson,
+      fallbackUser: _currentUser,
     );
 
-    await _authService.setAuth(token, basicUserModel);
+    await _authService.setAuth(token, _buildStoredUserModel(bootstrapUser));
 
     _token = token;
-    _currentUser = User(
-      username: username,
-      email: '',
-      membershipType: null,
-      membershipExpiry: null,
-      isAdmin: false,
-    );
+    _currentUser = bootstrapUser;
 
     await _storeAuth();
     await _syncMeditationPracticeForCurrentUser();
@@ -890,34 +970,33 @@ class AuthModel extends ChangeNotifier {
     await refreshUserInfo();
   }
 
-  Future<void> loginWithToken(String token, String username) async {
+  Future<void> loginWithToken(
+    String token,
+    String username, {
+    Map<String, dynamic>? userJson,
+  }) async {
     try {
       debugPrint('使用token登录: username=$username');
 
       _token = token;
-
-      final basicUserModel = UserModel(
-        username: username,
-        email: '',
-        emailVerified: true,
-        createdAt: DateTime.now().toIso8601String(),
-        membership: MembershipInfo(type: 'trial', isActive: true),
+      final bootstrapUser = _buildBootstrapUser(
+        token,
+        username,
+        userJson: userJson,
+        fallbackUser: _currentUser,
+        fallbackMembershipType: _currentUser?.membershipType ?? 'trial',
+        fallbackMembershipExpiry:
+            _currentUser?.membershipExpiry ?? DateTime.now().add(const Duration(days: 3)),
       );
 
-      await _authService.setAuth(token, basicUserModel);
+      await _authService.setAuth(token, _buildStoredUserModel(bootstrapUser));
 
-      _currentUser = User(
-        username: username,
-        email: '',
-        membershipType: 'trial',
-        membershipExpiry: DateTime.now().add(const Duration(days: 3)),
-        isAdmin: false,
-      );
+      _currentUser = bootstrapUser;
 
-        await _storeAuth();
-        await LikeService().initialize(userId: _currentUser!.username);
-        await _syncMeditationPracticeForCurrentUser();
-        notifyListeners();
+      await _storeAuth();
+      await LikeService().initialize(userId: _currentUser!.username);
+      await _syncMeditationPracticeForCurrentUser();
+      notifyListeners();
 
       debugPrint('✅ Token已设置，登录完成');
 
