@@ -65,8 +65,8 @@ export const metadata: Metadata = {
 };
 
 export default function PrivacyPage() {
-  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
-  const supportHref = contactChannels.find((item) => item.href.startsWith("mailto:"))?.href ?? "mailto:support@fabushi.com";
+  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
+  const supportHref = contactChannels.find((item) => item.href.startsWith("mailto:"))?.href ?? "mailto:support@ombhrum.com";
   const structuredData = {
     "@context": "https://schema.org",
     "@graph": [

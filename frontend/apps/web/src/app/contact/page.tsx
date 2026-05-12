@@ -31,7 +31,7 @@ export const metadata: Metadata = {
 };
 
 export default function ContactPage() {
-  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
+  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "ContactPage",

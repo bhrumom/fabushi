@@ -111,7 +111,7 @@ export default async function DownloadPage() {
   const betaChannels = releaseCollection.betaChannels;
   const stableChannels = releaseCollection.stableChannels;
   const allChannels = [...betaChannels, ...stableChannels];
-  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@fabushi.com";
+  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
   const notes = releaseCollection.notes.slice(0, 3);
 
   const structuredData = {
