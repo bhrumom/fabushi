@@ -58,9 +58,12 @@ class AuthService {
     required String requestedIdentifier,
   }) {
     final rawUser = data['user'];
-    final user = rawUser is Map ? Map<String, dynamic>.from(rawUser) : <String, dynamic>{};
+    final user = rawUser is Map
+        ? Map<String, dynamic>.from(rawUser)
+        : <String, dynamic>{};
     final resolvedUsername =
-        (user['username'] ?? data['username'] ?? requestedIdentifier).toString();
+        (user['username'] ?? data['username'] ?? requestedIdentifier)
+            .toString();
     final resolvedEmail =
         (user['email'] as String?) ??
         (resolvedUsername.contains('@') ? resolvedUsername : '');
@@ -68,14 +71,23 @@ class AuthService {
 
     return UserModel(
       username: resolvedUsername,
-      userNo: _instance._parseOptionalInt(user['userNo'] ?? user['user_no'] ?? user['id'] ?? data['userNo'] ?? data['userId']),
+      userNo: _instance._parseOptionalInt(
+        user['userNo'] ??
+            user['user_no'] ??
+            user['id'] ??
+            data['userNo'] ??
+            data['userId'],
+      ),
       email: resolvedEmail,
       emailVerified:
           user['emailVerified'] as bool? ?? user['email_verified'] == true,
       createdAt:
-          (user['createdAt'] ?? user['created_at'] ?? DateTime.now().toIso8601String())
+          (user['createdAt'] ??
+                  user['created_at'] ??
+                  DateTime.now().toIso8601String())
               .toString(),
-      usernameChangedAt: (user['usernameChangedAt'] ?? user['username_changed_at']) as String?,
+      usernameChangedAt:
+          (user['usernameChangedAt'] ?? user['username_changed_at']) as String?,
       wechatOpenid: user['wechatOpenid'] as String?,
       wechatNickname: user['wechatNickname'] as String?,
       wechatHeadimgurl: user['wechatHeadimgurl'] as String?,
@@ -94,6 +106,166 @@ class AuthService {
       membership: membershipJson is Map
           ? MembershipInfo.fromJson(Map<String, dynamic>.from(membershipJson))
           : MembershipInfo(type: 'expired', isActive: false),
+    );
+  }
+
+  static String? _optionalString(dynamic value) {
+    if (value == null) return null;
+    return value.toString();
+  }
+
+  static bool _parseBool(dynamic value, {required bool fallback}) {
+    if (value == null) return fallback;
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final normalized = value.toString().trim().toLowerCase();
+    if (normalized == 'true' || normalized == '1') return true;
+    if (normalized == 'false' || normalized == '0') return false;
+    return fallback;
+  }
+
+  static bool _isMembershipActive(String type, String? expiresAt) {
+    if (type == 'expired' || expiresAt == null || expiresAt.isEmpty) {
+      return false;
+    }
+
+    try {
+      final expiryDate = DateTime.parse(expiresAt);
+      return expiryDate.isAfter(DateTime.now());
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Map<String, dynamic>? _optionalMap(dynamic value) {
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    return null;
+  }
+
+  static MembershipInfo _buildMembershipInfo(
+    Map<String, dynamic> data, {
+    MembershipInfo? fallbackMembership,
+  }) {
+    final membershipJson = _optionalMap(data['membership']);
+    final membershipSource = membershipJson ?? data;
+    final type =
+        _optionalString(membershipSource['type'] ?? data['membershipType']) ??
+        fallbackMembership?.type ??
+        'expired';
+    final expiresAt =
+        _optionalString(
+          membershipSource['expiresAt'] ??
+              membershipSource['expires_at'] ??
+              data['membershipExpiresAt'] ??
+              data['membership_expires_at'],
+        ) ??
+        fallbackMembership?.expiresAt;
+    final explicitIsActive =
+        membershipSource['isActive'] ?? membershipSource['is_active'];
+    final computedIsActive = _isMembershipActive(type, expiresAt);
+
+    return MembershipInfo(
+      type: type,
+      isActive: _parseBool(explicitIsActive, fallback: computedIsActive),
+      expiresAt: expiresAt,
+      daysRemaining:
+          _instance._parseOptionalInt(
+            membershipSource['daysRemaining'] ??
+                membershipSource['days_remaining'],
+          ) ??
+          fallbackMembership?.daysRemaining,
+      subscriptionId:
+          _optionalString(
+            membershipSource['subscriptionId'] ??
+                membershipSource['subscription_id'],
+          ) ??
+          fallbackMembership?.subscriptionId,
+      paymentMethod:
+          _optionalString(
+            membershipSource['paymentMethod'] ??
+                membershipSource['payment_method'],
+          ) ??
+          fallbackMembership?.paymentMethod,
+    );
+  }
+
+  static UserModel buildRefreshedUser(
+    Map<String, dynamic> data, {
+    UserModel? fallbackUser,
+  }) {
+    final membership = _buildMembershipInfo(
+      data,
+      fallbackMembership: fallbackUser?.membership,
+    );
+
+    return UserModel(
+      username:
+          _optionalString(data['username']) ?? fallbackUser?.username ?? '',
+      userNo:
+          _instance._parseOptionalInt(
+            data['userNo'] ??
+                data['user_no'] ??
+                data['id'] ??
+                data['userId'] ??
+                data['user_id'],
+          ) ??
+          fallbackUser?.userNo,
+      email: _optionalString(data['email']) ?? fallbackUser?.email ?? '',
+      emailVerified: _parseBool(
+        data['emailVerified'] ?? data['email_verified'],
+        fallback: fallbackUser?.emailVerified ?? true,
+      ),
+      createdAt:
+          _optionalString(data['createdAt'] ?? data['created_at']) ??
+          fallbackUser?.createdAt ??
+          DateTime.now().toIso8601String(),
+      usernameChangedAt:
+          _optionalString(
+            data['usernameChangedAt'] ?? data['username_changed_at'],
+          ) ??
+          fallbackUser?.usernameChangedAt,
+      wechatOpenid:
+          _optionalString(data['wechatOpenid'] ?? data['wechat_openid']) ??
+          fallbackUser?.wechatOpenid,
+      wechatNickname:
+          _optionalString(data['wechatNickname'] ?? data['wechat_nickname']) ??
+          fallbackUser?.wechatNickname,
+      wechatHeadimgurl:
+          _optionalString(
+            data['wechatHeadimgurl'] ?? data['wechat_headimgurl'],
+          ) ??
+          fallbackUser?.wechatHeadimgurl,
+      wechatBoundAt:
+          _optionalString(data['wechatBoundAt'] ?? data['wechat_bound_at']) ??
+          fallbackUser?.wechatBoundAt,
+      alipayUserId:
+          _optionalString(data['alipayUserId'] ?? data['alipay_user_id']) ??
+          fallbackUser?.alipayUserId,
+      alipayNickname:
+          _optionalString(data['alipayNickname'] ?? data['alipay_nickname']) ??
+          fallbackUser?.alipayNickname,
+      alipayAvatar:
+          _optionalString(data['alipayAvatar'] ?? data['alipay_avatar']) ??
+          fallbackUser?.alipayAvatar,
+      alipayBoundAt:
+          _optionalString(data['alipayBoundAt'] ?? data['alipay_bound_at']) ??
+          fallbackUser?.alipayBoundAt,
+      nickname: _optionalString(data['nickname']) ?? fallbackUser?.nickname,
+      avatar:
+          _optionalString(data['avatar'] ?? data['avatarUrl']) ??
+          fallbackUser?.avatar,
+      phoneNumber:
+          _optionalString(data['phoneNumber'] ?? data['phone_number']) ??
+          fallbackUser?.phoneNumber,
+      firebaseUid:
+          _optionalString(data['firebaseUid'] ?? data['firebase_uid']) ??
+          fallbackUser?.firebaseUid,
+      mainPractice:
+          _optionalMap(data['mainPractice'] ?? data['main_practice']) ??
+          fallbackUser?.mainPractice,
+      membership: membership,
     );
   }
 
@@ -186,10 +358,7 @@ class AuthService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final token = data['token'] as String;
-        final userInfo = buildLoginUser(
-          data,
-          requestedIdentifier: username,
-        );
+        final userInfo = buildLoginUser(data, requestedIdentifier: username);
 
         if (data.containsKey('user') && data['user'] != null) {
           print('使用登录API返回的用户信息，并允许后续资料刷新失败时继续登录');
@@ -338,51 +507,29 @@ class AuthService {
     }
 
     try {
+      final fallbackUser = _currentUser;
       final response = await HttpService.get(
-        AppConfig.adminCheckStatusUrl,
+        AppConfig.userInfoUrl,
         useAuth: true,
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map) {
+          throw Exception('用户信息响应格式不正确');
+        }
+        final data = Map<String, dynamic>.from(decoded);
         print('📥 获取到的用户数据: $data');
 
-        final membershipExpiresAt = data['membershipExpiresAt'];
-        final membershipType = data['membershipType'] ?? 'expired';
-
-        bool isActive = false;
-        if (membershipExpiresAt != null && membershipType != 'expired') {
-          try {
-            final expiryDate = DateTime.parse(membershipExpiresAt);
-            isActive = expiryDate.isAfter(DateTime.now());
-            print('📅 会员到期时间: $expiryDate, 是否激活: $isActive');
-          } catch (e) {
-            print('⚠️ 解析会员到期时间失败: $e');
-          }
+        final userInfo = buildRefreshedUser(data, fallbackUser: fallbackUser);
+        final membershipExpiresAt = userInfo.membership.expiresAt;
+        if (membershipExpiresAt != null) {
+          print(
+            '📅 会员到期时间: $membershipExpiresAt, 是否激活: ${userInfo.membership.isActive}',
+          );
         }
 
-        return UserModel(
-          username: data['username'] ?? '',
-          userNo: _parseOptionalInt(data['userNo'] ?? data['user_no'] ?? data['id'] ?? data['userId']),
-          email: data['email'] ?? '',
-          emailVerified: true,
-          createdAt: DateTime.now().toIso8601String(),
-          usernameChangedAt: data['usernameChangedAt'] ?? data['username_changed_at'],
-          nickname: data['nickname'],
-          avatar: data['avatar'],
-          phoneNumber: data['phoneNumber'] ?? data['phone_number'],
-          alipayUserId: data['alipayUserId'] ?? data['alipay_user_id'],
-          alipayNickname: data['alipayNickname'] ?? data['alipay_nickname'],
-          alipayAvatar: data['alipayAvatar'] ?? data['alipay_avatar'],
-          mainPractice: data['mainPractice'] is Map
-              ? Map<String, dynamic>.from(data['mainPractice'] as Map)
-              : null,
-          membership: MembershipInfo(
-            type: membershipType,
-            isActive: isActive,
-            expiresAt: membershipExpiresAt,
-          ),
-        );
+        return userInfo;
       } else {
         throw Exception(
           '获取用户信息失败: ${HttpService.getErrorMessage(response)} (HTTP ${response.statusCode})',
