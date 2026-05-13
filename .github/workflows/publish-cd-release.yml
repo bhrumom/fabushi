@@ -577,11 +577,11 @@ jobs:
           retention-days: 30
 
   capture-screenshots:
-    name: Capture product screenshots
+    name: Capture app screenshots
     needs: resolve-cd-context
     if: needs.resolve-cd-context.outputs.mobile_changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    runs-on: macos-26
+    timeout-minutes: 45
     continue-on-error: true
     defaults:
       run:
@@ -605,32 +605,42 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
-      - name: Build Flutter web
+      - name: Capture Flutter app screenshots
         shell: bash
+        env:
+          STORE_SCREENSHOT_OUTPUT_DIR: ../release-screenshots
+          IOS_SCREENSHOT_DEVICE: ${{ vars.IOS_SCREENSHOT_DEVICE || 'iPhone 16 Pro Max' }}
         run: |
           set -euo pipefail
           flutter pub get
-          flutter build web --release --base-href /
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
+          find_simulator() {
+            local pattern="$1"
+            xcrun simctl list devices available \
+              | grep -F "$pattern" \
+              | sed -nE 's/.*\(([A-F0-9-]{36})\).*/\1/p' \
+              | head -n 1 || true
+          }
 
-      - name: Install Playwright Chromium
-        shell: bash
-        run: |
-          set -euo pipefail
-          npx playwright install chromium --with-deps
+          device_name="${IOS_SCREENSHOT_DEVICE:-iPhone 16 Pro Max}"
+          udid="$(find_simulator "$device_name")"
+          if [ -z "$udid" ]; then
+            echo "Requested simulator not found: $device_name; falling back to the first available iPhone simulator."
+            udid="$(find_simulator "iPhone")"
+          fi
+          if [ -z "$udid" ]; then
+            echo "Unable to find any available iPhone simulator." >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
 
-      - name: Capture screenshots
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p ../release-screenshots
-          node e2e/scripts/capture-release-screenshots.mjs \
-            --web-dir=build/web \
-            --output=../release-screenshots
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          mkdir -p "$STORE_SCREENSHOT_OUTPUT_DIR"
+          flutter drive \
+            --driver=test_driver/store_screenshot_driver.dart \
+            --target=integration_test/store_screenshots_test.dart \
+            -d "$udid"
 
       - name: Upload screenshots artifact
         if: always()

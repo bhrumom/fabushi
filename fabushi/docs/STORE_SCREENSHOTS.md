@@ -26,7 +26,7 @@ STORE_SCREENSHOT_OUTPUT_DIR=build/store_screenshots/raw/android \
   -d "Pixel 8 Pro"
 ```
 
-The raw PNGs are written to `build/store_screenshots/raw/`. Generate App Store
+The raw PNGs are written to `build/store_screenshots/raw/`. In release automation, the same Flutter app screenshot flow writes `screenshot-*.png` files to the release screenshot artifact. Generate App Store
 and Google Play final preview images from those raw captures with a separate
 post-processing step, because each store has its own allowed dimensions and
 marketing-frame rules.
