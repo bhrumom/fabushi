@@ -305,6 +305,7 @@ jobs:
         shell: bash
         env:
           RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # The file was generated in the previous workspace, need to recreate or fetch it
