@@ -1,6 +1,13 @@
 name: Sync official site beta download state
 
 on:
+  workflow_run:
+    workflows:
+      - Publish CD packages to GitHub Release
+    types:
+      - completed
+    branches:
+      - main
   release:
     types:
       - published
@@ -8,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: GitHub Release tag to sync into the official site beta channel.
+        description: GitHub Release tag to sync into the official site beta channel. (Leave empty to sync the latest release)
         required: false
         type: string
 
@@ -19,7 +26,7 @@ permissions:
 
 jobs:
   sync-beta-state:
-    if: github.event_name == 'workflow_dispatch' || github.event.release.draft == false
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run' || github.event.release.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -29,9 +36,21 @@ jobs:
         env:
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
           EVENT_RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           release_tag="${INPUT_RELEASE_TAG:-${EVENT_RELEASE_TAG:-}}"
+
+          # If triggered by workflow_run or no tag provided, fetch the latest release
+          if [ -z "$release_tag" ]; then
+            echo "No explicit tag provided, fetching latest release..."
+            latest_release="$(gh api repos/$RELEASE_REPO/releases/latest --jq .tag_name 2>/dev/null || true)"
+            if [ -n "$latest_release" ]; then
+              release_tag="$latest_release"
+            fi
+          fi
+
           if [ -z "$release_tag" ]; then
             echo "No release tag was provided or detected." >&2
             exit 1
@@ -272,7 +291,7 @@ jobs:
 
       - name: Push beta state to official site repo
         id: push_state
-        if: steps.upload_state.outputs.uploaded == 'true'
+        if: steps.upload_state.outcome == 'success'
         uses: actions/checkout@v5
         with:
           ref: main
