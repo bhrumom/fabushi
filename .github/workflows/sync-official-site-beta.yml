@@ -307,16 +307,25 @@ jobs:
           RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
         run: |
           set -euo pipefail
-          cp OFFICIAL_SITE_RELEASE_STATE.json frontend/apps/web/public/api/releases.json
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add frontend/apps/web/public/api/releases.json
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
+          # The file was generated in the previous workspace, need to recreate or fetch it
+          # Since checkout wipes the workspace, we should fetch it from the release
+          gh release download "$RELEASE_TAG" --pattern OFFICIAL_SITE_RELEASE_STATE.json --repo ${{ github.repository }} --dir . || true
+
+          if [ -f OFFICIAL_SITE_RELEASE_STATE.json ]; then
+            mkdir -p frontend/apps/web/public/api
+            cp OFFICIAL_SITE_RELEASE_STATE.json frontend/apps/web/public/api/releases.json
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add frontend/apps/web/public/api/releases.json
+            if git diff --cached --quiet; then
+              echo "No changes to commit."
+              exit 0
+            fi
+            git commit -m "chore: sync beta release state for $RELEASE_TAG"
+            git push origin main
+          else
+            echo "::warning::OFFICIAL_SITE_RELEASE_STATE.json not found, skipping commit to official site repo"
           fi
-          git commit -m "chore: sync beta release state for $RELEASE_TAG"
-          git push origin main
 
       - name: Write summary
         shell: bash
