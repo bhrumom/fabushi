@@ -612,7 +612,14 @@ jobs:
           IOS_SCREENSHOT_DEVICE: ${{ vars.IOS_SCREENSHOT_DEVICE || 'iPhone 16 Pro Max' }}
         run: |
           set -euo pipefail
-          flutter pub get
+          mkdir -p "$STORE_SCREENSHOT_OUTPUT_DIR"
+          status_file="$STORE_SCREENSHOT_OUTPUT_DIR/SCREENSHOT_CAPTURE_STATUS.txt"
+          {
+            echo "status=started"
+            echo "source_sha=${{ needs.resolve-cd-context.outputs.source_sha }}"
+            echo "captured_at="
+            echo "reason="
+          } > "$status_file"
 
           find_simulator() {
             local pattern="$1"
@@ -622,25 +629,58 @@ jobs:
               | head -n 1 || true
           }
 
-          device_name="${IOS_SCREENSHOT_DEVICE:-iPhone 16 Pro Max}"
-          udid="$(find_simulator "$device_name")"
-          if [ -z "$udid" ]; then
-            echo "Requested simulator not found: $device_name; falling back to the first available iPhone simulator."
-            udid="$(find_simulator "iPhone")"
-          fi
-          if [ -z "$udid" ]; then
-            echo "Unable to find any available iPhone simulator." >&2
-            xcrun simctl list devices available
-            exit 1
+          capture_reason=""
+          if (
+            flutter pub get
+
+            device_name="${IOS_SCREENSHOT_DEVICE:-iPhone 16 Pro Max}"
+            udid="$(find_simulator "$device_name")"
+            if [ -z "$udid" ]; then
+              echo "Requested simulator not found: $device_name; falling back to the first available iPhone simulator."
+              udid="$(find_simulator "iPhone")"
+            fi
+            if [ -z "$udid" ]; then
+              echo "Unable to find any available iPhone simulator." >&2
+              xcrun simctl list devices available
+              exit 1
+            fi
+
+            xcrun simctl boot "$udid" || true
+            xcrun simctl bootstatus "$udid" -b
+            flutter drive \
+              --driver=test_driver/store_screenshot_driver.dart \
+              --target=integration_test/store_screenshots_test.dart \
+              -d "$udid"
+          ); then
+            if find "$STORE_SCREENSHOT_OUTPUT_DIR" -type f -name '*.png' -print -quit | grep -q .; then
+              {
+                echo "status=captured"
+                echo "source_sha=${{ needs.resolve-cd-context.outputs.source_sha }}"
+                echo "captured_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+                echo "reason="
+              } > "$status_file"
+            else
+              capture_reason="no_png_screenshots_written"
+            fi
+          else
+            capture_reason="flutter_screenshot_capture_failed"
           fi
 
-          xcrun simctl boot "$udid" || true
-          xcrun simctl bootstatus "$udid" -b
-          mkdir -p "$STORE_SCREENSHOT_OUTPUT_DIR"
-          flutter drive \
-            --driver=test_driver/store_screenshot_driver.dart \
-            --target=integration_test/store_screenshots_test.dart \
-            -d "$udid"
+          if [ -n "$capture_reason" ]; then
+            {
+              echo "status=skipped"
+              echo "source_sha=${{ needs.resolve-cd-context.outputs.source_sha }}"
+              echo "captured_at="
+              echo "reason=$capture_reason"
+            } > "$status_file"
+            echo "::warning::Store screenshots were not captured ($capture_reason); mobile package release will continue."
+          fi
+
+          {
+            echo "## Store screenshot capture"
+            echo ""
+            awk -F= '{ printf "- %s: %s\n", $1, $2 }' "$status_file"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload screenshots artifact
         if: always()
@@ -648,7 +688,7 @@ jobs:
         with:
           name: release-product-screenshots
           path: release-screenshots
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
 
   publish-release:
@@ -684,6 +724,7 @@ jobs:
       - name: Download product screenshots
         if: needs.capture-screenshots.result == 'success'
         uses: actions/download-artifact@v5
+        continue-on-error: true
         with:
           name: release-product-screenshots
           path: release-screenshots
@@ -766,9 +807,10 @@ jobs:
             while IFS= read -r file; do
               [ -f "$file" ] || continue
               case "$file" in
-                *.png)
+                *.png|*/SCREENSHOT_CAPTURE_STATUS.txt)
                   base="$(basename "$file")"
-                  cp "$file" "release-assets/$base"
+                  safe_base="$(printf '%s' "$base" | tr ' ' '-' | tr -cd '[:alnum:]._+-')"
+                  cp "$file" "release-assets/$safe_base"
                   ;;
               esac
             done < <(find release-screenshots -type f 2>/dev/null)
