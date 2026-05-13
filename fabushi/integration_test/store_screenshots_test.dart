@@ -16,13 +16,13 @@ void main() {
       await app.main();
       await _waitForFirstScreen(tester);
 
-      await _capture(tester, binding, '01-home');
+      await _capture(tester, binding, 'screenshot-home');
 
       await _openTab(tester, const ['禅室', 'Zen Room']);
-      await _capture(tester, binding, '02-meditation-room');
+      await _capture(tester, binding, 'screenshot-meditation-room');
 
       await _openTab(tester, const ['我的', 'Profile']);
-      await _capture(tester, binding, '03-profile');
+      await _capture(tester, binding, 'screenshot-profile');
     });
   });
 }

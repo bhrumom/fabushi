@@ -576,12 +576,88 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  capture-screenshots:
+    name: Capture app screenshots
+    needs: resolve-cd-context
+    if: needs.resolve-cd-context.outputs.mobile_changed == 'true'
+    runs-on: macos-26
+    timeout-minutes: 45
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Capture Flutter app screenshots
+        shell: bash
+        env:
+          STORE_SCREENSHOT_OUTPUT_DIR: ../release-screenshots
+          IOS_SCREENSHOT_DEVICE: ${{ vars.IOS_SCREENSHOT_DEVICE || 'iPhone 16 Pro Max' }}
+        run: |
+          set -euo pipefail
+          flutter pub get
+
+          find_simulator() {
+            local pattern="$1"
+            xcrun simctl list devices available \
+              | grep -F "$pattern" \
+              | sed -nE 's/.*\(([A-F0-9-]{36})\).*/\1/p' \
+              | head -n 1 || true
+          }
+
+          device_name="${IOS_SCREENSHOT_DEVICE:-iPhone 16 Pro Max}"
+          udid="$(find_simulator "$device_name")"
+          if [ -z "$udid" ]; then
+            echo "Requested simulator not found: $device_name; falling back to the first available iPhone simulator."
+            udid="$(find_simulator "iPhone")"
+          fi
+          if [ -z "$udid" ]; then
+            echo "Unable to find any available iPhone simulator." >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
+
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          mkdir -p "$STORE_SCREENSHOT_OUTPUT_DIR"
+          flutter drive \
+            --driver=test_driver/store_screenshot_driver.dart \
+            --target=integration_test/store_screenshots_test.dart \
+            -d "$udid"
+
+      - name: Upload screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-product-screenshots
+          path: release-screenshots
+          if-no-files-found: warn
+          retention-days: 30
+
   publish-release:
     name: Publish changed mobile packages
     needs:
       - resolve-cd-context
       - build-android-packages
       - build-ios-package
+      - capture-screenshots
     if: >-
       always() &&
       needs.resolve-cd-context.result == 'success' &&
@@ -604,6 +680,13 @@ jobs:
         with:
           name: release-ios-packages
           path: built-native-packages/ios
+
+      - name: Download product screenshots
+        if: needs.capture-screenshots.result == 'success'
+        uses: actions/download-artifact@v5
+        with:
+          name: release-product-screenshots
+          path: release-screenshots
 
       - name: Checkout source for version metadata
         uses: actions/checkout@v5
@@ -678,6 +761,18 @@ jobs:
                 ;;
             esac
           done < <(find built-native-packages -type f 2>/dev/null)
+
+          if [ -d release-screenshots ]; then
+            while IFS= read -r file; do
+              [ -f "$file" ] || continue
+              case "$file" in
+                *.png)
+                  base="$(basename "$file")"
+                  cp "$file" "release-assets/$base"
+                  ;;
+              esac
+            done < <(find release-screenshots -type f 2>/dev/null)
+          fi
 
           if [ "$IOS_CHANGED" = "true" ]; then
             for metadata_file in TESTFLIGHT_UPLOAD_STATUS.txt IOS_SIGNING_NOT_CONFIGURED.txt; do
