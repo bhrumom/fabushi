@@ -296,6 +296,9 @@ jobs:
         with:
           ref: main
           token: ${{ secrets.OFFICIAL_SITE_RELEASE_PAT || github.token }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /frontend/apps/web/public/api/**
 
       - name: Copy state to public API and commit
         if: steps.push_state.outcome == 'success'
