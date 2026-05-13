@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DownloadLink } from "./download-link";
 
 export interface DownloadChannel {
   platform: "Android" | "iOS";
@@ -76,10 +77,10 @@ export function DownloadClient({ channels }: { channels: DownloadChannel[] }) {
       )}
       <div className="platform-strip recommended-first">
         {recommended.map((channel) => (
-          <a
+          <DownloadLink
             key={`${channel.audience}-${channel.platform}`}
             className="platform-row recommended"
-            href={channel.primaryHref}
+            channel={channel}
           >
             <div>
               <span className="platform-name">
@@ -92,7 +93,7 @@ export function DownloadClient({ channels }: { channels: DownloadChannel[] }) {
               <strong>{channel.status}</strong>
               <span>{channel.primaryLabel}</span>
             </div>
-          </a>
+          </DownloadLink>
         ))}
         <div className="section-divider">
           <span>全部下载入口</span>
@@ -105,10 +106,10 @@ export function DownloadClient({ channels }: { channels: DownloadChannel[] }) {
 
 function renderAllChannels(channels: DownloadChannel[]) {
   return channels.map((channel) => (
-    <a
+    <DownloadLink
       key={`${channel.audience}-${channel.platform}`}
       className="platform-row"
-      href={channel.primaryHref}
+      channel={channel}
     >
       <div>
         <span className="platform-name">{channel.title}</span>
@@ -118,6 +119,6 @@ function renderAllChannels(channels: DownloadChannel[]) {
         <strong>{channel.status}</strong>
         <span>{channel.primaryLabel}</span>
       </div>
-    </a>
+    </DownloadLink>
   ));
 }
