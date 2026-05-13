@@ -1,4 +1,5 @@
 import { brand, contactChannels, faqItems, homeHighlights } from "@fabushi/shared";
+import { DownloadLink } from "../components/download-link";
 import { SiteFooter } from "../components/site-footer";
 import { SiteHeader } from "../components/site-header";
 import { ZenOrbit } from "../components/zen-orbit";
@@ -33,7 +34,6 @@ export default async function HomePage() {
   const channels = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels].slice(0, 3);
   const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
   const directChannel = releaseCollection.betaChannels.find((item) => !item.primaryHref.startsWith("/contact"));
-  const primaryHref = directChannel?.primaryHref ?? "/download";
   const primaryLabel = directChannel?.primaryLabel ?? "查看下载入口";
   const faqPreview = faqItems.slice(0, 4);
 
@@ -88,9 +88,15 @@ export default async function HomePage() {
             <h1 id="home-title">法布施</h1>
             <p className="hero-subtitle">{brand.tagline}</p>
             <div className="hero-actions">
-              <a className="primary-action" href={siteHref(primaryHref)}>
-                {primaryLabel}
-              </a>
+              {directChannel ? (
+                <DownloadLink className="primary-action" channel={directChannel}>
+                  {primaryLabel}
+                </DownloadLink>
+              ) : (
+                <a className="primary-action" href={siteHref("/download")}>
+                  {primaryLabel}
+                </a>
+              )}
               <a className="secondary-action" href={siteHref("/apply")}>
                 申请测试
               </a>
@@ -99,10 +105,14 @@ export default async function HomePage() {
             <div className="release-pill-grid" aria-label="当前下载状态">
               {channels.length > 0 ? (
                 channels.map((item) => (
-                  <a key={`${item.audience}-${item.platform}`} className="release-pill" href={siteHref(item.primaryHref)}>
+                  <DownloadLink
+                    key={`${item.audience}-${item.platform}`}
+                    className="release-pill"
+                    channel={item}
+                  >
                     <span>{item.title}</span>
                     <strong>{item.status}</strong>
-                  </a>
+                  </DownloadLink>
                 ))
               ) : (
                 <a className="release-pill" href={siteHref("/download")}>
@@ -134,7 +144,11 @@ export default async function HomePage() {
         </div>
         <div className="platform-strip">
           {channels.map((item) => (
-            <a key={`${item.audience}-${item.platform}`} className="platform-row" href={siteHref(item.primaryHref)}>
+            <DownloadLink
+              key={`${item.audience}-${item.platform}`}
+              className="platform-row"
+              channel={item}
+            >
               <div>
                 <span className="platform-name">{item.title}</span>
                 <p>{item.description}</p>
@@ -143,7 +157,7 @@ export default async function HomePage() {
                 <strong>{item.status}</strong>
                 <span>{item.primaryLabel}</span>
               </div>
-            </a>
+            </DownloadLink>
           ))}
           <a className="platform-row accent-row" href={siteHref("/download")}>
             <div>
