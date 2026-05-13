@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { brand, contactChannels } from "@fabushi/shared";
 import { DownloadClient } from "../../components/download-client";
 import type { DownloadChannel } from "../../components/download-client";
+import { DownloadLink } from "../../components/download-link";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import { ZenOrbit } from "../../components/zen-orbit";
@@ -85,9 +86,9 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
         </div>
       )}
       <div className="release-card-actions">
-        <a className="primary-action" href={siteHref(channel.primaryHref)}>
+        <DownloadLink className="primary-action" channel={channel}>
           {channel.primaryLabel}
-        </a>
+        </DownloadLink>
         {channel.releasePageHref ? (
           <a className="secondary-action" href={siteHref(channel.releasePageHref)}>
             Release
