@@ -500,7 +500,7 @@ class AuthModel extends ChangeNotifier {
 
         _currentUser = User(
           username: userModel.username,
-          userNo: userModel.userNo,
+          userNo: userModel.userNo ?? _currentUser?.userNo,
           email: userModel.email ?? '',
           membershipType: userModel.membership.type,
           membershipExpiry: userModel.membership.expiresAt != null
