@@ -10,7 +10,8 @@ import {
 import { siteHref, siteUrl } from "../lib/site-url";
 import { ZenOrbit } from "../components/zen-orbit";
 
-type ProductScreenshotKey = keyof typeof FALLBACK_SCREENSHOTS;
+const SCREENSHOT_KEYS = ["home", "meditation", "sutra", "video"] as const;
+type ProductScreenshotKey = (typeof SCREENSHOT_KEYS)[number];
 
 interface ProductMoment {
   title: string;
