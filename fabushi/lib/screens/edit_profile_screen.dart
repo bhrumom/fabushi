@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
 import '../core/design_system/app_theme.dart';
 import '../models/auth_model.dart';
+import '../models/leaderboard_model.dart';
 import '../services/error_report_service.dart';
 import '../services/http_service.dart';
 import '../services/meditation_session_manager.dart';
@@ -342,16 +343,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (response.statusCode == 200 && data['success'] == true) {
         final token = data['token'] as String?;
         final userJson = data['user'];
-        final updatedUsername = userJson is Map
-            ? (userJson['username'] as String? ??
-                  _usernameController.text.trim())
-            : _usernameController.text.trim();
+        final updatedUserJson = userJson is Map
+            ? Map<String, dynamic>.from(userJson)
+            : null;
+        final updatedUsername = updatedUserJson?['username'] as String? ??
+            _usernameController.text.trim();
 
         if (token != null) {
-          await authModel.loginWithToken(token, updatedUsername);
+          await authModel.loginWithToken(
+            token,
+            updatedUsername,
+            userJson: updatedUserJson,
+          );
         } else {
           await authModel.refreshUserInfo();
         }
+        await LeaderboardModel.clearCache();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

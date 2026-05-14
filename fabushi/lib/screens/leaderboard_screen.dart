@@ -1,12 +1,12 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/design_system/app_theme.dart';
 import '../models/leaderboard_model.dart';
-import '../widgets/space_background.dart';
 import '../widgets/follow_button.dart';
 import '../widgets/leaderboard_user_detail_sheet.dart';
-import '../core/design_system/app_theme.dart';
+import '../widgets/space_background.dart';
 
 String formatLeaderboardBytes(int bytes) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
@@ -143,7 +143,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                             highlightLabel: '累计布施',
                             highlightValue: formatLeaderboardBytes(entry.totalBytes),
                           ),
-                          leading: _buildRankBadge(entry.rank),
+                          leading: _buildAvatarRank(entry),
                           title: Text(
                             entry.displayName.isNotEmpty
                                 ? entry.displayName
@@ -212,28 +212,60 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     );
   }
 
-  Widget _buildRankBadge(int rank) {
-    Color color;
-    if (rank == 1) {
-      color = Colors.amber;
-    } else if (rank == 2) {
-      color = Colors.grey;
-    } else if (rank == 3) {
-      color = Colors.brown;
-    } else {
-      color = Colors.blue;
-    }
+  Widget _buildAvatarRank(LeaderboardEntry entry) {
+    final hasAvatar = entry.avatar?.isNotEmpty == true;
+    final fallback = entry.displayName.isNotEmpty
+        ? entry.displayName[0].toUpperCase()
+        : (entry.username.isNotEmpty ? entry.username[0].toUpperCase() : '?');
 
-    return CircleAvatar(
-      backgroundColor: color,
-      child: Text(
-        '$rank',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        CircleAvatar(
+          radius: 23,
+          backgroundColor: Colors.white10,
+          backgroundImage: hasAvatar ? NetworkImage(entry.avatar!) : null,
+          child: hasAvatar
+              ? null
+              : Text(
+                  fallback,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
         ),
-      ),
+        Positioned(
+          right: -5,
+          bottom: -5,
+          child: Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: _rankColor(entry.rank),
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFF111111), width: 2),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              '${entry.rank}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
+  }
+
+  Color _rankColor(int rank) {
+    if (rank == 1) return Colors.amber;
+    if (rank == 2) return Colors.grey;
+    if (rank == 3) return Colors.brown;
+    return const Color(0xFF476A8E);
   }
 
   String _formatUpdateTime(DateTime time) {
