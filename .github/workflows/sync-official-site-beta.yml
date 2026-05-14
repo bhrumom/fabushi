@@ -317,25 +317,25 @@ jobs:
           if [ -f OFFICIAL_SITE_RELEASE_STATE.json ]; then
             mkdir -p frontend/apps/web/public/api
             python3 - <<'PY'
-            import json
-            from pathlib import Path
+import json
+from pathlib import Path
 
-            source_path = Path("OFFICIAL_SITE_RELEASE_STATE.json")
-            target_path = Path("frontend/apps/web/public/api/releases.json")
-            state = json.loads(source_path.read_text(encoding="utf-8"))
-            channels = state.get("channels", [])
-            api_state = {
-                "betaChannels": [channel for channel in channels if channel.get("audience") == "beta"],
-                "stableChannels": [channel for channel in channels if channel.get("audience") == "stable"],
-                "screenshots": state.get("screenshots", {}),
-                "releases": state.get("releases", []),
-                "notes": state.get("notes", []),
-            }
-            target_path.write_text(
-                json.dumps(api_state, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
-            PY
+source_path = Path("OFFICIAL_SITE_RELEASE_STATE.json")
+target_path = Path("frontend/apps/web/public/api/releases.json")
+state = json.loads(source_path.read_text(encoding="utf-8"))
+channels = state.get("channels", [])
+api_state = {
+    "betaChannels": [channel for channel in channels if channel.get("audience") == "beta"],
+    "stableChannels": [channel for channel in channels if channel.get("audience") == "stable"],
+    "screenshots": state.get("screenshots", {}),
+    "releases": state.get("releases", []),
+    "notes": state.get("notes", []),
+}
+target_path.write_text(
+    json.dumps(api_state, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add frontend/apps/web/public/api/releases.json
