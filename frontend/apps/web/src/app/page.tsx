@@ -3,11 +3,7 @@ import { DownloadLink } from "../components/download-link";
 import { SiteFooter } from "../components/site-footer";
 import { SiteHeader } from "../components/site-header";
 import { ZenOrbit } from "../components/zen-orbit";
-import {
-  getOfficialSiteReleaseCollection,
-  FALLBACK_SCREENSHOTS,
-  type OfficialSiteScreenshots,
-} from "../lib/official-site-releases";
+import { getOfficialSiteReleaseCollection } from "../lib/official-site-releases";
 import { siteHref, siteUrl } from "../lib/site-url";
 
 interface ProductMoment {
@@ -16,33 +12,60 @@ interface ProductMoment {
   image: string;
 }
 
-function resolveProductMoments(screenshots: OfficialSiteScreenshots): ProductMoment[] {
-  const moments: { title: string; description: string; screenshotKey: string }[] = [
-    { title: "经文听诵", description: "读经、听诵、进度保存。", screenshotKey: "sutra" },
-    { title: "全球法布施", description: "一键发送，看见善意抵达世界。", screenshotKey: "home" },
-    { title: "禅修冥想", description: "禅室、计时、修行记录。", screenshotKey: "meditation" },
-    { title: "法流视频", description: "滑动浏览佛法内容。", screenshotKey: "video" },
-  ];
+const HERO_MAIN_IMAGE = "/product/global-donation.svg";
+const HERO_SIDE_IMAGE = "/product/group-practice.svg";
 
-  return moments.map((m) => ({
-    title: m.title,
-    description: m.description,
-    image: (screenshots[m.screenshotKey as keyof OfficialSiteScreenshots] as string)
-      ?? FALLBACK_SCREENSHOTS[m.screenshotKey]
-      ?? "/product/home.png",
-  }));
-}
+const PRODUCT_MOMENTS: ProductMoment[] = [
+  {
+    title: "全球法布施",
+    description: "看见善意如何跨越地域，直接抵达世界各地。",
+    image: "/product/global-donation.svg",
+  },
+  {
+    title: "随时随地开始修行",
+    description: "打开就能进入禅修状态，把修行节奏留在日常里。",
+    image: "/product/start-practice.svg",
+  },
+  {
+    title: "沉浸式禅修体验",
+    description: "用更安静、更专注的界面承接每一次练习。",
+    image: "/product/immersive-meditation.svg",
+  },
+  {
+    title: "锁定主修功课",
+    description: "先确定主线，再围绕自己的路径稳定推进。",
+    image: "/product/main-course-lock.svg",
+  },
+  {
+    title: "轻松加入共修小组",
+    description: "搜索、申请、加入和管理共修关系都放在同一条路径里。",
+    image: "/product/group-practice.svg",
+  },
+  {
+    title: "全球修行排行",
+    description: "修行进度和榜单变化一眼可见，方便持续跟进。",
+    image: "/product/practice-ranking.svg",
+  },
+  {
+    title: "全球布施排行",
+    description: "实时查看全球布施动态，感受功德流动。",
+    image: "/product/donation-ranking-live.svg",
+  },
+  {
+    title: "全球布施排行榜",
+    description: "用更直观的排行榜界面看见用户与善行的连接。",
+    image: "/product/donation-leaderboard.svg",
+  },
+];
 
 export default async function HomePage() {
   const releaseCollection = await getOfficialSiteReleaseCollection();
-  const productMoments = resolveProductMoments(releaseCollection.screenshots);
+  const productMoments = PRODUCT_MOMENTS;
   const channels = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels].slice(0, 3);
   const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
   const directChannel = releaseCollection.betaChannels.find((item) => !item.primaryHref.startsWith("/contact"));
   const primaryLabel = directChannel?.primaryLabel ?? "查看下载入口";
   const faqPreview = faqItems.slice(0, 4);
-  const mainScreenshot = (releaseCollection.screenshots?.home as string) ?? FALLBACK_SCREENSHOTS.home;
-  const sideScreenshot = (releaseCollection.screenshots?.video as string) ?? FALLBACK_SCREENSHOTS.video;
 
   const structuredData = {
     "@context": "https://schema.org",
@@ -133,11 +156,11 @@ export default async function HomePage() {
           <section className="hero-visual" aria-label="大乘 产品预览">
             <ZenOrbit />
             <div className="phone-stack">
-              <div className="phone-frame main-phone">
-                <img src={siteHref(mainScreenshot)} alt="大乘 全球法布施界面预览" />
+              <div className="phone-frame main-phone poster-frame">
+                <img src={siteHref(HERO_MAIN_IMAGE)} alt="大乘 全球法布施功能海报" />
               </div>
-              <div className="phone-frame side-phone">
-                <img src={siteHref(sideScreenshot)} alt="大乘 法流视频界面预览" />
+              <div className="phone-frame side-phone poster-frame">
+                <img src={siteHref(HERO_SIDE_IMAGE)} alt="大乘 共修小组功能海报" />
               </div>
             </div>
           </section>
@@ -197,13 +220,13 @@ export default async function HomePage() {
       <section className="band product-band">
         <div className="section-heading tight">
           <p>预览</p>
-          <h2>打开后会看到这些。</h2>
+          <h2>官网截图全部改为手动精选版本。</h2>
         </div>
-        <div className="moment-grid">
+        <div className="moment-grid showcase-grid">
           {productMoments.map((item) => (
             <article key={item.title} className="moment-card">
               <div className="moment-image">
-                <img src={siteHref(item.image)} alt={`${item.title}界面预览`} loading="lazy" />
+                <img src={siteHref(item.image)} alt={`${item.title}界面海报`} loading="lazy" />
               </div>
               <h3>{item.title}</h3>
               <p>{item.description}</p>
