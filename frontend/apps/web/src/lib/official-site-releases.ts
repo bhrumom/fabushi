@@ -193,6 +193,43 @@ function buildReleaseEntries(releases: GitHubRelease[]): OfficialSiteReleaseEntr
     .filter((entry) => entry.tag.length > 0);
 }
 
+function isTestFlightJoinUrl(href: string): boolean {
+  return href.includes("testflight.apple.com");
+}
+
+function applyConfiguredIosTestFlightChannel(channel: OfficialSiteChannel): OfficialSiteChannel {
+  if (channel.platform !== "iOS" || channel.audience !== "beta" || !iosTestFlightPublicUrl) {
+    return channel;
+  }
+
+  if (isTestFlightJoinUrl(channel.primaryHref)) {
+    return channel;
+  }
+
+  const pointsToReleasePage =
+    !channel.primaryHref ||
+    channel.primaryHref.startsWith("https://github.com/") ||
+    channel.primaryHref.startsWith("/releases") ||
+    channel.primaryHref === channel.releasePageHref;
+
+  if (!pointsToReleasePage) {
+    return channel;
+  }
+
+  return {
+    ...channel,
+    status: channel.status.includes("TestFlight") ? channel.status : "TestFlight 已开放",
+    description: "iOS beta 已经配置为通过 Apple TestFlight 分发，点击即可打开公开加入页面。",
+    primaryLabel: "下载 iOS 测试版",
+    primaryHref: iosTestFlightPublicUrl,
+    note: "点击后会打开 Apple TestFlight 的公开加入页面。",
+  };
+}
+
+function applyConfiguredIosTestFlightChannels(channels: OfficialSiteChannel[]): OfficialSiteChannel[] {
+  return channels.map((channel) => applyConfiguredIosTestFlightChannel(channel));
+}
+
 function normalizeChannel(input: unknown): OfficialSiteChannel | null {
   if (!input || typeof input !== "object") {
     return null;
@@ -377,7 +414,7 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
   const testFlightStatus = await loadTestFlightStatus(release);
   if (testFlightStatus) {
     const uploaded = testFlightStatus.status === "uploaded";
-    const publicJoinHref = testFlightStatus.public_url || testFlightStatus.public_link || iosTestFlightPublicUrl;
+    const publicJoinHref = iosTestFlightPublicUrl || testFlightStatus.public_url || testFlightStatus.public_link;
     const primaryHref = uploaded && publicJoinHref ? publicJoinHref : release.html_url;
     channels.push({
       platform: "iOS",
@@ -444,7 +481,7 @@ export async function getReleaseCollectionClient(): Promise<OfficialSiteReleaseC
             .filter((item): item is OfficialSiteChannel => item !== null)
         : channels.filter((channel) => channel.audience === "stable");
     return {
-      betaChannels,
+      betaChannels: applyConfiguredIosTestFlightChannels(betaChannels),
       stableChannels,
       screenshots: normalizeScreenshots(data.screenshots) ?? {},
       releases: normalizeReleaseEntries(data.releases),
@@ -479,7 +516,7 @@ export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteRe
     : null;
 
   return {
-    betaChannels: betaState?.channels ?? [],
+    betaChannels: applyConfiguredIosTestFlightChannels(betaState?.channels ?? []),
     stableChannels: stableState?.channels?.length ? stableState.channels : DEFAULT_STABLE_CHANNELS,
     screenshots: betaState?.screenshots ?? {},
     releases: betaState?.releases?.length ? betaState.releases : fallbackReleaseEntries,
