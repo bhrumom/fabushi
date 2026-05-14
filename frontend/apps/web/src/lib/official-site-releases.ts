@@ -50,10 +50,14 @@ export interface OfficialSiteChannel {
 }
 
 export interface OfficialSiteScreenshots {
-  home?: string | null;
-  meditation?: string | null;
-  sutra?: string | null;
-  video?: string | null;
+  "global-dharma"?: string | null;
+  "start-meditation"?: string | null;
+  "immersive-meditation"?: string | null;
+  "main-sutra"?: string | null;
+  "group-practice"?: string | null;
+  "global-ranking"?: string | null;
+  "global-donation"?: string | null;
+  "global-donation-leaderboard"?: string | null;
   capturedAt?: string;
 }
 
@@ -82,10 +86,14 @@ export interface OfficialSiteReleaseCollection {
 }
 
 export const FALLBACK_SCREENSHOTS: Record<string, string> = {
-  home: "/product/home.png",
-  meditation: "/product/home.png",
-  sutra: "/product/sutra.png",
-  video: "/product/video.png",
+  "global-dharma": "/product/global-dharma.png",
+  "start-meditation": "/product/start-meditation.png",
+  "immersive-meditation": "/product/immersive-meditation.png",
+  "main-sutra": "/product/main-sutra.png",
+  "group-practice": "/product/group-practice.png",
+  "global-ranking": "/product/global-ranking.png",
+  "global-donation": "/product/global-donation.png",
+  "global-donation-leaderboard": "/product/global-donation-leaderboard.png",
 };
 
 const DEFAULT_STABLE_CHANNELS: OfficialSiteChannel[] = [
@@ -224,7 +232,7 @@ function normalizeScreenshots(input: unknown): OfficialSiteScreenshots | undefin
   const obj = input as Record<string, unknown>;
   const screenshots: OfficialSiteScreenshots = {};
   let hasAny = false;
-  for (const key of ["home", "meditation", "sutra", "video"]) {
+  for (const key of Object.keys(FALLBACK_SCREENSHOTS)) {
     const value = obj[key];
     if (typeof value === "string" && value.length > 0) {
       screenshots[key as keyof OfficialSiteScreenshots] = value;
