@@ -9,6 +9,10 @@ import {
   type OfficialSiteChannel,
   type OfficialSiteScreenshots,
 } from "../lib/official-site-releases";
+import {
+  getUserFacingDescription,
+  getUserFacingStatus,
+} from "../lib/channel-display";
 import { siteHref, siteUrl } from "../lib/site-url";
 import { ZenOrbit } from "../components/zen-orbit";
 
@@ -93,14 +97,6 @@ const PRODUCT_MOMENTS: ProductMoment[] = [
     screenshot: "global-donation",
     alt: "Fabushi donation activity screen",
   },
-  {
-    titleZh: "全球布施排行榜",
-    titleEn: "Donation Leaderboard",
-    descriptionZh: "用更直观的排行榜界面看见用户与善行的连接。",
-    descriptionEn: "A clearer leaderboard view that connects people with generosity.",
-    screenshot: "global-donation-leaderboard",
-    alt: "Fabushi donation leaderboard screen",
-  },
 ];
 
 const FEATURE_HIGHLIGHTS = [
@@ -111,10 +107,10 @@ const FEATURE_HIGHLIGHTS = [
     descriptionEn: "Reduce context switching so practice starts smoothly the moment the app opens.",
   },
   {
-    titleZh: "版本状态公开可见",
-    titleEn: "Visible release status",
-    descriptionZh: "官网直接同步 GitHub 发布版本、发布时间和更新摘要。",
-    descriptionEn: "The site now syncs GitHub release versions, publish time, and update summaries directly.",
+    titleZh: "下载前先看清版本",
+    titleEn: "See the version before you download",
+    descriptionZh: "首页直接告诉你平台、版本号、发布时间和最近更新。",
+    descriptionEn: "The homepage shows the platform, version, publish date, and latest updates before you tap download.",
   },
   {
     titleZh: "下载入口按平台组织",
@@ -152,8 +148,8 @@ const FAQ_PREVIEW = [
   {
     questionZh: "官网会显示我下载的是哪个版本吗？",
     questionEn: "Will the site show which version I am downloading?",
-    answerZh: "会。首页和下载页现在都会显示版本号、发布时间和最近更新摘要。",
-    answerEn: "Yes. The homepage and download page now show version, publish date, and a short update summary.",
+    answerZh: "会。首页和下载页都会显示版本号、发布时间和最近更新。",
+    answerEn: "Yes. The homepage and download page both show the version, publish date, and recent updates.",
   },
 ] as const;
 
@@ -185,20 +181,6 @@ function getChannelActionCopy(channel: OfficialSiteChannel) {
   return {
     zh: channel.audience === "beta" ? "下载 Android 测试版" : "下载 Android 正式版",
     en: channel.audience === "beta" ? "Download Android Beta" : "Download Android Stable",
-  };
-}
-
-function getChannelDisplayTitle(channel: OfficialSiteChannel) {
-  if (channel.platform === "iOS") {
-    return {
-      zh: channel.audience === "beta" ? "iOS 测试版" : "iOS 正式版",
-      en: channel.audience === "beta" ? "iOS Beta" : "iOS Stable",
-    };
-  }
-
-  return {
-    zh: channel.audience === "beta" ? "Android 测试版" : "Android 正式版",
-    en: channel.audience === "beta" ? "Android Beta" : "Android Stable",
   };
 }
 
@@ -284,7 +266,7 @@ export default async function HomePage() {
                 </a>
               )}
               {iosBetaChannel ? (
-                <DownloadLink className="secondary-action" channel={iosBetaChannel}>
+                <DownloadLink className="primary-action" channel={iosBetaChannel}>
                   <LocalizedText zh="下载 iOS 测试版" en="Download iOS Beta" />
                 </DownloadLink>
               ) : (
@@ -297,8 +279,9 @@ export default async function HomePage() {
             <div className="release-pill-grid" aria-label="Current download status / 当前下载状态">
               {channels.length > 0 ? (
                 channels.map((item) => {
-                  const titleCopy = getChannelDisplayTitle(item);
+                  const titleCopy = item.title;
                   const actionCopy = getChannelActionCopy(item);
+                  const statusCopy = getUserFacingStatus(item);
                   const publishedAt = formatPublishedAt(item.publishedAt);
                   return (
                     <DownloadLink
@@ -306,10 +289,10 @@ export default async function HomePage() {
                       className="release-pill"
                       channel={item}
                     >
-                      <span>
-                        <LocalizedText zh={titleCopy.zh} en={titleCopy.en} />
-                      </span>
-                      <strong>{item.status}</strong>
+                      <span>{titleCopy}</span>
+                      <strong>
+                        <LocalizedText zh={statusCopy.zh} en={statusCopy.en} />
+                      </strong>
                       {(item.version || publishedAt) && (
                         <small>
                           {item.version ? `v${item.version}` : ""}
@@ -329,7 +312,7 @@ export default async function HomePage() {
                     <LocalizedText zh="下载入口" en="Downloads" />
                   </span>
                   <strong>
-                    <LocalizedText zh="同步中" en="Syncing" />
+                    <LocalizedText zh="入口整理中" en="Links coming soon" />
                   </strong>
                 </a>
               )}
@@ -367,8 +350,10 @@ export default async function HomePage() {
         </div>
         <div className="platform-strip">
           {channels.map((item) => {
-            const titleCopy = getChannelDisplayTitle(item);
+            const titleCopy = item.title;
             const actionCopy = getChannelActionCopy(item);
+            const descriptionCopy = getUserFacingDescription(item);
+            const statusCopy = getUserFacingStatus(item);
             const publishedAt = formatPublishedAt(item.publishedAt);
             return (
               <DownloadLink
@@ -377,10 +362,10 @@ export default async function HomePage() {
                 channel={item}
               >
                 <div>
-                  <span className="platform-name">
-                    <LocalizedText zh={titleCopy.zh} en={titleCopy.en} />
-                  </span>
-                  <p>{item.description}</p>
+                  <span className="platform-name">{titleCopy}</span>
+                  <p>
+                    <LocalizedText zh={descriptionCopy.zh} en={descriptionCopy.en} />
+                  </p>
                   {(item.version || publishedAt) && (
                     <div className="platform-detail-line">
                       {item.version ? <span>v{item.version}</span> : null}
@@ -389,7 +374,9 @@ export default async function HomePage() {
                   )}
                 </div>
                 <div className="platform-meta">
-                  <strong>{item.status}</strong>
+                  <strong>
+                    <LocalizedText zh={statusCopy.zh} en={statusCopy.en} />
+                  </strong>
                   <span>
                     <LocalizedText zh={actionCopy.zh} en={actionCopy.en} />
                   </span>
@@ -428,7 +415,7 @@ export default async function HomePage() {
               <LocalizedText zh="版本更新" en="Release update" />
             </p>
             <h2>
-              <LocalizedText zh="官网现在会同步 GitHub 发布信息。" en="The site now mirrors GitHub release information." />
+              <LocalizedText zh="下载前，先看最近版本和更新摘要。" en="Check the latest version and update summary before you download." />
             </h2>
           </div>
           <article className="release-card homepage-release-card">
@@ -446,7 +433,7 @@ export default async function HomePage() {
                 <LocalizedText zh="版本" en="Version" /> {latestRelease.tag}
               </span>
               <span>
-                <LocalizedText zh="来源" en="Source" /> GitHub Releases
+                <LocalizedText zh="类型" en="Type" /> <LocalizedText zh="官方更新" en="Official update" />
               </span>
             </div>
             {latestRelease.summary.length > 0 ? (
@@ -474,7 +461,7 @@ export default async function HomePage() {
             <LocalizedText zh="体验" en="Experience" />
           </p>
           <h2>
-            <LocalizedText zh="留下真正有用的信息。" en="Show the details people actually need before downloading." />
+            <LocalizedText zh="下载前就先知道真正有用的信息。" en="See the details that matter before you download." />
           </h2>
         </div>
         <div className="feature-grid">

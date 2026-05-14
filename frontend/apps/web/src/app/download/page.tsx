@@ -11,6 +11,12 @@ import {
   getOfficialSiteReleaseCollection,
   type OfficialSiteChannel,
 } from "../../lib/official-site-releases";
+import {
+  getUserFacingDescription,
+  getUserFacingNote,
+  getUserFacingStatus,
+  getUserFacingSummary,
+} from "../../lib/channel-display";
 import { siteHref, siteUrl } from "../../lib/site-url";
 
 const downloadUrl = siteUrl("/download");
@@ -35,6 +41,21 @@ const downloadFaqs = [
     questionEn: "Why does iOS open TestFlight?",
     answerZh: "iOS 内测通过 Apple TestFlight 分发。公开加入链接开放后，下载页会直接显示。",
     answerEn: "iOS beta is distributed through Apple TestFlight. Once public access is ready, the page links there directly.",
+  },
+] as const;
+
+const DOWNLOAD_NOTES = [
+  {
+    zh: "下载前先确认平台、版本号和发布时间，避免下错包。",
+    en: "Check the platform, version, and publish date before downloading so you get the right build.",
+  },
+  {
+    zh: "Android 下载较慢时，可以优先尝试镜像入口。",
+    en: "If Android downloads are slow, try the mirror links first.",
+  },
+  {
+    zh: "iOS 测试版通过 TestFlight 分发，入口开放后会直接跳转。",
+    en: "iOS beta is distributed through TestFlight, and the button will jump there once access opens.",
   },
 ] as const;
 
@@ -92,8 +113,11 @@ function getChannelActionCopy(channel: OfficialSiteChannel) {
 
 function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
   const publishedAt = formatPublishedAt(channel.publishedAt);
-  const summary = channel.updateSummary.slice(0, 3);
+  const summary = getUserFacingSummary(channel);
   const actionCopy = getChannelActionCopy(channel);
+  const statusCopy = getUserFacingStatus(channel);
+  const descriptionCopy = getUserFacingDescription(channel);
+  const noteCopy = getUserFacingNote(channel);
 
   return (
     <article className="release-card">
@@ -104,9 +128,13 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
           </p>
           <h2>{channel.title}</h2>
         </div>
-        <span className="download-status">{channel.status}</span>
+        <span className="download-status">
+          <LocalizedText zh={statusCopy.zh} en={statusCopy.en} />
+        </span>
       </div>
-      <p>{channel.description}</p>
+      <p>
+        <LocalizedText zh={descriptionCopy.zh} en={descriptionCopy.en} />
+      </p>
       {(channel.version || publishedAt) && (
         <div className="release-card-meta">
           {channel.version ? <span><LocalizedText zh="版本" en="Version" /> v{channel.version}</span> : null}
@@ -116,7 +144,9 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
       {summary.length > 0 ? (
         <ul className="release-summary-list">
           {summary.map((item) => (
-            <li key={item}>{item}</li>
+            <li key={item.en}>
+              <LocalizedText zh={item.zh} en={item.en} />
+            </li>
           ))}
         </ul>
       ) : null}
@@ -126,7 +156,7 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
         </DownloadLink>
         {channel.releasePageHref ? (
           <a className="secondary-action" href={siteHref(channel.releasePageHref)}>
-            <LocalizedText zh="查看 Release" en="View release" />
+            <LocalizedText zh="查看版本说明" en="View release notes" />
           </a>
         ) : null}
       </div>
@@ -139,7 +169,11 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
           ))}
         </div>
       )}
-      {channel.note ? <p className="release-note">{channel.note}</p> : null}
+      {noteCopy ? (
+        <p className="release-note">
+          <LocalizedText zh={noteCopy.zh} en={noteCopy.en} />
+        </p>
+      ) : null}
     </article>
   );
 }
@@ -150,7 +184,6 @@ export default async function DownloadPage() {
   const stableChannels = releaseCollection.stableChannels;
   const allChannels = [...betaChannels, ...stableChannels];
   const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
-  const notes = releaseCollection.notes.slice(0, 3);
 
   const structuredData = {
     "@context": "https://schema.org",
@@ -210,8 +243,8 @@ export default async function DownloadPage() {
           </h1>
           <p className="lede">
             <LocalizedText
-              zh="Android Beta、iOS TestFlight、发布时间和更新摘要会在这里一起同步。"
-              en="Android beta, iOS TestFlight, publish time, and update summaries are synced here together."
+              zh="这里会集中显示可下载版本、发布时间和最近更新。"
+              en="This page brings the available builds, publish date, and recent updates into one place."
             />
           </p>
         </div>
@@ -237,7 +270,7 @@ export default async function DownloadPage() {
                     <LocalizedText zh="测试版" en="Beta" />
                   </p>
                   <h2>
-                    <LocalizedText zh="Beta 同步中" en="Beta is syncing" />
+                    <LocalizedText zh="测试资格整理中" en="Beta access is being prepared" />
                   </h2>
                 </div>
                 <span className="download-status">
@@ -246,7 +279,7 @@ export default async function DownloadPage() {
               </div>
               <p>
                 <LocalizedText
-                  zh="当前还没有可公开点击的 Beta 入口。可以先提交测试申请。"
+                  zh="当前还没有公开可点的测试入口。可以先提交测试申请。"
                   en="There is no public beta button yet. You can still apply for access first."
                 />
               </p>
@@ -282,12 +315,14 @@ export default async function DownloadPage() {
             <LocalizedText zh="说明" en="Notes" />
           </p>
           <h2>
-            <LocalizedText zh="下载前只看这三条。" en="Three things worth checking before you download." />
+            <LocalizedText zh="下载前只看这几条。" en="A few things worth checking before you download." />
           </h2>
         </div>
         <div className="note-grid">
-          {notes.map((item) => (
-            <p key={item}>{item}</p>
+          {DOWNLOAD_NOTES.map((item) => (
+            <p key={item.en}>
+              <LocalizedText zh={item.zh} en={item.en} />
+            </p>
           ))}
           <p>
             <LocalizedText zh={`遇到下载或安装问题，发邮件到 ${supportEmail}。`} en={`If download or install fails, email ${supportEmail}.`} />

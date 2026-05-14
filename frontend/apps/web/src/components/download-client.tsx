@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { DownloadLink } from "./download-link";
 import { LocalizedText } from "./localized-text";
 import { useSiteLocale } from "./locale-provider";
+import {
+  getUserFacingDescription,
+  getUserFacingStatus,
+  getUserFacingSummary,
+} from "../lib/channel-display";
 
 export interface DownloadChannel {
   platform: "Android" | "iOS";
@@ -82,7 +87,9 @@ function getChannelActionCopy(channel: DownloadChannel) {
 function ChannelCard({ channel, recommended = false }: { channel: DownloadChannel; recommended?: boolean }) {
   const publishedAt = formatPublishedAt(channel.publishedAt);
   const actionCopy = getChannelActionCopy(channel);
-  const summary = channel.updateSummary.slice(0, 2);
+  const statusCopy = getUserFacingStatus(channel);
+  const descriptionCopy = getUserFacingDescription(channel);
+  const summary = getUserFacingSummary(channel);
 
   return (
     <DownloadLink className={recommended ? "platform-row recommended detailed" : "platform-row detailed"} channel={channel}>
@@ -91,7 +98,9 @@ function ChannelCard({ channel, recommended = false }: { channel: DownloadChanne
           {channel.title}
           {recommended ? <sup className="recommended-tag"><LocalizedText zh="推荐" en="Top" /></sup> : null}
         </span>
-        <p>{channel.description}</p>
+        <p>
+          <LocalizedText zh={descriptionCopy.zh} en={descriptionCopy.en} />
+        </p>
         {(channel.version || publishedAt) && (
           <div className="platform-detail-line">
             {channel.version ? <span>v{channel.version}</span> : null}
@@ -101,13 +110,17 @@ function ChannelCard({ channel, recommended = false }: { channel: DownloadChanne
         {summary.length > 0 && (
           <ul className="platform-summary-list">
             {summary.map((item) => (
-              <li key={item}>{item}</li>
+              <li key={item.en}>
+                <LocalizedText zh={item.zh} en={item.en} />
+              </li>
             ))}
           </ul>
         )}
       </div>
       <div className="platform-meta">
-        <strong>{channel.status}</strong>
+        <strong>
+          <LocalizedText zh={statusCopy.zh} en={statusCopy.en} />
+        </strong>
         <span>
           <LocalizedText zh={actionCopy.zh} en={actionCopy.en} />
         </span>
