@@ -160,6 +160,7 @@ h3,
 
 .site-nav-links-wrap,
 .site-nav-links,
+.site-nav-actions,
 .hero-actions,
 .inline-cta,
 .release-card-actions,
@@ -168,6 +169,16 @@ h3,
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.site-nav-links-wrap {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.site-nav-actions {
+  margin-left: auto;
 }
 
 .site-nav-links {
@@ -184,28 +195,67 @@ h3,
 }
 
 .language-switch {
+  position: relative;
+}
+
+.language-toggle {
   display: inline-flex;
   align-items: center;
-  padding: 4px;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 249, 235, 0.06);
+  color: var(--gold-soft);
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
 }
 
-.language-button {
-  min-width: 44px;
-  min-height: 34px;
-  padding: 6px 12px;
+.language-toggle:hover,
+.language-toggle[aria-expanded="true"] {
+  transform: translateY(-1px);
+  border-color: var(--line-strong);
+  background: rgba(255, 249, 235, 0.1);
+}
+
+.language-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.language-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 152px;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(12, 17, 26, 0.96);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+}
+
+.language-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 10px;
   background: transparent;
   color: var(--muted-strong);
   cursor: pointer;
   transition: background-color 180ms ease, color 180ms ease;
 }
 
-.language-button.active {
-  background: rgba(232, 189, 107, 0.18);
+.language-option:hover,
+.language-option.active {
+  background: rgba(232, 189, 107, 0.16);
   color: var(--gold-soft);
 }
 
@@ -882,19 +932,25 @@ h3,
   }
 
   .site-nav,
-  .site-nav-links-wrap,
   .site-footer {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .site-nav-links {
-    gap: 10px;
-    font-size: 0.9rem;
+  .site-nav-links-wrap {
+    width: 100%;
+    align-items: flex-start;
+    gap: 14px;
   }
 
-  .language-switch {
-    order: 2;
+  .site-nav-actions {
+    margin-left: auto;
+  }
+
+  .site-nav-links {
+    width: 100%;
+    gap: 10px;
+    font-size: 0.9rem;
   }
 
   .nav-cta {
