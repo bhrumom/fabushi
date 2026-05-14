@@ -16,8 +16,11 @@ export function isDomesticCountryCode(countryCode: string | null | undefined) {
 }
 
 function getAndroidDownloadProxyHref(channel: DownloadHrefChannel) {
-  const audience = channel.audience === "stable" ? "stable" : "beta";
-  return `/downloads/android-${audience}.apk`;
+  if (channel.audience !== "beta") {
+    return channel.primaryHref;
+  }
+
+  return "/downloads/android-beta.apk";
 }
 
 export function getDownloadHrefForRegion(channel: DownloadHrefChannel, _region: DownloadRegion) {
