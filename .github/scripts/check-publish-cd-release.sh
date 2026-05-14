@@ -53,10 +53,8 @@ for required in (
     'Android package build when Android, shared app, release pipeline, or account/API runtime inputs changed',
     'iOS package build when iOS, shared app, release pipeline, or account/API runtime inputs changed',
     'Capture app screenshots',
-    'SCREENSHOT_CAPTURE_STATUS.txt',
-    'Store screenshots were not captured',
-    'continue-on-error: true\n        with:\n          name: release-product-screenshots',
-    '*.png|*/SCREENSHOT_CAPTURE_STATUS.txt',
+    'if: ${{ false }}',
+    'Official site screenshots are now maintained manually in frontend/apps/web/public/product.',
 ):
     if required not in publish_release_workflow:
         missing.append(f'publish release workflow missing: {required}')
