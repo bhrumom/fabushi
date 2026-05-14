@@ -10,7 +10,16 @@ import {
 import { siteHref, siteUrl } from "../lib/site-url";
 import { ZenOrbit } from "../components/zen-orbit";
 
-const SCREENSHOT_KEYS = ["home", "meditation", "sutra", "video"] as const;
+const SCREENSHOT_KEYS = [
+  "global-dharma",
+  "start-meditation",
+  "immersive-meditation",
+  "main-sutra",
+  "group-practice",
+  "global-ranking",
+  "global-donation",
+  "global-donation-leaderboard"
+] as const;
 type ProductScreenshotKey = (typeof SCREENSHOT_KEYS)[number];
 
 interface ProductMoment {
@@ -20,56 +29,56 @@ interface ProductMoment {
   alt: string;
 }
 
-const HERO_MAIN_IMAGE_KEY: ProductScreenshotKey = "home";
-const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "sutra";
+const HERO_MAIN_IMAGE_KEY: ProductScreenshotKey = "global-dharma";
+const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "main-sutra";
 
 const PRODUCT_MOMENTS: ProductMoment[] = [
   {
     title: "全球法布施",
     description: "看见善意如何跨越地域，直接抵达世界各地。",
-    screenshot: "home",
+    screenshot: "global-dharma",
     alt: "大乘 全球法布施界面截图",
   },
   {
     title: "随时随地开始修行",
     description: "打开就能进入禅修状态，把修行节奏留在日常里。",
-    screenshot: "meditation",
+    screenshot: "start-meditation",
     alt: "大乘 修行入口界面截图",
   },
   {
     title: "沉浸式禅修体验",
     description: "用更安静、更专注的界面承接每一次练习。",
-    screenshot: "video",
+    screenshot: "immersive-meditation",
     alt: "大乘 沉浸式禅修体验界面截图",
   },
   {
     title: "锁定主修功课",
     description: "先确定主线，再围绕自己的路径稳定推进。",
-    screenshot: "sutra",
+    screenshot: "main-sutra",
     alt: "大乘 主修功课界面截图",
   },
   {
     title: "轻松加入共修小组",
     description: "搜索、申请、加入和管理共修关系都放在同一条路径里。",
-    screenshot: "home",
+    screenshot: "group-practice",
     alt: "大乘 共修小组界面截图",
   },
   {
     title: "全球修行排行",
     description: "修行进度和榜单变化一眼可见，方便持续跟进。",
-    screenshot: "video",
+    screenshot: "global-ranking",
     alt: "大乘 全球修行排行界面截图",
   },
   {
     title: "全球布施排行",
     description: "实时查看全球布施动态，感受功德流动。",
-    screenshot: "sutra",
+    screenshot: "global-donation",
     alt: "大乘 全球布施排行界面截图",
   },
   {
     title: "全球布施排行榜",
     description: "用更直观的排行榜界面看见用户与善行的连接。",
-    screenshot: "home",
+    screenshot: "global-donation-leaderboard",
     alt: "大乘 全球布施排行榜界面截图",
   },
 ];
