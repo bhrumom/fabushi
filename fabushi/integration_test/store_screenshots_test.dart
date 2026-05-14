@@ -77,9 +77,4 @@ Future<void> _capture(
   }
 
   await binding.takeScreenshot(name);
-
-  if (Platform.isAndroid) {
-    await binding.revertFlutterImage();
-    await tester.pump();
-  }
 }

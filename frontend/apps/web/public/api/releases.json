@@ -1,7 +1,126 @@
 {
-  "betaChannels": [],
+  "betaChannels": [
+    {
+      "platform": "Android",
+      "audience": "beta",
+      "status": "Beta 自动同步",
+      "title": "Android Beta",
+      "description": "官网直接读取最新发布版本的 APK 安装包，安装包发布后这里会自动更新。",
+      "primaryLabel": "下载 Android Beta",
+      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/v1.0.0-148-mobile.01aa4666d6e6/fabushi-android-arm64-01aa4666d6e6.apk",
+      "version": "v1.0.0-148-mobile.01aa4666d6e6",
+      "publishedAt": "2026-05-14T00:47:16Z",
+      "updateSummary": [
+        "PR #359: feat(web): comprehensive UI/UX overhaul to world-class Bento grid design",
+        "Redesigned color tokens in `globals.css` with a tech & zen dark theme",
+        "Refactored `page.tsx` into a modern Bento Box layout grid",
+        "Integrated `framer-motion` for scroll reveal and stagger entrance animations",
+        "Created new `<BentoCard>` component with interactive spotlight hover effect",
+        "Upgraded the Hero section with 3D stacked floating screenshots (parallax hover)"
+      ],
+      "mirrorLinks": [
+        {
+          "label": "国内镜像 1",
+          "href": "https://mirror.ghproxy.com/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-148-mobile.01aa4666d6e6/fabushi-android-arm64-01aa4666d6e6.apk"
+        },
+        {
+          "label": "国内镜像 2",
+          "href": "https://ghfast.top/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-148-mobile.01aa4666d6e6/fabushi-android-arm64-01aa4666d6e6.apk"
+        }
+      ],
+      "note": "国内访问较慢时，可以优先尝试镜像下载入口。",
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-148-mobile.01aa4666d6e6"
+    },
+    {
+      "platform": "iOS",
+      "audience": "beta",
+      "status": "TestFlight 已开放",
+      "title": "iOS TestFlight Beta",
+      "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
+      "primaryLabel": "查看 iOS 发布状态",
+      "primaryHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-148-mobile.01aa4666d6e6",
+      "version": "148",
+      "publishedAt": "2026-05-14T00:23:54Z",
+      "updateSummary": [
+        "PR #359: feat(web): comprehensive UI/UX overhaul to world-class Bento grid design",
+        "Redesigned color tokens in `globals.css` with a tech & zen dark theme",
+        "Refactored `page.tsx` into a modern Bento Box layout grid",
+        "Integrated `framer-motion` for scroll reveal and stagger entrance animations",
+        "Created new `<BentoCard>` component with interactive spotlight hover effect",
+        "Upgraded the Hero section with 3D stacked floating screenshots (parallax hover)"
+      ],
+      "mirrorLinks": [],
+      "note": "已经上传到 TestFlight，但仓库变量 IOS_TESTFLIGHT_PUBLIC_URL 还没有配置公开加入链接。",
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-148-mobile.01aa4666d6e6"
+    }
+  ],
   "stableChannels": [],
   "screenshots": {},
-  "releases": [],
-  "notes": []
+  "releases": [
+    {
+      "tag": "v1.0.0-148-mobile.01aa4666d6e6",
+      "title": "Fabushi mobile 1.0.0+148 (01aa4666d6e6)",
+      "publishedAt": "2026-05-14T00:47:16Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-148-mobile.01aa4666d6e6",
+      "summary": [
+        "PR #359: feat(web): comprehensive UI/UX overhaul to world-class Bento grid design",
+        "Redesigned color tokens in `globals.css` with a tech & zen dark theme",
+        "Refactored `page.tsx` into a modern Bento Box layout grid",
+        "Integrated `framer-motion` for scroll reveal and stagger entrance animations",
+        "Created new `<BentoCard>` component with interactive spotlight hover effect",
+        "Upgraded the Hero section with 3D stacked floating screenshots (parallax hover)"
+      ]
+    },
+    {
+      "tag": "v1.0.0-147-mobile.bf69a3ea8679",
+      "title": "Fabushi mobile 1.0.0+147 (bf69a3ea8679)",
+      "publishedAt": "2026-05-13T23:56:48Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-147-mobile.bf69a3ea8679",
+      "summary": [
+        "PR #358: ci: fix missing GH_TOKEN in sync beta state workflow",
+        "[x] Run workflow manually to ensure it authenticates successfully"
+      ]
+    },
+    {
+      "tag": "v1.0.0-144-mobile.b6d5f08bef3d",
+      "title": "Fabushi mobile 1.0.0+144 (b6d5f08bef3d)",
+      "publishedAt": "2026-05-13T09:35:05Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-144-mobile.b6d5f08bef3d",
+      "summary": [
+        "PR #353: ci: fix official site sync not triggering automatically",
+        "Listen for `Publish CD packages to GitHub Release` workflow completion instead of `release` events, bypassing GITHUB_TOKEN recursive trigger limitations.",
+        "Fallback to fetching the latest GitHub release tag dynamically when no explicit tag is supplied by inputs or release context.",
+        "Update `Push beta state to official site repo` condition to execute even if attaching metadata to an immutable release is rejected (so the official site still receives updates).",
+        "Verify syntax and run the workflow dispatch to see if it correctly locates the latest release."
+      ]
+    },
+    {
+      "tag": "v1.0.0-142-mobile.4011ea22012e",
+      "title": "Fabushi mobile 1.0.0+142 (4011ea22012e)",
+      "publishedAt": "2026-05-13T05:58:32Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-142-mobile.4011ea22012e",
+      "summary": [
+        "PR #352: ci: keep release publish unblocked by screenshots"
+      ]
+    },
+    {
+      "tag": "v1.0.0-137-mobile.1ffba4b6640c",
+      "title": "Fabushi mobile 1.0.0+137 (1ffba4b6640c)",
+      "publishedAt": "2026-05-12T08:26:06Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-137-mobile.1ffba4b6640c",
+      "summary": [
+        "PR #336: fix: add missing .gitmodules for llama.cpp submodule mapping",
+        "Adds missing `.gitmodules` at repo root with `fabushi/native_libs/llama.cpp` submodule mapping to `https://github.com/ggml-org/llama.cpp`",
+        "The git index has this submodule (gitlink 160000) but `.gitmodules` was absent, causing every `actions/checkout` cleanup step to fail with `fatal: No url found for submodule path`",
+        "`Staging API E2E and smoke gate` — \"Checkout E2E files\" step failure",
+        "`Notify deployment failure` — \"Checkout failure notifier\" step failure → \"Create or update detailed CD failure issue\" was skipped",
+        "Any other job that checks out this repo without the workaround"
+      ]
+    }
+  ],
+  "notes": [
+    "Android beta 下载链接来自最新发布版本的 APK 资产。",
+    "iOS TestFlight 入口会在上传状态成功后和 Android beta 一起同步。",
+    "镜像链接面向国内网络环境准备，如镜像暂时不可用请使用原始下载地址。"
+  ]
 }
