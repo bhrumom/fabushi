@@ -1,6 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+
 import '../services/leaderboard_service.dart';
 
 class LeaderboardEntry {
@@ -141,8 +143,20 @@ class LeaderboardModel extends ChangeNotifier {
   String? get error => _error;
   DateTime? get lastUpdateTime => _lastUpdateTime;
 
+  static Future<void> clearCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_cacheKey);
+    await prefs.remove(_timestampKey);
+  }
+
   Future<void> fetchLeaderboard({bool forceRefresh = false}) async {
-    // 首次加载缓存
+    if (forceRefresh) {
+      await clearCache();
+      _entries = [];
+      _lastUpdateTime = null;
+      _hasLoadedCache = true;
+    }
+
     if (!_hasLoadedCache) {
       await _loadCache();
       _hasLoadedCache = true;
@@ -151,21 +165,18 @@ class LeaderboardModel extends ChangeNotifier {
       }
     }
 
-    // 检查缓存（1天）
     if (!forceRefresh && _lastUpdateTime != null && _entries.isNotEmpty) {
       final diff = DateTime.now().difference(_lastUpdateTime!);
       if (diff.inDays < 1) {
-        return; // 使用缓存，不需要刷新
+        return;
       }
     }
 
-    // 检查刷新限制（1分钟）- 只在真正需要网络请求时才检查
     if (_lastRefreshTime != null) {
       final diff = DateTime.now().difference(_lastRefreshTime!);
       if (diff.inSeconds < 60) {
         _error = '刷新过于频繁，请${60 - diff.inSeconds}秒后再试';
         notifyListeners();
-        // 3秒后自动清除错误消息
         Future.delayed(const Duration(seconds: 3), () {
           if (_error?.contains('刷新过于频繁') == true) {
             _error = null;
