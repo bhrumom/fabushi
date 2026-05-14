@@ -1,4 +1,4 @@
-const officialSiteReleaseRepo = process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_REPO?.trim() || "bhrum/fabushi";
+const officialSiteReleaseRepo = process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_REPO?.trim() || "bhrumom/fabushi";
 const iosTestFlightPublicUrl = process.env.NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL?.trim() || "";
 const RELEASES_API_URL = `https://api.github.com/repos/${officialSiteReleaseRepo}/releases?per_page=8`;
 
@@ -392,10 +392,25 @@ export async function getReleaseCollectionClient(): Promise<OfficialSiteReleaseC
   try {
     const res = await fetch("/api/releases.json");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = (await res.json()) as Record<string, unknown>;
+    const channels = Array.isArray(data.channels)
+      ? data.channels.map(normalizeChannel).filter((item): item is OfficialSiteChannel => item !== null)
+      : [];
+    const betaChannels =
+      Array.isArray(data.betaChannels) && data.betaChannels.length > 0
+        ? data.betaChannels
+            .map(normalizeChannel)
+            .filter((item): item is OfficialSiteChannel => item !== null)
+        : channels.filter((channel) => channel.audience === "beta");
+    const stableChannels =
+      Array.isArray(data.stableChannels) && data.stableChannels.length > 0
+        ? data.stableChannels
+            .map(normalizeChannel)
+            .filter((item): item is OfficialSiteChannel => item !== null)
+        : channels.filter((channel) => channel.audience === "stable");
     return {
-      betaChannels: (data.betaChannels ?? []).map(normalizeChannel).filter(Boolean) as OfficialSiteChannel[],
-      stableChannels: (data.stableChannels ?? []).map(normalizeChannel).filter(Boolean) as OfficialSiteChannel[],
+      betaChannels,
+      stableChannels,
       screenshots: normalizeScreenshots(data.screenshots) ?? {},
       releases: normalizeReleaseEntries(data.releases),
       notes: Array.isArray(data.notes) ? data.notes : [],
