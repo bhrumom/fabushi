@@ -67,7 +67,7 @@ jobs:
             exit 1
           fi
 
-          npx --yes wrangler@latest deploy \
+          npx --yes wrangler@latest deploy official-site-worker.js \
             --name fabushi-official-site \
             --assets apps/web/out \
             --compatibility-date 2026-05-06 \
