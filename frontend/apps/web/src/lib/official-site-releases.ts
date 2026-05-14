@@ -120,6 +120,9 @@ async function fetchJson<T>(url: string): Promise<T | null> {
       headers: {
         Accept: "application/vnd.github+json",
       },
+      next: {
+        revalidate: 600,
+      },
     });
 
     if (!response.ok) {
@@ -134,7 +137,11 @@ async function fetchJson<T>(url: string): Promise<T | null> {
 
 async function fetchText(url: string): Promise<string | null> {
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      next: {
+        revalidate: 600,
+      },
+    });
 
     if (!response.ok) {
       return null;
@@ -170,6 +177,20 @@ function buildMirrorLinks(primaryHref: string): OfficialSiteMirrorLink[] {
     label: item.label,
     href: `${item.prefix}${path}`,
   }));
+}
+
+function buildReleaseEntries(releases: GitHubRelease[]): OfficialSiteReleaseEntry[] {
+  return releases
+    .filter((release) => !release.draft)
+    .slice(0, 5)
+    .map((release) => ({
+      tag: release.tag_name,
+      title: release.name?.trim() || release.tag_name,
+      publishedAt: release.published_at ?? "",
+      htmlUrl: release.html_url,
+      summary: extractUpdateSummary(release.body, release.name ?? release.tag_name),
+    }))
+    .filter((entry) => entry.tag.length > 0);
 }
 
 function normalizeChannel(input: unknown): OfficialSiteChannel | null {
@@ -356,19 +377,20 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
   const testFlightStatus = await loadTestFlightStatus(release);
   if (testFlightStatus) {
     const uploaded = testFlightStatus.status === "uploaded";
-    const primaryHref = uploaded && iosTestFlightPublicUrl ? iosTestFlightPublicUrl : release.html_url;
+    const publicJoinHref = testFlightStatus.public_url || testFlightStatus.public_link || iosTestFlightPublicUrl;
+    const primaryHref = uploaded && publicJoinHref ? publicJoinHref : release.html_url;
     channels.push({
       platform: "iOS",
       audience: "beta",
-      status: uploaded ? "TestFlight 构建已上传" : "等待 TestFlight 可加入",
+      status: uploaded ? "TestFlight 已开放" : "等待 TestFlight 可加入",
       title: "iOS TestFlight Beta",
       description:
-        uploaded && iosTestFlightPublicUrl
+        uploaded && publicJoinHref
           ? "iOS beta 已经上传到 TestFlight，点击即可打开公开加入页面。"
           : uploaded
-            ? "iOS beta 已经上传到 TestFlight。公开加入链接开放后可直接加入。"
-          : "iOS beta 会在 TestFlight 上传成功后自动补到官网入口。",
-      primaryLabel: uploaded && iosTestFlightPublicUrl ? "加入 iOS TestFlight" : uploaded ? "查看 Beta 发布说明" : "等待 TestFlight 开放",
+            ? "iOS beta 已经上传到 TestFlight。公开加入链接同步后可直接加入。"
+            : "iOS beta 会在 TestFlight 上传成功后自动补到官网入口。",
+      primaryLabel: uploaded ? "下载 iOS 测试版" : "等待 iOS 测试版开放",
       primaryHref,
       version: testFlightStatus.build_number || release.tag_name,
       publishedAt: testFlightStatus.uploaded_at || release.published_at || undefined,
@@ -377,17 +399,18 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
       note:
         testFlightStatus.reason === "app_store_connect_credentials_not_configured"
           ? "当前仓库还没有配置 App Store Connect 上传凭据。"
-          : uploaded && iosTestFlightPublicUrl
+          : uploaded && publicJoinHref
             ? "点击后会打开 Apple TestFlight 的公开加入页面。"
-          : uploaded
-            ? "一旦公开 TestFlight 加入链接被同步进发布资产，这里会自动切成可直接加入。"
-            : "当前还没有可公开加入的 TestFlight 入口。",
+            : uploaded
+              ? "已经同步到发布记录，公开 TestFlight 加入链接配置后这里会自动切成直达入口。"
+              : "当前还没有可公开加入的 TestFlight 入口。",
       releasePageHref: release.html_url,
     });
   }
 
   return {
     channels,
+    releases: buildReleaseEntries([release]),
     notes: [
       "Android Beta 会优先显示最新 APK。",
       "iOS TestFlight 可加入时会显示直接入口。",
@@ -398,7 +421,11 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
 
 export async function getReleaseCollectionClient(): Promise<OfficialSiteReleaseCollection> {
   try {
-    const res = await fetch("/api/releases.json");
+    const res = await fetch("/api/releases.json", {
+      next: {
+        revalidate: 300,
+      },
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as Record<string, unknown>;
     const channels = Array.isArray(data.channels)
@@ -421,7 +448,7 @@ export async function getReleaseCollectionClient(): Promise<OfficialSiteReleaseC
       stableChannels,
       screenshots: normalizeScreenshots(data.screenshots) ?? {},
       releases: normalizeReleaseEntries(data.releases),
-      notes: Array.isArray(data.notes) ? data.notes : [],
+      notes: Array.isArray(data.notes) ? data.notes.filter((item): item is string => typeof item === "string") : [],
     };
   } catch {
     return { betaChannels: [], stableChannels: [], screenshots: {}, releases: [], notes: [] };
@@ -431,6 +458,7 @@ export async function getReleaseCollectionClient(): Promise<OfficialSiteReleaseC
 export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteReleaseCollection> {
   const releases = (await fetchJson<GitHubRelease[]>(RELEASES_API_URL)) ?? [];
   const publishedReleases = releases.filter((release) => !release.draft);
+  const fallbackReleaseEntries = buildReleaseEntries(publishedReleases);
 
   const betaRelease = publishedReleases[0] ?? null;
   const syncedBetaState = betaRelease
@@ -454,7 +482,7 @@ export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteRe
     betaChannels: betaState?.channels ?? [],
     stableChannels: stableState?.channels?.length ? stableState.channels : DEFAULT_STABLE_CHANNELS,
     screenshots: betaState?.screenshots ?? {},
-    releases: betaState?.releases ?? [],
+    releases: betaState?.releases?.length ? betaState.releases : fallbackReleaseEntries,
     notes:
       betaState?.notes?.length
         ? betaState.notes
