@@ -289,6 +289,12 @@ jobs:
           rm -f "$upload_log"
           exit 1
 
+      - name: Copy generated file to a safe location before checkout
+        shell: bash
+        run: |
+          mkdir -p $RUNNER_TEMP/sync-beta-state
+          cp OFFICIAL_SITE_RELEASE_STATE.json $RUNNER_TEMP/sync-beta-state/
+
       - name: Push beta state to official site repo
         id: push_state
         if: steps.upload_state.outcome == 'success'
@@ -308,9 +314,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # The file was generated in the previous workspace, need to recreate or fetch it
-          # Since checkout wipes the workspace, we should fetch it from the release
-          gh release download "$RELEASE_TAG" --pattern OFFICIAL_SITE_RELEASE_STATE.json --repo ${{ github.repository }} --dir . || true
+          # First try to restore the file from the safe location
+          if [ -f $RUNNER_TEMP/sync-beta-state/OFFICIAL_SITE_RELEASE_STATE.json ]; then
+            cp $RUNNER_TEMP/sync-beta-state/OFFICIAL_SITE_RELEASE_STATE.json OFFICIAL_SITE_RELEASE_STATE.json
+            echo "Restored generated file from RUNNER_TEMP"
+          else
+            # Fallback to fetching it from the release (will fail if release is immutable and wasn't uploaded)
+            gh release download "$RELEASE_TAG" --pattern OFFICIAL_SITE_RELEASE_STATE.json --repo ${{ github.repository }} --dir . || true
+          fi
 
           if [ -f OFFICIAL_SITE_RELEASE_STATE.json ]; then
             mkdir -p frontend/apps/web/public/api
@@ -325,7 +336,8 @@ jobs:
             git commit -m "chore: sync beta release state for $RELEASE_TAG"
             git push origin main
           else
-            echo "::warning::OFFICIAL_SITE_RELEASE_STATE.json not found, skipping commit to official site repo"
+            echo "::error::OFFICIAL_SITE_RELEASE_STATE.json could not be restored or downloaded."
+            exit 1
           fi
 
       - name: Write summary
