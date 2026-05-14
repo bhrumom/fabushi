@@ -44,10 +44,12 @@ export function SiteHeader() {
             </a>
           ))}
         </div>
-        <LanguageSwitch />
-        <a className="nav-cta" href={siteHref("/download")}>
-          <LocalizedText zh="下载入口" en="Download" />
-        </a>
+        <div className="site-nav-actions">
+          <LanguageSwitch />
+          <a className="nav-cta" href={siteHref("/download")}>
+            <LocalizedText zh="下载入口" en="Download" />
+          </a>
+        </div>
       </div>
     </nav>
   );
