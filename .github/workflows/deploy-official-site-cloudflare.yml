@@ -7,6 +7,13 @@ on:
     paths:
       - frontend/**
       - .github/workflows/deploy-official-site-cloudflare.yml
+  workflow_run:
+    workflows:
+      - Sync official site beta download state
+    types:
+      - completed
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -28,6 +35,7 @@ jobs:
       - name: Checkout official site source
         uses: actions/checkout@v5
         with:
+          ref: main
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /frontend/**
