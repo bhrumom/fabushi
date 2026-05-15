@@ -14,6 +14,11 @@ const NAV_ITEMS = [
     en: "Features",
   },
   {
+    href: "/buddhadharma",
+    zh: "佛法入门",
+    en: "Dharma Basics",
+  },
+  {
     href: "/faq",
     zh: "常见问题",
     en: "FAQ",
