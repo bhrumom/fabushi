@@ -33,6 +33,15 @@ const dharmaHighlights = [
 
 const learningPaths = [
   {
+    href: "/meditation",
+    labelZh: "禅修入门",
+    labelEn: "Meditation Guide",
+    titleZh: "先从短时、稳定、可持续的禅修练习开始。",
+    titleEn: "Start with short, steady, sustainable meditation practice.",
+    descriptionZh: "如果你最关心的是禅修怎么开始、一次多久、容易卡在哪里，这一页会更具体。",
+    descriptionEn: "If your main question is how to begin meditation, how long to sit, and where beginners get stuck, this page goes deeper.",
+  },
+  {
     href: "/faq",
     labelZh: "常见问题",
     labelEn: "FAQ",

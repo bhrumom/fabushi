@@ -28,6 +28,9 @@ export function SiteFooter() {
         <a href={siteHref("/buddhadharma")}>
           <LocalizedText zh="佛法入门" en="Dharma Basics" />
         </a>
+        <a href={siteHref("/meditation")}>
+          <LocalizedText zh="禅修入门" en="Meditation Guide" />
+        </a>
         <a href={siteHref("/privacy")}>
           <LocalizedText zh="隐私说明" en="Privacy" />
         </a>
