@@ -126,6 +126,11 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- flutter_scene / flutter_gpu 依赖 Impeller 后端。仅开启 FlutterGPU 不会强制 Android 使用 Impeller，
+             在回落到 Skia/OpenGL 的设备上会导致 3D 场景初始化或渲染失败。 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="true" />
         <meta-data 
             android:name="io.flutter.embedding.android.EnableFlutterGPU" 
             android:value="true" />

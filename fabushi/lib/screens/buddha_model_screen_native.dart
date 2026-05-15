@@ -3,23 +3,26 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vector;
+import 'package:webview_flutter/webview_flutter.dart';
 
+import '../core/config/app_config.dart';
 import '../services/asset_loader_service.dart';
 import '../utils/model_auto_fit.dart';
 
 class BuddhaModelScreen extends StatefulWidget {
   final bool autoRotate;
-  final bool isBurning; // 是否正在燃烧（开始念经后）
-  final double incenseProgress; // 香燃烧进度 0.0-1.0
-  final bool showBook; // 是否显示经书
-  final String? bookTitle; // 经书标题
-  final VoidCallback? onBookTap; // 点击经书回调
-  final bool isVisible; // 是否可见，用于暂停后台渲染
+  final bool isBurning;
+  final double incenseProgress;
+  final bool showBook;
+  final String? bookTitle;
+  final VoidCallback? onBookTap;
+  final bool isVisible;
 
   const BuddhaModelScreen({
     super.key,
@@ -38,6 +41,8 @@ class BuddhaModelScreen extends StatefulWidget {
 
 class BuddhaModelScreenState extends State<BuddhaModelScreen>
     with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
+  static const String _legacyFallbackChannelName = 'FabushiBuddhaFallback';
+
   late Scene scene;
   late PerspectiveCamera camera;
   late Ticker _ticker;
@@ -47,6 +52,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   double _loadingProgress = 0.0;
   bool _loadFailed = false;
   bool _renderFailed = false;
+  bool _useLegacyWebViewFallback = false;
+  bool _legacyWebViewReady = false;
+  String? _lastLoadError;
+  WebViewController? _legacyWebViewController;
+  Timer? _legacyFallbackTimeout;
 
   double _rotationY = 0.0;
   final double _cameraDistance = 250.0;
@@ -57,20 +67,22 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   double _currentIncenseProgress = 0.0;
   final math.Random _random = math.Random();
 
-  // 香和书的基准位置 (3D 坐标)
   static const double _incenseBaseX = 0.0;
   static const double _incenseBaseY = -60.0;
   static const double _incenseBaseZ = 80.0;
   static const double _incenseFullHeight = 46.0;
   static const List<double> _incenseStickOffsets = [-7.0, 0.0, 7.0];
 
-  // 烟雾粒子
   final int _particleCount = 90;
   final List<vector.Vector3> _smokeParticles = [];
   final List<double> _particleSpeeds = [];
 
-  // 背景星空点
   final List<vector.Vector3> _stars = [];
+
+  bool get _canUseLegacyWebViewFallback =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
   @override
   void initState() {
@@ -86,7 +98,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     }
   }
 
-  /// 用代码生成纯暖金色环境贴图，确保环境中完全没有蓝色
   static Future<ui.Image> _createGoldenEnvironmentImage() async {
     const int width = 256;
     const int height = 128;
@@ -96,13 +107,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
     );
 
-    // 反射环境保持暖金，不把蓝色背景直接喂给金属材质。
     canvas.drawRect(
       Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
       Paint()..color = const Color(0xFF4F3200),
     );
 
-    // 上方主光：明亮金黄，但不发白。
     final topLightPaint = Paint()
       ..shader = ui.Gradient.radial(
         Offset(width * 0.5, height * 0.18),
@@ -120,7 +129,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       topLightPaint,
     );
 
-    // 添加暖金色渐变光晕，模拟多个烛光光源
     final glowPaint = Paint()..style = PaintingStyle.fill;
     final glowPositions = [
       Offset(width * 0.2, height * 0.4),
@@ -135,10 +143,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         pos,
         width * 0.3,
         [
-          const Color(0xFFFFEE9A).withValues(alpha: 0.90), // 高亮核心
-          const Color(0xFFFFC800).withValues(alpha: 0.58), // 金黄过渡
-          const Color(0xFFC98D00).withValues(alpha: 0.22), // 饱和金边
-          const Color(0x00000000), // 透明
+          const Color(0xFFFFEE9A).withValues(alpha: 0.90),
+          const Color(0xFFFFC800).withValues(alpha: 0.58),
+          const Color(0xFFC98D00).withValues(alpha: 0.22),
+          const Color(0x00000000),
         ],
         [0.0, 0.3, 0.6, 1.0],
       );
@@ -152,6 +160,313 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     return picture.toImage(width, height);
   }
 
+  String _buildLegacyBuddhaFallbackHtml() {
+    final glbUrl =
+        '${AppConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(AppConfig.legacyBuddhaGlbAssetPath)}';
+
+    return '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Fabushi Buddha Fallback</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: linear-gradient(180deg, #1A2864 0%, #111C48 45%, #090E22 100%);
+    }
+    #container {
+      width: 100%;
+      height: 100%;
+    }
+    #status {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.72);
+      font: 500 15px sans-serif;
+      letter-spacing: 0.08em;
+      background: rgba(11, 14, 20, 0.42);
+      z-index: 9;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+  <div id="status">恭请佛像...</div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const notifyHost = (message) => {
+      const bridge = window.$_legacyFallbackChannelName;
+      if (bridge && typeof bridge.postMessage === 'function') {
+        bridge.postMessage(message);
+      }
+    };
+
+    const container = document.getElementById('container');
+    const status = document.getElementById('status');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000, 0);
+    container.appendChild(renderer.domElement);
+
+    camera.position.set(0, 120, 290);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.enablePan = false;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 1.4;
+    controls.minDistance = 180;
+    controls.maxDistance = 360;
+    controls.target.set(0, 90, 0);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
+    scene.add(ambientLight);
+
+    const keyLight = new THREE.DirectionalLight(0xffd05b, 1.8);
+    keyLight.position.set(80, 200, 120);
+    scene.add(keyLight);
+
+    const fillLight = new THREE.PointLight(0xffe7aa, 1.1, 620);
+    fillLight.position.set(-120, 110, 90);
+    scene.add(fillLight);
+
+    const rimLight = new THREE.PointLight(0x8b5a16, 0.9, 520);
+    rimLight.position.set(0, 40, -180);
+    scene.add(rimLight);
+
+    const haloGeometry = new THREE.RingGeometry(70, 102, 64);
+    const haloMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffd97b,
+      transparent: true,
+      opacity: 0.24,
+      side: THREE.DoubleSide,
+    });
+    const halo = new THREE.Mesh(haloGeometry, haloMaterial);
+    halo.position.set(0, 150, -32);
+    scene.add(halo);
+
+    const fail = (reason) => {
+      const errorMessage = reason || 'Legacy Buddha GLB load failed';
+      console.error('Legacy Buddha GLB load failed:', errorMessage);
+      if (status) {
+        status.textContent = '佛像兼容加载失败';
+      }
+      notifyHost('error:' + errorMessage);
+    };
+
+    window.addEventListener('error', (event) => {
+      const message = event && event.message ? event.message : 'Legacy Buddha runtime error';
+      fail(message);
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      const reason = event && event.reason ? String(event.reason) : 'Legacy Buddha promise rejection';
+      fail(reason);
+    });
+
+    const loader = new GLTFLoader();
+    loader.load(
+      '$glbUrl',
+      (gltf) => {
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        box.getSize(size);
+        box.getCenter(center);
+        const maxDim = Math.max(size.x || 1, size.y || 1, size.z || 1);
+        const scale = 170 / maxDim;
+
+        model.scale.setScalar(scale);
+        model.position.sub(center.multiplyScalar(scale));
+        model.position.y += 18;
+        model.rotation.y = Math.PI;
+        model.rotation.x = 0.08;
+
+        model.traverse((child) => {
+          if (!child.isMesh) return;
+          child.castShadow = false;
+          child.receiveShadow = false;
+          if (child.material) {
+            child.material.metalness = 0.72;
+            child.material.roughness = 0.24;
+            child.material.color = new THREE.Color(0xffd46a);
+            child.material.needsUpdate = true;
+          }
+        });
+
+        scene.add(model);
+        if (status) {
+          status.style.display = 'none';
+        }
+        notifyHost('ready');
+      },
+      undefined,
+      (error) => {
+        const errorMessage = error && error.message
+          ? error.message
+          : 'Legacy Buddha GLB load failed';
+        fail(errorMessage);
+      }
+    );
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      halo.rotation.z += 0.0018;
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+    });
+
+    animate();
+  </script>
+</body>
+</html>
+''';
+  }
+
+  void _cancelLegacyFallbackTimeout() {
+    _legacyFallbackTimeout?.cancel();
+    _legacyFallbackTimeout = null;
+  }
+
+  void _startLegacyFallbackTimeout() {
+    _cancelLegacyFallbackTimeout();
+    _legacyFallbackTimeout = Timer(const Duration(seconds: 15), () {
+      if (!mounted || _legacyWebViewReady || _loadFailed) {
+        return;
+      }
+      _markLegacyFallbackFailed('legacy GLB fallback timeout');
+    });
+  }
+
+  void _markLegacyFallbackReady() {
+    _cancelLegacyFallbackTimeout();
+    if (!mounted) return;
+    setState(() {
+      _useLegacyWebViewFallback = true;
+      _legacyWebViewReady = true;
+      _isLoading = false;
+      _loadFailed = false;
+      _renderFailed = false;
+    });
+  }
+
+  void _markLegacyFallbackFailed([String? details]) {
+    _cancelLegacyFallbackTimeout();
+    _ticker.stop();
+    if (!mounted) return;
+    setState(() {
+      _legacyWebViewReady = false;
+      _useLegacyWebViewFallback = false;
+      _isLoading = false;
+      _loadFailed = true;
+      _renderFailed = true;
+      if (details != null && details.isNotEmpty) {
+        _lastLoadError = details;
+      }
+    });
+  }
+
+  void _handleLegacyFallbackMessage(String message) {
+    if (message == 'ready') {
+      _markLegacyFallbackReady();
+      return;
+    }
+    if (message.startsWith('error:')) {
+      final details = message.substring('error:'.length).trim();
+      debugPrint('❌ [BuddhaModel] 兼容 WebView GLB 加载失败: $details');
+      _markLegacyFallbackFailed(
+        details.isEmpty ? 'legacy GLB load failed' : details,
+      );
+      return;
+    }
+    debugPrint('ℹ️ [BuddhaModel] 收到兼容 WebView 消息: $message');
+  }
+
+  Future<void> _activateLegacyWebViewFallback() async {
+    if (!_canUseLegacyWebViewFallback || !mounted) {
+      return;
+    }
+
+    _ticker.stop();
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0x00000000))
+      ..addJavaScriptChannel(
+        _legacyFallbackChannelName,
+        onMessageReceived: (message) {
+          _handleLegacyFallbackMessage(message.message);
+        },
+      )
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) {
+            if (!mounted) return;
+            setState(() {
+              _useLegacyWebViewFallback = true;
+              _legacyWebViewReady = false;
+              _isLoading = true;
+              _loadFailed = false;
+              _renderFailed = false;
+            });
+          },
+          onPageFinished: (_) {
+            if (!mounted) return;
+            setState(() {
+              _useLegacyWebViewFallback = true;
+              _legacyWebViewReady = false;
+            });
+          },
+          onWebResourceError: (error) {
+            debugPrint(
+              '⚠️ [BuddhaModel] 兼容 WebView 资源加载异常: ${error.description}',
+            );
+          },
+        ),
+      );
+
+    _legacyWebViewController = controller;
+    _startLegacyFallbackTimeout();
+    try {
+      await controller.loadHtmlString(
+        _buildLegacyBuddhaFallbackHtml(),
+        baseUrl: AppConfig.currentBackendUrl,
+      );
+    } catch (e) {
+      debugPrint('❌ [BuddhaModel] 兼容 WebView 初始化失败: $e');
+      _markLegacyFallbackFailed('legacy GLB init failed');
+    }
+  }
+
   void _initScene() {
     scene = Scene();
     camera = PerspectiveCamera(
@@ -160,7 +475,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       fovFar: 2000.0,
     );
 
-    // 生成背景星空
     final random = math.Random();
     for (int i = 0; i < 300; i++) {
       _stars.add(
@@ -172,20 +486,16 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       );
     }
 
-    // 初始化烟雾
     for (int i = 0; i < _particleCount; i++) {
       _smokeParticles.add(vector.Vector3(0, -1000, 0));
       _particleSpeeds.add(0.5 + random.nextDouble() * 0.5);
     }
 
-    // 初始化相机姿态
     _updateCamera();
 
-    // 尝试初始化环境和加载模型
     if (!kIsWeb) {
       Scene.initializeStaticResources()
           .then((_) async {
-            // 用代码生成纯暖金色环境贴图，确保佛像呈现金色而非透明/蓝色
             try {
               final goldEnvImage = await _createGoldenEnvironmentImage();
               final envMap = await EnvironmentMap.fromUIImages(
@@ -196,34 +506,39 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
               scene.environment.intensity = 2.0;
               scene.environment.exposure = 1.12;
             } catch (e) {
-              debugPrint('⚠️ 自定义环境贴图生成失败，调整默认环境参数: \$e');
+              debugPrint('⚠️ 自定义环境贴图生成失败，调整默认环境参数: $e');
               scene.environment.intensity = 1.75;
               scene.environment.exposure = 1.05;
             }
             _loadModel();
           })
           .catchError((e) {
-            debugPrint("⚠️ 渲染资源初始化失败 (需开启 Impeller 支持): \$e");
-            if (mounted) setState(() => _loadFailed = true);
+            debugPrint('⚠️ 渲染资源初始化失败 (需开启 Impeller 支持): $e');
+            if (_canUseLegacyWebViewFallback) {
+              _activateLegacyWebViewFallback();
+              return;
+            }
+            if (mounted) {
+              setState(() => _loadFailed = true);
+            }
           });
     } else {
-      debugPrint("⚠️ Web环境暂不支持 flutter_scene。");
+      debugPrint('⚠️ Web环境暂不支持 flutter_scene。');
       _loadFailed = true;
     }
   }
 
   void _onTick(Duration elapsed) {
-    if (!mounted || !widget.isVisible) return;
+    if (!mounted || !widget.isVisible || _useLegacyWebViewFallback) return;
     final now = elapsed.inMicroseconds / 1000000.0;
     final dt = _lastTime == 0.0 ? 0.0 : (now - _lastTime).clamp(0.0, 1 / 30);
     _lastTime = now;
 
     bool needsRepaint = false;
 
-    // 处理自动旋转及归位
     if (!_isUserDragging) {
       if (_isAutoRotating || _isReturningToStart) {
-        _rotationY -= 0.5 * dt; // 旋转速度
+        _rotationY -= 0.5 * dt;
 
         if (_isReturningToStart) {
           double normalizedRotation = _rotationY % (2 * math.pi);
@@ -240,14 +555,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       }
     }
 
-    // 烟雾动画更新
     if (widget.isBurning) {
       _updateSmoke(dt);
       needsRepaint = true;
     }
 
-    // 当有状态变化时触发重绘（其实 CustomPaint 在每次 rebuild 或传入 ChangeNotifier 时都会重绘，这里我们通过 setState 驱动）
-    // 为了性能，可以将 ScenePainter 包在 RepaintBoundary 中。
     if (needsRepaint) {
       setState(() {});
     }
@@ -270,9 +582,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     final windZ = math.cos(time * 0.34) * 0.42;
 
     for (int i = 0; i < _particleCount; i++) {
-      var p = _smokeParticles[i];
-      final sourceOffset =
-          _incenseStickOffsets[i % _incenseStickOffsets.length];
+      final p = _smokeParticles[i];
+      final sourceOffset = _incenseStickOffsets[i % _incenseStickOffsets.length];
       final tipPos = vector.Vector3(
         _incenseBaseX + sourceOffset,
         _incenseBaseY + currentHeight,
@@ -322,21 +633,37 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   Future<void> _loadModel() async {
-    const maxRetries = 3;
+    _cancelLegacyFallbackTimeout();
+    _lastLoadError = null;
+    _legacyWebViewReady = false;
+    _legacyWebViewController = null;
+
+    if (widget.isVisible) {
+      _lastTime = 0.0;
+      if (!_ticker.isTicking) {
+        _ticker.start();
+      }
+    }
+
     if (mounted) {
       setState(() {
         _isLoading = true;
         _loadFailed = false;
+        _renderFailed = false;
+        _useLegacyWebViewFallback = false;
         _loadingProgress = 0.0;
       });
     }
 
+    const maxRetries = 3;
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       var modelDataLoaded = false;
       try {
         final modelData = await AssetLoaderService.loadBuddhaModel(
           onProgress: (progress) {
-            if (mounted) setState(() => _loadingProgress = progress);
+            if (mounted) {
+              setState(() => _loadingProgress = progress);
+            }
           },
         );
         modelDataLoaded = true;
@@ -352,19 +679,29 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         }
         return;
       } catch (e) {
+        _lastLoadError = '$e';
         debugPrint('❌ 模型加载失败 (尝试 $attempt): $e');
         if (modelDataLoaded) {
           await AssetLoaderService.evictBuddhaModelCache();
         }
         if (attempt < maxRetries) {
           await Future.delayed(Duration(seconds: 1 << attempt));
-        } else {
-          if (mounted) {
-            setState(() {
-              _isLoading = false;
-              _loadFailed = true;
-            });
-          }
+          continue;
+        }
+
+        if (_canUseLegacyWebViewFallback) {
+          debugPrint(
+            '↪️ [BuddhaModel] .model 链路失败，切换 legacy GLB 兼容渲染: $_lastLoadError',
+          );
+          await _activateLegacyWebViewFallback();
+          return;
+        }
+
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _loadFailed = true;
+          });
         }
       }
     }
@@ -374,8 +711,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     final node = await Node.fromFlatbuffer(modelData.buffer.asByteData());
     _retuneBuddhaMaterials(node);
 
-    // 从 .model flatbuffer 自动解析边界框并计算适配矩阵
-    // 无论更换什么模型，都能自动居中和缩放
     final bounds = ModelAutoFit.computeBoundsFromModelBytes(modelData);
     final originalTransform = node.localTransform.clone();
     node.localTransform = ModelAutoFit.computeFitTransform(
@@ -406,6 +741,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   void _updateVisibilityState(bool isVisible) {
+    if (_useLegacyWebViewFallback) {
+      return;
+    }
     if (isVisible) {
       _lastTime = 0.0;
       if (!_ticker.isTicking && !_renderFailed) _ticker.start();
@@ -417,6 +755,13 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   void _handleRenderFailure(Object error) {
     if (_renderFailed || !mounted) return;
     debugPrint('❌ [BuddhaModel] 场景渲染失败: $error');
+
+    if (!_useLegacyWebViewFallback && _canUseLegacyWebViewFallback) {
+      _lastLoadError = '$error';
+      _activateLegacyWebViewFallback();
+      return;
+    }
+
     _ticker.stop();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -437,6 +782,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
   @override
   void dispose() {
+    _cancelLegacyFallbackTimeout();
     _ticker.dispose();
     super.dispose();
   }
@@ -444,16 +790,22 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final loadingLabel = _useLegacyWebViewFallback && !_legacyWebViewReady
+        ? '切换兼容佛像...'
+        : '恭请佛像... ${(_loadingProgress * 100).toInt()}%';
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
 
         return Listener(
           onPointerDown: (e) {
+            if (_useLegacyWebViewFallback) return;
             _isUserDragging = true;
             _lastPointerX = e.position.dx;
           },
           onPointerMove: (e) {
+            if (_useLegacyWebViewFallback) return;
             if (_isUserDragging && _lastPointerX != null) {
               _rotationY += (e.position.dx - _lastPointerX!) * 0.01;
               _updateCamera();
@@ -480,7 +832,15 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                 child: SizedBox.expand(),
               ),
 
-              if (!_isLoading && !_loadFailed)
+              if (!_isLoading && !_loadFailed && _useLegacyWebViewFallback)
+                Positioned.fill(
+                  child: RepaintBoundary(
+                    child: _legacyWebViewController == null
+                        ? const SizedBox.shrink()
+                        : WebViewWidget(controller: _legacyWebViewController!),
+                  ),
+                )
+              else if (!_isLoading && !_loadFailed)
                 ClipRect(
                   child: RepaintBoundary(
                     child: CustomPaint(
@@ -510,7 +870,56 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                   ),
                 ),
 
-              // 经书固定摆在佛像正前方，不随模型旋转漂移。
+              if (!_isLoading && !_loadFailed && _useLegacyWebViewFallback)
+                Positioned(
+                  top: 18,
+                  left: 24,
+                  right: 24,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.48),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: const Color(0xFFD4AF37).withValues(alpha: 0.36),
+                            ),
+                          ),
+                          child: const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '佛像已切换为兼容展示',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Color(0xFFFFD700),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                '当前仍可继续禅修',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
               if (widget.showBook && widget.bookTitle != null && !_isLoading)
                 Positioned(
                   left: (size.width - 184) / 2,
@@ -523,7 +932,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                   ),
                 ),
 
-              // 状态 UI...
               if (_isLoading)
                 Positioned.fill(
                   child: Container(
@@ -537,7 +945,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            '恭请佛像... ${(_loadingProgress * 100).toInt()}%',
+                            loadingLabel,
                             style: const TextStyle(
                               color: Color(0xFFFFD700),
                               fontSize: 14,
@@ -564,10 +972,12 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                             size: 48,
                           ),
                           const SizedBox(height: 16),
-                          const Text(
-                            '禅境展现遇到阻碍\\n(需Impeller及正确的.model文件)',
+                          Text(
+                            _canUseLegacyWebViewFallback
+                                ? '禅境展现遇到阻碍\n(.model 与兼容 GLB 均未能载入)'
+                                : '禅境展现遇到阻碍\n(需 Impeller 及正确的 .model 文件)',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 16,
                             ),
@@ -578,7 +988,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                               foregroundColor: const Color(0xFFFFD700),
                               side: const BorderSide(color: Color(0xFFFFD700)),
                             ),
-                            onPressed: () => _loadModel(),
+                            onPressed: _loadModel,
                             child: const Text('静心重试'),
                           ),
                         ],
@@ -803,7 +1213,6 @@ class ScenePainter extends CustomPainter {
       return;
     }
 
-    // 显式限制 3D 场景的渲染视口，避免 flutter_scene 从无限 clip bounds 推导出异常纹理尺寸。
     try {
       scene.render(camera, canvas, viewport: Offset.zero & size);
     } catch (error) {
@@ -822,12 +1231,11 @@ class ScenePainter extends CustomPainter {
       );
     }
 
-    // --- 绘制 2D 半透明星空 ---
     final starPaint = Paint()
       ..color = Colors.white54
       ..strokeWidth = 1.5;
     final starPoints = <Offset>[];
-    for (var s in stars) {
+    for (final s in stars) {
       final p = project(s);
       if (p != null) starPoints.add(p);
     }
@@ -889,8 +1297,22 @@ class ScenePainter extends CustomPainter {
     }
     final flame = Path()
       ..moveTo(center.dx, center.dy - 30)
-      ..cubicTo(center.dx + 11, center.dy - 19, center.dx + 6, center.dy - 7, center.dx, center.dy - 4)
-      ..cubicTo(center.dx - 8, center.dy - 10, center.dx - 8, center.dy - 21, center.dx, center.dy - 30)
+      ..cubicTo(
+        center.dx + 11,
+        center.dy - 19,
+        center.dx + 6,
+        center.dy - 7,
+        center.dx,
+        center.dy - 4,
+      )
+      ..cubicTo(
+        center.dx - 8,
+        center.dy - 10,
+        center.dx - 8,
+        center.dy - 21,
+        center.dx,
+        center.dy - 30,
+      )
       ..close();
     canvas.drawPath(
       flame,
@@ -920,7 +1342,11 @@ class ScenePainter extends CustomPainter {
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
     for (final dx in const [-10.0, 0.0, 10.0]) {
-      canvas.drawLine(center.translate(dx * 0.25, 14), center.translate(dx, -18), stemPaint);
+      canvas.drawLine(
+        center.translate(dx * 0.25, 14),
+        center.translate(dx, -18),
+        stemPaint,
+      );
       for (var i = 0; i < 6; i++) {
         canvas.save();
         canvas.translate(center.dx + dx, center.dy - 20);
@@ -931,7 +1357,11 @@ class ScenePainter extends CustomPainter {
         );
         canvas.restore();
       }
-      canvas.drawCircle(center.translate(dx, -20), 3.5, Paint()..color = const Color(0xFFFFE16A));
+      canvas.drawCircle(
+        center.translate(dx, -20),
+        3.5,
+        Paint()..color = const Color(0xFFFFE16A),
+      );
     }
     canvas.drawRRect(
       RRect.fromRectAndRadius(
@@ -960,7 +1390,7 @@ class ScenePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant ScenePainter oldDelegate) {
-    return true; // 每帧依靠 Ticker 驱动重绘即可
+    return true;
   }
 }
 
