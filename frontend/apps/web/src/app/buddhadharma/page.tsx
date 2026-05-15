@@ -42,6 +42,15 @@ const learningPaths = [
     descriptionEn: "If your main question is how to begin meditation, how long to sit, and where beginners get stuck, this page goes deeper.",
   },
   {
+    href: "/sutra-guide",
+    labelZh: "佛经导读",
+    labelEn: "Sutra Guide",
+    titleZh: "先把佛经读什么、怎么读、听诵与阅读的关系理清。",
+    titleEn: "Clarify what to read first and how listening supports understanding.",
+    descriptionZh: "如果你更关心初学者读什么佛经、经文听诵怎么配合阅读，这一页会更适合继续往下走。",
+    descriptionEn: "If your question is which sutra to start with and how listening fits with reading, this page is the better next stop.",
+  },
+  {
     href: "/faq",
     labelZh: "常见问题",
     labelEn: "FAQ",
