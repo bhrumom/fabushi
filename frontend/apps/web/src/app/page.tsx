@@ -444,8 +444,8 @@ export default async function HomePage() {
               </ul>
             ) : null}
             <div className="release-card-actions">
-              <a className="primary-action" href={latestRelease.htmlUrl} target="_blank" rel="noopener noreferrer">
-                <LocalizedText zh="查看完整发布说明" en="View release notes" />
+              <a className="primary-action" href={siteHref("/download#release-changelog")}>
+                <LocalizedText zh="查看完整下载内容说明" en="View full download notes" />
               </a>
               <a className="secondary-action" href={siteHref("/download")}>
                 <LocalizedText zh="查看全部下载入口" en="See all downloads" />
