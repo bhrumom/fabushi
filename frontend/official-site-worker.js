@@ -1,4 +1,16 @@
 const ANDROID_DOWNLOAD_ROUTE = /\/downloads\/android-(beta|stable)\.apk$/i;
+const DEFAULT_RELEASE_REPO = "bhrumom/fabushi";
+const GITHUB_API_BASE = "https://api.github.com";
+const DEFAULT_MIRROR_BASES = [
+  {
+    label: "国内镜像 1",
+    prefix: "https://mirror.ghproxy.com/https://github.com/",
+  },
+  {
+    label: "国内镜像 2",
+    prefix: "https://ghfast.top/https://github.com/",
+  },
+];
 
 export default {
   async fetch(request, env) {
@@ -54,6 +66,17 @@ async function handleAndroidDownload(request, env, audience) {
 }
 
 async function loadAndroidChannel(request, env, audience) {
+  if (audience === "beta") {
+    const latestReleaseChannel = await loadLatestReleaseAndroidChannel(env);
+    if (latestReleaseChannel) {
+      return latestReleaseChannel;
+    }
+  }
+
+  return loadSyncedAndroidChannel(request, env, audience);
+}
+
+async function loadSyncedAndroidChannel(request, env, audience) {
   try {
     const releaseStateResponse = await env.ASSETS.fetch(new Request(new URL("/api/releases.json", request.url)));
     if (!releaseStateResponse.ok) {
@@ -67,6 +90,101 @@ async function loadAndroidChannel(request, env, audience) {
   } catch {
     return null;
   }
+}
+
+async function loadLatestReleaseAndroidChannel(env) {
+  try {
+    const releaseRepo = getReleaseRepo(env);
+    const response = await fetch(`${GITHUB_API_BASE}/repos/${releaseRepo}/releases?per_page=5`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const releases = await response.json();
+    if (!Array.isArray(releases)) {
+      return null;
+    }
+
+    const release = releases.find((item) => !item?.draft && Array.isArray(item?.assets) && item.assets.some(isApkAsset));
+    if (!release) {
+      return null;
+    }
+
+    const apkAssets = release.assets.filter(isApkAsset);
+    const apkAsset = apkAssets.find((asset) => asset.name.toLowerCase().includes("arm64")) ?? apkAssets[0];
+    if (!apkAsset?.browser_download_url) {
+      return null;
+    }
+
+    return {
+      platform: "Android",
+      audience: "beta",
+      status: "Beta 自动同步",
+      title: "Android Beta",
+      description: "官网会优先读取最新 GitHub Release 的 Android 安装包。",
+      primaryLabel: "下载 Android Beta",
+      primaryHref: apkAsset.browser_download_url,
+      version: typeof release.tag_name === "string" ? release.tag_name : undefined,
+      publishedAt: typeof release.published_at === "string" ? release.published_at : undefined,
+      updateSummary: [],
+      mirrorLinks: buildMirrorLinks(apkAsset.browser_download_url, env),
+      note: "如果同步快照还没刷新，官网会直接回退到最新 release 安装包。",
+      releasePageHref: typeof release.html_url === "string" ? release.html_url : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isApkAsset(asset) {
+  return Boolean(asset && typeof asset.name === "string" && asset.name.endsWith(".apk") && typeof asset.browser_download_url === "string");
+}
+
+function getReleaseRepo(env) {
+  if (typeof env?.OFFICIAL_SITE_RELEASE_REPO === "string" && env.OFFICIAL_SITE_RELEASE_REPO.trim()) {
+    return env.OFFICIAL_SITE_RELEASE_REPO.trim();
+  }
+
+  return DEFAULT_RELEASE_REPO;
+}
+
+function buildMirrorLinks(primaryHref, env) {
+  if (!primaryHref.startsWith("https://github.com/")) {
+    return [];
+  }
+
+  const path = primaryHref.slice("https://github.com/".length);
+  return getMirrorBases(env).map((item) => ({
+    label: item.label,
+    href: `${item.prefix}${path}`,
+  }));
+}
+
+function getMirrorBases(env) {
+  const rawMirrorBases = typeof env?.OFFICIAL_SITE_GITHUB_MIRROR_BASES === "string" ? env.OFFICIAL_SITE_GITHUB_MIRROR_BASES : "";
+  const configuredMirrors = rawMirrorBases
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [label, prefix] = line.split("|");
+      if (!label || !prefix) {
+        return null;
+      }
+
+      return {
+        label: label.trim(),
+        prefix: prefix.trim(),
+      };
+    })
+    .filter(Boolean);
+
+  return configuredMirrors.length > 0 ? configuredMirrors : DEFAULT_MIRROR_BASES;
 }
 
 function collectCandidateSources(channel) {
