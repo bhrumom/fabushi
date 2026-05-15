@@ -109,11 +109,25 @@ class AssetLoaderService {
   }) async {
     // 确保已注册到 MemoryManager
     initialize();
-    return await _loadAsset(
-      AppConfig.buddhaModelAssetPath,
-      onProgress: onProgress,
-      minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
-    );
+
+    try {
+      return await _loadAsset(
+        AppConfig.buddhaModelAssetPath,
+        onProgress: onProgress,
+        minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
+      );
+    } catch (e) {
+      debugPrint(
+        '⚠️ [AssetLoader] 佛像模型首次加载失败，清理旧缓存后重试 R2: $e',
+      );
+      await evictBuddhaModelCache();
+      return _loadAsset(
+        AppConfig.buddhaModelAssetPath,
+        onProgress: onProgress,
+        forceRefresh: true,
+        minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
+      );
+    }
   }
 
   static Future<void> evictBuddhaModelCache() async {
@@ -185,18 +199,27 @@ class AssetLoaderService {
     if (!forceRefresh) {
       final cached = await _loadFromPersistentStorage(fileName);
       if (cached != null && cached.isNotEmpty) {
-        _assertAssetSizeIsValid(
-          fileName,
-          cached.lengthInBytes,
-          minExpectedBytes: minExpectedBytes,
-          source: 'persistent-cache',
-        );
-        debugPrint(
-          '✅ [AssetLoader] 从本地存储加载: $fileName (${cached.lengthInBytes} bytes)',
-        );
-        _memoryCache[fileName] = cached;
-        onProgress?.call(1.0);
-        return cached;
+        try {
+          _assertAssetSizeIsValid(
+            fileName,
+            cached.lengthInBytes,
+            minExpectedBytes: minExpectedBytes,
+            source: 'persistent-cache',
+          );
+          debugPrint(
+            '✅ [AssetLoader] 从本地存储加载: $fileName (${cached.lengthInBytes} bytes)',
+          );
+          _memoryCache[fileName] = cached;
+          onProgress?.call(1.0);
+          return cached;
+        } catch (e) {
+          debugPrint(
+            '⚠️ [AssetLoader] 本地佛像缓存无效，删除后回退到 R2 重新下载: '
+            '$fileName - $e',
+          );
+          _memoryCache.remove(fileName);
+          await _deletePersistentAsset(fileName, includePartial: true);
+        }
       }
     }
 
