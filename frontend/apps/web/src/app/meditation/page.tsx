@@ -84,6 +84,15 @@ const relatedPaths = [
     descriptionEn: "If you are still mapping buddhadharma, practice, scripture, and daily discipline, start with the broader topic hub.",
   },
   {
+    href: "/sutra-guide",
+    labelZh: "佛经导读",
+    labelEn: "Sutra Guide",
+    titleZh: "把经文听诵、阅读和理解义理接回修行节奏里。",
+    titleEn: "Connect scripture listening and reading back into your practice rhythm.",
+    descriptionZh: "如果你想让禅修和经文学习互相支撑，这一页会更适合继续往下看。",
+    descriptionEn: "If you want meditation and sutra study to reinforce each other, this is the next page to open.",
+  },
+  {
     href: "/faq",
     labelZh: "常见问题",
     labelEn: "FAQ",
@@ -229,7 +238,7 @@ export default function MeditationPage() {
           <p className="lede">
             <LocalizedText
               zh="先理解禅修在佛法里的位置，再安排每天可执行的小步练习，会比一开始追求很深的体验更稳。"
-              en="Understand the place of meditation inside buddhadharma first, then build a daily rhythm of small workable sessions instead of chasing dramatic experiences." 
+              en="Understand the place of meditation inside buddhadharma first, then build a daily rhythm of small workable sessions instead of chasing dramatic experiences."
             />
           </p>
         </div>
