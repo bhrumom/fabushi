@@ -4,7 +4,7 @@ import { siteUrl } from "../lib/site-url";
 
 export const dynamic = "force-static";
 
-const staticRoutes = ["/", "/download", "/apply", "/faq", "/privacy", "/contact", "/insights", "/buddhadharma", "/meditation"] as const;
+const staticRoutes = ["/", "/download", "/apply", "/faq", "/privacy", "/contact", "/insights", "/buddhadharma", "/meditation", "/sutra-guide"] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const pages: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
@@ -13,13 +13,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     changeFrequency:
       route === "/"
         ? "weekly"
-        : route === "/download" || route === "/faq" || route === "/buddhadharma" || route === "/meditation"
+        : route === "/download" || route === "/faq" || route === "/buddhadharma" || route === "/meditation" || route === "/sutra-guide"
           ? "weekly"
           : "monthly",
     priority:
       route === "/"
         ? 1
-        : route === "/download" || route === "/faq" || route === "/buddhadharma" || route === "/meditation"
+        : route === "/download" || route === "/faq" || route === "/buddhadharma" || route === "/meditation" || route === "/sutra-guide"
           ? 0.9
           : route === "/apply"
             ? 0.85
