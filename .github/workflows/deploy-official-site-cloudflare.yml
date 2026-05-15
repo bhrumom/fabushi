@@ -9,6 +9,7 @@ on:
       - .github/workflows/deploy-official-site-cloudflare.yml
   workflow_run:
     workflows:
+      - Publish CD packages to GitHub Release
       - Sync official site beta download state
     types:
       - completed
