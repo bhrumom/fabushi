@@ -551,7 +551,7 @@ class AssetLoaderService {
 
   static int? _parseTotalLengthFromContentRange(String? contentRange) {
     if (contentRange == null) return null;
-    final match = RegExp(r'/(\\d+)$').firstMatch(contentRange);
+    final match = RegExp(r'/(\d+)$').firstMatch(contentRange);
     if (match == null) return null;
     return int.tryParse(match.group(1)!);
   }
