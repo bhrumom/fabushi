@@ -4,17 +4,22 @@ import { siteUrl } from "../lib/site-url";
 
 export const dynamic = "force-static";
 
-const staticRoutes = ["/", "/download", "/apply", "/faq", "/privacy", "/contact", "/insights"] as const;
+const staticRoutes = ["/", "/download", "/apply", "/faq", "/privacy", "/contact", "/insights", "/buddhadharma"] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const pages: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
     url: siteUrl(route),
     lastModified: route === "/privacy" ? "2026-05-08" : new Date(),
-    changeFrequency: route === "/" ? "weekly" : route === "/download" || route === "/faq" ? "weekly" : "monthly",
+    changeFrequency:
+      route === "/"
+        ? "weekly"
+        : route === "/download" || route === "/faq" || route === "/buddhadharma"
+          ? "weekly"
+          : "monthly",
     priority:
       route === "/"
         ? 1
-        : route === "/download" || route === "/faq"
+        : route === "/download" || route === "/faq" || route === "/buddhadharma"
           ? 0.9
           : route === "/apply"
             ? 0.85
