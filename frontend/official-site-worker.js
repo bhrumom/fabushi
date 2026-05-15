@@ -89,9 +89,15 @@ function collectCandidateSources(channel) {
   return unique;
 }
 
-function getDownloadFilename(channel, audience, source) {
-  const fallbackName = `fabushi-android-${audience}.apk`;
+function sanitizeFilenamePart(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
 
+function extractSourceFilename(source) {
   try {
     const url = new URL(source);
     const lastSegment = url.pathname.split("/").filter(Boolean).pop();
@@ -102,18 +108,54 @@ function getDownloadFilename(channel, audience, source) {
     // Ignore filename parsing failures and fall back to the channel metadata.
   }
 
-  if (typeof channel?.version === "string" && channel.version.trim()) {
-    return `fabushi-android-${audience}-${channel.version.trim()}.apk`;
+  return "";
+}
+
+function extractVariant(sourceFilename) {
+  if (!sourceFilename) {
+    return "";
   }
 
-  return fallbackName;
+  const normalized = sourceFilename.toLowerCase();
+  if (normalized.includes("arm64")) {
+    return "arm64";
+  }
+  if (normalized.includes("armv7")) {
+    return "armv7";
+  }
+  if (normalized.includes("universal")) {
+    return "universal";
+  }
+  if (normalized.includes("x86_64")) {
+    return "x86_64";
+  }
+
+  return "";
+}
+
+function getDownloadFilename(channel, audience, source) {
+  const fallbackName = `fabushi-android-${audience}.apk`;
+  const sourceFilename = extractSourceFilename(source);
+  const version = sanitizeFilenamePart(channel?.version);
+
+  if (version) {
+    const parts = ["fabushi", "android", sanitizeFilenamePart(audience)];
+    const variant = sanitizeFilenamePart(extractVariant(sourceFilename));
+    if (variant && variant !== audience) {
+      parts.push(variant);
+    }
+    parts.push(version);
+    return `${parts.join("-")}.apk`;
+  }
+
+  return sourceFilename || fallbackName;
 }
 
 function buildDownloadResponse(upstreamResponse, filename) {
   const headers = new Headers(upstreamResponse.headers);
   headers.set("Cache-Control", "no-store");
   headers.set("Content-Type", headers.get("Content-Type") || "application/vnd.android.package-archive");
-  headers.set("Content-Disposition", `attachment; filename="${filename}"`);
+  headers.set("Content-Disposition", `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
 
   return new Response(upstreamResponse.body, {
     status: upstreamResponse.status,
