@@ -95,7 +95,7 @@ async function loadSyncedAndroidChannel(request, env, audience) {
 async function loadLatestReleaseAndroidChannel(env) {
   try {
     const releaseRepo = getReleaseRepo(env);
-    const response = await fetch(`${GITHUB_API_BASE}/repos/${releaseRepo}/releases?per_page=5`, {
+    const response = await fetch(`${GITHUB_API_BASE}/repos/${releaseRepo}/releases/latest`, {
       headers: {
         Accept: "application/vnd.github+json",
       },
@@ -105,13 +105,8 @@ async function loadLatestReleaseAndroidChannel(env) {
       return null;
     }
 
-    const releases = await response.json();
-    if (!Array.isArray(releases)) {
-      return null;
-    }
-
-    const release = releases.find((item) => !item?.draft && Array.isArray(item?.assets) && item.assets.some(isApkAsset));
-    if (!release) {
+    const release = await response.json();
+    if (!release || release.draft || !Array.isArray(release.assets)) {
       return null;
     }
 
