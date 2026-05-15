@@ -13,6 +13,36 @@ const DEFAULT_MIRROR_BASES = [
   },
 ] as const;
 
+const TECHNICAL_RELEASE_LINE_PATTERN =
+  /(^pr\s*#\d+)|\b(ci|workflow|checkout|token|sha|commit|submodule|api|github|dispatch|globals\.css|page\.tsx|framer-motion|bentocard)\b|^\[(x| )\]/i;
+
+const RELEASE_SUMMARY_RULES = [
+  {
+    pattern: /ui\/ux|bento|design|layout|hero section|spotlight hover|scroll reveal|floating screenshots|dark theme/i,
+    text: "Improved the website interface and browsing experience.",
+  },
+  {
+    pattern: /cache|stale|refresh/i,
+    text: "Reduced cases where older content stayed visible after an update.",
+  },
+  {
+    pattern: /android|apk|mirror/i,
+    text: "Improved Android download reliability and install guidance.",
+  },
+  {
+    pattern: /ios|testflight/i,
+    text: "Improved iOS testing access and release readiness.",
+  },
+  {
+    pattern: /sync|release publish|release state|latest release|immutable release|published/i,
+    text: "Made update delivery and version syncing more reliable.",
+  },
+  {
+    pattern: /screenshot|preview/i,
+    text: "Updated product previews and release details.",
+  },
+] as const;
+
 type GitHubReleaseAsset = {
   name: string;
   browser_download_url: string;
@@ -153,6 +183,79 @@ async function fetchText(url: string): Promise<string | null> {
   }
 }
 
+function normalizeReleaseSummaryLine(line: string): string {
+  return line
+    .replace(/`/g, "")
+    .replace(/^pr\s*#\d+:\s*/i, "")
+    .replace(/^\[(x| )\]\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildFallbackReleaseSummary(title: string): string[] {
+  const normalizedTitle = title.toLowerCase();
+
+  if (normalizedTitle.includes("ios") || normalizedTitle.includes("testflight")) {
+    return [
+      "Improved iOS testing access and release readiness.",
+      "Refined how the latest version details are presented.",
+    ];
+  }
+
+  if (normalizedTitle.includes("android") || normalizedTitle.includes("apk")) {
+    return [
+      "Improved Android download reliability and install guidance.",
+      "Refined how the latest version details are presented.",
+    ];
+  }
+
+  return [
+    "Improved the download experience and version details.",
+    "Refined overall stability and page presentation.",
+  ];
+}
+
+function mapReleaseLineToUserFacing(line: string): string | null {
+  const normalized = normalizeReleaseSummaryLine(line);
+  if (!normalized) {
+    return null;
+  }
+
+  for (const rule of RELEASE_SUMMARY_RULES) {
+    if (rule.pattern.test(normalized)) {
+      return rule.text;
+    }
+  }
+
+  if (TECHNICAL_RELEASE_LINE_PATTERN.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function sanitizeReleaseSummaries(lines: string[], fallback: string): string[] {
+  const seen = new Set<string>();
+  const summary: string[] = [];
+
+  for (const line of lines) {
+    const userFacingLine = mapReleaseLineToUserFacing(line);
+    if (!userFacingLine) {
+      continue;
+    }
+
+    const key = userFacingLine.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    summary.push(userFacingLine);
+  }
+
+  return summary.length > 0 ? summary.slice(0, 4) : buildFallbackReleaseSummary(fallback);
+}
+
 function extractUpdateSummary(body: string | null | undefined, fallback: string): string[] {
   const content = body ?? "";
   const sectionMatch = content.match(/## Included changes([\s\S]*?)(?:\n## |$)/);
@@ -164,7 +267,7 @@ function extractUpdateSummary(body: string | null | undefined, fallback: string)
     .map((line) => line.replace(/^-\s*/, "").trim())
     .filter(Boolean);
 
-  return lines.length > 0 ? lines.slice(0, 6) : [fallback];
+  return sanitizeReleaseSummaries(lines, fallback);
 }
 
 function buildMirrorLinks(primaryHref: string): OfficialSiteMirrorLink[] {
@@ -248,7 +351,7 @@ function normalizeChannel(input: unknown): OfficialSiteChannel | null {
     return null;
   }
 
-  const updateSummary = Array.isArray(channel.updateSummary)
+  const rawSummary = Array.isArray(channel.updateSummary)
     ? channel.updateSummary.filter((item): item is string => typeof item === "string" && item.length > 0)
     : [];
 
@@ -275,7 +378,7 @@ function normalizeChannel(input: unknown): OfficialSiteChannel | null {
     version: typeof channel.version === "string" && channel.version.length > 0 ? channel.version : undefined,
     publishedAt:
       typeof channel.publishedAt === "string" && channel.publishedAt.length > 0 ? channel.publishedAt : undefined,
-    updateSummary,
+    updateSummary: sanitizeReleaseSummaries(rawSummary, channel.title),
     mirrorLinks,
     note: typeof channel.note === "string" && channel.note.length > 0 ? channel.note : undefined,
     releasePageHref:
@@ -313,9 +416,12 @@ function normalizeReleaseEntries(input: unknown): OfficialSiteReleaseEntry[] {
       title: typeof item.title === "string" ? item.title : typeof item.tag === "string" ? item.tag : "",
       publishedAt: typeof item.publishedAt === "string" ? item.publishedAt : "",
       htmlUrl: typeof item.htmlUrl === "string" ? item.htmlUrl : "",
-      summary: Array.isArray(item.summary)
-        ? item.summary.filter((s): s is string => typeof s === "string" && s.length > 0)
-        : [],
+      summary: sanitizeReleaseSummaries(
+        Array.isArray(item.summary)
+          ? item.summary.filter((s): s is string => typeof s === "string" && s.length > 0)
+          : [],
+        typeof item.title === "string" ? item.title : typeof item.tag === "string" ? item.tag : "Latest update",
+      ),
     }))
     .filter((entry) => entry.tag.length > 0);
 }
