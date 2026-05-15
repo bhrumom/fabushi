@@ -298,6 +298,7 @@ jobs:
             /frontend/apps/web/public/api/**
 
       - name: Copy state to public API and commit
+        id: commit_state
         if: steps.push_state.outcome == 'success'
         shell: bash
         env:
@@ -322,10 +323,29 @@ jobs:
             git add frontend/apps/web/public/api/releases.json
             if git diff --cached --quiet; then
               echo "No changes to commit."
+              echo "push_blocked_by_repo_rules=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             git commit -m "chore: sync beta release state for $RELEASE_TAG"
-            git push origin main
+
+            push_log="$(mktemp)"
+            if git push origin main 2>"$push_log"; then
+              echo "push_blocked_by_repo_rules=false" >> "$GITHUB_OUTPUT"
+              rm -f "$push_log"
+              exit 0
+            fi
+
+            if grep -q 'GH013: Repository rule violations found' "$push_log" && grep -q 'Changes must be made through the merge queue' "$push_log"; then
+              cat "$push_log"
+              echo "push_blocked_by_repo_rules=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::Skipping direct push to main because repository rules require the merge queue. The official site will keep using release metadata and TESTFLIGHT_UPLOAD_STATUS.txt fallbacks."
+              rm -f "$push_log"
+              exit 0
+            fi
+
+            cat "$push_log" >&2
+            rm -f "$push_log"
+            exit 1
           else
             echo "::error::OFFICIAL_SITE_RELEASE_STATE.json could not be restored or downloaded."
             exit 1
@@ -337,6 +357,7 @@ jobs:
           RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
           RELEASE_STATE_UPLOADED: ${{ steps.upload_state.outputs.uploaded }}
           IMMUTABLE_RELEASE: ${{ steps.upload_state.outputs.immutable_release }}
+          PUSH_BLOCKED_BY_REPO_RULES: ${{ steps.commit_state.outputs.push_blocked_by_repo_rules }}
         run: |
           {
             echo "## Official site beta state synced"
@@ -349,6 +370,10 @@ jobs:
               echo "- Official site fallback remains available through release metadata and TESTFLIGHT_UPLOAD_STATUS.txt"
             else
               echo "- Asset: OFFICIAL_SITE_RELEASE_STATE.json was generated locally"
+            fi
+            if [ "$PUSH_BLOCKED_BY_REPO_RULES" = "true" ]; then
+              echo "- Repository rules blocked the direct push to main, so /api/releases.json was not committed automatically"
+              echo "- The official site will keep falling back to release metadata and TESTFLIGHT_UPLOAD_STATUS.txt"
             fi
             echo "- Android beta now points at the latest GitHub Release APK asset."
             echo "- iOS beta now points at the TestFlight public link when IOS_TESTFLIGHT_PUBLIC_URL is configured."
