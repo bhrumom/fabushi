@@ -155,8 +155,8 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
           <LocalizedText zh={actionCopy.zh} en={actionCopy.en} />
         </DownloadLink>
         {channel.releasePageHref ? (
-          <a className="secondary-action" href={siteHref(channel.releasePageHref)}>
-            <LocalizedText zh="查看版本说明" en="View release notes" />
+          <a className="secondary-action" href={siteHref("/download#release-changelog")}>
+            <LocalizedText zh="查看下载内容说明" en="View download notes" />
           </a>
         ) : null}
       </div>
@@ -365,11 +365,7 @@ export default async function DownloadPage() {
             {releaseCollection.releases.map((entry) => (
               <article key={entry.tag} className="changelog-entry">
                 <div className="changelog-meta">
-                  <h3>
-                    <a href={entry.htmlUrl} target="_blank" rel="noopener noreferrer">
-                      {entry.title}
-                    </a>
-                  </h3>
+                  <h3>{entry.title}</h3>
                   <time dateTime={entry.publishedAt}>{formatPublishedAt(entry.publishedAt)}</time>
                 </div>
                 <div className="release-card-meta compact">
@@ -384,14 +380,6 @@ export default async function DownloadPage() {
                     ))}
                   </ul>
                 )}
-                <a
-                  className="secondary-action"
-                  href={entry.htmlUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <LocalizedText zh="查看完整发布说明" en="View full release notes" />
-                </a>
               </article>
             ))}
           </div>
