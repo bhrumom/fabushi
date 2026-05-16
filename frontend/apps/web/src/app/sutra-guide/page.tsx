@@ -75,6 +75,17 @@ const conceptBlocks = [
 
 const relatedPaths = [
   {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "初学者佛经推荐",
+    labelEn: "Beginner Sutra Picks",
+    titleZh: "先把“先读什么佛经”这个问题单独理清。",
+    titleEn: "Answer the question of which sutra to begin with more directly.",
+    descriptionZh: "如果你现在最卡的是先从《心经》、" +
+      "《阿弥陀经》、" +
+      "《普门品》还是《金刚经》开始，这一页会更具体。",
+    descriptionEn: "If your main difficulty is choosing between gateway texts such as the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra, this page is more specific.",
+  },
+  {
     href: "/buddhadharma",
     labelZh: "佛法入门",
     labelEn: "Dharma Basics",
