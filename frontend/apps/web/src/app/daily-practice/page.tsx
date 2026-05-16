@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/daily-practice");
 const pageTitle = `日常功课怎么安排 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理日常功课怎么安排：晨起、白天与晚间可以怎样放进禅修、经文听诵、念佛、阅读与简短回顾，帮助学佛修行、六度与生活真正接在一起。";
+  "面向初学者梳理日常功课怎么安排：晨起、白天与晚间可以怎样放进禅修、经文听诵、念佛、阅读与简短回顾，帮助学佛修行、六度、空性理解与生活真正接在一起。";
 
 const routinePrinciples = [
   {
@@ -114,6 +114,15 @@ const relatedPaths = [
     descriptionEn: "This is the better next page if you want to see how generosity, discipline, patience, diligence, meditation, and wisdom slowly return to morning, daytime, and evening rhythm.",
   },
   {
+    href: "/what-is-emptiness",
+    labelZh: "空性怎么理解",
+    labelEn: "How to Understand Emptiness",
+    titleZh: "把“少一点抓得太死”慢慢接回晨起、白天和晚间。",
+    titleEn: "Return the loosening of rigid grasping to morning, daytime, and evening rhythm.",
+    descriptionZh: "如果你想知道空性为什么不只是离生活很远的名相，而会影响功课节奏、待人处事和每天的回观，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you want to see why emptiness is not remote from life, but can reshape a routine, relationships, and daily reflection.",
+  },
+  {
     href: "/start-learning-buddhism",
     labelZh: "学佛从哪里开始",
     labelEn: "Where to Begin",
@@ -177,6 +186,12 @@ const faqItems = [
     answerEn: "No. What matters is not never breaking the rhythm, but being able to return after it breaks. When continuity stops, begin again with a smaller version instead of forcing the old plan.",
   },
   {
+    questionZh: "空性怎么理解，和日常功课有什么关系？",
+    questionEn: "How does understanding emptiness relate to a daily practice routine?",
+    answerZh: "如果把空性只当成很远的名相，功课很容易变成完成任务。更稳的方向，是在晨起、白天和晚间慢慢看见：很多情绪和判断并没有想象中那样固定。这样禅修、听诵、念佛和回顾，就会变成帮助自己少一点抓得太死、更多一点清醒和柔软的练习。",
+    answerEn: "If emptiness is treated as a remote term, a daily routine can shrink into task completion. A steadier direction is to notice across morning, daytime, and evening that many emotions and judgments are less fixed than they seemed. Then meditation, listening, recitation, and review become practices of loosening rigid grasping and growing in clarity and softness.",
+  },
+  {
     questionZh: "Fabushi 在日常功课里最适合扮演什么角色？",
     questionEn: "What role does Fabushi play in a daily practice routine?",
     answerZh: "它更适合作为经文听诵、禅修提醒、简短记录和帮助维持连续性的辅助工具，让功课更容易放进每天的生活，而不是只在偶尔想起时才做。",
@@ -196,6 +211,7 @@ export const metadata: Metadata = {
     "初学者功课安排",
     "居士日常修行",
     "六度分别是什么",
+    "空性怎么理解",
     "修行方法",
     "Fabushi",
   ],
@@ -229,7 +245,7 @@ export default function DailyPracticePage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["日常功课", "学佛修行", "初学者功课安排"],
+        about: ["日常功课", "学佛修行", "初学者功课安排", "空性理解"],
       },
       {
         "@type": "BreadcrumbList",
@@ -330,6 +346,12 @@ export default function DailyPracticePage() {
             <LocalizedText
               zh="比较稳妥的功课，不是看起来最完整的那一种，而是最能留下来的那一种。传统修学常重视闻、思、修能否慢慢接续起来。放到今天的生活里，日常功课更像是一条轻轻贯穿一天的线，而不是早晚各做一大段、白天完全断开。"
               en="The steadier routine is usually not the one that looks most complete, but the one that can truly stay alive. Traditional learning often values whether hearing, reflection, and practice can continue into one another. Inside modern life, a daily routine often works better as a light thread through the day than as two heavy blocks that leave the middle empty."
+            />
+          </p>
+          <p>
+            <LocalizedText
+              zh="日常功课的价值，也不只是把几个动作做完。随着晨起、白天和晚间慢慢出现回返点，人会开始看见：很多急躁、执着和判断，并没有想象中那样固定，这也是为什么六度和空性会和功课页放在同一条路上。功课越回到这里，练习就越不只是完成任务，而是在帮助自己多一点清醒和柔软。"
+              en="The value of a daily routine is not only finishing a few actions. As morning, daytime, and evening gain small points of return, people often begin to see that agitation, attachment, and judgment are less fixed than they seemed. This is why the six paramitas and emptiness belong on the same path as a routine page. The more practice returns here, the less it becomes task completion and the more it supports clarity and softness."
             />
           </p>
           <p>

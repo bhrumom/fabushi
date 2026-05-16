@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/practice-guide");
 const pageTitle = `修行方法总览 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，才能把修行、六度与日常生活接在一起。";
+  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，才能把修行、六度、空性理解与日常生活接在一起。";
 
 const practicePrinciples = [
   {
@@ -108,6 +108,15 @@ const relatedPaths = [
     descriptionEn: "This is the better next page if you want to see how generosity, discipline, patience, diligence, meditation, and wisdom return to actual practice methods and ordinary conduct.",
   },
   {
+    href: "/what-is-emptiness",
+    labelZh: "空性怎么理解",
+    labelEn: "How to Understand Emptiness",
+    titleZh: "把“少一点抓得太死”慢慢接回练习方式。",
+    titleEn: "Return the loosening of rigid grasping to actual practice methods.",
+    descriptionZh: "如果你想知道空性为什么不是离生活很远的概念，而会影响禅修、念佛、听诵和待人处事，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you want to see why emptiness is not remote from life, but can reshape meditation, recitation, listening, and ordinary conduct.",
+  },
+  {
     href: "/buddhadharma",
     labelZh: "佛法入门",
     labelEn: "Dharma Basics",
@@ -171,6 +180,12 @@ const faqItems = [
     answerEn: "Yes, but it helps to give them different weights. Choose one main line and let the others support it. Many beginners use listening for familiarity, short meditation for steadiness, and a little reading or note-taking for understanding.",
   },
   {
+    questionZh: "空性怎么理解，和修行方法有什么关系？",
+    questionEn: "How does understanding emptiness relate to actual practice methods?",
+    answerZh: "如果把空性理解成离生活很远的高深义理，修行就容易只剩方法清单。更稳的方向，是先看见很多情绪、判断和习惯并没有想象中那样固定，这样禅修、听诵、念佛和记录就不只是为了完成任务，而是在帮助自己少一点抓得太死。",
+    answerEn: "If emptiness is treated as distant doctrine, practice can shrink into a checklist of methods. A steadier direction is to notice that many emotions, judgments, and habits are less fixed than they seem, so meditation, listening, recitation, and notes become ways of loosening rigid grasping instead of merely finishing tasks.",
+  },
+  {
     questionZh: "Fabushi 在修行方法总览里最适合扮演什么角色？",
     questionEn: "What role does Fabushi play in a beginner practice routine?",
     answerZh: "它更适合作为经文听诵、禅修提醒、修行记录和保持连续性的辅助工具，帮助你把练习接进生活，而不是只停留在偶尔想起时才做。",
@@ -191,6 +206,7 @@ export const metadata: Metadata = {
     "初学者怎么修行",
     "日常功课",
     "六度分别是什么",
+    "空性怎么理解",
     "念佛",
     "Fabushi",
   ],
@@ -224,7 +240,7 @@ export default function PracticeGuidePage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["修行方法", "学佛修行", "日常功课"],
+        about: ["修行方法", "学佛修行", "日常功课", "空性理解"],
       },
       {
         "@type": "BreadcrumbList",
@@ -325,6 +341,12 @@ export default function PracticeGuidePage() {
             <LocalizedText
               zh="比较稳妥的做法，是先让自己每天有一个最轻但真实的动作。可以是坐几分钟禅修，也可以是听一段经文、念一小段佛号，或读一点导读。传统学习里常说闻、思、修要相续，对初学者来说，这并不意味着一天里要把所有事情都做满，而是让接触、理解和实践慢慢连起来。"
               en="A steadier approach is to keep one light but real daily action. It can be a few minutes of meditation, one short scripture passage, a small round of recitation, or a little reading. Traditional learning often treats hearing, reflection, and practice as a sequence. For beginners, that does not mean filling the whole day, but letting contact, understanding, and lived practice connect gradually."
+            />
+          </p>
+          <p>
+            <LocalizedText
+              zh="修行方法最后不只是在练几种技能。随着节奏慢慢稳定，人也会开始看见：很多急躁、执着和判断，并没有想象中那样固定，这也是为什么六度和空性会和方法页放在同一条路上。方法越回到这里，练习就越不只是完成任务，而是在帮助自己少一点抓得太死。"
+              en="Practice methods are not only a set of techniques. As the rhythm steadies, people often begin to see that agitation, attachment, and judgment are less fixed than they seem. This is why the six paramitas and emptiness belong on the same path as method pages. The more practice returns here, the less it becomes task-completion and the more it helps loosen rigid grasping."
             />
           </p>
           <p>
