@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { FORUM_SECTIONS, FORUM_THREADS, getThreadsBySection } from "../../lib/forum-data";
+import { getForumSnapshot } from "../../lib/forum-data";
 
 export default function ThreadsPage() {
+  const snapshot = getForumSnapshot();
+
   return (
     <main>
       <section className="hero">
@@ -19,17 +21,17 @@ export default function ThreadsPage() {
       </section>
 
       <section className="section-grid">
-        {FORUM_SECTIONS.map((section) => (
+        {snapshot.sections.map((section) => (
           <article key={section.slug} className="panel">
             <h2>{section.name}</h2>
             <p>{section.description}</p>
-            <p>当前种子帖子 {getThreadsBySection(section.slug).length} 条</p>
+            <p>当前种子帖子 {section.threadCount} 条</p>
           </article>
         ))}
       </section>
 
       <section className="thread-grid">
-        {FORUM_THREADS.map((thread) => (
+        {snapshot.threads.map((thread) => (
           <article key={thread.slug} className="thread-card">
             <div className="thread-meta">
               <span>{thread.author}</span>
