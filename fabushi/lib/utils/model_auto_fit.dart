@@ -1,5 +1,6 @@
+// ignore_for_file: depend_on_referenced_packages
+
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
@@ -70,8 +71,7 @@ class ModelAutoFit {
 
         if (rawBytes == null || vertexCount == 0) continue;
 
-        // 将 List<int> 转为 ByteData 以便读取 float32
-        final byteData = ByteData.sublistView(Uint8List.fromList(rawBytes));
+        final byteData = _asByteDataView(rawBytes);
 
         for (int i = 0; i < vertexCount; i++) {
           final offset = i * vertexStride;
@@ -112,6 +112,13 @@ class ModelAutoFit {
     );
   }
 
+  static ByteData _asByteDataView(List<int> bytes) {
+    if (bytes is Uint8List) {
+      return ByteData.sublistView(bytes);
+    }
+    return ByteData.sublistView(Uint8List.fromList(bytes));
+  }
+
   /// 根据边界框计算适配变换矩阵
   ///
   /// [bounds] 模型边界框
@@ -137,11 +144,12 @@ class ModelAutoFit {
       ..multiply(originalTransform ?? vector.Matrix4.identity())
       ..rotateY(facingCorrectionY)
       ..rotateX(tiltCorrectionX)
-      ..translate(
+      ..translateByDouble(
         -center.x * scale,
         -center.y * scale + yOffset,
         -center.z * scale,
+        1.0,
       )
-      ..scale(scale, scale, scale);
+      ..scaleByDouble(scale, scale, scale, 1.0);
   }
 }
