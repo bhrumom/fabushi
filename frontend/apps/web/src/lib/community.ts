@@ -9,6 +9,7 @@ export interface ForumSection {
 }
 
 export interface StarterThread {
+  slug: string;
   titleZh: string;
   titleEn: string;
   sectionZh: string;
@@ -29,6 +30,36 @@ export interface LaunchStep {
   titleEn: string;
   descriptionZh: string;
   descriptionEn: string;
+}
+
+export interface ForumThread {
+  slug: string;
+  sectionSlug: string;
+  titleZh: string;
+  titleEn: string;
+  summaryZh: string;
+  summaryEn: string;
+  authorZh: string;
+  authorEn: string;
+  roleZh: string;
+  roleEn: string;
+  publishedLabelZh: string;
+  publishedLabelEn: string;
+  lastActivityZh: string;
+  lastActivityEn: string;
+  repliesCount: number;
+  followsCount: number;
+  bookmarksCount: number;
+  tagsZh: string[];
+  tagsEn: string[];
+  featuredReasonZh: string;
+  featuredReasonEn: string;
+  openingPostZh: string[];
+  openingPostEn: string[];
+  takeawaysZh: string[];
+  takeawaysEn: string[];
+  replyPromptsZh: string[];
+  replyPromptsEn: string[];
 }
 
 export const FORUM_SECTIONS: ForumSection[] = [
@@ -88,40 +119,234 @@ export const FORUM_SECTIONS: ForumSection[] = [
   },
 ];
 
-export const STARTER_THREADS: StarterThread[] = [
+export const FORUM_THREADS: ForumThread[] = [
   {
+    slug: "first-year-stability",
+    sectionSlug: "newcomer-path",
     titleZh: "学佛第一年，先稳定什么最重要？",
     titleEn: "In the first year, what is most important to stabilize?",
-    sectionZh: "新手起步",
-    sectionEn: "Newcomer Path",
-    descriptionZh: "把“先听闻、先持诵、先禅修、先建立作息”几条常见起步路径摆在一起讨论。",
-    descriptionEn: "A starter thread comparing common first-year paths: listening, chanting, meditation, and daily rhythm.",
+    summaryZh: "与其一开始同时抓很多法门，不如先把愿心、作息、听闻和最基础的练习节奏稳下来。",
+    summaryEn: "Instead of trying too many practices at once, stabilize aspiration, daily rhythm, listening, and one basic practice first.",
+    authorZh: "净行",
+    authorEn: "Jing Xing",
+    roleZh: "论坛发起帖",
+    roleEn: "Forum seed thread",
+    publishedLabelZh: "首批引导话题",
+    publishedLabelEn: "Seed discussion",
+    lastActivityZh: "最近整理：起步节奏清单",
+    lastActivityEn: "Latest update: starter rhythm checklist",
+    repliesCount: 18,
+    followsCount: 42,
+    bookmarksCount: 27,
+    tagsZh: ["新手", "作息", "起步"],
+    tagsEn: ["newcomer", "daily rhythm", "beginning"],
+    featuredReasonZh: "适合作为新手欢迎区的第一条常驻讨论。",
+    featuredReasonEn: "A strong anchor thread for the newcomer welcome area.",
+    openingPostZh: [
+      "很多人学佛的第一年，最大的困难不是信息不够，而是同时抓太多，结果什么都不稳。今天想邀请大家一起讨论：如果只能先稳定三件事，你会选什么？为什么？",
+      "我自己的判断是，第一优先通常不是“立刻进入很多高强度练习”，而是先把愿心、作息、听闻和一个最基础的日常练习放稳。这样后面读经、持诵、禅修或参加共修时，才有真正能持续的土壤。",
+      "欢迎大家结合自己的路径来分享，但尽量说清楚适用对象：是面向完全零基础的新手，还是已经开始固定听经、诵经或禅修的人。",
+    ],
+    openingPostEn: [
+      "In the first year of practice, the biggest problem is often not a lack of information but trying too many things at once. If you could stabilize only three things first, what would they be, and why?",
+      "My own view is that the first priority is usually not intense practice volume, but a steady aspiration, daily rhythm, listening habit, and one basic repeatable practice. That creates soil for later sutra study, chanting, meditation, or group practice.",
+      "Please share from your own path, but note who your advice is for: someone completely new, or someone who has already begun a stable routine of listening, recitation, or meditation.",
+    ],
+    takeawaysZh: [
+      "先稳节奏，再谈扩展，不要让起步阶段变成堆任务。",
+      "建议回复时写明自己的起点，避免把个人路径说成唯一标准。",
+      "后续可以把高质量回复整理成“新手第一年节奏建议”。",
+    ],
+    takeawaysEn: [
+      "Stabilize rhythm before expansion so the first stage does not become a pile of tasks.",
+      "Replies should state the speaker's starting point instead of presenting one path as universal.",
+      "Strong responses can later become a newcomer first-year rhythm guide.",
+    ],
+    replyPromptsZh: [
+      "如果是完全零基础的人，你会建议先固定什么？",
+      "你走过弯路后，最希望早点稳定下来的是什么？",
+      "哪些建议看似积极，但其实容易让新手失去节奏？",
+    ],
+    replyPromptsEn: [
+      "For a complete beginner, what would you ask them to stabilize first?",
+      "Looking back, what do you wish you had made steady earlier?",
+      "Which well-meant suggestions actually make beginners lose their rhythm?",
+    ],
   },
   {
+    slug: "how-to-ask-while-reading-sutras",
+    sectionSlug: "sutra-study",
     titleZh: "读经时遇到看不懂的名相，应该怎样提问？",
     titleEn: "How should we ask about terms we do not understand in sutra reading?",
-    sectionZh: "经论研读",
-    sectionEn: "Sutra Study",
-    descriptionZh: "鼓励附上经文出处、前后文和自己的理解，再请他人帮助辨析。",
-    descriptionEn: "Encourages members to bring the source passage, surrounding context, and their current understanding.",
+    summaryZh: "好问题不是只贴一个词，而是把出处、上下文和自己的理解一起带出来，这样讨论才更能沉淀。",
+    summaryEn: "A good question brings the term, the source passage, surrounding context, and the reader's current understanding together.",
+    authorZh: "闻思",
+    authorEn: "Wen Si",
+    roleZh: "经论研读发起帖",
+    roleEn: "Sutra study seed thread",
+    publishedLabelZh: "首批引导话题",
+    publishedLabelEn: "Seed discussion",
+    lastActivityZh: "最近整理：提问模板已加入",
+    lastActivityEn: "Latest update: question template added",
+    repliesCount: 11,
+    followsCount: 31,
+    bookmarksCount: 36,
+    tagsZh: ["名相", "出处", "提问方式"],
+    tagsEn: ["terminology", "sources", "asking well"],
+    featuredReasonZh: "这类提问方式会直接影响论坛的长期知识质量。",
+    featuredReasonEn: "The way people ask here will shape the forum's long-term knowledge quality.",
+    openingPostZh: [
+      "经论研读区很容易出现一种情况：有人只贴一个名相，然后问“这是什么意思？”这样的提问当然真实，但如果没有出处和上下文，回答也很容易发散，甚至互相误解。",
+      "我想先做一个更适合论坛长期沉淀的提问范式：至少附上经论出处、前后文、自己目前的理解，以及你卡住的具体点。这样别人不只是来“给答案”，而是能一起帮助厘清语境。",
+      "欢迎大家补充：对于新手来说，怎样的提问模板既不会太重，又能明显提高讨论质量？",
+    ],
+    openingPostEn: [
+      "In sutra study, a common pattern is that someone posts a single term and asks, 'What does this mean?' The question is sincere, but without source and context, the replies often scatter or misunderstand each other.",
+      "I want to propose a forum-friendly question format: include the source text, nearby context, your current understanding, and the exact point where you got stuck. Then people can clarify the frame instead of only dropping answers.",
+      "Please add to this: what kind of question template stays light enough for beginners while still raising the quality of discussion?",
+    ],
+    takeawaysZh: [
+      "提问要尽量把出处、上下文和卡点一起带出来。",
+      "论坛后续可以把常见提问模板做成固定置顶说明。",
+      "好的提问本身就是知识沉淀的起点。",
+    ],
+    takeawaysEn: [
+      "Questions should carry source, context, and the exact point of confusion.",
+      "The forum can later turn common question formats into pinned guidance.",
+      "A well-formed question is already the start of knowledge archiving.",
+    ],
+    replyPromptsZh: [
+      "你见过最有帮助的一种读经提问方式是什么？",
+      "哪些补充信息最值得作为固定字段？",
+      "怎样避免把提问门槛抬得太高，让新手不敢开口？",
+    ],
+    replyPromptsEn: [
+      "What is the most helpful sutra-reading question format you have seen?",
+      "Which extra details deserve to become standard fields?",
+      "How do we keep the bar helpful without making beginners afraid to ask?",
+    ],
   },
   {
+    slug: "working-with-distraction-and-dullness",
+    sectionSlug: "meditation-practice",
     titleZh: "禅修里最常见的散乱和昏沉，大家怎么处理？",
     titleEn: "How do people work with distraction and dullness in meditation?",
-    sectionZh: "禅修问答",
-    sectionEn: "Meditation Practice",
-    descriptionZh: "以实践层面的复盘和互助为主，不把短期状态神秘化。",
-    descriptionEn: "A practical review thread that keeps short-term states grounded instead of mystical.",
+    summaryZh: "把散乱和昏沉说得具体一些：发生在什么时候、前后做了什么、如何复盘，比空泛谈体验更有帮助。",
+    summaryEn: "It helps more to describe when distraction or dullness appears, what came before it, and how you reviewed it than to speak vaguely about states.",
+    authorZh: "清照",
+    authorEn: "Qing Zhao",
+    roleZh: "禅修问答发起帖",
+    roleEn: "Meditation seed thread",
+    publishedLabelZh: "首批引导话题",
+    publishedLabelEn: "Seed discussion",
+    lastActivityZh: "最近整理：复盘提示已补充",
+    lastActivityEn: "Latest update: review prompts added",
+    repliesCount: 23,
+    followsCount: 38,
+    bookmarksCount: 33,
+    tagsZh: ["禅修", "散乱", "昏沉"],
+    tagsEn: ["meditation", "distraction", "dullness"],
+    featuredReasonZh: "这是最容易活跃、也最需要降噪的一类主题。",
+    featuredReasonEn: "This topic will likely become active quickly and needs grounded framing from the start.",
+    openingPostZh: [
+      "散乱和昏沉几乎是每个练习者都会遇到的，但论坛里如果只说“我今天状态不好”，其实很难互相帮助。真正有用的分享，往往会把练习前的状态、练习中的变化和结束后的复盘说清楚。",
+      "我建议这个串先聚焦在实践层面：你通常在什么情况下更容易散乱？昏沉来时，你会怎么调整坐姿、呼吸、时长或作息？哪些调整对你有效，哪些只是暂时掩盖问题？",
+      "也想提醒一点：欢迎谈经验，但尽量不要把短期体感包装成深层境界判断。这样论坛会更稳，也更适合真正互相帮助。",
+    ],
+    openingPostEn: [
+      "Almost every practitioner meets distraction and dullness, but a post that only says 'I had a bad session' gives others little to work with. The most helpful sharing usually explains the preconditions, what changed during the sit, and how the session was reviewed afterward.",
+      "I suggest keeping this thread practical first: when are you more likely to become distracted, what adjustments do you make in posture, breathing, duration, or routine, and which changes actually help?",
+      "One more note: personal experience is welcome, but please avoid framing short-term sensations as deep attainment claims. That keeps the forum steadier and more useful.",
+    ],
+    takeawaysZh: [
+      "把问题落到练习前、中、后的复盘细节里。",
+      "讨论应优先帮助调整节奏，而不是放大体验感。",
+      "后续可以把高质量回复沉淀成“散乱 / 昏沉处理索引”。",
+    ],
+    takeawaysEn: [
+      "Ground the conversation in before, during, and after-practice review details.",
+      "The goal is to help adjustment and rhythm, not dramatize experience.",
+      "Strong replies can later become an index for working with distraction and dullness.",
+    ],
+    replyPromptsZh: [
+      "你最常见的散乱触发点是什么？",
+      "哪些调整帮助你从昏沉里出来，而不是只是硬撑？",
+      "怎样描述自己的体验，才能更容易得到有效帮助？",
+    ],
+    replyPromptsEn: [
+      "What most often triggers distraction for you?",
+      "Which adjustments help you emerge from dullness instead of just enduring it?",
+      "How can someone describe a session so others can actually help?",
+    ],
   },
   {
+    slug: "honest-practice-journal",
+    sectionSlug: "practice-journal",
     titleZh: "怎样写修学日志，既真实又不流于自我表演？",
     titleEn: "How can a practice journal stay honest without turning into performance?",
-    sectionZh: "修学日志",
-    sectionEn: "Practice Journal",
-    descriptionZh: "首批会给出推荐模板，帮助用户记录发心、节奏、障碍和回顾。",
-    descriptionEn: "The first release will include a suggested format for vows, rhythm, obstacles, and review.",
+    summaryZh: "修学日志不只是记录“我做了什么”，更重要的是记下愿心、节奏、障碍和调整，这样回看才真的有用。",
+    summaryEn: "A practice journal becomes useful when it records aspiration, rhythm, obstacles, and adjustments, not just a list of completed actions.",
+    authorZh: "持灯",
+    authorEn: "Chi Deng",
+    roleZh: "修学日志发起帖",
+    roleEn: "Practice journal seed thread",
+    publishedLabelZh: "首批引导话题",
+    publishedLabelEn: "Seed discussion",
+    lastActivityZh: "最近整理：日志模板草案",
+    lastActivityEn: "Latest update: journal template draft",
+    repliesCount: 9,
+    followsCount: 26,
+    bookmarksCount: 41,
+    tagsZh: ["日志", "复盘", "长期记录"],
+    tagsEn: ["journal", "review", "long-term record"],
+    featuredReasonZh: "这会影响论坛能否形成长期可回看的修学轨迹。",
+    featuredReasonEn: "This determines whether the forum can support long-term, reviewable practice paths.",
+    openingPostZh: [
+      "修学日志区如果只剩“今天打卡了什么”，很快就会变成一种表演压力。可如果什么都不记，很多真正重要的变化又会在几周后完全想不起来。",
+      "我想邀请大家一起讨论：一条健康的修学日志，最少应该包含哪些部分？比如今天的发心、做了什么、遇到什么障碍、怎么调整，以及接下来准备观察什么。",
+      "如果你已经有稳定记录的经验，也欢迎分享你后来删掉了哪些“看起来很积极、实际没帮助”的记录习惯。",
+    ],
+    openingPostEn: [
+      "If the practice journal area becomes only a list of check-ins, it quickly creates performance pressure. But if nothing is recorded, many meaningful changes disappear from memory within weeks.",
+      "I want to ask: what is the minimum healthy structure of a practice journal? For example, today's aspiration, what was done, what obstacle appeared, how it was adjusted, and what to watch next.",
+      "If you already keep a stable journal, please share which habits looked diligent but later turned out not to help.",
+    ],
+    takeawaysZh: [
+      "日志要帮助回看和调整，而不是制造展示压力。",
+      "推荐围绕发心、节奏、障碍、调整四项来写。",
+      "后续可把优质模板沉淀成固定写作引导。",
+    ],
+    takeawaysEn: [
+      "A journal should support review and adjustment rather than performance pressure.",
+      "A useful base format centers on aspiration, rhythm, obstacles, and adjustment.",
+      "Strong templates can later become stable writing guidance for the forum.",
+    ],
+    replyPromptsZh: [
+      "你记录日志时，最想在几周后回看到什么？",
+      "哪些内容值得保留，哪些内容容易变成自我展示？",
+      "如果论坛给一个默认模板，你最希望它提醒你写哪一项？",
+    ],
+    replyPromptsEn: [
+      "When you review a journal weeks later, what do you most want to see?",
+      "Which kinds of notes are worth keeping, and which drift into self-display?",
+      "If the forum offered a default template, what would you most want it to prompt?",
+    ],
   },
 ];
+
+export const STARTER_THREADS: StarterThread[] = FORUM_THREADS.map((thread) => {
+  const section = FORUM_SECTIONS.find((item) => item.slug === thread.sectionSlug);
+
+  return {
+    slug: thread.slug,
+    titleZh: thread.titleZh,
+    titleEn: thread.titleEn,
+    sectionZh: section?.titleZh ?? thread.sectionSlug,
+    sectionEn: section?.titleEn ?? thread.sectionSlug,
+    descriptionZh: thread.summaryZh,
+    descriptionEn: thread.summaryEn,
+  };
+});
 
 export const GOVERNANCE_SIGNALS: GovernanceSignal[] = [
   {
@@ -176,3 +401,15 @@ export const LAUNCH_STEPS: LaunchStep[] = [
     descriptionEn: "Convert great Q&A, curated threads, and long-term topics into durable knowledge pages.",
   },
 ];
+
+export function getForumSectionBySlug(slug: string) {
+  return FORUM_SECTIONS.find((item) => item.slug === slug) ?? null;
+}
+
+export function getForumThreadBySlug(slug: string) {
+  return FORUM_THREADS.find((item) => item.slug === slug) ?? null;
+}
+
+export function getForumThreadsBySection(sectionSlug: string) {
+  return FORUM_THREADS.filter((item) => item.sectionSlug === sectionSlug);
+}
