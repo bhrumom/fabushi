@@ -36,6 +36,8 @@ interface SqliteThreadRow {
   title: string;
   summary: string;
   author: string;
+  author_role_label?: string | null;
+  guidance_signal?: string | null;
   published_at: string;
   last_activity: string;
   reply_count: number;
@@ -53,6 +55,7 @@ interface SqliteReplyRow {
   thread_slug: string;
   author: string;
   role_label: string;
+  guidance_signal?: string | null;
   published_at: string;
   moderation_state: ForumReply["moderationState"];
   trust_signal: string;
@@ -75,6 +78,91 @@ const DEFAULT_DATABASE_URL = "file:./data/forum.db";
 function parseJsonArray(value: string): string[] {
   const parsed = JSON.parse(value) as unknown;
   return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+}
+
+function getDefaultThreadRoleLabel(sectionSlug: string) {
+  switch (sectionSlug) {
+    case "newcomer-path":
+      return "新手提问者";
+    case "sutra-study":
+      return "经论研读者";
+    case "meditation-practice":
+      return "练习反馈者";
+    case "knowledge-archive":
+      return "资料整理者";
+    default:
+      return "论坛提问者";
+  }
+}
+
+function getDefaultThreadGuidanceSignal(sectionSlug: string) {
+  switch (sectionSlug) {
+    case "newcomer-path":
+      return "请优先结合当前节奏给一条最容易开始的下一步建议。";
+    case "sutra-study":
+      return "请优先补出处、上下文和当前理解，再继续讨论名相。";
+    case "meditation-practice":
+      return "请优先结合练习前状态与结束后复盘来回应。";
+    case "knowledge-archive":
+      return "请优先说明这条内容为什么值得长期沉淀和复用。";
+    default:
+      return "请继续结合提问者当前阶段给出具体、可执行的回应。";
+  }
+}
+
+function getDefaultReplyGuidanceSignal(sectionSlug?: string) {
+  switch (sectionSlug) {
+    case "newcomer-path":
+      return "请先接住楼主当前阶段，再补一条最容易执行的起步建议。";
+    case "sutra-study":
+      return "请尽量围绕出处、上下文和当前理解继续回应。";
+    case "meditation-practice":
+      return "请优先结合练习条件、变化和复盘给出反馈。";
+    case "knowledge-archive":
+      return "请优先说明这条补充是否适合整理进长期资料。";
+    default:
+      return "请继续结合楼主当前阶段给出具体回应。";
+  }
+}
+
+function getDefaultReplyRoleLabel() {
+  return "论坛参与者";
+}
+
+function getDefaultReplyTrustSignal() {
+  return "新提交回复，等待更多互动后再判断是否适合沉淀。";
+}
+
+function normalizeThread(thread: ForumThread): ForumThread {
+  return {
+    ...thread,
+    authorRoleLabel:
+      typeof thread.authorRoleLabel === "string" && thread.authorRoleLabel.trim().length > 0
+        ? thread.authorRoleLabel.trim()
+        : getDefaultThreadRoleLabel(thread.sectionSlug),
+    guidanceSignal:
+      typeof thread.guidanceSignal === "string" && thread.guidanceSignal.trim().length > 0
+        ? thread.guidanceSignal.trim()
+        : getDefaultThreadGuidanceSignal(thread.sectionSlug),
+  };
+}
+
+function normalizeReply(reply: ForumReply, thread?: ForumThread): ForumReply {
+  return {
+    ...reply,
+    roleLabel:
+      typeof reply.roleLabel === "string" && reply.roleLabel.trim().length > 0
+        ? reply.roleLabel.trim()
+        : getDefaultReplyRoleLabel(),
+    guidanceSignal:
+      typeof reply.guidanceSignal === "string" && reply.guidanceSignal.trim().length > 0
+        ? reply.guidanceSignal.trim()
+        : getDefaultReplyGuidanceSignal(thread?.sectionSlug),
+    trustSignal:
+      typeof reply.trustSignal === "string" && reply.trustSignal.trim().length > 0
+        ? reply.trustSignal.trim()
+        : getDefaultReplyTrustSignal(),
+  };
 }
 
 function describeSeedModerationSummary(thread: ForumThread) {
@@ -118,6 +206,14 @@ function mapThread(row: SqliteThreadRow): ForumThread {
     title: row.title,
     summary: row.summary,
     author: row.author,
+    authorRoleLabel:
+      typeof row.author_role_label === "string" && row.author_role_label.trim().length > 0
+        ? row.author_role_label.trim()
+        : getDefaultThreadRoleLabel(row.section_slug),
+    guidanceSignal:
+      typeof row.guidance_signal === "string" && row.guidance_signal.trim().length > 0
+        ? row.guidance_signal.trim()
+        : getDefaultThreadGuidanceSignal(row.section_slug),
     publishedAt: row.published_at,
     lastActivity: row.last_activity,
     replyCount: Number(row.reply_count),
@@ -136,10 +232,20 @@ function mapReply(row: SqliteReplyRow): ForumReply {
     id: row.id,
     threadSlug: row.thread_slug,
     author: row.author,
-    roleLabel: row.role_label,
+    roleLabel:
+      typeof row.role_label === "string" && row.role_label.trim().length > 0
+        ? row.role_label.trim()
+        : getDefaultReplyRoleLabel(),
+    guidanceSignal:
+      typeof row.guidance_signal === "string" && row.guidance_signal.trim().length > 0
+        ? row.guidance_signal.trim()
+        : getDefaultReplyGuidanceSignal(),
     publishedAt: row.published_at,
     moderationState: row.moderation_state,
-    trustSignal: row.trust_signal,
+    trustSignal:
+      typeof row.trust_signal === "string" && row.trust_signal.trim().length > 0
+        ? row.trust_signal.trim()
+        : getDefaultReplyTrustSignal(),
     body: parseJsonArray(row.body_json),
   };
 }
@@ -217,6 +323,8 @@ function initializeSchema(database: DatabaseSync) {
       title TEXT NOT NULL,
       summary TEXT NOT NULL,
       author TEXT NOT NULL,
+      author_role_label TEXT NOT NULL DEFAULT '论坛提问者',
+      guidance_signal TEXT NOT NULL DEFAULT '请继续结合提问者当前阶段给出具体、可执行的回应。',
       published_at TEXT NOT NULL,
       last_activity TEXT NOT NULL,
       reply_count INTEGER NOT NULL DEFAULT 0,
@@ -235,6 +343,7 @@ function initializeSchema(database: DatabaseSync) {
       thread_slug TEXT NOT NULL,
       author TEXT NOT NULL,
       role_label TEXT NOT NULL,
+      guidance_signal TEXT NOT NULL DEFAULT '请继续结合楼主当前阶段给出具体回应。',
       published_at TEXT NOT NULL,
       moderation_state TEXT NOT NULL,
       trust_signal TEXT NOT NULL,
@@ -256,12 +365,41 @@ function initializeSchema(database: DatabaseSync) {
   `);
 }
 
+function tableHasColumn(database: DatabaseSync, tableName: string, columnName: string) {
+  const rows = database.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+  return rows.some((row) => row.name === columnName);
+}
+
+function ensureSchemaCompatibility(database: DatabaseSync) {
+  if (!tableHasColumn(database, "forum_threads", "author_role_label")) {
+    database.exec(
+      "ALTER TABLE forum_threads ADD COLUMN author_role_label TEXT NOT NULL DEFAULT '论坛提问者'",
+    );
+  }
+
+  if (!tableHasColumn(database, "forum_threads", "guidance_signal")) {
+    database.exec(
+      "ALTER TABLE forum_threads ADD COLUMN guidance_signal TEXT NOT NULL DEFAULT '请继续结合提问者当前阶段给出具体、可执行的回应。'",
+    );
+  }
+
+  if (!tableHasColumn(database, "forum_replies", "guidance_signal")) {
+    database.exec(
+      "ALTER TABLE forum_replies ADD COLUMN guidance_signal TEXT NOT NULL DEFAULT '请继续结合楼主当前阶段给出具体回应。'",
+    );
+  }
+}
+
 function seedDatabaseIfEmpty(database: DatabaseSync) {
   const countRow = database.prepare("SELECT COUNT(*) AS count FROM forum_sections").get() as { count: number };
 
   if (Number(countRow.count) > 0) {
     return;
   }
+
+  const normalizedThreads = seedContent.threads.map(normalizeThread);
+  const threadBySlug = new Map(normalizedThreads.map((thread) => [thread.slug, thread]));
+  const normalizedReplies = seedContent.replies.map((reply) => normalizeReply(reply, threadBySlug.get(reply.threadSlug)));
 
   const insertSection = database.prepare(`
     INSERT INTO forum_sections (slug, name, description, moderation_focus, posting_prompt)
@@ -274,6 +412,8 @@ function seedDatabaseIfEmpty(database: DatabaseSync) {
       title,
       summary,
       author,
+      author_role_label,
+      guidance_signal,
       published_at,
       last_activity,
       reply_count,
@@ -285,7 +425,7 @@ function seedDatabaseIfEmpty(database: DatabaseSync) {
       moderation_state,
       knowledge_stage
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertReply = database.prepare(`
     INSERT INTO forum_replies (
@@ -293,12 +433,13 @@ function seedDatabaseIfEmpty(database: DatabaseSync) {
       thread_slug,
       author,
       role_label,
+      guidance_signal,
       published_at,
       moderation_state,
       trust_signal,
       body_json
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertModerationEvent = database.prepare(`
     INSERT INTO forum_moderation_events (
@@ -326,13 +467,15 @@ function seedDatabaseIfEmpty(database: DatabaseSync) {
       );
     }
 
-    for (const thread of seedContent.threads) {
+    for (const thread of normalizedThreads) {
       insertThread.run(
         thread.slug,
         thread.sectionSlug,
         thread.title,
         thread.summary,
         thread.author,
+        thread.authorRoleLabel,
+        thread.guidanceSignal,
         thread.publishedAt,
         thread.lastActivity,
         thread.replyCount,
@@ -356,12 +499,13 @@ function seedDatabaseIfEmpty(database: DatabaseSync) {
       );
     }
 
-    for (const reply of seedContent.replies) {
+    for (const reply of normalizedReplies) {
       insertReply.run(
         reply.id,
         reply.threadSlug,
         reply.author,
         reply.roleLabel,
+        reply.guidanceSignal,
         reply.publishedAt,
         reply.moderationState,
         reply.trustSignal,
@@ -434,6 +578,7 @@ export function createSqliteForumRepository(): ForumRepository {
   const database = new DatabaseSync(databasePath);
   database.exec("PRAGMA foreign_keys = ON");
   initializeSchema(database);
+  ensureSchemaCompatibility(database);
   seedDatabaseIfEmpty(database);
 
   const getSections = (): ForumSection[] => {
@@ -453,6 +598,8 @@ export function createSqliteForumRepository(): ForumRepository {
           title,
           summary,
           author,
+          author_role_label,
+          guidance_signal,
           published_at,
           last_activity,
           reply_count,
@@ -479,6 +626,7 @@ export function createSqliteForumRepository(): ForumRepository {
           thread_slug,
           author,
           role_label,
+          guidance_signal,
           published_at,
           moderation_state,
           trust_signal,
@@ -527,6 +675,8 @@ export function createSqliteForumRepository(): ForumRepository {
           title,
           summary,
           author,
+          author_role_label,
+          guidance_signal,
           published_at,
           last_activity,
           reply_count,
@@ -555,6 +705,8 @@ export function createSqliteForumRepository(): ForumRepository {
           title,
           summary,
           author,
+          author_role_label,
+          guidance_signal,
           published_at,
           last_activity,
           reply_count,
@@ -582,6 +734,7 @@ export function createSqliteForumRepository(): ForumRepository {
           thread_slug,
           author,
           role_label,
+          guidance_signal,
           published_at,
           moderation_state,
           trust_signal,
@@ -641,7 +794,10 @@ export function createSqliteForumRepository(): ForumRepository {
     return {
       sections: sections.map((section) => {
         const sectionThreads = threads.filter((thread) => thread.sectionSlug === section.slug);
-        const replyCount = sectionThreads.reduce((total, thread) => total + replies.filter((reply) => reply.threadSlug === thread.slug).length, 0);
+        const replyCount = sectionThreads.reduce(
+          (total, thread) => total + replies.filter((reply) => reply.threadSlug === thread.slug).length,
+          0,
+        );
 
         return {
           ...section,
@@ -694,6 +850,8 @@ export function createSqliteForumRepository(): ForumRepository {
     const slug = nextThreadSlug(database, input.title);
     const createdAt = new Date().toISOString();
     const openingPost = input.openingPost.filter((paragraph) => paragraph.trim().length > 0);
+    const authorRoleLabel = input.authorRoleLabel.trim() || getDefaultThreadRoleLabel(input.sectionSlug);
+    const guidanceSignal = input.guidanceSignal.trim() || getDefaultThreadGuidanceSignal(input.sectionSlug);
 
     if (openingPost.length === 0) {
       throw new ForumInputError("Thread openingPost must contain at least one non-empty paragraph.");
@@ -709,6 +867,8 @@ export function createSqliteForumRepository(): ForumRepository {
           title,
           summary,
           author,
+          author_role_label,
+          guidance_signal,
           published_at,
           last_activity,
           reply_count,
@@ -720,13 +880,15 @@ export function createSqliteForumRepository(): ForumRepository {
           moderation_state,
           knowledge_stage
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         slug,
         input.sectionSlug,
         input.title,
         input.summary,
         input.author,
+        authorRoleLabel,
+        guidanceSignal,
         createdAt,
         "刚刚创建",
         0,
@@ -783,6 +945,9 @@ export function createSqliteForumRepository(): ForumRepository {
     }
 
     const body = input.body.filter((paragraph) => paragraph.trim().length > 0);
+    const roleLabel = input.roleLabel.trim() || getDefaultReplyRoleLabel();
+    const guidanceSignal = input.guidanceSignal.trim() || getDefaultReplyGuidanceSignal(thread.sectionSlug);
+    const trustSignal = input.trustSignal.trim() || getDefaultReplyTrustSignal();
 
     if (body.length === 0) {
       throw new ForumInputError("Reply body must contain at least one non-empty paragraph.");
@@ -800,20 +965,22 @@ export function createSqliteForumRepository(): ForumRepository {
           thread_slug,
           author,
           role_label,
+          guidance_signal,
           published_at,
           moderation_state,
           trust_signal,
           body_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         replyId,
         input.threadSlug,
         input.author,
-        input.roleLabel,
+        roleLabel,
+        guidanceSignal,
         createdAt,
         "published",
-        input.trustSignal,
+        trustSignal,
         JSON.stringify(body),
       );
 

@@ -34,6 +34,12 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
 
         <h1>{thread.title}</h1>
         <p>{thread.summary}</p>
+        <div className="thread-meta">
+          <span>{thread.author}</span>
+          <span>{thread.authorRoleLabel}</span>
+          <span>{thread.publishedAt}</span>
+        </div>
+        <p className="reply-form-hint">当前引导信号：{thread.guidanceSignal}</p>
 
         <div className="metrics">
           <article className="metric">
@@ -67,11 +73,7 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
           </ul>
         </section>
 
-        <ThreadReplyForm
-          threadSlug={thread.slug}
-          writesEnabled={runtime.writesEnabled}
-          dataSource={runtime.dataSource}
-        />
+        <ThreadReplyForm threadSlug={thread.slug} writesEnabled={runtime.writesEnabled} dataSource={runtime.dataSource} />
 
         <section className="reply-stack">
           <div className="section-heading">
@@ -79,7 +81,7 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
               <h2>当前回复</h2>
               <p>
                 {runtime.writesEnabled
-                  ? "新回复提交后会回写 sqlite，并在刷新后直接显示在这里。"
+                  ? "新回复提交后会把角色状态、引导信号和正文一起写入 sqlite，并在刷新后直接显示在这里。"
                   : "当前环境先以样例回复展示结构，切到 sqlite 后这里会承接真实提交。"}
               </p>
             </div>
@@ -95,6 +97,7 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
                 </div>
                 <span className="reply-signal">{reply.trustSignal}</span>
               </div>
+              <p className="reply-form-hint">引导信号：{reply.guidanceSignal}</p>
 
               {reply.body.map((paragraph) => (
                 <p key={paragraph}>{paragraph}</p>
@@ -133,10 +136,10 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
 
         <section className="api-note">
           <h2>后续扩展位置</h2>
-          <p>下一轮可以继续把角色状态和新手引导沿着同一条页面到仓储链路持久化，而不是把治理能力留在展示文案里。</p>
+          <p>下一轮可以在这条已持久化的角色与引导链路上继续接更明确的审核动作、登录态和新手承接流程。</p>
           <div className="footer-note">
             <span>作者：{thread.author}</span>
-            <span>发布时间：{thread.publishedAt}</span>
+            <span>作者角色：{thread.authorRoleLabel}</span>
             <span>最近活动：{thread.lastActivity}</span>
           </div>
         </section>

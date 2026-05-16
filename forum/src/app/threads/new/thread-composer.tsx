@@ -18,6 +18,8 @@ interface ThreadComposerProps {
 
 type FormTone = "error" | "success";
 
+const ROLE_OPTIONS = ["新手提问者", "持续修学者", "带新同修", "资料整理者"];
+
 function getParagraphs(value: string) {
   return value
     .split(/\n+/)
@@ -37,6 +39,8 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
   const [sectionSlug, setSectionSlug] = useState(sections[0]?.slug ?? "");
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
+  const [authorRoleLabel, setAuthorRoleLabel] = useState(ROLE_OPTIONS[0]);
+  const [guidanceSignal, setGuidanceSignal] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [openingPost, setOpeningPost] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -65,12 +69,13 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
 
     const trimmedTitle = title.trim();
     const trimmedAuthor = author.trim();
+    const trimmedGuidanceSignal = guidanceSignal.trim();
     const paragraphs = getParagraphs(openingPost);
     const tags = getTags(tagsInput);
 
-    if (!trimmedTitle || !trimmedAuthor || paragraphs.length === 0) {
+    if (!trimmedTitle || !trimmedAuthor || !trimmedGuidanceSignal || paragraphs.length === 0) {
       setTone("error");
-      setMessage("请先选择版块，并填写标题、称呼和开场帖内容。");
+      setMessage("请先填写标题、称呼、作者角色、引导信号和开场帖内容。");
       return;
     }
 
@@ -89,6 +94,8 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
               sectionSlug: selectedSection.slug,
               title: trimmedTitle,
               author: trimmedAuthor,
+              authorRoleLabel,
+              guidanceSignal: trimmedGuidanceSignal,
               tags,
               openingPost: paragraphs,
             }),
@@ -111,6 +118,7 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
 
           setTitle("");
           setAuthor("");
+          setGuidanceSignal("");
           setTagsInput("");
           setOpeningPost("");
           setTone("success");
@@ -129,7 +137,7 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
       <div className="section-heading">
         <div>
           <h2 id="thread-composer-heading">发起一条最小主题</h2>
-          <p>先把页面层接到已有的线程创建接口，确认浏览列表、发起主题、进入详情页这条链路已经成立。</p>
+          <p>这一步除了创建主题本身，也把作者角色和新手引导信号一起写入持久化层，避免它们只停留在展示文案。</p>
         </div>
         <span className="reply-runtime">{writesEnabled ? `当前数据源：${dataSource} / 可写` : `当前数据源：${dataSource} / 只读`}</span>
       </div>
@@ -185,6 +193,35 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
           </label>
 
           <label className="reply-field">
+            <span>作者角色</span>
+            <select
+              className="reply-input composer-select"
+              name="authorRoleLabel"
+              value={authorRoleLabel}
+              onChange={(event) => setAuthorRoleLabel(event.target.value)}
+              disabled={!writesEnabled || isPending}
+            >
+              {ROLE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="reply-field">
+            <span>引导信号</span>
+            <input
+              className="reply-input"
+              name="guidanceSignal"
+              value={guidanceSignal}
+              onChange={(event) => setGuidanceSignal(event.target.value)}
+              placeholder="例如：请先给我一条最容易开始的下一步建议。"
+              disabled={!writesEnabled || isPending}
+            />
+          </label>
+
+          <label className="reply-field">
             <span>标签</span>
             <input
               className="reply-input"
@@ -220,8 +257,8 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
         <div className="reply-form-footer">
           <p className="reply-form-hint">
             {paragraphCount > 0
-              ? `当前会提交 ${paragraphCount} 段开场帖${tagCount > 0 ? `，并附带 ${tagCount} 个标签` : ""}。接口会自动生成摘要。`
-              : "开场帖支持按空行分段；第一版先让标题、版块和开场帖稳定落库。"}
+              ? `当前会提交 ${paragraphCount} 段开场帖${tagCount > 0 ? `，并附带 ${tagCount} 个标签` : ""}，同时把作者角色和引导信号一起落库。`
+              : "开场帖支持按空行分段；第一版先把标题、版块、角色状态和引导信号稳定落库。"}
           </p>
           <button className="submit-button" type="submit" disabled={!writesEnabled || isPending || !selectedSection}>
             {isPending ? "发布中..." : "发布主题"}

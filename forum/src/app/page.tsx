@@ -22,18 +22,18 @@ export default function HomePage() {
 
         <h1>把论坛从占位目录推进成真正能承接互动与治理的独立项目。</h1>
         <p>
-          这一版先不追求完整社区能力，而是先把独立运行骨架、sqlite 最小写入、帖子详情回复、页面层主题创建入口和首条审核时间线接起来，
-          让下一轮可以直接接角色状态、新手引导和更完整的用户流程。
+          这一版先不追求完整社区能力，而是先把独立运行骨架、sqlite 最小写入、帖子详情回复、页面层主题创建入口、审核时间线，以及作者角色与新手引导信号接起来，
+          让下一轮可以直接接更明确的登录、审核和部署边界。
         </p>
 
         <div className="hero-grid">
           <article className="panel">
             <h2>当前阶段</h2>
-            <p>sqlite 最小互动闭环加首条治理时间线。目标是让论坛从“能发起主题、能回复”进入“每次写入都会留下可回读的审核状态”。</p>
+            <p>sqlite 最小互动闭环加治理时间线与角色引导持久化。目标是让论坛从“能写内容”继续推进到“写入后带着真实上下文回读”。</p>
           </article>
           <article className="panel">
             <h2>下一步承接点</h2>
-            <p>优先把角色状态和新手引导沿着同一条页面到仓储链路继续持久化，而不是回到静态占位页面。</p>
+            <p>优先明确论坛独立部署入口，以及登录态、权限态和审核流该落在哪一层服务边界上。</p>
           </article>
         </div>
       </section>
@@ -43,10 +43,12 @@ export default function HomePage() {
           <article key={thread.slug} className="thread-card">
             <div className="thread-meta">
               <span>{thread.author}</span>
+              <span>{thread.authorRoleLabel}</span>
               <span>{thread.lastActivity}</span>
             </div>
             <h2>{thread.title}</h2>
             <p>{thread.summary}</p>
+            <p className="reply-form-hint">当前引导信号：{thread.guidanceSignal}</p>
             <div className="thread-tags">
               {thread.tags.map((tag) => (
                 <span key={tag}>{tag}</span>
