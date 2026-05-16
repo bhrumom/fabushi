@@ -3,6 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import forumContent from "../data/forum-content.json";
 import type {
+  CreateForumReplyInput,
   CreateForumThreadInput,
   ForumReply,
   ForumRepository,
@@ -311,6 +312,23 @@ function nextThreadSlug(database: DatabaseSync, title: string): string {
   return `${baseSlug}-${suffix}`;
 }
 
+function nextReplyId(database: DatabaseSync, threadSlug: string): string {
+  const baseId = `reply-${threadSlug}-${Date.now().toString(36)}`;
+  const existingReply = database.prepare("SELECT id FROM forum_replies WHERE id = ? LIMIT 1");
+
+  if (!existingReply.get(baseId)) {
+    return baseId;
+  }
+
+  let suffix = 2;
+
+  while (existingReply.get(`${baseId}-${suffix}`)) {
+    suffix += 1;
+  }
+
+  return `${baseId}-${suffix}`;
+}
+
 export function createSqliteForumRepository(): ForumRepository {
   const databasePath = resolveSqliteDatabasePath(process.env.FORUM_DATABASE_URL?.trim() || DEFAULT_DATABASE_URL);
   ensureDatabaseDirectory(databasePath);
@@ -585,6 +603,71 @@ export function createSqliteForumRepository(): ForumRepository {
     return createdDetail;
   };
 
+  const createReply = (input: CreateForumReplyInput): ForumThreadDetail => {
+    const thread = getThreadBySlug(input.threadSlug);
+
+    if (!thread) {
+      throw new ForumInputError(`Forum thread "${input.threadSlug}" does not exist.`);
+    }
+
+    const body = input.body.filter((paragraph) => paragraph.trim().length > 0);
+
+    if (body.length === 0) {
+      throw new ForumInputError("Reply body must contain at least one non-empty paragraph.");
+    }
+
+    const replyId = nextReplyId(database, input.threadSlug);
+    const createdAt = new Date().toISOString();
+
+    database.exec("BEGIN");
+
+    try {
+      database.prepare(`
+        INSERT INTO forum_replies (
+          id,
+          thread_slug,
+          author,
+          role_label,
+          published_at,
+          moderation_state,
+          trust_signal,
+          body_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        replyId,
+        input.threadSlug,
+        input.author,
+        input.roleLabel,
+        createdAt,
+        "published",
+        input.trustSignal,
+        JSON.stringify(body),
+      );
+
+      database.prepare(`
+        UPDATE forum_threads
+        SET
+          reply_count = reply_count + 1,
+          last_activity = ?
+        WHERE slug = ?
+      `).run("刚刚回复", input.threadSlug);
+
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+
+    const updatedDetail = getThreadDetailBySlug(input.threadSlug);
+
+    if (!updatedDetail) {
+      throw new Error("Updated thread could not be reloaded from sqlite storage after reply creation.");
+    }
+
+    return updatedDetail;
+  };
+
   return {
     dataSource: "sqlite",
     persistenceMode: "sqlite-file",
@@ -599,5 +682,6 @@ export function createSqliteForumRepository(): ForumRepository {
     getSnapshot,
     getRuntimeStatus,
     createThread,
+    createReply,
   };
 }

@@ -73,6 +73,14 @@ export interface CreateForumThreadInput {
   openingPost: string[];
 }
 
+export interface CreateForumReplyInput {
+  threadSlug: string;
+  author: string;
+  roleLabel: string;
+  trustSignal: string;
+  body: string[];
+}
+
 export interface ForumRuntimeStatus {
   service: "forum";
   dataSource: ForumDataSource;
@@ -115,6 +123,7 @@ export interface ForumRepository {
   getSnapshot(): ForumSnapshot;
   getRuntimeStatus(): ForumRuntimeStatus;
   createThread(input: CreateForumThreadInput): ForumThreadDetail;
+  createReply(input: CreateForumReplyInput): ForumThreadDetail;
 }
 
 function resolveForumDataSource(): ForumDataSource {
@@ -176,4 +185,8 @@ export function getForumRuntimeStatus() {
 
 export function createForumThread(input: CreateForumThreadInput) {
   return forumRepository.createThread(input);
+}
+
+export function createForumReply(input: CreateForumReplyInput) {
+  return forumRepository.createReply(input);
 }
