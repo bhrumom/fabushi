@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { join } from "node:path";
 
 const officialSiteReleaseRepo = process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_REPO?.trim() || "bhrumom/fabushi";
 const iosTestFlightPublicUrl = process.env.NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL?.trim() || "";
 const RELEASES_API_URL = `https://api.github.com/repos/${officialSiteReleaseRepo}/releases?per_page=8`;
-const PERSISTED_RELEASES_PATH = path.join(process.cwd(), "public", "api", "releases.json");
+const PERSISTED_RELEASES_PATH = join(process.cwd(), "public", "api", "releases.json");
 
 const DEFAULT_MIRROR_BASES = [
   {
