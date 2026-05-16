@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -16,6 +15,12 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import '../core/config/app_config.dart';
 import '../services/asset_loader_service.dart';
 import '../utils/model_auto_fit.dart';
+
+enum _BuddhaRendererPath {
+  androidThreePrimary,
+  flutterScenePrimary,
+  flutterSceneFallback,
+}
 
 class BuddhaModelScreen extends StatefulWidget {
   final bool autoRotate;
@@ -44,51 +49,46 @@ class BuddhaModelScreen extends StatefulWidget {
 class BuddhaModelScreenState extends State<BuddhaModelScreen>
     with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   static const String _legacyFallbackChannelName = 'FabushiBuddhaFallback';
+  static const Duration _androidThreeTimeout = Duration(seconds: 90);
 
-  late Scene scene;
-  late PerspectiveCamera camera;
-  late Ticker _ticker;
+  late final Ticker _ticker;
+
+  Scene? _scene;
+  PerspectiveCamera? _camera;
   double _lastTime = 0.0;
 
   bool _isLoading = true;
-  double _loadingProgress = 0.0;
   bool _loadFailed = false;
   bool _renderFailed = false;
-  bool _useLegacyWebViewFallback = false;
   bool _legacyWebViewReady = false;
-  String? _lastLoadError;
-  String? _nativeModelLoadError;
-  String? _legacyFallbackError;
-  WebViewController? _legacyWebViewController;
-  Timer? _legacyFallbackTimeout;
-
+  bool _useLegacyWebViewFallback = false;
+  double _loadingProgress = 0.0;
   double _rotationY = 0.0;
+  double _currentIncenseProgress = 0.0;
   final double _cameraDistance = 250.0;
+
   bool _isUserDragging = false;
   double? _lastPointerX;
   bool _isReturningToStart = false;
   bool _isAutoRotating = false;
-  double _currentIncenseProgress = 0.0;
-  final math.Random _random = math.Random();
 
-  static const double _incenseBaseX = 0.0;
-  static const double _incenseBaseY = -60.0;
-  static const double _incenseBaseZ = 80.0;
-  static const double _incenseFullHeight = 46.0;
-  static const List<double> _incenseStickOffsets = [-7.0, 0.0, 7.0];
+  _BuddhaRendererPath? _activeRendererPath;
+  bool _androidThreeFallbackEnabled = false;
 
-  final int _particleCount = 90;
-  final List<vector.Vector3> _smokeParticles = [];
-  final List<double> _particleSpeeds = [];
+  String? _lastLoadError;
+  String? _androidThreeError;
+  String? _flutterSceneError;
+  String _loadingLabel = '恭请佛像...';
 
-  final List<vector.Vector3> _stars = [];
+  WebViewController? _legacyWebViewController;
+  Timer? _legacyFallbackTimeout;
 
   bool get _canUseLegacyWebViewFallback =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
-  bool get _shouldPreferBundledAndroidFallback =>
+  bool get _shouldUseAndroidThreePrimary =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   @override
@@ -96,12 +96,220 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     super.initState();
     _isAutoRotating = widget.autoRotate;
     _currentIncenseProgress = widget.incenseProgress;
-
-    _initScene();
-
     _ticker = createTicker(_onTick);
     if (widget.isVisible) {
       _ticker.start();
+    }
+    unawaited(_bootstrapRenderer());
+  }
+
+  Future<void> _bootstrapRenderer() async {
+    if (_shouldUseAndroidThreePrimary) {
+      await _startAndroidThreePrimary();
+      return;
+    }
+    await _startFlutterScenePrimary();
+  }
+
+  void _resetForFreshLoad({
+    required String loadingLabel,
+    _BuddhaRendererPath? activePath,
+  }) {
+    _cancelLegacyFallbackTimeout();
+    _lastLoadError = null;
+    _renderFailed = false;
+    _loadFailed = false;
+    _isLoading = true;
+    _loadingProgress = 0.0;
+    _loadingLabel = loadingLabel;
+    _legacyWebViewReady = false;
+    _useLegacyWebViewFallback = false;
+    _legacyWebViewController = null;
+    _activeRendererPath = activePath;
+    if (widget.isVisible && !_ticker.isTicking) {
+      _lastTime = 0.0;
+      _ticker.start();
+    }
+  }
+
+  Future<void> _startAndroidThreePrimary() async {
+    _androidThreeFallbackEnabled = true;
+    if (!mounted) return;
+    setState(() {
+      _flutterSceneError = null;
+      _androidThreeError = null;
+      _resetForFreshLoad(
+        loadingLabel: '安卓佛像加载中...',
+        activePath: _BuddhaRendererPath.androidThreePrimary,
+      );
+    });
+    await _activateLegacyWebViewFallback();
+  }
+
+  Future<void> _startFlutterScenePrimary() async {
+    if (!mounted) return;
+    setState(() {
+      _flutterSceneError = null;
+      _androidThreeError = null;
+      _resetForFreshLoad(
+        loadingLabel: '恭请佛像...',
+        activePath: _BuddhaRendererPath.flutterScenePrimary,
+      );
+    });
+    await _loadFlutterSceneModel(
+      asFallback: false,
+      reasonLabel: 'flutter_scene 渲染准备中...',
+    );
+  }
+
+  Future<void> _startFlutterSceneFallback(String reason) async {
+    if (!mounted) return;
+    _androidThreeError = reason;
+    _lastLoadError = reason;
+    setState(() {
+      _resetForFreshLoad(
+        loadingLabel: 'Three 主渲染失败，切换 flutter_scene...',
+        activePath: _BuddhaRendererPath.flutterSceneFallback,
+      );
+    });
+    await _loadFlutterSceneModel(
+      asFallback: true,
+      reasonLabel: 'Three 主渲染失败，切换 flutter_scene...',
+    );
+  }
+
+  Future<void> _loadFlutterSceneModel({
+    required bool asFallback,
+    required String reasonLabel,
+  }) async {
+    _androidThreeFallbackEnabled = false;
+    try {
+      await _ensureFlutterSceneEnvironment();
+    } catch (error) {
+      _markFlutterSceneFailed('flutter_scene 初始化失败: $error');
+      return;
+    }
+
+    const maxRetries = 2;
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      Uint8List? modelData;
+      try {
+        if (mounted) {
+          setState(() {
+            _loadingLabel = attempt == 1
+                ? reasonLabel
+                : '$reasonLabel（重试 $attempt/$maxRetries）';
+          });
+        }
+
+        modelData = await AssetLoaderService.loadBuddhaModel(
+          onProgress: (progress) {
+            if (!mounted) return;
+            setState(() {
+              _loadingProgress = progress;
+            });
+          },
+        );
+
+        if (!mounted) return;
+        await _buildBuddhaNode(modelData);
+        AssetLoaderService.releaseBuddhaModelMemoryCache();
+
+        setState(() {
+          _isLoading = false;
+          _loadFailed = false;
+          _renderFailed = false;
+          _flutterSceneError = null;
+          _loadingProgress = 1.0;
+          if (asFallback) {
+            _loadingLabel = '已切换 flutter_scene 备用展示';
+          }
+        });
+        return;
+      } catch (error) {
+        _flutterSceneError = 'flutter_scene 解析失败: $error';
+        _lastLoadError = _flutterSceneError;
+        AssetLoaderService.releaseBuddhaModelMemoryCache();
+        if (attempt < maxRetries) {
+          await Future.delayed(Duration(seconds: 1 << attempt));
+          continue;
+        }
+      }
+    }
+
+    _markFlutterSceneFailed(
+      _flutterSceneError ?? 'flutter_scene 备用渲染失败',
+    );
+  }
+
+  Future<void> _ensureFlutterSceneEnvironment() async {
+    if (_scene != null && _camera != null) {
+      return;
+    }
+
+    final scene = Scene();
+    final camera = PerspectiveCamera(
+      fovRadiansY: 50 * math.pi / 180,
+      fovNear: 0.1,
+      fovFar: 2000.0,
+    );
+    _scene = scene;
+    _camera = camera;
+    _updateCamera();
+
+    await Scene.initializeStaticResources();
+
+    try {
+      final goldEnvImage = await _createGoldenEnvironmentImage();
+      final envMap = await EnvironmentMap.fromUIImages(
+        radianceImage: goldEnvImage,
+        irradianceImage: goldEnvImage,
+      );
+      scene.environment.environmentMap = envMap;
+      scene.environment.intensity = 2.0;
+      scene.environment.exposure = 1.12;
+    } catch (_) {
+      scene.environment.intensity = 1.75;
+      scene.environment.exposure = 1.05;
+    }
+  }
+
+  Future<void> _buildBuddhaNode(Uint8List modelData) async {
+    final scene = _scene;
+    if (scene == null) {
+      throw StateError('flutter_scene 尚未初始化');
+    }
+
+    final bounds = ModelAutoFit.computeBoundsFromModelBytes(modelData);
+    final node = await Node.fromFlatbuffer(ByteData.sublistView(modelData));
+    _retuneBuddhaMaterials(node);
+
+    final originalTransform = node.localTransform.clone();
+    node.localTransform = ModelAutoFit.computeFitTransform(
+      bounds,
+      originalTransform: originalTransform,
+    );
+
+    scene.add(node);
+  }
+
+  void _retuneBuddhaMaterials(Node node) {
+    final mesh = node.mesh;
+    if (mesh != null) {
+      for (final MeshPrimitive primitive in mesh.primitives) {
+        final material = primitive.material;
+        if (material is PhysicallyBasedMaterial) {
+          material.baseColorFactor = vector.Vector4(1.0, 0.86, 0.08, 1.0);
+          material.metallicFactor = 0.68;
+          material.roughnessFactor = 0.18;
+          material.emissiveFactor = vector.Vector4(0.10, 0.07, 0.012, 1.0);
+          material.vertexColorWeight = 0.0;
+        }
+      }
+    }
+
+    for (final child in node.children) {
+      _retuneBuddhaMaterials(child);
     }
   }
 
@@ -119,401 +327,39 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       Paint()..color = const Color(0xFF4F3200),
     );
 
-    final topLightPaint = Paint()
+    final lightPaint = Paint()
       ..shader = ui.Gradient.radial(
-        Offset(width * 0.5, height * 0.18),
-        width * 0.48,
+        Offset(width * 0.5, height * 0.2),
+        width * 0.46,
         const [
           Color(0xFFFFF0B8),
           Color(0xFFFFD43B),
-          Color(0xC8B97800),
           Color(0x00000000),
         ],
-        const [0.0, 0.24, 0.62, 1.0],
+        const [0.0, 0.35, 1.0],
       );
     canvas.drawRect(
       Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
-      topLightPaint,
+      lightPaint,
     );
-
-    final glowPaint = Paint()..style = PaintingStyle.fill;
-    final glowPositions = [
-      Offset(width * 0.2, height * 0.4),
-      Offset(width * 0.5, height * 0.3),
-      Offset(width * 0.8, height * 0.4),
-      Offset(width * 0.35, height * 0.6),
-      Offset(width * 0.65, height * 0.6),
-    ];
-
-    for (final pos in glowPositions) {
-      glowPaint.shader = ui.Gradient.radial(
-        pos,
-        width * 0.3,
-        [
-          const Color(0xFFFFEE9A).withValues(alpha: 0.90),
-          const Color(0xFFFFC800).withValues(alpha: 0.58),
-          const Color(0xFFC98D00).withValues(alpha: 0.22),
-          const Color(0x00000000),
-        ],
-        [0.0, 0.3, 0.6, 1.0],
-      );
-      canvas.drawRect(
-        Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
-        glowPaint,
-      );
-    }
 
     final picture = recorder.endRecording();
     return picture.toImage(width, height);
   }
 
-  String _buildLegacyBuddhaFallbackHtml() {
-    final glbUrlJson = jsonEncode(AppConfig.legacyBuddhaGlbUrl);
-
-    return '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Fabushi Buddha Fallback</title>
-  <style>
-    html, body {
-      margin: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: linear-gradient(180deg, #1A2864 0%, #111C48 45%, #090E22 100%);
-    }
-    #container {
-      width: 100%;
-      height: 100%;
-    }
-    #status {
-      position: fixed;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: rgba(255, 255, 255, 0.72);
-      font: 500 15px sans-serif;
-      letter-spacing: 0.08em;
-      background: rgba(11, 14, 20, 0.42);
-      z-index: 9;
-      pointer-events: none;
-    }
-  </style>
-</head>
-<body>
-  <div id="container"></div>
-  <div id="status">恭请佛像...</div>
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-      }
-    }
-  </script>
-  <script type="module">
-    const glbUrl = $glbUrlJson;
-
-    const notifyHost = (message) => {
-      const bridge = window.$_legacyFallbackChannelName;
-      if (bridge && typeof bridge.postMessage === 'function') {
-        bridge.postMessage(message);
-      }
-    };
-
-    const container = document.getElementById('container');
-    const status = document.getElementById('status');
-
-    const fail = (reason) => {
-      const errorMessage = reason || 'Legacy Buddha GLB load failed';
-      console.error('Legacy Buddha GLB load failed:', errorMessage);
-      if (status) {
-        status.textContent = '佛像兼容加载失败';
-      }
-      notifyHost('error:' + errorMessage);
-    };
-
-    async function importThreeRuntime() {
-      const candidates = [
-        {
-          root: 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
-          loader: 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js',
-          controls: 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js',
-        },
-        {
-          root: 'https://esm.sh/three@0.160.0',
-          loader: 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js',
-          controls: 'https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js',
-        },
-      ];
-
-      let lastError;
-      for (const candidate of candidates) {
-        try {
-          const THREE = await import(candidate.root);
-          const loaderModule = await import(candidate.loader);
-          const controlsModule = await import(candidate.controls);
-          return {
-            THREE,
-            GLTFLoader: loaderModule.GLTFLoader,
-            OrbitControls: controlsModule.OrbitControls,
-          };
-        } catch (error) {
-          lastError = error;
-          console.warn('Three runtime import failed from', candidate.root, error);
-        }
-      }
-      throw lastError || new Error('Three runtime import failed');
-    }
-
-    window.addEventListener('error', (event) => {
-      const message = event && event.message ? event.message : 'Legacy Buddha runtime error';
-      fail(message);
-    });
-
-    window.addEventListener('unhandledrejection', (event) => {
-      const reason = event && event.reason ? String(event.reason) : 'Legacy Buddha promise rejection';
-      fail(reason);
-    });
-
-    importThreeRuntime().then(({ THREE, GLTFLoader, OrbitControls }) => {
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(window.devicePixelRatio || 1);
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setClearColor(0x000000, 0);
-      if ('outputColorSpace' in renderer && 'SRGBColorSpace' in THREE) {
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-      }
-      container.appendChild(renderer.domElement);
-
-      camera.position.set(0, 120, 290);
-
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.enablePan = false;
-      controls.autoRotate = true;
-      controls.autoRotateSpeed = 1.4;
-      controls.minDistance = 180;
-      controls.maxDistance = 360;
-      controls.target.set(0, 90, 0);
-
-      const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
-      scene.add(ambientLight);
-
-      const keyLight = new THREE.DirectionalLight(0xffd05b, 1.8);
-      keyLight.position.set(80, 200, 120);
-      scene.add(keyLight);
-
-      const fillLight = new THREE.PointLight(0xffe7aa, 1.1, 620);
-      fillLight.position.set(-120, 110, 90);
-      scene.add(fillLight);
-
-      const rimLight = new THREE.PointLight(0x8b5a16, 0.9, 520);
-      rimLight.position.set(0, 40, -180);
-      scene.add(rimLight);
-
-      const haloGeometry = new THREE.RingGeometry(70, 102, 64);
-      const haloMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffd97b,
-        transparent: true,
-        opacity: 0.24,
-        side: THREE.DoubleSide,
-      });
-      const halo = new THREE.Mesh(haloGeometry, haloMaterial);
-      halo.position.set(0, 150, -32);
-      scene.add(halo);
-
-      const loader = new GLTFLoader();
-      loader.load(
-        glbUrl,
-        (gltf) => {
-          const model = gltf.scene;
-          const box = new THREE.Box3().setFromObject(model);
-          const size = new THREE.Vector3();
-          const center = new THREE.Vector3();
-          box.getSize(size);
-          box.getCenter(center);
-          const maxDim = Math.max(size.x || 1, size.y || 1, size.z || 1);
-          const scale = 170 / maxDim;
-
-          model.scale.setScalar(scale);
-          model.position.sub(center.multiplyScalar(scale));
-          model.position.y += 18;
-          model.rotation.y = Math.PI;
-          model.rotation.x = 0.08;
-
-          model.traverse((child) => {
-            if (!child.isMesh) return;
-            child.castShadow = false;
-            child.receiveShadow = false;
-            if (child.material) {
-              child.material.metalness = 0.72;
-              child.material.roughness = 0.24;
-              child.material.color = new THREE.Color(0xffd46a);
-              child.material.needsUpdate = true;
-            }
-          });
-
-          scene.add(model);
-          if (status) {
-            status.style.display = 'none';
-          }
-          notifyHost('ready');
-        },
-        (progress) => {
-          if (!status || !progress.lengthComputable || progress.total <= 0) {
-            return;
-          }
-          const percent = Math.max(0, Math.min(99, Math.floor((progress.loaded / progress.total) * 100)));
-          status.textContent = '恭请佛像...' + percent + '%';
-        },
-        (error) => {
-          const errorMessage = error && error.message
-            ? error.message
-            : 'Legacy Buddha GLB load failed';
-          fail(errorMessage);
-        }
-      );
-
-      function animate() {
-        requestAnimationFrame(animate);
-        controls.update();
-        halo.rotation.z += 0.0018;
-        renderer.render(scene, camera);
-      }
-
-      window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight, false);
-      });
-
-      animate();
-    }).catch((error) => {
-      const message = error && error.message
-        ? error.message
-        : 'Three runtime import failed';
-      fail(message);
-    });
-  </script>
-</body>
-</html>
-''';
-  }
-
-  void _cancelLegacyFallbackTimeout() {
-    _legacyFallbackTimeout?.cancel();
-    _legacyFallbackTimeout = null;
-  }
-
-  String _cleanLoadError(String error) {
-    final compact = error
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .replaceFirst(RegExp(r'^(Exception|Error):\s*'), '')
-        .trim();
-    if (compact.length <= 260) {
-      return compact;
-    }
-    return '${compact.substring(0, 257)}...';
-  }
-
-  String get _loadFailureDetails {
-    final details = <String>[];
-    if (_nativeModelLoadError != null && _nativeModelLoadError!.isNotEmpty) {
-      details.add('原生 .model：${_cleanLoadError(_nativeModelLoadError!)}');
-    }
-    if (_legacyFallbackError != null && _legacyFallbackError!.isNotEmpty) {
-      details.add('兼容 GLB：${_cleanLoadError(_legacyFallbackError!)}');
-    }
-    if (details.isEmpty &&
-        _lastLoadError != null &&
-        _lastLoadError!.isNotEmpty) {
-      details.add(_cleanLoadError(_lastLoadError!));
-    }
-    if (details.isEmpty) {
-      return _canUseLegacyWebViewFallback
-          ? '未收到具体错误，请重试后查看设备日志。'
-          : '需要 Impeller / Flutter GPU 支持，以及有效的 flutter_scene .model 文件。';
-    }
-    return details.join('\n');
-  }
-
-  void _startLegacyFallbackTimeout() {
-    _cancelLegacyFallbackTimeout();
-    _legacyFallbackTimeout = Timer(const Duration(seconds: 120), () {
-      if (!mounted || _legacyWebViewReady || _loadFailed) {
-        return;
-      }
-      _markLegacyFallbackFailed('legacy GLB fallback timeout');
-    });
-  }
-
-  void _markLegacyFallbackReady() {
-    _cancelLegacyFallbackTimeout();
-    if (!mounted) return;
-    setState(() {
-      _useLegacyWebViewFallback = true;
-      _legacyWebViewReady = true;
-      _legacyFallbackError = null;
-      _isLoading = false;
-      _loadFailed = false;
-      _renderFailed = false;
-    });
-  }
-
-  void _markLegacyFallbackFailed([String? details]) {
-    _cancelLegacyFallbackTimeout();
-    _ticker.stop();
-    if (!mounted) return;
-    setState(() {
-      _legacyWebViewReady = false;
-      _useLegacyWebViewFallback = false;
-      _isLoading = false;
-      _loadFailed = true;
-      _renderFailed = true;
-      if (details != null && details.isNotEmpty) {
-        _legacyFallbackError = details;
-        _lastLoadError = details;
-      }
-    });
-  }
-
-  void _handleLegacyFallbackMessage(String message) {
-    if (message == 'ready' || message.startsWith('ready:')) {
-      debugPrint('✅ [BuddhaModel] 兼容 GLB 已就绪: $message');
-      _markLegacyFallbackReady();
-      return;
-    }
-    if (message.startsWith('error:')) {
-      final details = message.substring('error:'.length).trim();
-      debugPrint('❌ [BuddhaModel] 兼容 WebView GLB 加载失败: $details');
-      _markLegacyFallbackFailed(
-        details.isEmpty ? 'legacy GLB load failed' : details,
-      );
-      return;
-    }
-    debugPrint('ℹ️ [BuddhaModel] 收到兼容 WebView 消息: $message');
-  }
-
   Future<void> _activateLegacyWebViewFallback() async {
     if (!_canUseLegacyWebViewFallback || !mounted) {
+      _markLoadFailed('当前平台不支持 Android Three 兼容链路');
       return;
     }
 
-    _ticker.stop();
-    _legacyFallbackError = null;
+    _cancelLegacyFallbackTimeout();
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0x00000000))
       ..setOnConsoleMessage((message) {
         debugPrint(
-          '🧭 [BuddhaModel][WebView] ${message.level.name}: ${message.message}',
+          '🧭 [BuddhaModel][AndroidThree] ${message.level.name}: ${message.message}',
         );
       })
       ..addJavaScriptChannel(
@@ -542,334 +388,187 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
             });
           },
           onWebResourceError: (error) {
-            final details =
-                'WebView resource error ${error.errorCode}: '
+            final message =
+                'Android Three 资源异常 ${error.errorCode}: '
                 '${error.description}'
                 '${error.url == null ? '' : ' (${error.url})'}';
-            debugPrint('⚠️ [BuddhaModel] 兼容 WebView 资源加载异常: $details');
-            _legacyFallbackError = details;
-            if (error.isForMainFrame == true) {
-              _markLegacyFallbackFailed(details);
-            }
+            _handleAndroidThreeFailure(message);
           },
         ),
       );
 
     _legacyWebViewController = controller;
     _startLegacyFallbackTimeout();
+
     try {
-      if (_shouldPreferBundledAndroidFallback &&
-          controller.platform is AndroidWebViewController) {
-        final androidController =
-            controller.platform as AndroidWebViewController;
+      if (controller.platform is AndroidWebViewController) {
+        final androidController = controller.platform as AndroidWebViewController;
         await androidController.setAllowFileAccess(true);
         await androidController.setAllowContentAccess(true);
       }
 
-      if (_shouldPreferBundledAndroidFallback) {
-        debugPrint(
-          '↪️ [BuddhaModel] Android 使用内置 WebView GLB 兼容页: '
-          '${AppConfig.bundledBuddhaFallbackHtmlAssetPath}',
-        );
-        await controller.loadFlutterAsset(
-          AppConfig.bundledBuddhaFallbackHtmlAssetPath,
-        );
-      } else {
-        await controller.loadHtmlString(
-          _buildLegacyBuddhaFallbackHtml(),
-          baseUrl: AppConfig.publicWebUrl,
-        );
-      }
-    } catch (e) {
-      debugPrint('❌ [BuddhaModel] 兼容 WebView 初始化失败: $e');
-      _markLegacyFallbackFailed('legacy GLB init failed: $e');
+      await controller.loadFlutterAsset(
+        AppConfig.bundledBuddhaFallbackHtmlAssetPath,
+      );
+    } catch (error) {
+      _handleAndroidThreeFailure('Android Three 初始化失败: $error');
     }
   }
 
-  void _initScene() {
-    scene = Scene();
-    camera = PerspectiveCamera(
-      fovRadiansY: 50 * math.pi / 180,
-      fovNear: 0.1,
-      fovFar: 2000.0,
-    );
-
-    final random = math.Random();
-    for (int i = 0; i < 300; i++) {
-      _stars.add(
-        vector.Vector3(
-          (random.nextDouble() - 0.5) * 2000,
-          (random.nextDouble() - 0.5) * 2000,
-          (random.nextDouble() - 0.5) * 2000,
-        ),
+  void _startLegacyFallbackTimeout() {
+    _cancelLegacyFallbackTimeout();
+    _legacyFallbackTimeout = Timer(_androidThreeTimeout, () {
+      if (!mounted || _legacyWebViewReady || _loadFailed) {
+        return;
+      }
+      _handleAndroidThreeFailure(
+        'Android Three 超时: ${_androidThreeTimeout.inSeconds} 秒内未收到就绪信号',
       );
+    });
+  }
+
+  void _cancelLegacyFallbackTimeout() {
+    _legacyFallbackTimeout?.cancel();
+    _legacyFallbackTimeout = null;
+  }
+
+  void _handleLegacyFallbackMessage(String message) {
+    if (message == 'ready' || message.startsWith('ready:')) {
+      _markLegacyFallbackReady();
+      return;
+    }
+    if (message.startsWith('error:')) {
+      final details = message.substring('error:'.length).trim();
+      _handleAndroidThreeFailure(
+        details.isEmpty ? 'Android Three 返回空错误' : details,
+      );
+      return;
+    }
+    debugPrint('ℹ️ [BuddhaModel] 收到 Android Three 消息: $message');
+  }
+
+  void _markLegacyFallbackReady() {
+    _cancelLegacyFallbackTimeout();
+    if (!mounted) return;
+    setState(() {
+      _legacyWebViewReady = true;
+      _useLegacyWebViewFallback = true;
+      _isLoading = false;
+      _loadFailed = false;
+      _renderFailed = false;
+      _loadingProgress = 1.0;
+    });
+  }
+
+  void _handleAndroidThreeFailure(String details) {
+    _cancelLegacyFallbackTimeout();
+    _androidThreeError = details;
+    _lastLoadError = details;
+    debugPrint('❌ [BuddhaModel] Android Three 失败: $details');
+
+    if (_androidThreeFallbackEnabled) {
+      _androidThreeFallbackEnabled = false;
+      unawaited(_startFlutterSceneFallback(details));
+      return;
     }
 
-    for (int i = 0; i < _particleCount; i++) {
-      _smokeParticles.add(vector.Vector3(0, -1000, 0));
-      _particleSpeeds.add(0.5 + random.nextDouble() * 0.5);
+    _markLoadFailed(details);
+  }
+
+  void _markFlutterSceneFailed(String details) {
+    _flutterSceneError = details;
+    _lastLoadError = details;
+    debugPrint('❌ [BuddhaModel] flutter_scene 失败: $details');
+    _markLoadFailed(details);
+  }
+
+  void _markLoadFailed(String details) {
+    _cancelLegacyFallbackTimeout();
+    if (_ticker.isTicking) {
+      _ticker.stop();
     }
-
-    _updateCamera();
-
-    if (!kIsWeb) {
-      Scene.initializeStaticResources()
-          .then((_) async {
-            try {
-              final goldEnvImage = await _createGoldenEnvironmentImage();
-              final envMap = await EnvironmentMap.fromUIImages(
-                radianceImage: goldEnvImage,
-                irradianceImage: goldEnvImage,
-              );
-              scene.environment.environmentMap = envMap;
-              scene.environment.intensity = 2.0;
-              scene.environment.exposure = 1.12;
-            } catch (e) {
-              debugPrint('⚠️ 自定义环境贴图生成失败，调整默认环境参数: $e');
-              scene.environment.intensity = 1.75;
-              scene.environment.exposure = 1.05;
-            }
-            _loadModel();
-          })
-          .catchError((e) {
-            debugPrint('⚠️ 渲染资源初始化失败 (需开启 Impeller 支持): $e');
-            _nativeModelLoadError = 'flutter_scene 初始化失败: $e';
-            _lastLoadError = _nativeModelLoadError;
-            if (_canUseLegacyWebViewFallback) {
-              _activateLegacyWebViewFallback();
-              return;
-            }
-            if (mounted) {
-              setState(() => _loadFailed = true);
-            }
-          });
-    } else {
-      debugPrint('⚠️ Web环境暂不支持 flutter_scene。');
+    if (!mounted) return;
+    setState(() {
       _loadFailed = true;
+      _renderFailed = true;
+      _isLoading = false;
+      _legacyWebViewReady = false;
+      _useLegacyWebViewFallback = false;
+    });
+  }
+
+  String _cleanLoadError(String error) {
+    final compact = error
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceFirst(RegExp(r'^(Exception|Error):\s*'), '')
+        .trim();
+    if (compact.length <= 260) {
+      return compact;
     }
+    return '${compact.substring(0, 257)}...';
+  }
+
+  String get _loadFailureDetails {
+    final details = <String>[];
+    if (_androidThreeError != null && _androidThreeError!.isNotEmpty) {
+      details.add('Android Three：${_cleanLoadError(_androidThreeError!)}');
+    }
+    if (_flutterSceneError != null && _flutterSceneError!.isNotEmpty) {
+      details.add('flutter_scene：${_cleanLoadError(_flutterSceneError!)}');
+    }
+    if (details.isEmpty && _lastLoadError != null && _lastLoadError!.isNotEmpty) {
+      details.add(_cleanLoadError(_lastLoadError!));
+    }
+    if (details.isEmpty) {
+      return '未收到具体错误，请重试后查看设备日志。';
+    }
+    return details.join('\n');
   }
 
   void _onTick(Duration elapsed) {
-    if (!mounted || !widget.isVisible || _useLegacyWebViewFallback) return;
+    if (!mounted || !widget.isVisible || _useLegacyWebViewFallback) {
+      return;
+    }
+    final camera = _camera;
+    if (camera == null) {
+      return;
+    }
     final now = elapsed.inMicroseconds / 1000000.0;
     final dt = _lastTime == 0.0 ? 0.0 : (now - _lastTime).clamp(0.0, 1 / 30);
     _lastTime = now;
 
-    bool needsRepaint = false;
-
-    if (!_isUserDragging) {
-      if (_isAutoRotating || _isReturningToStart) {
-        _rotationY -= 0.5 * dt;
-
-        if (_isReturningToStart) {
-          double normalizedRotation = _rotationY % (2 * math.pi);
-          if (normalizedRotation < 0) normalizedRotation += 2 * math.pi;
-
-          if (normalizedRotation < 0.05 ||
-              normalizedRotation > (2 * math.pi - 0.05)) {
-            _rotationY = 0.0;
-            _isReturningToStart = false;
-          }
+    if (!_isUserDragging && (_isAutoRotating || _isReturningToStart)) {
+      _rotationY -= 0.5 * dt;
+      if (_isReturningToStart) {
+        double normalizedRotation = _rotationY % (2 * math.pi);
+        if (normalizedRotation < 0) normalizedRotation += 2 * math.pi;
+        if (normalizedRotation < 0.05 ||
+            normalizedRotation > (2 * math.pi - 0.05)) {
+          _rotationY = 0.0;
+          _isReturningToStart = false;
         }
-        _updateCamera();
-        needsRepaint = true;
       }
-    }
-
-    if (widget.isBurning) {
-      _updateSmoke(dt);
-      needsRepaint = true;
-    }
-
-    if (needsRepaint) {
+      _updateCamera();
       setState(() {});
     }
   }
 
   void _updateCamera() {
+    final camera = _camera;
+    if (camera == null) {
+      return;
+    }
     final x = _cameraDistance * math.sin(_rotationY);
     final z = _cameraDistance * math.cos(_rotationY);
     camera.position = vector.Vector3(x, 0.0, z);
     camera.target = vector.Vector3(0, 0, 0);
   }
 
-  void _updateSmoke(double dt) {
-    final remaining = (1.0 - _currentIncenseProgress)
-        .clamp(0.01, 1.0)
-        .toDouble();
-    final currentHeight = _incenseFullHeight * remaining;
-    final time = DateTime.now().millisecondsSinceEpoch * 0.001;
-    final windX = math.sin(time * 0.48) * 0.72;
-    final windZ = math.cos(time * 0.34) * 0.42;
-
-    for (int i = 0; i < _particleCount; i++) {
-      final p = _smokeParticles[i];
-      final sourceOffset =
-          _incenseStickOffsets[i % _incenseStickOffsets.length];
-      final tipPos = vector.Vector3(
-        _incenseBaseX + sourceOffset,
-        _incenseBaseY + currentHeight,
-        _incenseBaseZ + (i % 3 - 1) * 0.8,
-      );
-
-      if (p.y > tipPos.y + 86.0 || p.y < -500) {
-        p.x = tipPos.x + (_random.nextDouble() - 0.5) * 1.6;
-        p.y = tipPos.y + (_random.nextDouble() * 2.0);
-        p.z = tipPos.z + (_random.nextDouble() - 0.5) * 1.4;
-      } else {
-        final speed = _particleSpeeds[i];
-        p.y += speed * 34.0 * dt;
-        final heightFactor = ((p.y - tipPos.y) / 86.0)
-            .clamp(0.0, 1.0)
-            .toDouble();
-        p.x +=
-            (windX * heightFactor * 1.35 +
-                math.sin(time * 1.8 + i * 0.37 + p.y * 0.12) * 0.85) *
-            dt;
-        p.z +=
-            (windZ * heightFactor +
-                math.cos(time * 1.25 + i * 0.31 + p.y * 0.1) * 0.55) *
-            dt;
-      }
-    }
-  }
-
-  void _retuneBuddhaMaterials(Node node) {
-    final mesh = node.mesh;
-    if (mesh != null) {
-      for (final MeshPrimitive primitive in mesh.primitives) {
-        final material = primitive.material;
-        if (material is PhysicallyBasedMaterial) {
-          material.baseColorFactor = vector.Vector4(1.0, 0.86, 0.08, 1.0);
-          material.metallicFactor = 0.68;
-          material.roughnessFactor = 0.18;
-          material.emissiveFactor = vector.Vector4(0.10, 0.07, 0.012, 1.0);
-          material.vertexColorWeight = 0.0;
-        }
-      }
-    }
-
-    for (final child in node.children) {
-      _retuneBuddhaMaterials(child);
-    }
-  }
-
-  Future<void> _loadModel() async {
-    _cancelLegacyFallbackTimeout();
-    _lastLoadError = null;
-    _nativeModelLoadError = null;
-    _legacyFallbackError = null;
-    _legacyWebViewReady = false;
-    _legacyWebViewController = null;
-
-    if (widget.isVisible) {
-      _lastTime = 0.0;
-      if (!_ticker.isTicking) {
-        _ticker.start();
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-        _loadFailed = false;
-        _renderFailed = false;
-        _useLegacyWebViewFallback = false;
-        _loadingProgress = 0.0;
-      });
-    }
-
-    if (_shouldPreferBundledAndroidFallback && _canUseLegacyWebViewFallback) {
-      debugPrint(
-        '↪️ [BuddhaModel] Android 跳过远端大型 .model 原生解包，'
-        '直接使用内置 Three.js + GLB 兼容渲染，避免下载/解析内存峰值。',
-      );
-      await _activateLegacyWebViewFallback();
+  void _handleRenderFailure(Object error) {
+    if (_renderFailed || !mounted) {
       return;
     }
-
-    const maxRetries = 2;
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      Uint8List? modelData;
-      try {
-        modelData = await AssetLoaderService.loadBuddhaModel(
-          onProgress: (progress) {
-            if (mounted) {
-              setState(() => _loadingProgress = progress);
-            }
-          },
-        );
-        if (!mounted) return;
-
-        await _buildBuddhaNode(modelData);
-        AssetLoaderService.releaseBuddhaModelMemoryCache();
-
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _renderFailed = false;
-          });
-        }
-        return;
-      } catch (e) {
-        _nativeModelLoadError = '$e';
-        _lastLoadError = '$e';
-        debugPrint('❌ 模型加载失败 (尝试 $attempt): $e');
-
-        if (modelData != null) {
-          AssetLoaderService.releaseBuddhaModelMemoryCache();
-          if (_canUseLegacyWebViewFallback) {
-            debugPrint(
-              '↪️ [BuddhaModel] 远端 .model 已下载但原生解包/渲染失败，'
-              '切换远端 GLB 兼容渲染: $_lastLoadError',
-            );
-            await _activateLegacyWebViewFallback();
-            return;
-          }
-          if (mounted) {
-            setState(() {
-              _isLoading = false;
-              _loadFailed = true;
-            });
-          }
-          return;
-        }
-
-        if (attempt < maxRetries) {
-          await Future.delayed(Duration(seconds: 1 << attempt));
-          continue;
-        }
-
-        if (_canUseLegacyWebViewFallback) {
-          debugPrint(
-            '↪️ [BuddhaModel] .model 链路失败，切换 legacy GLB 兼容渲染: $_lastLoadError',
-          );
-          await _activateLegacyWebViewFallback();
-          return;
-        }
-
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _loadFailed = true;
-          });
-        }
-      }
-    }
-  }
-
-  Future<void> _buildBuddhaNode(Uint8List modelData) async {
-    final bounds = ModelAutoFit.computeBoundsFromModelBytes(modelData);
-    final node = await Node.fromFlatbuffer(ByteData.sublistView(modelData));
-    _retuneBuddhaMaterials(node);
-
-    final originalTransform = node.localTransform.clone();
-    node.localTransform = ModelAutoFit.computeFitTransform(
-      bounds,
-      originalTransform: originalTransform,
-    );
-
-    scene.add(node);
+    _markFlutterSceneFailed('flutter_scene 渲染失败: $error');
   }
 
   @override
@@ -886,87 +585,71 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     }
   }
 
-  void updateIncenseProgress(double progress) {
-    _currentIncenseProgress = progress;
-    if (mounted) setState(() {});
-  }
-
   void _updateVisibilityState(bool isVisible) {
     if (_useLegacyWebViewFallback) {
       return;
     }
     if (isVisible) {
       _lastTime = 0.0;
-      if (!_ticker.isTicking && !_renderFailed) _ticker.start();
-    } else {
-      if (_ticker.isTicking) _ticker.stop();
+      if (!_ticker.isTicking && !_renderFailed) {
+        _ticker.start();
+      }
+    } else if (_ticker.isTicking) {
+      _ticker.stop();
     }
   }
 
-  void _handleRenderFailure(Object error) {
-    if (_renderFailed || !mounted) return;
-    debugPrint('❌ [BuddhaModel] 场景渲染失败: $error');
-    _nativeModelLoadError = 'flutter_scene 渲染失败: $error';
-
-    if (!_useLegacyWebViewFallback && _canUseLegacyWebViewFallback) {
-      _lastLoadError = '$error';
-      _activateLegacyWebViewFallback();
-      return;
+  void updateIncenseProgress(double progress) {
+    _currentIncenseProgress = progress;
+    if (mounted) {
+      setState(() {});
     }
-
-    _ticker.stop();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {
-        _renderFailed = true;
-        _loadFailed = true;
-      });
-    });
   }
 
   void setAutoRotate(bool enabled) {
     _isAutoRotating = enabled;
-    if (!enabled) _isReturningToStart = true;
+    if (!enabled) {
+      _isReturningToStart = true;
+    }
   }
 
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  void dispose() {
-    _cancelLegacyFallbackTimeout();
-    _ticker.dispose();
-    super.dispose();
+  String get _compatibilityBanner {
+    if (_activeRendererPath == _BuddhaRendererPath.flutterSceneFallback) {
+      return 'Android Three 失败，已切换 flutter_scene 备用展示';
+    }
+    if (_activeRendererPath == _BuddhaRendererPath.androidThreePrimary) {
+      return '安卓佛像使用 Three 兼容渲染';
+    }
+    return '佛像已切换为兼容展示';
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final loadingLabel = _useLegacyWebViewFallback && !_legacyWebViewReady
-        ? '切换兼容佛像...'
-        : '恭请佛像... ${(_loadingProgress * 100).toInt()}%';
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
+        final scene = _scene;
+        final camera = _camera;
 
         return Listener(
-          onPointerDown: (e) {
+          onPointerDown: (event) {
             if (_useLegacyWebViewFallback) return;
             _isUserDragging = true;
-            _lastPointerX = e.position.dx;
+            _lastPointerX = event.position.dx;
           },
-          onPointerMove: (e) {
+          onPointerMove: (event) {
             if (_useLegacyWebViewFallback) return;
             if (_isUserDragging && _lastPointerX != null) {
-              _rotationY += (e.position.dx - _lastPointerX!) * 0.01;
+              _rotationY += (event.position.dx - _lastPointerX!) * 0.01;
+              _lastPointerX = event.position.dx;
               _updateCamera();
-              _lastPointerX = e.position.dx;
               setState(() {});
             }
           },
-          onPointerUp: (e) => _isUserDragging = false,
-          onPointerCancel: (e) => _isUserDragging = false,
+          onPointerUp: (_) => _isUserDragging = false,
+          onPointerCancel: (_) => _isUserDragging = false,
           child: Stack(
             children: [
               const DecoratedBox(
@@ -983,109 +666,81 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                 ),
                 child: SizedBox.expand(),
               ),
-
               if (!_isLoading && !_loadFailed && _useLegacyWebViewFallback)
                 Positioned.fill(
-                  child: RepaintBoundary(
-                    child: _legacyWebViewController == null
-                        ? const SizedBox.shrink()
-                        : WebViewWidget(controller: _legacyWebViewController!),
-                  ),
+                  child: _legacyWebViewController == null
+                      ? const SizedBox.shrink()
+                      : WebViewWidget(controller: _legacyWebViewController!),
                 )
-              else if (!_isLoading && !_loadFailed)
-                ClipRect(
-                  child: RepaintBoundary(
+              else if (!_isLoading && !_loadFailed && scene != null && camera != null)
+                Positioned.fill(
+                  child: CustomPaint(
+                    size: size,
+                    painter: _ScenePainter(
+                      scene: scene,
+                      camera: camera,
+                      onRenderError: _handleRenderFailure,
+                    ),
+                  ),
+                ),
+              if (!_isLoading && !_loadFailed)
+                Positioned.fill(
+                  child: IgnorePointer(
                     child: CustomPaint(
                       size: size,
-                      painter: ScenePainter(
-                        scene: scene,
-                        camera: camera,
-                        isBurning: widget.isBurning,
+                      painter: _IncensePainter(
                         incenseProgress: _currentIncenseProgress,
-                        smokeParticles: _smokeParticles,
-                        stars: _stars,
-                        showBook: widget.showBook,
-                        onRenderError: _handleRenderFailure,
+                        isBurning: widget.isBurning,
                       ),
                     ),
                   ),
                 ),
-
-              if (!_isLoading && !_loadFailed)
-                IgnorePointer(
-                  child: CustomPaint(
-                    size: size,
-                    painter: _IncensePainter(
-                      isBurning: widget.isBurning,
-                      incenseProgress: _currentIncenseProgress,
-                    ),
-                  ),
-                ),
-
-              if (!_isLoading && !_loadFailed && _useLegacyWebViewFallback)
+              if (!_isLoading &&
+                  !_loadFailed &&
+                  _activeRendererPath != _BuddhaRendererPath.flutterScenePrimary)
                 Positioned(
                   top: 18,
-                  left: 24,
-                  right: 24,
+                  left: 20,
+                  right: 20,
                   child: IgnorePointer(
                     child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 320),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 360),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.48),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: const Color(0xFFD4AF37).withValues(alpha: 0.36),
                           ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.48),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: const Color(
-                                0xFFD4AF37,
-                              ).withValues(alpha: 0.36),
-                            ),
-                          ),
-                          child: const Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '佛像已切换为兼容展示',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Color(0xFFFFD700),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                '当前仍可继续禅修',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
+                        ),
+                        child: Text(
+                          _compatibilityBanner,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFFFFD700),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-
               if (widget.showBook && widget.bookTitle != null && !_isLoading)
                 Positioned(
                   left: (size.width - 184) / 2,
-                  top: (size.height * 0.54)
-                      .clamp(0.0, size.height - 270)
+                  top: (size.height * 0.58)
+                      .clamp(0.0, size.height - 180)
                       .toDouble(),
                   child: _SutraBookButton(
                     title: widget.bookTitle!,
                     onTap: widget.onBookTap,
                   ),
                 ),
-
               if (_isLoading)
                 Positioned.fill(
                   child: Container(
@@ -1099,19 +754,29 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            loadingLabel,
+                            _loadingLabel,
                             style: const TextStyle(
                               color: Color(0xFFFFD700),
                               fontSize: 14,
-                              letterSpacing: 1.2,
+                              letterSpacing: 1.0,
                             ),
                           ),
+                          if (_loadingProgress > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                '${(_loadingProgress * 100).toInt()}%',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
                   ),
                 ),
-
               if (_loadFailed && !_isLoading)
                 Positioned.fill(
                   child: Container(
@@ -1137,7 +802,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                           ),
                           const SizedBox(height: 8),
                           ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 320),
+                            constraints: const BoxConstraints(maxWidth: 340),
                             child: Text(
                               _loadFailureDetails,
                               textAlign: TextAlign.center,
@@ -1154,7 +819,13 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                               foregroundColor: const Color(0xFFFFD700),
                               side: const BorderSide(color: Color(0xFFFFD700)),
                             ),
-                            onPressed: _loadModel,
+                            onPressed: () {
+                              if (_shouldUseAndroidThreePrimary) {
+                                unawaited(_startAndroidThreePrimary());
+                              } else {
+                                unawaited(_startFlutterScenePrimary());
+                              }
+                            },
                             child: const Text('静心重试'),
                           ),
                         ],
@@ -1168,208 +839,26 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       },
     );
   }
-}
-
-class _SutraBookButton extends StatelessWidget {
-  final String title;
-  final VoidCallback? onTap;
-
-  const _SutraBookButton({required this.title, this.onTap});
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Semantics(
-        button: true,
-        label: title,
-        child: SizedBox(
-          width: 184,
-          height: 128,
-          child: CustomPaint(painter: _SutraBookPainter(title)),
-        ),
-      ),
-    );
+  bool get wantKeepAlive => true;
+
+  @override
+  void dispose() {
+    _cancelLegacyFallbackTimeout();
+    _ticker.dispose();
+    super.dispose();
   }
 }
 
-class _SutraBookPainter extends CustomPainter {
-  final String title;
-
-  _SutraBookPainter(this.title);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final shadowPaint = Paint()
-      ..color = const Color(0x99000000)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(size.width * 0.5, size.height * 0.82),
-        width: size.width * 0.78,
-        height: 20,
-      ),
-      shadowPaint,
-    );
-
-    final pagePaint = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(size.width * 0.26, size.height * 0.2),
-        Offset(size.width * 0.74, size.height * 0.72),
-        const [Color(0xFFFFF3C6), Color(0xFFE4C26F), Color(0xFF7A4A16)],
-        const [0.0, 0.54, 1.0],
-      );
-    final coverPaint = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(size.width * 0.2, size.height * 0.12),
-        Offset(size.width * 0.82, size.height * 0.7),
-        const [Color(0xFF9E1C16), Color(0xFF5E0707), Color(0xFF2A0202)],
-        const [0.0, 0.5, 1.0],
-      );
-    final rightCoverPaint = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(size.width * 0.46, size.height * 0.1),
-        Offset(size.width * 0.9, size.height * 0.66),
-        const [Color(0xFFC0261E), Color(0xFF6B0808), Color(0xFF310303)],
-        const [0.0, 0.5, 1.0],
-      );
-
-    final leftPages = Path()
-      ..moveTo(size.width * 0.15, size.height * 0.32)
-      ..lineTo(size.width * 0.5, size.height * 0.18)
-      ..lineTo(size.width * 0.5, size.height * 0.78)
-      ..lineTo(size.width * 0.14, size.height * 0.68)
-      ..close();
-    final rightPages = Path()
-      ..moveTo(size.width * 0.5, size.height * 0.18)
-      ..lineTo(size.width * 0.88, size.height * 0.32)
-      ..lineTo(size.width * 0.86, size.height * 0.68)
-      ..lineTo(size.width * 0.5, size.height * 0.78)
-      ..close();
-
-    canvas.drawPath(leftPages, pagePaint);
-    canvas.drawPath(rightPages, pagePaint);
-
-    final leftCover = Path()
-      ..moveTo(size.width * 0.09, size.height * 0.24)
-      ..lineTo(size.width * 0.49, size.height * 0.09)
-      ..lineTo(size.width * 0.5, size.height * 0.72)
-      ..lineTo(size.width * 0.1, size.height * 0.59)
-      ..close();
-    final rightCover = Path()
-      ..moveTo(size.width * 0.51, size.height * 0.09)
-      ..lineTo(size.width * 0.93, size.height * 0.25)
-      ..lineTo(size.width * 0.9, size.height * 0.6)
-      ..lineTo(size.width * 0.5, size.height * 0.72)
-      ..close();
-    canvas.drawPath(leftCover, coverPaint);
-    canvas.drawPath(rightCover, rightCoverPaint);
-
-    final goldLine = Paint()
-      ..color = const Color(0xFFD4AF37)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-    canvas.drawPath(leftCover, goldLine);
-    canvas.drawPath(rightCover, goldLine);
-    canvas.drawLine(
-      Offset(size.width * 0.5, size.height * 0.1),
-      Offset(size.width * 0.5, size.height * 0.74),
-      Paint()
-        ..color = const Color(0xAA3A1204)
-        ..strokeWidth = 5
-        ..strokeCap = StrokeCap.round,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.5, size.height * 0.12),
-      Offset(size.width * 0.5, size.height * 0.71),
-      Paint()
-        ..color = const Color(0xFFD4AF37)
-        ..strokeWidth = 1.2
-        ..strokeCap = StrokeCap.round,
-    );
-
-    final pageLine = Paint()
-      ..color = const Color(0x887A4A16)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-    for (var i = 0; i < 5; i++) {
-      final y = size.height * (0.34 + i * 0.065);
-      canvas.drawLine(
-        Offset(size.width * 0.2, y + i * 1.5),
-        Offset(size.width * 0.43, y - 8),
-        pageLine,
-      );
-      canvas.drawLine(
-        Offset(size.width * 0.57, y - 8),
-        Offset(size.width * 0.82, y + i * 1.4),
-        pageLine,
-      );
-    }
-
-    final titlePainter = TextPainter(
-      text: TextSpan(
-        text: title,
-        style: const TextStyle(
-          color: Color(0xFFFFE6A3),
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.0,
-          shadows: [Shadow(color: Color(0xFF3A1204), blurRadius: 4)],
-          height: 1.2,
-        ),
-      ),
-      maxLines: 2,
-      textAlign: TextAlign.center,
-      textDirection: TextDirection.ltr,
-      ellipsis: '…',
-    );
-    titlePainter.layout(maxWidth: size.width * 0.82);
-    final offsetY = titlePainter.height > 20
-        ? size.height * 0.31
-        : size.height * 0.37;
-    titlePainter.paint(
-      canvas,
-      Offset((size.width - titlePainter.width) / 2, offsetY),
-    );
-
-    final hintPainter = TextPainter(
-      text: const TextSpan(
-        text: '经卷',
-        style: TextStyle(color: Color(0xCCFFF4C2), fontSize: 10),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    hintPainter.layout();
-    hintPainter.paint(
-      canvas,
-      Offset((size.width - hintPainter.width) / 2, size.height * 0.55),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _SutraBookPainter oldDelegate) {
-    return title != oldDelegate.title;
-  }
-}
-
-class ScenePainter extends CustomPainter {
+class _ScenePainter extends CustomPainter {
   final Scene scene;
   final PerspectiveCamera camera;
-  final bool isBurning;
-  final double incenseProgress;
-  final List<vector.Vector3> smokeParticles;
-  final List<vector.Vector3> stars;
-  final bool showBook;
   final ValueChanged<Object>? onRenderError;
 
-  ScenePainter({
+  const _ScenePainter({
     required this.scene,
     required this.camera,
-    required this.isBurning,
-    required this.incenseProgress,
-    required this.smokeParticles,
-    required this.stars,
-    required this.showBook,
     this.onRenderError,
   });
 
@@ -1383,180 +872,60 @@ class ScenePainter extends CustomPainter {
       scene.render(camera, canvas, viewport: Offset.zero & size);
     } catch (error) {
       onRenderError?.call(error);
-      return;
-    }
-
-    final transform = camera.getViewTransform(size);
-    Offset? project(vector.Vector3 p) {
-      final v4 = vector.Vector4(p.x, p.y, p.z, 1.0);
-      transform.transform(v4);
-      if (v4.w <= 0.1) return null;
-      return Offset(
-        (v4.x / v4.w + 1.0) * size.width / 2.0,
-        (-v4.y / v4.w + 1.0) * size.height / 2.0,
-      );
-    }
-
-    final starPaint = Paint()
-      ..color = Colors.white54
-      ..strokeWidth = 1.5;
-    final starPoints = <Offset>[];
-    for (final s in stars) {
-      final p = project(s);
-      if (p != null) starPoints.add(p);
-    }
-    canvas.drawPoints(ui.PointMode.points, starPoints, starPaint);
-    _drawOfferingSets(canvas, size);
-  }
-
-  void _drawOfferingSets(Canvas canvas, Size size) {
-    final y = size.height * 0.79;
-    final spread = (size.width * 0.25).clamp(96.0, 156.0).toDouble();
-    _drawOfferingSet(canvas, Offset(size.width / 2 - spread, y), mirror: false);
-    _drawOfferingSet(canvas, Offset(size.width / 2 + spread, y), mirror: true);
-  }
-
-  void _drawOfferingSet(Canvas canvas, Offset center, {required bool mirror}) {
-    final scale = mirror ? -1.0 : 1.0;
-    canvas.drawOval(
-      Rect.fromCenter(center: center.translate(0, 30), width: 106, height: 18),
-      Paint()
-        ..color = const Color(0x55000000)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
-    );
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: center.translate(0, 22), width: 94, height: 20),
-        const Radius.circular(10),
-      ),
-      Paint()
-        ..shader = ui.Gradient.linear(
-          center.translate(-44, 14),
-          center.translate(44, 36),
-          const [Color(0xFFFFD36A), Color(0xFF7A4314), Color(0xFFD4AF37)],
-        ),
-    );
-    canvas.drawOval(
-      Rect.fromCenter(center: center.translate(0, 12), width: 82, height: 18),
-      Paint()..color = const Color(0xAA2B1306),
-    );
-
-    _drawOfferingLamp(canvas, center.translate(scale * 34, -18));
-    _drawOfferingFlowers(canvas, center.translate(scale * -18, -18));
-    _drawOfferingFruit(canvas, center.translate(scale * 7, 0));
-  }
-
-  void _drawOfferingLamp(Canvas canvas, Offset center) {
-    for (var i = 2; i >= 0; i--) {
-      canvas.drawCircle(
-        center.translate(0, -12),
-        15.0 + i * 9,
-        Paint()
-          ..color = Color.lerp(
-            const Color(0x33FFF2A8),
-            const Color(0x00FF8A24),
-            i / 2,
-          )!
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8 + i * 4),
-      );
-    }
-    final flame = Path()
-      ..moveTo(center.dx, center.dy - 30)
-      ..cubicTo(
-        center.dx + 11,
-        center.dy - 19,
-        center.dx + 6,
-        center.dy - 7,
-        center.dx,
-        center.dy - 4,
-      )
-      ..cubicTo(
-        center.dx - 8,
-        center.dy - 10,
-        center.dx - 8,
-        center.dy - 21,
-        center.dx,
-        center.dy - 30,
-      )
-      ..close();
-    canvas.drawPath(
-      flame,
-      Paint()
-        ..shader = ui.Gradient.radial(center.translate(0, -16), 20, const [
-          Color(0xFFFFF5B7),
-          Color(0xFFFF8A24),
-          Color(0x00FF8A24),
-        ]),
-    );
-    canvas.drawOval(
-      Rect.fromCenter(center: center.translate(0, 2), width: 30, height: 12),
-      Paint()..color = const Color(0xFFD4AF37),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: center.translate(0, 11), width: 22, height: 20),
-        const Radius.circular(6),
-      ),
-      Paint()..color = const Color(0xFF74420F),
-    );
-  }
-
-  void _drawOfferingFlowers(Canvas canvas, Offset center) {
-    final stemPaint = Paint()
-      ..color = const Color(0xFF426A2B)
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    for (final dx in const [-10.0, 0.0, 10.0]) {
-      canvas.drawLine(
-        center.translate(dx * 0.25, 14),
-        center.translate(dx, -18),
-        stemPaint,
-      );
-      for (var i = 0; i < 6; i++) {
-        canvas.save();
-        canvas.translate(center.dx + dx, center.dy - 20);
-        canvas.rotate(i * math.pi / 3);
-        canvas.drawOval(
-          const Rect.fromLTWH(-4, -11, 8, 13),
-          Paint()..color = const Color(0xFFEBA7C8),
-        );
-        canvas.restore();
-      }
-      canvas.drawCircle(
-        center.translate(dx, -20),
-        3.5,
-        Paint()..color = const Color(0xFFFFE16A),
-      );
-    }
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: center.translate(0, 16), width: 26, height: 18),
-        const Radius.circular(6),
-      ),
-      Paint()..color = const Color(0xFF7B3E19),
-    );
-  }
-
-  void _drawOfferingFruit(Canvas canvas, Offset center) {
-    final fruits = <MapEntry<Offset, Color>>[
-      const MapEntry(Offset(-12, 2), Color(0xFFFFC34D)),
-      const MapEntry(Offset(0, -7), Color(0xFFD83A2E)),
-      const MapEntry(Offset(13, 3), Color(0xFFFFB13B)),
-    ];
-    for (final fruit in fruits) {
-      canvas.drawCircle(center + fruit.key, 10, Paint()..color = fruit.value);
-      canvas.drawCircle(
-        center + fruit.key.translate(-3, -3),
-        3,
-        Paint()..color = const Color(0x66FFFFFF),
-      );
     }
   }
 
   @override
-  bool shouldRepaint(covariant ScenePainter oldDelegate) {
-    return true;
+  bool shouldRepaint(covariant _ScenePainter oldDelegate) => true;
+}
+
+class _SutraBookButton extends StatelessWidget {
+  final String title;
+  final VoidCallback? onTap;
+
+  const _SutraBookButton({required this.title, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: title,
+      child: SizedBox(
+        width: 184,
+        child: FilledButton(
+          onPressed: onTap,
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xAA5E0707),
+            foregroundColor: const Color(0xFFFFE6A3),
+            side: const BorderSide(color: Color(0xFFD4AF37)),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                '经卷',
+                style: TextStyle(fontSize: 11, color: Color(0xCCFFF4C2)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1564,19 +933,40 @@ class _IncensePainter extends CustomPainter {
   final double incenseProgress;
   final bool isBurning;
 
-  _IncensePainter({required this.incenseProgress, required this.isBurning});
+  const _IncensePainter({
+    required this.incenseProgress,
+    required this.isBurning,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (size.isEmpty || !size.width.isFinite || !size.height.isFinite) return;
-    _drawFixedIncense(canvas, size);
-  }
+    if (size.isEmpty || !size.width.isFinite || !size.height.isFinite) {
+      return;
+    }
 
-  void _drawFixedIncense(Canvas canvas, Size size) {
     final base = Offset(size.width / 2, size.height * 0.82);
     final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
     final stickHeight = 74.0 * remaining;
-    _drawIncenseBurner(canvas, base, stickHeight);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: base.translate(0, 36), width: 108, height: 20),
+      Paint()
+        ..color = const Color(0x55000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: base.translate(0, 22), width: 92, height: 22),
+        const Radius.circular(10),
+      ),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          base.translate(-46, 12),
+          base.translate(46, 34),
+          const [Color(0xFFFFD36A), Color(0xFF7A4314), Color(0xFFD4AF37)],
+        ),
+    );
 
     for (final offset in const [-14.0, 0.0, 14.0]) {
       final stickBase = base.translate(offset, 6);
@@ -1595,152 +985,47 @@ class _IncensePainter extends CustomPainter {
           ..strokeCap = StrokeCap.round,
       );
 
-      if (isBurning) {
-        canvas.drawCircle(
-          stickTip,
-          6,
-          Paint()
-            ..shader = ui.Gradient.radial(
-              stickTip,
-              8,
-              const [Color(0xFFFFF1A3), Color(0xFFFF6B1A), Color(0x00FF6B1A)],
-              const [0.0, 0.5, 1.0],
-            ),
-        );
-        canvas.drawCircle(
-          stickTip,
-          2.4,
-          Paint()..color = const Color(0xFFFFE6A3),
-        );
-        _drawFixedSmoke(canvas, stickTip, offset);
+      if (!isBurning) {
+        continue;
       }
-    }
-  }
 
-  void _drawFixedSmoke(Canvas canvas, Offset tip, double seed) {
-    final time = DateTime.now().millisecondsSinceEpoch * 0.001;
-    for (var i = 0; i < 11; i++) {
-      final t = (time * 0.18 + i / 11 + seed * 0.006) % 1.0;
-      final x = tip.dx + math.sin(t * math.pi * 2.0 + seed) * (7 + t * 26);
-      final y = tip.dy - t * 122 - i * 3.2;
-      final radius = 2.4 + t * 9.5;
-      final opacity = ((1 - t) * 0.45 + 0.05).clamp(0.0, 0.5).toDouble();
       canvas.drawCircle(
-        Offset(x, y),
-        radius,
+        stickTip,
+        6,
         Paint()
-          ..color = Color.fromRGBO(235, 229, 214, opacity)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2 + t * 5),
+          ..shader = ui.Gradient.radial(
+            stickTip,
+            8,
+            const [Color(0xFFFFF1A3), Color(0xFFFF6B1A), Color(0x00FF6B1A)],
+            const [0.0, 0.5, 1.0],
+          ),
       );
 
-      if (i.isEven) {
-        final wisp = Path()
-          ..moveTo(x, y + radius)
-          ..quadraticBezierTo(
-            x + math.sin(time + i) * 10,
-            y - radius * 1.6,
-            x + math.cos(time * 0.7 + i) * 18,
-            y - radius * 3.2,
-          );
-        canvas.drawPath(
-          wisp,
+      for (var i = 0; i < 9; i++) {
+        final t = ((DateTime.now().millisecondsSinceEpoch / 1000) * 0.2 +
+                i / 9 +
+                offset * 0.006) %
+            1.0;
+        final smokeCenter = Offset(
+          stickTip.dx + math.sin(t * math.pi * 2.0 + offset) * (7 + t * 24),
+          stickTip.dy - t * 118 - i * 3.0,
+        );
+        canvas.drawCircle(
+          smokeCenter,
+          2.4 + t * 9.0,
           Paint()
-            ..color = Color.fromRGBO(242, 236, 220, opacity * 0.85)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5 + t * 1.5
-            ..strokeCap = StrokeCap.round
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
+            ..color = Color.fromRGBO(
+              235,
+              229,
+              214,
+              ((1 - t) * 0.45 + 0.05).clamp(0.0, 0.5),
+            )
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2 + t * 5),
         );
       }
     }
-  }
-
-  void _drawIncenseBurner(Canvas canvas, Offset center, double stickHeight) {
-    final width = (stickHeight * 1.22).clamp(48.0, 88.0).toDouble();
-    final topHeight = (stickHeight * 0.22).clamp(10.0, 16.0).toDouble();
-    final bodyHeight = (stickHeight * 0.45).clamp(20.0, 34.0).toDouble();
-    final topCenter = center.translate(0, 8);
-
-    final shadowPaint = Paint()
-      ..color = const Color(0x66000000)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: topCenter.translate(0, bodyHeight * 0.72),
-        width: width * 0.92,
-        height: topHeight,
-      ),
-      shadowPaint,
-    );
-
-    final body = Path()
-      ..moveTo(topCenter.dx - width * 0.48, topCenter.dy)
-      ..quadraticBezierTo(
-        topCenter.dx - width * 0.38,
-        topCenter.dy + bodyHeight,
-        topCenter.dx,
-        topCenter.dy + bodyHeight * 1.12,
-      )
-      ..quadraticBezierTo(
-        topCenter.dx + width * 0.38,
-        topCenter.dy + bodyHeight,
-        topCenter.dx + width * 0.48,
-        topCenter.dy,
-      )
-      ..close();
-    canvas.drawPath(
-      body,
-      Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(topCenter.dx - width * 0.5, topCenter.dy),
-          Offset(topCenter.dx + width * 0.5, topCenter.dy + bodyHeight),
-          const [Color(0xFF4A2111), Color(0xFF9A5A24), Color(0xFF2A1208)],
-          const [0.0, 0.5, 1.0],
-        ),
-    );
-    canvas.drawPath(
-      body,
-      Paint()
-        ..color = const Color(0x99D4AF37)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2,
-    );
-
-    final rimRect = Rect.fromCenter(
-      center: topCenter,
-      width: width,
-      height: topHeight,
-    );
-    canvas.drawOval(
-      rimRect,
-      Paint()
-        ..shader = ui.Gradient.linear(
-          rimRect.topLeft,
-          rimRect.bottomRight,
-          const [Color(0xFFD4AF37), Color(0xFF6F3514), Color(0xFFFFD36A)],
-          const [0.0, 0.5, 1.0],
-        ),
-    );
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: topCenter,
-        width: width * 0.78,
-        height: topHeight * 0.58,
-      ),
-      Paint()..color = const Color(0xFF25110A),
-    );
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: topCenter.translate(0, 1),
-        width: width * 0.64,
-        height: topHeight * 0.36,
-      ),
-      Paint()..color = const Color(0xFF6A5A45),
-    );
   }
 
   @override
-  bool shouldRepaint(covariant _IncensePainter oldDelegate) {
-    return true;
-  }
+  bool shouldRepaint(covariant _IncensePainter oldDelegate) => true;
 }
