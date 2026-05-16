@@ -19,6 +19,75 @@ interface ForumContentStore {
   replies: ForumReply[];
 }
 
+function getDefaultThreadRoleLabel(sectionSlug: string) {
+  switch (sectionSlug) {
+    case "newcomer-path":
+      return "新手提问者";
+    case "sutra-study":
+      return "经论研读者";
+    case "meditation-practice":
+      return "练习反馈者";
+    case "knowledge-archive":
+      return "资料整理者";
+    default:
+      return "论坛提问者";
+  }
+}
+
+function getDefaultThreadGuidanceSignal(sectionSlug: string) {
+  switch (sectionSlug) {
+    case "newcomer-path":
+      return "请优先结合当前节奏给一条最容易开始的下一步建议。";
+    case "sutra-study":
+      return "请优先补出处、上下文和当前理解，再继续讨论名相。";
+    case "meditation-practice":
+      return "请优先结合练习前状态与结束后复盘来回应。";
+    case "knowledge-archive":
+      return "请优先说明这条内容为什么值得长期沉淀和复用。";
+    default:
+      return "请继续结合提问者当前阶段给出具体、可执行的回应。";
+  }
+}
+
+function getDefaultReplyGuidanceSignal(sectionSlug?: string) {
+  switch (sectionSlug) {
+    case "newcomer-path":
+      return "请先接住楼主当前阶段，再补一条最容易执行的起步建议。";
+    case "sutra-study":
+      return "请尽量围绕出处、上下文和当前理解继续回应。";
+    case "meditation-practice":
+      return "请优先结合练习条件、变化和复盘给出反馈。";
+    case "knowledge-archive":
+      return "请优先说明这条补充是否适合整理进长期资料。";
+    default:
+      return "请继续结合楼主当前阶段给出具体回应。";
+  }
+}
+
+function normalizeThread(thread: ForumThread): ForumThread {
+  return {
+    ...thread,
+    authorRoleLabel:
+      typeof thread.authorRoleLabel === "string" && thread.authorRoleLabel.trim().length > 0
+        ? thread.authorRoleLabel.trim()
+        : getDefaultThreadRoleLabel(thread.sectionSlug),
+    guidanceSignal:
+      typeof thread.guidanceSignal === "string" && thread.guidanceSignal.trim().length > 0
+        ? thread.guidanceSignal.trim()
+        : getDefaultThreadGuidanceSignal(thread.sectionSlug),
+  };
+}
+
+function normalizeReply(reply: ForumReply, thread?: ForumThread): ForumReply {
+  return {
+    ...reply,
+    guidanceSignal:
+      typeof reply.guidanceSignal === "string" && reply.guidanceSignal.trim().length > 0
+        ? reply.guidanceSignal.trim()
+        : getDefaultReplyGuidanceSignal(thread?.sectionSlug),
+  };
+}
+
 function describeSeedModerationSummary(thread: ForumThread) {
   if (thread.knowledgeStage === "candidate") {
     return "种子主题已发布，并标记为候选资料，后续适合继续整理。";
@@ -42,8 +111,9 @@ const content = forumContent as ForumContentStore;
 
 export function createSeedForumRepository(): ForumRepository {
   const sections = content.sections;
-  const threads = content.threads;
-  const replies = content.replies;
+  const threads = content.threads.map(normalizeThread);
+  const threadBySlug = new Map(threads.map((thread) => [thread.slug, thread]));
+  const replies = content.replies.map((reply) => normalizeReply(reply, threadBySlug.get(reply.threadSlug)));
   const moderationEvents = buildSeedModerationEvents(threads);
 
   const getSectionBySlug = (slug: string) => sections.find((section) => section.slug === slug);

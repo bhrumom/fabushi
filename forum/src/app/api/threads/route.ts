@@ -12,6 +12,8 @@ interface CreateThreadPayload {
   title?: unknown;
   summary?: unknown;
   author?: unknown;
+  authorRoleLabel?: unknown;
+  guidanceSignal?: unknown;
   tags?: unknown;
   openingPost?: unknown;
 }
@@ -28,6 +30,18 @@ function requireString(value: unknown, fieldName: string): string {
   }
 
   return trimmed;
+}
+
+function optionalString(value: unknown, fieldName: string): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  if (typeof value !== "string") {
+    throw new ForumInputError(`${fieldName} must be a string.`);
+  }
+
+  return value.trim();
 }
 
 function normalizeStringArray(value: unknown, fieldName: string): string[] {
@@ -57,6 +71,8 @@ function parseCreateThreadPayload(payload: CreateThreadPayload): CreateForumThre
   const sectionSlug = requireString(payload.sectionSlug, "sectionSlug");
   const title = requireString(payload.title, "title");
   const author = requireString(payload.author, "author");
+  const authorRoleLabel = optionalString(payload.authorRoleLabel, "authorRoleLabel");
+  const guidanceSignal = optionalString(payload.guidanceSignal, "guidanceSignal");
   const openingPost = normalizeStringArray(payload.openingPost, "openingPost");
 
   if (openingPost.length === 0) {
@@ -73,6 +89,8 @@ function parseCreateThreadPayload(payload: CreateThreadPayload): CreateForumThre
     title,
     summary,
     author,
+    authorRoleLabel,
+    guidanceSignal,
     tags,
     openingPost,
   };

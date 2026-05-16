@@ -11,6 +11,8 @@ interface ThreadReplyFormProps {
 
 type FormTone = "error" | "success";
 
+const ROLE_OPTIONS = ["新加入同修", "持续修学者", "带新同修", "资料整理协作"];
+
 function getParagraphs(value: string) {
   return value
     .split(/\n+/)
@@ -21,6 +23,8 @@ function getParagraphs(value: string) {
 export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: ThreadReplyFormProps) {
   const router = useRouter();
   const [author, setAuthor] = useState("");
+  const [roleLabel, setRoleLabel] = useState(ROLE_OPTIONS[0]);
+  const [guidanceSignal, setGuidanceSignal] = useState("");
   const [body, setBody] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [tone, setTone] = useState<FormTone | null>(null);
@@ -38,11 +42,12 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
     }
 
     const trimmedAuthor = author.trim();
+    const trimmedGuidanceSignal = guidanceSignal.trim();
     const paragraphs = getParagraphs(body);
 
-    if (!trimmedAuthor || paragraphs.length === 0) {
+    if (!trimmedAuthor || !trimmedGuidanceSignal || paragraphs.length === 0) {
       setTone("error");
-      setMessage("请先填写称呼和回复内容。");
+      setMessage("请先填写称呼、角色状态、引导信号和回复内容。");
       return;
     }
 
@@ -59,6 +64,8 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
             },
             body: JSON.stringify({
               author: trimmedAuthor,
+              roleLabel,
+              guidanceSignal: trimmedGuidanceSignal,
               body: paragraphs,
             }),
           });
@@ -70,6 +77,7 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
           }
 
           setAuthor("");
+          setGuidanceSignal("");
           setBody("");
           setTone("success");
           setMessage("回复已写入当前线程，页面正在刷新。");
@@ -87,7 +95,7 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
       <div className="section-heading">
         <div>
           <h2 id="reply-composer-heading">写一条最小回复</h2>
-          <p>先把页面层接到 sqlite 回复接口，确认真实互动不只停留在 API。</p>
+          <p>这一步会把回复者的角色状态和当前引导信号一起写入 sqlite，而不是继续依赖接口默认文案。</p>
         </div>
         <span className="reply-runtime">{writesEnabled ? `当前数据源：${dataSource} / 可写` : `当前数据源：${dataSource} / 只读`}</span>
       </div>
@@ -114,6 +122,35 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
           </label>
 
           <label className="reply-field">
+            <span>角色状态</span>
+            <select
+              className="reply-input composer-select"
+              name="roleLabel"
+              value={roleLabel}
+              onChange={(event) => setRoleLabel(event.target.value)}
+              disabled={!writesEnabled || isPending}
+            >
+              {ROLE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="reply-field">
+            <span>引导信号</span>
+            <input
+              className="reply-input"
+              name="guidanceSignal"
+              value={guidanceSignal}
+              onChange={(event) => setGuidanceSignal(event.target.value)}
+              placeholder="例如：我想先补一条最容易执行的下一步建议。"
+              disabled={!writesEnabled || isPending}
+            />
+          </label>
+
+          <label className="reply-field">
             <span>回复内容</span>
             <textarea
               className="reply-textarea"
@@ -129,8 +166,8 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
         <div className="reply-form-footer">
           <p className="reply-form-hint">
             {paragraphCount > 0
-              ? `当前会提交 ${paragraphCount} 段内容。接口会自动补默认角色标签和信任信号。`
-              : "回复支持按空行切成多段，先把最小交流闭环跑通。"}
+              ? `当前会提交 ${paragraphCount} 段内容，并把回复者角色和引导信号一起落库。`
+              : "回复支持按空行切成多段，第一版先把角色状态和引导信号稳定接进真实回复流。"}
           </p>
           <button className="submit-button" type="submit" disabled={!writesEnabled || isPending}>
             {isPending ? "提交中..." : "提交回复"}

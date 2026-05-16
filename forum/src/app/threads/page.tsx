@@ -28,7 +28,7 @@ export default function ThreadsPage() {
             <h2>开始一条新主题</h2>
             <p>
               {runtime.writesEnabled
-                ? "当前运行环境已经允许页面层直接发起主题，下一轮可以继续沿着这条链路接审核事件和用户状态。"
+                ? "当前运行环境已经允许页面层直接发起主题，作者角色和新手引导信号也会随主题一起落库。"
                 : `当前 ${runtime.dataSource} 模式还是只读，但页面层发帖入口已经可以先承接结构和表单交互，切到 sqlite 后即可直接发布。`}
             </p>
           </div>
@@ -54,11 +54,13 @@ export default function ThreadsPage() {
           <article key={thread.slug} className="thread-card">
             <div className="thread-meta">
               <span>{thread.author}</span>
+              <span>{thread.authorRoleLabel}</span>
               <span>{thread.publishedAt}</span>
               <span>{thread.lastActivity}</span>
             </div>
             <h2>{thread.title}</h2>
             <p>{thread.summary}</p>
+            <p className="reply-form-hint">当前引导信号：{thread.guidanceSignal}</p>
             <div className="thread-tags">
               {thread.tags.map((tag) => (
                 <span key={tag}>{tag}</span>
