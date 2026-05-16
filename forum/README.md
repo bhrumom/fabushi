@@ -18,6 +18,7 @@ Current scope:
 - a page-level thread composer on top of the thread-creation API in writable mode
 - a minimal reply-creation API for existing threads in sqlite mode
 - a page-level reply composer on thread detail when writes are enabled
+- a first moderation-event timeline that can be read back from thread detail and runtime status
 - a dedicated GitHub Actions workflow that checks the forum app when `forum/**` changes
 - a container deployment baseline built from Next.js standalone output
 - a container smoke check that starts the forum, validates `/api/status`, exercises sqlite thread and reply creation, and reads the updated thread back through real forum pages
@@ -36,6 +37,7 @@ Included:
 - structured seed content contract
 - read-only API boundary
 - moderation and knowledge-stage fields reserved in the content model
+- a first moderation-event timeline for thread publishing and new sqlite writes
 - a runtime status endpoint for deployment smoke checks
 - a first durable persistence path backed by sqlite file storage
 - a first reply write path for existing threads
@@ -45,7 +47,7 @@ Not included yet:
 
 - authentication
 - search, notifications, bookmarks, or follows as real user actions
-- moderation workflows beyond reserved fields and write-state checks
+- moderation workflows beyond the first persisted timeline and write-state checks
 
 ## Local development
 
@@ -84,12 +86,13 @@ curl -X POST http://localhost:3000/api/thread/first-year-stability/replies \
     "trustSignal": "回复已按主题聚焦提交，等待更多互动后再决定是否沉淀。",
     "body": ["我发现先把睡前十分钟固定下来，比一下子改整天作息更容易坚持。"]
   }'
+curl http://localhost:3000/api/thread/first-year-stability
 curl http://localhost:3000/threads/new
 curl http://localhost:3000/threads
 curl http://localhost:3000/threads/first-year-stability
 ```
 
-When `FORUM_DATA_SOURCE=sqlite`, you can also open `http://localhost:3000/threads/new` to create a new topic, and `http://localhost:3000/threads/first-year-stability` to submit a reply through the page-level form. In `seed-json` mode, both page-level forms stay visible but clearly report that the runtime is still read-only.
+When `FORUM_DATA_SOURCE=sqlite`, you can also open `http://localhost:3000/threads/new` to create a new topic, and `http://localhost:3000/threads/first-year-stability` to submit a reply through the page-level form. In `seed-json` mode, both page-level forms stay visible but clearly report that the runtime is still read-only. `GET /api/thread/[slug]` now includes `moderationEvents`, so thread detail can expose the first durable governance timeline instead of only content fields.
 
 ## Runtime contract
 
@@ -109,7 +112,7 @@ Current JSON routes:
 - `POST /api/thread/[slug]/replies`
 - `GET /api/status`
 
-`GET /api/status` now reports whether writes are enabled for the current data source. In `sqlite` mode, the repository initializes its schema automatically, seeds the database from `forum-content.json` the first time it starts, lets the page-level thread composer create new topics, and lets existing threads accept the first persisted reply submissions.
+`GET /api/status` now reports whether writes are enabled for the current data source and how many moderation events the current store already contains. In `sqlite` mode, the repository initializes its schema automatically, seeds the database from `forum-content.json` the first time it starts, writes the first moderation timeline events alongside newly created threads and replies, lets the page-level thread composer create new topics, and lets existing threads accept the first persisted reply submissions.
 
 ## Container deployment
 
@@ -132,8 +135,8 @@ Runtime defaults:
 - `HOSTNAME=0.0.0.0`
 - `NODE_ENV=production`
 
-A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, validates the sqlite runtime status, confirms `/threads/new` exposes the writable page-level composer, creates a thread through the API, reads that thread back through `/threads` and `/threads/[slug]`, and then adds a reply to verify the updated discussion is visible on the thread detail page.
+A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, validates the sqlite runtime status, confirms `/threads/new` exposes the writable page-level composer, creates a thread through the API, reads that thread back through `/threads` and `/threads/[slug]`, and then adds a reply to verify both the updated discussion and the appended moderation timeline event are visible on the thread detail page.
 
 ## Why this is the next step
 
-After the structured seed content contract, standalone deployment baseline, runtime status boundary, first durable thread creation path, first reply write path, and page-level reply submission landed, the next highest-value gap was proving that the same sqlite interaction loop is visible through the real page layer, not just through JSON endpoints. This iteration keeps the product surface narrow while making deployment checks more trustworthy, so the next pass can focus on moderation events, role state, and more explicit newcomer guidance instead of rediscovering whether the current forum pages still reflect newly written content.
+After the structured seed content contract, standalone deployment baseline, runtime status boundary, first durable thread creation path, first reply write path, page-level reply submission, page-level thread creation, and page-level sqlite readback checks landed, the next highest-value gap was turning governance signals into durable data rather than leaving them in copy alone. This iteration keeps the product surface narrow while making moderation state inspectable through the same repository and page boundary, so the next pass can focus on role state and more explicit newcomer guidance instead of rediscovering whether governance events survive real writes.

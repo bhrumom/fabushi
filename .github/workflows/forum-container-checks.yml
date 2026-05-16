@@ -61,6 +61,7 @@ jobs:
           assert payload["persistenceMode"] == "sqlite-file", payload
           assert payload["writesEnabled"] is True, payload
           assert payload["counts"]["threads"] >= 4, payload
+          assert payload["counts"]["moderationEvents"] >= 4, payload
           PY
 
       - name: Smoke test forum writable page surfaces
@@ -99,6 +100,8 @@ jobs:
           assert payload["thread"]["sectionSlug"] == "newcomer-path", payload
           assert payload["thread"]["title"].startswith("容器页面检查"), payload
           assert payload["thread"]["openingPost"], payload
+          assert payload["moderationEvents"][-1]["eventType"] == "thread-created", payload
+          assert "新主题已发布" in payload["moderationEvents"][-1]["summary"], payload
           print(payload["thread"]["slug"])
           PY
 
@@ -121,6 +124,7 @@ jobs:
           assert payload["source"] == "sqlite", payload
           assert payload["thread"]["slug"], payload
           assert payload["thread"]["author"] == "页面检查用户", payload
+          assert payload["moderationEvents"][-1]["eventType"] == "thread-created", payload
           PY
 
           thread_list_page="$(curl --fail --show-error --silent http://127.0.0.1:3000/threads)"
@@ -143,6 +147,8 @@ jobs:
           assert "容器页面检查：新主题能否进入真实帖子页？" in html, html[:2000]
           assert "页面检查用户" in html, html[:2000]
           assert "写一条最小回复" in html, html[:2000]
+          assert "审核时间线" in html, html[:3000]
+          assert "新主题已发布" in html, html[:4000]
           PY
 
           echo "thread_slug=${slug}" >> "$GITHUB_ENV"
@@ -170,6 +176,8 @@ jobs:
           assert payload["thread"]["lastActivity"] == "刚刚回复", payload
           assert payload["replies"][-1]["author"] == "页面回复检查", payload
           assert payload["replies"][-1]["body"], payload
+          assert payload["moderationEvents"][-1]["eventType"] == "reply-created", payload
+          assert "新回复已写入时间线" in payload["moderationEvents"][-1]["summary"], payload
           PY
 
           thread_detail_page="$(curl --fail --show-error --silent "http://127.0.0.1:3000/threads/${thread_slug}")"
@@ -182,6 +190,7 @@ jobs:
           assert "页面回复检查" in html, html[:4000]
           assert "页面回读验证" in html, html[:4000]
           assert "这条回复由页面检查写入，用来确认 forum 页面详情已经能回读最新回复。" in html, html[:4000]
+          assert "新回复已写入时间线" in html, html[:5000]
           PY
 
       - name: Stop forum container
