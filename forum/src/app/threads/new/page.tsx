@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getForumRuntimeStatus, getForumSnapshot } from "../../lib/forum-data";
+import { getForumRuntimeStatus, getForumSnapshot } from "../../../lib/forum-data";
 import { ThreadComposer } from "./thread-composer";
 
 export const dynamic = "force-dynamic";
