@@ -7,29 +7,29 @@
       "title": "Android Beta",
       "description": "官网直接读取最新发布版本的 APK 安装包，安装包发布后这里会自动更新。",
       "primaryLabel": "下载 Android Beta",
-      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/v1.0.0-208-mobile.56c0652a910d/fabushi-android-arm64-56c0652a910d.apk",
-      "version": "v1.0.0-208-mobile.56c0652a910d",
-      "publishedAt": "2026-05-16T13:53:58Z",
+      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/v1.0.0-229-mobile.d723b0a32d1d/fabushi-android-arm64-d723b0a32d1d.apk",
+      "version": "v1.0.0-229-mobile.d723b0a32d1d",
+      "publishedAt": "2026-05-16T21:22:02Z",
       "updateSummary": [
-        "PR #445: [codex] fix android buddha model fallback",
-        "Android 禅室不再先下载/解包远端 293MB `buddha_model.model`，直接走内置 WebView + GLB 兼容渲染，避免 `.model` 在 Android 上的下载和内存峰值。",
-        "新增打包进 App 的 fallback HTML/Three.js bundle，并优先加载官网 GLB，失败时再尝试 APK 内置 GLB。",
-        "失败页现在展示原生 `.model` 与兼容 GLB 的具体失败阶段；资源校验也会带上 HTTP URL 和首字节签名，方便判断是否拿到了 GLB、HTML 错误页或错误 R2 对象。",
-        "`flutter test --no-pub test/unit/core/app_config_buddha_model_test.dart test/unit/services/asset_loader_service_test.dart`",
-        "`flutter analyze --no-pub lib/screens/buddha_model_screen_native.dart lib/services/asset_loader_service.dart lib/core/config/app_config.dart test/unit/core/app_config_buddha_model_test.dart`"
+        "PR #470: Android 佛像优先使用 Three，失败后回退 flutter_scene",
+        "Android 端佛像展示优先走 Three WebView 兼容渲染",
+        "Three 链路失败时，自动回退到 `flutter_scene` 备用渲染",
+        "补齐 Android Three 页面初始化、脚本报错、Promise 异常、资源异常、候选地址为空、加载超时等错误回传",
+        "在 Flutter 侧区分并汇总 `Android Three` 和 `flutter_scene` 两条链路的错误，失败页可直接看到具体原因",
+        "Android 佛像加载路径变更为 Three 优先"
       ],
       "mirrorLinks": [
         {
           "label": "国内镜像 1",
-          "href": "https://mirror.ghproxy.com/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-208-mobile.56c0652a910d/fabushi-android-arm64-56c0652a910d.apk"
+          "href": "https://mirror.ghproxy.com/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-229-mobile.d723b0a32d1d/fabushi-android-arm64-d723b0a32d1d.apk"
         },
         {
           "label": "国内镜像 2",
-          "href": "https://ghfast.top/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-208-mobile.56c0652a910d/fabushi-android-arm64-56c0652a910d.apk"
+          "href": "https://ghfast.top/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-229-mobile.d723b0a32d1d/fabushi-android-arm64-d723b0a32d1d.apk"
         }
       ],
       "note": "国内访问较慢时，可以优先尝试镜像下载入口。",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-208-mobile.56c0652a910d"
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-229-mobile.d723b0a32d1d"
     },
     {
       "platform": "iOS",
@@ -39,24 +39,38 @@
       "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
       "primaryLabel": "加入 iOS TestFlight",
       "primaryHref": "https://testflight.apple.com/join/98KFgV2z",
-      "version": "208",
-      "publishedAt": "2026-05-16T13:53:12Z",
+      "version": "229",
+      "publishedAt": "2026-05-16T21:21:26Z",
       "updateSummary": [
-        "PR #445: [codex] fix android buddha model fallback",
-        "Android 禅室不再先下载/解包远端 293MB `buddha_model.model`，直接走内置 WebView + GLB 兼容渲染，避免 `.model` 在 Android 上的下载和内存峰值。",
-        "新增打包进 App 的 fallback HTML/Three.js bundle，并优先加载官网 GLB，失败时再尝试 APK 内置 GLB。",
-        "失败页现在展示原生 `.model` 与兼容 GLB 的具体失败阶段；资源校验也会带上 HTTP URL 和首字节签名，方便判断是否拿到了 GLB、HTML 错误页或错误 R2 对象。",
-        "`flutter test --no-pub test/unit/core/app_config_buddha_model_test.dart test/unit/services/asset_loader_service_test.dart`",
-        "`flutter analyze --no-pub lib/screens/buddha_model_screen_native.dart lib/services/asset_loader_service.dart lib/core/config/app_config.dart test/unit/core/app_config_buddha_model_test.dart`"
+        "PR #470: Android 佛像优先使用 Three，失败后回退 flutter_scene",
+        "Android 端佛像展示优先走 Three WebView 兼容渲染",
+        "Three 链路失败时，自动回退到 `flutter_scene` 备用渲染",
+        "补齐 Android Three 页面初始化、脚本报错、Promise 异常、资源异常、候选地址为空、加载超时等错误回传",
+        "在 Flutter 侧区分并汇总 `Android Three` 和 `flutter_scene` 两条链路的错误，失败页可直接看到具体原因",
+        "Android 佛像加载路径变更为 Three 优先"
       ],
       "mirrorLinks": [],
       "note": "",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-208-mobile.56c0652a910d"
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-229-mobile.d723b0a32d1d"
     }
   ],
   "stableChannels": [],
   "screenshots": {},
   "releases": [
+    {
+      "tag": "v1.0.0-229-mobile.d723b0a32d1d",
+      "title": "Fabushi mobile 1.0.0+229 (d723b0a32d1d)",
+      "publishedAt": "2026-05-16T21:22:02Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-229-mobile.d723b0a32d1d",
+      "summary": [
+        "PR #470: Android 佛像优先使用 Three，失败后回退 flutter_scene",
+        "Android 端佛像展示优先走 Three WebView 兼容渲染",
+        "Three 链路失败时，自动回退到 `flutter_scene` 备用渲染",
+        "补齐 Android Three 页面初始化、脚本报错、Promise 异常、资源异常、候选地址为空、加载超时等错误回传",
+        "在 Flutter 侧区分并汇总 `Android Three` 和 `flutter_scene` 两条链路的错误，失败页可直接看到具体原因",
+        "Android 佛像加载路径变更为 Three 优先"
+      ]
+    },
     {
       "tag": "v1.0.0-208-mobile.56c0652a910d",
       "title": "Fabushi mobile 1.0.0+208 (56c0652a910d)",
@@ -111,20 +125,6 @@
         "让 `Deploy official site to Cloudflare Worker` 同时监听 `Publish CD packages to GitHub Release` 和 `Sync official site beta download state` 成功完成。",
         "保持官网构建固定基于 `main`，但不再把自动刷新绑定在 beta sync 单一路径上。",
         "给 `frontend/official-site-worker.js` 增加兜底：Android beta 下载优先读取 GitHub latest release 的 APK 资产；只有拿不到 latest release 时，才回退到静态 `/api/releases.json`。"
-      ]
-    },
-    {
-      "tag": "v1.0.0-166-mobile.ceafd2e4926b",
-      "title": "Fabushi mobile 1.0.0+166 (ceafd2e4926b)",
-      "publishedAt": "2026-05-15T12:25:37Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-166-mobile.ceafd2e4926b",
-      "summary": [
-        "PR #314: fix: restore android buddha rendering with legacy glb fallback",
-        "在 `AppConfig` 增加 `legacyBuddhaGlbAssetPath`，把旧 GLB 对象键收口成正式配置。",
-        "在原生禅室佛像页保留现有 `flutter_scene + .model` 主链路。",
-        "当移动端 `.model` 加载或渲染失败时，自动切到 WebView 兼容渲染，直接使用 legacy GLB 路径恢复佛像展示，而不是给用户报错页。",
-        "兼容模式下继续保留经书按钮和香炉/烟雾叠层，避免禅室交互退化成纯只读页面。",
-        "这轮无法在容器里直接执行 Flutter/Android 编译验证，因为运行环境无法完整拉取仓库代码进行本地构建。"
       ]
     }
   ],
