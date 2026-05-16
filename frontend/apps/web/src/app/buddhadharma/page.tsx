@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/buddhadharma");
 const pageTitle = `佛法入门 | ${brand.name}`;
 const pageDescription =
-  "从佛法是什么、初学者如何开始，到禅修、经文、因果、菩提心、六度、空性与日常修行路径，Fabushi 提供清晰的入门导读。";
+  "从佛法是什么、初学者如何开始，到佛学基本概念、禅修、经文、因果、菩提心、六度、空性与日常修行路径，Fabushi 提供清晰的入门导读。";
 
 const dharmaHighlights = [
   {
@@ -40,6 +40,15 @@ const learningPaths = [
     titleEn: "Turn the beginner sequence into a clearer first step.",
     descriptionZh: "如果你最关心的是先读经、先禅修，还是先建立日常节奏，这一页会更聚焦地回答。",
     descriptionEn: "If your main question is whether to begin with sutras, meditation, or a daily rhythm, this page answers it more directly.",
+  },
+  {
+    href: "/buddhist-concepts",
+    labelZh: "佛学基本概念入门",
+    labelEn: "Buddhist Concepts",
+    titleZh: "先把因果、菩提心、六度和空性放回同一张地图里。",
+    titleEn: "Place karma, bodhicitta, the six paramitas, and emptiness back on one map.",
+    descriptionZh: "如果你已经发现自己总被这些名相反复挡住，但还看不清它们彼此是什么关系，这一页会更适合继续往下看。",
+    descriptionEn: "This page is the better next step if these terms keep returning and you still want a clearer map of how they relate to one another.",
   },
   {
     href: "/what-is-karma",
@@ -206,6 +215,7 @@ export const metadata: Metadata = {
     "佛法入门",
     "佛教入门",
     "学佛从哪里开始",
+    "佛学基本概念",
     "因果是什么意思",
     "空性怎么理解",
     "六度分别是什么",
