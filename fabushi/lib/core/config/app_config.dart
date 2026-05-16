@@ -168,6 +168,9 @@ class AppConfig {
   // 3D 佛像模型配置
   // 如果 R2 上需要切换到新的对象键，优先改这里，便于强制绕开旧缓存。
   static const String buddhaModelAssetPath = 'models/buddha_model.model';
+  // 安卓主链路优先读取随包发布的 .model，避免核心佛像展示受远端对象或下载中断影响。
+  static const String bundledBuddhaModelAssetPath =
+      'assets/models/buddha_model.model';
   // 兼容旧链路：移动端在 .model 缺失时，可退回到仍在线上的 legacy GLB。
   static const String legacyBuddhaGlbAssetPath = 'models/佛像模型.glb';
   // 当前线上正确模型明显大于 48MB，小于该阈值视为误传/降质文件。
