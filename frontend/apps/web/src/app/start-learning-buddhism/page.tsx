@@ -93,6 +93,15 @@ const relatedPaths = [
     descriptionEn: "This is the better next page if your question has already become whether karma simply means reward, punishment, or payback.",
   },
   {
+    href: "/what-is-bodhicitta",
+    labelZh: "菩提心是什么意思",
+    labelEn: "What Bodhicitta Means",
+    titleZh: "先把大乘修学里最关键的发心放清楚。",
+    titleEn: "Clarify one of the most central intentions in Mahayana practice.",
+    descriptionZh: "如果你现在最卡的是“菩提心到底是不是一种好心”，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if your question has already become whether bodhicitta is merely a kind feeling or a wider direction of practice.",
+  },
+  {
     href: "/beginner-sutra-recommendations",
     labelZh: "初学者佛经推荐",
     labelEn: "Beginner Sutra Picks",
