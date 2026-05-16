@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { brand, contactChannels } from "@fabushi/shared";
 import { DownloadLink } from "../components/download-link";
 import { LocalizedText } from "../components/localized-text";
@@ -39,6 +40,10 @@ interface ProductMoment {
 
 const HERO_MAIN_IMAGE_KEY: ProductScreenshotKey = "global-dharma";
 const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "main-sutra";
+const homeUrl = siteUrl("/");
+const homeTitle = `学佛从哪里开始、禅修与佛经学习 | ${brand.name}`;
+const homeDescription =
+  "Fabushi 提供学佛从哪里开始、佛法入门、禅修入门、佛经导读，以及经文听诵、禅修、修行记录和下载入口。";
 
 const PRODUCT_MOMENTS: ProductMoment[] = [
   {
@@ -153,6 +158,75 @@ const FAQ_PREVIEW = [
   },
 ] as const;
 
+const DHARMA_PATHS = [
+  {
+    href: "/start-learning-buddhism",
+    labelZh: "学佛从哪里开始",
+    labelEn: "Where to Begin",
+    titleZh: "先把学佛的第一步放轻一点、放清楚一点。",
+    titleEn: "Make the first step into buddhadharma lighter and clearer.",
+    descriptionZh: "如果你最关心的是先读经、先禅修，还是先建立日常节奏，这一页会更直接地回答。",
+    descriptionEn: "If your main question is whether to begin with sutras, meditation, or a daily rhythm, this page answers it more directly.",
+  },
+  {
+    href: "/buddhadharma",
+    labelZh: "佛法入门",
+    labelEn: "Dharma Basics",
+    titleZh: "先看清佛法、修行与日常实践之间的关系。",
+    titleEn: "See how buddhadharma, practice, and daily life fit together.",
+    descriptionZh: "如果你想先理清佛法是什么、佛教与修行有什么关系，这里是更完整的入门地图。",
+    descriptionEn: "If you first need to clarify what buddhadharma is and how Buddhism relates to practice, this is the broader beginner map.",
+  },
+  {
+    href: "/meditation",
+    labelZh: "禅修入门",
+    labelEn: "Meditation Guide",
+    titleZh: "把禅修变成短时、稳定、可持续的日常练习。",
+    titleEn: "Turn meditation into a short, steady, sustainable daily rhythm.",
+    descriptionZh: "如果你更关心禅修怎么开始、一次多久、分心怎么办，这一页会更具体。",
+    descriptionEn: "If your question is how to begin meditation, how long to sit, or what to do with distraction, this page goes deeper.",
+  },
+  {
+    href: "/sutra-guide",
+    labelZh: "佛经导读",
+    labelEn: "Sutra Guide",
+    titleZh: "从读什么、怎么读，到听诵与阅读如何配合。",
+    titleEn: "Clarify what to read first and how listening supports reading.",
+    descriptionZh: "如果你想知道初学者读什么佛经、经文听诵怎样帮助理解，这一页更适合继续往下看。",
+    descriptionEn: "If you want to know which sutra to start with and how listening helps understanding, this is the next page to open.",
+  },
+] as const;
+
+export const metadata: Metadata = {
+  title: homeTitle,
+  description: homeDescription,
+  alternates: {
+    canonical: homeUrl,
+  },
+  keywords: [
+    "学佛从哪里开始",
+    "佛法入门",
+    "禅修入门",
+    "佛经导读",
+    "经文听诵",
+    "Fabushi",
+    "法布施",
+  ],
+  openGraph: {
+    title: homeTitle,
+    description: homeDescription,
+    url: homeUrl,
+    siteName: "Fabushi",
+    locale: "zh_CN",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: homeTitle,
+    description: homeDescription,
+  },
+};
+
 function resolveScreenshot(screenshots: OfficialSiteScreenshots, key: ProductScreenshotKey) {
   return screenshots[key] ?? FALLBACK_SCREENSHOTS[key];
 }
@@ -213,6 +287,17 @@ export default async function HomePage() {
         operatingSystem: "iOS, Android, Web",
         url: siteUrl("/download"),
         description: "Meditation, sutra listening, and global dharma sharing.",
+      },
+      {
+        "@type": "ItemList",
+        name: "Fabushi 佛法学习路径",
+        itemListElement: DHARMA_PATHS.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.labelZh,
+          url: siteUrl(item.href),
+          description: item.descriptionZh,
+        })),
       },
       {
         "@type": "FAQPage",
@@ -475,6 +560,59 @@ export default async function HomePage() {
               </p>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="band alt" id="dharma-paths">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="学佛路径" en="Dharma Paths" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="先把“从哪里开始”理清，再进入更具体的学习入口。"
+              en="Clarify where to start first, then move into the next learning path."
+            />
+          </h2>
+        </div>
+        <div className="article-body">
+          <p>
+            <LocalizedText
+              zh="很多人第一次接触佛法时，真正卡住的不是没有内容，而是不知道该先理解佛法、先练禅修，还是先读佛经。现在官网已经把这条入门路径拆成了几个更容易进入的入口。"
+              en="When people first meet buddhadharma, the real difficulty is often not a lack of material but not knowing whether to begin with basic understanding, meditation, or sutra study. The site now breaks that beginner path into a few clearer entrances."
+            />
+          </p>
+          <p>
+            <LocalizedText
+              zh="你可以先从“学佛从哪里开始”回答眼前的问题，再回到佛法入门看整体地图，继续进入禅修或佛经学习；准备开始使用产品时，再把听诵、禅修和修行记录接进日常。"
+              en="You can begin with the page that answers where to start, return to dharma basics for the broader map, then move into meditation or sutra study. When you are ready to use the product, bring listening, practice, and tracking into daily life."
+            />
+          </p>
+        </div>
+        <div className="editorial-list">
+          {DHARMA_PATHS.map((item) => (
+            <a key={item.href} className="editorial-row" href={siteHref(item.href)}>
+              <span>
+                <LocalizedText zh={item.labelZh} en={item.labelEn} />
+              </span>
+              <div>
+                <strong>
+                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
+                </strong>
+                <p>
+                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+                </p>
+              </div>
+            </a>
+          ))}
+        </div>
+        <div className="inline-cta">
+          <a className="primary-action" href={siteHref("/start-learning-buddhism")}>
+            <LocalizedText zh="先看学佛从哪里开始" en="Start with Where to Begin" />
+          </a>
+          <a className="secondary-action" href={siteHref("/download")}>
+            <LocalizedText zh="准备好后再去下载" en="Go to downloads when ready" />
+          </a>
         </div>
       </section>
 
