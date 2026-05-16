@@ -1,6 +1,10 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 const officialSiteReleaseRepo = process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_REPO?.trim() || "bhrumom/fabushi";
 const iosTestFlightPublicUrl = process.env.NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL?.trim() || "";
 const RELEASES_API_URL = `https://api.github.com/repos/${officialSiteReleaseRepo}/releases?per_page=8`;
+const PERSISTED_RELEASES_PATH = path.join(process.cwd(), "public", "api", "releases.json");
 
 const DEFAULT_MIRROR_BASES = [
   {
@@ -125,6 +129,13 @@ export const FALLBACK_SCREENSHOTS: Record<string, string> = {
   "global-donation": "/product/global-donation.png",
   "global-donation-leaderboard": "/product/global-donation-leaderboard.png",
 };
+
+const CHANNEL_ORDER: Array<Pick<OfficialSiteChannel, "audience" | "platform">> = [
+  { audience: "beta", platform: "Android" },
+  { audience: "beta", platform: "iOS" },
+  { audience: "stable", platform: "Android" },
+  { audience: "stable", platform: "iOS" },
+];
 
 const DEFAULT_STABLE_CHANNELS: OfficialSiteChannel[] = [
   {
@@ -333,6 +344,30 @@ function applyConfiguredIosTestFlightChannels(channels: OfficialSiteChannel[]): 
   return channels.map((channel) => applyConfiguredIosTestFlightChannel(channel));
 }
 
+function getChannelKey(channel: Pick<OfficialSiteChannel, "audience" | "platform">): string {
+  return `${channel.audience}:${channel.platform}`;
+}
+
+function mergeChannels(primary: OfficialSiteChannel[], fallback: OfficialSiteChannel[]): OfficialSiteChannel[] {
+  const merged = new Map<string, OfficialSiteChannel>();
+
+  for (const channel of fallback) {
+    merged.set(getChannelKey(channel), channel);
+  }
+
+  for (const channel of primary) {
+    merged.set(getChannelKey(channel), channel);
+  }
+
+  const orderedChannels = CHANNEL_ORDER.map((channel) => merged.get(getChannelKey(channel))).filter(
+    (channel): channel is OfficialSiteChannel => Boolean(channel),
+  );
+  const seenKeys = new Set(orderedChannels.map((channel) => getChannelKey(channel)));
+  const remainingChannels = Array.from(merged.values()).filter((channel) => !seenKeys.has(getChannelKey(channel)));
+
+  return [...orderedChannels, ...remainingChannels];
+}
+
 function normalizeChannel(input: unknown): OfficialSiteChannel | null {
   if (!input || typeof input !== "object") {
     return null;
@@ -453,6 +488,37 @@ function normalizeState(input: unknown): OfficialSiteReleaseAssetState | null {
   };
 }
 
+function normalizeReleaseCollectionRecord(data: Record<string, unknown>): OfficialSiteReleaseCollection {
+  const channels = Array.isArray(data.channels)
+    ? data.channels.map(normalizeChannel).filter((item): item is OfficialSiteChannel => item !== null)
+    : [];
+  const betaChannels =
+    Array.isArray(data.betaChannels) && data.betaChannels.length > 0
+      ? data.betaChannels.map(normalizeChannel).filter((item): item is OfficialSiteChannel => item !== null)
+      : channels.filter((channel) => channel.audience === "beta");
+  const stableChannels =
+    Array.isArray(data.stableChannels) && data.stableChannels.length > 0
+      ? data.stableChannels.map(normalizeChannel).filter((item): item is OfficialSiteChannel => item !== null)
+      : channels.filter((channel) => channel.audience === "stable");
+
+  return {
+    betaChannels,
+    stableChannels,
+    screenshots: normalizeScreenshots(data.screenshots) ?? {},
+    releases: normalizeReleaseEntries(data.releases),
+    notes: Array.isArray(data.notes) ? data.notes.filter((item): item is string => typeof item === "string") : [],
+  };
+}
+
+async function loadPersistedReleaseCollection(): Promise<OfficialSiteReleaseCollection | null> {
+  try {
+    const content = await readFile(PERSISTED_RELEASES_PATH, "utf-8");
+    return normalizeReleaseCollectionRecord(JSON.parse(content) as Record<string, unknown>);
+  } catch {
+    return null;
+  }
+}
+
 async function loadStateAsset(
   release: GitHubRelease,
   assetName: "OFFICIAL_SITE_RELEASE_STATE.json" | "OFFICIAL_SITE_STABLE_RELEASE_STATE.json",
@@ -571,27 +637,10 @@ export async function getReleaseCollectionClient(): Promise<OfficialSiteReleaseC
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as Record<string, unknown>;
-    const channels = Array.isArray(data.channels)
-      ? data.channels.map(normalizeChannel).filter((item): item is OfficialSiteChannel => item !== null)
-      : [];
-    const betaChannels =
-      Array.isArray(data.betaChannels) && data.betaChannels.length > 0
-        ? data.betaChannels
-            .map(normalizeChannel)
-            .filter((item): item is OfficialSiteChannel => item !== null)
-        : channels.filter((channel) => channel.audience === "beta");
-    const stableChannels =
-      Array.isArray(data.stableChannels) && data.stableChannels.length > 0
-        ? data.stableChannels
-            .map(normalizeChannel)
-            .filter((item): item is OfficialSiteChannel => item !== null)
-        : channels.filter((channel) => channel.audience === "stable");
+    const collection = normalizeReleaseCollectionRecord(data);
     return {
-      betaChannels: applyConfiguredIosTestFlightChannels(betaChannels),
-      stableChannels,
-      screenshots: normalizeScreenshots(data.screenshots) ?? {},
-      releases: normalizeReleaseEntries(data.releases),
-      notes: Array.isArray(data.notes) ? data.notes.filter((item): item is string => typeof item === "string") : [],
+      ...collection,
+      betaChannels: applyConfiguredIosTestFlightChannels(collection.betaChannels),
     };
   } catch {
     return { betaChannels: [], stableChannels: [], screenshots: {}, releases: [], notes: [] };
@@ -599,6 +648,7 @@ export async function getReleaseCollectionClient(): Promise<OfficialSiteReleaseC
 }
 
 export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteReleaseCollection> {
+  const persistedCollection = await loadPersistedReleaseCollection();
   const releases = (await fetchJson<GitHubRelease[]>(RELEASES_API_URL)) ?? [];
   const publishedReleases = releases.filter((release) => !release.draft);
   const fallbackReleaseEntries = buildReleaseEntries(publishedReleases);
@@ -622,16 +672,28 @@ export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteRe
     : null;
 
   return {
-    betaChannels: applyConfiguredIosTestFlightChannels(betaState?.channels ?? []),
-    stableChannels: stableState?.channels?.length ? stableState.channels : DEFAULT_STABLE_CHANNELS,
-    screenshots: betaState?.screenshots ?? {},
-    releases: betaState?.releases?.length ? betaState.releases : fallbackReleaseEntries,
+    betaChannels: applyConfiguredIosTestFlightChannels(
+      mergeChannels(betaState?.channels ?? [], persistedCollection?.betaChannels ?? []),
+    ),
+    stableChannels: mergeChannels(
+      stableState?.channels?.length ? stableState.channels : DEFAULT_STABLE_CHANNELS,
+      persistedCollection?.stableChannels ?? [],
+    ),
+    screenshots: betaState?.screenshots ?? persistedCollection?.screenshots ?? {},
+    releases:
+      betaState?.releases?.length
+        ? betaState.releases
+        : persistedCollection?.releases?.length
+          ? persistedCollection.releases
+          : fallbackReleaseEntries,
     notes:
       betaState?.notes?.length
         ? betaState.notes
-        : [
-            "当前 Beta 入口会先显示公开发布记录里的可用信息。",
-            "TestFlight 公共加入链接开放后会显示直接入口。",
-          ],
+        : persistedCollection?.notes?.length
+          ? persistedCollection.notes
+          : [
+              "当前 Beta 入口会先显示公开发布记录里的可用信息。",
+              "TestFlight 公共加入链接开放后会显示直接入口。",
+            ],
   };
 }
