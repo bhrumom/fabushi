@@ -51,6 +51,15 @@ const learningPaths = [
     descriptionEn: "If your main question is which methods to begin with and how to shape a daily rhythm, this page is the better next stop.",
   },
   {
+    href: "/daily-practice",
+    labelZh: "日常功课怎么安排",
+    labelEn: "Daily Practice",
+    titleZh: "把晨起、白天和晚间的轻功课慢慢接起来。",
+    titleEn: "Connect a lighter routine across morning, daytime, and evening.",
+    descriptionZh: "如果你已经知道要开始修行，但卡在功课怎么安排、怎么做得下去，这一页会更具体。",
+    descriptionEn: "If you already know you want to practice but feel stuck on how to arrange a routine that can last, this page is more concrete.",
+  },
+  {
     href: "/meditation",
     labelZh: "禅修入门",
     labelEn: "Meditation Guide",
