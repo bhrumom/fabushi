@@ -18,6 +18,7 @@ const staticRoutes = [
   "/practice-guide",
   "/daily-practice",
   "/sutra-guide",
+  "/sutra-listening",
   "/beginner-sutra-recommendations",
 ] as const;
 
@@ -31,6 +32,7 @@ const weeklyRoutes = new Set([
   "/practice-guide",
   "/daily-practice",
   "/sutra-guide",
+  "/sutra-listening",
   "/beginner-sutra-recommendations",
 ]);
 

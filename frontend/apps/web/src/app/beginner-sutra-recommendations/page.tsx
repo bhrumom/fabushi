@@ -140,6 +140,15 @@ const relatedPaths = [
     descriptionEn: "Open this first if you want the broader map of sutra study before choosing a first text.",
   },
   {
+    href: "/sutra-listening",
+    labelZh: "听诵和读经怎么配合",
+    labelEn: "Listening and Reading",
+    titleZh: "选好起点之后，再把听诵和阅读的关系理清。",
+    titleEn: "Once you have a first text in mind, clarify how listening and reading should work together.",
+    descriptionZh: "如果你已经想从某一部经典开始，但卡在经文听诵能不能代替阅读、怎样把两者接起来，这一页会更具体。",
+    descriptionEn: "This page is more specific if you already have a first text in mind but feel stuck on whether listening can replace reading and how the two should connect.",
+  },
+  {
     href: "/start-learning-buddhism",
     labelZh: "学佛从哪里开始",
     labelEn: "Where to Begin",

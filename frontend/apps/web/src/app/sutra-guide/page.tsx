@@ -86,6 +86,15 @@ const relatedPaths = [
     descriptionEn: "If your main difficulty is choosing between gateway texts such as the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra, this page is more specific.",
   },
   {
+    href: "/sutra-listening",
+    labelZh: "听诵和读经怎么配合",
+    labelEn: "Listening and Reading",
+    titleZh: "把“听诵能不能代替读经”单独说清楚。",
+    titleEn: "Clarify how listening and reading support each other in a beginner rhythm.",
+    descriptionZh: "如果你现在最关心经文听诵能不能代替自己读经、通勤里听经怎样接回阅读，这一页会更具体。",
+    descriptionEn: "This page is more specific if you are asking whether listening can replace reading and how commute listening can return to the written text.",
+  },
+  {
     href: "/buddhadharma",
     labelZh: "佛法入门",
     labelEn: "Dharma Basics",

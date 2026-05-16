@@ -95,6 +95,15 @@ const relatedPaths = [
     descriptionEn: "If you already know scripture is the doorway but feel stuck on whether the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra is the better start, this page is more specific.",
   },
   {
+    href: "/sutra-listening",
+    labelZh: "听诵和读经怎么配合",
+    labelEn: "Listening and Reading",
+    titleZh: "如果你想先靠听诵接近经典，再慢慢回到阅读。",
+    titleEn: "See how listening can become a gentler doorway back into reading.",
+    descriptionZh: "如果你更想知道经文听诵能不能代替读经、通勤里听经怎样接回阅读，这一页会更适合继续往下看。",
+    descriptionEn: "This page is the better next step if you want to know whether listening can replace reading and how commute listening can return to the text.",
+  },
+  {
     href: "/daily-practice",
     labelZh: "日常功课怎么安排",
     labelEn: "Daily Practice",
