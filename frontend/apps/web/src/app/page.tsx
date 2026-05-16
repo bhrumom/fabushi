@@ -43,7 +43,7 @@ const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "main-sutra";
 const homeUrl = siteUrl("/");
 const homeTitle = `学佛从哪里开始、因果、菩提心、六度与空性入门 | ${brand.name}`;
 const homeDescription =
-  "Fabushi 提供学佛从哪里开始、佛法入门、因果是什么意思、菩提心是什么意思、六度分别是什么、空性怎么理解、修行方法总览、日常功课安排、佛经导读、听诵和读经怎么配合与初学者佛经推荐，以及经文听诵、禅修、修行记录和下载入口。";
+  "Fabushi 提供学佛从哪里开始、佛法入门、佛学基本概念入门、因果是什么意思、菩提心是什么意思、六度分别是什么、空性怎么理解、修行方法总览、日常功课安排、佛经导读、听诵和读经怎么配合与初学者佛经推荐，以及经文听诵、禅修、修行记录和下载入口。";
 
 const PRODUCT_MOMENTS: ProductMoment[] = [
   {
@@ -141,8 +141,14 @@ const FAQ_PREVIEW = [
   {
     questionZh: "先读经、先禅修，还是先把日常功课排出来？",
     questionEn: "Should I begin with sutras, meditation, or a daily routine?",
-    answerZh: "更重要的是看你当下最需要什么。如果需要方向感，可以先看佛法入门或佛经导读；如果需要把练习留在生活里，可以先看修行方法总览和日常功课安排。",
-    answerEn: "The better question is what you need most right now. If you need orientation, begin with dharma basics or the sutra guide. If you need practice to stay inside daily life, begin with the practice guide and daily routine page.",
+    answerZh: "更重要的是看你当下最需要什么。如果需要方向感，可以先看佛法入门；如果常常卡在因果、菩提心、六度、空性这些词，就先看佛学基本概念入门；如果需要把练习留在生活里，再继续看修行方法总览和日常功课安排。",
+    answerEn: "The better question is what you need most right now. If you need orientation, begin with dharma basics. If core terms such as karma, bodhicitta, the six paramitas, or emptiness keep stopping you, begin with the concepts hub. If you need practice to stay inside daily life, continue into the practice guide and daily routine page.",
+  },
+  {
+    questionZh: "佛学基本概念应该先看哪几个？",
+    questionEn: "Which buddhist concepts should a beginner clarify first?",
+    answerZh: "对很多初学者来说，先把因果、菩提心、六度和空性放进同一张地图里，往往比零散地碰到一个算一个更稳。先看概念总览页，再决定自己现在更该先读哪一张概念页，会更容易继续往下走。",
+    answerEn: "For many beginners, it is steadier to place karma, bodhicitta, the six paramitas, and emptiness onto one map before treating them as isolated terms. Start with the concepts hub, then decide which concept page matches the question you are living with now.",
   },
   {
     questionZh: "因果是不是就是做好事得好报、做坏事受惩罚？",
@@ -183,6 +189,11 @@ const HERO_GUIDE_LINKS = [
     en: "Where to Begin",
   },
   {
+    href: "/buddhist-concepts",
+    zh: "佛学基本概念",
+    en: "Buddhist Concepts",
+  },
+  {
     href: "/practice-guide",
     zh: "修行方法总览",
     en: "Practice Guide",
@@ -191,11 +202,6 @@ const HERO_GUIDE_LINKS = [
     href: "/sutra-guide",
     zh: "佛经导读",
     en: "Sutra Guide",
-  },
-  {
-    href: "/what-is-emptiness",
-    zh: "空性怎么理解",
-    en: "Emptiness",
   },
 ] as const;
 
@@ -217,6 +223,15 @@ const DHARMA_PATHS = [
     titleEn: "See how buddhadharma, practice, and daily life fit together.",
     descriptionZh: "如果你想先理清佛法是什么、佛教与修行有什么关系，这里是更完整的入门地图。",
     descriptionEn: "If you first need to clarify what buddhadharma is and how Buddhism relates to practice, this is the broader beginner map.",
+  },
+  {
+    href: "/buddhist-concepts",
+    labelZh: "佛学基本概念入门",
+    labelEn: "Buddhist Concepts",
+    titleZh: "先把因果、菩提心、六度和空性放回同一张概念地图里。",
+    titleEn: "Place karma, bodhicitta, the six paramitas, and emptiness back on one concept map.",
+    descriptionZh: "如果你已经发现自己总被这些名相反复挡住，却还看不清它们彼此是什么关系，这一页会更适合继续往下看。",
+    descriptionEn: "This page is the better next step if these terms keep stopping you and you still need a clearer sense of how they relate to one another.",
   },
   {
     href: "/what-is-karma",
@@ -319,6 +334,8 @@ export const metadata: Metadata = {
   keywords: [
     "学佛从哪里开始",
     "佛法入门",
+    "佛学基本概念",
+    "佛教概念入门",
     "因果是什么意思",
     "菩提心是什么意思",
     "六度分别是什么",
@@ -457,8 +474,8 @@ export default async function HomePage() {
             </h1>
             <p className="hero-subtitle">
               <LocalizedText
-                zh="从学佛入门、因果、菩提心、六度与空性，到经文听诵、禅修、日常功课与全球法布施，先把学习路径和练习工具放回同一个入口。"
-                en="From beginner dharma questions and core concepts to sutra listening, meditation, daily rhythm, and global giving, Fabushi keeps learning paths and practice tools inside one entry point."
+                zh="从学佛入门、佛学基本概念、因果、菩提心、六度与空性，到经文听诵、禅修、日常功课与全球法布施，先把学习路径和练习工具放回同一个入口。"
+                en="From beginner dharma questions and a clearer concepts hub to sutra listening, meditation, daily rhythm, and global giving, Fabushi keeps learning paths and practice tools inside one entry point."
               />
             </p>
             <div className="hero-actions">
@@ -711,14 +728,14 @@ export default async function HomePage() {
         <div className="article-body">
           <p>
             <LocalizedText
-              zh="很多人第一次接触佛法时，真正卡住的不是没有内容，而是不知道该先理解佛法、先练禅修，还是先读佛经。往前走一点之后，问题又常常会继续变成“因果到底是不是报应”、“菩提心到底是什么意思”、“六度怎样才不是离生活很远的一张清单”，或“空性到底是不是就是什么都没有”。首页这层最有价值的，不只是给出入口，而是先把这些入口之间的顺序放清楚。"
-              en="When people first meet buddhadharma, the real difficulty is often not a lack of material but not knowing whether to begin with basic understanding, meditation, or sutra study. A little later the questions often become whether karma is just payback, what bodhicitta really means, how the six paramitas stop feeling like a distant list, or whether emptiness means that nothing exists at all. The value of the homepage is not only to offer links, but to make the sequence between those links feel clear."
+              zh="很多人第一次接触佛法时，真正卡住的不是没有内容，而是不知道该先理解佛法、先练禅修，还是先读佛经。往前走一点之后，问题又常常会继续变成“因果到底是不是报应”、“菩提心到底是什么意思”、“六度怎样才不是离生活很远的一张清单”，或“空性到底是不是就是什么都没有”。这时候如果首页只有叶子页入口，没有一张概念总览页把这些问题放回同一张图里，路径还是会显得断。"
+              en="When people first meet buddhadharma, the real difficulty is often not a lack of material but not knowing whether to begin with basic understanding, meditation, or sutra study. A little later the questions often become whether karma is just payback, what bodhicitta really means, how the six paramitas stop feeling like a distant list, or whether emptiness means that nothing exists at all. If the homepage offers only leaf pages at that point, the path can still feel fragmented without a concept overview that gathers those questions back onto one map."
             />
           </p>
           <p>
             <LocalizedText
-              zh="你可以先从“学佛从哪里开始”回答眼前的问题，再回到佛法入门看整体地图；如果问题已经变成“怎样练得更稳”，就继续进入修行方法总览和日常功课安排；如果已经开始碰到核心概念和经典阅读的问题，就顺着因果、菩提心、六度、空性、佛经导读、听诵与阅读关系页继续往下走。"
-              en="You can begin with the page that answers where to start, then return to dharma basics for the broader map. If the question has become how to practice more steadily, move into the practice guide and daily routine page. If core concepts and scripture questions are already appearing, continue through karma, bodhicitta, the six paramitas, emptiness, the sutra guide, and the listening-and-reading page."
+              zh="你可以先从“学佛从哪里开始”回答眼前的问题，再回到佛法入门看整体地图；如果问题已经开始集中到因果、菩提心、六度、空性这些名相上，就先进入佛学基本概念入门，把这些概念之间的关系看清；如果问题已经变成“怎样练得更稳”，就继续进入修行方法总览和日常功课安排；如果已经开始碰到经典阅读的问题，再顺着佛经导读、听诵与阅读关系页和初学者佛经推荐继续往下走。"
+              en="You can begin with the page that answers where to start, then return to dharma basics for the broader map. If your questions are now gathering around karma, bodhicitta, the six paramitas, and emptiness, move first into the concepts hub so those ideas can sit on one clearer map. If the question has become how to practice more steadily, continue into the practice guide and daily routine page. If scripture questions are already taking over, continue through the sutra guide, the listening-and-reading page, and beginner sutra recommendations."
             />
           </p>
         </div>
@@ -743,8 +760,8 @@ export default async function HomePage() {
           <a className="primary-action" href={siteHref("/start-learning-buddhism")}>
             <LocalizedText zh="先看学佛从哪里开始" en="Start with Where to Begin" />
           </a>
-          <a className="secondary-action" href={siteHref("/practice-guide")}>
-            <LocalizedText zh="继续看修行方法总览" en="Continue to the Practice Guide" />
+          <a className="secondary-action" href={siteHref("/buddhist-concepts")}>
+            <LocalizedText zh="继续看佛学基本概念" en="Continue to Buddhist Concepts" />
           </a>
         </div>
       </section>
