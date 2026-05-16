@@ -1,5 +1,6 @@
 import forumContent from "../data/forum-content.json";
 import type {
+  CreateForumReplyInput,
   CreateForumThreadInput,
   ForumReply,
   ForumRepository,
@@ -80,6 +81,10 @@ export function createSeedForumRepository(): ForumRepository {
     throw new ForumWriteUnavailableError("Thread creation is only available when FORUM_DATA_SOURCE=sqlite.");
   };
 
+  const createReply = (_input: CreateForumReplyInput): ForumThreadDetail => {
+    throw new ForumWriteUnavailableError("Reply creation is only available when FORUM_DATA_SOURCE=sqlite.");
+  };
+
   return {
     dataSource: "seed-json",
     persistenceMode: "seed-only",
@@ -94,5 +99,6 @@ export function createSeedForumRepository(): ForumRepository {
     getSnapshot,
     getRuntimeStatus,
     createThread,
+    createReply,
   };
 }
