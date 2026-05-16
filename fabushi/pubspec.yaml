@@ -66,6 +66,7 @@ dependencies:
 
   # WebView
   webview_flutter: ^4.4.2
+  webview_flutter_android: ^4.10.13
   flutter_inappwebview: ^6.0.0
   url_launcher: ^6.1.11
 
@@ -163,6 +164,10 @@ flutter:
     - assets/earth_texture.jpg
     - assets/ip_data/
     - assets/sherpa_models/streaming-paraformer-zh-en/
+    - assets/buddha_fallback/index.html
+    - assets/buddha_fallback/buddha_fallback.js
+    - assets/buddha_fallback/buddha_fallback.js.LEGAL.txt
+    - web/assets/models/佛像模型.glb
     # 佛像模型优先从 R2 加载原始版本，不默认打包本地简化 .model
   
   fonts:

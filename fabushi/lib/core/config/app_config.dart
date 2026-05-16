@@ -170,6 +170,9 @@ class AppConfig {
   static const String buddhaModelAssetPath = 'models/buddha_model.model';
   // 兼容旧链路：移动端在 .model 无法渲染时，可退回到官网静态资源上的远端 GLB。
   static const String legacyBuddhaGlbAssetPath = 'models/佛像模型.glb';
+  static const String bundledBuddhaFallbackHtmlAssetPath =
+      'assets/buddha_fallback/index.html';
+  static const String bundledBuddhaGlbAssetPath = 'web/assets/models/佛像模型.glb';
   static String get legacyBuddhaGlbUrl {
     final encodedPath = legacyBuddhaGlbAssetPath
         .split('/')
