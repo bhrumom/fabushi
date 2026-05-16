@@ -42,7 +42,6 @@ jobs:
           set -euo pipefail
           release_tag="${INPUT_RELEASE_TAG:-${EVENT_RELEASE_TAG:-}}"
 
-          # If triggered by workflow_run or no tag provided, fetch the latest release
           if [ -z "$release_tag" ]; then
             echo "No explicit tag provided, fetching latest release..."
             latest_release="$(gh api repos/$RELEASE_REPO/releases/latest --jq .tag_name 2>/dev/null || true)"
@@ -57,6 +56,13 @@ jobs:
           fi
           echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
 
+      - name: Checkout workflow helper scripts
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/scripts/**
+
       - name: Generate beta state asset for the official site
         shell: bash
         env:
@@ -65,191 +71,7 @@ jobs:
           RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
           IOS_TESTFLIGHT_PUBLIC_URL: ${{ vars.IOS_TESTFLIGHT_PUBLIC_URL || '' }}
           OFFICIAL_SITE_GITHUB_MIRROR_BASES: ${{ vars.OFFICIAL_SITE_GITHUB_MIRROR_BASES || '' }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-import json
-import os
-import subprocess
-import urllib.request
-from datetime import datetime, timezone
-
-release_repo = os.environ["RELEASE_REPO"]
-release_tag = os.environ["RELEASE_TAG"]
-ios_testflight_public_url = os.environ.get("IOS_TESTFLIGHT_PUBLIC_URL", "").strip()
-mirror_lines = [
-    line.strip()
-    for line in os.environ.get("OFFICIAL_SITE_GITHUB_MIRROR_BASES", "").splitlines()
-    if line.strip()
-]
-if not mirror_lines:
-    mirror_lines = [
-        "国内镜像 1|https://mirror.ghproxy.com/https://github.com/",
-        "国内镜像 2|https://ghfast.top/https://github.com/",
-    ]
-
-release = json.loads(
-    subprocess.check_output(
-        ["gh", "api", f"repos/{release_repo}/releases/tags/{release_tag}"],
-        text=True,
-    )
-)
-
-assets = release.get("assets", [])
-screenshots = {}
-
-def extract_summary(body: str | None, fallback: str) -> list[str]:
-    text = body or ""
-    marker = "## Included changes"
-    if marker in text:
-        tail = text.split(marker, 1)[1]
-        section = tail.split("\n## ", 1)[0]
-    else:
-        section = text
-    lines = []
-    for raw_line in section.splitlines():
-        line = raw_line.strip()
-        if line.startswith("- "):
-            cleaned = line[2:].strip()
-            if cleaned:
-                lines.append(cleaned)
-    return lines[:6] if lines else [fallback]
-
-# Fetch recent releases for changelog
-releases_list = []
-try:
-    all_releases = json.loads(
-        subprocess.check_output(
-            ["gh", "api", f"repos/{release_repo}/releases?per_page=5"],
-            text=True,
-        )
-    )
-    for rel in all_releases:
-        if rel.get("draft"):
-            continue
-        rel_summary = extract_summary(rel.get("body"), rel.get("name") or rel.get("tag_name"))
-        releases_list.append({
-            "tag": rel["tag_name"],
-            "title": rel.get("name") or rel["tag_name"],
-            "publishedAt": rel.get("published_at"),
-            "htmlUrl": rel.get("html_url") or f"https://github.com/{release_repo}/releases/tag/{rel['tag_name']}",
-            "summary": rel_summary,
-        })
-except Exception:
-    pass
-
-apk_assets = [asset for asset in assets if asset.get("name", "").endswith(".apk")]
-if not apk_assets:
-    raise SystemExit("No APK asset was found in the selected release.")
-
-apk_asset = next((asset for asset in apk_assets if "arm64" in asset.get("name", "")), apk_assets[0])
-
-def build_mirror_links(primary_href: str) -> list[dict[str, str]]:
-    prefix = "https://github.com/"
-    if not primary_href.startswith(prefix):
-        return []
-    path = primary_href[len(prefix):]
-    result: list[dict[str, str]] = []
-    for line in mirror_lines:
-        label, separator, mirror_prefix = line.partition("|")
-        if not separator or not label.strip() or not mirror_prefix.strip():
-            continue
-        result.append(
-            {
-                "label": label.strip(),
-                "href": f"{mirror_prefix.strip()}{path}",
-            }
-        )
-    return result
-
-testflight_status = {}
-testflight_asset = next(
-    (asset for asset in assets if asset.get("name") == "TESTFLIGHT_UPLOAD_STATUS.txt"),
-    None,
-)
-if testflight_asset:
-    with urllib.request.urlopen(testflight_asset["browser_download_url"]) as response:
-        content = response.read().decode("utf-8")
-    for raw_line in content.splitlines():
-        key, separator, value = raw_line.partition("=")
-        if separator and key.strip():
-            testflight_status[key.strip()] = value.strip()
-
-summary = extract_summary(release.get("body"), release.get("name") or release_tag)
-release_url = release.get("html_url") or f"https://github.com/{release_repo}/releases/tag/{release_tag}"
-
-channels = [
-    {
-        "platform": "Android",
-        "audience": "beta",
-        "status": "Beta 自动同步",
-        "title": "Android Beta",
-        "description": "官网直接读取最新发布版本的 APK 安装包，安装包发布后这里会自动更新。",
-        "primaryLabel": "下载 Android Beta",
-        "primaryHref": apk_asset["browser_download_url"],
-        "version": release_tag,
-        "publishedAt": release.get("published_at"),
-        "updateSummary": summary,
-        "mirrorLinks": build_mirror_links(apk_asset["browser_download_url"]),
-        "note": "国内访问较慢时，可以优先尝试镜像下载入口。",
-        "releasePageHref": release_url,
-    }
-]
-
-if testflight_status:
-    tf_status = testflight_status.get("status", "")
-    tf_uploaded_at = testflight_status.get("uploaded_at") or release.get("published_at")
-    tf_build_number = testflight_status.get("build_number") or release_tag
-    tf_uploaded = tf_status == "uploaded"
-    ios_primary_href = ios_testflight_public_url if tf_uploaded and ios_testflight_public_url else release_url
-    ios_primary_label = "加入 iOS TestFlight" if tf_uploaded and ios_testflight_public_url else "查看 iOS 发布状态"
-    ios_note = ""
-    if tf_uploaded and not ios_testflight_public_url:
-        ios_note = "已经上传到 TestFlight，但仓库变量 IOS_TESTFLIGHT_PUBLIC_URL 还没有配置公开加入链接。"
-    elif testflight_status.get("reason") == "app_store_connect_credentials_not_configured":
-        ios_note = "当前仓库还没有配置 App Store Connect 上传凭据。"
-    elif not tf_uploaded:
-        ios_note = "当前还没有拿到可公开加入的 TestFlight 入口。"
-
-    channels.append(
-        {
-            "platform": "iOS",
-            "audience": "beta",
-            "status": "TestFlight 已开放" if tf_uploaded else "等待 TestFlight 可加入",
-            "title": "iOS TestFlight Beta",
-            "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
-            "primaryLabel": ios_primary_label,
-            "primaryHref": ios_primary_href,
-            "version": tf_build_number,
-            "publishedAt": tf_uploaded_at,
-            "updateSummary": summary,
-            "mirrorLinks": [],
-            "note": ios_note,
-            "releasePageHref": release_url,
-        }
-    )
-
-state = {
-    "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    "release": {
-        "tag": release_tag,
-        "title": release.get("name") or release_tag,
-        "publishedAt": release.get("published_at"),
-    },
-    "channels": channels,
-    "screenshots": screenshots,
-    "releases": releases_list,
-    "notes": [
-        "Android beta 下载链接来自最新发布版本的 APK 资产。",
-        "iOS TestFlight 入口会在上传状态成功后和 Android beta 一起同步。",
-        "镜像链接面向国内网络环境准备，如镜像暂时不可用请使用原始下载地址。",
-    ],
-}
-
-with open("OFFICIAL_SITE_RELEASE_STATE.json", "w", encoding="utf-8") as handle:
-    json.dump(state, handle, ensure_ascii=False, indent=2)
-    handle.write("\n")
-PY
+        run: python3 .github/scripts/generate-official-site-beta-state.py
 
       - name: Upload beta state asset to the release
         id: upload_state
@@ -296,6 +118,7 @@ PY
           token: ${{ secrets.OFFICIAL_SITE_RELEASE_PAT || github.token }}
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            /.github/scripts/**
             /frontend/apps/web/public/api/**
 
       - name: Copy state to public API and commit
@@ -307,12 +130,10 @@ PY
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # First try to restore the file from the safe location
           if [ -f $RUNNER_TEMP/sync-beta-state/OFFICIAL_SITE_RELEASE_STATE.json ]; then
             cp $RUNNER_TEMP/sync-beta-state/OFFICIAL_SITE_RELEASE_STATE.json OFFICIAL_SITE_RELEASE_STATE.json
             echo "Restored generated file from RUNNER_TEMP"
           else
-            # Fallback to fetching it from the release (will fail if release is immutable and wasn't uploaded)
             gh release download "$RELEASE_TAG" --pattern OFFICIAL_SITE_RELEASE_STATE.json --repo ${{ github.repository }} --dir .
           fi
 
@@ -322,60 +143,7 @@ PY
           fi
 
           mkdir -p frontend/apps/web/public/api
-          python3 - <<'PY'
-import json
-from pathlib import Path
-
-source_path = Path("OFFICIAL_SITE_RELEASE_STATE.json")
-target_path = Path("frontend/apps/web/public/api/releases.json")
-
-state = json.loads(source_path.read_text(encoding="utf-8"))
-channels = state.get("channels", [])
-incoming_beta = [channel for channel in channels if channel.get("audience") == "beta"]
-incoming_stable = [channel for channel in channels if channel.get("audience") == "stable"]
-
-existing = {}
-if target_path.exists():
-    try:
-        existing = json.loads(target_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        existing = {}
-
-def merge_channels(incoming, previous):
-    merged = {}
-    insertion_order = []
-    for channel in previous:
-        if not isinstance(channel, dict):
-            continue
-        key = f"{channel.get('audience', '')}:{channel.get('platform', '')}"
-        if key not in merged:
-            insertion_order.append(key)
-        merged[key] = channel
-    for channel in incoming:
-        if not isinstance(channel, dict):
-            continue
-        key = f"{channel.get('audience', '')}:{channel.get('platform', '')}"
-        if key not in merged:
-            insertion_order.append(key)
-        merged[key] = channel
-    preferred_order = ["beta:Android", "beta:iOS", "stable:Android", "stable:iOS"]
-    ordered_keys = [key for key in preferred_order if key in merged]
-    ordered_keys.extend(key for key in insertion_order if key not in ordered_keys)
-    return [merged[key] for key in ordered_keys]
-
-previous_beta = existing.get("betaChannels", []) if isinstance(existing, dict) else []
-previous_stable = existing.get("stableChannels", []) if isinstance(existing, dict) else []
-
-api_state = {
-    "betaChannels": merge_channels(incoming_beta, previous_beta),
-    "stableChannels": merge_channels(incoming_stable, previous_stable),
-    "screenshots": state.get("screenshots") or (existing.get("screenshots") if isinstance(existing, dict) else {}) or {},
-    "releases": state.get("releases") or (existing.get("releases") if isinstance(existing, dict) else []) or [],
-    "notes": state.get("notes") or (existing.get("notes") if isinstance(existing, dict) else []) or [],
-}
-
-target_path.write_text(json.dumps(api_state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-PY
+          python3 .github/scripts/merge-official-site-beta-state.py
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add frontend/apps/web/public/api/releases.json
@@ -396,7 +164,7 @@ PY
           if grep -q 'GH013: Repository rule violations found' "$push_log" && grep -q 'Changes must be made through the merge queue' "$push_log"; then
             cat "$push_log"
             echo "push_blocked_by_repo_rules=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping direct push to main because repository rules require the merge queue. The official site will keep using release metadata and TESTFLIGHT_UPLOAD_STATUS.txt fallbacks."
+            echo "::notice::Skipping direct push to main because repository rules require the merge queue. The official site will keep falling back to release metadata and TESTFLIGHT_UPLOAD_STATUS.txt fallbacks."
             rm -f "$push_log"
             exit 0
           fi
@@ -429,8 +197,8 @@ PY
               echo "- Repository rules blocked the direct push to main, so /api/releases.json was not committed automatically"
               echo "- The official site will keep falling back to release metadata and TESTFLIGHT_UPLOAD_STATUS.txt"
             fi
-            echo "- Android beta now points at the latest GitHub Release APK asset."
-            echo "- iOS beta now points at the TestFlight public link when IOS_TESTFLIGHT_PUBLIC_URL is configured."
+            echo "- Available beta channels from this release were synced selectively."
+            echo "- If a release only contains one platform, the official site keeps the previous entry for the other platform."
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-beta-sync-failure:
