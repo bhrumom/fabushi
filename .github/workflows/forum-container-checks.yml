@@ -60,6 +60,7 @@ jobs:
           assert payload["dataSource"] == "sqlite", payload
           assert payload["persistenceMode"] == "sqlite-file", payload
           assert payload["writesEnabled"] is False, payload
+          assert payload["requiresAccessCode"] is False, payload
           assert payload["counts"]["threads"] >= 4, payload
           assert payload["counts"]["moderationEvents"] >= 4, payload
           PY
@@ -107,11 +108,12 @@ jobs:
         if: always()
         run: docker stop fabushi-forum-check-readonly || true
 
-      - name: Start forum container in sqlite writable mode
+      - name: Start forum container in sqlite writable preview mode
         run: |
           docker run -d --rm --name fabushi-forum-check \
             -e FORUM_DATA_SOURCE=sqlite \
             -e FORUM_ENABLE_WRITES=true \
+            -e FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
             -e FORUM_DATABASE_URL=file:/tmp/forum.db \
             -p 3000:3000 \
             fabushi-forum
@@ -138,6 +140,7 @@ jobs:
           assert payload["dataSource"] == "sqlite", payload
           assert payload["persistenceMode"] == "sqlite-file", payload
           assert payload["writesEnabled"] is True, payload
+          assert payload["requiresAccessCode"] is True, payload
           assert payload["counts"]["threads"] >= 4, payload
           assert payload["counts"]["moderationEvents"] >= 4, payload
           PY
@@ -151,13 +154,39 @@ jobs:
 
           html = unescape(os.environ["FORUM_NEW_THREAD_PAGE"])
           assert "发起一条最小主题" in html, html[:1000]
-          assert "当前数据源：sqlite / 可写" in html, html[:1000]
-          assert "作者角色" in html, html[:1500]
-          assert "引导信号" in html, html[:1500]
+          assert "当前数据源：sqlite / 可写" in html, html[:1200]
+          assert "写入口令" in html, html[:2200]
+          assert "小范围内测" in html, html[:2600]
           PY
 
       - name: Smoke test forum thread creation endpoint
         run: |
+          denied_status="$(curl --silent --show-error --output /tmp/forum-write-denied.json --write-out '%{http_code}' http://127.0.0.1:3000/api/threads \
+            -H 'content-type: application/json' \
+            --data '{
+              "sectionSlug": "newcomer-path",
+              "title": "容器页面检查：缺少口令时不应写入",
+              "author": "页面检查用户",
+              "authorRoleLabel": "新手观察者",
+              "guidanceSignal": "先验证写入口令确实生效。",
+              "summary": "想确认内测写入口令缺失时，sqlite 不会直接接收新主题。",
+              "tags": ["页面检查", "sqlite"],
+              "openingPost": ["这条请求应该先被 preview gate 拒绝。"]
+            }')"
+
+          if [ "$denied_status" != "403" ]; then
+            cat /tmp/forum-write-denied.json
+            exit 1
+          fi
+
+          FORUM_CREATE_DENIED_BODY="$(cat /tmp/forum-write-denied.json)" python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_CREATE_DENIED_BODY"])
+          assert "write access code" in payload["error"], payload
+          PY
+
           response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/threads \
             -H 'content-type: application/json' \
             --data '{
@@ -166,6 +195,7 @@ jobs:
               "author": "页面检查用户",
               "authorRoleLabel": "新手观察者",
               "guidanceSignal": "请先补一条最容易开始的下一步建议。",
+              "writeAccessCode": "forum-preview-2026",
               "summary": "想确认 sqlite 新主题创建后，列表页和详情页都会回读到最新内容。",
               "tags": ["页面检查", "sqlite"],
               "openingPost": ["这条主题由容器页面检查创建，用来确认论坛页面层也能读到刚写入的新线程。"]
@@ -236,7 +266,8 @@ jobs:
           assert "新手观察者" in html, html[:2500]
           assert "请先补一条最容易开始的下一步建议。" in html, html[:3500]
           assert "写一条最小回复" in html, html[:2500]
-          assert "审核时间线" in html, html[:3500]
+          assert "写入口令" in html, html[:3500]
+          assert "审核时间线" in html, html[:4000]
           assert "新主题已发布" in html, html[:4500]
           PY
 
@@ -250,6 +281,7 @@ jobs:
               "author": "页面回复检查",
               "roleLabel": "页面回读验证",
               "guidanceSignal": "请优先补一条最容易执行的下一步建议。",
+              "writeAccessCode": "forum-preview-2026",
               "trustSignal": "用于确认 sqlite 回复写入后，线程详情页会显示新回复。",
               "body": ["这条回复由页面检查写入，用来确认 forum 页面详情已经能回读最新回复。"]
             }')"
