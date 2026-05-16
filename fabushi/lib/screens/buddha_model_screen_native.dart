@@ -11,6 +11,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vector;
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../core/config/app_config.dart';
 import '../services/asset_loader_service.dart';
@@ -56,6 +57,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   bool _useLegacyWebViewFallback = false;
   bool _legacyWebViewReady = false;
   String? _lastLoadError;
+  String? _nativeModelLoadError;
+  String? _legacyFallbackError;
   WebViewController? _legacyWebViewController;
   Timer? _legacyFallbackTimeout;
 
@@ -84,6 +87,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
+
+  bool get _shouldPreferBundledAndroidFallback =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   @override
   void initState() {
@@ -406,6 +412,38 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     _legacyFallbackTimeout = null;
   }
 
+  String _cleanLoadError(String error) {
+    final compact = error
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceFirst(RegExp(r'^(Exception|Error):\s*'), '')
+        .trim();
+    if (compact.length <= 260) {
+      return compact;
+    }
+    return '${compact.substring(0, 257)}...';
+  }
+
+  String get _loadFailureDetails {
+    final details = <String>[];
+    if (_nativeModelLoadError != null && _nativeModelLoadError!.isNotEmpty) {
+      details.add('原生 .model：${_cleanLoadError(_nativeModelLoadError!)}');
+    }
+    if (_legacyFallbackError != null && _legacyFallbackError!.isNotEmpty) {
+      details.add('兼容 GLB：${_cleanLoadError(_legacyFallbackError!)}');
+    }
+    if (details.isEmpty &&
+        _lastLoadError != null &&
+        _lastLoadError!.isNotEmpty) {
+      details.add(_cleanLoadError(_lastLoadError!));
+    }
+    if (details.isEmpty) {
+      return _canUseLegacyWebViewFallback
+          ? '未收到具体错误，请重试后查看设备日志。'
+          : '需要 Impeller / Flutter GPU 支持，以及有效的 flutter_scene .model 文件。';
+    }
+    return details.join('\n');
+  }
+
   void _startLegacyFallbackTimeout() {
     _cancelLegacyFallbackTimeout();
     _legacyFallbackTimeout = Timer(const Duration(seconds: 120), () {
@@ -422,6 +460,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     setState(() {
       _useLegacyWebViewFallback = true;
       _legacyWebViewReady = true;
+      _legacyFallbackError = null;
       _isLoading = false;
       _loadFailed = false;
       _renderFailed = false;
@@ -439,13 +478,15 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       _loadFailed = true;
       _renderFailed = true;
       if (details != null && details.isNotEmpty) {
+        _legacyFallbackError = details;
         _lastLoadError = details;
       }
     });
   }
 
   void _handleLegacyFallbackMessage(String message) {
-    if (message == 'ready') {
+    if (message == 'ready' || message.startsWith('ready:')) {
+      debugPrint('✅ [BuddhaModel] 兼容 GLB 已就绪: $message');
       _markLegacyFallbackReady();
       return;
     }
@@ -466,9 +507,15 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     }
 
     _ticker.stop();
+    _legacyFallbackError = null;
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0x00000000))
+      ..setOnConsoleMessage((message) {
+        debugPrint(
+          '🧭 [BuddhaModel][WebView] ${message.level.name}: ${message.message}',
+        );
+      })
       ..addJavaScriptChannel(
         _legacyFallbackChannelName,
         onMessageReceived: (message) {
@@ -495,9 +542,15 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
             });
           },
           onWebResourceError: (error) {
-            debugPrint(
-              '⚠️ [BuddhaModel] 兼容 WebView 资源加载异常: ${error.description}',
-            );
+            final details =
+                'WebView resource error ${error.errorCode}: '
+                '${error.description}'
+                '${error.url == null ? '' : ' (${error.url})'}';
+            debugPrint('⚠️ [BuddhaModel] 兼容 WebView 资源加载异常: $details');
+            _legacyFallbackError = details;
+            if (error.isForMainFrame == true) {
+              _markLegacyFallbackFailed(details);
+            }
           },
         ),
       );
@@ -505,13 +558,31 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     _legacyWebViewController = controller;
     _startLegacyFallbackTimeout();
     try {
-      await controller.loadHtmlString(
-        _buildLegacyBuddhaFallbackHtml(),
-        baseUrl: AppConfig.publicWebUrl,
-      );
+      if (_shouldPreferBundledAndroidFallback &&
+          controller.platform is AndroidWebViewController) {
+        final androidController =
+            controller.platform as AndroidWebViewController;
+        await androidController.setAllowFileAccess(true);
+        await androidController.setAllowContentAccess(true);
+      }
+
+      if (_shouldPreferBundledAndroidFallback) {
+        debugPrint(
+          '↪️ [BuddhaModel] Android 使用内置 WebView GLB 兼容页: '
+          '${AppConfig.bundledBuddhaFallbackHtmlAssetPath}',
+        );
+        await controller.loadFlutterAsset(
+          AppConfig.bundledBuddhaFallbackHtmlAssetPath,
+        );
+      } else {
+        await controller.loadHtmlString(
+          _buildLegacyBuddhaFallbackHtml(),
+          baseUrl: AppConfig.publicWebUrl,
+        );
+      }
     } catch (e) {
       debugPrint('❌ [BuddhaModel] 兼容 WebView 初始化失败: $e');
-      _markLegacyFallbackFailed('legacy GLB init failed');
+      _markLegacyFallbackFailed('legacy GLB init failed: $e');
     }
   }
 
@@ -562,6 +633,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
           })
           .catchError((e) {
             debugPrint('⚠️ 渲染资源初始化失败 (需开启 Impeller 支持): $e');
+            _nativeModelLoadError = 'flutter_scene 初始化失败: $e';
+            _lastLoadError = _nativeModelLoadError;
             if (_canUseLegacyWebViewFallback) {
               _activateLegacyWebViewFallback();
               return;
@@ -684,6 +757,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   Future<void> _loadModel() async {
     _cancelLegacyFallbackTimeout();
     _lastLoadError = null;
+    _nativeModelLoadError = null;
+    _legacyFallbackError = null;
     _legacyWebViewReady = false;
     _legacyWebViewController = null;
 
@@ -702,6 +777,15 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         _useLegacyWebViewFallback = false;
         _loadingProgress = 0.0;
       });
+    }
+
+    if (_shouldPreferBundledAndroidFallback && _canUseLegacyWebViewFallback) {
+      debugPrint(
+        '↪️ [BuddhaModel] Android 跳过远端大型 .model 原生解包，'
+        '直接使用内置 Three.js + GLB 兼容渲染，避免下载/解析内存峰值。',
+      );
+      await _activateLegacyWebViewFallback();
+      return;
     }
 
     const maxRetries = 2;
@@ -728,6 +812,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         }
         return;
       } catch (e) {
+        _nativeModelLoadError = '$e';
         _lastLoadError = '$e';
         debugPrint('❌ 模型加载失败 (尝试 $attempt): $e');
 
@@ -821,6 +906,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   void _handleRenderFailure(Object error) {
     if (_renderFailed || !mounted) return;
     debugPrint('❌ [BuddhaModel] 场景渲染失败: $error');
+    _nativeModelLoadError = 'flutter_scene 渲染失败: $error';
 
     if (!_useLegacyWebViewFallback && _canUseLegacyWebViewFallback) {
       _lastLoadError = '$error';
@@ -1040,14 +1126,26 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                             size: 48,
                           ),
                           const SizedBox(height: 16),
-                          Text(
-                            _canUseLegacyWebViewFallback
-                                ? '禅境展现遇到阻碍\n(.model 与兼容 GLB 均未能载入)'
-                                : '禅境展现遇到阻碍\n(需 Impeller 及正确的 .model 文件)',
+                          const Text(
+                            '禅境展现遇到阻碍',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: Colors.white70,
                               fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 320),
+                            child: Text(
+                              _loadFailureDetails,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 12,
+                                height: 1.35,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 24),
