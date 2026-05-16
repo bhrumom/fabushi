@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/daily-practice");
 const pageTitle = `日常功课怎么安排 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理日常功课怎么安排：晨起、白天与晚间可以怎样放进禅修、经文听诵、念佛、阅读与简短回顾，帮助学佛修行、六度、空性理解与生活真正接在一起。";
+  "面向初学者梳理日常功课怎么安排：晨起、白天与晚间可以怎样放进禅修、经文听诵、念佛、阅读与简短回顾，帮助菩提心、学佛修行、六度、空性理解与生活真正接在一起。";
 
 const routinePrinciples = [
   {
@@ -105,6 +105,15 @@ const relatedPaths = [
     descriptionEn: "Return to the overview first if you are still mapping how meditation, listening, recitation, reading, and notes fit together.",
   },
   {
+    href: "/what-is-bodhicitta",
+    labelZh: "菩提心是什么意思",
+    labelEn: "What Bodhicitta Means",
+    titleZh: "把“为什么做这份功课”先放清楚。",
+    titleEn: "Clarify why you keep this routine and what direction it is meant to serve.",
+    descriptionZh: "如果你想知道日常功课为什么不只是一张任务清单，而要和发心一起慢慢站稳，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you want to see why a daily routine is more than a checklist and needs to become steady together with aspiration.",
+  },
+  {
     href: "/what-are-the-six-paramitas",
     labelZh: "六度分别是什么",
     labelEn: "Six Paramitas",
@@ -174,6 +183,12 @@ const faqItems = [
     answerEn: "It helps more to ask what you need most right now. If steadiness is the need, let short meditation lead. If you need an easier rhythm, recitation or listening can come first. If you need orientation, begin by placing guide reading into the routine.",
   },
   {
+    questionZh: "菩提心是什么意思，和日常功课有什么关系？",
+    questionEn: "What does bodhicitta have to do with a daily practice routine?",
+    answerZh: "如果没有发心，功课很容易只剩完成任务。更稳的方向，是让晨起、白天和晚间的这些小动作，慢慢回到“我为什么学、愿意把这条路带向哪里”这件事上。这样功课才不只是维持自己，而会开始长出更宽的方向和柔软。",
+    answerEn: "Without aspiration, a daily routine can shrink into task completion. A steadier direction is to let the small actions of morning, daytime, and evening return to the question of why you practice and what direction you want the path to grow toward. Then the routine becomes more than self-maintenance and begins to open into a wider intention and softness.",
+  },
+  {
     questionZh: "白天工作忙，还能有日常功课吗？",
     questionEn: "Can I still keep a daily routine when work is busy?",
     answerZh: "可以。日常功课不一定等于大块时间。很多人真正能留下来的，是晨起几分钟、白天一个短提醒点、晚间一点回顾。功课轻一点，反而更容易和现实生活接上。",
@@ -210,6 +225,7 @@ export const metadata: Metadata = {
     "学佛日常功课",
     "初学者功课安排",
     "居士日常修行",
+    "菩提心是什么意思",
     "六度分别是什么",
     "空性怎么理解",
     "修行方法",
@@ -245,7 +261,7 @@ export default function DailyPracticePage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["日常功课", "学佛修行", "初学者功课安排", "空性理解"],
+        about: ["日常功课", "菩提心", "学佛修行", "初学者功课安排", "空性理解"],
       },
       {
         "@type": "BreadcrumbList",
@@ -350,8 +366,8 @@ export default function DailyPracticePage() {
           </p>
           <p>
             <LocalizedText
-              zh="日常功课的价值，也不只是把几个动作做完。随着晨起、白天和晚间慢慢出现回返点，人会开始看见：很多急躁、执着和判断，并没有想象中那样固定，这也是为什么六度和空性会和功课页放在同一条路上。功课越回到这里，练习就越不只是完成任务，而是在帮助自己多一点清醒和柔软。"
-              en="The value of a daily routine is not only finishing a few actions. As morning, daytime, and evening gain small points of return, people often begin to see that agitation, attachment, and judgment are less fixed than they seemed. This is why the six paramitas and emptiness belong on the same path as a routine page. The more practice returns here, the less it becomes task completion and the more it supports clarity and softness."
+              zh="日常功课的价值，也不只是把几个动作做完。随着晨起、白天和晚间慢慢出现回返点，人会开始看见：很多急躁、执着和判断，并没有想象中那样固定，这也是为什么菩提心、六度和空性会和功课页放在同一条路上。功课越回到这里，练习就越不只是完成任务，而是在帮助自己多一点清醒和柔软。"
+              en="The value of a daily routine is not only finishing a few actions. As morning, daytime, and evening gain small points of return, people often begin to see that agitation, attachment, and judgment are less fixed than they seemed. This is why bodhicitta, the six paramitas, and emptiness belong on the same path as a routine page. The more practice returns here, the less it becomes task completion and the more it supports clarity and softness."
             />
           </p>
           <p>
