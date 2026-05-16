@@ -33,6 +33,15 @@ const dharmaHighlights = [
 
 const learningPaths = [
   {
+    href: "/start-learning-buddhism",
+    labelZh: "学佛从哪里开始",
+    labelEn: "Where to Begin",
+    titleZh: "把入门顺序拆成更清楚的第一步。",
+    titleEn: "Turn the beginner sequence into a clearer first step.",
+    descriptionZh: "如果你最关心的是先读经、先禅修，还是先建立日常节奏，这一页会更聚焦地回答。",
+    descriptionEn: "If your main question is whether to begin with sutras, meditation, or a daily rhythm, this page answers it more directly.",
+  },
+  {
     href: "/meditation",
     labelZh: "禅修入门",
     labelEn: "Meditation Guide",
