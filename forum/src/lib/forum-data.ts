@@ -125,6 +125,13 @@ export class ForumWriteUnavailableError extends Error {
   }
 }
 
+export class ForumWriteAccessDeniedError extends Error {
+  constructor(message = "This runtime requires a valid write access code before accepting new threads or replies.") {
+    super(message);
+    this.name = "ForumWriteAccessDeniedError";
+  }
+}
+
 export class ForumInputError extends Error {
   constructor(message: string) {
     super(message);
@@ -187,6 +194,14 @@ function resolveForumWritesEnabled(dataSource: ForumDataSource): boolean {
   throw new Error(`Unsupported FORUM_ENABLE_WRITES: ${process.env.FORUM_ENABLE_WRITES}`);
 }
 
+function resolveForumWriteAccessCode(dataSource: ForumDataSource): string {
+  if (dataSource !== "sqlite") {
+    return "";
+  }
+
+  return process.env.FORUM_WRITE_ACCESS_CODE?.trim() ?? "";
+}
+
 function getWriteUnavailableMessage(dataSource: ForumDataSource) {
   if (dataSource === "sqlite") {
     return "Forum writes are disabled for the current sqlite runtime. Set FORUM_ENABLE_WRITES=true to allow thread and reply creation.";
@@ -240,11 +255,29 @@ export function getForumSnapshot() {
 
 export function getForumRuntimeStatus() {
   const runtimeStatus = forumRepository.getRuntimeStatus();
+  const writesEnabled = resolveForumWritesEnabled(runtimeStatus.dataSource);
 
   return {
     ...runtimeStatus,
-    writesEnabled: resolveForumWritesEnabled(runtimeStatus.dataSource),
+    writesEnabled,
+    requiresAccessCode: writesEnabled && Boolean(resolveForumWriteAccessCode(runtimeStatus.dataSource)),
   };
+}
+
+export function assertForumWriteAccessCode(value: unknown) {
+  if (!resolveForumWritesEnabled(forumRepository.dataSource)) {
+    return;
+  }
+
+  const configuredCode = resolveForumWriteAccessCode(forumRepository.dataSource);
+
+  if (!configuredCode) {
+    return;
+  }
+
+  if (typeof value !== "string" || value.trim() !== configuredCode) {
+    throw new ForumWriteAccessDeniedError();
+  }
 }
 
 export function createForumThread(input: CreateForumThreadInput) {
