@@ -88,8 +88,7 @@ const relatedPaths = [
     labelZh: "因果是什么意思",
     labelEn: "What Karma Means",
     titleZh: "先把初学者最常先遇到的核心概念放清楚。",
-    titleEn: "Clarify one of the first core concepts beginners usually meet."
-,
+    titleEn: "Clarify one of the first core concepts beginners usually meet.",
     descriptionZh: "如果你现在最卡的是“因果到底是不是报应”，这一页会更适合继续往下看。",
     descriptionEn: "This is the better next page if your question has already become whether karma simply means reward, punishment, or payback.",
   },
