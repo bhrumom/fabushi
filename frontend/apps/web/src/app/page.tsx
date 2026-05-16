@@ -41,9 +41,9 @@ interface ProductMoment {
 const HERO_MAIN_IMAGE_KEY: ProductScreenshotKey = "global-dharma";
 const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "main-sutra";
 const homeUrl = siteUrl("/");
-const homeTitle = `学佛从哪里开始、禅修与佛经学习 | ${brand.name}`;
+const homeTitle = `学佛从哪里开始、修行方法与佛经学习 | ${brand.name}`;
 const homeDescription =
-  "Fabushi 提供学佛从哪里开始、佛法入门、禅修入门、佛经导读，以及经文听诵、禅修、修行记录和下载入口。";
+  "Fabushi 提供学佛从哪里开始、佛法入门、修行方法总览、日常功课安排、佛经导读与初学者佛经推荐，以及经文听诵、禅修、修行记录和下载入口。";
 
 const PRODUCT_MOMENTS: ProductMoment[] = [
   {
@@ -133,28 +133,28 @@ const FEATURE_HIGHLIGHTS = [
 
 const FAQ_PREVIEW = [
   {
-    questionZh: "我应该下载哪个版本？",
-    questionEn: "Which version should I download?",
-    answerZh: "想尽快体验新功能，先下测试版；更重视稳定性，就等正式版。",
-    answerEn: "Choose beta if you want the newest features quickly. Wait for stable if you prefer a calmer release.",
+    questionZh: "学佛从哪里开始，才不会一开始就太重？",
+    questionEn: "How can I begin buddhadharma without making it too heavy immediately?",
+    answerZh: "更稳的起点通常不是一下子学很多，而是先看清自己当下最需要的入口。可以先从“学佛从哪里开始”理清方向，再决定先走佛法入门、修行方法，还是佛经导读。",
+    answerEn: "A steadier beginning is usually not to learn everything at once, but to clarify the doorway that matches your present question. Start with where to begin, then decide whether dharma basics, practice methods, or sutra study should come first.",
   },
   {
-    questionZh: "iOS 为什么会跳到 TestFlight？",
-    questionEn: "Why does iOS open TestFlight?",
-    answerZh: "iOS 内测通过 Apple TestFlight 分发，公开加入后官网会直接带你过去。",
-    answerEn: "iOS beta builds are distributed through Apple TestFlight, and the site takes you there when public access is ready.",
+    questionZh: "先读经、先禅修，还是先把日常功课排出来？",
+    questionEn: "Should I begin with sutras, meditation, or a daily routine?",
+    answerZh: "更重要的是看你当下最需要什么。如果需要方向感，可以先看佛法入门或佛经导读；如果需要把练习留在生活里，可以先看修行方法总览和日常功课安排。",
+    answerEn: "The better question is what you need most right now. If you need orientation, begin with dharma basics or the sutra guide. If you need practice to stay inside daily life, begin with the practice guide and daily routine page.",
   },
   {
-    questionZh: "Android 下载慢怎么办？",
-    questionEn: "What if Android downloads are slow?",
-    answerZh: "国内网络环境下可以优先尝试镜像入口，原始链接仍会保留。",
-    answerEn: "If the original Android download is slow, try the mirror links first. The original link stays available too.",
+    questionZh: "日常功课是不是一定要排得很满才算认真？",
+    questionEn: "Does a daily practice routine need to be full to count as sincere?",
+    answerZh: "不一定。对初学者来说，轻一点、稳一点、能继续做下去，通常比一开始排得很满更有帮助。先让一两个真实动作留下来，再慢慢扩展，往往更稳。",
+    answerEn: "Not necessarily. For beginners, lighter, steadier, and sustainable usually helps more than a full schedule on day one. Let one or two real actions remain first, then expand gradually.",
   },
   {
-    questionZh: "官网会显示我下载的是哪个版本吗？",
-    questionEn: "Will the site show which version I am downloading?",
-    answerZh: "会。首页和下载页都会显示版本号、发布时间和最近更新。",
-    answerEn: "Yes. The homepage and download page both show the version, publish date, and recent updates.",
+    questionZh: "初学者先读什么佛经会更合适？",
+    questionEn: "Which sutra is a better first choice for beginners?",
+    answerZh: "可以先按自己现在最想弄明白的问题来选，而不是只按名气来选。想先熟悉佛法常见词汇，可以从《心经》或导读开始；想从愿心、念佛或安住感进入，也可以先看《阿弥陀经》或《普门品》的相关说明。",
+    answerEn: "It usually helps to choose by the question you are actually living with instead of fame alone. The Heart Sutra can be a good start for familiar language, while the Amitabha Sutra or Universal Gate Chapter may fit better if aspiration, recitation, or steadiness feel closer.",
   },
 ] as const;
 
@@ -187,6 +187,24 @@ const DHARMA_PATHS = [
     descriptionEn: "If your question is how to begin meditation, how long to sit, or what to do with distraction, this page goes deeper.",
   },
   {
+    href: "/practice-guide",
+    labelZh: "修行方法总览",
+    labelEn: "Practice Guide",
+    titleZh: "先把禅修、听诵、念佛、阅读和记录放回同一张地图里。",
+    titleEn: "Place meditation, listening, recitation, reading, and notes back onto one map.",
+    descriptionZh: "如果你已经知道要开始练习，但还不清楚这些方法该怎么配合，这一页更适合先打开。",
+    descriptionEn: "Open this first if you know you want to practice but still need a clearer map for how the methods support each other.",
+  },
+  {
+    href: "/daily-practice",
+    labelZh: "日常功课怎么安排",
+    labelEn: "Daily Practice",
+    titleZh: "把晨起、白天和晚间的轻量功课慢慢接起来。",
+    titleEn: "Connect a lighter morning, daytime, and evening rhythm that can stay alive.",
+    descriptionZh: "如果你最关心第一周功课怎么排、白天怎么接进生活，这一页会更具体。",
+    descriptionEn: "If your main question is how to arrange the first week and carry practice through the day, this page is more specific.",
+  },
+  {
     href: "/sutra-guide",
     labelZh: "佛经导读",
     labelEn: "Sutra Guide",
@@ -194,6 +212,15 @@ const DHARMA_PATHS = [
     titleEn: "Clarify what to read first and how listening supports reading.",
     descriptionZh: "如果你想知道初学者读什么佛经、经文听诵怎样帮助理解，这一页更适合继续往下看。",
     descriptionEn: "If you want to know which sutra to start with and how listening helps understanding, this is the next page to open.",
+  },
+  {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "初学者佛经推荐",
+    labelEn: "Beginner Sutra Picks",
+    titleZh: "把“先读什么佛经”这个问题单独说明白。",
+    titleEn: "Answer the question of which sutra to begin with more directly.",
+    descriptionZh: "如果你已经确定想从经典进入，但卡在《心经》《阿弥陀经》《普门品》或《金刚经》之间，这一页更适合继续往下走。",
+    descriptionEn: "If scripture already feels like the doorway but you are choosing between the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra, this page goes further.",
   },
 ] as const;
 
@@ -206,8 +233,11 @@ export const metadata: Metadata = {
   keywords: [
     "学佛从哪里开始",
     "佛法入门",
+    "修行方法总览",
     "禅修入门",
+    "日常功课怎么安排",
     "佛经导读",
+    "初学者先读什么佛经",
     "经文听诵",
     "Fabushi",
     "法布施",
@@ -303,10 +333,10 @@ export default async function HomePage() {
         "@type": "FAQPage",
         mainEntity: FAQ_PREVIEW.map((item) => ({
           "@type": "Question",
-          name: item.questionEn,
+          name: item.questionZh,
           acceptedAnswer: {
             "@type": "Answer",
-            text: item.answerEn,
+            text: item.answerZh,
           },
         })),
       },
@@ -570,22 +600,22 @@ export default async function HomePage() {
           </p>
           <h2>
             <LocalizedText
-              zh="先把“从哪里开始”理清，再进入更具体的学习入口。"
-              en="Clarify where to start first, then move into the next learning path."
+              zh="先把“从哪里开始”理清，再把更具体的修行与佛经问题接上去。"
+              en="Clarify where to start first, then connect the more specific practice and sutra questions."
             />
           </h2>
         </div>
         <div className="article-body">
           <p>
             <LocalizedText
-              zh="很多人第一次接触佛法时，真正卡住的不是没有内容，而是不知道该先理解佛法、先练禅修，还是先读佛经。现在官网已经把这条入门路径拆成了几个更容易进入的入口。"
-              en="When people first meet buddhadharma, the real difficulty is often not a lack of material but not knowing whether to begin with basic understanding, meditation, or sutra study. The site now breaks that beginner path into a few clearer entrances."
+              zh="很多人第一次接触佛法时，真正卡住的不是没有内容，而是不知道该先理解佛法、先练禅修，还是先读佛经。现在官网已经把这条入门路径拆成了“先回答起步问题，再进入更具体页面”的几层入口。"
+              en="When people first meet buddhadharma, the real difficulty is often not a lack of material but not knowing whether to begin with basic understanding, meditation, or sutra study. The site now breaks that path into layers that first answer the beginner question, then move into more specific pages."
             />
           </p>
           <p>
             <LocalizedText
-              zh="你可以先从“学佛从哪里开始”回答眼前的问题，再回到佛法入门看整体地图，继续进入禅修或佛经学习；准备开始使用产品时，再把听诵、禅修和修行记录接进日常。"
-              en="You can begin with the page that answers where to start, return to dharma basics for the broader map, then move into meditation or sutra study. When you are ready to use the product, bring listening, practice, and tracking into daily life."
+              zh="你可以先从“学佛从哪里开始”回答眼前的问题，再回到佛法入门看整体地图；如果问题已经变成“怎样练得更稳”或“先读什么佛经”，就直接继续进入修行方法总览、日常功课安排，或初学者佛经推荐这些第二层页面。"
+              en="You can begin with the page that answers where to start, then return to dharma basics for the broader map. If the question has already become how to practice more steadily or which sutra to begin with, move straight into the practice guide, daily routine page, or beginner sutra picks."
             />
           </p>
         </div>
@@ -610,8 +640,8 @@ export default async function HomePage() {
           <a className="primary-action" href={siteHref("/start-learning-buddhism")}>
             <LocalizedText zh="先看学佛从哪里开始" en="Start with Where to Begin" />
           </a>
-          <a className="secondary-action" href={siteHref("/download")}>
-            <LocalizedText zh="准备好后再去下载" en="Go to downloads when ready" />
+          <a className="secondary-action" href={siteHref("/practice-guide")}>
+            <LocalizedText zh="继续看修行方法总览" en="Continue to the Practice Guide" />
           </a>
         </div>
       </section>
@@ -650,7 +680,10 @@ export default async function HomePage() {
         <div className="section-heading tight">
           <p>FAQ</p>
           <h2>
-            <LocalizedText zh="先回答最关键的。" en="Answer the questions that block people first." />
+            <LocalizedText
+              zh="先把初学者最常卡住的几个问题说清楚。"
+              en="Clarify the questions beginners most often get stuck on first."
+            />
           </h2>
         </div>
         <div className="faq-list">
