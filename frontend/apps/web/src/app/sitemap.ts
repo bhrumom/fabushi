@@ -9,6 +9,7 @@ const staticRoutes = [
   "/download",
   "/apply",
   "/faq",
+  "/community",
   "/privacy",
   "/contact",
   "/insights",
@@ -19,32 +20,27 @@ const staticRoutes = [
   "/sutra-guide",
 ] as const;
 
+const weeklyRoutes = new Set([
+  "/",
+  "/download",
+  "/faq",
+  "/community",
+  "/buddhadharma",
+  "/start-learning-buddhism",
+  "/meditation",
+  "/practice-guide",
+  "/sutra-guide",
+]);
+
 export default function sitemap(): MetadataRoute.Sitemap {
   const pages: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
     url: siteUrl(route),
     lastModified: route === "/privacy" ? "2026-05-08" : new Date(),
-    changeFrequency:
-      route === "/"
-        ? "weekly"
-        : route === "/download" ||
-            route === "/faq" ||
-            route === "/buddhadharma" ||
-            route === "/start-learning-buddhism" ||
-            route === "/meditation" ||
-            route === "/practice-guide" ||
-            route === "/sutra-guide"
-          ? "weekly"
-          : "monthly",
+    changeFrequency: weeklyRoutes.has(route) ? "weekly" : "monthly",
     priority:
       route === "/"
         ? 1
-        : route === "/download" ||
-            route === "/faq" ||
-            route === "/buddhadharma" ||
-            route === "/start-learning-buddhism" ||
-            route === "/meditation" ||
-            route === "/practice-guide" ||
-            route === "/sutra-guide"
+        : weeklyRoutes.has(route)
           ? 0.9
           : route === "/apply"
             ? 0.85
