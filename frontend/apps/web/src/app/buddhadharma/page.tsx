@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/buddhadharma");
 const pageTitle = `佛法入门 | ${brand.name}`;
 const pageDescription =
-  "从佛法是什么、初学者如何开始，到禅修、经文和日常修行路径，Fabushi 提供清晰的入门导读。";
+  "从佛法是什么、初学者如何开始，到禅修、经文、因果与日常修行路径，Fabushi 提供清晰的入门导读。";
 
 const dharmaHighlights = [
   {
@@ -40,6 +40,15 @@ const learningPaths = [
     titleEn: "Turn the beginner sequence into a clearer first step.",
     descriptionZh: "如果你最关心的是先读经、先禅修，还是先建立日常节奏，这一页会更聚焦地回答。",
     descriptionEn: "If your main question is whether to begin with sutras, meditation, or a daily rhythm, this page answers it more directly.",
+  },
+  {
+    href: "/what-is-karma",
+    labelZh: "因果是什么意思",
+    labelEn: "What Karma Means",
+    titleZh: "先把学佛里最常先遇到的核心概念说明白。",
+    titleEn: "Clarify one of the first core concepts many beginners meet in buddhadharma.",
+    descriptionZh: "如果你已经开始接触佛法，但常把因果理解成简单报应，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you have begun meeting buddhadharma but still hear karma as simple punishment or payback.",
   },
   {
     href: "/practice-guide",
@@ -164,6 +173,7 @@ export const metadata: Metadata = {
     "佛法入门",
     "佛教入门",
     "学佛从哪里开始",
+    "因果是什么意思",
     "禅修入门",
     "Fabushi",
   ],
@@ -251,8 +261,8 @@ export default function BuddhadharmaPage() {
           </h1>
           <p className="lede">
             <LocalizedText
-              zh="先理解佛法、禅修、经文和日常修行之间的关系，再决定你最适合从哪里开始。"
-              en="Understand how buddhadharma, meditation, scripture, and daily discipline fit together before choosing your first step."
+              zh="先理解佛法、禅修、经文、因果和日常修行之间的关系，再决定你最适合从哪里开始。"
+              en="Understand how buddhadharma, meditation, scripture, karma, and daily discipline fit together before choosing your first step."
             />
           </p>
         </div>
