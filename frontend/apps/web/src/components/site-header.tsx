@@ -4,14 +4,14 @@ import { siteHref } from "../lib/site-url";
 
 const NAV_ITEMS = [
   {
-    href: "/#download",
-    zh: "下载",
-    en: "Download",
-  },
-  {
     href: "/buddhadharma",
     zh: "佛法入门",
     en: "Dharma Basics",
+  },
+  {
+    href: "/buddhist-concepts",
+    zh: "佛学概念",
+    en: "Concepts",
   },
   {
     href: "/practice-guide",
