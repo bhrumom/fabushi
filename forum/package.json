@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "start:standalone": "node .next/standalone/server.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke:deployment": "node ./scripts/check-deployment-contract.mjs"
   },
   "dependencies": {
     "next": "^15.5.2",
