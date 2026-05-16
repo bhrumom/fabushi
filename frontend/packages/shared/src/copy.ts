@@ -39,7 +39,6 @@ export const homeUseCases = [
 export const primaryNavigation = [
   { label: "首页", href: "/" },
   { label: "下载", href: "/download" },
-  { label: "佛法论坛", href: "/community" },
   { label: "申请测试", href: "/apply" },
   { label: "常见问题", href: "/faq" },
   { label: "联系", href: "/contact" },
