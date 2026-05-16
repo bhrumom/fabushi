@@ -16,6 +16,7 @@ const staticRoutes = [
   "/start-learning-buddhism",
   "/meditation",
   "/practice-guide",
+  "/daily-practice",
   "/sutra-guide",
 ] as const;
 
@@ -32,6 +33,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
             route === "/start-learning-buddhism" ||
             route === "/meditation" ||
             route === "/practice-guide" ||
+            route === "/daily-practice" ||
             route === "/sutra-guide"
           ? "weekly"
           : "monthly",
@@ -44,6 +46,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
             route === "/start-learning-buddhism" ||
             route === "/meditation" ||
             route === "/practice-guide" ||
+            route === "/daily-practice" ||
             route === "/sutra-guide"
           ? 0.9
           : route === "/apply"
