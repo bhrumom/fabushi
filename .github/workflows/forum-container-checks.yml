@@ -110,6 +110,31 @@ jobs:
           assert payload["thread"]["author"] == "容器检查", payload
           PY
 
+      - name: Smoke test forum reply creation endpoint
+        run: |
+          response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/thread/first-year-stability/replies \
+            -H 'content-type: application/json' \
+            --data '{
+              "author": "容器回复检查",
+              "roleLabel": "容器检查",
+              "trustSignal": "用于确认 sqlite 回复写入路径可用。",
+              "body": ["这条回复由容器检查写入，用来确认 forum_replies 与线程计数更新已经打通。"]
+            }')"
+
+          echo "$response"
+          FORUM_REPLY_RESPONSE="$response" python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_REPLY_RESPONSE"])
+          assert payload["source"] == "sqlite", payload
+          assert payload["thread"]["slug"] == "first-year-stability", payload
+          assert payload["thread"]["replyCount"] >= 4, payload
+          assert payload["thread"]["lastActivity"] == "刚刚回复", payload
+          assert payload["replies"][-1]["author"] == "容器回复检查", payload
+          assert payload["replies"][-1]["body"], payload
+          PY
+
       - name: Stop forum container
         if: always()
         run: docker stop fabushi-forum-check || true
