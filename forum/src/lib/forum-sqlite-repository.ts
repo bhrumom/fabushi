@@ -323,7 +323,7 @@ export function createSqliteForumRepository(): ForumRepository {
   const getSections = (): ForumSection[] => {
     const rows = database
       .prepare("SELECT slug, name, description, moderation_focus, posting_prompt FROM forum_sections ORDER BY name ASC")
-      .all() as SqliteSectionRow[];
+      .all() as unknown as SqliteSectionRow[];
 
     return rows.map(mapSection);
   };
@@ -350,7 +350,7 @@ export function createSqliteForumRepository(): ForumRepository {
         FROM forum_threads
         ORDER BY published_at DESC, slug DESC
       `)
-      .all() as SqliteThreadRow[];
+      .all() as unknown as SqliteThreadRow[];
 
     return rows.map(mapThread);
   };
@@ -370,7 +370,7 @@ export function createSqliteForumRepository(): ForumRepository {
         FROM forum_replies
         ORDER BY published_at ASC, id ASC
       `)
-      .all() as SqliteReplyRow[];
+      .all() as unknown as SqliteReplyRow[];
 
     return rows.map(mapReply);
   };
@@ -434,7 +434,7 @@ export function createSqliteForumRepository(): ForumRepository {
         WHERE section_slug = ?
         ORDER BY published_at DESC, slug DESC
       `)
-      .all(sectionSlug) as SqliteThreadRow[];
+      .all(sectionSlug) as unknown as SqliteThreadRow[];
 
     return rows.map(mapThread);
   };
@@ -455,7 +455,7 @@ export function createSqliteForumRepository(): ForumRepository {
         WHERE thread_slug = ?
         ORDER BY published_at ASC, id ASC
       `)
-      .all(threadSlug) as SqliteReplyRow[];
+      .all(threadSlug) as unknown as SqliteReplyRow[];
 
     return rows.map(mapReply);
   };
