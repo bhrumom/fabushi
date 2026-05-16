@@ -15,6 +15,7 @@ Current scope:
 - read-only routes for thread listing, thread detail, and runtime status
 - a sqlite-backed repository option that can bootstrap from the current seed content
 - a minimal thread-creation API when sqlite mode is enabled
+- a page-level thread composer on top of the thread-creation API in writable mode
 - a minimal reply-creation API for existing threads in sqlite mode
 - a page-level reply composer on thread detail when writes are enabled
 - a dedicated GitHub Actions workflow that checks the forum app when `forum/**` changes
@@ -30,6 +31,7 @@ Included:
 - landing page
 - thread list page
 - thread detail page with sample replies
+- page-level thread creation in writable mode
 - page-level reply submission in writable mode
 - structured seed content contract
 - read-only API boundary
@@ -42,7 +44,6 @@ Included:
 Not included yet:
 
 - authentication
-- thread creation UI in the page layer
 - search, notifications, bookmarks, or follows as real user actions
 - moderation workflows beyond reserved fields and write-state checks
 
@@ -85,7 +86,7 @@ curl -X POST http://localhost:3000/api/thread/first-year-stability/replies \
   }'
 ```
 
-When `FORUM_DATA_SOURCE=sqlite`, you can also open `http://localhost:3000/threads/first-year-stability` and submit a reply through the page-level form. In `seed-json` mode, the same form stays visible but clearly reports that the runtime is still read-only.
+When `FORUM_DATA_SOURCE=sqlite`, you can also open `http://localhost:3000/threads/new` to create a new topic, and `http://localhost:3000/threads/first-year-stability` to submit a reply through the page-level form. In `seed-json` mode, both page-level forms stay visible but clearly report that the runtime is still read-only.
 
 ## Runtime contract
 
@@ -105,7 +106,7 @@ Current JSON routes:
 - `POST /api/thread/[slug]/replies`
 - `GET /api/status`
 
-`GET /api/status` now reports whether writes are enabled for the current data source. In `sqlite` mode, the repository initializes its schema automatically, seeds the database from `forum-content.json` the first time it starts, and lets existing threads accept the first persisted reply submissions.
+`GET /api/status` now reports whether writes are enabled for the current data source. In `sqlite` mode, the repository initializes its schema automatically, seeds the database from `forum-content.json` the first time it starts, lets the page-level thread composer create new topics, and lets existing threads accept the first persisted reply submissions.
 
 ## Container deployment
 
@@ -132,4 +133,4 @@ A dedicated GitHub Actions workflow now checks that the forum container image ca
 
 ## Why this is the next step
 
-After the structured seed content contract, standalone deployment baseline, runtime status boundary, first durable thread creation path, and first reply write path landed, the next highest-value gap was page-level reply submission on top of the same sqlite boundary. This iteration keeps the product surface narrow while letting the thread detail page submit a real reply, surface read-only mode clearly, and re-read the latest thread state. That gives the next pass a stable place to add moderation events, page-level thread creation, and database-backed user workflows.
+After the structured seed content contract, standalone deployment baseline, runtime status boundary, first durable thread creation path, first reply write path, and page-level reply submission landed, the next highest-value gap was page-level thread creation on top of the same sqlite boundary. This iteration keeps the product surface narrow while letting the thread list flow continue into a real composer page and then into a newly created thread detail page. That gives the next pass a stable place to add moderation events, validation rules, and database-backed user workflows.
