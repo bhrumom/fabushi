@@ -52,6 +52,16 @@ class AssetLoaderService {
 
   static String get cdnBaseUrl => defaultCdnBaseUrl;
 
+  static const List<int> _flutterSceneModelFileIdentifier = [
+    0x49,
+    0x50,
+    0x53,
+    0x43,
+  ]; // IPSC
+
+  static bool get _canPrewarmLargeBuddhaModelBytes =>
+      kIsWeb || defaultTargetPlatform != TargetPlatform.android;
+
   // 内存缓存 (仅用于当前会话)
   static final Map<String, Uint8List> _memoryCache = {};
 
@@ -69,12 +79,18 @@ class AssetLoaderService {
 
   /// 如果本机已经存在佛像模型，就提前把它放进内存缓存，避免首次进入禅室再阻塞等待。
   ///
+  /// Android 上该模型太大，启动预热会显著抬高内存峰值，因此只在进入禅室时按需读取。
   /// 这里不会触发网络请求，也不会在本地不存在时主动下载大文件。
   static Future<void> prewarmBuddhaModelFromPersistentCache() async {
     initialize();
     const fileName = AppConfig.buddhaModelAssetPath;
 
     if (_memoryCache.containsKey(fileName)) {
+      return;
+    }
+
+    if (!_canPrewarmLargeBuddhaModelBytes) {
+      debugPrint('ℹ️ [AssetLoader] Android 跳过启动预热佛像大模型字节');
       return;
     }
 
@@ -88,6 +104,11 @@ class AssetLoaderService {
         fileName,
         cached.lengthInBytes,
         minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
+        source: 'persistent-prewarm',
+      );
+      _assertAssetSignatureIsValid(
+        fileName,
+        cached,
         source: 'persistent-prewarm',
       );
 
@@ -117,9 +138,7 @@ class AssetLoaderService {
         minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
       );
     } catch (e) {
-      debugPrint(
-        '⚠️ [AssetLoader] 佛像模型首次加载失败，清理旧缓存后重试 R2: $e',
-      );
+      debugPrint('⚠️ [AssetLoader] 佛像模型首次加载失败，清理旧缓存后重试 R2: $e');
       await evictBuddhaModelCache();
       return _loadAsset(
         AppConfig.buddhaModelAssetPath,
@@ -136,6 +155,10 @@ class AssetLoaderService {
       AppConfig.buddhaModelAssetPath,
       includePartial: true,
     );
+  }
+
+  static void releaseBuddhaModelMemoryCache() {
+    _memoryCache.remove(AppConfig.buddhaModelAssetPath);
   }
 
   // 正在进行的加载任务，防止并发下载同一资源
@@ -206,6 +229,11 @@ class AssetLoaderService {
             minExpectedBytes: minExpectedBytes,
             source: 'persistent-cache',
           );
+          _assertAssetSignatureIsValid(
+            fileName,
+            cached,
+            source: 'persistent-cache',
+          );
           debugPrint(
             '✅ [AssetLoader] 从本地存储加载: $fileName (${cached.lengthInBytes} bytes)',
           );
@@ -244,6 +272,7 @@ class AssetLoaderService {
       minExpectedBytes: minExpectedBytes,
       source: 'download',
     );
+    _assertAssetSignatureIsValid(fileName, data, source: 'download');
 
     _memoryCache[fileName] = data;
     return data;
@@ -392,9 +421,9 @@ class AssetLoaderService {
 
         final totalLength = isResuming
             ? _parseTotalLengthFromContentRange(
-                  response.headers['content-range'],
-                ) ??
-                ((response.contentLength ?? 0) + downloadedBytes)
+                    response.headers['content-range'],
+                  ) ??
+                  ((response.contentLength ?? 0) + downloadedBytes)
             : response.contentLength ?? expectedContentLength ?? 0;
         _assertAssetSizeIsValid(
           fileName,
@@ -422,7 +451,6 @@ class AssetLoaderService {
 
         await sink.flush();
         await sink.close();
-        client.close();
 
         final downloadedSize = await tempFile.length();
         if (totalLength > 0 && downloadedSize != totalLength) {
@@ -595,6 +623,30 @@ class AssetLoaderService {
         'R2 可能上传了错误文件。',
       );
     }
+  }
+
+  static void _assertAssetSignatureIsValid(
+    String fileName,
+    Uint8List data, {
+    required String source,
+  }) {
+    if (fileName != AppConfig.buddhaModelAssetPath) return;
+    if (isFlutterSceneModelData(data)) return;
+
+    throw Exception(
+      '资源格式异常($source): $fileName 不是有效的 flutter_scene .model 文件。',
+    );
+  }
+
+  @visibleForTesting
+  static bool isFlutterSceneModelData(Uint8List data) {
+    if (data.lengthInBytes < 8) return false;
+    for (var i = 0; i < _flutterSceneModelFileIdentifier.length; i++) {
+      if (data[4 + i] != _flutterSceneModelFileIdentifier[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   static String _formatBytes(int bytes) {

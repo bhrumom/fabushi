@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -161,8 +162,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   String _buildLegacyBuddhaFallbackHtml() {
-    final glbUrl =
-        '${AppConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(AppConfig.legacyBuddhaGlbAssetPath)}';
+    final glbUrlJson = jsonEncode(AppConfig.legacyBuddhaGlbUrl);
 
     return '''
 <!DOCTYPE html>
@@ -210,9 +210,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     }
   </script>
   <script type="module">
-    import * as THREE from 'three';
-    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    const glbUrl = $glbUrlJson;
 
     const notifyHost = (message) => {
       const bridge = window.$_legacyFallbackChannelName;
@@ -223,50 +221,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
     const container = document.getElementById('container');
     const status = document.getElementById('status');
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setClearColor(0x000000, 0);
-    container.appendChild(renderer.domElement);
-
-    camera.position.set(0, 120, 290);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.enablePan = false;
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 1.4;
-    controls.minDistance = 180;
-    controls.maxDistance = 360;
-    controls.target.set(0, 90, 0);
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
-    scene.add(ambientLight);
-
-    const keyLight = new THREE.DirectionalLight(0xffd05b, 1.8);
-    keyLight.position.set(80, 200, 120);
-    scene.add(keyLight);
-
-    const fillLight = new THREE.PointLight(0xffe7aa, 1.1, 620);
-    fillLight.position.set(-120, 110, 90);
-    scene.add(fillLight);
-
-    const rimLight = new THREE.PointLight(0x8b5a16, 0.9, 520);
-    rimLight.position.set(0, 40, -180);
-    scene.add(rimLight);
-
-    const haloGeometry = new THREE.RingGeometry(70, 102, 64);
-    const haloMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffd97b,
-      transparent: true,
-      opacity: 0.24,
-      side: THREE.DoubleSide,
-    });
-    const halo = new THREE.Mesh(haloGeometry, haloMaterial);
-    halo.position.set(0, 150, -32);
-    scene.add(halo);
 
     const fail = (reason) => {
       const errorMessage = reason || 'Legacy Buddha GLB load failed';
@@ -276,6 +230,39 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       }
       notifyHost('error:' + errorMessage);
     };
+
+    async function importThreeRuntime() {
+      const candidates = [
+        {
+          root: 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
+          loader: 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js',
+          controls: 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js',
+        },
+        {
+          root: 'https://esm.sh/three@0.160.0',
+          loader: 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js',
+          controls: 'https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js',
+        },
+      ];
+
+      let lastError;
+      for (const candidate of candidates) {
+        try {
+          const THREE = await import(candidate.root);
+          const loaderModule = await import(candidate.loader);
+          const controlsModule = await import(candidate.controls);
+          return {
+            THREE,
+            GLTFLoader: loaderModule.GLTFLoader,
+            OrbitControls: controlsModule.OrbitControls,
+          };
+        } catch (error) {
+          lastError = error;
+          console.warn('Three runtime import failed from', candidate.root, error);
+        }
+      }
+      throw lastError || new Error('Three runtime import failed');
+    }
 
     window.addEventListener('error', (event) => {
       const message = event && event.message ? event.message : 'Legacy Buddha runtime error';
@@ -287,66 +274,127 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       fail(reason);
     });
 
-    const loader = new GLTFLoader();
-    loader.load(
-      '$glbUrl',
-      (gltf) => {
-        const model = gltf.scene;
-        const box = new THREE.Box3().setFromObject(model);
-        const size = new THREE.Vector3();
-        const center = new THREE.Vector3();
-        box.getSize(size);
-        box.getCenter(center);
-        const maxDim = Math.max(size.x || 1, size.y || 1, size.z || 1);
-        const scale = 170 / maxDim;
-
-        model.scale.setScalar(scale);
-        model.position.sub(center.multiplyScalar(scale));
-        model.position.y += 18;
-        model.rotation.y = Math.PI;
-        model.rotation.x = 0.08;
-
-        model.traverse((child) => {
-          if (!child.isMesh) return;
-          child.castShadow = false;
-          child.receiveShadow = false;
-          if (child.material) {
-            child.material.metalness = 0.72;
-            child.material.roughness = 0.24;
-            child.material.color = new THREE.Color(0xffd46a);
-            child.material.needsUpdate = true;
-          }
-        });
-
-        scene.add(model);
-        if (status) {
-          status.style.display = 'none';
-        }
-        notifyHost('ready');
-      },
-      undefined,
-      (error) => {
-        const errorMessage = error && error.message
-          ? error.message
-          : 'Legacy Buddha GLB load failed';
-        fail(errorMessage);
+    importThreeRuntime().then(({ THREE, GLTFLoader, OrbitControls }) => {
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setPixelRatio(window.devicePixelRatio || 1);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setClearColor(0x000000, 0);
+      if ('outputColorSpace' in renderer && 'SRGBColorSpace' in THREE) {
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
       }
-    );
+      container.appendChild(renderer.domElement);
 
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      halo.rotation.z += 0.0018;
-      renderer.render(scene, camera);
-    }
+      camera.position.set(0, 120, 290);
 
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight, false);
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.enablePan = false;
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 1.4;
+      controls.minDistance = 180;
+      controls.maxDistance = 360;
+      controls.target.set(0, 90, 0);
+
+      const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
+      scene.add(ambientLight);
+
+      const keyLight = new THREE.DirectionalLight(0xffd05b, 1.8);
+      keyLight.position.set(80, 200, 120);
+      scene.add(keyLight);
+
+      const fillLight = new THREE.PointLight(0xffe7aa, 1.1, 620);
+      fillLight.position.set(-120, 110, 90);
+      scene.add(fillLight);
+
+      const rimLight = new THREE.PointLight(0x8b5a16, 0.9, 520);
+      rimLight.position.set(0, 40, -180);
+      scene.add(rimLight);
+
+      const haloGeometry = new THREE.RingGeometry(70, 102, 64);
+      const haloMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffd97b,
+        transparent: true,
+        opacity: 0.24,
+        side: THREE.DoubleSide,
+      });
+      const halo = new THREE.Mesh(haloGeometry, haloMaterial);
+      halo.position.set(0, 150, -32);
+      scene.add(halo);
+
+      const loader = new GLTFLoader();
+      loader.load(
+        glbUrl,
+        (gltf) => {
+          const model = gltf.scene;
+          const box = new THREE.Box3().setFromObject(model);
+          const size = new THREE.Vector3();
+          const center = new THREE.Vector3();
+          box.getSize(size);
+          box.getCenter(center);
+          const maxDim = Math.max(size.x || 1, size.y || 1, size.z || 1);
+          const scale = 170 / maxDim;
+
+          model.scale.setScalar(scale);
+          model.position.sub(center.multiplyScalar(scale));
+          model.position.y += 18;
+          model.rotation.y = Math.PI;
+          model.rotation.x = 0.08;
+
+          model.traverse((child) => {
+            if (!child.isMesh) return;
+            child.castShadow = false;
+            child.receiveShadow = false;
+            if (child.material) {
+              child.material.metalness = 0.72;
+              child.material.roughness = 0.24;
+              child.material.color = new THREE.Color(0xffd46a);
+              child.material.needsUpdate = true;
+            }
+          });
+
+          scene.add(model);
+          if (status) {
+            status.style.display = 'none';
+          }
+          notifyHost('ready');
+        },
+        (progress) => {
+          if (!status || !progress.lengthComputable || progress.total <= 0) {
+            return;
+          }
+          const percent = Math.max(0, Math.min(99, Math.floor((progress.loaded / progress.total) * 100)));
+          status.textContent = '恭请佛像...' + percent + '%';
+        },
+        (error) => {
+          const errorMessage = error && error.message
+            ? error.message
+            : 'Legacy Buddha GLB load failed';
+          fail(errorMessage);
+        }
+      );
+
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        halo.rotation.z += 0.0018;
+        renderer.render(scene, camera);
+      }
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight, false);
+      });
+
+      animate();
+    }).catch((error) => {
+      const message = error && error.message
+        ? error.message
+        : 'Three runtime import failed';
+      fail(message);
     });
-
-    animate();
   </script>
 </body>
 </html>
@@ -360,7 +408,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
   void _startLegacyFallbackTimeout() {
     _cancelLegacyFallbackTimeout();
-    _legacyFallbackTimeout = Timer(const Duration(seconds: 15), () {
+    _legacyFallbackTimeout = Timer(const Duration(seconds: 120), () {
       if (!mounted || _legacyWebViewReady || _loadFailed) {
         return;
       }
@@ -459,7 +507,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     try {
       await controller.loadHtmlString(
         _buildLegacyBuddhaFallbackHtml(),
-        baseUrl: AppConfig.currentBackendUrl,
+        baseUrl: AppConfig.publicWebUrl,
       );
     } catch (e) {
       debugPrint('❌ [BuddhaModel] 兼容 WebView 初始化失败: $e');
@@ -583,7 +631,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
     for (int i = 0; i < _particleCount; i++) {
       final p = _smokeParticles[i];
-      final sourceOffset = _incenseStickOffsets[i % _incenseStickOffsets.length];
+      final sourceOffset =
+          _incenseStickOffsets[i % _incenseStickOffsets.length];
       final tipPos = vector.Vector3(
         _incenseBaseX + sourceOffset,
         _incenseBaseY + currentHeight,
@@ -655,21 +704,21 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       });
     }
 
-    const maxRetries = 3;
+    const maxRetries = 2;
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      var modelDataLoaded = false;
+      Uint8List? modelData;
       try {
-        final modelData = await AssetLoaderService.loadBuddhaModel(
+        modelData = await AssetLoaderService.loadBuddhaModel(
           onProgress: (progress) {
             if (mounted) {
               setState(() => _loadingProgress = progress);
             }
           },
         );
-        modelDataLoaded = true;
         if (!mounted) return;
 
         await _buildBuddhaNode(modelData);
+        AssetLoaderService.releaseBuddhaModelMemoryCache();
 
         if (mounted) {
           setState(() {
@@ -681,9 +730,26 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       } catch (e) {
         _lastLoadError = '$e';
         debugPrint('❌ 模型加载失败 (尝试 $attempt): $e');
-        if (modelDataLoaded) {
-          await AssetLoaderService.evictBuddhaModelCache();
+
+        if (modelData != null) {
+          AssetLoaderService.releaseBuddhaModelMemoryCache();
+          if (_canUseLegacyWebViewFallback) {
+            debugPrint(
+              '↪️ [BuddhaModel] 远端 .model 已下载但原生解包/渲染失败，'
+              '切换远端 GLB 兼容渲染: $_lastLoadError',
+            );
+            await _activateLegacyWebViewFallback();
+            return;
+          }
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _loadFailed = true;
+            });
+          }
+          return;
         }
+
         if (attempt < maxRetries) {
           await Future.delayed(Duration(seconds: 1 << attempt));
           continue;
@@ -708,10 +774,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   Future<void> _buildBuddhaNode(Uint8List modelData) async {
-    final node = await Node.fromFlatbuffer(modelData.buffer.asByteData());
+    final bounds = ModelAutoFit.computeBoundsFromModelBytes(modelData);
+    final node = await Node.fromFlatbuffer(ByteData.sublistView(modelData));
     _retuneBuddhaMaterials(node);
 
-    final bounds = ModelAutoFit.computeBoundsFromModelBytes(modelData);
     final originalTransform = node.localTransform.clone();
     node.localTransform = ModelAutoFit.computeFitTransform(
       bounds,
@@ -888,7 +954,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                             color: Colors.black.withValues(alpha: 0.48),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: const Color(0xFFD4AF37).withValues(alpha: 0.36),
+                              color: const Color(
+                                0xFFD4AF37,
+                              ).withValues(alpha: 0.36),
                             ),
                           ),
                           child: const Column(
@@ -1317,11 +1385,11 @@ class ScenePainter extends CustomPainter {
     canvas.drawPath(
       flame,
       Paint()
-        ..shader = ui.Gradient.radial(
-          center.translate(0, -16),
-          20,
-          const [Color(0xFFFFF5B7), Color(0xFFFF8A24), Color(0x00FF8A24)],
-        ),
+        ..shader = ui.Gradient.radial(center.translate(0, -16), 20, const [
+          Color(0xFFFFF5B7),
+          Color(0xFFFF8A24),
+          Color(0x00FF8A24),
+        ]),
     );
     canvas.drawOval(
       Rect.fromCenter(center: center.translate(0, 2), width: 30, height: 12),
