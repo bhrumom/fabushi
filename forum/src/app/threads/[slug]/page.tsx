@@ -73,7 +73,12 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
           </ul>
         </section>
 
-        <ThreadReplyForm threadSlug={thread.slug} writesEnabled={runtime.writesEnabled} dataSource={runtime.dataSource} />
+        <ThreadReplyForm
+          threadSlug={thread.slug}
+          writesEnabled={runtime.writesEnabled}
+          requiresAccessCode={runtime.requiresAccessCode}
+          dataSource={runtime.dataSource}
+        />
 
         <section className="reply-stack">
           <div className="section-heading">
@@ -81,7 +86,9 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
               <h2>当前回复</h2>
               <p>
                 {runtime.writesEnabled
-                  ? "新回复提交后会把角色状态、引导信号和正文一起写入 sqlite，并在刷新后直接显示在这里。"
+                  ? runtime.requiresAccessCode
+                    ? "当前环境已经开放 sqlite 写入，但仍要求有效写入口令；适合先做小范围内测和人工承接。"
+                    : "新回复提交后会把角色状态、引导信号和正文一起写入 sqlite，并在刷新后直接显示在这里。"
                   : "当前环境会继续回读已有帖子和回复，但不会默认开放新写入；等部署环境确认后再显式打开 FORUM_ENABLE_WRITES。"}
               </p>
             </div>
