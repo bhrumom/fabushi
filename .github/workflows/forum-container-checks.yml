@@ -1,0 +1,31 @@
+name: Container checks - Forum
+
+on:
+  pull_request:
+    paths:
+      - "forum/**"
+      - ".github/workflows/forum-container-checks.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "forum/**"
+      - ".github/workflows/forum-container-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  forum-container:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout forum workspace only
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+            forum
+          fetch-depth: 1
+
+      - name: Build forum container image
+        run: docker build -t fabushi-forum ./forum
