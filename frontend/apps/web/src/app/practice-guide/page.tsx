@@ -90,6 +90,15 @@ const relatedPaths = [
     descriptionEn: "Return here first if your main difficulty is still deciding where to begin.",
   },
   {
+    href: "/daily-practice",
+    labelZh: "日常功课怎么安排",
+    labelEn: "Daily Practice",
+    titleZh: "把晨起、白天和晚间的轻量功课慢慢接起来。",
+    titleEn: "Connect a lighter routine across morning, daytime, and evening.",
+    descriptionZh: "如果你已经确定要开始练习，但卡在功课怎么安排、怎么做得更稳，这一页会更具体。",
+    descriptionEn: "If you already know you want to practice but feel stuck on arranging a routine that can last, this page is more concrete.",
+  },
+  {
     href: "/buddhadharma",
     labelZh: "佛法入门",
     labelEn: "Dharma Basics",
