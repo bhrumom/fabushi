@@ -41,9 +41,9 @@ interface ProductMoment {
 const HERO_MAIN_IMAGE_KEY: ProductScreenshotKey = "global-dharma";
 const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "main-sutra";
 const homeUrl = siteUrl("/");
-const homeTitle = `学佛从哪里开始、因果、菩提心与六度入门 | ${brand.name}`;
+const homeTitle = `学佛从哪里开始、因果、菩提心、六度与空性入门 | ${brand.name}`;
 const homeDescription =
-  "Fabushi 提供学佛从哪里开始、佛法入门、因果是什么意思、菩提心是什么意思、六度分别是什么、修行方法总览、日常功课安排、佛经导读、听诵和读经怎么配合与初学者佛经推荐，以及经文听诵、禅修、修行记录和下载入口。";
+  "Fabushi 提供学佛从哪里开始、佛法入门、因果是什么意思、菩提心是什么意思、六度分别是什么、空性怎么理解、修行方法总览、日常功课安排、佛经导读、听诵和读经怎么配合与初学者佛经推荐，以及经文听诵、禅修、修行记录和下载入口。";
 
 const PRODUCT_MOMENTS: ProductMoment[] = [
   {
@@ -163,6 +163,12 @@ const FAQ_PREVIEW = [
     answerEn: "Not necessarily. For beginners, the six paramitas can begin in very small ways, such as a little more patience today, a little less reactivity, or returning once more after the rhythm breaks. They are not distant doctrine, but six directions that slowly bring aspiration back into daily life.",
   },
   {
+    questionZh: "空性是不是就是“什么都没有”？",
+    questionEn: "Does emptiness mean that nothing exists at all?",
+    answerZh: "通常不是这样理解。更稳妥的方向，是说一切法都依赖因缘条件而成立，没有一个永远固定、不依赖任何条件的自性。它不是把生活否定掉，而是帮助人少一点把事情抓得太实、太绝对。",
+    answerEn: "Usually not. A steadier understanding is that all phenomena arise through conditions and do not possess an eternal self-existing essence. Emptiness does not cancel life, but helps loosen the tendency to treat things as too solid and absolute.",
+  },
+  {
     questionZh: "初学者先读什么佛经会更合适？",
     questionEn: "Which sutra is a better first choice for beginners?",
     answerZh: "可以先按自己现在最想弄明白的问题来选，而不是只按名气来选。想先熟悉佛法常见词汇，可以从《心经》或导读开始；想从愿心、念佛或安住感进入，也可以先看《阿弥陀经》或《普门品》的相关说明。",
@@ -215,6 +221,15 @@ const DHARMA_PATHS = [
     titleEn: "Clarify how aspiration returns to conduct, training, and ordinary life.",
     descriptionZh: "如果你的问题已经变成“布施、持戒、忍辱、精进、禅定、般若和日常修行是什么关系”，这一页会更适合继续往下看。",
     descriptionEn: "This page is the better next step if your question has already become how generosity, discipline, patience, diligence, meditation, and wisdom relate to ordinary practice.",
+  },
+  {
+    href: "/what-is-emptiness",
+    labelZh: "空性怎么理解",
+    labelEn: "How to Understand Emptiness",
+    titleZh: "把般若和空性从抽象词句慢慢接回眼前经验。",
+    titleEn: "Return wisdom and emptiness from abstract language to lived experience.",
+    descriptionZh: "如果你的问题已经变成“空性是不是就是什么都没有”，这一页会更适合继续往下看。",
+    descriptionEn: "This page is the better next step if your question has already become whether emptiness means that nothing exists at all.",
   },
   {
     href: "/meditation",
@@ -284,6 +299,7 @@ export const metadata: Metadata = {
     "因果是什么意思",
     "菩提心是什么意思",
     "六度分别是什么",
+    "空性怎么理解",
     "修行方法总览",
     "禅修入门",
     "日常功课怎么安排",
@@ -660,14 +676,14 @@ export default async function HomePage() {
         <div className="article-body">
           <p>
             <LocalizedText
-              zh="很多人第一次接触佛法时，真正卡住的不是没有内容，而是不知道该先理解佛法、先练禅修，还是先读佛经。往前走一点之后，问题又常常会继续变成“因果到底是不是报应”、“菩提心到底是什么意思”，或“六度怎样才不是离生活很远的一张清单”。首页这层最有价值的，不只是给出入口，而是先把这些入口之间的顺序放清楚。"
-              en="When people first meet buddhadharma, the real difficulty is often not a lack of material but not knowing whether to begin with basic understanding, meditation, or sutra study. A little later the questions often become whether karma is just payback, what bodhicitta really means, or how the six paramitas stop feeling like a distant list. The value of the homepage is not only to offer links, but to make the sequence between those links feel clear."
+              zh="很多人第一次接触佛法时，真正卡住的不是没有内容，而是不知道该先理解佛法、先练禅修，还是先读佛经。往前走一点之后，问题又常常会继续变成“因果到底是不是报应”、“菩提心到底是什么意思”、“六度怎样才不是离生活很远的一张清单”，或“空性到底是不是就是什么都没有”。首页这层最有价值的，不只是给出入口，而是先把这些入口之间的顺序放清楚。"
+              en="When people first meet buddhadharma, the real difficulty is often not a lack of material but not knowing whether to begin with basic understanding, meditation, or sutra study. A little later the questions often become whether karma is just payback, what bodhicitta really means, how the six paramitas stop feeling like a distant list, or whether emptiness means that nothing exists at all. The value of the homepage is not only to offer links, but to make the sequence between those links feel clear."
             />
           </p>
           <p>
             <LocalizedText
-              zh="你可以先从“学佛从哪里开始”回答眼前的问题，再回到佛法入门看整体地图；如果问题已经变成“怎样练得更稳”，就继续进入修行方法总览和日常功课安排；如果已经开始碰到核心概念和经典阅读的问题，就顺着因果、菩提心、六度、佛经导读、听诵与阅读关系页继续往下走。"
-              en="You can begin with the page that answers where to start, then return to dharma basics for the broader map. If the question has become how to practice more steadily, move into the practice guide and daily routine page. If core concepts and scripture questions are already appearing, continue through karma, bodhicitta, the six paramitas, the sutra guide, and the listening-and-reading page."
+              zh="你可以先从“学佛从哪里开始”回答眼前的问题，再回到佛法入门看整体地图；如果问题已经变成“怎样练得更稳”，就继续进入修行方法总览和日常功课安排；如果已经开始碰到核心概念和经典阅读的问题，就顺着因果、菩提心、六度、空性、佛经导读、听诵与阅读关系页继续往下走。"
+              en="You can begin with the page that answers where to start, then return to dharma basics for the broader map. If the question has become how to practice more steadily, move into the practice guide and daily routine page. If core concepts and scripture questions are already appearing, continue through karma, bodhicitta, the six paramitas, emptiness, the sutra guide, and the listening-and-reading page."
             />
           </p>
         </div>
