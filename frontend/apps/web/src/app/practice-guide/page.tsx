@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/practice-guide");
 const pageTitle = `修行方法总览 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，才能把修行留在生活里。";
+  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，才能把修行、六度与日常生活接在一起。";
 
 const practicePrinciples = [
   {
@@ -99,6 +99,15 @@ const relatedPaths = [
     descriptionEn: "If you already know you want to practice but feel stuck on arranging a routine that can last, this page is more concrete.",
   },
   {
+    href: "/what-are-the-six-paramitas",
+    labelZh: "六度分别是什么",
+    labelEn: "Six Paramitas",
+    titleZh: "把修行方法为什么不只是在练技能说清楚。",
+    titleEn: "See why practice methods are not only techniques but also a wider training of life.",
+    descriptionZh: "如果你想知道布施、持戒、忍辱、精进、禅定和般若怎样回到练习方式和待人处事里，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you want to see how generosity, discipline, patience, diligence, meditation, and wisdom return to actual practice methods and ordinary conduct.",
+  },
+  {
     href: "/buddhadharma",
     labelZh: "佛法入门",
     labelEn: "Dharma Basics",
@@ -181,6 +190,7 @@ export const metadata: Metadata = {
     "佛教修行方法",
     "初学者怎么修行",
     "日常功课",
+    "六度分别是什么",
     "念佛",
     "Fabushi",
   ],
