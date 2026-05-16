@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/start-learning-buddhism");
 const pageTitle = `学佛从哪里开始 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理学佛从哪里开始：先建立方向，再选一条可持续的练习主线，把佛经、禅修、因果理解、六度与日常功课接进生活。";
+  "面向初学者梳理学佛从哪里开始：先建立方向，再选一条可持续的练习主线，把佛经、禅修、因果理解、菩提心、六度、空性与日常功课接进生活。";
 
 const starterPrinciples = [
   {
@@ -109,6 +109,15 @@ const relatedPaths = [
     titleEn: "See how aspiration returns to conduct, training, and ordinary life.",
     descriptionZh: "如果你现在最卡的是“六度到底和日常修行有什么关系”，这一页会更适合继续往下看。",
     descriptionEn: "This is the better next page if your question has already become how the six paramitas relate to ordinary practice.",
+  },
+  {
+    href: "/what-is-emptiness",
+    labelZh: "空性怎么理解",
+    labelEn: "How to Understand Emptiness",
+    titleZh: "把空性从抽象词句慢慢接回眼前最容易执着的地方。",
+    titleEn: "Return emptiness from abstract language to the places where attachment feels strongest.",
+    descriptionZh: "如果你现在最卡的是“空性是不是就是什么都没有”，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if your question has already become whether emptiness means nothingness or something usable in life.",
   },
   {
     href: "/beginner-sutra-recommendations",
@@ -213,6 +222,7 @@ export const metadata: Metadata = {
     "佛法入门",
     "初学者学佛",
     "因果是什么意思",
+    "空性怎么理解",
     "六度分别是什么",
     "佛教入门",
     "Fabushi",
