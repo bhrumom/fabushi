@@ -40,5 +40,21 @@ void main() {
       expect(html, isNot(contains('cdn.jsdelivr.net')));
       expect(html, isNot(contains('esm.sh')));
     });
+
+    test('prefers bundled GLB candidates before the remote static URL', () {
+      final html = File(AppConfig.bundledBuddhaFallbackHtmlAssetPath)
+          .readAsStringSync();
+
+      expect(html, contains('bundled-glb-relative-two-up'));
+      expect(html, contains('bundled-glb-relative-one-up'));
+      expect(html, contains('bundled-glb-origin-assets-root'));
+      expect(html, contains('bundled-glb-origin-web-root'));
+      expect(html.indexOf('bundled-glb-relative-two-up'), isNonNegative);
+      expect(html.indexOf('remote-static-glb'), isNonNegative);
+      expect(
+        html.indexOf('bundled-glb-relative-two-up'),
+        lessThan(html.indexOf('remote-static-glb')),
+      );
+    });
   });
 }
