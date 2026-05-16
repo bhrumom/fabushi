@@ -168,8 +168,16 @@ class AppConfig {
   // 3D 佛像模型配置
   // 如果 R2 上需要切换到新的对象键，优先改这里，便于强制绕开旧缓存。
   static const String buddhaModelAssetPath = 'models/buddha_model.model';
-  // 兼容旧链路：移动端在 .model 缺失时，可退回到仍在线上的 legacy GLB。
+  // 兼容旧链路：移动端在 .model 无法渲染时，可退回到官网静态资源上的远端 GLB。
   static const String legacyBuddhaGlbAssetPath = 'models/佛像模型.glb';
+  static String get legacyBuddhaGlbUrl {
+    final encodedPath = legacyBuddhaGlbAssetPath
+        .split('/')
+        .map(Uri.encodeComponent)
+        .join('/');
+    return '$publicWebUrl/assets/$encodedPath';
+  }
+
   // 当前线上正确模型明显大于 48MB，小于该阈值视为误传/降质文件。
   static const int minBuddhaModelSizeBytes = 100 * 1024 * 1024;
 
