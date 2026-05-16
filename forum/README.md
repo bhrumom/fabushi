@@ -235,9 +235,18 @@ docker run --rm -p 3000:3000 \
   -e FORUM_ENABLE_WRITES=false \
   -e FORUM_DATABASE_URL=file:/tmp/forum.db \
   fabushi-forum
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/status
 curl http://localhost:3000/robots.txt
 curl -I http://localhost:3000/threads
 ```
+
+In that production-indexing runtime, verify the pair of signals together before exposing traffic:
+
+- `GET /api/health` and `GET /api/status` both report `deploymentStage=production` and `indexingEnabled=true`
+- response headers on page routes include `x-forum-deployment-stage: production` and `x-forum-indexing-enabled: true`, without the preview `x-robots-tag`
+- `GET /robots.txt` switches from `Disallow: /` to `Allow: /` and includes the configured `Host:`
+- page HTML begins emitting canonical and indexable metadata against `FORUM_PUBLIC_BASE_URL`
 
 If you want sqlite data to survive container restarts, use the preview compose example in this directory:
 
@@ -258,7 +267,7 @@ Runtime defaults:
 - `HOSTNAME=0.0.0.0`
 - `NODE_ENV=production`
 
-A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, waits for the container healthcheck to report healthy, validates that sqlite starts in read-only mode by default, confirms preview responses stay noindex through headers and `robots.txt`, confirms `/threads/new` exposes the disabled page-level composer until writes are explicitly enabled, reruns the container with `FORUM_ENABLE_WRITES=true` plus a preview write-access code to exercise thread creation, denied writes without the code, thread-detail readback, reply submission, role labels, guidance signals, and appended moderation timeline events, and then restarts the same writable container against a mounted sqlite path to confirm those writes still exist after the process comes back up.
+A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, waits for the container healthcheck to report healthy, validates that sqlite starts in read-only mode by default, confirms preview responses stay noindex through headers and `robots.txt`, verifies a production runtime with `FORUM_PUBLIC_BASE_URL` flips health, status, headers, robots, and page metadata into indexable mode, confirms `/threads/new` exposes the disabled page-level composer until writes are explicitly enabled, reruns the container with `FORUM_ENABLE_WRITES=true` plus a preview write-access code to exercise thread creation, denied writes without the code, thread-detail readback, reply submission, role labels, guidance signals, and appended moderation timeline events, and then restarts the same writable container against a mounted sqlite path to confirm those writes still exist after the process comes back up.
 
 ## Why this is the next step
 
