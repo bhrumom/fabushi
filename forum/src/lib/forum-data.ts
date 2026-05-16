@@ -7,6 +7,9 @@ export type ForumModerationState = "published" | "needs-review" | "archived";
 export type ForumKnowledgeStage = "discussion" | "candidate" | "archived";
 export type ForumModerationEventType = "thread-published" | "thread-created" | "reply-created";
 
+const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
+
 export interface ForumSection {
   slug: string;
   name: string;
@@ -116,7 +119,7 @@ export interface ForumRuntimeStatus {
 }
 
 export class ForumWriteUnavailableError extends Error {
-  constructor(message = "Forum writes are not enabled for the current data source.") {
+  constructor(message = "Forum writes are not enabled for the current runtime.") {
     super(message);
     this.name = "ForumWriteUnavailableError";
   }
@@ -160,6 +163,36 @@ function resolveForumDataSource(): ForumDataSource {
   }
 
   throw new Error(`Unsupported FORUM_DATA_SOURCE: ${configuredSource}`);
+}
+
+function resolveForumWritesEnabled(dataSource: ForumDataSource): boolean {
+  if (dataSource !== "sqlite") {
+    return false;
+  }
+
+  const configuredFlag = process.env.FORUM_ENABLE_WRITES?.trim().toLowerCase();
+
+  if (!configuredFlag) {
+    return false;
+  }
+
+  if (TRUE_VALUES.has(configuredFlag)) {
+    return true;
+  }
+
+  if (FALSE_VALUES.has(configuredFlag)) {
+    return false;
+  }
+
+  throw new Error(`Unsupported FORUM_ENABLE_WRITES: ${process.env.FORUM_ENABLE_WRITES}`);
+}
+
+function getWriteUnavailableMessage(dataSource: ForumDataSource) {
+  if (dataSource === "sqlite") {
+    return "Forum writes are disabled for the current sqlite runtime. Set FORUM_ENABLE_WRITES=true to allow thread and reply creation.";
+  }
+
+  return "Forum writes are only available when FORUM_DATA_SOURCE=sqlite and FORUM_ENABLE_WRITES=true.";
 }
 
 function createForumRepository(): ForumRepository {
@@ -206,13 +239,26 @@ export function getForumSnapshot() {
 }
 
 export function getForumRuntimeStatus() {
-  return forumRepository.getRuntimeStatus();
+  const runtimeStatus = forumRepository.getRuntimeStatus();
+
+  return {
+    ...runtimeStatus,
+    writesEnabled: resolveForumWritesEnabled(runtimeStatus.dataSource),
+  };
 }
 
 export function createForumThread(input: CreateForumThreadInput) {
+  if (!resolveForumWritesEnabled(forumRepository.dataSource)) {
+    throw new ForumWriteUnavailableError(getWriteUnavailableMessage(forumRepository.dataSource));
+  }
+
   return forumRepository.createThread(input);
 }
 
 export function createForumReply(input: CreateForumReplyInput) {
+  if (!resolveForumWritesEnabled(forumRepository.dataSource)) {
+    throw new ForumWriteUnavailableError(getWriteUnavailableMessage(forumRepository.dataSource));
+  }
+
   return forumRepository.createReply(input);
 }

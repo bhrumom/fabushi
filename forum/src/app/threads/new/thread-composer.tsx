@@ -57,7 +57,9 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
 
     if (!writesEnabled) {
       setTone("error");
-      setMessage(`当前 ${dataSource} 模式还是只读，切到 sqlite 后才能在页面里直接发布主题。`);
+      setMessage(
+        `当前 ${dataSource} 模式还没有开放写入；请保持 FORUM_DATA_SOURCE=sqlite，并把 FORUM_ENABLE_WRITES=true 后再直接发布主题。`,
+      );
       return;
     }
 
@@ -137,14 +139,14 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
       <div className="section-heading">
         <div>
           <h2 id="thread-composer-heading">发起一条最小主题</h2>
-          <p>这一步除了创建主题本身，也把作者角色和新手引导信号一起写入持久化层，避免它们只停留在展示文案。</p>
+          <p>这一步会在开放写入时把作者角色和新手引导信号一起写入持久化层，而不是继续只停留在展示文案。</p>
         </div>
         <span className="reply-runtime">{writesEnabled ? `当前数据源：${dataSource} / 可写` : `当前数据源：${dataSource} / 只读`}</span>
       </div>
 
       {!writesEnabled ? (
         <p className="reply-form-hint">
-          当前运行环境还在只读模式。把 `FORUM_DATA_SOURCE` 切到 `sqlite` 后，这里就能直接提交新主题。
+          当前运行环境还在只读模式。先把 `FORUM_DATA_SOURCE` 设为 `sqlite`，再显式打开 `FORUM_ENABLE_WRITES=true`，这里才会直接提交新主题。
         </p>
       ) : null}
 

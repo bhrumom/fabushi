@@ -37,7 +37,9 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
 
     if (!writesEnabled) {
       setTone("error");
-      setMessage(`当前 ${dataSource} 模式还是只读，切到 sqlite 后才能在页面里直接提交回复。`);
+      setMessage(
+        `当前 ${dataSource} 模式还没有开放写入；请保持 FORUM_DATA_SOURCE=sqlite，并把 FORUM_ENABLE_WRITES=true 后再直接提交回复。`,
+      );
       return;
     }
 
@@ -95,14 +97,14 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
       <div className="section-heading">
         <div>
           <h2 id="reply-composer-heading">写一条最小回复</h2>
-          <p>这一步会把回复者的角色状态和当前引导信号一起写入 sqlite，而不是继续依赖接口默认文案。</p>
+          <p>这一步会在开放写入时把回复者的角色状态和当前引导信号一起写入 sqlite，而不是继续依赖接口默认文案。</p>
         </div>
         <span className="reply-runtime">{writesEnabled ? `当前数据源：${dataSource} / 可写` : `当前数据源：${dataSource} / 只读`}</span>
       </div>
 
       {!writesEnabled ? (
         <p className="reply-form-hint">
-          当前运行环境还在只读模式。把 `FORUM_DATA_SOURCE` 切到 `sqlite` 后，这里就能直接提交最小回复。
+          当前运行环境还在只读模式。先把 `FORUM_DATA_SOURCE` 设为 `sqlite`，再显式打开 `FORUM_ENABLE_WRITES=true`，这里才会直接提交最小回复。
         </p>
       ) : null}
 

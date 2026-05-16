@@ -29,7 +29,7 @@ export default function ThreadsPage() {
             <p>
               {runtime.writesEnabled
                 ? "当前运行环境已经允许页面层直接发起主题，作者角色和新手引导信号也会随主题一起落库。"
-                : `当前 ${runtime.dataSource} 模式还是只读，但页面层发帖入口已经可以先承接结构和表单交互，切到 sqlite 后即可直接发布。`}
+                : `当前 ${runtime.dataSource} 模式还没有开放写入；论坛可以先用持久化只读形态部署，等环境准备好后再显式打开 FORUM_ENABLE_WRITES。`}
             </p>
           </div>
           <Link className="primary-link" href="/threads/new">

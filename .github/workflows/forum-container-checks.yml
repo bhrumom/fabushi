@@ -30,15 +30,93 @@ jobs:
       - name: Build forum container image
         run: docker build -t fabushi-forum ./forum
 
-      - name: Start forum container in sqlite mode
+      - name: Start forum container in sqlite read-only mode
+        run: |
+          docker run -d --rm --name fabushi-forum-check-readonly \
+            -e FORUM_DATA_SOURCE=sqlite \
+            -e FORUM_DATABASE_URL=file:/tmp/forum-readonly.db \
+            -p 3000:3000 \
+            fabushi-forum
+
+      - name: Smoke test forum sqlite status endpoint defaults to read-only
+        run: |
+          for attempt in 1 2 3 4 5; do
+            response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)" && break
+            sleep 3
+          done
+
+          if [ -z "${response:-}" ]; then
+            docker logs fabushi-forum-check-readonly
+            exit 1
+          fi
+
+          echo "$response"
+          FORUM_STATUS_RESPONSE="$response" python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_STATUS_RESPONSE"])
+          assert payload["service"] == "forum", payload
+          assert payload["dataSource"] == "sqlite", payload
+          assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["writesEnabled"] is False, payload
+          assert payload["counts"]["threads"] >= 4, payload
+          assert payload["counts"]["moderationEvents"] >= 4, payload
+          PY
+
+      - name: Smoke test forum sqlite read-only page surfaces
+        run: |
+          new_thread_page="$(curl --fail --show-error --silent http://127.0.0.1:3000/threads/new)"
+          FORUM_NEW_THREAD_PAGE="$new_thread_page" python3 - <<'PY'
+          import os
+          from html import unescape
+
+          html = unescape(os.environ["FORUM_NEW_THREAD_PAGE"])
+          assert "发起一条最小主题" in html, html[:1000]
+          assert "当前数据源：sqlite / 只读" in html, html[:1500]
+          assert "FORUM_ENABLE_WRITES=true" in html, html[:2500]
+          PY
+
+          status_code="$(curl --silent --show-error --output /tmp/forum-readonly-create.json --write-out '%{http_code}' http://127.0.0.1:3000/api/threads \
+            -H 'content-type: application/json' \
+            --data '{
+              "sectionSlug": "newcomer-path",
+              "title": "只读容器检查：不应默认开放新主题",
+              "author": "只读检查用户",
+              "authorRoleLabel": "新手观察者",
+              "guidanceSignal": "确认 sqlite 默认不开放写入。",
+              "summary": "用于验证 sqlite 在默认部署态下仍然拒绝创建主题。",
+              "tags": ["只读检查"],
+              "openingPost": ["这条请求应该被显式拒绝，而不是直接写入 sqlite。"]
+            }')"
+
+          if [ "$status_code" != "503" ]; then
+            cat /tmp/forum-readonly-create.json
+            exit 1
+          fi
+
+          FORUM_CREATE_ERROR_BODY="$(cat /tmp/forum-readonly-create.json)" python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_CREATE_ERROR_BODY"])
+          assert "FORUM_ENABLE_WRITES=true" in payload["error"], payload
+          PY
+
+      - name: Stop forum sqlite read-only container
+        if: always()
+        run: docker stop fabushi-forum-check-readonly || true
+
+      - name: Start forum container in sqlite writable mode
         run: |
           docker run -d --rm --name fabushi-forum-check \
             -e FORUM_DATA_SOURCE=sqlite \
+            -e FORUM_ENABLE_WRITES=true \
             -e FORUM_DATABASE_URL=file:/tmp/forum.db \
             -p 3000:3000 \
             fabushi-forum
 
-      - name: Smoke test forum sqlite status endpoint
+      - name: Smoke test forum writable sqlite status endpoint
         run: |
           for attempt in 1 2 3 4 5; do
             response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)" && break
@@ -208,6 +286,8 @@ jobs:
           assert "新回复已写入时间线" in html, html[:5500]
           PY
 
-      - name: Stop forum container
+      - name: Stop forum containers
         if: always()
-        run: docker stop fabushi-forum-check || true
+        run: |
+          docker stop fabushi-forum-check || true
+          docker stop fabushi-forum-check-readonly || true

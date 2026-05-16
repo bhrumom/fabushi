@@ -82,7 +82,7 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
               <p>
                 {runtime.writesEnabled
                   ? "新回复提交后会把角色状态、引导信号和正文一起写入 sqlite，并在刷新后直接显示在这里。"
-                  : "当前环境先以样例回复展示结构，切到 sqlite 后这里会承接真实提交。"}
+                  : "当前环境会继续回读已有帖子和回复，但不会默认开放新写入；等部署环境确认后再显式打开 FORUM_ENABLE_WRITES。"}
               </p>
             </div>
           </div>
