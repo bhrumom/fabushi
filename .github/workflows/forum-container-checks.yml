@@ -74,7 +74,8 @@ jobs:
           html = unescape(os.environ["FORUM_NEW_THREAD_PAGE"])
           assert "发起一条最小主题" in html, html[:1000]
           assert "当前数据源：sqlite / 可写" in html, html[:1000]
-          assert "版块与发帖提示" in html, html[:1000]
+          assert "作者角色" in html, html[:1500]
+          assert "引导信号" in html, html[:1500]
           PY
 
       - name: Smoke test forum thread creation endpoint
@@ -85,6 +86,8 @@ jobs:
               "sectionSlug": "newcomer-path",
               "title": "容器页面检查：新主题能否进入真实帖子页？",
               "author": "页面检查用户",
+              "authorRoleLabel": "新手观察者",
+              "guidanceSignal": "请先补一条最容易开始的下一步建议。",
               "summary": "想确认 sqlite 新主题创建后，列表页和详情页都会回读到最新内容。",
               "tags": ["页面检查", "sqlite"],
               "openingPost": ["这条主题由容器页面检查创建，用来确认论坛页面层也能读到刚写入的新线程。"]
@@ -99,6 +102,8 @@ jobs:
           assert payload["source"] == "sqlite", payload
           assert payload["thread"]["sectionSlug"] == "newcomer-path", payload
           assert payload["thread"]["title"].startswith("容器页面检查"), payload
+          assert payload["thread"]["authorRoleLabel"] == "新手观察者", payload
+          assert payload["thread"]["guidanceSignal"] == "请先补一条最容易开始的下一步建议。", payload
           assert payload["thread"]["openingPost"], payload
           assert payload["moderationEvents"][-1]["eventType"] == "thread-created", payload
           assert "新主题已发布" in payload["moderationEvents"][-1]["summary"], payload
@@ -124,6 +129,8 @@ jobs:
           assert payload["source"] == "sqlite", payload
           assert payload["thread"]["slug"], payload
           assert payload["thread"]["author"] == "页面检查用户", payload
+          assert payload["thread"]["authorRoleLabel"] == "新手观察者", payload
+          assert payload["thread"]["guidanceSignal"] == "请先补一条最容易开始的下一步建议。", payload
           assert payload["moderationEvents"][-1]["eventType"] == "thread-created", payload
           PY
 
@@ -134,8 +141,10 @@ jobs:
 
           html = unescape(os.environ["FORUM_THREAD_LIST_PAGE"])
           assert "发起主题" in html, html[:1000]
-          assert "容器页面检查：新主题能否进入真实帖子页？" in html, html[:2000]
-          assert "页面检查用户" in html, html[:2000]
+          assert "容器页面检查：新主题能否进入真实帖子页？" in html, html[:3000]
+          assert "页面检查用户" in html, html[:3000]
+          assert "新手观察者" in html, html[:3000]
+          assert "请先补一条最容易开始的下一步建议。" in html, html[:4000]
           PY
 
           thread_detail_page="$(curl --fail --show-error --silent "http://127.0.0.1:3000/threads/${slug}")"
@@ -144,11 +153,13 @@ jobs:
           from html import unescape
 
           html = unescape(os.environ["FORUM_THREAD_DETAIL_PAGE"])
-          assert "容器页面检查：新主题能否进入真实帖子页？" in html, html[:2000]
-          assert "页面检查用户" in html, html[:2000]
-          assert "写一条最小回复" in html, html[:2000]
-          assert "审核时间线" in html, html[:3000]
-          assert "新主题已发布" in html, html[:4000]
+          assert "容器页面检查：新主题能否进入真实帖子页？" in html, html[:2500]
+          assert "页面检查用户" in html, html[:2500]
+          assert "新手观察者" in html, html[:2500]
+          assert "请先补一条最容易开始的下一步建议。" in html, html[:3500]
+          assert "写一条最小回复" in html, html[:2500]
+          assert "审核时间线" in html, html[:3500]
+          assert "新主题已发布" in html, html[:4500]
           PY
 
           echo "thread_slug=${slug}" >> "$GITHUB_ENV"
@@ -160,6 +171,7 @@ jobs:
             --data '{
               "author": "页面回复检查",
               "roleLabel": "页面回读验证",
+              "guidanceSignal": "请优先补一条最容易执行的下一步建议。",
               "trustSignal": "用于确认 sqlite 回复写入后，线程详情页会显示新回复。",
               "body": ["这条回复由页面检查写入，用来确认 forum 页面详情已经能回读最新回复。"]
             }')"
@@ -175,6 +187,8 @@ jobs:
           assert payload["thread"]["replyCount"] >= 1, payload
           assert payload["thread"]["lastActivity"] == "刚刚回复", payload
           assert payload["replies"][-1]["author"] == "页面回复检查", payload
+          assert payload["replies"][-1]["roleLabel"] == "页面回读验证", payload
+          assert payload["replies"][-1]["guidanceSignal"] == "请优先补一条最容易执行的下一步建议。", payload
           assert payload["replies"][-1]["body"], payload
           assert payload["moderationEvents"][-1]["eventType"] == "reply-created", payload
           assert "新回复已写入时间线" in payload["moderationEvents"][-1]["summary"], payload
@@ -187,10 +201,11 @@ jobs:
 
           html = unescape(os.environ["FORUM_THREAD_DETAIL_PAGE"])
           assert "当前回复" in html, html[:2000]
-          assert "页面回复检查" in html, html[:4000]
-          assert "页面回读验证" in html, html[:4000]
-          assert "这条回复由页面检查写入，用来确认 forum 页面详情已经能回读最新回复。" in html, html[:4000]
-          assert "新回复已写入时间线" in html, html[:5000]
+          assert "页面回复检查" in html, html[:4500]
+          assert "页面回读验证" in html, html[:4500]
+          assert "请优先补一条最容易执行的下一步建议。" in html, html[:5000]
+          assert "这条回复由页面检查写入，用来确认 forum 页面详情已经能回读最新回复。" in html, html[:5000]
+          assert "新回复已写入时间线" in html, html[:5500]
           PY
 
       - name: Stop forum container
