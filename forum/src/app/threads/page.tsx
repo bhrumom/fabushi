@@ -1,8 +1,11 @@
 import Link from "next/link";
-import { getForumSnapshot } from "../../lib/forum-data";
+import { getForumRuntimeStatus, getForumSnapshot } from "../../lib/forum-data";
+
+export const dynamic = "force-dynamic";
 
 export default function ThreadsPage() {
   const snapshot = getForumSnapshot();
+  const runtime = getForumRuntimeStatus();
 
   return (
     <main>
@@ -11,13 +14,28 @@ export default function ThreadsPage() {
           <span className="badge">帖子列表 / Thread Index</span>
           <nav className="nav">
             <Link href="/">返回首页</Link>
+            <Link href="/threads/new">发起主题</Link>
             <a href="/api/threads">查看 API</a>
           </nav>
         </div>
         <h1>先把值得长期讨论的问题摆出来。</h1>
         <p>
-          当前列表使用种子内容驱动，但页面结构已经按真实论坛的浏览方式组织：板块、线程摘要、互动指标和详情入口都已具备独立承接点。
+          当前列表已经按真实论坛的浏览方式组织：板块、线程摘要、互动指标、详情入口和主题创建入口都开始沿着同一条独立论坛链路推进。
         </p>
+
+        <div className="thread-action-bar">
+          <div>
+            <h2>开始一条新主题</h2>
+            <p>
+              {runtime.writesEnabled
+                ? "当前运行环境已经允许页面层直接发起主题，下一轮可以继续沿着这条链路接审核事件和用户状态。"
+                : `当前 ${runtime.dataSource} 模式还是只读，但页面层发帖入口已经可以先承接结构和表单交互，切到 sqlite 后即可直接发布。`}
+            </p>
+          </div>
+          <Link className="primary-link" href="/threads/new">
+            发起主题
+          </Link>
+        </div>
       </section>
 
       <section className="section-grid">
@@ -25,6 +43,7 @@ export default function ThreadsPage() {
           <article key={section.slug} className="panel">
             <h2>{section.name}</h2>
             <p>{section.description}</p>
+            <p>{section.postingPrompt}</p>
             <p>当前种子帖子 {section.threadCount} 条</p>
           </article>
         ))}
