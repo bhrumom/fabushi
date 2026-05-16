@@ -93,6 +93,15 @@ const relatedPaths = [
     descriptionEn: "If you want to see how meditation fits with listening, recitation, reading, and notes, this page is the better next step.",
   },
   {
+    href: "/daily-practice",
+    labelZh: "日常功课怎么安排",
+    labelEn: "Daily Practice",
+    titleZh: "把每天的坐、听、念和回顾接成稳定节奏。",
+    titleEn: "Connect sitting, listening, recitation, and review into a steadier daily rhythm.",
+    descriptionZh: "如果你已经决定从禅修开始，但想知道它怎么放进早晚和白天的生活，这一页会更贴近日常。",
+    descriptionEn: "If meditation is your starting point but you want to know how it fits into mornings, evenings, and the middle of the day, this page is closer to daily life.",
+  },
+  {
     href: "/sutra-guide",
     labelZh: "佛经导读",
     labelEn: "Sutra Guide",

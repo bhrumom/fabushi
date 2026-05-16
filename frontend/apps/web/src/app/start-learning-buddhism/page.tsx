@@ -84,6 +84,15 @@ const relatedPaths = [
     descriptionEn: "Open this first if you want the wider map of buddhadharma, practice, meditation, and daily discipline.",
   },
   {
+    href: "/daily-practice",
+    labelZh: "日常功课怎么安排",
+    labelEn: "Daily Practice",
+    titleZh: "把最轻的晨起、白天和晚间功课慢慢接起来。",
+    titleEn: "Connect the lightest morning, daytime, and evening practice into a living rhythm.",
+    descriptionZh: "如果你最卡的是第一周功课怎么安排、怎样做得更稳，这一页会更适合继续往下走。",
+    descriptionEn: "If your main difficulty is how to arrange the first week and make it steadier, this page is the better next step.",
+  },
+  {
     href: "/meditation",
     labelZh: "禅修入门",
     labelEn: "Meditation Guide",
