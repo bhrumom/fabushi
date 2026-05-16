@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/what-is-karma");
 const pageTitle = `因果是什么意思 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理因果是什么意思：因果不是简单报应，而是起心动念、说话做事与习惯怎样慢慢形成结果，并说明因果、业力与日常修行的关系。";
+  "面向初学者梳理因果是什么意思：因果不是简单报应，而是起心动念、说话做事与习惯怎样慢慢形成结果，并说明因果、业力、空性、菩提心、六度与日常修行的关系。";
 
 const karmaFoundations = [
   {
@@ -114,6 +114,33 @@ const relatedPaths = [
     descriptionEn: "Return here first if you are still looking for the doorway that fits your present question best.",
   },
   {
+    href: "/what-is-bodhicitta",
+    labelZh: "菩提心是什么意思",
+    labelEn: "What Bodhicitta Means",
+    titleZh: "把发心怎样不只围着自己打转接回同一条路上。",
+    titleEn: "See how intention widens beyond the self on the same path.",
+    descriptionZh: "如果你想继续看理解因果以后，为什么修学不会只停在自己得失上，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you want to see why understanding karma does not leave practice circling only around personal gain and loss.",
+  },
+  {
+    href: "/what-are-the-six-paramitas",
+    labelZh: "六度分别是什么",
+    labelEn: "Six Paramitas",
+    titleZh: "把发心和行为怎样慢慢长成日常修学的六个方向接起来。",
+    titleEn: "See how intention and action gradually become six directions of daily training.",
+    descriptionZh: "如果你想继续看理解因果以后，为什么布施、持戒、忍辱、精进、禅定和般若会跟着出现，这一页更适合继续往下看。",
+    descriptionEn: "This is the better next page if you want to see why generosity, discipline, patience, diligence, meditation, and wisdom naturally follow after karma becomes clearer.",
+  },
+  {
+    href: "/what-is-emptiness",
+    labelZh: "空性怎么理解",
+    labelEn: "How to Understand Emptiness",
+    titleZh: "把因缘和合怎样和空性放在一起理解接回来。",
+    titleEn: "Read dependent arising together with emptiness.",
+    descriptionZh: "如果你想继续看“因果和空性会不会矛盾”，以及为什么看见因缘和合反而会让因果更不那么僵硬，这一页更适合继续往下看。",
+    descriptionEn: "This page is the better next step if you want to see why karma and emptiness do not conflict and how dependent arising makes karma less rigid rather than less real.",
+  },
+  {
     href: "/practice-guide",
     labelZh: "修行方法总览",
     labelEn: "Practice Guide",
@@ -177,6 +204,18 @@ const faqItems = [
     answerEn: "No. Karma is not taught to trap a person in the past, but to show that as long as intention and choice are still alive, direction can still shift. Acknowledging, adjusting, and reducing what deepens confusion are already new causes.",
   },
   {
+    questionZh: "因果和空性会不会矛盾？",
+    questionEn: "Do karma and emptiness contradict each other?",
+    answerZh: "通常不需要这样理解。正因为一切都在因缘条件中成立，行为、习惯和结果才会彼此影响。空性不是取消因果，反而能帮助人少一点用僵硬、定死的方式理解因果。",
+    answerEn: "Usually not. Precisely because things arise through conditions, actions, habits, and results influence one another. Emptiness does not cancel karma, but helps us understand karma with less rigidity.",
+  },
+  {
+    questionZh: "理解因果以后，为什么还要继续看菩提心和六度？",
+    questionEn: "Why continue to bodhicitta and the six paramitas after understanding karma?",
+    answerZh: "因为因果先帮助人看见方向怎样被养出来，接下来就会碰到另一个问题：这条路是不是还只围着自己的得失打转。菩提心会把方向拉宽，六度会把这种更宽的发心慢慢接回说话、做人、练习和日常节奏里。",
+    answerEn: "Because karma first shows how direction is cultivated, and then another question appears: is this path still circling only around personal gain and loss? Bodhicitta widens the direction, and the six paramitas return that wider intention to speech, conduct, practice, and daily rhythm.",
+  },
+  {
     questionZh: "Fabushi 在理解因果这件事上最适合帮助什么？",
     questionEn: "What is Fabushi most useful for when reflecting on karma?",
     answerZh: "它更适合作为听诵、提醒和简短记录的辅助工具，帮助你把“今天怎样起心、怎样说话、怎样练习”慢慢接回日常节奏。更深入的理解，仍然要回到佛法学习、经典导读和长期实践。",
@@ -196,6 +235,9 @@ export const metadata: Metadata = {
     "佛教因果",
     "因果报应",
     "业力",
+    "空性怎么理解",
+    "菩提心是什么意思",
+    "六度分别是什么",
     "学佛入门",
     "Fabushi",
   ],
@@ -229,7 +271,7 @@ export default function WhatIsKarmaPage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["因果", "佛教因果", "业力"],
+        about: ["因果", "佛教因果", "业力", "因缘和合", "空性"],
       },
       {
         "@type": "BreadcrumbList",
@@ -334,8 +376,8 @@ export default function WhatIsKarmaPage() {
           </p>
           <p>
             <LocalizedText
-              zh="所以，理解因果最有力量的地方，不是急着解释别人，也不是只回头追究过去，而是把眼光放回今天：说这句话时心里是什么发心？做这件事时是在增长贪、嗔、痴，还是在让自己更清明一点？传统修学常说闻、思、修要相续，对初学者来说，因果真正能帮助的，也正是在这里。Fabushi 更适合承接其中听诵、提醒和简短记录的部分，帮助你把这些观察慢慢留在日常里。"
-              en="That is why the strength of karma does not lie in explaining other people or chasing the past, but in returning attention to today: what intention was alive in this sentence, and did this action strengthen confusion or clarity? Traditional learning often speaks of hearing, reflection, and practice as a living sequence. Karma becomes useful for beginners in exactly that way. Fabushi fits best on the listening, reminder, and short-note side of that sequence so these observations can stay inside daily life."
+              zh="所以，理解因果最有力量的地方，不是急着解释别人，也不是只回头追究过去，而是把眼光放回今天：说这句话时心里是什么发心？做这件事时是在增长贪、嗔、痴，还是在让自己更清明一点？传统修学常说闻、思、修要相续，对初学者来说，因果真正能帮助的，也正是在这里。再往下走，也常会碰到空性、菩提心和六度这些问题：一边看见因果怎样成立，一边看见心能不能少一点抓死、多一点愿意利益别人，这条路才会慢慢变宽。Fabushi 更适合承接其中听诵、提醒和简短记录的部分，帮助你把这些观察慢慢留在日常里。"
+              en="That is why the strength of karma does not lie in explaining other people or chasing the past, but in returning attention to today: what intention was alive in this sentence, and did this action strengthen confusion or clarity? Traditional learning often speaks of hearing, reflection, and practice as a living sequence. Karma becomes useful for beginners in exactly that way. From there, questions about emptiness, bodhicitta, and the six paramitas often arise as well: seeing how karma works while also asking whether the heart can cling less rigidly and widen beyond self-concern. Fabushi fits best on the listening, reminder, and short-note side of that sequence so these observations can stay inside daily life."
             />
           </p>
         </div>
@@ -452,8 +494,8 @@ export default function WhatIsKarmaPage() {
           </p>
           <h2>
             <LocalizedText
-              zh="把这张概念页接回更完整的入门、修行和日常路径。"
-              en="Use this concept page as a bridge back into the wider beginner, practice, and daily-life paths."
+              zh="把这张概念页接回更完整的入门、核心概念、修行和日常路径。"
+              en="Use this concept page as a bridge back into the wider beginner, concept, practice, and daily-life paths."
             />
           </h2>
         </div>
