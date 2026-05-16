@@ -108,13 +108,19 @@ jobs:
         if: always()
         run: docker stop fabushi-forum-check-readonly || true
 
+      - name: Prepare persistent sqlite workspace
+        run: |
+          rm -rf /tmp/fabushi-forum-data
+          mkdir -p /tmp/fabushi-forum-data
+
       - name: Start forum container in sqlite writable preview mode
         run: |
           docker run -d --rm --name fabushi-forum-check \
+            -v /tmp/fabushi-forum-data:/data \
             -e FORUM_DATA_SOURCE=sqlite \
             -e FORUM_ENABLE_WRITES=true \
             -e FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
-            -e FORUM_DATABASE_URL=file:/tmp/forum.db \
+            -e FORUM_DATABASE_URL=file:/data/forum.db \
             -p 3000:3000 \
             fabushi-forum
 
@@ -318,8 +324,79 @@ jobs:
           assert "新回复已写入时间线" in html, html[:5500]
           PY
 
+      - name: Restart forum container with same sqlite volume
+        run: |
+          docker stop fabushi-forum-check
+          docker run -d --rm --name fabushi-forum-check-restart \
+            -v /tmp/fabushi-forum-data:/data \
+            -e FORUM_DATA_SOURCE=sqlite \
+            -e FORUM_ENABLE_WRITES=true \
+            -e FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
+            -e FORUM_DATABASE_URL=file:/data/forum.db \
+            -p 3000:3000 \
+            fabushi-forum
+
+      - name: Smoke test forum sqlite data survives container restart
+        run: |
+          for attempt in 1 2 3 4 5; do
+            response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)" && break
+            sleep 3
+          done
+
+          if [ -z "${response:-}" ]; then
+            docker logs fabushi-forum-check-restart
+            exit 1
+          fi
+
+          echo "$response"
+          FORUM_RESTART_STATUS_RESPONSE="$response" python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_RESTART_STATUS_RESPONSE"])
+          assert payload["service"] == "forum", payload
+          assert payload["dataSource"] == "sqlite", payload
+          assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["writesEnabled"] is True, payload
+          assert payload["requiresAccessCode"] is True, payload
+          assert payload["counts"]["threads"] >= 5, payload
+          assert payload["counts"]["moderationEvents"] >= 6, payload
+          PY
+
+          detail="$(curl --fail --show-error --silent "http://127.0.0.1:3000/api/thread/${thread_slug}")"
+          echo "$detail"
+          FORUM_RESTART_DETAIL_RESPONSE="$detail" python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_RESTART_DETAIL_RESPONSE"])
+          assert payload["source"] == "sqlite", payload
+          assert payload["thread"]["slug"] == os.environ["thread_slug"], payload
+          assert payload["thread"]["author"] == "页面检查用户", payload
+          assert payload["thread"]["authorRoleLabel"] == "新手观察者", payload
+          assert payload["thread"]["guidanceSignal"] == "请先补一条最容易开始的下一步建议。", payload
+          assert payload["replies"][-1]["author"] == "页面回复检查", payload
+          assert payload["replies"][-1]["roleLabel"] == "页面回读验证", payload
+          assert payload["replies"][-1]["guidanceSignal"] == "请优先补一条最容易执行的下一步建议。", payload
+          assert payload["moderationEvents"][-1]["eventType"] == "reply-created", payload
+          assert "新回复已写入时间线" in payload["moderationEvents"][-1]["summary"], payload
+          PY
+
+          thread_detail_page="$(curl --fail --show-error --silent "http://127.0.0.1:3000/threads/${thread_slug}")"
+          FORUM_RESTART_THREAD_DETAIL_PAGE="$thread_detail_page" python3 - <<'PY'
+          import os
+          from html import unescape
+
+          html = unescape(os.environ["FORUM_RESTART_THREAD_DETAIL_PAGE"])
+          assert "容器页面检查：新主题能否进入真实帖子页？" in html, html[:2500]
+          assert "页面回复检查" in html, html[:5000]
+          assert "页面回读验证" in html, html[:5000]
+          assert "新回复已写入时间线" in html, html[:5500]
+          PY
+
       - name: Stop forum containers
         if: always()
         run: |
           docker stop fabushi-forum-check || true
           docker stop fabushi-forum-check-readonly || true
+          docker stop fabushi-forum-check-restart || true
