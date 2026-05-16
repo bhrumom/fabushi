@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/start-learning-buddhism");
 const pageTitle = `学佛从哪里开始 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理学佛从哪里开始：先建立方向，再选一条可持续的练习主线，把佛经、禅修、因果理解、菩提心、六度、空性与日常功课接进生活。";
+  "面向初学者梳理学佛从哪里开始：先建立方向，再选一条可持续的练习主线，把佛学基本概念、佛经、禅修、因果理解、菩提心、六度、空性与日常功课接进生活。";
 
 const starterPrinciples = [
   {
@@ -20,8 +20,8 @@ const starterPrinciples = [
   {
     titleZh: "先选一条主线，不先把所有方法都塞进来",
     titleEn: "Choose one main line first",
-    descriptionZh: "可以先从佛法入门、禅修入门，或佛经导读里选一个最贴近自己当下问题的入口，而不是同时做满所有项目。",
-    descriptionEn: "Start with the entry point that matches the question you are living with right now, whether that is dharma basics, meditation, or scripture, instead of forcing every method into day one.",
+    descriptionZh: "可以先从佛法入门、佛学基本概念、禅修入门，或佛经导读里选一个最贴近自己当下问题的入口，而不是同时做满所有项目。",
+    descriptionEn: "Start with the entry point that matches the question you are living with right now, whether that is dharma basics, core concepts, meditation, or scripture, instead of forcing every method into day one.",
   },
   {
     titleZh: "先让练习变小，才能让它留下来",
@@ -41,8 +41,8 @@ const firstSteps = [
   {
     titleZh: "第二步：先选一个最容易进入的入口",
     titleEn: "Step 2: Pick the easiest workable entry point",
-    descriptionZh: "如果你需要整体方向，先看佛法入门；如果你更想从练习开始，先看禅修入门；如果你更想从经典进入，先看佛经导读。先有入口，再慢慢扩展。",
-    descriptionEn: "If you need the bigger picture, start with dharma basics. If you want practice first, start with meditation. If scripture feels closest, begin with the sutra guide. Enter first, then expand.",
+    descriptionZh: "如果你需要整体方向，先看佛法入门；如果你更常卡在因果、菩提心、六度、空性这些词，先看佛学基本概念入门；如果你更想从练习开始，先看禅修入门；如果你更想从经典进入，先看佛经导读。先有入口，再慢慢扩展。",
+    descriptionEn: "If you need the bigger picture, start with dharma basics. If core terms like karma, bodhicitta, the six paramitas, or emptiness are what keep stopping you, begin with the concepts hub. If you want practice first, start with meditation. If scripture feels closest, begin with the sutra guide. Enter first, then expand.",
   },
   {
     titleZh: "第三步：把第一周的节奏定得足够轻",
@@ -82,6 +82,15 @@ const relatedPaths = [
     titleEn: "See the broader beginner map for buddhadharma.",
     descriptionZh: "如果你想先弄清佛法、修行、禅修和日常实践之间的关系，这一页更适合先打开。",
     descriptionEn: "Open this first if you want the wider map of buddhadharma, practice, meditation, and daily discipline.",
+  },
+  {
+    href: "/buddhist-concepts",
+    labelZh: "佛学基本概念入门",
+    labelEn: "Buddhist Concepts",
+    titleZh: "先把因果、菩提心、六度和空性放回同一张概念地图里。",
+    titleEn: "Place karma, bodhicitta, the six paramitas, and emptiness back on one concept map.",
+    descriptionZh: "如果你现在最卡的是这些名相反复出现，却不知道先理解哪一个、它们又怎么彼此接起来，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if these terms keep returning and you still need a clearer order for how to understand them together.",
   },
   {
     href: "/what-is-karma",
@@ -220,6 +229,7 @@ export const metadata: Metadata = {
     "学佛从哪里开始",
     "学佛入门",
     "佛法入门",
+    "佛学基本概念",
     "初学者学佛",
     "因果是什么意思",
     "空性怎么理解",
@@ -257,7 +267,7 @@ export default function StartLearningBuddhismPage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["学佛从哪里开始", "佛法入门", "修行方法"],
+        about: ["学佛从哪里开始", "佛法入门", "修行方法", "佛学基本概念"],
       },
       {
         "@type": "BreadcrumbList",
