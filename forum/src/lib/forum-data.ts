@@ -5,6 +5,7 @@ export type ForumDataSource = "seed-json" | "sqlite";
 export type ForumPersistenceMode = "seed-only" | "sqlite-file";
 export type ForumModerationState = "published" | "needs-review" | "archived";
 export type ForumKnowledgeStage = "discussion" | "candidate" | "archived";
+export type ForumModerationEventType = "thread-published" | "thread-created" | "reply-created";
 
 export interface ForumSection {
   slug: string;
@@ -43,6 +44,16 @@ export interface ForumReply {
   body: string[];
 }
 
+export interface ForumModerationEvent {
+  id: string;
+  threadSlug: string;
+  replyId?: string;
+  eventType: ForumModerationEventType;
+  actorLabel: string;
+  summary: string;
+  createdAt: string;
+}
+
 export interface ForumSectionSummary extends ForumSection {
   threadCount: number;
   replyCount: number;
@@ -52,6 +63,7 @@ export interface ForumThreadDetail {
   thread: ForumThread;
   section?: ForumSection;
   replies: ForumReply[];
+  moderationEvents: ForumModerationEvent[];
   source: ForumDataSource;
   generatedAt: string;
 }
@@ -60,6 +72,7 @@ export interface ForumSnapshot {
   sections: ForumSectionSummary[];
   threads: ForumThread[];
   replies: ForumReply[];
+  moderationEvents: ForumModerationEvent[];
   generatedAt: string;
   source: ForumDataSource;
 }
@@ -91,6 +104,7 @@ export interface ForumRuntimeStatus {
     sections: number;
     threads: number;
     replies: number;
+    moderationEvents: number;
   };
   generatedAt: string;
 }
@@ -115,10 +129,12 @@ export interface ForumRepository {
   getSections(): ForumSection[];
   getThreads(): ForumThread[];
   getReplies(): ForumReply[];
+  getModerationEvents(): ForumModerationEvent[];
   getSectionBySlug(slug: string): ForumSection | undefined;
   getThreadBySlug(slug: string): ForumThread | undefined;
   getThreadsBySection(sectionSlug: string): ForumThread[];
   getRepliesByThreadSlug(threadSlug: string): ForumReply[];
+  getModerationEventsByThreadSlug(threadSlug: string): ForumModerationEvent[];
   getThreadDetailBySlug(slug: string): ForumThreadDetail | undefined;
   getSnapshot(): ForumSnapshot;
   getRuntimeStatus(): ForumRuntimeStatus;
@@ -169,6 +185,10 @@ export function getThreadsBySection(sectionSlug: string) {
 
 export function getRepliesByThreadSlug(threadSlug: string) {
   return forumRepository.getRepliesByThreadSlug(threadSlug);
+}
+
+export function getModerationEventsByThreadSlug(threadSlug: string) {
+  return forumRepository.getModerationEventsByThreadSlug(threadSlug);
 }
 
 export function getThreadDetailBySlug(slug: string) {

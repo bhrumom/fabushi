@@ -5,6 +5,7 @@ import forumContent from "../data/forum-content.json";
 import type {
   CreateForumReplyInput,
   CreateForumThreadInput,
+  ForumModerationEvent,
   ForumReply,
   ForumRepository,
   ForumRuntimeStatus,
@@ -58,12 +59,46 @@ interface SqliteReplyRow {
   body_json: string;
 }
 
+interface SqliteModerationEventRow {
+  id: string;
+  thread_slug: string;
+  reply_id: string | null;
+  event_type: ForumModerationEvent["eventType"];
+  actor_label: string;
+  summary: string;
+  created_at: string;
+}
+
 const seedContent = forumContent as ForumContentStore;
 const DEFAULT_DATABASE_URL = "file:./data/forum.db";
 
 function parseJsonArray(value: string): string[] {
   const parsed = JSON.parse(value) as unknown;
   return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+}
+
+function describeSeedModerationSummary(thread: ForumThread) {
+  if (thread.knowledgeStage === "candidate") {
+    return "种子主题已发布，并标记为候选资料，后续适合继续整理。";
+  }
+
+  return "种子主题已发布，当前仍处于讨论沉淀阶段。";
+}
+
+function describeThreadCreationSummary(sectionSlug: string) {
+  if (sectionSlug === "newcomer-path") {
+    return "新主题已发布，并进入新手起步引导队列，后续可继续补充适用对象与已尝试方法。";
+  }
+
+  return "新主题已发布，后续可根据互动质量继续补充治理判断和资料沉淀。";
+}
+
+function describeReplyCreationSummary(sectionSlug: string) {
+  if (sectionSlug === "newcomer-path") {
+    return "新回复已写入时间线，适合后续继续补充适用对象与已尝试方法。";
+  }
+
+  return "新回复已写入时间线，等待更多互动后再判断是否适合沉淀。";
 }
 
 function mapSection(row: SqliteSectionRow): ForumSection {
@@ -106,6 +141,18 @@ function mapReply(row: SqliteReplyRow): ForumReply {
     moderationState: row.moderation_state,
     trustSignal: row.trust_signal,
     body: parseJsonArray(row.body_json),
+  };
+}
+
+function mapModerationEvent(row: SqliteModerationEventRow): ForumModerationEvent {
+  return {
+    id: row.id,
+    threadSlug: row.thread_slug,
+    replyId: row.reply_id ?? undefined,
+    eventType: row.event_type,
+    actorLabel: row.actor_label,
+    summary: row.summary,
+    createdAt: row.created_at,
   };
 }
 
@@ -194,6 +241,18 @@ function initializeSchema(database: DatabaseSync) {
       body_json TEXT NOT NULL,
       FOREIGN KEY (thread_slug) REFERENCES forum_threads(slug)
     );
+
+    CREATE TABLE IF NOT EXISTS forum_moderation_events (
+      id TEXT PRIMARY KEY,
+      thread_slug TEXT NOT NULL,
+      reply_id TEXT,
+      event_type TEXT NOT NULL,
+      actor_label TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (thread_slug) REFERENCES forum_threads(slug),
+      FOREIGN KEY (reply_id) REFERENCES forum_replies(id)
+    );
   `);
 }
 
@@ -241,6 +300,18 @@ function seedDatabaseIfEmpty(database: DatabaseSync) {
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
+  const insertModerationEvent = database.prepare(`
+    INSERT INTO forum_moderation_events (
+      id,
+      thread_slug,
+      reply_id,
+      event_type,
+      actor_label,
+      summary,
+      created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
 
   database.exec("BEGIN");
 
@@ -272,6 +343,16 @@ function seedDatabaseIfEmpty(database: DatabaseSync) {
         JSON.stringify(thread.takeaways),
         thread.moderationState,
         thread.knowledgeStage,
+      );
+
+      insertModerationEvent.run(
+        `seed-thread-published-${thread.slug}`,
+        thread.slug,
+        null,
+        "thread-published",
+        "论坛种子内容",
+        describeSeedModerationSummary(thread),
+        thread.publishedAt,
       );
     }
 
@@ -323,6 +404,23 @@ function nextReplyId(database: DatabaseSync, threadSlug: string): string {
   let suffix = 2;
 
   while (existingReply.get(`${baseId}-${suffix}`)) {
+    suffix += 1;
+  }
+
+  return `${baseId}-${suffix}`;
+}
+
+function nextModerationEventId(database: DatabaseSync, threadSlug: string, eventType: ForumModerationEvent["eventType"]): string {
+  const baseId = `event-${eventType}-${threadSlug}-${Date.now().toString(36)}`;
+  const existingEvent = database.prepare("SELECT id FROM forum_moderation_events WHERE id = ? LIMIT 1");
+
+  if (!existingEvent.get(baseId)) {
+    return baseId;
+  }
+
+  let suffix = 2;
+
+  while (existingEvent.get(`${baseId}-${suffix}`)) {
     suffix += 1;
   }
 
@@ -391,6 +489,25 @@ export function createSqliteForumRepository(): ForumRepository {
       .all() as unknown as SqliteReplyRow[];
 
     return rows.map(mapReply);
+  };
+
+  const getModerationEvents = (): ForumModerationEvent[] => {
+    const rows = database
+      .prepare(`
+        SELECT
+          id,
+          thread_slug,
+          reply_id,
+          event_type,
+          actor_label,
+          summary,
+          created_at
+        FROM forum_moderation_events
+        ORDER BY created_at ASC, id ASC
+      `)
+      .all() as unknown as SqliteModerationEventRow[];
+
+    return rows.map(mapModerationEvent);
   };
 
   const getSectionBySlug = (slug: string): ForumSection | undefined => {
@@ -478,6 +595,26 @@ export function createSqliteForumRepository(): ForumRepository {
     return rows.map(mapReply);
   };
 
+  const getModerationEventsByThreadSlug = (threadSlug: string): ForumModerationEvent[] => {
+    const rows = database
+      .prepare(`
+        SELECT
+          id,
+          thread_slug,
+          reply_id,
+          event_type,
+          actor_label,
+          summary,
+          created_at
+        FROM forum_moderation_events
+        WHERE thread_slug = ?
+        ORDER BY created_at ASC, id ASC
+      `)
+      .all(threadSlug) as unknown as SqliteModerationEventRow[];
+
+    return rows.map(mapModerationEvent);
+  };
+
   const getThreadDetailBySlug = (slug: string): ForumThreadDetail | undefined => {
     const thread = getThreadBySlug(slug);
 
@@ -489,6 +626,7 @@ export function createSqliteForumRepository(): ForumRepository {
       thread,
       section: getSectionBySlug(thread.sectionSlug),
       replies: getRepliesByThreadSlug(thread.slug),
+      moderationEvents: getModerationEventsByThreadSlug(thread.slug),
       source: "sqlite",
       generatedAt: new Date().toISOString(),
     };
@@ -498,6 +636,7 @@ export function createSqliteForumRepository(): ForumRepository {
     const sections = getSections();
     const threads = getThreads();
     const replies = getReplies();
+    const moderationEvents = getModerationEvents();
 
     return {
       sections: sections.map((section) => {
@@ -512,6 +651,7 @@ export function createSqliteForumRepository(): ForumRepository {
       }),
       threads,
       replies,
+      moderationEvents,
       generatedAt: new Date().toISOString(),
       source: "sqlite",
     };
@@ -523,9 +663,10 @@ export function createSqliteForumRepository(): ForumRepository {
         SELECT
           (SELECT COUNT(*) FROM forum_sections) AS sections,
           (SELECT COUNT(*) FROM forum_threads) AS threads,
-          (SELECT COUNT(*) FROM forum_replies) AS replies
+          (SELECT COUNT(*) FROM forum_replies) AS replies,
+          (SELECT COUNT(*) FROM forum_moderation_events) AS moderation_events
       `)
-      .get() as { sections: number; threads: number; replies: number };
+      .get() as { sections: number; threads: number; replies: number; moderation_events: number };
 
     return {
       service: "forum",
@@ -537,6 +678,7 @@ export function createSqliteForumRepository(): ForumRepository {
         sections: Number(countsRow.sections),
         threads: Number(countsRow.threads),
         replies: Number(countsRow.replies),
+        moderationEvents: Number(countsRow.moderation_events),
       },
       generatedAt: new Date().toISOString(),
     };
@@ -557,42 +699,72 @@ export function createSqliteForumRepository(): ForumRepository {
       throw new ForumInputError("Thread openingPost must contain at least one non-empty paragraph.");
     }
 
-    database.prepare(`
-      INSERT INTO forum_threads (
+    database.exec("BEGIN");
+
+    try {
+      database.prepare(`
+        INSERT INTO forum_threads (
+          slug,
+          section_slug,
+          title,
+          summary,
+          author,
+          published_at,
+          last_activity,
+          reply_count,
+          follow_count,
+          bookmark_count,
+          tags_json,
+          opening_post_json,
+          takeaways_json,
+          moderation_state,
+          knowledge_stage
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
         slug,
-        section_slug,
-        title,
-        summary,
-        author,
-        published_at,
-        last_activity,
-        reply_count,
-        follow_count,
-        bookmark_count,
-        tags_json,
-        opening_post_json,
-        takeaways_json,
-        moderation_state,
-        knowledge_stage
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      slug,
-      input.sectionSlug,
-      input.title,
-      input.summary,
-      input.author,
-      createdAt,
-      "刚刚创建",
-      0,
-      0,
-      0,
-      JSON.stringify(input.tags),
-      JSON.stringify(openingPost),
-      JSON.stringify([]),
-      "published",
-      "discussion",
-    );
+        input.sectionSlug,
+        input.title,
+        input.summary,
+        input.author,
+        createdAt,
+        "刚刚创建",
+        0,
+        0,
+        0,
+        JSON.stringify(input.tags),
+        JSON.stringify(openingPost),
+        JSON.stringify([]),
+        "published",
+        "discussion",
+      );
+
+      database.prepare(`
+        INSERT INTO forum_moderation_events (
+          id,
+          thread_slug,
+          reply_id,
+          event_type,
+          actor_label,
+          summary,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        nextModerationEventId(database, slug, "thread-created"),
+        slug,
+        null,
+        "thread-created",
+        "系统记录",
+        describeThreadCreationSummary(input.sectionSlug),
+        createdAt,
+      );
+
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
 
     const createdDetail = getThreadDetailBySlug(slug);
 
@@ -653,6 +825,27 @@ export function createSqliteForumRepository(): ForumRepository {
         WHERE slug = ?
       `).run("刚刚回复", input.threadSlug);
 
+      database.prepare(`
+        INSERT INTO forum_moderation_events (
+          id,
+          thread_slug,
+          reply_id,
+          event_type,
+          actor_label,
+          summary,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        nextModerationEventId(database, input.threadSlug, "reply-created"),
+        input.threadSlug,
+        replyId,
+        "reply-created",
+        "系统记录",
+        describeReplyCreationSummary(thread.sectionSlug),
+        createdAt,
+      );
+
       database.exec("COMMIT");
     } catch (error) {
       database.exec("ROLLBACK");
@@ -674,10 +867,12 @@ export function createSqliteForumRepository(): ForumRepository {
     getSections,
     getThreads,
     getReplies,
+    getModerationEvents,
     getSectionBySlug,
     getThreadBySlug,
     getThreadsBySection,
     getRepliesByThreadSlug,
+    getModerationEventsByThreadSlug,
     getThreadDetailBySlug,
     getSnapshot,
     getRuntimeStatus,

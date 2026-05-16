@@ -2,6 +2,7 @@ import forumContent from "../data/forum-content.json";
 import type {
   CreateForumReplyInput,
   CreateForumThreadInput,
+  ForumModerationEvent,
   ForumReply,
   ForumRepository,
   ForumRuntimeStatus,
@@ -18,17 +19,39 @@ interface ForumContentStore {
   replies: ForumReply[];
 }
 
+function describeSeedModerationSummary(thread: ForumThread) {
+  if (thread.knowledgeStage === "candidate") {
+    return "种子主题已发布，并标记为候选资料，后续适合继续整理。";
+  }
+
+  return "种子主题已发布，当前仍处于讨论沉淀阶段。";
+}
+
+function buildSeedModerationEvents(threads: ForumThread[]): ForumModerationEvent[] {
+  return threads.map((thread) => ({
+    id: `seed-thread-published-${thread.slug}`,
+    threadSlug: thread.slug,
+    eventType: "thread-published",
+    actorLabel: "论坛种子内容",
+    summary: describeSeedModerationSummary(thread),
+    createdAt: thread.publishedAt,
+  }));
+}
+
 const content = forumContent as ForumContentStore;
 
 export function createSeedForumRepository(): ForumRepository {
   const sections = content.sections;
   const threads = content.threads;
   const replies = content.replies;
+  const moderationEvents = buildSeedModerationEvents(threads);
 
   const getSectionBySlug = (slug: string) => sections.find((section) => section.slug === slug);
   const getThreadBySlug = (slug: string) => threads.find((thread) => thread.slug === slug);
   const getThreadsBySection = (sectionSlug: string) => threads.filter((thread) => thread.sectionSlug === sectionSlug);
   const getRepliesByThreadSlug = (threadSlug: string) => replies.filter((reply) => reply.threadSlug === threadSlug);
+  const getModerationEventsByThreadSlug = (threadSlug: string) =>
+    moderationEvents.filter((event) => event.threadSlug === threadSlug);
 
   const getThreadDetailBySlug = (slug: string): ForumThreadDetail | undefined => {
     const thread = getThreadBySlug(slug);
@@ -41,6 +64,7 @@ export function createSeedForumRepository(): ForumRepository {
       thread,
       section: getSectionBySlug(thread.sectionSlug),
       replies: getRepliesByThreadSlug(thread.slug),
+      moderationEvents: getModerationEventsByThreadSlug(thread.slug),
       source: "seed-json",
       generatedAt: new Date().toISOString(),
     };
@@ -59,6 +83,7 @@ export function createSeedForumRepository(): ForumRepository {
     }),
     threads,
     replies,
+    moderationEvents,
     generatedAt: new Date().toISOString(),
     source: "seed-json",
   });
@@ -73,6 +98,7 @@ export function createSeedForumRepository(): ForumRepository {
       sections: sections.length,
       threads: threads.length,
       replies: replies.length,
+      moderationEvents: moderationEvents.length,
     },
     generatedAt: new Date().toISOString(),
   });
@@ -91,10 +117,12 @@ export function createSeedForumRepository(): ForumRepository {
     getSections: () => sections,
     getThreads: () => threads,
     getReplies: () => replies,
+    getModerationEvents: () => moderationEvents,
     getSectionBySlug,
     getThreadBySlug,
     getThreadsBySection,
     getRepliesByThreadSlug,
+    getModerationEventsByThreadSlug,
     getThreadDetailBySlug,
     getSnapshot,
     getRuntimeStatus,

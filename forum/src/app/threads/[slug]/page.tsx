@@ -18,7 +18,7 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
   }
 
   const runtime = getForumRuntimeStatus();
-  const { thread, section, replies } = detail;
+  const { thread, section, replies, moderationEvents } = detail;
 
   return (
     <main>
@@ -104,6 +104,25 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
         </section>
 
         <section className="list-block">
+          <h2>审核时间线</h2>
+          {moderationEvents.length > 0 ? (
+            <ul>
+              {moderationEvents.map((event) => (
+                <li key={event.id}>
+                  <strong>{event.actorLabel}</strong>
+                  {" · "}
+                  {event.createdAt}
+                  {" · "}
+                  {event.summary}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>当前线程还没有新的审核事件，后续真实治理动作会继续沿着这条时间线落库。</p>
+          )}
+        </section>
+
+        <section className="list-block">
           <h2>当前值得沉淀的要点</h2>
           <ul>
             {thread.takeaways.map((item) => (
@@ -114,7 +133,7 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
 
         <section className="api-note">
           <h2>后续扩展位置</h2>
-          <p>下一轮可以继续把同一条链路扩到主题创建页、审核事件时间线和角色状态持久化。</p>
+          <p>下一轮可以继续把角色状态和新手引导沿着同一条页面到仓储链路持久化，而不是把治理能力留在展示文案里。</p>
           <div className="footer-note">
             <span>作者：{thread.author}</span>
             <span>发布时间：{thread.publishedAt}</span>
