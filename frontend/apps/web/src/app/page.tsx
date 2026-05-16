@@ -41,9 +41,9 @@ interface ProductMoment {
 const HERO_MAIN_IMAGE_KEY: ProductScreenshotKey = "global-dharma";
 const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "main-sutra";
 const homeUrl = siteUrl("/");
-const homeTitle = `学佛从哪里开始、修行方法与佛经学习 | ${brand.name}`;
+const homeTitle = `学佛从哪里开始、因果与菩提心入门 | ${brand.name}`;
 const homeDescription =
-  "Fabushi 提供学佛从哪里开始、佛法入门、修行方法总览、日常功课安排、佛经导读与初学者佛经推荐，以及经文听诵、禅修、修行记录和下载入口。";
+  "Fabushi 提供学佛从哪里开始、佛法入门、因果是什么意思、菩提心是什么意思、修行方法总览、日常功课安排、佛经导读、听诵和读经怎么配合与初学者佛经推荐，以及经文听诵、禅修、修行记录和下载入口。";
 
 const PRODUCT_MOMENTS: ProductMoment[] = [
   {
@@ -145,10 +145,16 @@ const FAQ_PREVIEW = [
     answerEn: "The better question is what you need most right now. If you need orientation, begin with dharma basics or the sutra guide. If you need practice to stay inside daily life, begin with the practice guide and daily routine page.",
   },
   {
-    questionZh: "日常功课是不是一定要排得很满才算认真？",
-    questionEn: "Does a daily practice routine need to be full to count as sincere?",
-    answerZh: "不一定。对初学者来说，轻一点、稳一点、能继续做下去，通常比一开始排得很满更有帮助。先让一两个真实动作留下来，再慢慢扩展，往往更稳。",
-    answerEn: "Not necessarily. For beginners, lighter, steadier, and sustainable usually helps more than a full schedule on day one. Let one or two real actions remain first, then expand gradually.",
+    questionZh: "因果是不是就是做好事得好报、做坏事受惩罚？",
+    questionEn: "Is karma just reward for good deeds and punishment for bad ones?",
+    answerZh: "更稳妥的理解不是这样简单。因果更像是起心动念、说话做事和长期习惯怎样慢慢形成结果，中间还会受到很多因缘影响，所以不适合被理解成一句立刻兑现的判断。",
+    answerEn: "A steadier view is not that simple. Karma is closer to the way intention, speech, action, and repeated habits gradually shape results together with many conditions, rather than an instant verdict.",
+  },
+  {
+    questionZh: "菩提心是不是只要对人好一点就够了？",
+    questionEn: "Is bodhicitta simply a matter of being a little nicer to people?",
+    answerZh: "不完全是。善意当然重要，但菩提心更深一层，它牵涉愿意把觉悟之路和众生利益一起放进修行方向里，而不是只让学习围着自己的得失打转。",
+    answerEn: "Not exactly. Kindness matters, but bodhicitta points more deeply toward placing awakening and the welfare of others inside the direction of practice instead of circling only around personal gain and loss.",
   },
   {
     questionZh: "初学者先读什么佛经会更合适？",
@@ -176,6 +182,24 @@ const DHARMA_PATHS = [
     titleEn: "See how buddhadharma, practice, and daily life fit together.",
     descriptionZh: "如果你想先理清佛法是什么、佛教与修行有什么关系，这里是更完整的入门地图。",
     descriptionEn: "If you first need to clarify what buddhadharma is and how Buddhism relates to practice, this is the broader beginner map.",
+  },
+  {
+    href: "/what-is-karma",
+    labelZh: "因果是什么意思",
+    labelEn: "What Karma Means",
+    titleZh: "先把初学者最常遇到的核心概念放清楚。",
+    titleEn: "Clarify one of the first core concepts beginners usually meet.",
+    descriptionZh: "如果你的问题已经变成“因果到底是不是报应”，这一页会更适合继续往下看。",
+    descriptionEn: "This page is the better next step if your question has already become whether karma is just reward, punishment, or payback.",
+  },
+  {
+    href: "/what-is-bodhicitta",
+    labelZh: "菩提心是什么意思",
+    labelEn: "What Bodhicitta Means",
+    titleZh: "把大乘修学里最关键的发心先放清楚。",
+    titleEn: "Clarify one of the most central intentions in Mahayana practice.",
+    descriptionZh: "如果你的问题已经变成“菩提心到底是不是只要对人好一点”，这一页会更适合继续往下看。",
+    descriptionEn: "This page is the better next step if your question has already become whether bodhicitta is only a kind feeling or a wider direction of practice.",
   },
   {
     href: "/meditation",
@@ -214,6 +238,15 @@ const DHARMA_PATHS = [
     descriptionEn: "If you want to know which sutra to start with and how listening helps understanding, this is the next page to open.",
   },
   {
+    href: "/sutra-listening",
+    labelZh: "听诵和读经怎么配合",
+    labelEn: "Listening and Reading",
+    titleZh: "把“听诵能不能代替读经”这类问题单独说清楚。",
+    titleEn: "Clarify how listening and reading support each other in beginner scripture study.",
+    descriptionZh: "如果你已经开始接触经典，但卡在听诵和阅读怎么配合、碎片时间里听经怎样接回文本，这一页会更具体。",
+    descriptionEn: "This page is more specific if you are already touching scripture but feel stuck on how listening and reading should work together.",
+  },
+  {
     href: "/beginner-sutra-recommendations",
     labelZh: "初学者佛经推荐",
     labelEn: "Beginner Sutra Picks",
@@ -233,10 +266,13 @@ export const metadata: Metadata = {
   keywords: [
     "学佛从哪里开始",
     "佛法入门",
+    "因果是什么意思",
+    "菩提心是什么意思",
     "修行方法总览",
     "禅修入门",
     "日常功课怎么安排",
     "佛经导读",
+    "听诵和读经怎么配合",
     "初学者先读什么佛经",
     "经文听诵",
     "Fabushi",
@@ -600,22 +636,22 @@ export default async function HomePage() {
           </p>
           <h2>
             <LocalizedText
-              zh="先把“从哪里开始”理清，再把更具体的修行与佛经问题接上去。"
-              en="Clarify where to start first, then connect the more specific practice and sutra questions."
+              zh="先把“从哪里开始”理清，再把修行、佛经和核心概念接上去。"
+              en="Clarify where to start first, then connect the practice, sutra, and core concept questions."
             />
           </h2>
         </div>
         <div className="article-body">
           <p>
             <LocalizedText
-              zh="很多人第一次接触佛法时，真正卡住的不是没有内容，而是不知道该先理解佛法、先练禅修，还是先读佛经。现在官网已经把这条入门路径拆成了“先回答起步问题，再进入更具体页面”的几层入口。"
-              en="When people first meet buddhadharma, the real difficulty is often not a lack of material but not knowing whether to begin with basic understanding, meditation, or sutra study. The site now breaks that path into layers that first answer the beginner question, then move into more specific pages."
+              zh="很多人第一次接触佛法时，真正卡住的不是没有内容，而是不知道该先理解佛法、先练禅修，还是先读佛经。往前走一点之后，问题又常常会继续变成“因果到底是不是报应”或“菩提心到底是什么意思”。首页这层最有价值的，不只是给出入口，而是先把这些入口之间的顺序放清楚。"
+              en="When people first meet buddhadharma, the real difficulty is often not a lack of material but not knowing whether to begin with basic understanding, meditation, or sutra study. A little later the questions often become whether karma is just payback or what bodhicitta really means. The value of the homepage is not only to offer links, but to make the sequence between those links feel clear."
             />
           </p>
           <p>
             <LocalizedText
-              zh="你可以先从“学佛从哪里开始”回答眼前的问题，再回到佛法入门看整体地图；如果问题已经变成“怎样练得更稳”或“先读什么佛经”，就直接继续进入修行方法总览、日常功课安排，或初学者佛经推荐这些第二层页面。"
-              en="You can begin with the page that answers where to start, then return to dharma basics for the broader map. If the question has already become how to practice more steadily or which sutra to begin with, move straight into the practice guide, daily routine page, or beginner sutra picks."
+              zh="你可以先从“学佛从哪里开始”回答眼前的问题，再回到佛法入门看整体地图；如果问题已经变成“怎样练得更稳”，就继续进入修行方法总览和日常功课安排；如果已经开始碰到核心概念和经典阅读的问题，就顺着因果、菩提心、佛经导读、听诵与阅读关系页继续往下走。"
+              en="You can begin with the page that answers where to start, then return to dharma basics for the broader map. If the question has become how to practice more steadily, move into the practice guide and daily routine page. If core concepts and scripture questions are already appearing, continue through karma, bodhicitta, the sutra guide, and the listening-and-reading page."
             />
           </p>
         </div>
