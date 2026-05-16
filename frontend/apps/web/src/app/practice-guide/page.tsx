@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/practice-guide");
 const pageTitle = `修行方法总览 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，才能把修行、六度与日常生活接在一起。";
+  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，才能把修行、六度、空性理解与日常生活接在一起。";
 
 const practicePrinciples = [
   {
@@ -108,6 +108,15 @@ const relatedPaths = [
     descriptionEn: "This is the better next page if you want to see how generosity, discipline, patience, diligence, meditation, and wisdom return to actual practice methods and ordinary conduct.",
   },
   {
+    href: "/what-is-emptiness",
+    labelZh: "空性怎么理解",
+    labelEn: "How to Understand Emptiness",
+    titleZh: "把“少一点抓得太死”慢慢接回练习方式。",
+    titleEn: "Return the loosening of rigid grasping to actual practice methods.",
+    descriptionZh: "如果你想知道空性为什么不是离生活很远的概念，而会影响禅修、念佛、听诵和待人处事，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you want to see why emptiness is not remote from life, but can reshape meditation, recitation, listening, and ordinary conduct.",
+  },
+  {
     href: "/buddhadharma",
     labelZh: "佛法入门",
     labelEn: "Dharma Basics",
@@ -171,6 +180,12 @@ const faqItems = [
     answerEn: "Yes, but it helps to give them different weights. Choose one main line and let the others support it. Many beginners use listening for familiarity, short meditation for steadiness, and a little reading or note-taking for understanding.",
   },
   {
+    questionZh: "空性怎么理解，和修行方法有什么关系？",
+    questionEn: "How does understanding emptiness relate to actual practice methods?",
+    answerZh: "如果把空性理解成离生活很远的高深义理，修行就容易只剩方法清单。更稳的方向，是先看见很多情绪、判断和习惯并没有想象中那样固定，这样禅修、听诵、念佛和记录就不只是为了完成任务，而是在帮助自己少一点抓得太死。",
+    answerEn: "If emptiness is treated as distant doctrine, practice can shrink into a checklist of methods. A steadier direction is to notice that many emotions, judgments, and habits are less fixed than they seem, so meditation, listening, recitation, and notes become ways of loosening rigid grasping instead of merely finishing tasks.",
+  },
+  {
     questionZh: "Fabushi 在修行方法总览里最适合扮演什么角色？",
     questionEn: "What role does Fabushi play in a beginner practice routine?",
     answerZh: "它更适合作为经文听诵、禅修提醒、修行记录和保持连续性的辅助工具，帮助你把练习接进生活，而不是只停留在偶尔想起时才做。",
@@ -191,6 +206,7 @@ export const metadata: Metadata = {
     "初学者怎么修行",
     "日常功课",
     "六度分别是什么",
+    "空性怎么理解",
     "念佛",
     "Fabushi",
   ],
@@ -224,7 +240,7 @@ export default function PracticeGuidePage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["修行方法", "学佛修行", "日常功课"],
+        about: ["修行方法", "学佛修行", "日常功课", "空性理解"],
       },
       {
         "@type": "BreadcrumbList",
@@ -316,168 +332,16 @@ export default function PracticeGuidePage() {
         </div>
         <div className="article-body">
           <p>
-            <LocalizedText
-              zh="很多人刚接触佛法时，第一反应是想把禅修、听诵、念佛、读经和日常功课一次排满，仿佛这样才算认真。可真正的问题往往不是不够认真，而是节奏太重，结果三天后就停了。对初学者来说，修行更像是一条要慢慢养出来的生活路径，而不是一张第一天就必须填满的清单。"
-              en="When people first meet buddhadharma, many try to pack meditation, listening, recitation, reading, and daily practice into the same schedule at once, as if that proves sincerity. The real problem is usually not a lack of sincerity, but a rhythm that is too heavy to survive. For beginners, practice is more like a way of living that grows slowly than a checklist to complete on day one."
-            />
+            <LocalizedText zh="很多人刚接触佛法时，第一反应是想把禅修、听诵、念佛、读经和日常功课一次排满，仿佛这样才算认真。可真正的问题往往不是不够认真，而是节奏太重，结果三天后就停了。对初学者来说，修行更像是一条要慢慢养出来的生活路径，而不是一张第一天就必须填满的清单。" en="When people first meet buddhadharma, many try to pack meditation, listening, recitation, reading, and daily practice into the same schedule at once, as if that proves sincerity. The real problem is usually not a lack of sincerity, but a rhythm that is too heavy to survive. For beginners, practice is more like a way of living that grows slowly than a checklist to complete on day one." />
           </p>
           <p>
-            <LocalizedText
-              zh="比较稳妥的做法，是先让自己每天有一个最轻但真实的动作。可以是坐几分钟禅修，也可以是听一段经文、念一小段佛号，或读一点导读。传统学习里常说闻、思、修要相续，对初学者来说，这并不意味着一天里要把所有事情都做满，而是让接触、理解和实践慢慢连起来。"
-              en="A steadier approach is to keep one light but real daily action. It can be a few minutes of meditation, one short scripture passage, a small round of recitation, or a little reading. Traditional learning often treats hearing, reflection, and practice as a sequence. For beginners, that does not mean filling the whole day, but letting contact, understanding, and lived practice connect gradually."
-            />
+            <LocalizedText zh="比较稳妥的做法，是先让自己每天有一个最轻但真实的动作。可以是坐几分钟禅修，也可以是听一段经文、念一小段佛号，或读一点导读。传统学习里常说闻、思、修要相续，对初学者来说，这并不意味着一天里要把所有事情都做满，而是让接触、理解和实践慢慢连起来。" en="A steadier approach is to keep one light but real daily action. It can be a few minutes of meditation, one short scripture passage, a small round of recitation, or a little reading. Traditional learning often treats hearing, reflection, and practice as a sequence. For beginners, that does not mean filling the whole day, but letting contact, understanding, and lived practice connect gradually." />
           </p>
           <p>
-            <LocalizedText
-              zh="Fabushi 更适合承接这条路径里的辅助部分，例如经文听诵、禅修提醒、简单记录和保持连续性。它不能替代长期学习本身，但可以帮助你把修行方法从“知道很多”变成“今天真的做了一点”。"
-              en="Fabushi fits best on the support side of this path through scripture listening, meditation reminders, simple notes, and continuity. It does not replace long-term learning, but it can help practice move from knowing many ideas to actually doing a little today."
-            />
+            <LocalizedText zh="修行方法最后不只是在练几种技能。随着节奏慢慢稳定，人也会开始看见：很多急躁、执着和判断，并没有想象中那样固定，这也是为什么六度和空性会和方法页放在同一条路上。方法越回到这里，练习就越不只是完成任务，而是在帮助自己少一点抓得太死。" en="Practice methods are not only a set of techniques. As the rhythm steadies, people often begin to see that agitation, attachment, and judgment are less fixed than they seem. This is why the six paramitas and emptiness belong on the same path as method pages. The more practice returns here, the less it becomes task-completion and the more it helps loosen rigid grasping." />
+          </p>
+          <p>
+            <LocalizedText zh="Fabushi 更适合承接这条路径里的辅助部分，例如经文听诵、禅修提醒、简单记录和保持连续性。它不能替代长期学习本身，但可以帮助你把修行方法从“知道很多”变成“今天真的做了一点”。" en="Fabushi fits best on the support side of this path through scripture listening, meditation reminders, simple notes, and continuity. It does not replace long-term learning, but it can help practice move from knowing many ideas to actually doing a little today." />
           </p>
         </div>
       </section>
-
-      <section className="band alt feature-band">
-        <div className="section-heading tight">
-          <p>
-            <LocalizedText zh="基本判断" en="Foundations" />
-          </p>
-          <h2>
-            <LocalizedText
-              zh="先把修行方法的三个基本判断放稳。"
-              en="Set three basic judgments in place before you build a routine."
-            />
-          </h2>
-        </div>
-        <div className="definition-grid">
-          {practicePrinciples.map((item) => (
-            <article key={item.titleEn} className="definition-card">
-              <h3>
-                <LocalizedText zh={item.titleZh} en={item.titleEn} />
-              </h3>
-              <p>
-                <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band">
-        <div className="section-heading tight">
-          <p>
-            <LocalizedText zh="常见方法" en="Common Methods" />
-          </p>
-          <h2>
-            <LocalizedText
-              zh="先看初学者最常接触的几种修行方法，各自适合做什么。"
-              en="See the common methods beginners encounter first and what each one does best."
-            />
-          </h2>
-        </div>
-        <div className="path-grid">
-          {practiceMethods.map((item) => (
-            <article key={item.titleEn} className="path-card">
-              <h3>
-                <LocalizedText zh={item.titleZh} en={item.titleEn} />
-              </h3>
-              <p>
-                <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band alt">
-        <div className="section-heading tight">
-          <p>
-            <LocalizedText zh="第一周节奏" en="First Week" />
-          </p>
-          <h2>
-            <LocalizedText
-              zh="把第一周能做的事拆成三步，会比空想更容易真正留下来。"
-              en="Break the first week into three steps so the rhythm can actually stay."
-            />
-          </h2>
-        </div>
-        <div className="compare-grid">
-          {weeklyRhythm.map((item) => (
-            <article key={item.titleEn} className="compare-card">
-              <h3>
-                <LocalizedText zh={item.titleZh} en={item.titleEn} />
-              </h3>
-              <p>
-                <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band">
-        <div className="section-heading tight">
-          <p>
-            <LocalizedText zh="继续阅读" en="Keep Going" />
-          </p>
-          <h2>
-            <LocalizedText
-              zh="顺着你当下最需要的入口，继续往更具体的页面走。"
-              en="Move from this overview into the page that matches what you need most now."
-            />
-          </h2>
-        </div>
-        <div className="editorial-list">
-          {relatedPaths.map((item) => (
-            <a key={item.href} className="editorial-row" href={siteHref(item.href)}>
-              <span>
-                <LocalizedText zh={item.labelZh} en={item.labelEn} />
-              </span>
-              <div>
-                <strong>
-                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
-                </strong>
-                <p>
-                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
-                </p>
-              </div>
-            </a>
-          ))}
-        </div>
-      </section>
-
-      <section className="band faq-band">
-        <div className="section-heading tight">
-          <p>FAQ</p>
-          <h2>
-            <LocalizedText
-              zh="先回答初学者最容易在修行方法上卡住的几个问题。"
-              en="Answer the questions beginners most often get stuck on when choosing methods."
-            />
-          </h2>
-        </div>
-        <div className="faq-list full">
-          {faqItems.map((item) => (
-            <details key={item.questionEn} className="faq-item">
-              <summary>
-                <LocalizedText zh={item.questionZh} en={item.questionEn} />
-              </summary>
-              <p>
-                <LocalizedText zh={item.answerZh} en={item.answerEn} />
-              </p>
-            </details>
-          ))}
-        </div>
-        <div className="inline-cta">
-          <a className="primary-action" href={siteHref("/download")}>
-            <LocalizedText zh="下载法布施" en="Download Fabushi" />
-          </a>
-          <a className="secondary-action" href={siteHref("/start-learning-buddhism")}>
-            <LocalizedText zh="回到学佛从哪里开始" en="Back to Where to Begin" />
-          </a>
-        </div>
-      </section>
-
-      <SiteFooter />
-    </main>
-  );
-}
