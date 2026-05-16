@@ -2,8 +2,55 @@
 
 This directory is the independent root for the forum project.
 
-Current ground rules:
+## What exists now
 
-- Build the forum from this directory instead of extending the marketing website.
-- Keep forum product, data model, and deployment planning separate from `frontend/apps/web`.
-- Treat the existing `/community` pages in the website as legacy prototype surface, not the long-term forum home.
+The forum is no longer being extended inside the marketing website. This directory now contains a standalone Next.js app skeleton so the project can move from an empty placeholder into something runnable and testable.
+
+Current scope:
+
+- independent app shell under `forum/src/app`
+- seed forum sections and threads under `forum/src/lib/forum-data.ts`
+- read-only routes for thread listing and thread detail
+- JSON routes for the same seed contract
+- a dedicated GitHub Actions workflow that checks the forum app when `forum/**` changes
+
+## Current product boundary
+
+This app is intentionally narrow in the first pass.
+
+Included:
+
+- landing page
+- thread list page
+- thread detail page
+- seed data contract
+- read-only API boundary
+
+Not included yet:
+
+- authentication
+- posting or replying
+- moderation actions
+- persistence layer
+- search, notifications, bookmarks, or follows as real user actions
+
+## Local development
+
+```bash
+cd forum
+pnpm install
+pnpm dev
+```
+
+Then open `http://localhost:3000`.
+
+Useful checks:
+
+```bash
+pnpm typecheck
+pnpm build
+```
+
+## Why this is the next step
+
+The highest-priority gap after creating `forum/` was that it still could not run. This skeleton turns the independent root into a real project boundary so the next iteration can plug in database models, auth, posting flows, and governance logic without going back through the website prototype.

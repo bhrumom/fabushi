@@ -1,0 +1,53 @@
+name: Module checks - Forum
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  pull_request:
+    paths:
+      - "forum/**"
+      - ".github/workflows/forum-module-checks.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "forum/**"
+      - ".github/workflows/forum-module-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  forum:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: forum
+    steps:
+      - name: Checkout forum workspace only
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+            forum
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.9.0
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Typecheck forum app
+        run: pnpm typecheck
+
+      - name: Build forum app
+        run: pnpm build
