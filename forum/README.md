@@ -16,6 +16,7 @@ Current scope:
 - a sqlite-backed repository option that can bootstrap from the current seed content
 - a minimal thread-creation API when sqlite mode is enabled
 - a minimal reply-creation API for existing threads in sqlite mode
+- a page-level reply composer on thread detail when writes are enabled
 - a dedicated GitHub Actions workflow that checks the forum app when `forum/**` changes
 - a container deployment baseline built from Next.js standalone output
 - a container smoke check that starts the forum, validates `/api/status`, and exercises sqlite thread and reply creation
@@ -29,6 +30,7 @@ Included:
 - landing page
 - thread list page
 - thread detail page with sample replies
+- page-level reply submission in writable mode
 - structured seed content contract
 - read-only API boundary
 - moderation and knowledge-stage fields reserved in the content model
@@ -40,7 +42,7 @@ Included:
 Not included yet:
 
 - authentication
-- reply UI in the page layer
+- thread creation UI in the page layer
 - search, notifications, bookmarks, or follows as real user actions
 - moderation workflows beyond reserved fields and write-state checks
 
@@ -82,6 +84,8 @@ curl -X POST http://localhost:3000/api/thread/first-year-stability/replies \
     "body": ["我发现先把睡前十分钟固定下来，比一下子改整天作息更容易坚持。"]
   }'
 ```
+
+When `FORUM_DATA_SOURCE=sqlite`, you can also open `http://localhost:3000/threads/first-year-stability` and submit a reply through the page-level form. In `seed-json` mode, the same form stays visible but clearly reports that the runtime is still read-only.
 
 ## Runtime contract
 
@@ -128,4 +132,4 @@ A dedicated GitHub Actions workflow now checks that the forum container image ca
 
 ## Why this is the next step
 
-After the structured seed content contract, standalone deployment baseline, runtime status boundary, and first durable thread creation path landed, the next highest-value gap was reply persistence on top of the same sqlite boundary. This iteration keeps the product surface narrow while adding a real reply write endpoint, thread-level activity updates, and a smoke-checkable interaction loop. That gives the next pass a stable place to add moderation events, page-level reply forms, and database-backed user workflows.
+After the structured seed content contract, standalone deployment baseline, runtime status boundary, first durable thread creation path, and first reply write path landed, the next highest-value gap was page-level reply submission on top of the same sqlite boundary. This iteration keeps the product surface narrow while letting the thread detail page submit a real reply, surface read-only mode clearly, and re-read the latest thread state. That gives the next pass a stable place to add moderation events, page-level thread creation, and database-backed user workflows.
