@@ -21,6 +21,8 @@ export interface ForumThread {
   title: string;
   summary: string;
   author: string;
+  authorRoleLabel: string;
+  guidanceSignal: string;
   publishedAt: string;
   lastActivity: string;
   replyCount: number;
@@ -38,6 +40,7 @@ export interface ForumReply {
   threadSlug: string;
   author: string;
   roleLabel: string;
+  guidanceSignal: string;
   publishedAt: string;
   moderationState: ForumModerationState;
   trustSignal: string;
@@ -82,6 +85,8 @@ export interface CreateForumThreadInput {
   title: string;
   summary: string;
   author: string;
+  authorRoleLabel: string;
+  guidanceSignal: string;
   tags: string[];
   openingPost: string[];
 }
@@ -90,6 +95,7 @@ export interface CreateForumReplyInput {
   threadSlug: string;
   author: string;
   roleLabel: string;
+  guidanceSignal: string;
   trustSignal: string;
   body: string[];
 }
