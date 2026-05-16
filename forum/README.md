@@ -14,15 +14,16 @@ Current scope:
 - a repository boundary that keeps page rendering and API routes behind one forum data source contract
 - read-only routes for thread listing, thread detail, and runtime status
 - a sqlite-backed repository option that can bootstrap from the current seed content
-- a minimal thread-creation API when sqlite mode is enabled
+- an explicit sqlite write gate so durable storage does not automatically imply public thread and reply creation
+- a minimal thread-creation API when sqlite mode is enabled and writes are explicitly opened
 - a page-level thread composer on top of the thread-creation API in writable mode
-- a minimal reply-creation API for existing threads in sqlite mode
+- a minimal reply-creation API for existing threads when sqlite writes are enabled
 - a page-level reply composer on thread detail when writes are enabled
 - a first moderation-event timeline that can be read back from thread detail and runtime status
 - persisted author-role and newcomer-guidance signals for new threads and replies
 - a dedicated GitHub Actions workflow that checks the forum app when `forum/**` changes
 - a container deployment baseline built from Next.js standalone output
-- a container smoke check that starts the forum, validates `/api/status`, exercises sqlite thread and reply creation, and reads the updated thread back through real forum pages
+- a container smoke check that validates both the default sqlite read-only runtime and the explicitly writable sqlite runtime
 
 ## Current product boundary
 
@@ -40,6 +41,7 @@ Included:
 - moderation and knowledge-stage fields reserved in the content model
 - a first moderation-event timeline for thread publishing and new sqlite writes
 - a first durable persistence path backed by sqlite file storage
+- an explicit runtime gate for public writes
 - a first reply write path for existing threads
 - persisted role and guidance fields for new thread authors and reply authors
 - standalone server artifact for container packaging
@@ -61,6 +63,19 @@ pnpm dev
 ```
 
 Then open `http://localhost:3000`.
+
+If you want sqlite persistence without opening public writes yet, keep:
+
+```bash
+FORUM_DATA_SOURCE=sqlite
+FORUM_ENABLE_WRITES=false
+```
+
+If you want to exercise thread and reply creation locally, explicitly open writes:
+
+```bash
+FORUM_DATA_SOURCE=sqlite FORUM_ENABLE_WRITES=true pnpm dev
+```
 
 Useful checks:
 
@@ -96,7 +111,7 @@ curl http://localhost:3000/threads
 curl http://localhost:3000/threads/first-year-stability
 ```
 
-When `FORUM_DATA_SOURCE=sqlite`, you can also open `http://localhost:3000/threads/new` to create a new topic, and `http://localhost:3000/threads/first-year-stability` to submit a reply through the page-level form. In `seed-json` mode, both page-level forms stay visible but clearly report that the runtime is still read-only. `GET /api/thread/[slug]` now includes `moderationEvents`, thread-level `authorRoleLabel`, thread-level `guidanceSignal`, and reply-level `guidanceSignal`, so thread detail can expose the first durable governance timeline alongside role and newcomer guidance context instead of only content fields.
+When `FORUM_DATA_SOURCE=sqlite` but `FORUM_ENABLE_WRITES=false`, the page-level forms stay visible and clearly report that the runtime is still read-only. When `FORUM_ENABLE_WRITES=true`, `http://localhost:3000/threads/new` can create a new topic and `http://localhost:3000/threads/first-year-stability` can submit a reply through the page-level form. `GET /api/thread/[slug]` now includes `moderationEvents`, thread-level `authorRoleLabel`, thread-level `guidanceSignal`, and reply-level `guidanceSignal`, so thread detail can expose the first durable governance timeline alongside role and newcomer guidance context instead of only content fields.
 
 ## Runtime contract
 
@@ -106,6 +121,7 @@ Supported runtime fields:
 
 - `FORUM_DATA_SOURCE=seed-json`
 - `FORUM_DATA_SOURCE=sqlite`
+- `FORUM_ENABLE_WRITES=false`
 - `FORUM_DATABASE_URL=file:./data/forum.db`
 
 Current JSON routes:
@@ -116,7 +132,7 @@ Current JSON routes:
 - `POST /api/thread/[slug]/replies`
 - `GET /api/status`
 
-`GET /api/status` now reports whether writes are enabled for the current data source and how many moderation events the current store already contains. In `sqlite` mode, the repository initializes its schema automatically, seeds the database from `forum-content.json` the first time it starts, writes the first moderation timeline events alongside newly created threads and replies, persists author-role and guidance fields for both topic creation and reply creation, lets the page-level thread composer create new topics, and lets existing threads accept the first persisted reply submissions.
+`GET /api/status` now reports whether the current runtime is writable, even when the data source is already `sqlite`. In `sqlite` mode, the repository initializes its schema automatically, seeds the database from `forum-content.json` the first time it starts, and keeps the forum durably readable by default. Only when `FORUM_ENABLE_WRITES=true` does the same runtime start accepting new threads and replies, writing moderation timeline events, and persisting author-role and guidance fields for those new submissions.
 
 ## Container deployment
 
@@ -126,8 +142,24 @@ Build and run locally with Docker:
 
 ```bash
 docker build -t fabushi-forum ./forum
+```
+
+Run sqlite in durable read-only mode first:
+
+```bash
 docker run --rm -p 3000:3000 \
   -e FORUM_DATA_SOURCE=sqlite \
+  -e FORUM_DATABASE_URL=file:/tmp/forum.db \
+  fabushi-forum
+curl http://localhost:3000/api/status
+```
+
+Open writes only when the environment is ready to accept public submissions:
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e FORUM_DATA_SOURCE=sqlite \
+  -e FORUM_ENABLE_WRITES=true \
   -e FORUM_DATABASE_URL=file:/tmp/forum.db \
   fabushi-forum
 curl http://localhost:3000/api/status
@@ -139,8 +171,8 @@ Runtime defaults:
 - `HOSTNAME=0.0.0.0`
 - `NODE_ENV=production`
 
-A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, validates the sqlite runtime status, confirms `/threads/new` exposes the writable page-level composer, creates a thread through the API, reads that thread back through `/threads` and `/threads/[slug]`, and then adds a reply to verify the latest discussion, role labels, guidance signals, and appended moderation timeline event are all visible on the thread detail page.
+A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, validates that sqlite starts in read-only mode by default, confirms `/threads/new` exposes the disabled page-level composer until writes are explicitly enabled, and then reruns the container with `FORUM_ENABLE_WRITES=true` to exercise thread creation, thread-detail readback, reply submission, role labels, guidance signals, and appended moderation timeline events.
 
 ## Why this is the next step
 
-After moderation timeline persistence landed, the highest-value gap was still that author role and newcomer-guidance state mostly existed as defaults or copy rather than explicit durable fields. This iteration keeps the product surface narrow while moving those signals into the same repository, API, page, and container-check boundary, so the next pass can build on real persisted state instead of rediscovering it at render time.
+After moderation timeline persistence and role-guidance persistence landed, the highest-value gap was no longer another UI slice. The bigger launch-readiness risk was that switching to sqlite also opened anonymous writes by default. This iteration keeps the product surface narrow while making the deployment posture safer: the forum can now be durably readable in sqlite mode first, and public writes become an explicit runtime decision instead of an accidental side effect of persistence.
