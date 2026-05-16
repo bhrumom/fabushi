@@ -95,7 +95,7 @@ function ChannelCard({ channel, recommended = false }: { channel: DownloadChanne
   const fallbackLinks = getDownloadFallbackLinks(channel);
 
   return (
-    <DownloadLink className={recommended ? "platform-row recommended detailed" : "platform-row detailed"} channel={channel}>
+    <article className={recommended ? "platform-row recommended detailed" : "platform-row detailed"}>
       <div>
         <span className="platform-name">
           {channel.title}
@@ -133,11 +133,11 @@ function ChannelCard({ channel, recommended = false }: { channel: DownloadChanne
         <strong>
           <LocalizedText zh={statusCopy.zh} en={statusCopy.en} />
         </strong>
-        <span>
+        <DownloadLink className="primary-action" channel={channel}>
           <LocalizedText zh={actionCopy.zh} en={actionCopy.en} />
-        </span>
+        </DownloadLink>
       </div>
-    </DownloadLink>
+    </article>
   );
 }
 
