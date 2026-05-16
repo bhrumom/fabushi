@@ -125,6 +125,14 @@ function getDefaultReplyGuidanceSignal(sectionSlug?: string) {
   }
 }
 
+function getDefaultReplyRoleLabel() {
+  return "论坛参与者";
+}
+
+function getDefaultReplyTrustSignal() {
+  return "新提交回复，等待更多互动后再判断是否适合沉淀。";
+}
+
 function normalizeThread(thread: ForumThread): ForumThread {
   return {
     ...thread,
@@ -142,10 +150,18 @@ function normalizeThread(thread: ForumThread): ForumThread {
 function normalizeReply(reply: ForumReply, thread?: ForumThread): ForumReply {
   return {
     ...reply,
+    roleLabel:
+      typeof reply.roleLabel === "string" && reply.roleLabel.trim().length > 0
+        ? reply.roleLabel.trim()
+        : getDefaultReplyRoleLabel(),
     guidanceSignal:
       typeof reply.guidanceSignal === "string" && reply.guidanceSignal.trim().length > 0
         ? reply.guidanceSignal.trim()
         : getDefaultReplyGuidanceSignal(thread?.sectionSlug),
+    trustSignal:
+      typeof reply.trustSignal === "string" && reply.trustSignal.trim().length > 0
+        ? reply.trustSignal.trim()
+        : getDefaultReplyTrustSignal(),
   };
 }
 
@@ -216,14 +232,20 @@ function mapReply(row: SqliteReplyRow): ForumReply {
     id: row.id,
     threadSlug: row.thread_slug,
     author: row.author,
-    roleLabel: row.role_label,
+    roleLabel:
+      typeof row.role_label === "string" && row.role_label.trim().length > 0
+        ? row.role_label.trim()
+        : getDefaultReplyRoleLabel(),
     guidanceSignal:
       typeof row.guidance_signal === "string" && row.guidance_signal.trim().length > 0
         ? row.guidance_signal.trim()
         : getDefaultReplyGuidanceSignal(),
     publishedAt: row.published_at,
     moderationState: row.moderation_state,
-    trustSignal: row.trust_signal,
+    trustSignal:
+      typeof row.trust_signal === "string" && row.trust_signal.trim().length > 0
+        ? row.trust_signal.trim()
+        : getDefaultReplyTrustSignal(),
     body: parseJsonArray(row.body_json),
   };
 }
@@ -923,7 +945,9 @@ export function createSqliteForumRepository(): ForumRepository {
     }
 
     const body = input.body.filter((paragraph) => paragraph.trim().length > 0);
+    const roleLabel = input.roleLabel.trim() || getDefaultReplyRoleLabel();
     const guidanceSignal = input.guidanceSignal.trim() || getDefaultReplyGuidanceSignal(thread.sectionSlug);
+    const trustSignal = input.trustSignal.trim() || getDefaultReplyTrustSignal();
 
     if (body.length === 0) {
       throw new ForumInputError("Reply body must contain at least one non-empty paragraph.");
@@ -952,11 +976,11 @@ export function createSqliteForumRepository(): ForumRepository {
         replyId,
         input.threadSlug,
         input.author,
-        input.roleLabel,
+        roleLabel,
         guidanceSignal,
         createdAt,
         "published",
-        input.trustSignal,
+        trustSignal,
         JSON.stringify(body),
       );
 
