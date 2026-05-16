@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/buddhadharma");
 const pageTitle = `佛法入门 | ${brand.name}`;
 const pageDescription =
-  "从佛法是什么、初学者如何开始，到禅修、经文、因果与日常修行路径，Fabushi 提供清晰的入门导读。";
+  "从佛法是什么、初学者如何开始，到禅修、经文、因果、菩提心、六度与日常修行路径，Fabushi 提供清晰的入门导读。";
 
 const dharmaHighlights = [
   {
@@ -58,6 +58,15 @@ const learningPaths = [
     titleEn: "Clarify one of the most central intentions in Mahayana practice.",
     descriptionZh: "如果你已经开始接触佛法，但常把菩提心理解成空泛口号或只是一种好心，这一页会更适合继续往下看。",
     descriptionEn: "This is the better next page if you have begun meeting buddhadharma but still hear bodhicitta as either a vague slogan or simple kindness.",
+  },
+  {
+    href: "/what-are-the-six-paramitas",
+    labelZh: "六度分别是什么",
+    labelEn: "Six Paramitas",
+    titleZh: "把菩提心怎样落回做人、修心和练习里接起来。",
+    titleEn: "See how aspiration returns to conduct, training, and ordinary life.",
+    descriptionZh: "如果你已经开始接触大乘修学，但常把六度听成一张离生活很远的清单，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you are meeting Mahayana learning but still hear the six paramitas as a distant list rather than a living practice path.",
   },
   {
     href: "/practice-guide",
@@ -183,6 +192,7 @@ export const metadata: Metadata = {
     "佛教入门",
     "学佛从哪里开始",
     "因果是什么意思",
+    "六度分别是什么",
     "禅修入门",
     "Fabushi",
   ],

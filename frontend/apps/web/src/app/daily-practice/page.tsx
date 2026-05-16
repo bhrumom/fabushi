@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/daily-practice");
 const pageTitle = `日常功课怎么安排 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理日常功课怎么安排：晨起、白天与晚间可以怎样放进禅修、经文听诵、念佛、阅读与简短回顾，帮助学佛修行真正留在生活里。";
+  "面向初学者梳理日常功课怎么安排：晨起、白天与晚间可以怎样放进禅修、经文听诵、念佛、阅读与简短回顾，帮助学佛修行、六度与生活真正接在一起。";
 
 const routinePrinciples = [
   {
@@ -105,6 +105,15 @@ const relatedPaths = [
     descriptionEn: "Return to the overview first if you are still mapping how meditation, listening, recitation, reading, and notes fit together.",
   },
   {
+    href: "/what-are-the-six-paramitas",
+    labelZh: "六度分别是什么",
+    labelEn: "Six Paramitas",
+    titleZh: "把日常功课为什么不只是一张任务清单说清楚。",
+    titleEn: "See why a daily routine is not only a checklist but part of a wider training of life.",
+    descriptionZh: "如果你想知道布施、持戒、忍辱、精进、禅定和般若怎样慢慢回到晨起、白天和晚间的节奏里，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you want to see how generosity, discipline, patience, diligence, meditation, and wisdom slowly return to morning, daytime, and evening rhythm.",
+  },
+  {
     href: "/start-learning-buddhism",
     labelZh: "学佛从哪里开始",
     labelEn: "Where to Begin",
@@ -186,6 +195,7 @@ export const metadata: Metadata = {
     "学佛日常功课",
     "初学者功课安排",
     "居士日常修行",
+    "六度分别是什么",
     "修行方法",
     "Fabushi",
   ],

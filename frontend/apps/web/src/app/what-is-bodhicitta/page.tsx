@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/what-is-bodhicitta");
 const pageTitle = `菩提心是什么意思 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理菩提心是什么意思：菩提心不是一时的好心，也不只是口号，而是愿意走向觉悟、同时把众生利益放进发心、选择与日常练习里的方向。";
+  "面向初学者梳理菩提心是什么意思：菩提心不是一时的好心，也不只是口号，而是愿意走向觉悟、同时把众生利益放进发心、选择、六度与日常练习里的方向。";
 
 const bodhicittaFoundations = [
   {
@@ -123,6 +123,15 @@ const relatedPaths = [
     descriptionEn: "This is the better next page if you want to understand intention together with karma, habits, and ordinary choices.",
   },
   {
+    href: "/what-are-the-six-paramitas",
+    labelZh: "六度分别是什么",
+    labelEn: "Six Paramitas",
+    titleZh: "把菩提心怎样落回做人、修心和练习里接起来。",
+    titleEn: "See how bodhicitta returns to conduct, training, and ordinary life.",
+    descriptionZh: "如果你想知道发心为什么会继续长成布施、持戒、忍辱、精进、禅定和般若，这一页更适合继续往下看。",
+    descriptionEn: "This is the better next page if you want to see how aspiration unfolds into generosity, discipline, patience, diligence, meditation, and wisdom.",
+  },
+  {
     href: "/practice-guide",
     labelZh: "修行方法总览",
     labelEn: "Practice Guide",
@@ -203,6 +212,7 @@ export const metadata: Metadata = {
     "菩提心是什么意思",
     "菩提心",
     "发菩提心",
+    "六度分别是什么",
     "大乘佛教",
     "学佛入门",
     "佛法入门",
