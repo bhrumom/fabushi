@@ -159,6 +159,7 @@ if testflight_status:
         }
     )
     notes.append("iOS TestFlight 入口会在上传状态成功后同步到官网。")
+    notes.append("官网展示的 iOS TestFlight 入口来自本次发布携带的上传状态与公开加入链接；如需确认 App Store Connect 后台最终处理态，仍需额外核验。")
 
 if not notes:
     notes.append("本次 release 没有带新的 Android APK 或 iOS TestFlight 状态，官网会继续保留现有渠道信息。")
