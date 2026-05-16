@@ -5,14 +5,11 @@ buildscript {
         if (preferOfficialReposInCi) {
             google()
             mavenCentral()
-        }
-
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
-        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-
-        if (!preferOfficialReposInCi) {
+        } else {
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/central") }
+            maven { url = uri("https://maven.aliyun.com/repository/public") }
+            maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
             google()
             mavenCentral()
         }
@@ -27,14 +24,11 @@ allprojects {
             if (preferOfficialReposInCi) {
                 google()
                 mavenCentral()
-            }
-
-            maven { url = uri("https://maven.aliyun.com/repository/google") }
-            maven { url = uri("https://maven.aliyun.com/repository/central") }
-            maven { url = uri("https://maven.aliyun.com/repository/public") }
-            maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-
-            if (!preferOfficialReposInCi) {
+            } else {
+                maven { url = uri("https://maven.aliyun.com/repository/google") }
+                maven { url = uri("https://maven.aliyun.com/repository/central") }
+                maven { url = uri("https://maven.aliyun.com/repository/public") }
+                maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
                 google()
                 mavenCentral()
             }
