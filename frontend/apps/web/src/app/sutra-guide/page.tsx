@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/sutra-guide");
 const pageTitle = `佛经导读 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理佛经从哪里开始读、经文听诵与阅读如何配合，以及怎样把佛经学习放进稳定的修行节奏。";
+  "面向初学者梳理佛经从哪里开始读、经文听诵与阅读如何配合，以及《心经》怎样接回空性理解、《普门品》怎样接回菩提心、《阿弥陀经》怎样接回日常功课，把佛经学习放进稳定的修行节奏。";
 
 const scriptureFoundations = [
   {
@@ -73,6 +73,45 @@ const conceptBlocks = [
   },
 ] as const;
 
+const nextStepGuides = [
+  {
+    href: "/what-is-emptiness",
+    labelZh: "《心经》之后，继续看空性怎么理解",
+    labelEn: "After the Heart Sutra, continue to emptiness",
+    titleZh: "把“色即是空”一类最常让初学者停住的地方，接回更稳的空性导读。",
+    titleEn: "Return the places where the Heart Sutra most often stops beginners to a steadier emptiness guide.",
+    descriptionZh: "如果你已经确定想从《心经》进入，但下一步最常变成“空性到底是不是就是什么都没有”，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if the Heart Sutra already feels like the doorway but your next question keeps becoming whether emptiness means nothingness.",
+  },
+  {
+    href: "/what-is-bodhicitta",
+    labelZh: "《普门品》之后，继续看菩提心是什么意思",
+    labelEn: "After the Universal Gate Chapter, continue to bodhicitta",
+    titleZh: "把慈悲、愿心和利他为什么会越走越宽，接回更清楚的发心导读。",
+    titleEn: "Return compassion, aspiration, and benefiting others to a clearer guide to bodhicitta.",
+    descriptionZh: "如果你已经对《普门品》或观音法门有亲近感，但下一步最常变成“慈悲为什么会长成更宽的方向”，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if the Universal Gate Chapter already feels close but your next question becomes how compassion widens into a larger direction of practice.",
+  },
+  {
+    href: "/what-are-the-six-paramitas",
+    labelZh: "《金刚经》之后，继续看六度分别是什么",
+    labelEn: "After the Diamond Sutra, continue to the six paramitas",
+    titleZh: "把般若、发心和大乘修学为什么会落回做人做事与练习里，接回六度导读。",
+    titleEn: "Return wisdom, aspiration, and Mahayana training to the six paramitas as lived conduct and practice.",
+    descriptionZh: "如果你已经开始接触《金刚经》，但下一步常变成“这些义理怎样回到修行方法和待人处事”，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if the Diamond Sutra has already become an entry point but your next question is how those teachings return to practice methods and conduct.",
+  },
+  {
+    href: "/daily-practice",
+    labelZh: "《阿弥陀经》之后，继续看日常功课怎么安排",
+    labelEn: "After the Amitabha Sutra, continue to daily practice",
+    titleZh: "把愿心、听诵、念佛和回向怎样慢慢接成一天里的轻量节奏说清楚。",
+    titleEn: "Clarify how aspiration, listening, recitation, and dedication return to a light daily rhythm.",
+    descriptionZh: "如果你已经对《阿弥陀经》或净土愿行有亲近感，但下一步常变成“这一类练习怎么放进晨起、白天和晚间”，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if the Amitabha Sutra or Pure Land aspiration already feels close but your next question is how that practice fits into morning, daytime, and evening life.",
+  },
+] as const;
+
 const relatedPaths = [
   {
     href: "/beginner-sutra-recommendations",
@@ -95,6 +134,42 @@ const relatedPaths = [
     descriptionEn: "This page is more specific if you are asking whether listening can replace reading and how commute listening can return to the written text.",
   },
   {
+    href: "/buddhist-concepts",
+    labelZh: "佛学基本概念入门",
+    labelEn: "Buddhist Concepts",
+    titleZh: "把经里反复遇到的因果、菩提心、六度和空性先收成一张图。",
+    titleEn: "Gather karma, bodhicitta, the six paramitas, and emptiness onto one beginner concept map.",
+    descriptionZh: "如果你发现佛经阅读最常停在这些名相上，但又不想每次都只卡在单一一页，这一页会更适合先打开。",
+    descriptionEn: "This is the better next page if scripture reading keeps stopping on these concepts and you need one map before diving into individual pages again.",
+  },
+  {
+    href: "/what-is-emptiness",
+    labelZh: "空性怎么理解",
+    labelEn: "How to Understand Emptiness",
+    titleZh: "把《心经》与般若类经典里最常出现的“空”接回日常经验。",
+    titleEn: "Return the language of emptiness in wisdom texts to lived experience.",
+    descriptionZh: "如果你已经发现自己最常被《心经》、般若和“空”这个字卡住，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if the Heart Sutra, wisdom teachings, and the word emptiness keep becoming the point where reading stops.",
+  },
+  {
+    href: "/what-is-bodhicitta",
+    labelZh: "菩提心是什么意思",
+    labelEn: "What Bodhicitta Means",
+    titleZh: "把《普门品》、慈悲和愿心为什么会长成更宽的方向说清楚。",
+    titleEn: "Clarify how compassion, aspiration, and a wider direction of practice grow together.",
+    descriptionZh: "如果你已经发现经典阅读常会把问题带到慈悲、利他和发心，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if scripture reading often leads into questions about compassion, benefiting others, and aspiration.",
+  },
+  {
+    href: "/daily-practice",
+    labelZh: "日常功课怎么安排",
+    labelEn: "Daily Practice",
+    titleZh: "把愿心、听诵、念佛和阅读慢慢接回晨起、白天与晚间。",
+    titleEn: "Return aspiration, listening, recitation, and reading to morning, daytime, and evening rhythm.",
+    descriptionZh: "如果你已经确定经典学习要留在生活里，但还不知道怎样放进每天的轻量节奏，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you know scripture needs to stay inside life but still need a lighter daily rhythm that can hold it.",
+  },
+  {
     href: "/buddhadharma",
     labelZh: "佛法入门",
     labelEn: "Dharma Basics",
@@ -102,15 +177,6 @@ const relatedPaths = [
     titleEn: "Return to the broader beginner map for buddhadharma.",
     descriptionZh: "如果你还在分辨佛法、修行、禅修和经文之间的关系，先从佛法入门页看整体脉络。",
     descriptionEn: "If you are still mapping buddhadharma, practice, meditation, and scripture, start from the broader beginner hub first.",
-  },
-  {
-    href: "/meditation",
-    labelZh: "禅修入门",
-    labelEn: "Meditation Guide",
-    titleZh: "把佛经阅读和禅修练习互相接起来。",
-    titleEn: "Let sutra reading and meditation reinforce each other.",
-    descriptionZh: "如果你想知道经文听诵和禅修如何一起放进日常，这一页可以继续往下接。",
-    descriptionEn: "If you want scripture listening and meditation to live in the same daily rhythm, this is the next page to open.",
   },
   {
     href: "/download",
@@ -149,6 +215,24 @@ const faqItems = [
     answerEn: "Usually not. Pick one or two sutras that match the question you are living with and return to them repeatedly. That often stays with you better than rushing through many texts.",
   },
   {
+    questionZh: "读《心经》以后，下一步常常该看什么？",
+    questionEn: "After starting with the Heart Sutra, what is often the next useful page to read?",
+    answerZh: "很多初学者读《心经》以后，问题会很快变成“空性怎么理解”。这时与其继续追着很多版本跑，不如先回到空性导读，把“空不是什麽都没有”“因缘和合”“怎样少一点抓得太死”这些最容易卡住的地方放清楚，再回头读经，通常更容易读进去。",
+    answerEn: "After the Heart Sutra, many beginners quickly arrive at the question of how to understand emptiness. At that point it is often more useful to step into an emptiness guide, clarify dependent arising and the loosening of rigid grasping, and then return to the sutra again.",
+  },
+  {
+    questionZh: "《普门品》为什么常会把问题带到菩提心？",
+    questionEn: "Why does the Universal Gate Chapter often lead into the question of bodhicitta?",
+    answerZh: "因为很多人从《普门品》接触到的，不只是求护念，而是慈悲为什么会长成更宽的发心。读到这里时，问题常会从“这段经文让我安心”慢慢变成“修行为什么不能只围着自己”。这时回到菩提心导读，会更容易把慈悲、愿心和利他放回同一条路上。",
+    answerEn: "Because for many readers the Universal Gate Chapter opens not only comfort, but the wider question of how compassion grows into a broader aspiration. The next useful step is often a bodhicitta guide that places compassion, aspiration, and benefiting others on one path.",
+  },
+  {
+    questionZh: "《阿弥陀经》怎么接回日常功课？",
+    questionEn: "How can the Amitabha Sutra return to an actual daily routine?",
+    answerZh: "很多人读《阿弥陀经》以后，会想知道愿心、听诵、念佛和回向怎样放进晨起、白天和晚间。更稳的方式通常不是突然把功课排得很满，而是先让一两个轻动作留下来，例如晨起听一段、白天念几分钟、晚间回顾一句最触动自己的地方。这样经典学习才会慢慢进入生活。",
+    answerEn: "After the Amitabha Sutra, many readers want to know how aspiration, listening, recitation, and dedication fit into morning, daytime, and evening life. A steadier start is usually one or two light actions that can stay alive rather than a heavy schedule all at once.",
+  },
+  {
     questionZh: "Fabushi 在佛经导读里最适合扮演什么角色？",
     questionEn: "What role does Fabushi play in a sutra study routine?",
     answerZh: "它更适合作为经文听诵、提醒和简单记录的辅助工具，帮助你把佛经学习放进日常节奏，而不是只在想起来时才接触经典。",
@@ -162,7 +246,17 @@ export const metadata: Metadata = {
   alternates: {
     canonical: pageUrl,
   },
-  keywords: ["佛经", "佛经导读", "佛经入门", "初学者读什么佛经", "经文听诵", "Fabushi"],
+  keywords: [
+    "佛经",
+    "佛经导读",
+    "佛经入门",
+    "初学者读什么佛经",
+    "心经 空性",
+    "普门品 菩提心",
+    "阿弥陀经 日常功课",
+    "经文听诵",
+    "Fabushi",
+  ],
   openGraph: {
     title: pageTitle,
     description: pageDescription,
@@ -193,7 +287,7 @@ export default function SutraGuidePage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["佛经导读", "佛经入门", "经文听诵"],
+        about: ["佛经导读", "佛经入门", "经文听诵", "空性", "菩提心", "日常功课"],
       },
       {
         "@type": "BreadcrumbList",
@@ -217,6 +311,17 @@ export default function SutraGuidePage() {
             item: pageUrl,
           },
         ],
+      },
+      {
+        "@type": "ItemList",
+        name: "佛经导读的下一步路径",
+        itemListElement: nextStepGuides.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.labelZh,
+          url: siteUrl(item.href),
+          description: item.descriptionZh,
+        })),
       },
       {
         "@type": "FAQPage",
@@ -284,6 +389,12 @@ export default function SutraGuidePage() {
             <LocalizedText
               zh="更稳妥的方式，是先问自己为什么读佛经。是想建立学佛方向、安定心念、理解某个概念，还是想把听诵和修行节奏接进日常？先把这个问题看清，再去选经典，会比一开始追求读得多、读得快更容易进入。"
               en="A steadier approach is to ask why you want to read sutras right now. Are you trying to orient your learning, steady the mind, clarify a concept, or connect listening and practice inside daily life? Once that question becomes clearer, the right text is easier to choose."
+            />
+          </p>
+          <p>
+            <LocalizedText
+              zh="很多人读经典时，真正卡住的常常不是“有没有读”，而是读到某一句以后，不知道下一步该去哪里。读《心经》时，问题常会变成空性怎么理解；读《普门品》时，问题常会变成慈悲和菩提心是什么关系；读《阿弥陀经》时，问题常会变成愿心和日常功课怎样接起来。把这些下一步提前准备好，佛经学习才不容易断在第一页。"
+              en="Many readers do not stop because they refused to read, but because after one striking line they no longer know where to go next. The Heart Sutra often leads to emptiness, the Universal Gate Chapter to bodhicitta, and the Amitabha Sutra to the question of how aspiration returns to daily rhythm. Preparing those next steps early keeps sutra study from ending on the first page."
             />
           </p>
           <p>
@@ -374,6 +485,37 @@ export default function SutraGuidePage() {
       </section>
 
       <section className="band">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="下一步接哪里" en="Where to Go Next" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="把常见经典入口，直接接回已经存在的概念页和日常修行页。"
+              en="Connect common scripture entry points directly to the concept and daily-practice pages already live on the site."
+            />
+          </h2>
+        </div>
+        <div className="editorial-list">
+          {nextStepGuides.map((item) => (
+            <a key={item.href} className="editorial-row" href={siteHref(item.href)}>
+              <span>
+                <LocalizedText zh={item.labelZh} en={item.labelEn} />
+              </span>
+              <div>
+                <strong>
+                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
+                </strong>
+                <p>
+                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+                </p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt">
         <div className="section-heading tight">
           <p>
             <LocalizedText zh="继续阅读" en="Keep Going" />
