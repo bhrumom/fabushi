@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/practice-guide");
 const pageTitle = `修行方法总览 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，才能把修行、六度、空性理解与日常生活接在一起。";
+  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，才能把菩提心、修行、六度、空性理解与日常生活接在一起。";
 
 const practicePrinciples = [
   {
@@ -99,6 +99,15 @@ const relatedPaths = [
     descriptionEn: "If you already know you want to practice but feel stuck on arranging a routine that can last, this page is more concrete.",
   },
   {
+    href: "/what-is-bodhicitta",
+    labelZh: "菩提心是什么意思",
+    labelEn: "What Bodhicitta Means",
+    titleZh: "把“为什么修、愿意把这条路带向哪里”先放清楚。",
+    titleEn: "Clarify why you practice and what direction you want the path to grow toward.",
+    descriptionZh: "如果你想知道修行方法为什么不只是在练技巧，而要和发心一起长出来，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you want to see why practice methods are more than technique and need to grow together with aspiration.",
+  },
+  {
     href: "/what-are-the-six-paramitas",
     labelZh: "六度分别是什么",
     labelEn: "Six Paramitas",
@@ -168,6 +177,12 @@ const faqItems = [
     answerEn: "The better question is what you need most right now. Meditation can come first if you need steadiness, recitation or listening can come first if you need an easier rhythm, and reading can come first if you need clearer direction.",
   },
   {
+    questionZh: "菩提心是什么意思，和修行方法有什么关系？",
+    questionEn: "What does bodhicitta have to do with actual practice methods?",
+    answerZh: "如果没有发心，修行方法很容易只剩技巧和任务。更稳的方向，是让禅修、听诵、阅读、念佛和记录，慢慢回到“我为什么学、愿意把这条路带向哪里”这件事上。这样方法才不只是让自己舒服一点，也会开始长出更宽的方向。",
+    answerEn: "Without aspiration, practice methods can shrink into technique and task. A steadier direction is to let meditation, listening, reading, recitation, and notes return to the question of why you practice and what direction you want the path to grow toward. Then methods become more than self-soothing and begin to open into a wider intention.",
+  },
+  {
     questionZh: "日常功课一定要安排很多吗？",
     questionEn: "Does a daily routine need to be heavy to count?",
     answerZh: "不需要。很多人真正能留下来的修行，反而是很轻的节奏，例如每天几分钟禅修、听一段经文、念几分钟佛号，再留下一点记录。轻一点，往往更容易真做下去。",
@@ -204,6 +219,7 @@ export const metadata: Metadata = {
     "学佛修行",
     "佛教修行方法",
     "初学者怎么修行",
+    "菩提心是什么意思",
     "日常功课",
     "六度分别是什么",
     "空性怎么理解",
@@ -240,7 +256,7 @@ export default function PracticeGuidePage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["修行方法", "学佛修行", "日常功课", "空性理解"],
+        about: ["修行方法", "学佛修行", "菩提心", "日常功课", "空性理解"],
       },
       {
         "@type": "BreadcrumbList",
@@ -345,8 +361,8 @@ export default function PracticeGuidePage() {
           </p>
           <p>
             <LocalizedText
-              zh="修行方法最后不只是在练几种技能。随着节奏慢慢稳定，人也会开始看见：很多急躁、执着和判断，并没有想象中那样固定，这也是为什么六度和空性会和方法页放在同一条路上。方法越回到这里，练习就越不只是完成任务，而是在帮助自己少一点抓得太死。"
-              en="Practice methods are not only a set of techniques. As the rhythm steadies, people often begin to see that agitation, attachment, and judgment are less fixed than they seem. This is why the six paramitas and emptiness belong on the same path as method pages. The more practice returns here, the less it becomes task-completion and the more it helps loosen rigid grasping."
+              zh="修行方法最后不只是在练几种技能。随着节奏慢慢稳定，人也会开始看见：很多急躁、执着和判断，并没有想象中那样固定，这也是为什么菩提心、六度和空性会和方法页放在同一条路上。方法越回到这里，练习就越不只是完成任务，而是在帮助自己少一点抓得太死。"
+              en="Practice methods are not only a set of techniques. As the rhythm steadies, people often begin to see that agitation, attachment, and judgment are less fixed than they seem. This is why bodhicitta, the six paramitas, and emptiness belong on the same path as method pages. The more practice returns here, the less it becomes task-completion and the more it helps loosen rigid grasping."
             />
           </p>
           <p>
