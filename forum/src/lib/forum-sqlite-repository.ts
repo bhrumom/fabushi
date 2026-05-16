@@ -117,7 +117,11 @@ function resolveSqliteDatabasePath(databaseUrl: string): string {
 
   const withoutPrefix = trimmedUrl.startsWith("file:") ? trimmedUrl.slice(5) : trimmedUrl;
 
-  if (!withoutPrefix || withoutPrefix === ":memory:") {
+  if (!withoutPrefix) {
+    throw new Error("FORUM_DATABASE_URL must point to a sqlite file path.");
+  }
+
+  if (withoutPrefix === ":memory:") {
     return withoutPrefix;
   }
 
