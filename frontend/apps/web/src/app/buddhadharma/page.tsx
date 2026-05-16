@@ -51,6 +51,15 @@ const learningPaths = [
     descriptionEn: "This is the better next page if you have begun meeting buddhadharma but still hear karma as simple punishment or payback.",
   },
   {
+    href: "/what-is-bodhicitta",
+    labelZh: "菩提心是什么意思",
+    labelEn: "What Bodhicitta Means",
+    titleZh: "把大乘修学里最关键的发心先放清楚。",
+    titleEn: "Clarify one of the most central intentions in Mahayana practice.",
+    descriptionZh: "如果你已经开始接触佛法，但常把菩提心理解成空泛口号或只是一种好心，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you have begun meeting buddhadharma but still hear bodhicitta as either a vague slogan or simple kindness.",
+  },
+  {
     href: "/practice-guide",
     labelZh: "修行方法总览",
     labelEn: "Practice Guide",
