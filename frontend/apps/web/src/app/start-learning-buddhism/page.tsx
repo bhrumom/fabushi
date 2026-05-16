@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/start-learning-buddhism");
 const pageTitle = `学佛从哪里开始 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理学佛从哪里开始：先建立方向，再选一条可持续的练习主线，把佛经、禅修、因果理解和日常功课接进生活。";
+  "面向初学者梳理学佛从哪里开始：先建立方向，再选一条可持续的练习主线，把佛经、禅修、因果理解、六度与日常功课接进生活。";
 
 const starterPrinciples = [
   {
@@ -100,6 +100,15 @@ const relatedPaths = [
     titleEn: "Clarify one of the most central intentions in Mahayana practice.",
     descriptionZh: "如果你现在最卡的是“菩提心到底是不是一种好心”，这一页会更适合继续往下看。",
     descriptionEn: "This is the better next page if your question has already become whether bodhicitta is merely a kind feeling or a wider direction of practice.",
+  },
+  {
+    href: "/what-are-the-six-paramitas",
+    labelZh: "六度分别是什么",
+    labelEn: "Six Paramitas",
+    titleZh: "把发心怎样落回做人、修心和练习里接起来。",
+    titleEn: "See how aspiration returns to conduct, training, and ordinary life.",
+    descriptionZh: "如果你现在最卡的是“六度到底和日常修行有什么关系”，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if your question has already become how the six paramitas relate to ordinary practice.",
   },
   {
     href: "/beginner-sutra-recommendations",
@@ -204,6 +213,7 @@ export const metadata: Metadata = {
     "佛法入门",
     "初学者学佛",
     "因果是什么意思",
+    "六度分别是什么",
     "佛教入门",
     "Fabushi",
   ],
