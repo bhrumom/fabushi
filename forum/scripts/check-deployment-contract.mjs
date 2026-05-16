@@ -13,7 +13,7 @@ function parseArgs(argv) {
     const key = part.slice(2);
     const value = argv[index + 1];
 
-    if (!value || value.startsWith("--")) {
+    if (value === undefined || value.startsWith("--")) {
       throw new Error(`Missing value for --${key}`);
     }
 
