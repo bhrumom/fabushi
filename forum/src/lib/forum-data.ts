@@ -1,5 +1,7 @@
-import forumContent from "../data/forum-content.json";
+import { createSeedForumRepository } from "./forum-seed-repository";
 
+export type ForumDataSource = "seed-json";
+export type ForumPersistenceMode = "seed-only";
 export type ForumModerationState = "published" | "needs-review" | "archived";
 export type ForumKnowledgeStage = "discussion" | "candidate" | "archived";
 
@@ -40,65 +42,84 @@ export interface ForumReply {
   body: string[];
 }
 
-interface ForumContentStore {
-  sections: ForumSection[];
-  threads: ForumThread[];
-  replies: ForumReply[];
+export interface ForumSectionSummary extends ForumSection {
+  threadCount: number;
+  replyCount: number;
 }
 
-const content = forumContent as ForumContentStore;
+export interface ForumThreadDetail {
+  thread: ForumThread;
+  section?: ForumSection;
+  replies: ForumReply[];
+  source: ForumDataSource;
+  generatedAt: string;
+}
 
-export const FORUM_SECTIONS: ForumSection[] = content.sections;
-export const FORUM_THREADS: ForumThread[] = content.threads;
-export const FORUM_REPLIES: ForumReply[] = content.replies;
+export interface ForumSnapshot {
+  sections: ForumSectionSummary[];
+  threads: ForumThread[];
+  replies: ForumReply[];
+  generatedAt: string;
+  source: ForumDataSource;
+}
+
+export interface ForumRuntimeStatus {
+  service: "forum";
+  dataSource: ForumDataSource;
+  persistenceMode: ForumPersistenceMode;
+  databaseConfigured: boolean;
+  counts: {
+    sections: number;
+    threads: number;
+    replies: number;
+  };
+  generatedAt: string;
+}
+
+export interface ForumRepository {
+  dataSource: ForumDataSource;
+  persistenceMode: ForumPersistenceMode;
+  getSections(): ForumSection[];
+  getThreads(): ForumThread[];
+  getReplies(): ForumReply[];
+  getSectionBySlug(slug: string): ForumSection | undefined;
+  getThreadBySlug(slug: string): ForumThread | undefined;
+  getThreadsBySection(sectionSlug: string): ForumThread[];
+  getRepliesByThreadSlug(threadSlug: string): ForumReply[];
+  getThreadDetailBySlug(slug: string): ForumThreadDetail | undefined;
+  getSnapshot(): ForumSnapshot;
+  getRuntimeStatus(): ForumRuntimeStatus;
+}
+
+const forumRepository = createSeedForumRepository();
+
+export const FORUM_DATA_SOURCE = forumRepository.dataSource;
+export const FORUM_PERSISTENCE_MODE = forumRepository.persistenceMode;
 
 export function getSectionBySlug(slug: string) {
-  return FORUM_SECTIONS.find((section) => section.slug === slug);
+  return forumRepository.getSectionBySlug(slug);
 }
 
 export function getThreadBySlug(slug: string) {
-  return FORUM_THREADS.find((thread) => thread.slug === slug);
+  return forumRepository.getThreadBySlug(slug);
 }
 
 export function getThreadsBySection(sectionSlug: string) {
-  return FORUM_THREADS.filter((thread) => thread.sectionSlug === sectionSlug);
+  return forumRepository.getThreadsBySection(sectionSlug);
 }
 
 export function getRepliesByThreadSlug(threadSlug: string) {
-  return FORUM_REPLIES.filter((reply) => reply.threadSlug === threadSlug);
+  return forumRepository.getRepliesByThreadSlug(threadSlug);
 }
 
 export function getThreadDetailBySlug(slug: string) {
-  const thread = getThreadBySlug(slug);
-
-  if (!thread) {
-    return undefined;
-  }
-
-  return {
-    thread,
-    section: getSectionBySlug(thread.sectionSlug),
-    replies: getRepliesByThreadSlug(thread.slug),
-    source: "seed-json",
-    generatedAt: new Date().toISOString(),
-  };
+  return forumRepository.getThreadDetailBySlug(slug);
 }
 
 export function getForumSnapshot() {
-  return {
-    sections: FORUM_SECTIONS.map((section) => {
-      const threads = getThreadsBySection(section.slug);
-      const replyCount = threads.reduce((total, thread) => total + getRepliesByThreadSlug(thread.slug).length, 0);
+  return forumRepository.getSnapshot();
+}
 
-      return {
-        ...section,
-        threadCount: threads.length,
-        replyCount,
-      };
-    }),
-    threads: FORUM_THREADS,
-    replies: FORUM_REPLIES,
-    generatedAt: new Date().toISOString(),
-    source: "seed-json",
-  };
+export function getForumRuntimeStatus() {
+  return forumRepository.getRuntimeStatus();
 }

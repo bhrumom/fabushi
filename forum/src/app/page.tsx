@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FORUM_SECTIONS, FORUM_THREADS, getForumSnapshot } from "../lib/forum-data";
+import { getForumSnapshot } from "../lib/forum-data";
 
 export default function HomePage() {
   const snapshot = getForumSnapshot();
@@ -35,7 +35,7 @@ export default function HomePage() {
       </section>
 
       <section className="thread-grid">
-        {FORUM_THREADS.slice(0, 4).map((thread) => (
+        {snapshot.threads.slice(0, 4).map((thread) => (
           <article key={thread.slug} className="thread-card">
             <div className="thread-meta">
               <span>{thread.author}</span>
@@ -58,7 +58,7 @@ export default function HomePage() {
       </section>
 
       <section className="section-grid">
-        {FORUM_SECTIONS.map((section) => (
+        {snapshot.sections.map((section) => (
           <article key={section.slug} className="panel">
             <h3>{section.name}</h3>
             <p>{section.description}</p>
@@ -72,6 +72,7 @@ export default function HomePage() {
         <p>种子数据已经通过独立应用自己的 JSON 路由暴露出来，后续可以在不重写页面结构的前提下切到真实数据层。</p>
         <p className="code">GET /api/threads</p>
         <p className="code">GET /api/thread/[slug]</p>
+        <p className="code">GET /api/status</p>
         <div className="footer-note">
           <span>sections: {snapshot.sections.length}</span>
           <span>threads: {snapshot.threads.length}</span>
