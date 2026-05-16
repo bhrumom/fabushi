@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getAllArticles } from "../lib/content";
+import { FORUM_THREADS } from "../lib/community";
 import { siteUrl } from "../lib/site-url";
 
 export const dynamic = "force-static";
@@ -10,6 +11,7 @@ const staticRoutes = [
   "/apply",
   "/faq",
   "/community",
+  "/community/threads",
   "/privacy",
   "/contact",
   "/insights",
@@ -25,6 +27,7 @@ const weeklyRoutes = new Set([
   "/download",
   "/faq",
   "/community",
+  "/community/threads",
   "/buddhadharma",
   "/start-learning-buddhism",
   "/meditation",
@@ -56,5 +59,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: article.featured ? 0.8 : 0.65,
   }));
 
-  return [...pages, ...articlePages];
+  const forumThreadPages: MetadataRoute.Sitemap = FORUM_THREADS.map((thread) => ({
+    url: siteUrl(`/community/threads/${thread.slug}`),
+    lastModified: new Date(),
+    changeFrequency: "weekly",
+    priority: 0.8,
+  }));
+
+  return [...pages, ...articlePages, ...forumThreadPages];
 }
