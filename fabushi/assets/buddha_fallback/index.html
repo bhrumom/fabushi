@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Fabushi Buddha Fallback</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: linear-gradient(180deg, #1A2864 0%, #111C48 45%, #090E22 100%);
+      touch-action: none;
+    }
+
+    #container {
+      width: 100%;
+      height: 100%;
+    }
+
+    #status {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.72);
+      font: 500 15px sans-serif;
+      letter-spacing: 0.08em;
+      text-align: center;
+      background: rgba(11, 14, 20, 0.42);
+      z-index: 9;
+      pointer-events: none;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+  <div id="status">恭请佛像...</div>
+  <script>
+    (function () {
+      var channelName = 'FabushiBuddhaFallback';
+      var remoteGlbUrl = 'https://flutter.ombhrum.com/assets/models/%E4%BD%9B%E5%83%8F%E6%A8%A1%E5%9E%8B.glb';
+      var bundledGlbUrl = new URL(
+        '../../web/assets/models/%E4%BD%9B%E5%83%8F%E6%A8%A1%E5%9E%8B.glb',
+        window.location.href
+      ).href;
+
+      window.FABUSHI_BUDDHA_CONFIG = {
+        channelName: channelName,
+        glbCandidates: [
+          { label: 'remote-static-glb', url: remoteGlbUrl },
+          { label: 'bundled-glb', url: bundledGlbUrl }
+        ]
+      };
+
+      window.fabushiNotifyBuddhaHost = function (message) {
+        var bridge = window[channelName];
+        if (bridge && typeof bridge.postMessage === 'function') {
+          bridge.postMessage(message);
+        }
+      };
+    })();
+  </script>
+  <script
+    src="./buddha_fallback.js"
+    onerror="window.fabushiNotifyBuddhaHost && window.fabushiNotifyBuddhaHost('error:bundled Three.js fallback script failed to load')"
+  ></script>
+</body>
+</html>

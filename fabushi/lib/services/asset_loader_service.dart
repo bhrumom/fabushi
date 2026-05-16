@@ -499,9 +499,9 @@ class AssetLoaderService {
         if (await tempFile.exists()) {
           await tempFile.delete();
         }
-        throw Exception('下载失败: HTTP 416');
+        throw Exception('下载失败: HTTP 416 ($url)');
       } else {
-        throw Exception('下载失败: HTTP ${response.statusCode}');
+        throw Exception('下载失败: HTTP ${response.statusCode} ($url)');
       }
     } catch (e) {
       debugPrint('❌ [AssetLoader] 下载出错: $e');
@@ -553,7 +553,7 @@ class AssetLoaderService {
         return data;
       } else {
         client.close();
-        throw Exception('下载失败: HTTP ${response.statusCode}');
+        throw Exception('下载失败: HTTP ${response.statusCode} ($url)');
       }
     } catch (e) {
       debugPrint('❌ [AssetLoader] 简单下载失败: $e');
@@ -634,7 +634,9 @@ class AssetLoaderService {
     if (isFlutterSceneModelData(data)) return;
 
     throw Exception(
-      '资源格式异常($source): $fileName 不是有效的 flutter_scene .model 文件。',
+      '资源格式异常($source): $fileName 不是有效的 flutter_scene .model 文件。'
+      '首字节=${_formatHeaderBytes(data)}，'
+      '可能下载到了 GLB、HTML 错误页或错误的 R2 对象。',
     );
   }
 
@@ -658,6 +660,15 @@ class AssetLoaderService {
       unitIndex++;
     }
     return '${value.toStringAsFixed(unitIndex == 0 ? 0 : 1)} ${units[unitIndex]}';
+  }
+
+  static String _formatHeaderBytes(Uint8List data) {
+    if (data.isEmpty) return '<empty>';
+    final length = data.lengthInBytes < 12 ? data.lengthInBytes : 12;
+    return data
+        .take(length)
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join(' ');
   }
 
   /// 强制重新下载并清除旧缓存

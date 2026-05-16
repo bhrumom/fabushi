@@ -261,6 +261,8 @@ jobs:
             /fabushi/assets/**
             !/fabushi/assets/built_in/**
             /fabushi/fonts/**
+            /fabushi/web/**
+            !/fabushi/web/assets/built_in/**
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
