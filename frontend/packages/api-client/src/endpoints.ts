@@ -9,5 +9,5 @@ export const endpoints = {
   sendVerificationCode: "/api/auth/send-verification-code",
   userInfo: "/api/auth/user-info",
   forumThreads: "/api/community/threads",
-  forumThread: (slug: string) => `/api/community/threads/${encodeURIComponent(slug)}`,
+  forumThread: (slug: string) => `/api/community/thread/${encodeURIComponent(slug)}`,
 } as const;
