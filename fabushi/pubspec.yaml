@@ -163,7 +163,8 @@ flutter:
     - assets/earth_texture.jpg
     - assets/ip_data/
     - assets/sherpa_models/streaming-paraformer-zh-en/
-    # 佛像模型优先从 R2 加载原始版本，不默认打包本地简化 .model
+    # 安卓佛像模型改为随包提供，禅室不再把首次展示依赖在远端下载上
+    - assets/models/buddha_model.model
   
   fonts:
     # 使用子集化后的字体（从80MB压缩至~4.5MB）
