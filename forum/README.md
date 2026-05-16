@@ -25,6 +25,7 @@ Current scope:
 - a dedicated GitHub Actions workflow that checks the forum app when `forum/**` changes
 - a container deployment baseline built from Next.js standalone output
 - a container smoke check that validates both the default sqlite read-only runtime and the explicitly writable sqlite runtime
+- a preview compose example that keeps sqlite on a mounted volume so data survives container restarts
 
 ## Current product boundary
 
@@ -188,14 +189,26 @@ docker run --rm -p 3000:3000 \
 curl http://localhost:3000/api/status
 ```
 
+If you want sqlite data to survive container restarts, use the preview compose example in this directory:
+
+```bash
+cd forum
+FORUM_ENABLE_WRITES=true FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
+  docker compose -f docker-compose.preview.yml up --build -d
+curl http://localhost:3000/api/status
+docker compose -f docker-compose.preview.yml down
+```
+
+`docker-compose.preview.yml` mounts a named volume at `/data` and keeps `FORUM_DATABASE_URL=file:/data/forum.db`, so newly created threads, replies, and moderation events survive container restarts instead of being lost with the container filesystem.
+
 Runtime defaults:
 
 - `PORT=3000`
 - `HOSTNAME=0.0.0.0`
 - `NODE_ENV=production`
 
-A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, validates that sqlite starts in read-only mode by default, confirms `/threads/new` exposes the disabled page-level composer until writes are explicitly enabled, and then reruns the container with `FORUM_ENABLE_WRITES=true` plus a preview write-access code to exercise thread creation, denied writes without the code, thread-detail readback, reply submission, role labels, guidance signals, and appended moderation timeline events.
+A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, validates that sqlite starts in read-only mode by default, confirms `/threads/new` exposes the disabled page-level composer until writes are explicitly enabled, reruns the container with `FORUM_ENABLE_WRITES=true` plus a preview write-access code to exercise thread creation, denied writes without the code, thread-detail readback, reply submission, role labels, guidance signals, and appended moderation timeline events, and then restarts the same writable container against a mounted sqlite path to confirm those writes still exist after the process comes back up.
 
 ## Why this is the next step
 
-After the explicit sqlite write gate landed, the highest-value gap was no longer another UI slice. The remaining launch-readiness risk was that once a deployment opened writes, it still became fully anonymous and globally writable. This iteration keeps the product surface narrow while making the deployment posture safer: the forum can now be durably readable in sqlite mode first, then move into a small shared-code preview before the fuller authentication and permission boundary lands.
+After the preview write-access gate landed, the next launch-readiness gap was no longer another UI slice. The remaining deployment risk was that the forum could accept real preview writes in sqlite mode without proving those writes survive a container restart. This iteration closes that gap in the smallest useful way: it adds a repeatable compose entry for mounted sqlite storage and extends the container smoke check to verify that a created thread, a created reply, and their moderation timeline still exist after the container starts again.
