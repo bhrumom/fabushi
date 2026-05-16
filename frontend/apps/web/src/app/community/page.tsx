@@ -99,8 +99,8 @@ export default function CommunityPage() {
       <section className="band compact-band">
         <div className="recommended-banner">
           <LocalizedText
-            zh="当前阶段：论坛公开入口已经建立，下一步优先补发帖、回复、收藏、关注和新手引导。"
-            en="Current stage: the public forum entry is live, and the next priority is posting, replies, bookmarks, follows, and newcomer guidance."
+            zh="当前阶段：论坛公开入口已经建立，首批示例帖子也已可浏览；下一步优先补发帖、回复、收藏、关注和新手引导。"
+            en="Current stage: the public forum entry is live, starter discussion pages are now browseable, and the next priority is posting, replies, bookmarks, follows, and newcomer guidance."
           />
         </div>
         <div className="article-body">
@@ -116,6 +116,14 @@ export default function CommunityPage() {
               en="The first release starts by making the community skeleton clear, then adds accounts, interaction, and governance in layers. The goal is not to move slowly, but to make sure the forum begins with direction, boundaries, and room to grow."
             />
           </p>
+          <div className="inline-cta">
+            <a className="primary-action" href={siteHref("/community/threads")}>
+              <LocalizedText zh="浏览首批示例帖子" en="Browse starter threads" />
+            </a>
+            <a className="secondary-action" href={siteHref("/contact")}>
+              <LocalizedText zh="联系团队反馈论坛需求" en="Contact the team with forum feedback" />
+            </a>
+          </div>
         </div>
       </section>
 
@@ -162,7 +170,11 @@ export default function CommunityPage() {
         </div>
         <div className="editorial-list">
           {STARTER_THREADS.map((item) => (
-            <article key={item.titleEn} className="editorial-row">
+            <a
+              key={item.slug}
+              className="editorial-row"
+              href={siteHref(`/community/threads/${item.slug}`)}
+            >
               <span>
                 <LocalizedText zh={item.sectionZh} en={item.sectionEn} />
               </span>
@@ -173,9 +185,17 @@ export default function CommunityPage() {
                 <p>
                   <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
                 </p>
+                <small>
+                  <LocalizedText zh="查看这条示例帖子" en="Open this starter thread" />
+                </small>
               </div>
-            </article>
+            </a>
           ))}
+        </div>
+        <div className="inline-cta">
+          <a className="secondary-action" href={siteHref("/community/threads")}>
+            <LocalizedText zh="进入帖子列表" en="Open thread index" />
+          </a>
         </div>
       </section>
 
@@ -230,11 +250,11 @@ export default function CommunityPage() {
           ))}
         </div>
         <div className="inline-cta">
-          <a className="primary-action" href={siteHref("/")}>
-            <LocalizedText zh="回到首页" en="Back to home" />
+          <a className="primary-action" href={siteHref("/community/threads")}>
+            <LocalizedText zh="先看论坛种子内容" en="See starter forum content" />
           </a>
-          <a className="secondary-action" href={siteHref("/contact")}>
-            <LocalizedText zh="联系团队反馈论坛需求" en="Contact the team with forum feedback" />
+          <a className="secondary-action" href={siteHref("/")}>
+            <LocalizedText zh="回到首页" en="Back to home" />
           </a>
         </div>
       </section>
