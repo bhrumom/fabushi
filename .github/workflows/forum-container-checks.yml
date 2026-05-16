@@ -38,18 +38,46 @@ jobs:
             -p 3000:3000 \
             fabushi-forum
 
-      - name: Smoke test forum sqlite status endpoint defaults to read-only
+      - name: Wait for forum sqlite read-only container healthcheck
         run: |
-          for attempt in 1 2 3 4 5; do
-            response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)" && break
+          for attempt in 1 2 3 4 5 6; do
+            container_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' fabushi-forum-check-readonly)"
+
+            if [ "$container_health" = "healthy" ]; then
+              break
+            fi
+
+            if [ "$container_health" = "unhealthy" ]; then
+              docker logs fabushi-forum-check-readonly
+              exit 1
+            fi
+
             sleep 3
           done
 
-          if [ -z "${response:-}" ]; then
+          if [ "${container_health:-}" != "healthy" ]; then
             docker logs fabushi-forum-check-readonly
             exit 1
           fi
 
+      - name: Smoke test forum sqlite health and status endpoints default to read-only
+        run: |
+          health_response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/health)"
+          echo "$health_response"
+          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_HEALTH_RESPONSE"])
+          assert payload["service"] == "forum", payload
+          assert payload["ready"] is True, payload
+          assert payload["dataSource"] == "sqlite", payload
+          assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["writesEnabled"] is False, payload
+          assert payload["requiresAccessCode"] is False, payload
+          PY
+
+          response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)"
           echo "$response"
           FORUM_STATUS_RESPONSE="$response" python3 - <<'PY'
           import json
@@ -124,18 +152,46 @@ jobs:
             -p 3000:3000 \
             fabushi-forum
 
-      - name: Smoke test forum writable sqlite status endpoint
+      - name: Wait for forum sqlite writable preview container healthcheck
         run: |
-          for attempt in 1 2 3 4 5; do
-            response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)" && break
+          for attempt in 1 2 3 4 5 6; do
+            container_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' fabushi-forum-check)"
+
+            if [ "$container_health" = "healthy" ]; then
+              break
+            fi
+
+            if [ "$container_health" = "unhealthy" ]; then
+              docker logs fabushi-forum-check
+              exit 1
+            fi
+
             sleep 3
           done
 
-          if [ -z "${response:-}" ]; then
+          if [ "${container_health:-}" != "healthy" ]; then
             docker logs fabushi-forum-check
             exit 1
           fi
 
+      - name: Smoke test forum writable sqlite health and status endpoints
+        run: |
+          health_response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/health)"
+          echo "$health_response"
+          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_HEALTH_RESPONSE"])
+          assert payload["service"] == "forum", payload
+          assert payload["ready"] is True, payload
+          assert payload["dataSource"] == "sqlite", payload
+          assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["writesEnabled"] is True, payload
+          assert payload["requiresAccessCode"] is True, payload
+          PY
+
+          response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)"
           echo "$response"
           FORUM_STATUS_RESPONSE="$response" python3 - <<'PY'
           import json
@@ -336,18 +392,46 @@ jobs:
             -p 3000:3000 \
             fabushi-forum
 
-      - name: Smoke test forum sqlite data survives container restart
+      - name: Wait for forum restarted sqlite preview container healthcheck
         run: |
-          for attempt in 1 2 3 4 5; do
-            response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)" && break
+          for attempt in 1 2 3 4 5 6; do
+            container_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' fabushi-forum-check-restart)"
+
+            if [ "$container_health" = "healthy" ]; then
+              break
+            fi
+
+            if [ "$container_health" = "unhealthy" ]; then
+              docker logs fabushi-forum-check-restart
+              exit 1
+            fi
+
             sleep 3
           done
 
-          if [ -z "${response:-}" ]; then
+          if [ "${container_health:-}" != "healthy" ]; then
             docker logs fabushi-forum-check-restart
             exit 1
           fi
 
+      - name: Smoke test forum sqlite data survives container restart
+        run: |
+          health_response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/health)"
+          echo "$health_response"
+          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_HEALTH_RESPONSE"])
+          assert payload["service"] == "forum", payload
+          assert payload["ready"] is True, payload
+          assert payload["dataSource"] == "sqlite", payload
+          assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["writesEnabled"] is True, payload
+          assert payload["requiresAccessCode"] is True, payload
+          PY
+
+          response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)"
           echo "$response"
           FORUM_RESTART_STATUS_RESPONSE="$response" python3 - <<'PY'
           import json
