@@ -2,7 +2,10 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+  >
   <title>Fabushi Buddha Fallback</title>
   <style>
     html, body {
@@ -39,7 +42,7 @@
 </head>
 <body>
   <div id="container"></div>
-  <div id="status">恭请佛像...</div>
+  <div id="status">安卓 Three 佛像加载中...</div>
   <script>
     (function () {
       var channelName = 'FabushiBuddhaFallback';
@@ -47,6 +50,20 @@
       var currentUrl = window.location.href;
       var origin = window.location.origin || '';
       var remoteGlbUrl = 'https://flutter.ombhrum.com/assets/models/' + encodedGlbName;
+
+      function notifyHost(message) {
+        var bridge = window[channelName];
+        if (bridge && typeof bridge.postMessage === 'function') {
+          bridge.postMessage(message);
+        }
+      }
+
+      function updateStatus(text) {
+        var status = document.getElementById('status');
+        if (status) {
+          status.textContent = text;
+        }
+      }
 
       var candidateSpecs = [
         {
@@ -88,12 +105,27 @@
         glbCandidates: dedupedCandidates,
       };
 
-      window.fabushiNotifyBuddhaHost = function (message) {
-        var bridge = window[channelName];
-        if (bridge && typeof bridge.postMessage === 'function') {
-          bridge.postMessage(message);
-        }
-      };
+      window.fabushiNotifyBuddhaHost = notifyHost;
+      window.fabushiUpdateBuddhaStatus = updateStatus;
+
+      window.addEventListener('error', function (event) {
+        var message = event && event.message
+          ? event.message
+          : 'Android Three 页面脚本异常';
+        notifyHost('error:' + message);
+      });
+
+      window.addEventListener('unhandledrejection', function (event) {
+        var reason = event && event.reason
+          ? String(event.reason)
+          : 'Android Three Promise 未处理异常';
+        notifyHost('error:' + reason);
+      });
+
+      if (!dedupedCandidates.length) {
+        updateStatus('未找到可用 GLB 候选地址');
+        notifyHost('error:no GLB candidates configured');
+      }
     })();
   </script>
   <script
