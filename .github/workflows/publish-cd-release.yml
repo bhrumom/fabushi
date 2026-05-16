@@ -193,6 +193,7 @@ jobs:
                 add_both "shared Flutter package input changed: $path"
                 ;;
               frontend/*)
+                # 修复：明确排除逻辑，确保 frontend 变动不会影响 mobile 构建判定
                 ignore_mobile_package "official site input does not require mobile install packages: $path"
                 ;;
               fabushi/test/*|fabushi/integration_test/*|fabushi/e2e/*)
