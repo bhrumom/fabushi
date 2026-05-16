@@ -40,6 +40,9 @@ export function SiteFooter() {
         <a href={siteHref("/what-are-the-six-paramitas")}>
           <LocalizedText zh="六度分别是什么" en="Six Paramitas" />
         </a>
+        <a href={siteHref("/what-is-emptiness")}>
+          <LocalizedText zh="空性怎么理解" en="How to Understand Emptiness" />
+        </a>
         <a href={siteHref("/meditation")}>
           <LocalizedText zh="禅修入门" en="Meditation Guide" />
         </a>
