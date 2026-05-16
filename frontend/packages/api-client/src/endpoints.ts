@@ -8,4 +8,6 @@ export const endpoints = {
   register: "/api/auth/register",
   sendVerificationCode: "/api/auth/send-verification-code",
   userInfo: "/api/auth/user-info",
+  forumThreads: "/api/community/threads",
+  forumThread: (slug: string) => `/api/community/threads/${encodeURIComponent(slug)}`,
 } as const;
