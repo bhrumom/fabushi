@@ -43,18 +43,49 @@
   <script>
     (function () {
       var channelName = 'FabushiBuddhaFallback';
-      var remoteGlbUrl = 'https://flutter.ombhrum.com/assets/models/%E4%BD%9B%E5%83%8F%E6%A8%A1%E5%9E%8B.glb';
-      var bundledGlbUrl = new URL(
-        '../../web/assets/models/%E4%BD%9B%E5%83%8F%E6%A8%A1%E5%9E%8B.glb',
-        window.location.href
-      ).href;
+      var encodedGlbName = '%E4%BD%9B%E5%83%8F%E6%A8%A1%E5%9E%8B.glb';
+      var currentUrl = window.location.href;
+      var origin = window.location.origin || '';
+      var remoteGlbUrl = 'https://flutter.ombhrum.com/assets/models/' + encodedGlbName;
+
+      var candidateSpecs = [
+        {
+          label: 'bundled-glb-relative-two-up',
+          url: new URL('../../web/assets/models/' + encodedGlbName, currentUrl).href,
+        },
+        {
+          label: 'bundled-glb-relative-one-up',
+          url: new URL('../web/assets/models/' + encodedGlbName, currentUrl).href,
+        },
+        origin
+          ? {
+              label: 'bundled-glb-origin-assets-root',
+              url: origin + '/assets/web/assets/models/' + encodedGlbName,
+            }
+          : null,
+        origin
+          ? {
+              label: 'bundled-glb-origin-web-root',
+              url: origin + '/web/assets/models/' + encodedGlbName,
+            }
+          : null,
+        { label: 'remote-static-glb', url: remoteGlbUrl },
+      ].filter(Boolean);
+
+      var dedupedCandidates = [];
+      var seenUrls = Object.create(null);
+      candidateSpecs.forEach(function (candidate) {
+        if (!candidate.url || seenUrls[candidate.url]) {
+          return;
+        }
+        seenUrls[candidate.url] = true;
+        dedupedCandidates.push(candidate);
+      });
 
       window.FABUSHI_BUDDHA_CONFIG = {
         channelName: channelName,
-        glbCandidates: [
-          { label: 'remote-static-glb', url: remoteGlbUrl },
-          { label: 'bundled-glb', url: bundledGlbUrl }
-        ]
+        pageUrl: currentUrl,
+        glbCandidates: dedupedCandidates,
       };
 
       window.fabushiNotifyBuddhaHost = function (message) {
