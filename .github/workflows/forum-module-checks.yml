@@ -1,5 +1,8 @@
 name: Module checks - Forum
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   pull_request:
     paths:
@@ -22,8 +25,13 @@ jobs:
       run:
         working-directory: forum
     steps:
-      - name: Checkout repository
+      - name: Checkout forum workspace only
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+            forum
+          fetch-depth: 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
