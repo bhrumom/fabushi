@@ -105,7 +105,8 @@ main {
 .hero-grid,
 .section-grid,
 .thread-grid,
-.metrics {
+.metrics,
+.reply-stack {
   display: grid;
   gap: 18px;
 }
@@ -153,7 +154,8 @@ main {
 }
 
 .thread-meta span,
-.thread-tags span {
+.thread-tags span,
+.reply-signal {
   padding: 6px 10px;
   border-radius: 999px;
   background: rgba(140, 90, 43, 0.08);
@@ -210,6 +212,40 @@ main {
   padding-left: 20px;
 }
 
+.reply-stack {
+  margin-top: 18px;
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: end;
+}
+
+.section-heading p {
+  margin: 0;
+}
+
+.reply-card {
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.reply-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
+.reply-card p + p {
+  margin-top: 12px;
+}
+
 .api-note {
   margin-top: 24px;
   padding: 18px 20px;
@@ -244,9 +280,16 @@ main {
   .hero-grid,
   .section-grid,
   .thread-grid,
-  .metrics {
+  .metrics,
+  .reply-stack {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .reply-top,
+  .section-heading {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .hero h1,
