@@ -129,7 +129,7 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
       <div className="section-heading">
         <div>
           <h2 id="thread-composer-heading">发起一条最小主题</h2>
-          <p>先把页面层接到已有的线程创建接口，确认“浏览列表 -> 发起主题 -> 进入详情页”的链路已经成立。</p>
+          <p>先把页面层接到已有的线程创建接口，确认浏览列表、发起主题、进入详情页这条链路已经成立。</p>
         </div>
         <span className="reply-runtime">{writesEnabled ? `当前数据源：${dataSource} / 可写` : `当前数据源：${dataSource} / 只读`}</span>
       </div>
