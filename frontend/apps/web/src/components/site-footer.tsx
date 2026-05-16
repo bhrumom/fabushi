@@ -25,6 +25,9 @@ export function SiteFooter() {
         <a href={siteHref("/faq")}>
           <LocalizedText zh="常见问题" en="FAQ" />
         </a>
+        <a href={siteHref("/community")}>
+          <LocalizedText zh="佛法论坛" en="Community Forum" />
+        </a>
         <a href={siteHref("/buddhadharma")}>
           <LocalizedText zh="佛法入门" en="Dharma Basics" />
         </a>
