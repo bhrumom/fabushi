@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getThreadDetailBySlug } from "../../../lib/forum-data";
+import { getForumRuntimeStatus, getThreadDetailBySlug } from "../../../lib/forum-data";
+import { ThreadReplyForm } from "./reply-form";
+
+export const dynamic = "force-dynamic";
 
 interface ThreadPageProps {
   params: Promise<{ slug: string }>;
@@ -14,6 +17,7 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
     notFound();
   }
 
+  const runtime = getForumRuntimeStatus();
   const { thread, section, replies } = detail;
 
   return (
@@ -63,11 +67,21 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
           </ul>
         </section>
 
+        <ThreadReplyForm
+          threadSlug={thread.slug}
+          writesEnabled={runtime.writesEnabled}
+          dataSource={runtime.dataSource}
+        />
+
         <section className="reply-stack">
           <div className="section-heading">
             <div>
-              <h2>首批回复样例</h2>
-              <p>这一层已经开始承接真实论坛会需要的回复、治理提示和后续沉淀信号。</p>
+              <h2>当前回复</h2>
+              <p>
+                {runtime.writesEnabled
+                  ? "新回复提交后会回写 sqlite，并在刷新后直接显示在这里。"
+                  : "当前环境先以样例回复展示结构，切到 sqlite 后这里会承接真实提交。"}
+              </p>
             </div>
           </div>
 
@@ -100,7 +114,7 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
 
         <section className="api-note">
           <h2>后续扩展位置</h2>
-          <p>下一轮可以直接把这里的结构接到真实持久化层、发帖表单、回复提交和审核事件时间线上。</p>
+          <p>下一轮可以继续把同一条链路扩到主题创建页、审核事件时间线和角色状态持久化。</p>
           <div className="footer-note">
             <span>作者：{thread.author}</span>
             <span>发布时间：{thread.publishedAt}</span>
