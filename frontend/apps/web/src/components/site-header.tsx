@@ -9,24 +9,24 @@ const NAV_ITEMS = [
     en: "Download",
   },
   {
-    href: "/#features",
-    zh: "功能",
-    en: "Features",
-  },
-  {
     href: "/buddhadharma",
     zh: "佛法入门",
     en: "Dharma Basics",
   },
   {
+    href: "/practice-guide",
+    zh: "修行方法",
+    en: "Practice Guide",
+  },
+  {
+    href: "/sutra-guide",
+    zh: "佛经导读",
+    en: "Sutra Guide",
+  },
+  {
     href: "/faq",
     zh: "常见问题",
     en: "FAQ",
-  },
-  {
-    href: "/apply",
-    zh: "申请测试",
-    en: "Apply",
   },
 ] as const;
 
