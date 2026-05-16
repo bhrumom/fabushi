@@ -13,9 +13,26 @@ const staticRoutes = [
   "/privacy",
   "/contact",
   "/insights",
+  "/buddhadharma",
+  "/start-learning-buddhism",
+  "/meditation",
+  "/practice-guide",
+  "/daily-practice",
+  "/sutra-guide",
 ] as const;
 
-const weeklyRoutes = new Set(["/", "/download", "/faq", "/community"]);
+const weeklyRoutes = new Set([
+  "/",
+  "/download",
+  "/faq",
+  "/community",
+  "/buddhadharma",
+  "/start-learning-buddhism",
+  "/meditation",
+  "/practice-guide",
+  "/daily-practice",
+  "/sutra-guide",
+]);
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const pages: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
