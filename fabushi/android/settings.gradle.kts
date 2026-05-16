@@ -23,16 +23,13 @@ pluginManagement {
             google()
             mavenCentral()
             gradlePluginPortal()
-        }
-
-        // Keep local and regional builds mirror-first, but let GitHub-hosted CI try upstream first.
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
-        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-        maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
-
-        if (!preferOfficialReposInCi) {
+        } else {
+            // Keep local and regional builds mirror-first, but let CI avoid flaky mirror metadata.
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/central") }
+            maven { url = uri("https://maven.aliyun.com/repository/public") }
+            maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+            maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
             google()
             mavenCentral()
             gradlePluginPortal()
@@ -51,15 +48,12 @@ dependencyResolutionManagement {
         if (preferOfficialReposInCi) {
             google()
             mavenCentral()
-        }
-
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
-        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-        maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
-
-        if (!preferOfficialReposInCi) {
+        } else {
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/central") }
+            maven { url = uri("https://maven.aliyun.com/repository/public") }
+            maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+            maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
             google()
             mavenCentral()
         }
