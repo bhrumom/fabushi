@@ -63,17 +63,30 @@ jobs:
           assert payload["counts"]["threads"] >= 4, payload
           PY
 
+      - name: Smoke test forum writable page surfaces
+        run: |
+          new_thread_page="$(curl --fail --show-error --silent http://127.0.0.1:3000/threads/new)"
+          FORUM_NEW_THREAD_PAGE="$new_thread_page" python3 - <<'PY'
+          import os
+          from html import unescape
+
+          html = unescape(os.environ["FORUM_NEW_THREAD_PAGE"])
+          assert "发起一条最小主题" in html, html[:1000]
+          assert "当前数据源：sqlite / 可写" in html, html[:1000]
+          assert "版块与发帖提示" in html, html[:1000]
+          PY
+
       - name: Smoke test forum thread creation endpoint
         run: |
           response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/threads \
             -H 'content-type: application/json' \
             --data '{
               "sectionSlug": "newcomer-path",
-              "title": "建立稳定作息时，先固定早课还是先固定睡前复盘？",
-              "author": "容器检查",
-              "summary": "想验证 sqlite 写入路径是否能承接真实线程创建。",
-              "tags": ["新手", "作息"],
-              "openingPost": ["这条帖子是容器检查创建的，用来确认论坛第一版 durable storage 已经可写。"]
+              "title": "容器页面检查：新主题能否进入真实帖子页？",
+              "author": "页面检查用户",
+              "summary": "想确认 sqlite 新主题创建后，列表页和详情页都会回读到最新内容。",
+              "tags": ["页面检查", "sqlite"],
+              "openingPost": ["这条主题由容器页面检查创建，用来确认论坛页面层也能读到刚写入的新线程。"]
             }')"
 
           echo "$response"
@@ -84,7 +97,7 @@ jobs:
           payload = json.loads(os.environ["FORUM_CREATE_RESPONSE"])
           assert payload["source"] == "sqlite", payload
           assert payload["thread"]["sectionSlug"] == "newcomer-path", payload
-          assert payload["thread"]["title"].startswith("建立稳定作息时"), payload
+          assert payload["thread"]["title"].startswith("容器页面检查"), payload
           assert payload["thread"]["openingPost"], payload
           print(payload["thread"]["slug"])
           PY
@@ -107,18 +120,42 @@ jobs:
           payload = json.loads(os.environ["FORUM_DETAIL_RESPONSE"])
           assert payload["source"] == "sqlite", payload
           assert payload["thread"]["slug"], payload
-          assert payload["thread"]["author"] == "容器检查", payload
+          assert payload["thread"]["author"] == "页面检查用户", payload
           PY
+
+          thread_list_page="$(curl --fail --show-error --silent http://127.0.0.1:3000/threads)"
+          FORUM_THREAD_LIST_PAGE="$thread_list_page" python3 - <<'PY'
+          import os
+          from html import unescape
+
+          html = unescape(os.environ["FORUM_THREAD_LIST_PAGE"])
+          assert "发起主题" in html, html[:1000]
+          assert "容器页面检查：新主题能否进入真实帖子页？" in html, html[:2000]
+          assert "页面检查用户" in html, html[:2000]
+          PY
+
+          thread_detail_page="$(curl --fail --show-error --silent "http://127.0.0.1:3000/threads/${slug}")"
+          FORUM_THREAD_DETAIL_PAGE="$thread_detail_page" python3 - <<'PY'
+          import os
+          from html import unescape
+
+          html = unescape(os.environ["FORUM_THREAD_DETAIL_PAGE"])
+          assert "容器页面检查：新主题能否进入真实帖子页？" in html, html[:2000]
+          assert "页面检查用户" in html, html[:2000]
+          assert "写一条最小回复" in html, html[:2000]
+          PY
+
+          echo "thread_slug=${slug}" >> "$GITHUB_ENV"
 
       - name: Smoke test forum reply creation endpoint
         run: |
-          response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/thread/first-year-stability/replies \
+          response="$(curl --fail --show-error --silent "http://127.0.0.1:3000/api/thread/${thread_slug}/replies" \
             -H 'content-type: application/json' \
             --data '{
-              "author": "容器回复检查",
-              "roleLabel": "容器检查",
-              "trustSignal": "用于确认 sqlite 回复写入路径可用。",
-              "body": ["这条回复由容器检查写入，用来确认 forum_replies 与线程计数更新已经打通。"]
+              "author": "页面回复检查",
+              "roleLabel": "页面回读验证",
+              "trustSignal": "用于确认 sqlite 回复写入后，线程详情页会显示新回复。",
+              "body": ["这条回复由页面检查写入，用来确认 forum 页面详情已经能回读最新回复。"]
             }')"
 
           echo "$response"
@@ -128,11 +165,23 @@ jobs:
 
           payload = json.loads(os.environ["FORUM_REPLY_RESPONSE"])
           assert payload["source"] == "sqlite", payload
-          assert payload["thread"]["slug"] == "first-year-stability", payload
-          assert payload["thread"]["replyCount"] >= 4, payload
+          assert payload["thread"]["slug"] == os.environ["thread_slug"], payload
+          assert payload["thread"]["replyCount"] >= 1, payload
           assert payload["thread"]["lastActivity"] == "刚刚回复", payload
-          assert payload["replies"][-1]["author"] == "容器回复检查", payload
+          assert payload["replies"][-1]["author"] == "页面回复检查", payload
           assert payload["replies"][-1]["body"], payload
+          PY
+
+          thread_detail_page="$(curl --fail --show-error --silent "http://127.0.0.1:3000/threads/${thread_slug}")"
+          FORUM_THREAD_DETAIL_PAGE="$thread_detail_page" python3 - <<'PY'
+          import os
+          from html import unescape
+
+          html = unescape(os.environ["FORUM_THREAD_DETAIL_PAGE"])
+          assert "当前回复" in html, html[:2000]
+          assert "页面回复检查" in html, html[:4000]
+          assert "页面回读验证" in html, html[:4000]
+          assert "这条回复由页面检查写入，用来确认 forum 页面详情已经能回读最新回复。" in html, html[:4000]
           PY
 
       - name: Stop forum container
