@@ -123,6 +123,15 @@ const relatedPaths = [
     descriptionEn: "Return here first if you want to see why the six paramitas belong so naturally to Mahayana aspiration.",
   },
   {
+    href: "/what-is-emptiness",
+    labelZh: "空性怎么理解",
+    labelEn: "How to Understand Emptiness",
+    titleZh: "把般若和空性从抽象词句慢慢接回眼前经验。",
+    titleEn: "Return wisdom and emptiness from abstract language to lived experience.",
+    descriptionZh: "如果你想知道般若为什么不只是懂很多道理，而会和空性理解连在一起，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you want to see why wisdom is not just doctrine, but is closely tied to understanding emptiness.",
+  },
+  {
     href: "/practice-guide",
     labelZh: "修行方法总览",
     labelEn: "Practice Guide",
@@ -213,6 +222,7 @@ export const metadata: Metadata = {
     "六度",
     "六度波罗蜜",
     "布施持戒忍辱精进禅定般若",
+    "空性怎么理解",
     "菩提心",
     "大乘修行",
     "Fabushi",
