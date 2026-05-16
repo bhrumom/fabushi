@@ -14,6 +14,7 @@ interface RouteContext {
 interface CreateReplyPayload {
   author?: unknown;
   roleLabel?: unknown;
+  guidanceSignal?: unknown;
   trustSignal?: unknown;
   body?: unknown;
 }
@@ -30,6 +31,18 @@ function requireString(value: unknown, fieldName: string): string {
   }
 
   return trimmed;
+}
+
+function optionalString(value: unknown, fieldName: string): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  if (typeof value !== "string") {
+    throw new ForumInputError(`${fieldName} must be a string.`);
+  }
+
+  return value.trim();
 }
 
 function normalizeStringArray(value: unknown, fieldName: string): string[] {
@@ -63,17 +76,15 @@ function parseCreateReplyPayload(threadSlug: string, payload: CreateReplyPayload
     throw new ForumInputError("body must contain at least one paragraph.");
   }
 
-  const roleLabel = typeof payload.roleLabel === "string" && payload.roleLabel.trim().length > 0
-    ? payload.roleLabel.trim()
-    : "论坛参与者";
-  const trustSignal = typeof payload.trustSignal === "string" && payload.trustSignal.trim().length > 0
-    ? payload.trustSignal.trim()
-    : "新提交回复，等待更多互动后再判断是否适合沉淀。";
+  const roleLabel = optionalString(payload.roleLabel, "roleLabel");
+  const guidanceSignal = optionalString(payload.guidanceSignal, "guidanceSignal");
+  const trustSignal = optionalString(payload.trustSignal, "trustSignal");
 
   return {
     threadSlug,
     author,
     roleLabel,
+    guidanceSignal,
     trustSignal,
     body,
   };
