@@ -139,10 +139,7 @@ except Exception:
     pass
 
 apk_assets = [asset for asset in assets if asset.get("name", "").endswith(".apk")]
-if not apk_assets:
-    raise SystemExit("No APK asset was found in the selected release.")
-
-apk_asset = next((asset for asset in apk_assets if "arm64" in asset.get("name", "")), apk_assets[0])
+apk_asset = next((asset for asset in apk_assets if "arm64" in asset.get("name", "")), apk_assets[0]) if apk_assets else None
 
 def build_mirror_links(primary_href: str) -> list[dict[str, str]]:
     prefix = "https://github.com/"
@@ -178,23 +175,29 @@ if testflight_asset:
 summary = extract_summary(release.get("body"), release.get("name") or release_tag)
 release_url = release.get("html_url") or f"https://github.com/{release_repo}/releases/tag/{release_tag}"
 
-channels = [
-    {
-        "platform": "Android",
-        "audience": "beta",
-        "status": "Beta 自动同步",
-        "title": "Android Beta",
-        "description": "官网直接读取最新发布版本的 APK 安装包，安装包发布后这里会自动更新。",
-        "primaryLabel": "下载 Android Beta",
-        "primaryHref": apk_asset["browser_download_url"],
-        "version": release_tag,
-        "publishedAt": release.get("published_at"),
-        "updateSummary": summary,
-        "mirrorLinks": build_mirror_links(apk_asset["browser_download_url"]),
-        "note": "国内访问较慢时，可以优先尝试镜像下载入口。",
-        "releasePageHref": release_url,
-    }
-]
+channels = []
+notes = []
+
+if apk_asset:
+    channels.append(
+        {
+            "platform": "Android",
+            "audience": "beta",
+            "status": "Beta 自动同步",
+            "title": "Android Beta",
+            "description": "官网直接读取最新发布版本的 APK 安装包，安装包发布后这里会自动更新。",
+            "primaryLabel": "下载 Android Beta",
+            "primaryHref": apk_asset["browser_download_url"],
+            "version": release_tag,
+            "publishedAt": release.get("published_at"),
+            "updateSummary": summary,
+            "mirrorLinks": build_mirror_links(apk_asset["browser_download_url"]),
+            "note": "国内访问较慢时，可以优先尝试镜像下载入口。",
+            "releasePageHref": release_url,
+        }
+    )
+    notes.append("Android beta 下载链接来自本次发布中的 APK 资产。")
+    notes.append("镜像链接面向国内网络环境准备，如镜像暂时不可用请使用原始下载地址。")
 
 if testflight_status:
     tf_status = testflight_status.get("status", "")
@@ -228,6 +231,12 @@ if testflight_status:
             "releasePageHref": release_url,
         }
     )
+    notes.append("iOS TestFlight 入口会在上传状态成功后同步到官网。")
+
+if not notes:
+    notes.append("本次 release 没有带新的 Android APK 或 iOS TestFlight 状态，官网会继续保留现有渠道信息。")
+else:
+    notes.append("如果本次 GitHub Release 只带了一个平台，官网会继续保留另一个平台上一版可用信息。")
 
 state = {
     "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -239,11 +248,7 @@ state = {
     "channels": channels,
     "screenshots": screenshots,
     "releases": releases_list,
-    "notes": [
-        "Android beta 下载链接来自最新发布版本的 APK 资产。",
-        "iOS TestFlight 入口会在上传状态成功后和 Android beta 一起同步。",
-        "镜像链接面向国内网络环境准备，如镜像暂时不可用请使用原始下载地址。",
-    ],
+    "notes": notes,
 }
 
 with open("OFFICIAL_SITE_RELEASE_STATE.json", "w", encoding="utf-8") as handle:
@@ -396,7 +401,7 @@ PY
           if grep -q 'GH013: Repository rule violations found' "$push_log" && grep -q 'Changes must be made through the merge queue' "$push_log"; then
             cat "$push_log"
             echo "push_blocked_by_repo_rules=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping direct push to main because repository rules require the merge queue. The official site will keep using release metadata and TESTFLIGHT_UPLOAD_STATUS.txt fallbacks."
+            echo "::notice::Skipping direct push to main because repository rules require the merge queue. The official site will keep falling back to release metadata and TESTFLIGHT_UPLOAD_STATUS.txt fallbacks."
             rm -f "$push_log"
             exit 0
           fi
@@ -429,8 +434,8 @@ PY
               echo "- Repository rules blocked the direct push to main, so /api/releases.json was not committed automatically"
               echo "- The official site will keep falling back to release metadata and TESTFLIGHT_UPLOAD_STATUS.txt"
             fi
-            echo "- Android beta now points at the latest GitHub Release APK asset."
-            echo "- iOS beta now points at the TestFlight public link when IOS_TESTFLIGHT_PUBLIC_URL is configured."
+            echo "- Available beta channels from this release were synced selectively."
+            echo "- If a release only contains one platform, the official site keeps the previous entry for the other platform."
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-beta-sync-failure:
