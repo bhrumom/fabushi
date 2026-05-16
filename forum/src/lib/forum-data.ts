@@ -1,5 +1,6 @@
 import { createSeedForumRepository } from "./forum-seed-repository";
 import { createSqliteForumRepository } from "./forum-sqlite-repository";
+import { getForumDeploymentRuntime, type ForumDeploymentRuntime } from "./forum-runtime";
 
 export type ForumDataSource = "seed-json" | "sqlite";
 export type ForumPersistenceMode = "seed-only" | "sqlite-file";
@@ -117,6 +118,11 @@ export interface ForumRuntimeStatus {
   };
   generatedAt: string;
 }
+
+export type ResolvedForumRuntimeStatus = ForumRuntimeStatus &
+  ForumDeploymentRuntime & {
+    requiresAccessCode: boolean;
+  };
 
 export class ForumWriteUnavailableError extends Error {
   constructor(message = "Forum writes are not enabled for the current runtime.") {
@@ -253,12 +259,14 @@ export function getForumSnapshot() {
   return forumRepository.getSnapshot();
 }
 
-export function getForumRuntimeStatus() {
+export function getForumRuntimeStatus(): ResolvedForumRuntimeStatus {
   const runtimeStatus = forumRepository.getRuntimeStatus();
   const writesEnabled = resolveForumWritesEnabled(runtimeStatus.dataSource);
+  const deploymentRuntime = getForumDeploymentRuntime();
 
   return {
     ...runtimeStatus,
+    ...deploymentRuntime,
     writesEnabled,
     requiresAccessCode: writesEnabled && Boolean(resolveForumWriteAccessCode(runtimeStatus.dataSource)),
   };
