@@ -42,6 +42,15 @@ const learningPaths = [
     descriptionEn: "If your main question is whether to begin with sutras, meditation, or a daily rhythm, this page answers it more directly.",
   },
   {
+    href: "/practice-guide",
+    labelZh: "修行方法总览",
+    labelEn: "Practice Guide",
+    titleZh: "先把禅修、听诵、念佛和日常记录放回同一条路径里。",
+    titleEn: "See how meditation, listening, recitation, and simple notes fit into one path.",
+    descriptionZh: "如果你更关心学佛修行可以从哪些方法开始、怎么安排日常节奏，这一页会更合适。",
+    descriptionEn: "If your main question is which methods to begin with and how to shape a daily rhythm, this page is the better next stop.",
+  },
+  {
     href: "/meditation",
     labelZh: "禅修入门",
     labelEn: "Meditation Guide",

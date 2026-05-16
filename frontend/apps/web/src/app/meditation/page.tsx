@@ -84,6 +84,15 @@ const relatedPaths = [
     descriptionEn: "If you are still mapping buddhadharma, practice, scripture, and daily discipline, start with the broader topic hub.",
   },
   {
+    href: "/practice-guide",
+    labelZh: "修行方法总览",
+    labelEn: "Practice Guide",
+    titleZh: "把禅修放回更完整的学佛修行方法里。",
+    titleEn: "Place meditation back inside a broader beginner practice routine.",
+    descriptionZh: "如果你想知道禅修应该怎样和听诵、念佛、阅读与记录配合，这一页会更适合继续往下看。",
+    descriptionEn: "If you want to see how meditation fits with listening, recitation, reading, and notes, this page is the better next step.",
+  },
+  {
     href: "/sutra-guide",
     labelZh: "佛经导读",
     labelEn: "Sutra Guide",
