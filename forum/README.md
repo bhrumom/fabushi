@@ -20,7 +20,7 @@ Current scope:
 - a page-level reply composer on thread detail when writes are enabled
 - a dedicated GitHub Actions workflow that checks the forum app when `forum/**` changes
 - a container deployment baseline built from Next.js standalone output
-- a container smoke check that starts the forum, validates `/api/status`, and exercises sqlite thread and reply creation
+- a container smoke check that starts the forum, validates `/api/status`, exercises sqlite thread and reply creation, and reads the updated thread back through real forum pages
 
 ## Current product boundary
 
@@ -84,6 +84,9 @@ curl -X POST http://localhost:3000/api/thread/first-year-stability/replies \
     "trustSignal": "回复已按主题聚焦提交，等待更多互动后再决定是否沉淀。",
     "body": ["我发现先把睡前十分钟固定下来，比一下子改整天作息更容易坚持。"]
   }'
+curl http://localhost:3000/threads/new
+curl http://localhost:3000/threads
+curl http://localhost:3000/threads/first-year-stability
 ```
 
 When `FORUM_DATA_SOURCE=sqlite`, you can also open `http://localhost:3000/threads/new` to create a new topic, and `http://localhost:3000/threads/first-year-stability` to submit a reply through the page-level form. In `seed-json` mode, both page-level forms stay visible but clearly report that the runtime is still read-only.
@@ -129,8 +132,8 @@ Runtime defaults:
 - `HOSTNAME=0.0.0.0`
 - `NODE_ENV=production`
 
-A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, validates the sqlite runtime status, creates a thread through the API, and adds a reply to confirm the first interaction loop is working end to end.
+A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, validates the sqlite runtime status, confirms `/threads/new` exposes the writable page-level composer, creates a thread through the API, reads that thread back through `/threads` and `/threads/[slug]`, and then adds a reply to verify the updated discussion is visible on the thread detail page.
 
 ## Why this is the next step
 
-After the structured seed content contract, standalone deployment baseline, runtime status boundary, first durable thread creation path, first reply write path, and page-level reply submission landed, the next highest-value gap was page-level thread creation on top of the same sqlite boundary. This iteration keeps the product surface narrow while letting the thread list flow continue into a real composer page and then into a newly created thread detail page. That gives the next pass a stable place to add moderation events, validation rules, and database-backed user workflows.
+After the structured seed content contract, standalone deployment baseline, runtime status boundary, first durable thread creation path, first reply write path, and page-level reply submission landed, the next highest-value gap was proving that the same sqlite interaction loop is visible through the real page layer, not just through JSON endpoints. This iteration keeps the product surface narrow while making deployment checks more trustworthy, so the next pass can focus on moderation events, role state, and more explicit newcomer guidance instead of rediscovering whether the current forum pages still reflect newly written content.
