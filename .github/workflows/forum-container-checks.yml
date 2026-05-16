@@ -112,4 +112,4 @@ jobs:
 
       - name: Stop forum container
         if: always()
-        run: docker stop fabushi-forum-check
+        run: docker stop fabushi-forum-check || true
