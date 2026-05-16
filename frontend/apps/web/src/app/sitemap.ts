@@ -19,7 +19,9 @@ const staticRoutes = [
   "/start-learning-buddhism",
   "/meditation",
   "/practice-guide",
+  "/daily-practice",
   "/sutra-guide",
+  "/beginner-sutra-recommendations",
 ] as const;
 
 const weeklyRoutes = new Set([
@@ -32,7 +34,9 @@ const weeklyRoutes = new Set([
   "/start-learning-buddhism",
   "/meditation",
   "/practice-guide",
+  "/daily-practice",
   "/sutra-guide",
+  "/beginner-sutra-recommendations",
 ]);
 
 export default function sitemap(): MetadataRoute.Sitemap {
