@@ -9,6 +9,8 @@ import {
   getUserFacingStatus,
   getUserFacingSummary,
 } from "../lib/channel-display";
+import { getDownloadFallbackLinks } from "../lib/download-hrefs";
+import { siteHref } from "../lib/site-url";
 
 export interface DownloadChannel {
   platform: "Android" | "iOS";
@@ -90,9 +92,10 @@ function ChannelCard({ channel, recommended = false }: { channel: DownloadChanne
   const statusCopy = getUserFacingStatus(channel);
   const descriptionCopy = getUserFacingDescription(channel);
   const summary = getUserFacingSummary(channel);
+  const fallbackLinks = getDownloadFallbackLinks(channel);
 
   return (
-    <DownloadLink className={recommended ? "platform-row recommended detailed" : "platform-row detailed"} channel={channel}>
+    <article className={recommended ? "platform-row recommended detailed" : "platform-row detailed"}>
       <div>
         <span className="platform-name">
           {channel.title}
@@ -116,16 +119,25 @@ function ChannelCard({ channel, recommended = false }: { channel: DownloadChanne
             ))}
           </ul>
         )}
+        {fallbackLinks.length > 0 && (
+          <div className="mirror-links" aria-label={`${channel.title} fallback links`}>
+            {fallbackLinks.map((item) => (
+              <a key={item.href} href={siteHref(item.href)}>
+                {item.label}
+              </a>
+            ))}
+          </div>
+        )}
       </div>
       <div className="platform-meta">
         <strong>
           <LocalizedText zh={statusCopy.zh} en={statusCopy.en} />
         </strong>
-        <span>
+        <DownloadLink className="primary-action" channel={channel}>
           <LocalizedText zh={actionCopy.zh} en={actionCopy.en} />
-        </span>
+        </DownloadLink>
       </div>
-    </DownloadLink>
+    </article>
   );
 }
 
