@@ -64,7 +64,7 @@ jobs:
         run: |
           health_response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/health)"
           echo "$health_response"
-          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY'
+          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY2'
           import json
           import os
 
@@ -78,11 +78,11 @@ jobs:
           assert payload["publicBaseUrlConfigured"] is False, payload
           assert payload["writesEnabled"] is False, payload
           assert payload["requiresAccessCode"] is False, payload
-          PY
+          PY2
 
           response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)"
           echo "$response"
-          FORUM_STATUS_RESPONSE="$response" python3 - <<'PY'
+          FORUM_STATUS_RESPONSE="$response" python3 - <<'PY2'
           import json
           import os
 
@@ -96,12 +96,12 @@ jobs:
           assert payload["requiresAccessCode"] is False, payload
           assert payload["counts"]["threads"] >= 4, payload
           assert payload["counts"]["moderationEvents"] >= 4, payload
-          PY
+          PY2
 
       - name: Smoke test forum sqlite read-only page surfaces
         run: |
           new_thread_page="$(curl --fail --show-error --silent http://127.0.0.1:3000/threads/new)"
-          FORUM_NEW_THREAD_PAGE="$new_thread_page" python3 - <<'PY'
+          FORUM_NEW_THREAD_PAGE="$new_thread_page" python3 - <<'PY2'
           import os
           from html import unescape
 
@@ -109,7 +109,7 @@ jobs:
           assert "发起一条最小主题" in html, html[:1000]
           assert "当前数据源：sqlite / 只读" in html, html[:1500]
           assert "FORUM_ENABLE_WRITES=true" in html, html[:2500]
-          PY
+          PY2
 
           status_code="$(curl --silent --show-error --output /tmp/forum-readonly-create.json --write-out '%{http_code}' http://127.0.0.1:3000/api/threads \
             -H 'content-type: application/json' \
@@ -129,40 +129,150 @@ jobs:
             exit 1
           fi
 
-          FORUM_CREATE_ERROR_BODY="$(cat /tmp/forum-readonly-create.json)" python3 - <<'PY'
+          FORUM_CREATE_ERROR_BODY="$(cat /tmp/forum-readonly-create.json)" python3 - <<'PY2'
           import json
           import os
 
           payload = json.loads(os.environ["FORUM_CREATE_ERROR_BODY"])
           assert "FORUM_ENABLE_WRITES=true" in payload["error"], payload
-          PY
+          PY2
 
       - name: Smoke test forum preview deployment headers and robots contract
         run: |
           response_headers="$(curl --silent --show-error --dump-header - --output /dev/null http://127.0.0.1:3000/threads)"
           echo "$response_headers"
-          FORUM_HEADERS="$response_headers" python3 - <<'PY'
+          FORUM_HEADERS="$response_headers" python3 - <<'PY2'
           import os
 
           headers = os.environ["FORUM_HEADERS"].lower()
           assert "x-forum-deployment-stage: preview" in headers, headers
           assert "x-forum-indexing-enabled: false" in headers, headers
           assert "x-robots-tag: noindex, nofollow, noarchive" in headers, headers
-          PY
+          PY2
 
           robots_response="$(curl --fail --show-error --silent http://127.0.0.1:3000/robots.txt)"
           echo "$robots_response"
-          FORUM_ROBOTS_RESPONSE="$robots_response" python3 - <<'PY'
+          FORUM_ROBOTS_RESPONSE="$robots_response" python3 - <<'PY2'
           import os
 
           payload = os.environ["FORUM_ROBOTS_RESPONSE"]
           assert "User-Agent: *" in payload, payload
           assert "Disallow: /" in payload, payload
-          PY
+          PY2
 
       - name: Stop forum sqlite read-only container
         if: always()
         run: docker stop fabushi-forum-check-readonly || true
+
+      - name: Start forum container in sqlite production indexing mode
+        run: |
+          docker run -d --rm --name fabushi-forum-check-production \
+            -e FORUM_DEPLOYMENT_STAGE=production \
+            -e FORUM_PUBLIC_BASE_URL=https://forum.fabushi.test \
+            -e FORUM_DATA_SOURCE=sqlite \
+            -e FORUM_DATABASE_URL=file:/tmp/forum-production.db \
+            -p 3000:3000 \
+            fabushi-forum
+
+      - name: Wait for forum sqlite production indexing container healthcheck
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            container_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' fabushi-forum-check-production)"
+
+            if [ "$container_health" = "healthy" ]; then
+              break
+            fi
+
+            if [ "$container_health" = "unhealthy" ]; then
+              docker logs fabushi-forum-check-production
+              exit 1
+            fi
+
+            sleep 3
+          done
+
+          if [ "${container_health:-}" != "healthy" ]; then
+            docker logs fabushi-forum-check-production
+            exit 1
+          fi
+
+      - name: Smoke test forum production indexing contract
+        run: |
+          health_response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/health)"
+          echo "$health_response"
+          FORUM_PRODUCTION_HEALTH_RESPONSE="$health_response" python3 - <<'PY2'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_PRODUCTION_HEALTH_RESPONSE"])
+          assert payload["service"] == "forum", payload
+          assert payload["ready"] is True, payload
+          assert payload["dataSource"] == "sqlite", payload
+          assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["deploymentStage"] == "production", payload
+          assert payload["indexingEnabled"] is True, payload
+          assert payload["publicBaseUrlConfigured"] is True, payload
+          assert payload["writesEnabled"] is False, payload
+          assert payload["requiresAccessCode"] is False, payload
+          PY2
+
+          response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)"
+          echo "$response"
+          FORUM_PRODUCTION_STATUS_RESPONSE="$response" python3 - <<'PY2'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_PRODUCTION_STATUS_RESPONSE"])
+          assert payload["service"] == "forum", payload
+          assert payload["dataSource"] == "sqlite", payload
+          assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["deploymentStage"] == "production", payload
+          assert payload["indexingEnabled"] is True, payload
+          assert payload["publicBaseUrl"] == "https://forum.fabushi.test", payload
+          assert payload["writesEnabled"] is False, payload
+          assert payload["requiresAccessCode"] is False, payload
+          assert payload["counts"]["threads"] >= 4, payload
+          assert payload["counts"]["moderationEvents"] >= 4, payload
+          PY2
+
+          response_headers="$(curl --silent --show-error --dump-header - --output /dev/null http://127.0.0.1:3000/threads)"
+          echo "$response_headers"
+          FORUM_PRODUCTION_HEADERS="$response_headers" python3 - <<'PY2'
+          import os
+
+          headers = os.environ["FORUM_PRODUCTION_HEADERS"].lower()
+          assert "x-forum-deployment-stage: production" in headers, headers
+          assert "x-forum-indexing-enabled: true" in headers, headers
+          assert "x-forum-public-base-url: https://forum.fabushi.test" in headers, headers
+          assert "x-robots-tag:" not in headers, headers
+          PY2
+
+          robots_response="$(curl --fail --show-error --silent http://127.0.0.1:3000/robots.txt)"
+          echo "$robots_response"
+          FORUM_PRODUCTION_ROBOTS_RESPONSE="$robots_response" python3 - <<'PY2'
+          import os
+
+          payload = os.environ["FORUM_PRODUCTION_ROBOTS_RESPONSE"]
+          assert "User-Agent: *" in payload, payload
+          assert "Allow: /" in payload, payload
+          assert "Host: https://forum.fabushi.test" in payload, payload
+          assert "Disallow: /" not in payload, payload
+          PY2
+
+          thread_list_page="$(curl --fail --show-error --silent http://127.0.0.1:3000/threads)"
+          FORUM_PRODUCTION_THREAD_LIST_PAGE="$thread_list_page" python3 - <<'PY2'
+          import os
+          from html import unescape
+
+          html = unescape(os.environ["FORUM_PRODUCTION_THREAD_LIST_PAGE"]).lower()
+          assert 'index, follow' in html, html[:4000]
+          assert 'https://forum.fabushi.test/' in html, html[:4000]
+          assert 'noindex' not in html, html[:5000]
+          PY2
+
+      - name: Stop forum sqlite production indexing container
+        if: always()
+        run: docker stop fabushi-forum-check-production || true
 
       - name: Prepare persistent sqlite workspace
         run: |
@@ -206,7 +316,7 @@ jobs:
         run: |
           health_response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/health)"
           echo "$health_response"
-          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY'
+          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY2'
           import json
           import os
 
@@ -220,11 +330,11 @@ jobs:
           assert payload["publicBaseUrlConfigured"] is False, payload
           assert payload["writesEnabled"] is True, payload
           assert payload["requiresAccessCode"] is True, payload
-          PY
+          PY2
 
           response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)"
           echo "$response"
-          FORUM_STATUS_RESPONSE="$response" python3 - <<'PY'
+          FORUM_STATUS_RESPONSE="$response" python3 - <<'PY2'
           import json
           import os
 
@@ -238,12 +348,12 @@ jobs:
           assert payload["requiresAccessCode"] is True, payload
           assert payload["counts"]["threads"] >= 4, payload
           assert payload["counts"]["moderationEvents"] >= 4, payload
-          PY
+          PY2
 
       - name: Smoke test forum writable page surfaces
         run: |
           new_thread_page="$(curl --fail --show-error --silent http://127.0.0.1:3000/threads/new)"
-          FORUM_NEW_THREAD_PAGE="$new_thread_page" python3 - <<'PY'
+          FORUM_NEW_THREAD_PAGE="$new_thread_page" python3 - <<'PY2'
           import os
           from html import unescape
 
@@ -252,7 +362,7 @@ jobs:
           assert "当前数据源：sqlite / 可写" in html, html[:1200]
           assert "写入口令" in html, html[:2200]
           assert "小范围内测" in html, html[:2600]
-          PY
+          PY2
 
       - name: Smoke test forum thread creation endpoint
         run: |
@@ -274,13 +384,13 @@ jobs:
             exit 1
           fi
 
-          FORUM_CREATE_DENIED_BODY="$(cat /tmp/forum-write-denied.json)" python3 - <<'PY'
+          FORUM_CREATE_DENIED_BODY="$(cat /tmp/forum-write-denied.json)" python3 - <<'PY2'
           import json
           import os
 
           payload = json.loads(os.environ["FORUM_CREATE_DENIED_BODY"])
           assert "write access code" in payload["error"], payload
-          PY
+          PY2
 
           response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/threads \
             -H 'content-type: application/json' \
@@ -297,7 +407,7 @@ jobs:
             }')"
 
           echo "$response"
-          FORUM_CREATE_RESPONSE="$response" python3 - <<'PY'
+          FORUM_CREATE_RESPONSE="$response" python3 - <<'PY2'
           import json
           import os
 
@@ -311,20 +421,20 @@ jobs:
           assert payload["moderationEvents"][-1]["eventType"] == "thread-created", payload
           assert "新主题已发布" in payload["moderationEvents"][-1]["summary"], payload
           print(payload["thread"]["slug"])
-          PY
+          PY2
 
-          slug="$(FORUM_CREATE_RESPONSE="$response" python3 - <<'PY'
+          slug="$(FORUM_CREATE_RESPONSE="$response" python3 - <<'PY2'
           import json
           import os
 
           payload = json.loads(os.environ["FORUM_CREATE_RESPONSE"])
           print(payload["thread"]["slug"])
-          PY
+          PY2
           )"
 
           detail="$(curl --fail --show-error --silent "http://127.0.0.1:3000/api/thread/${slug}")"
           echo "$detail"
-          FORUM_DETAIL_RESPONSE="$detail" python3 - <<'PY'
+          FORUM_DETAIL_RESPONSE="$detail" python3 - <<'PY2'
           import json
           import os
 
@@ -335,10 +445,10 @@ jobs:
           assert payload["thread"]["authorRoleLabel"] == "新手观察者", payload
           assert payload["thread"]["guidanceSignal"] == "请先补一条最容易开始的下一步建议。", payload
           assert payload["moderationEvents"][-1]["eventType"] == "thread-created", payload
-          PY
+          PY2
 
           thread_list_page="$(curl --fail --show-error --silent http://127.0.0.1:3000/threads)"
-          FORUM_THREAD_LIST_PAGE="$thread_list_page" python3 - <<'PY'
+          FORUM_THREAD_LIST_PAGE="$thread_list_page" python3 - <<'PY2'
           import os
           from html import unescape
 
@@ -348,10 +458,10 @@ jobs:
           assert "页面检查用户" in html, html[:3000]
           assert "新手观察者" in html, html[:3000]
           assert "请先补一条最容易开始的下一步建议。" in html, html[:4000]
-          PY
+          PY2
 
           thread_detail_page="$(curl --fail --show-error --silent "http://127.0.0.1:3000/threads/${slug}")"
-          FORUM_THREAD_DETAIL_PAGE="$thread_detail_page" python3 - <<'PY'
+          FORUM_THREAD_DETAIL_PAGE="$thread_detail_page" python3 - <<'PY2'
           import os
           from html import unescape
 
@@ -364,7 +474,7 @@ jobs:
           assert "写入口令" in html, html[:3500]
           assert "审核时间线" in html, html[:4000]
           assert "新主题已发布" in html, html[:4500]
-          PY
+          PY2
 
           echo "thread_slug=${slug}" >> "$GITHUB_ENV"
 
@@ -382,7 +492,7 @@ jobs:
             }')"
 
           echo "$response"
-          FORUM_REPLY_RESPONSE="$response" python3 - <<'PY'
+          FORUM_REPLY_RESPONSE="$response" python3 - <<'PY2'
           import json
           import os
 
@@ -397,10 +507,10 @@ jobs:
           assert payload["replies"][-1]["body"], payload
           assert payload["moderationEvents"][-1]["eventType"] == "reply-created", payload
           assert "新回复已写入时间线" in payload["moderationEvents"][-1]["summary"], payload
-          PY
+          PY2
 
           thread_detail_page="$(curl --fail --show-error --silent "http://127.0.0.1:3000/threads/${thread_slug}")"
-          FORUM_THREAD_DETAIL_PAGE="$thread_detail_page" python3 - <<'PY'
+          FORUM_THREAD_DETAIL_PAGE="$thread_detail_page" python3 - <<'PY2'
           import os
           from html import unescape
 
@@ -411,7 +521,7 @@ jobs:
           assert "请优先补一条最容易执行的下一步建议。" in html, html[:5000]
           assert "这条回复由页面检查写入，用来确认 forum 页面详情已经能回读最新回复。" in html, html[:5000]
           assert "新回复已写入时间线" in html, html[:5500]
-          PY
+          PY2
 
       - name: Restart forum container with same sqlite volume
         run: |
@@ -451,7 +561,7 @@ jobs:
         run: |
           health_response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/health)"
           echo "$health_response"
-          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY'
+          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY2'
           import json
           import os
 
@@ -465,11 +575,11 @@ jobs:
           assert payload["publicBaseUrlConfigured"] is False, payload
           assert payload["writesEnabled"] is True, payload
           assert payload["requiresAccessCode"] is True, payload
-          PY
+          PY2
 
           response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)"
           echo "$response"
-          FORUM_RESTART_STATUS_RESPONSE="$response" python3 - <<'PY'
+          FORUM_RESTART_STATUS_RESPONSE="$response" python3 - <<'PY2'
           import json
           import os
 
@@ -483,11 +593,11 @@ jobs:
           assert payload["requiresAccessCode"] is True, payload
           assert payload["counts"]["threads"] >= 5, payload
           assert payload["counts"]["moderationEvents"] >= 6, payload
-          PY
+          PY2
 
           detail="$(curl --fail --show-error --silent "http://127.0.0.1:3000/api/thread/${thread_slug}")"
           echo "$detail"
-          FORUM_RESTART_DETAIL_RESPONSE="$detail" python3 - <<'PY'
+          FORUM_RESTART_DETAIL_RESPONSE="$detail" python3 - <<'PY2'
           import json
           import os
 
@@ -502,10 +612,10 @@ jobs:
           assert payload["replies"][-1]["guidanceSignal"] == "请优先补一条最容易执行的下一步建议。", payload
           assert payload["moderationEvents"][-1]["eventType"] == "reply-created", payload
           assert "新回复已写入时间线" in payload["moderationEvents"][-1]["summary"], payload
-          PY
+          PY2
 
           thread_detail_page="$(curl --fail --show-error --silent "http://127.0.0.1:3000/threads/${thread_slug}")"
-          FORUM_RESTART_THREAD_DETAIL_PAGE="$thread_detail_page" python3 - <<'PY'
+          FORUM_RESTART_THREAD_DETAIL_PAGE="$thread_detail_page" python3 - <<'PY2'
           import os
           from html import unescape
 
@@ -514,11 +624,12 @@ jobs:
           assert "页面回复检查" in html, html[:5000]
           assert "页面回读验证" in html, html[:5000]
           assert "新回复已写入时间线" in html, html[:5500]
-          PY
+          PY2
 
       - name: Stop forum containers
         if: always()
         run: |
           docker stop fabushi-forum-check || true
           docker stop fabushi-forum-check-readonly || true
+          docker stop fabushi-forum-check-production || true
           docker stop fabushi-forum-check-restart || true
