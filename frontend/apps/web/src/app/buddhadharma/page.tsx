@@ -78,6 +78,15 @@ const learningPaths = [
     descriptionEn: "If your question is which sutra to start with and how listening fits with reading, this page is the better next stop.",
   },
   {
+    href: "/sutra-listening",
+    labelZh: "听诵和读经怎么配合",
+    labelEn: "Listening and Reading",
+    titleZh: "把“听诵能不能代替读经”这类问题单独说清楚。",
+    titleEn: "Clarify how listening and reading support each other in beginner scripture study.",
+    descriptionZh: "如果你已经开始接触经典，但更卡在听诵和阅读怎么配合、碎片时间里听经怎样接回文本，这一页会更具体。",
+    descriptionEn: "This page is more specific if you are already touching scripture but feel stuck on how listening and reading should work together.",
+  },
+  {
     href: "/beginner-sutra-recommendations",
     labelZh: "初学者佛经推荐",
     labelEn: "Beginner Sutra Picks",
