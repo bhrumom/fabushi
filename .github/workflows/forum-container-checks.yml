@@ -29,3 +29,33 @@ jobs:
 
       - name: Build forum container image
         run: docker build -t fabushi-forum ./forum
+
+      - name: Start forum container
+        run: docker run -d --rm --name fabushi-forum-check -p 3000:3000 fabushi-forum
+
+      - name: Smoke test forum status endpoint
+        run: |
+          for attempt in 1 2 3 4 5; do
+            response="$(curl --fail --show-error --silent http://127.0.0.1:3000/api/status)" && break
+            sleep 3
+          done
+
+          if [ -z "${response:-}" ]; then
+            docker logs fabushi-forum-check
+            exit 1
+          fi
+
+          echo "$response"
+          FORUM_STATUS_RESPONSE="$response" python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_STATUS_RESPONSE"])
+          assert payload["service"] == "forum", payload
+          assert payload["dataSource"] == "seed-json", payload
+          assert payload["persistenceMode"] == "seed-only", payload
+          PY
+
+      - name: Stop forum container
+        if: always()
+        run: docker stop fabushi-forum-check
