@@ -4,7 +4,7 @@ This directory is the independent root for the forum project.
 
 ## What exists now
 
-The forum is no longer being extended inside the marketing website. This directory now contains a standalone Next.js app skeleton so the project can move from an empty placeholder into something runnable and testable.
+The forum is no longer being extended inside the marketing website. This directory now contains a standalone Next.js app skeleton so the project can move from an empty placeholder into something runnable, testable, and deployable on its own.
 
 Current scope:
 
@@ -14,6 +14,7 @@ Current scope:
 - read-only routes for thread listing and thread detail
 - JSON routes for the same seed contract, including reply data on thread detail
 - a dedicated GitHub Actions workflow that checks the forum app when `forum/**` changes
+- a container deployment baseline built from Next.js standalone output
 
 ## Current product boundary
 
@@ -27,6 +28,7 @@ Included:
 - structured seed content contract
 - read-only API boundary
 - moderation and knowledge-stage fields reserved in the content model
+- standalone server artifact for container packaging
 
 Not included yet:
 
@@ -50,8 +52,28 @@ Useful checks:
 ```bash
 pnpm typecheck
 pnpm build
+pnpm start:standalone
 ```
+
+## Container deployment
+
+The app now builds with `output: "standalone"`, so deployment does not need the whole repository at runtime.
+
+Build and run locally with Docker:
+
+```bash
+docker build -t fabushi-forum ./forum
+docker run --rm -p 3000:3000 fabushi-forum
+```
+
+Runtime defaults:
+
+- `PORT=3000`
+- `HOSTNAME=0.0.0.0`
+- `NODE_ENV=production`
+
+A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes.
 
 ## Why this is the next step
 
-The highest-priority gap after creating `forum/` was that forum content still lived as hard-coded TypeScript arrays. This iteration moves the project onto a structured content store and reply-aware contract so the next pass can attach a real persistence layer, posting flow, and governance events without first untangling page-local seed data.
+After the structured seed content contract landed, the next highest-value blocker was deployment readiness for the independent forum app. This iteration keeps the current seed-backed product surface intact while adding a real container path, so the next pass can attach persistence, posting flow, and governance services without first inventing a deployment baseline.
