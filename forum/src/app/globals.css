@@ -155,7 +155,8 @@ main {
 
 .thread-meta span,
 .thread-tags span,
-.reply-signal {
+.reply-signal,
+.reply-runtime {
   padding: 6px 10px;
   border-radius: 999px;
   background: rgba(140, 90, 43, 0.08);
@@ -212,6 +213,14 @@ main {
   padding-left: 20px;
 }
 
+.reply-composer {
+  margin-top: 18px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.68);
+}
+
 .reply-stack {
   margin-top: 18px;
 }
@@ -225,6 +234,98 @@ main {
 
 .section-heading p {
   margin: 0;
+}
+
+.reply-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.reply-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.reply-field {
+  display: grid;
+  gap: 8px;
+}
+
+.reply-field span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.reply-input,
+.reply-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fffdf8;
+  color: var(--text);
+  font: inherit;
+  padding: 12px 14px;
+}
+
+.reply-input {
+  min-height: 48px;
+}
+
+.reply-textarea {
+  min-height: 156px;
+  resize: vertical;
+}
+
+.reply-input:focus,
+.reply-textarea:focus {
+  outline: 2px solid rgba(140, 90, 43, 0.16);
+  border-color: rgba(140, 90, 43, 0.48);
+}
+
+.reply-form-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.reply-form-hint,
+.reply-form-message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.reply-form-message[data-tone="success"] {
+  color: #44611d;
+}
+
+.reply-form-message[data-tone="error"] {
+  color: #8a3520;
+}
+
+.submit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fffdf8;
+  font: inherit;
+  cursor: pointer;
+}
+
+.reply-input:disabled,
+.reply-textarea:disabled,
+.submit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .reply-card {
@@ -281,13 +382,15 @@ main {
   .section-grid,
   .thread-grid,
   .metrics,
-  .reply-stack {
+  .reply-stack,
+  .reply-form-grid {
     grid-template-columns: 1fr;
     display: grid;
   }
 
   .reply-top,
-  .section-heading {
+  .section-heading,
+  .reply-form-footer {
     flex-direction: column;
     align-items: stretch;
   }
