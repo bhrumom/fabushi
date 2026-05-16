@@ -9,9 +9,10 @@ The forum is no longer being extended inside the marketing website. This directo
 Current scope:
 
 - independent app shell under `forum/src/app`
-- seed forum sections and threads under `forum/src/lib/forum-data.ts`
+- structured seed content under `forum/src/data/forum-content.json`
+- forum domain helpers under `forum/src/lib/forum-data.ts`
 - read-only routes for thread listing and thread detail
-- JSON routes for the same seed contract
+- JSON routes for the same seed contract, including reply data on thread detail
 - a dedicated GitHub Actions workflow that checks the forum app when `forum/**` changes
 
 ## Current product boundary
@@ -22,16 +23,16 @@ Included:
 
 - landing page
 - thread list page
-- thread detail page
-- seed data contract
+- thread detail page with sample replies
+- structured seed content contract
 - read-only API boundary
+- moderation and knowledge-stage fields reserved in the content model
 
 Not included yet:
 
 - authentication
 - posting or replying
-- moderation actions
-- persistence layer
+- durable persistence layer
 - search, notifications, bookmarks, or follows as real user actions
 
 ## Local development
@@ -53,4 +54,4 @@ pnpm build
 
 ## Why this is the next step
 
-The highest-priority gap after creating `forum/` was that it still could not run. This skeleton turns the independent root into a real project boundary so the next iteration can plug in database models, auth, posting flows, and governance logic without going back through the website prototype.
+The highest-priority gap after creating `forum/` was that forum content still lived as hard-coded TypeScript arrays. This iteration moves the project onto a structured content store and reply-aware contract so the next pass can attach a real persistence layer, posting flow, and governance events without first untangling page-local seed data.

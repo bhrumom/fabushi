@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getSectionBySlug, getThreadBySlug } from "../../../lib/forum-data";
+import { getThreadDetailBySlug } from "../../../lib/forum-data";
 
 interface ThreadPageProps {
   params: Promise<{ slug: string }>;
@@ -8,13 +8,13 @@ interface ThreadPageProps {
 
 export default async function ThreadDetailPage({ params }: ThreadPageProps) {
   const { slug } = await params;
-  const thread = getThreadBySlug(slug);
+  const detail = getThreadDetailBySlug(slug);
 
-  if (!thread) {
+  if (!detail) {
     notFound();
   }
 
-  const section = getSectionBySlug(thread.sectionSlug);
+  const { thread, section, replies } = detail;
 
   return (
     <main>
@@ -50,6 +50,8 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
           {thread.tags.map((tag) => (
             <span key={tag}>{tag}</span>
           ))}
+          <span>{thread.knowledgeStage === "candidate" ? "候选资料" : "讨论中"}</span>
+          <span>{thread.moderationState === "published" ? "已发布" : "需复核"}</span>
         </div>
 
         <section className="list-block">
@@ -59,6 +61,32 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
               <li key={paragraph}>{paragraph}</li>
             ))}
           </ul>
+        </section>
+
+        <section className="reply-stack">
+          <div className="section-heading">
+            <div>
+              <h2>首批回复样例</h2>
+              <p>这一层已经开始承接真实论坛会需要的回复、治理提示和后续沉淀信号。</p>
+            </div>
+          </div>
+
+          {replies.map((reply) => (
+            <article key={reply.id} className="reply-card">
+              <div className="reply-top">
+                <div className="thread-meta">
+                  <span>{reply.author}</span>
+                  <span>{reply.roleLabel}</span>
+                  <span>{reply.publishedAt}</span>
+                </div>
+                <span className="reply-signal">{reply.trustSignal}</span>
+              </div>
+
+              {reply.body.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
+            </article>
+          ))}
         </section>
 
         <section className="list-block">
@@ -72,7 +100,7 @@ export default async function ThreadDetailPage({ params }: ThreadPageProps) {
 
         <section className="api-note">
           <h2>后续扩展位置</h2>
-          <p>这里下一轮可以直接接真实回复流、收藏操作、关注状态、新手引导提示和审核事件时间线。</p>
+          <p>下一轮可以直接把这里的结构接到真实持久化层、发帖表单、回复提交和审核事件时间线上。</p>
           <div className="footer-note">
             <span>作者：{thread.author}</span>
             <span>发布时间：{thread.publishedAt}</span>
