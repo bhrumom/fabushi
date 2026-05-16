@@ -17,6 +17,7 @@ Current scope:
 - an explicit sqlite write gate so durable storage does not automatically imply public thread and reply creation
 - an optional write-access code gate so writable sqlite deployments can stay in a small preview cohort before full authentication lands
 - a preview/production deployment contract that keeps preview responses noindex until the public forum origin is explicit
+- a reusable deployment smoke script plus a manual GitHub Actions workflow for checking real preview and production forum URLs against that contract
 - a minimal thread-creation API when sqlite mode is enabled and writes are explicitly opened
 - a page-level thread composer on top of the thread-creation API in writable mode
 - a minimal reply-creation API for existing threads when sqlite writes are enabled
@@ -51,6 +52,7 @@ Included:
 - standalone server artifact for container packaging
 - a no-store health endpoint for deployment readiness probes
 - a preview-safe indexing contract driven by deployment stage plus public forum origin
+- a reusable smoke check for real deployment URLs
 
 Not included yet:
 
@@ -105,7 +107,7 @@ pnpm start:standalone
 curl http://localhost:3000/api/health
 curl http://localhost:3000/api/status
 curl http://localhost:3000/robots.txt
-curl -I http://localhost:3000/threads
+pnpm smoke:deployment -- --url http://localhost:3000 --deployment-stage preview --writes-enabled=false --requires-access-code=false
 curl -X POST http://localhost:3000/api/threads \
   -H 'content-type: application/json' \
   -d '{
@@ -175,6 +177,26 @@ That means preview deployments, local smoke checks, and half-finished runtime ex
 
 In `sqlite` mode, the repository initializes its schema automatically, seeds the database from `forum-content.json` the first time it starts, and keeps the forum durably readable by default. Only when `FORUM_ENABLE_WRITES=true` does the same runtime start accepting new threads and replies, writing moderation timeline events, and persisting author-role and guidance fields for those new submissions. If `FORUM_WRITE_ACCESS_CODE` is also configured, those writes stay behind a shared preview gate until a fuller account boundary is ready.
 
+## Live deployment checks
+
+When a real preview URL or production forum origin exists, you no longer need to manually inspect `/api/health`, `/api/status`, headers, `robots.txt`, and page metadata one by one.
+
+Run the reusable script locally against any reachable forum URL:
+
+```bash
+pnpm smoke:deployment -- --url https://forum-preview.example.com --deployment-stage preview --writes-enabled=true --requires-access-code=true
+pnpm smoke:deployment -- --url https://forum.example.com --deployment-stage production --public-base-url https://forum.example.com --writes-enabled=false --requires-access-code=false
+```
+
+The same check is also available as the manual GitHub Actions workflow `Live deployment checks - Forum`. Provide:
+
+- `forum_url` for the real forum entry you want to verify
+- `deployment_stage` as `preview` or `production`
+- `public_base_url` when the target should already be publicly indexable
+- `writes_enabled` and `requires_access_code` so the live runtime is checked against the current rollout posture
+
+This closes the gap between “container checks passed in CI” and “the actual preview or production forum URL is configured correctly”.
+
 ## Container deployment
 
 The app now builds with `output: "standalone"`, so deployment does not need the whole repository at runtime.
@@ -196,6 +218,7 @@ docker run --rm -p 3000:3000 \
 curl http://localhost:3000/api/health
 curl http://localhost:3000/api/status
 curl http://localhost:3000/robots.txt
+pnpm smoke:deployment -- --url http://localhost:3000 --deployment-stage preview --writes-enabled=false --requires-access-code=false
 ```
 
 Open writes only when the environment is ready to accept preview submissions:
@@ -209,6 +232,7 @@ docker run --rm -p 3000:3000 \
   fabushi-forum
 curl http://localhost:3000/api/health
 curl http://localhost:3000/api/status
+pnpm smoke:deployment -- --url http://localhost:3000 --deployment-stage preview --writes-enabled=true --requires-access-code=false
 ```
 
 Keep writable deployments in a small preview cohort when needed:
@@ -223,6 +247,7 @@ docker run --rm -p 3000:3000 \
   fabushi-forum
 curl http://localhost:3000/api/health
 curl http://localhost:3000/api/status
+pnpm smoke:deployment -- --url http://localhost:3000 --deployment-stage preview --writes-enabled=true --requires-access-code=true
 ```
 
 When the forum is actually ready to advertise a public origin, switch both deployment fields together:
@@ -239,6 +264,7 @@ curl http://localhost:3000/api/health
 curl http://localhost:3000/api/status
 curl http://localhost:3000/robots.txt
 curl -I http://localhost:3000/threads
+pnpm smoke:deployment -- --url http://localhost:3000 --deployment-stage production --public-base-url https://forum.fabushi.com --writes-enabled=false --requires-access-code=false
 ```
 
 In that production-indexing runtime, verify the pair of signals together before exposing traffic:
@@ -258,17 +284,3 @@ curl http://localhost:3000/api/health
 curl http://localhost:3000/api/status
 docker compose -f docker-compose.preview.yml down
 ```
-
-`docker-compose.preview.yml` now pins `FORUM_DEPLOYMENT_STAGE=preview`, can accept an optional `FORUM_PUBLIC_BASE_URL`, mounts a named volume at `/data`, keeps `FORUM_DATABASE_URL=file:/data/forum.db`, and declares the same `/api/health` probe that the container image exposes through `HEALTHCHECK`. That gives preview deployments one consistent readiness contract whether they are started with `docker run`, `docker compose`, or a later reverse-proxy/platform wrapper.
-
-Runtime defaults:
-
-- `PORT=3000`
-- `HOSTNAME=0.0.0.0`
-- `NODE_ENV=production`
-
-A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, waits for the container healthcheck to report healthy, validates that sqlite starts in read-only mode by default, confirms preview responses stay noindex through headers and `robots.txt`, verifies a production runtime with `FORUM_PUBLIC_BASE_URL` flips health, status, headers, robots, and page metadata into indexable mode, confirms `/threads/new` exposes the disabled page-level composer until writes are explicitly enabled, reruns the container with `FORUM_ENABLE_WRITES=true` plus a preview write-access code to exercise thread creation, denied writes without the code, thread-detail readback, reply submission, role labels, guidance signals, and appended moderation timeline events, and then restarts the same writable container against a mounted sqlite path to confirm those writes still exist after the process comes back up.
-
-## Why this is the next step
-
-After the preview write-access gate and health probe landed, the next launch-readiness gap was no longer another UI slice. The remaining deployment risk was that the forum still had no explicit preview-versus-production publishing contract, even though preview deployments were already close to real use. This iteration closes that gap in the smallest useful way: it keeps preview noindex by default, makes the deployment stage visible through runtime responses and headers, and only enables crawlable metadata after a public forum origin is intentionally configured.

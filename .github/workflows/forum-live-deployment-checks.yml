@@ -1,0 +1,66 @@
+name: Live deployment checks - Forum
+
+on:
+  workflow_dispatch:
+    inputs:
+      forum_url:
+        description: Forum base URL to check, for example https://forum.example.com
+        required: true
+        type: string
+      deployment_stage:
+        description: Expected deployment stage returned by the live forum runtime
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - production
+      public_base_url:
+        description: Expected FORUM_PUBLIC_BASE_URL. Leave empty for preview or other noindex runtimes.
+        required: false
+        type: string
+      writes_enabled:
+        description: Expected writesEnabled value reported by /api/health and /api/status
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      requires_access_code:
+        description: Expected requiresAccessCode value reported by /api/health and /api/status
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+
+jobs:
+  forum-live-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout forum workspace only
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+            forum
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Smoke test live forum deployment contract
+        run: |
+          node forum/scripts/check-deployment-contract.mjs \
+            --url "${{ inputs.forum_url }}" \
+            --deployment-stage "${{ inputs.deployment_stage }}" \
+            --public-base-url "${{ inputs.public_base_url }}" \
+            --writes-enabled "${{ inputs.writes_enabled }}" \
+            --requires-access-code "${{ inputs.requires_access_code }}"
