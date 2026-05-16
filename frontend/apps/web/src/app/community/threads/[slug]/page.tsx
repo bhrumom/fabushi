@@ -11,10 +11,12 @@ import {
 } from "../../../../lib/community";
 import { siteHref, siteUrl } from "../../../../lib/site-url";
 
+type ThreadPageParams = {
+  slug: string;
+};
+
 interface ThreadPageProps {
-  params: {
-    slug: string;
-  };
+  params: Promise<ThreadPageParams>;
 }
 
 export const dynamicParams = false;
@@ -23,8 +25,9 @@ export function generateStaticParams() {
   return FORUM_THREADS.map((thread) => ({ slug: thread.slug }));
 }
 
-export function generateMetadata({ params }: ThreadPageProps): Metadata {
-  const thread = getForumThreadBySlug(params.slug);
+export async function generateMetadata({ params }: ThreadPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const thread = getForumThreadBySlug(slug);
 
   if (!thread) {
     return {
@@ -34,7 +37,7 @@ export function generateMetadata({ params }: ThreadPageProps): Metadata {
   }
 
   const section = getForumSectionBySlug(thread.sectionSlug);
-  const threadUrl = siteUrl(`/community/threads/${thread.slug}`);
+  const threadUrl = siteUrl(`/community/threads/${slug}`);
   const title = `${thread.titleZh} | ${brand.name}`;
   const description = thread.summaryZh;
 
@@ -61,15 +64,16 @@ export function generateMetadata({ params }: ThreadPageProps): Metadata {
   };
 }
 
-export default function CommunityThreadDetailPage({ params }: ThreadPageProps) {
-  const thread = getForumThreadBySlug(params.slug);
+export default async function CommunityThreadDetailPage({ params }: ThreadPageProps) {
+  const { slug } = await params;
+  const thread = getForumThreadBySlug(slug);
 
   if (!thread) {
     notFound();
   }
 
   const section = getForumSectionBySlug(thread.sectionSlug);
-  const threadUrl = siteUrl(`/community/threads/${thread.slug}`);
+  const threadUrl = siteUrl(`/community/threads/${slug}`);
   const structuredData = {
     "@context": "https://schema.org",
     "@graph": [
