@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 interface ThreadReplyFormProps {
   threadSlug: string;
   writesEnabled: boolean;
+  requiresAccessCode: boolean;
   dataSource: string;
 }
 
@@ -20,11 +21,12 @@ function getParagraphs(value: string) {
     .filter(Boolean);
 }
 
-export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: ThreadReplyFormProps) {
+export function ThreadReplyForm({ threadSlug, writesEnabled, requiresAccessCode, dataSource }: ThreadReplyFormProps) {
   const router = useRouter();
   const [author, setAuthor] = useState("");
   const [roleLabel, setRoleLabel] = useState(ROLE_OPTIONS[0]);
   const [guidanceSignal, setGuidanceSignal] = useState("");
+  const [writeAccessCode, setWriteAccessCode] = useState("");
   const [body, setBody] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [tone, setTone] = useState<FormTone | null>(null);
@@ -45,11 +47,18 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
 
     const trimmedAuthor = author.trim();
     const trimmedGuidanceSignal = guidanceSignal.trim();
+    const trimmedWriteAccessCode = writeAccessCode.trim();
     const paragraphs = getParagraphs(body);
 
     if (!trimmedAuthor || !trimmedGuidanceSignal || paragraphs.length === 0) {
       setTone("error");
       setMessage("请先填写称呼、角色状态、引导信号和回复内容。");
+      return;
+    }
+
+    if (requiresAccessCode && !trimmedWriteAccessCode) {
+      setTone("error");
+      setMessage("当前写入环境还要求写入口令；请先填写正确口令后再提交回复。");
       return;
     }
 
@@ -68,6 +77,7 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
               author: trimmedAuthor,
               roleLabel,
               guidanceSignal: trimmedGuidanceSignal,
+              writeAccessCode: trimmedWriteAccessCode,
               body: paragraphs,
             }),
           });
@@ -80,6 +90,7 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
 
           setAuthor("");
           setGuidanceSignal("");
+          setWriteAccessCode("");
           setBody("");
           setTone("success");
           setMessage("回复已写入当前线程，页面正在刷新。");
@@ -97,7 +108,9 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
       <div className="section-heading">
         <div>
           <h2 id="reply-composer-heading">写一条最小回复</h2>
-          <p>这一步会在开放写入时把回复者的角色状态和当前引导信号一起写入 sqlite，而不是继续依赖接口默认文案。</p>
+          <p>
+            这一步会在开放写入时把回复者的角色状态和当前引导信号一起写入 sqlite；如果当前环境仍处于内测口令模式，也会在这里一起校验。
+          </p>
         </div>
         <span className="reply-runtime">{writesEnabled ? `当前数据源：${dataSource} / 可写` : `当前数据源：${dataSource} / 只读`}</span>
       </div>
@@ -106,6 +119,8 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
         <p className="reply-form-hint">
           当前运行环境还在只读模式。先把 `FORUM_DATA_SOURCE` 设为 `sqlite`，再显式打开 `FORUM_ENABLE_WRITES=true`，这里才会直接提交最小回复。
         </p>
+      ) : requiresAccessCode ? (
+        <p className="reply-form-hint">当前运行环境已经开放写入，但仍要求有效写入口令，适合先做小范围内测。</p>
       ) : null}
 
       <form className="reply-form" onSubmit={handleSubmit}>
@@ -152,6 +167,21 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
             />
           </label>
 
+          {requiresAccessCode ? (
+            <label className="reply-field">
+              <span>写入口令</span>
+              <input
+                className="reply-input"
+                name="writeAccessCode"
+                value={writeAccessCode}
+                onChange={(event) => setWriteAccessCode(event.target.value)}
+                placeholder="例如：forum-preview-2026"
+                disabled={!writesEnabled || isPending}
+                autoComplete="off"
+              />
+            </label>
+          ) : null}
+
           <label className="reply-field">
             <span>回复内容</span>
             <textarea
@@ -168,8 +198,8 @@ export function ThreadReplyForm({ threadSlug, writesEnabled, dataSource }: Threa
         <div className="reply-form-footer">
           <p className="reply-form-hint">
             {paragraphCount > 0
-              ? `当前会提交 ${paragraphCount} 段内容，并把回复者角色和引导信号一起落库。`
-              : "回复支持按空行切成多段，第一版先把角色状态和引导信号稳定接进真实回复流。"}
+              ? `当前会提交 ${paragraphCount} 段内容，并把回复者角色和引导信号一起落库${requiresAccessCode ? "，同时校验写入口令" : ""}。`
+              : `回复支持按空行切成多段，第一版先把角色状态和引导信号稳定接进真实回复流${requiresAccessCode ? "，再用写入口令收住内测写入边界" : ""}。`}
           </p>
           <button className="submit-button" type="submit" disabled={!writesEnabled || isPending}>
             {isPending ? "提交中..." : "提交回复"}

@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import {
   type CreateForumThreadInput,
   ForumInputError,
+  ForumWriteAccessDeniedError,
   ForumWriteUnavailableError,
+  assertForumWriteAccessCode,
   createForumThread,
   getForumSnapshot,
 } from "../../../lib/forum-data";
@@ -16,6 +18,7 @@ interface CreateThreadPayload {
   guidanceSignal?: unknown;
   tags?: unknown;
   openingPost?: unknown;
+  writeAccessCode?: unknown;
 }
 
 function requireString(value: unknown, fieldName: string): string {
@@ -114,6 +117,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    assertForumWriteAccessCode(payload.writeAccessCode);
     const createdThread = createForumThread(parseCreateThreadPayload(payload));
 
     return NextResponse.json(createdThread, {
@@ -127,6 +131,10 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof ForumInputError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (error instanceof ForumWriteAccessDeniedError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
     }
 
     if (error instanceof ForumWriteUnavailableError) {

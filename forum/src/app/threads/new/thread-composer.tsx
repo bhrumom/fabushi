@@ -13,6 +13,7 @@ interface ComposerSection {
 interface ThreadComposerProps {
   sections: ComposerSection[];
   writesEnabled: boolean;
+  requiresAccessCode: boolean;
   dataSource: string;
 }
 
@@ -34,13 +35,14 @@ function getTags(value: string) {
     .filter(Boolean);
 }
 
-export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadComposerProps) {
+export function ThreadComposer({ sections, writesEnabled, requiresAccessCode, dataSource }: ThreadComposerProps) {
   const router = useRouter();
   const [sectionSlug, setSectionSlug] = useState(sections[0]?.slug ?? "");
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
   const [authorRoleLabel, setAuthorRoleLabel] = useState(ROLE_OPTIONS[0]);
   const [guidanceSignal, setGuidanceSignal] = useState("");
+  const [writeAccessCode, setWriteAccessCode] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [openingPost, setOpeningPost] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -72,12 +74,19 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
     const trimmedTitle = title.trim();
     const trimmedAuthor = author.trim();
     const trimmedGuidanceSignal = guidanceSignal.trim();
+    const trimmedWriteAccessCode = writeAccessCode.trim();
     const paragraphs = getParagraphs(openingPost);
     const tags = getTags(tagsInput);
 
     if (!trimmedTitle || !trimmedAuthor || !trimmedGuidanceSignal || paragraphs.length === 0) {
       setTone("error");
       setMessage("请先填写标题、称呼、作者角色、引导信号和开场帖内容。");
+      return;
+    }
+
+    if (requiresAccessCode && !trimmedWriteAccessCode) {
+      setTone("error");
+      setMessage("当前写入环境还要求写入口令；请先填写正确口令后再发布主题。");
       return;
     }
 
@@ -98,6 +107,7 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
               author: trimmedAuthor,
               authorRoleLabel,
               guidanceSignal: trimmedGuidanceSignal,
+              writeAccessCode: trimmedWriteAccessCode,
               tags,
               openingPost: paragraphs,
             }),
@@ -121,6 +131,7 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
           setTitle("");
           setAuthor("");
           setGuidanceSignal("");
+          setWriteAccessCode("");
           setTagsInput("");
           setOpeningPost("");
           setTone("success");
@@ -139,7 +150,9 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
       <div className="section-heading">
         <div>
           <h2 id="thread-composer-heading">发起一条最小主题</h2>
-          <p>这一步会在开放写入时把作者角色和新手引导信号一起写入持久化层，而不是继续只停留在展示文案。</p>
+          <p>
+            这一步会在开放写入时把作者角色和新手引导信号一起写入持久化层；如果当前环境仍处于内测口令模式，也会在这里一起校验。
+          </p>
         </div>
         <span className="reply-runtime">{writesEnabled ? `当前数据源：${dataSource} / 可写` : `当前数据源：${dataSource} / 只读`}</span>
       </div>
@@ -148,6 +161,8 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
         <p className="reply-form-hint">
           当前运行环境还在只读模式。先把 `FORUM_DATA_SOURCE` 设为 `sqlite`，再显式打开 `FORUM_ENABLE_WRITES=true`，这里才会直接提交新主题。
         </p>
+      ) : requiresAccessCode ? (
+        <p className="reply-form-hint">当前运行环境已经开放写入，但仍要求有效写入口令，适合先做小范围内测。</p>
       ) : null}
 
       <form className="reply-form" onSubmit={handleSubmit}>
@@ -223,6 +238,21 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
             />
           </label>
 
+          {requiresAccessCode ? (
+            <label className="reply-field">
+              <span>写入口令</span>
+              <input
+                className="reply-input"
+                name="writeAccessCode"
+                value={writeAccessCode}
+                onChange={(event) => setWriteAccessCode(event.target.value)}
+                placeholder="例如：forum-preview-2026"
+                disabled={!writesEnabled || isPending}
+                autoComplete="off"
+              />
+            </label>
+          ) : null}
+
           <label className="reply-field">
             <span>标签</span>
             <input
@@ -259,8 +289,8 @@ export function ThreadComposer({ sections, writesEnabled, dataSource }: ThreadCo
         <div className="reply-form-footer">
           <p className="reply-form-hint">
             {paragraphCount > 0
-              ? `当前会提交 ${paragraphCount} 段开场帖${tagCount > 0 ? `，并附带 ${tagCount} 个标签` : ""}，同时把作者角色和引导信号一起落库。`
-              : "开场帖支持按空行分段；第一版先把标题、版块、角色状态和引导信号稳定落库。"}
+              ? `当前会提交 ${paragraphCount} 段开场帖${tagCount > 0 ? `，并附带 ${tagCount} 个标签` : ""}，同时把作者角色和引导信号一起落库${requiresAccessCode ? "，并校验写入口令" : ""}。`
+              : `开场帖支持按空行分段；第一版先把标题、版块、角色状态和引导信号稳定落库${requiresAccessCode ? "，再用写入口令收住内测写入边界" : ""}。`}
           </p>
           <button className="submit-button" type="submit" disabled={!writesEnabled || isPending || !selectedSection}>
             {isPending ? "发布中..." : "发布主题"}
