@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/start-learning-buddhism");
 const pageTitle = `学佛从哪里开始 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理学佛从哪里开始：先建立方向，再选一条可持续的练习主线，把佛经、禅修和日常功课接进生活。";
+  "面向初学者梳理学佛从哪里开始：先建立方向，再选一条可持续的练习主线，把佛经、禅修、因果理解和日常功课接进生活。";
 
 const starterPrinciples = [
   {
@@ -36,7 +36,7 @@ const firstSteps = [
     titleZh: "第一步：先问自己，为什么现在想学佛",
     titleEn: "Step 1: Ask why you want to begin now",
     descriptionZh: "有人是想先安定心念，有人是想理解佛法到底在讲什么，也有人是想把经文听诵和日常修持接进生活。先看清自己的问题，后面的入口就会更明确。",
-    descriptionEn: "Some people want steadier attention, some want to understand what buddhadharma is actually pointing to, and some want to connect scripture and daily discipline. When the question becomes clear, the next step becomes simpler.",
+    descriptionEn: "Some people want steadier attention, some want to understand what buddhadharma is actually pointing to, and some want to connect scripture and daily discipline into life. When the question becomes clear, the next step becomes simpler.",
   },
   {
     titleZh: "第二步：先选一个最容易进入的入口",
@@ -82,6 +82,15 @@ const relatedPaths = [
     titleEn: "See the broader beginner map for buddhadharma.",
     descriptionZh: "如果你想先弄清佛法、修行、禅修和日常实践之间的关系，这一页更适合先打开。",
     descriptionEn: "Open this first if you want the wider map of buddhadharma, practice, meditation, and daily discipline.",
+  },
+  {
+    href: "/what-is-karma",
+    labelZh: "因果是什么意思",
+    labelEn: "What Karma Means",
+    titleZh: "先把初学者最常先遇到的核心概念放清楚。",
+    titleEn: "Clarify one of the first core concepts beginners usually meet.",
+    descriptionZh: "如果你现在最卡的是“因果到底是不是报应”，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if your question has already become whether karma simply means reward, punishment, or payback.",
   },
   {
     href: "/beginner-sutra-recommendations",
@@ -185,6 +194,7 @@ export const metadata: Metadata = {
     "学佛入门",
     "佛法入门",
     "初学者学佛",
+    "因果是什么意思",
     "佛教入门",
     "Fabushi",
   ],
@@ -279,8 +289,8 @@ export default function StartLearningBuddhismPage() {
           </h1>
           <p className="lede">
             <LocalizedText
-              zh="先建立方向，再选一个最贴近自己当下问题的入口，把佛经、禅修和日常练习慢慢接进生活，不必一开始就做得很满。"
-              en="Start by setting direction, then choose the entry point that matches your present question and let scripture, meditation, and daily practice enter life gradually instead of all at once."
+              zh="先建立方向，再选一个最贴近自己当下问题的入口，把佛经、禅修、因果理解和日常练习慢慢接进生活，不必一开始就做得很满。"
+              en="Start by setting direction, then choose the entry point that matches your present question and let scripture, meditation, karma, and daily practice enter life gradually instead of all at once."
             />
           </p>
         </div>
