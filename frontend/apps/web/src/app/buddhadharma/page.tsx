@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/buddhadharma");
 const pageTitle = `佛法入门 | ${brand.name}`;
 const pageDescription =
-  "从佛法是什么、初学者如何开始，到禅修、经文、因果、菩提心、六度与日常修行路径，Fabushi 提供清晰的入门导读。";
+  "从佛法是什么、初学者如何开始，到禅修、经文、因果、菩提心、六度、空性与日常修行路径，Fabushi 提供清晰的入门导读。";
 
 const dharmaHighlights = [
   {
@@ -67,6 +67,15 @@ const learningPaths = [
     titleEn: "See how aspiration returns to conduct, training, and ordinary life.",
     descriptionZh: "如果你已经开始接触大乘修学，但常把六度听成一张离生活很远的清单，这一页会更适合继续往下看。",
     descriptionEn: "This is the better next page if you are meeting Mahayana learning but still hear the six paramitas as a distant list rather than a living practice path.",
+  },
+  {
+    href: "/what-is-emptiness",
+    labelZh: "空性怎么理解",
+    labelEn: "How to Understand Emptiness",
+    titleZh: "把般若与空性从抽象词句慢慢接回日常经验。",
+    titleEn: "Return wisdom and emptiness from abstract language to ordinary experience.",
+    descriptionZh: "如果你已经开始接触佛法，但常把空性听成“什么都没有”或离生活太远，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you have begun meeting buddhadharma but still hear emptiness as either nothingness or something far from daily life.",
   },
   {
     href: "/practice-guide",
@@ -167,6 +176,12 @@ const faqItems = [
     answerEn: "No. It is more important to build a steady rhythm, understand core concepts, and expand your reading gradually.",
   },
   {
+    questionZh: "空性是不是就是什么都没有，所以离初学者太远？",
+    questionEn: "Does emptiness mean nothing exists, making it too advanced for beginners?",
+    answerZh: "通常不是这样理解。更稳妥的方向，是先看见很多情绪、判断和痛苦并没有想象中那样固定，再随着导读、经典阅读和练习慢慢把理解带深。空性不是把生活否定掉，而是帮助人少一点抓得太死。",
+    answerEn: "Usually not. A steadier way is to start by noticing that many emotions, judgments, and pains are less fixed than they seem, then let guides, scripture, and practice deepen the understanding. Emptiness does not cancel life, but helps loosen rigid grasping.",
+  },
+  {
     questionZh: "禅修、听诵和日常记录之间应该怎么安排？",
     questionEn: "How should meditation, sutra listening, and daily tracking fit together?",
     answerZh: "可以先固定一条主线，例如每天短时禅修，再用听诵和记录帮助自己维持连续性，不必同时追求过多项目。",
@@ -192,6 +207,7 @@ export const metadata: Metadata = {
     "佛教入门",
     "学佛从哪里开始",
     "因果是什么意思",
+    "空性怎么理解",
     "六度分别是什么",
     "禅修入门",
     "Fabushi",
