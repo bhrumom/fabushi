@@ -34,6 +34,9 @@ export function SiteFooter() {
         <a href={siteHref("/what-is-karma")}>
           <LocalizedText zh="因果是什么意思" en="What Karma Means" />
         </a>
+        <a href={siteHref("/what-is-bodhicitta")}>
+          <LocalizedText zh="菩提心是什么意思" en="What Bodhicitta Means" />
+        </a>
         <a href={siteHref("/meditation")}>
           <LocalizedText zh="禅修入门" en="Meditation Guide" />
         </a>
