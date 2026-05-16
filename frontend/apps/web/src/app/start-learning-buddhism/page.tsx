@@ -84,6 +84,17 @@ const relatedPaths = [
     descriptionEn: "Open this first if you want the wider map of buddhadharma, practice, meditation, and daily discipline.",
   },
   {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "初学者佛经推荐",
+    labelEn: "Beginner Sutra Picks",
+    titleZh: "把“先读什么佛经”这个问题单独理清。",
+    titleEn: "Answer the question of which sutra to begin with more directly.",
+    descriptionZh: "如果你已经确定想从经典进入，但卡在《心经》、" +
+      "《阿弥陀经》、" +
+      "《普门品》还是《金刚经》更适合作为起点，这一页会更具体。",
+    descriptionEn: "If you already know scripture is the doorway but feel stuck on whether the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra is the better start, this page is more specific.",
+  },
+  {
     href: "/daily-practice",
     labelZh: "日常功课怎么安排",
     labelEn: "Daily Practice",

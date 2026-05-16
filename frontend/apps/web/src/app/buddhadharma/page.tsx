@@ -78,6 +78,17 @@ const learningPaths = [
     descriptionEn: "If your question is which sutra to start with and how listening fits with reading, this page is the better next stop.",
   },
   {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "初学者佛经推荐",
+    labelEn: "Beginner Sutra Picks",
+    titleZh: "把“先读什么佛经”这个问题单独理清。",
+    titleEn: "Answer the question of which sutra to begin with more directly.",
+    descriptionZh: "如果你最卡的是《心经》、" +
+      "《阿弥陀经》、" +
+      "《普门品》还是《金刚经》更适合作为起点，这一页会更具体。",
+    descriptionEn: "If your main difficulty is choosing whether the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra is the better starting point, this page is more specific.",
+  },
+  {
     href: "/faq",
     labelZh: "常见问题",
     labelEn: "FAQ",
