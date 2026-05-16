@@ -5,6 +5,8 @@ services:
     ports:
       - "${FORUM_PORT:-3000}:3000"
     environment:
+      FORUM_DEPLOYMENT_STAGE: preview
+      FORUM_PUBLIC_BASE_URL: "${FORUM_PUBLIC_BASE_URL:-}"
       FORUM_DATA_SOURCE: sqlite
       FORUM_ENABLE_WRITES: "${FORUM_ENABLE_WRITES:-false}"
       FORUM_DATABASE_URL: file:/data/forum.db

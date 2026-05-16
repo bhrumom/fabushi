@@ -73,6 +73,9 @@ jobs:
           assert payload["ready"] is True, payload
           assert payload["dataSource"] == "sqlite", payload
           assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["deploymentStage"] == "preview", payload
+          assert payload["indexingEnabled"] is False, payload
+          assert payload["publicBaseUrlConfigured"] is False, payload
           assert payload["writesEnabled"] is False, payload
           assert payload["requiresAccessCode"] is False, payload
           PY
@@ -87,6 +90,8 @@ jobs:
           assert payload["service"] == "forum", payload
           assert payload["dataSource"] == "sqlite", payload
           assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["deploymentStage"] == "preview", payload
+          assert payload["indexingEnabled"] is False, payload
           assert payload["writesEnabled"] is False, payload
           assert payload["requiresAccessCode"] is False, payload
           assert payload["counts"]["threads"] >= 4, payload
@@ -130,6 +135,29 @@ jobs:
 
           payload = json.loads(os.environ["FORUM_CREATE_ERROR_BODY"])
           assert "FORUM_ENABLE_WRITES=true" in payload["error"], payload
+          PY
+
+      - name: Smoke test forum preview deployment headers and robots contract
+        run: |
+          response_headers="$(curl --silent --show-error --dump-header - --output /dev/null http://127.0.0.1:3000/threads)"
+          echo "$response_headers"
+          FORUM_HEADERS="$response_headers" python3 - <<'PY'
+          import os
+
+          headers = os.environ["FORUM_HEADERS"].lower()
+          assert "x-forum-deployment-stage: preview" in headers, headers
+          assert "x-forum-indexing-enabled: false" in headers, headers
+          assert "x-robots-tag: noindex, nofollow, noarchive" in headers, headers
+          PY
+
+          robots_response="$(curl --fail --show-error --silent http://127.0.0.1:3000/robots.txt)"
+          echo "$robots_response"
+          FORUM_ROBOTS_RESPONSE="$robots_response" python3 - <<'PY'
+          import os
+
+          payload = os.environ["FORUM_ROBOTS_RESPONSE"]
+          assert "User-Agent: *" in payload, payload
+          assert "Disallow: /" in payload, payload
           PY
 
       - name: Stop forum sqlite read-only container
@@ -187,6 +215,9 @@ jobs:
           assert payload["ready"] is True, payload
           assert payload["dataSource"] == "sqlite", payload
           assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["deploymentStage"] == "preview", payload
+          assert payload["indexingEnabled"] is False, payload
+          assert payload["publicBaseUrlConfigured"] is False, payload
           assert payload["writesEnabled"] is True, payload
           assert payload["requiresAccessCode"] is True, payload
           PY
@@ -201,6 +232,8 @@ jobs:
           assert payload["service"] == "forum", payload
           assert payload["dataSource"] == "sqlite", payload
           assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["deploymentStage"] == "preview", payload
+          assert payload["indexingEnabled"] is False, payload
           assert payload["writesEnabled"] is True, payload
           assert payload["requiresAccessCode"] is True, payload
           assert payload["counts"]["threads"] >= 4, payload
@@ -427,6 +460,9 @@ jobs:
           assert payload["ready"] is True, payload
           assert payload["dataSource"] == "sqlite", payload
           assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["deploymentStage"] == "preview", payload
+          assert payload["indexingEnabled"] is False, payload
+          assert payload["publicBaseUrlConfigured"] is False, payload
           assert payload["writesEnabled"] is True, payload
           assert payload["requiresAccessCode"] is True, payload
           PY
@@ -441,6 +477,8 @@ jobs:
           assert payload["service"] == "forum", payload
           assert payload["dataSource"] == "sqlite", payload
           assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["deploymentStage"] == "preview", payload
+          assert payload["indexingEnabled"] is False, payload
           assert payload["writesEnabled"] is True, payload
           assert payload["requiresAccessCode"] is True, payload
           assert payload["counts"]["threads"] >= 5, payload
