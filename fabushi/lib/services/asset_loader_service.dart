@@ -1,9 +1,13 @@
-import 'package:flutter/foundation.dart';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, Uint8List, debugPrint, defaultTargetPlatform, kIsWeb;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'dart:io';
-import 'memory_manager.dart';
+
 import '../core/config/app_config.dart';
+import 'memory_manager.dart';
 
 /// 3D 模型资源缓存包装器
 /// 实现 ClearableCache 接口以便 MemoryManager 在内存警告时清理
@@ -44,13 +48,15 @@ class _AssetCacheWrapper implements ClearableCache {
 
 /// 大型资源动态加载服务
 ///
-/// 用于从 CDN 加载大型 3D 模型等资源,避免打包到应用中
-/// 实现断点续传和持久化缓存机制
+/// 用于加载 3D 模型等大型资源，优先复用随包资源与本地缓存，必要时再回退到远端下载。
 class AssetLoaderService {
   static String get defaultCdnBaseUrl =>
       '${AppConfig.currentBackendUrl}/r2?file=';
 
   static String get cdnBaseUrl => defaultCdnBaseUrl;
+
+  static bool get _shouldPreferBundledBuddhaModel =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   // 内存缓存 (仅用于当前会话)
   static final Map<String, Uint8List> _memoryCache = {};
@@ -76,6 +82,15 @@ class AssetLoaderService {
 
     if (_memoryCache.containsKey(fileName)) {
       return;
+    }
+
+    if (_shouldPreferBundledBuddhaModel) {
+      try {
+        await _loadBundledBuddhaModel();
+        return;
+      } catch (e) {
+        debugPrint('⚠️ [AssetLoader] 预热随包佛像模型失败，继续检查本地缓存: $e');
+      }
     }
 
     try {
@@ -110,6 +125,15 @@ class AssetLoaderService {
     // 确保已注册到 MemoryManager
     initialize();
 
+    if (_shouldPreferBundledBuddhaModel) {
+      try {
+        return await _loadBundledBuddhaModel(onProgress: onProgress);
+      } catch (e) {
+        debugPrint('⚠️ [AssetLoader] 随包佛像模型读取失败，回退到 R2: $e');
+        _memoryCache.remove(AppConfig.buddhaModelAssetPath);
+      }
+    }
+
     try {
       return await _loadAsset(
         AppConfig.buddhaModelAssetPath,
@@ -136,6 +160,37 @@ class AssetLoaderService {
       AppConfig.buddhaModelAssetPath,
       includePartial: true,
     );
+  }
+
+  static Future<Uint8List> _loadBundledBuddhaModel({
+    void Function(double progress)? onProgress,
+  }) async {
+    const cacheKey = AppConfig.buddhaModelAssetPath;
+
+    if (_memoryCache.containsKey(cacheKey)) {
+      onProgress?.call(1.0);
+      return _memoryCache[cacheKey]!;
+    }
+
+    final byteData = await rootBundle.load(AppConfig.bundledBuddhaModelAssetPath);
+    final data = byteData.buffer.asUint8List(
+      byteData.offsetInBytes,
+      byteData.lengthInBytes,
+    );
+
+    if (data.isEmpty) {
+      throw Exception(
+        '打包佛像模型为空: ${AppConfig.bundledBuddhaModelAssetPath}',
+      );
+    }
+
+    _memoryCache[cacheKey] = data;
+    onProgress?.call(1.0);
+    debugPrint(
+      '📦 [AssetLoader] 从随包佛像模型加载: '
+      '${AppConfig.bundledBuddhaModelAssetPath} (${data.lengthInBytes} bytes)',
+    );
+    return data;
   }
 
   // 正在进行的加载任务，防止并发下载同一资源
