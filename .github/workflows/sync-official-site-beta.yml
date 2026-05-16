@@ -196,37 +196,38 @@ jobs:
               }
           ]
 
-          tf_status = testflight_status.get("status", "")
-          tf_uploaded_at = testflight_status.get("uploaded_at") or release.get("published_at")
-          tf_build_number = testflight_status.get("build_number") or release_tag
-          tf_uploaded = tf_status == "uploaded"
-          ios_primary_href = ios_testflight_public_url if tf_uploaded and ios_testflight_public_url else release_url
-          ios_primary_label = "加入 iOS TestFlight" if tf_uploaded and ios_testflight_public_url else "查看 iOS 发布状态"
-          ios_note = ""
-          if tf_uploaded and not ios_testflight_public_url:
-              ios_note = "已经上传到 TestFlight，但仓库变量 IOS_TESTFLIGHT_PUBLIC_URL 还没有配置公开加入链接。"
-          elif testflight_status.get("reason") == "app_store_connect_credentials_not_configured":
-              ios_note = "当前仓库还没有配置 App Store Connect 上传凭据。"
-          elif not tf_uploaded:
-              ios_note = "当前还没有拿到可公开加入的 TestFlight 入口。"
+          if testflight_status:
+              tf_status = testflight_status.get("status", "")
+              tf_uploaded_at = testflight_status.get("uploaded_at") or release.get("published_at")
+              tf_build_number = testflight_status.get("build_number") or release_tag
+              tf_uploaded = tf_status == "uploaded"
+              ios_primary_href = ios_testflight_public_url if tf_uploaded and ios_testflight_public_url else release_url
+              ios_primary_label = "加入 iOS TestFlight" if tf_uploaded and ios_testflight_public_url else "查看 iOS 发布状态"
+              ios_note = ""
+              if tf_uploaded and not ios_testflight_public_url:
+                  ios_note = "已经上传到 TestFlight，但仓库变量 IOS_TESTFLIGHT_PUBLIC_URL 还没有配置公开加入链接。"
+              elif testflight_status.get("reason") == "app_store_connect_credentials_not_configured":
+                  ios_note = "当前仓库还没有配置 App Store Connect 上传凭据。"
+              elif not tf_uploaded:
+                  ios_note = "当前还没有拿到可公开加入的 TestFlight 入口。"
 
-          channels.append(
-              {
-                  "platform": "iOS",
-                  "audience": "beta",
-                  "status": "TestFlight 已开放" if tf_uploaded else "等待 TestFlight 可加入",
-                  "title": "iOS TestFlight Beta",
-                  "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
-                  "primaryLabel": ios_primary_label,
-                  "primaryHref": ios_primary_href,
-                  "version": tf_build_number,
-                  "publishedAt": tf_uploaded_at,
-                  "updateSummary": summary,
-                  "mirrorLinks": [],
-                  "note": ios_note,
-                  "releasePageHref": release_url,
-              }
-          )
+              channels.append(
+                  {
+                      "platform": "iOS",
+                      "audience": "beta",
+                      "status": "TestFlight 已开放" if tf_uploaded else "等待 TestFlight 可加入",
+                      "title": "iOS TestFlight Beta",
+                      "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
+                      "primaryLabel": ios_primary_label,
+                      "primaryHref": ios_primary_href,
+                      "version": tf_build_number,
+                      "publishedAt": tf_uploaded_at,
+                      "updateSummary": summary,
+                      "mirrorLinks": [],
+                      "note": ios_note,
+                      "releasePageHref": release_url,
+                  }
+              )
 
           state = {
               "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -317,7 +318,60 @@ jobs:
 
           if [ -f OFFICIAL_SITE_RELEASE_STATE.json ]; then
             mkdir -p frontend/apps/web/public/api
-            python3 -c 'import json; from pathlib import Path; source_path = Path("OFFICIAL_SITE_RELEASE_STATE.json"); target_path = Path("frontend/apps/web/public/api/releases.json"); state = json.loads(source_path.read_text(encoding="utf-8")); channels = state.get("channels", []); api_state = {"betaChannels": [channel for channel in channels if channel.get("audience") == "beta"], "stableChannels": [channel for channel in channels if channel.get("audience") == "stable"], "screenshots": state.get("screenshots", {}), "releases": state.get("releases", []), "notes": state.get("notes", [])}; target_path.write_text(json.dumps(api_state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")'
+            python3 - <<'PY'
+            import json
+            from pathlib import Path
+
+            source_path = Path("OFFICIAL_SITE_RELEASE_STATE.json")
+            target_path = Path("frontend/apps/web/public/api/releases.json")
+
+            state = json.loads(source_path.read_text(encoding="utf-8"))
+            channels = state.get("channels", [])
+            incoming_beta = [channel for channel in channels if channel.get("audience") == "beta"]
+            incoming_stable = [channel for channel in channels if channel.get("audience") == "stable"]
+
+            existing = {}
+            if target_path.exists():
+                try:
+                    existing = json.loads(target_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    existing = {}
+
+            def merge_channels(incoming, previous):
+                merged = {}
+                insertion_order = []
+                for channel in previous:
+                    if not isinstance(channel, dict):
+                        continue
+                    key = f"{channel.get('audience', '')}:{channel.get('platform', '')}"
+                    if key not in merged:
+                        insertion_order.append(key)
+                    merged[key] = channel
+                for channel in incoming:
+                    if not isinstance(channel, dict):
+                        continue
+                    key = f"{channel.get('audience', '')}:{channel.get('platform', '')}"
+                    if key not in merged:
+                        insertion_order.append(key)
+                    merged[key] = channel
+                preferred_order = ["beta:Android", "beta:iOS", "stable:Android", "stable:iOS"]
+                ordered_keys = [key for key in preferred_order if key in merged]
+                ordered_keys.extend(key for key in insertion_order if key not in ordered_keys)
+                return [merged[key] for key in ordered_keys]
+
+            previous_beta = existing.get("betaChannels", []) if isinstance(existing, dict) else []
+            previous_stable = existing.get("stableChannels", []) if isinstance(existing, dict) else []
+
+            api_state = {
+                "betaChannels": merge_channels(incoming_beta, previous_beta),
+                "stableChannels": merge_channels(incoming_stable, previous_stable),
+                "screenshots": state.get("screenshots") or (existing.get("screenshots") if isinstance(existing, dict) else {}) or {},
+                "releases": state.get("releases") or (existing.get("releases") if isinstance(existing, dict) else []) or [],
+                "notes": state.get("notes") or (existing.get("notes") if isinstance(existing, dict) else []) or [],
+            }
+
+            target_path.write_text(json.dumps(api_state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            PY
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add frontend/apps/web/public/api/releases.json
