@@ -13,10 +13,11 @@ Current scope:
 - forum domain helpers under `forum/src/lib/forum-data.ts`
 - a repository boundary that keeps page rendering and API routes behind one forum data source contract
 - read-only routes for thread listing, thread detail, and runtime status
-- JSON routes for the same seed contract, including reply data on thread detail
+- a sqlite-backed repository option that can bootstrap from the current seed content
+- a minimal thread-creation API when sqlite mode is enabled
 - a dedicated GitHub Actions workflow that checks the forum app when `forum/**` changes
 - a container deployment baseline built from Next.js standalone output
-- a container smoke check that starts the forum and hits `/api/status`
+- a container smoke check that starts the forum, validates `/api/status`, and exercises sqlite thread creation
 
 ## Current product boundary
 
@@ -31,14 +32,15 @@ Included:
 - read-only API boundary
 - moderation and knowledge-stage fields reserved in the content model
 - a runtime status endpoint for deployment smoke checks
+- a first durable persistence path backed by sqlite file storage
 - standalone server artifact for container packaging
 
 Not included yet:
 
 - authentication
-- posting or replying
-- durable persistence layer
+- reply creation
 - search, notifications, bookmarks, or follows as real user actions
+- moderation workflows beyond reserved fields and write-state checks
 
 ## Local development
 
@@ -59,22 +61,36 @@ pnpm typecheck
 pnpm build
 pnpm start:standalone
 curl http://localhost:3000/api/status
+curl -X POST http://localhost:3000/api/threads \
+  -H 'content-type: application/json' \
+  -d '{
+    "sectionSlug": "newcomer-path",
+    "title": "想建立稳定作息，该从哪一步开始？",
+    "author": "测试用户",
+    "summary": "先把最小作息和听闻节奏稳定下来。",
+    "tags": ["新手", "作息"],
+    "openingPost": ["我目前还没有固定作息，想先把每天最小的修学节奏建立起来。"]
+  }'
 ```
 
 ## Runtime contract
 
-The forum currently runs in `seed-json` mode, but the page layer and API routes no longer read the JSON file directly. They now go through a single repository boundary, so the first durable database pass can replace the data source without rewriting the route or page structure.
+The forum still defaults to `seed-json` mode, but the page layer and API routes no longer read the JSON file directly. They now go through a single repository boundary, so durable storage can replace the seed source without rewriting the route or page structure.
 
-Current runtime fields:
+Supported runtime fields:
 
 - `FORUM_DATA_SOURCE=seed-json`
-- `FORUM_DATABASE_URL=` reserved for the first durable persistence pass
+- `FORUM_DATA_SOURCE=sqlite`
+- `FORUM_DATABASE_URL=file:./data/forum.db`
 
 Current JSON routes:
 
 - `GET /api/threads`
+- `POST /api/threads`
 - `GET /api/thread/[slug]`
 - `GET /api/status`
+
+`GET /api/status` now reports whether writes are enabled for the current data source. In `sqlite` mode, the repository initializes its schema automatically and seeds the database from `forum-content.json` the first time it starts.
 
 ## Container deployment
 
@@ -84,7 +100,10 @@ Build and run locally with Docker:
 
 ```bash
 docker build -t fabushi-forum ./forum
-docker run --rm -p 3000:3000 fabushi-forum
+docker run --rm -p 3000:3000 \
+  -e FORUM_DATA_SOURCE=sqlite \
+  -e FORUM_DATABASE_URL=file:/tmp/forum.db \
+  fabushi-forum
 curl http://localhost:3000/api/status
 ```
 
@@ -94,8 +113,8 @@ Runtime defaults:
 - `HOSTNAME=0.0.0.0`
 - `NODE_ENV=production`
 
-A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, and then verifies the container actually serves the runtime status endpoint.
+A dedicated GitHub Actions workflow now checks that the forum container image can be built whenever `forum/**` changes, validates the sqlite runtime status, and creates a thread through the API to confirm the first durable storage path is working.
 
 ## Why this is the next step
 
-After the structured seed content contract and standalone deployment baseline landed, the next highest-value gap was a clear runtime boundary for the forum's first persistent data source. This iteration keeps the current seed-backed product surface intact while making the data source explicit and adding a smoke-testable runtime endpoint, so the next pass can attach posting flow and durable storage without guessing where that boundary should live.
+After the structured seed content contract, standalone deployment baseline, and runtime status boundary landed, the next highest-value gap was a durable storage path that the deploy flow could actually exercise. This iteration keeps the existing product surface intact while adding a real sqlite-backed repository, a first write endpoint, and a smoke-checkable persistence mode. That gives the next pass a stable place to add replies, moderation events, and database-backed user workflows.

@@ -1,5 +1,6 @@
 import forumContent from "../data/forum-content.json";
 import type {
+  CreateForumThreadInput,
   ForumReply,
   ForumRepository,
   ForumRuntimeStatus,
@@ -8,6 +9,7 @@ import type {
   ForumThread,
   ForumThreadDetail,
 } from "./forum-data";
+import { ForumWriteUnavailableError } from "./forum-data";
 
 interface ForumContentStore {
   sections: ForumSection[];
@@ -65,6 +67,7 @@ export function createSeedForumRepository(): ForumRepository {
     dataSource: "seed-json",
     persistenceMode: "seed-only",
     databaseConfigured: Boolean(process.env.FORUM_DATABASE_URL?.trim()),
+    writesEnabled: false,
     counts: {
       sections: sections.length,
       threads: threads.length,
@@ -72,6 +75,10 @@ export function createSeedForumRepository(): ForumRepository {
     },
     generatedAt: new Date().toISOString(),
   });
+
+  const createThread = (_input: CreateForumThreadInput): ForumThreadDetail => {
+    throw new ForumWriteUnavailableError("Thread creation is only available when FORUM_DATA_SOURCE=sqlite.");
+  };
 
   return {
     dataSource: "seed-json",
@@ -86,5 +93,6 @@ export function createSeedForumRepository(): ForumRepository {
     getThreadDetailBySlug,
     getSnapshot,
     getRuntimeStatus,
+    createThread,
   };
 }

@@ -1,7 +1,8 @@
 import { createSeedForumRepository } from "./forum-seed-repository";
+import { createSqliteForumRepository } from "./forum-sqlite-repository";
 
-export type ForumDataSource = "seed-json";
-export type ForumPersistenceMode = "seed-only";
+export type ForumDataSource = "seed-json" | "sqlite";
+export type ForumPersistenceMode = "seed-only" | "sqlite-file";
 export type ForumModerationState = "published" | "needs-review" | "archived";
 export type ForumKnowledgeStage = "discussion" | "candidate" | "archived";
 
@@ -63,17 +64,41 @@ export interface ForumSnapshot {
   source: ForumDataSource;
 }
 
+export interface CreateForumThreadInput {
+  sectionSlug: string;
+  title: string;
+  summary: string;
+  author: string;
+  tags: string[];
+  openingPost: string[];
+}
+
 export interface ForumRuntimeStatus {
   service: "forum";
   dataSource: ForumDataSource;
   persistenceMode: ForumPersistenceMode;
   databaseConfigured: boolean;
+  writesEnabled: boolean;
   counts: {
     sections: number;
     threads: number;
     replies: number;
   };
   generatedAt: string;
+}
+
+export class ForumWriteUnavailableError extends Error {
+  constructor(message = "Forum writes are not enabled for the current data source.") {
+    super(message);
+    this.name = "ForumWriteUnavailableError";
+  }
+}
+
+export class ForumInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ForumInputError";
+  }
 }
 
 export interface ForumRepository {
@@ -89,9 +114,34 @@ export interface ForumRepository {
   getThreadDetailBySlug(slug: string): ForumThreadDetail | undefined;
   getSnapshot(): ForumSnapshot;
   getRuntimeStatus(): ForumRuntimeStatus;
+  createThread(input: CreateForumThreadInput): ForumThreadDetail;
 }
 
-const forumRepository = createSeedForumRepository();
+function resolveForumDataSource(): ForumDataSource {
+  const configuredSource = process.env.FORUM_DATA_SOURCE?.trim();
+
+  if (!configuredSource || configuredSource === "seed-json") {
+    return "seed-json";
+  }
+
+  if (configuredSource === "sqlite") {
+    return "sqlite";
+  }
+
+  throw new Error(`Unsupported FORUM_DATA_SOURCE: ${configuredSource}`);
+}
+
+function createForumRepository(): ForumRepository {
+  const dataSource = resolveForumDataSource();
+
+  if (dataSource === "sqlite") {
+    return createSqliteForumRepository();
+  }
+
+  return createSeedForumRepository();
+}
+
+const forumRepository = createForumRepository();
 
 export const FORUM_DATA_SOURCE = forumRepository.dataSource;
 export const FORUM_PERSISTENCE_MODE = forumRepository.persistenceMode;
@@ -122,4 +172,8 @@ export function getForumSnapshot() {
 
 export function getForumRuntimeStatus() {
   return forumRepository.getRuntimeStatus();
+}
+
+export function createForumThread(input: CreateForumThreadInput) {
+  return forumRepository.createThread(input);
 }
