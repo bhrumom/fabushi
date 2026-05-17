@@ -61,10 +61,12 @@ jobs:
           node forum/scripts/scaffold-deploy-env.mjs \
             --deploy-env-path /tmp/forum-deploy-preview-scaffold.env \
             --forum-port 3001 \
-            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data
+            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data \
+            --deploy-check-url http://127.0.0.1:3001
 
           grep "FORUM_DEPLOYMENT_STAGE=preview" /tmp/forum-deploy-preview-scaffold.env
           grep "FORUM_ENABLE_WRITES=false" /tmp/forum-deploy-preview-scaffold.env
+          grep "FORUM_DEPLOY_CHECK_URL=http://127.0.0.1:3001" /tmp/forum-deploy-preview-scaffold.env
 
       - name: Reject writable preview scaffold without access code
         shell: bash
@@ -84,11 +86,13 @@ jobs:
             --forum-image fabushi-forum \
             --forum-port 3001 \
             --forum-data-dir "/tmp/fabushi forum deploy compose data" \
+            --deploy-check-url http://127.0.0.1:3001 \
             --write-access-code forum-preview-2026
 
           grep 'FORUM_DATA_DIR="/tmp/fabushi forum deploy compose data"' /tmp/forum-deploy-writable-preview.env
           grep "FORUM_ENABLE_WRITES=true" /tmp/forum-deploy-writable-preview.env
           grep "FORUM_WRITE_ACCESS_CODE=forum-preview-2026" /tmp/forum-deploy-writable-preview.env
+          grep "FORUM_DEPLOY_CHECK_URL=http://127.0.0.1:3001" /tmp/forum-deploy-writable-preview.env
 
       - name: Prepare quoted writable preview deploy env sample
         run: |
@@ -96,6 +100,7 @@ jobs:
           FORUM_IMAGE="fabushi-forum"
           FORUM_PORT="3001"
           FORUM_DATA_DIR="/tmp/fabushi-forum-deploy-compose-data" # quoted path should still parse cleanly
+          FORUM_DEPLOY_CHECK_URL="https://forum-preview.fabushi.test/" # handoff helpers should normalize this
           FORUM_DEPLOYMENT_STAGE="preview"
           FORUM_PUBLIC_BASE_URL="" # preview should stay noindex
           FORUM_DATA_SOURCE='sqlite'
@@ -116,10 +121,9 @@ jobs:
             --exercise-write-flow true \
             --format json >/tmp/forum-live-target.json
 
-      - name: Prepare bundled live target sample from quoted deploy env
+      - name: Prepare bundled live target sample from deploy env check URL
         run: |
           node forum/scripts/prepare-live-deployment-vars.mjs \
-            --forum-url "https://forum-preview.fabushi.test/" \
             --deploy-env-path /tmp/forum-deploy-writable-preview-quoted.env \
             --exercise-write-flow true \
             --format github-cli-bundled \
@@ -173,6 +177,7 @@ jobs:
           grep "FORUM_DEPLOYMENT_STAGE=production" /tmp/forum-deploy-production.env
           grep "FORUM_PUBLIC_BASE_URL=https://forum.fabushi.test" /tmp/forum-deploy-production.env
           grep "FORUM_ENABLE_WRITES=false" /tmp/forum-deploy-production.env
+          grep "FORUM_DEPLOY_CHECK_URL=https://forum.fabushi.test" /tmp/forum-deploy-production.env
 
       - name: Build forum container image
         run: docker build -t fabushi-forum ./forum

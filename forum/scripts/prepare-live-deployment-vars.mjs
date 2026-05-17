@@ -153,12 +153,6 @@ function renderGithubCliBundledFormat(liveTarget, deployEnv, githubRepo) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const forumUrl = normalizeUrl(args["forum-url"]?.trim() || "");
-
-  if (!forumUrl) {
-    throw new Error("Missing required --forum-url.");
-  }
-
   const format = args.format?.trim() || "env";
   if (!["env", "json", "github-cli", "github-cli-bundled"].includes(format)) {
     throw new Error(`Expected --format to be env, json, github-cli, or github-cli-bundled, received: ${format}`);
@@ -169,6 +163,12 @@ async function main() {
 
   const deployEnvContent = await readFile(args["deploy-env-path"], "utf-8");
   const deployEnv = parseDotEnv(deployEnvContent);
+  const forumUrl = normalizeUrl(args["forum-url"]?.trim() || deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || "");
+
+  if (!forumUrl) {
+    throw new Error("Missing required --forum-url and deploy env FORUM_DEPLOY_CHECK_URL.");
+  }
+
   const liveTarget = buildLiveTarget({ forumUrl, deployEnv, exerciseWriteFlow });
 
   if (format === "github-cli") {
