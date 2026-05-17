@@ -166,10 +166,15 @@ Start the forum:
 
 ```bash
 docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
+pnpm smoke:deploy-env -- \
+  --forum-url http://127.0.0.1:3000 \
+  --deploy-env-path .env.deploy
 curl http://localhost:3000/api/health
 curl http://localhost:3000/api/status
 curl http://localhost:3000/robots.txt
 ```
+
+The smoke command derives the expected runtime directly from `.env.deploy` and verifies the deployed forum's health endpoint, runtime status, headers, `robots.txt`, and page metadata against that same file.
 
 Expected preview signals:
 
@@ -189,6 +194,15 @@ FORUM_WRITE_ACCESS_CODE=forum-preview-2026
 
 After restarting the compose stack, the runtime stays preview-only and still requires the shared code before thread or reply creation succeeds.
 
+To validate the writable preview against the same deploy env and also exercise the live thread-and-reply path, run:
+
+```bash
+pnpm smoke:deploy-env -- \
+  --forum-url http://127.0.0.1:3000 \
+  --deploy-env-path .env.deploy \
+  --exercise-write-flow true
+```
+
 ## Production indexing runtime
 
 Switch the deployment boundary only when the public origin is ready:
@@ -203,6 +217,9 @@ Bring the stack back up and verify:
 
 ```bash
 docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
+pnpm smoke:deploy-env -- \
+  --forum-url https://forum.fabushi.com \
+  --deploy-env-path .env.deploy
 curl http://localhost:3000/api/health
 curl http://localhost:3000/api/status
 curl http://localhost:3000/robots.txt
