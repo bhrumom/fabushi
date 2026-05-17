@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/what-are-the-six-paramitas");
 const pageTitle = `六度分别是什么 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理六度分别是什么：布施、持戒、忍辱、精进、禅定、般若不是孤立清单，而是把菩提心、修行方法与日常功课接回生活的六个方向。";
+  "面向初学者梳理六度分别是什么：布施、持戒、忍辱、精进、禅定、般若不是孤立清单，而是把菩提心、《金刚经》里的般若问题、佛学基本概念、修行方法与日常功课接回生活的六个方向。";
 
 const sixParamitaFoundations = [
   {
@@ -91,6 +91,36 @@ const practiceSequence = [
   },
 ] as const;
 
+const scriptureBridgeSteps = [
+  {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "从《金刚经》接到六度",
+    labelEn: "Diamond Sutra to Six Paramitas",
+    titleZh: "如果你是先在《金刚经》里被般若、无住和松动固着的语言打动，下一步先把这种感受接回更清楚的六度路径。",
+    titleEn: "If the Diamond Sutra first moved you through wisdom, non-abiding, and the loosening of rigid views, the next step is to return that experience to a clearer six-paramitas path.",
+    descriptionZh: "很多人第一次真正想继续理解六度，不是在概念清单里，而是在《金刚经》的语言里开始追问：这些义理为什么不会只停在观念里，而会回到做人做事与修行方法？把这一步说清楚，经典阅读才不容易只停在震动感上。",
+    descriptionEn: "Many readers first want to understand the six paramitas more deeply not through a concept list, but through the Diamond Sutra's language. The question becomes why these teachings do not stay in ideas alone, but return to conduct and actual practice. Clarifying that bridge helps scripture study continue beyond the initial impact.",
+  },
+  {
+    href: "/buddhist-concepts",
+    labelZh: "从六度接回佛学基本概念",
+    labelEn: "Six Paramitas to Concepts Hub",
+    titleZh: "如果你已经发现六度不只是六个名词，下一步可以回到更完整的概念地图，看它和因果、菩提心、空性怎样连成一条路。",
+    titleEn: "If the six paramitas are no longer just six terms, the next step is to return to the wider concepts hub and see how they join karma, bodhicitta, and emptiness on one path.",
+    descriptionZh: "很多人练着练着会发现，问题不会只停在“六度是什么意思”，而会继续连到因果为什么让方法要相续、菩提心为什么让发心变宽、空性为什么让般若不那么僵硬。先回到概念总览，会比在单页里硬撑更稳。",
+    descriptionEn: "Many readers eventually discover that the question does not stop at what the six paramitas mean. It keeps connecting to karma, bodhicitta, and emptiness. Returning to the concepts hub is often steadier than forcing every connection to remain on a single leaf page.",
+  },
+  {
+    href: "/daily-practice",
+    labelZh: "从六度接回日常功课",
+    labelEn: "Six Paramitas to Daily Practice",
+    titleZh: "如果你最关心的是怎样让六度不要只停在理解里，下一步先把它接回晨起、白天和晚间的小动作。",
+    titleEn: "If your main concern is how the six paramitas can live beyond explanation, the next step is to return them to small practices across morning, daytime, and evening.",
+    descriptionZh: "六度真正留得住，往往不是靠一次想明白，而是靠很轻但持续的功课，让自己在一天里一次次更愿意回来、更谨慎地说话、更能忍一点、少一点只围着自己打转。",
+    descriptionEn: "The six paramitas usually stay alive not through one decisive insight, but through a light and continuous routine that slowly builds return, care in speech, patience, and less self-enclosure across the day.",
+  },
+] as const;
+
 const commonMistakes = [
   {
     titleZh: "把六度当成一张背诵清单，却没有回到日常处境",
@@ -121,6 +151,33 @@ const relatedPaths = [
     titleEn: "Return to the intention that gives the six paramitas their direction.",
     descriptionZh: "如果你想先看清六度为什么会和大乘修学连在一起，可以先回到菩提心这一页。",
     descriptionEn: "Return here first if you want to see why the six paramitas belong so naturally to Mahayana aspiration.",
+  },
+  {
+    href: "/buddhist-concepts",
+    labelZh: "佛学基本概念",
+    labelEn: "Buddhist Concepts",
+    titleZh: "先回到一张更完整的概念地图，再决定自己现在更该继续看哪一个词。",
+    titleEn: "Return to a wider concepts map before deciding which concept deserves attention next.",
+    descriptionZh: "如果你已经发现自己的问题不只停在六度一个词上，而是开始和因果、菩提心、空性与修行方法连在一起，这一页会更适合先打开。",
+    descriptionEn: "Open this first if your question is no longer only about the six paramitas and is beginning to connect with karma, bodhicitta, emptiness, and actual practice.",
+  },
+  {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "初学者佛经推荐",
+    labelEn: "Beginner Sutra Picks",
+    titleZh: "把《金刚经》为什么常会把人带到六度，放回更具体的经典入口里。",
+    titleEn: "Return the bridge from the Diamond Sutra to the six paramitas to a more specific beginner scripture entry point.",
+    descriptionZh: "如果你已经发现自己的问题更贴近《金刚经》、般若和松动固着看法，而不是抽象概念本身，这一页会更适合继续往下看。",
+    descriptionEn: "This page is more specific if your question is already closer to the Diamond Sutra, wisdom, and loosening rigid views than to abstract concept language alone.",
+  },
+  {
+    href: "/sutra-guide",
+    labelZh: "佛经导读",
+    labelEn: "Sutra Guide",
+    titleZh: "把经典阅读、般若问题和修行方向重新放回同一条路上。",
+    titleEn: "Return scripture study, wisdom questions, and the direction of practice to the same path.",
+    descriptionZh: "如果你已经发现自己常常是从《金刚经》、听诵或经典语言里先被打动，这一页会更适合继续往下走。",
+    descriptionEn: "This page is the better next step if you often find yourself moved first through the Diamond Sutra, listening, or the language of scripture itself.",
   },
   {
     href: "/what-is-emptiness",
@@ -192,10 +249,22 @@ const faqItems = [
     answerEn: "No. The six paramitas can become very deep, but they can also begin in very small ways. Giving a little more space, speaking a little more carefully, or returning after the rhythm breaks already belongs to this training.",
   },
   {
+    questionZh: "《金刚经》为什么常会把问题带到六度？",
+    questionEn: "Why does the Diamond Sutra so often lead people into the six paramitas?",
+    answerZh: "很多人被《金刚经》吸引，是因为它能松动固着看法；但继续往前时，更需要知道这种般若为什么不会只停在观念里，而会回到布施、持戒、忍辱、精进、禅定这些更具体的练习方向。六度正好能把这一步接起来。",
+    answerEn: "Many readers are drawn to the Diamond Sutra because it loosens rigid views, but the next need is often seeing why that wisdom does not remain only an idea and instead returns to generosity, discipline, patience, diligence, and meditation. The six paramitas are the natural bridge for that step.",
+  },
+  {
     questionZh: "般若是不是一定要懂很深的空性，才能算开始？",
     questionEn: "Does wisdom mean I need a deep understanding of emptiness before I can begin?",
     answerZh: "不一定。对初学者来说，般若可以先从更朴素的地方开始，例如慢慢看清哪些执着、判断和习惯正在让自己更苦。真正更深的义理会随着阅读、思惟和修行再慢慢展开，不必第一天就讲得很高。",
     answerEn: "Not necessarily. For beginners, wisdom can start more simply by seeing which attachments, judgments, and habits are deepening confusion. Deeper doctrine unfolds through reading, reflection, and practice over time and does not need to become lofty on day one.",
+  },
+  {
+    questionZh: "六度和佛学基本概念是什么关系？",
+    questionEn: "How do the six paramitas connect with the wider beginner concept map?",
+    answerZh: "六度不会孤立存在。它会继续连到菩提心为什么让方向变宽、因果为什么让方法要相续、空性为什么让般若不那么僵硬。把六度放回佛学基本概念总览里看，通常更容易明白它不是一张单独清单，而是整条修学路径中的一层。",
+    answerEn: "The six paramitas do not stand alone. They keep connecting back to how bodhicitta widens direction, how karma explains continuity, and how emptiness keeps wisdom from becoming rigid. Returning the six paramitas to the wider concepts hub usually makes it easier to see that they are not a separate checklist but one layer inside a larger path.",
   },
   {
     questionZh: "六度和日常功课有什么关系？",
@@ -222,7 +291,9 @@ export const metadata: Metadata = {
     "六度",
     "六度波罗蜜",
     "布施持戒忍辱精进禅定般若",
+    "金刚经 六度",
     "空性怎么理解",
+    "佛学基本概念",
     "菩提心",
     "大乘修行",
     "Fabushi",
@@ -257,7 +328,7 @@ export default function WhatAreTheSixParamitasPage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["六度", "六度波罗蜜", "菩提心", "大乘修行"],
+        about: ["六度", "六度波罗蜜", "菩提心", "大乘修行", "金刚经", "佛学基本概念入门", "空性"],
       },
       {
         "@type": "BreadcrumbList",
@@ -277,6 +348,12 @@ export default function WhatAreTheSixParamitasPage() {
           {
             "@type": "ListItem",
             position: 3,
+            name: "佛学基本概念入门",
+            item: siteUrl("/buddhist-concepts"),
+          },
+          {
+            "@type": "ListItem",
+            position: 4,
             name: "六度分别是什么",
             item: pageUrl,
           },
@@ -289,6 +366,17 @@ export default function WhatAreTheSixParamitasPage() {
           "@type": "ListItem",
           position: index + 1,
           name: item.titleZh,
+          description: item.descriptionZh,
+        })),
+      },
+      {
+        "@type": "ItemList",
+        name: "六度的经典与实践桥接路径",
+        itemListElement: scriptureBridgeSteps.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.labelZh,
+          url: siteUrl(item.href),
           description: item.descriptionZh,
         })),
       },
@@ -358,6 +446,12 @@ export default function WhatAreTheSixParamitasPage() {
             <LocalizedText
               zh="所以，六度不是和生活分开的另一套课程。它更像是在提醒人：修行不只是在安静的时候坐一坐，也会反映在今天怎么说话、怎么回应不顺、怎么把节奏接回来、怎么少一点只围着自己打转。对初学者来说，六度最有帮助的地方，不是一次把六个方向都做满，而是先找到自己现在最容易卡住的那一度。"
               en="The six paramitas are therefore not a separate course outside of life. They remind us that practice does not only happen in quiet formal moments, but also in how we speak today, respond to difficulty, return to rhythm, and loosen a path that circles too tightly around the self. For beginners, their real value is not filling out all six at once, but seeing which one feels most difficult right now."
+            />
+          </p>
+          <p>
+            <LocalizedText
+              zh="很多人第一次真正想继续理解六度，不是在概念清单里，而是在《金刚经》或般若类经典的语言里。问题常常不是“六度到底是哪六个”，而是“这些义理为什么不会只停在观念里，为什么会继续回到布施、持戒、忍辱、精进、禅定，乃至每天怎样做人做事”。把《金刚经》的入口、六度的概念页和后面的功课路径收回同一条线上，阅读才不容易断在最初的震动感上。"
+              en="Many readers first want to understand the six paramitas more deeply not through a concept list, but through the language of the Diamond Sutra and other wisdom texts. The question is often not only which six they are, but why these teachings do not stay as ideas and instead return to generosity, discipline, patience, diligence, meditation, and the way life is actually lived. Bringing the Diamond Sutra doorway, the six-paramitas page, and the later routine pages back onto one line helps reading continue beyond the first impact."
             />
           </p>
           <p>
@@ -455,6 +549,35 @@ export default function WhatAreTheSixParamitasPage() {
       <section className="band">
         <div className="section-heading tight">
           <p>
+            <LocalizedText zh="下一步接哪里" en="Where to Continue" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="把《金刚经》、六度、概念总览和日常练习重新接成同一条继续阅读路径。"
+              en="Reconnect the Diamond Sutra, the six paramitas, the concepts hub, and daily practice into one onward path."
+            />
+          </h2>
+        </div>
+        <div className="path-grid">
+          {scriptureBridgeSteps.map((item) => (
+            <a key={item.href} className="path-card" href={siteHref(item.href)}>
+              <h3>
+                <LocalizedText zh={item.labelZh} en={item.labelEn} />
+              </h3>
+              <strong>
+                <LocalizedText zh={item.titleZh} en={item.titleEn} />
+              </strong>
+              <p>
+                <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+              </p>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt">
+        <div className="section-heading tight">
+          <p>
             <LocalizedText zh="常见误区" en="Common Mistakes" />
           </p>
           <h2>
@@ -478,15 +601,15 @@ export default function WhatAreTheSixParamitasPage() {
         </div>
       </section>
 
-      <section className="band alt">
+      <section className="band">
         <div className="section-heading tight">
           <p>
             <LocalizedText zh="继续阅读" en="Keep Going" />
           </p>
           <h2>
             <LocalizedText
-              zh="把这张概念页接回更完整的入门、发心、方法和日常路径。"
-              en="Use this concept page as a bridge back into the wider beginner, aspiration, practice, and daily-life paths."
+              zh="把这张概念页接回更完整的入门、发心、经典、方法和日常路径。"
+              en="Use this concept page as a bridge back into the wider beginner, aspiration, scripture, practice, and daily-life paths."
             />
           </h2>
         </div>
@@ -509,7 +632,7 @@ export default function WhatAreTheSixParamitasPage() {
         </div>
       </section>
 
-      <section className="band faq-band">
+      <section className="band alt faq-band">
         <div className="section-heading tight">
           <p>FAQ</p>
           <h2>
@@ -535,8 +658,8 @@ export default function WhatAreTheSixParamitasPage() {
           <a className="primary-action" href={siteHref("/download")}>
             <LocalizedText zh="下载法布施" en="Download Fabushi" />
           </a>
-          <a className="secondary-action" href={siteHref("/what-is-bodhicitta")}>
-            <LocalizedText zh="返回菩提心是什么意思" en="Back to What Bodhicitta Means" />
+          <a className="secondary-action" href={siteHref("/buddhist-concepts")}>
+            <LocalizedText zh="返回佛学基本概念入门" en="Back to Buddhist Concepts" />
           </a>
         </div>
       </section>
