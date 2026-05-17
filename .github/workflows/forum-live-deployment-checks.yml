@@ -35,6 +35,14 @@ on:
         options:
           - "false"
           - "true"
+      exercise_write_flow:
+        description: For preview runtimes only. When true, the live check will create a thread and reply against the deployed forum.
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
   contents: read
@@ -42,6 +50,8 @@ permissions:
 jobs:
   forum-live-deployment:
     runs-on: ubuntu-latest
+    env:
+      FORUM_WRITE_ACCESS_CODE: ${{ secrets.FORUM_LIVE_WRITE_ACCESS_CODE }}
     steps:
       - name: Checkout forum workspace only
         uses: actions/checkout@v4
@@ -63,4 +73,5 @@ jobs:
             --deployment-stage "${{ inputs.deployment_stage }}" \
             --public-base-url "${{ inputs.public_base_url }}" \
             --writes-enabled "${{ inputs.writes_enabled }}" \
-            --requires-access-code "${{ inputs.requires_access_code }}"
+            --requires-access-code "${{ inputs.requires_access_code }}" \
+            --exercise-write-flow "${{ inputs.exercise_write_flow }}"
