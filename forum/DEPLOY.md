@@ -7,6 +7,12 @@ This guide turns the forum's published GHCR image into a repeatable preview or p
 - `docker-compose.deploy.yml`
 - `.env.deploy.example`
 
+The repository workflow `Deploy compose checks - Forum` now boots this same compose path in three deployment postures so the server-facing runtime stays covered in CI:
+
+- sqlite read-only preview
+- sqlite writable preview with a shared write-access code
+- sqlite production indexing with an explicit public base URL
+
 Copy the example environment file first:
 
 ```bash
