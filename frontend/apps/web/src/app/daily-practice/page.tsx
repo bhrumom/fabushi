@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/daily-practice");
 const pageTitle = `日常功课怎么安排 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理日常功课怎么安排：晨起、白天与晚间可以怎样放进禅修、经文听诵、念佛、阅读与简短回顾，帮助菩提心、学佛修行、六度、空性理解与生活真正接在一起。";
+  "面向初学者梳理日常功课怎么安排：晨起、白天与晚间可以怎样放进禅修、经文听诵、念佛、阅读与简短回顾，并帮助因果、菩提心、六度、空性与佛学基本概念理解真正接回生活。";
 
 const routinePrinciples = [
   {
@@ -73,6 +73,27 @@ const gentleSchedule = [
   },
 ] as const;
 
+const conceptBridgeSteps = [
+  {
+    titleZh: "因果：为什么功课总断，总会回到习惯、选择和结果这层问题",
+    titleEn: "Karma: why a broken routine often returns to habit, choice, and result",
+    descriptionZh: "很多人做日常功课时真正卡住的，并不是不知道该做什么，而是明明知道要修，却还是会拖延、散乱、一下太满一下全停。回到因果，会更容易看见这些小动作怎样慢慢养成后面的方向，而不是把中断只看成一次失败。",
+    descriptionEn: "Many people do not get stuck because they lack methods, but because they keep swinging between delay, distraction, overload, and stopping altogether. Returning to karma helps show how these small actions gradually shape direction instead of treating every interruption as a final failure.",
+  },
+  {
+    titleZh: "菩提心与六度：为什么功课不只是完成任务，而会慢慢长成待人处事的方向",
+    titleEn: "Bodhicitta and the six paramitas: why a routine becomes more than task completion",
+    descriptionZh: "如果功课只剩“今天有没有做完”，它很容易越做越硬。回到菩提心和六度，会更容易看见晨起、白天和晚间这些小动作，怎样慢慢长成更宽的发心、忍耐、节奏与待人处事，而不只是维持一份任务感。",
+    descriptionEn: "If a routine becomes only a question of whether it was completed, it can quickly grow rigid. Returning to bodhicitta and the six paramitas helps show how small actions across morning, daytime, and evening widen into aspiration, patience, steadiness, and conduct instead of remaining a checklist.",
+  },
+  {
+    titleZh: "空性与概念总览：为什么功课越往前走，越需要一张更完整的理解地图",
+    titleEn: "Emptiness and the concepts hub: why practice needs a wider map as it matures",
+    descriptionZh: "练习一段时间以后，很多人会开始问：我是不是又把功课抓得太死？这些概念之间到底怎么连？这时先回到佛学基本概念总览，再决定是继续看空性、因果、菩提心还是六度，往往会比只在功课页里硬撑更稳。",
+    descriptionEn: "After some time, many people begin asking whether they are gripping the routine too tightly and how the concepts actually connect. Returning to the concepts hub first, then moving into emptiness, karma, bodhicitta, or the six paramitas, is often steadier than forcing all those questions to remain inside a routine page alone.",
+  },
+] as const;
+
 const commonMistakes = [
   {
     titleZh: "把日常功课想成一次要做完的清单",
@@ -103,6 +124,24 @@ const relatedPaths = [
     titleEn: "Return to the broader map of beginner practice methods.",
     descriptionZh: "如果你还在看禅修、听诵、念佛、阅读和记录之间如何配合，可以先回到总览页。",
     descriptionEn: "Return to the overview first if you are still mapping how meditation, listening, recitation, reading, and notes fit together.",
+  },
+  {
+    href: "/buddhist-concepts",
+    labelZh: "佛学基本概念",
+    labelEn: "Buddhist Concepts",
+    titleZh: "先回到一张更完整的概念地图，再决定自己卡在哪个概念上。",
+    titleEn: "Return to a wider concepts map before choosing which concept needs attention now.",
+    descriptionZh: "如果你已经发现自己并不只是缺功课安排，而是总被因果、菩提心、六度、空性这些词反复卡住，这一页会更适合先打开。",
+    descriptionEn: "Open this first if you have started to see that the problem is not only routine design, but repeated friction around karma, bodhicitta, the six paramitas, or emptiness.",
+  },
+  {
+    href: "/what-is-karma",
+    labelZh: "因果是什么意思",
+    labelEn: "What Karma Means",
+    titleZh: "把功课为什么总断、习惯怎样慢慢形成结果先放清楚。",
+    titleEn: "Clarify why routines keep breaking and how habits gradually become results.",
+    descriptionZh: "如果你已经发现自己最常卡在“为什么知道该修，却总是留不住节奏”，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if your main friction has become why you know you should practice but still cannot keep the rhythm alive.",
   },
   {
     href: "/what-is-bodhicitta",
@@ -183,6 +222,12 @@ const faqItems = [
     answerEn: "It helps more to ask what you need most right now. If steadiness is the need, let short meditation lead. If you need an easier rhythm, recitation or listening can come first. If you need orientation, begin by placing guide reading into the routine.",
   },
   {
+    questionZh: "因果是什么意思，和日常功课有什么关系？",
+    questionEn: "What does karma have to do with a daily practice routine?",
+    answerZh: "如果不知道因果怎样和习惯、选择、结果连在一起，功课很容易只剩一阵一阵的热情。回到因果，会更容易看见：晨起有没有回来、白天有没有一个提醒点、晚间断掉以后有没有重来，这些很小的动作，正在慢慢形成后面的方向。",
+    answerEn: "When karma is separated from habit, choice, and result, a routine can shrink into bursts of enthusiasm. Returning to karma helps show how coming back in the morning, keeping one reminder in the day, and beginning again at night are already shaping the path that follows.",
+  },
+  {
     questionZh: "菩提心是什么意思，和日常功课有什么关系？",
     questionEn: "What does bodhicitta have to do with a daily practice routine?",
     answerZh: "如果没有发心，功课很容易只剩完成任务。更稳的方向，是让晨起、白天和晚间的这些小动作，慢慢回到“我为什么学、愿意把这条路带向哪里”这件事上。这样功课才不只是维持自己，而会开始长出更宽的方向和柔软。",
@@ -225,6 +270,8 @@ export const metadata: Metadata = {
     "学佛日常功课",
     "初学者功课安排",
     "居士日常修行",
+    "佛学基本概念",
+    "因果是什么意思",
     "菩提心是什么意思",
     "六度分别是什么",
     "空性怎么理解",
@@ -261,7 +308,7 @@ export default function DailyPracticePage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["日常功课", "菩提心", "学佛修行", "初学者功课安排", "空性理解"],
+        about: ["日常功课", "因果", "菩提心", "佛学基本概念", "学佛修行", "初学者功课安排", "空性理解"],
       },
       {
         "@type": "BreadcrumbList",
@@ -290,6 +337,16 @@ export default function DailyPracticePage() {
         "@type": "ItemList",
         name: "日常功课的一日节奏",
         itemListElement: dailyMoments.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.titleZh,
+          description: item.descriptionZh,
+        })),
+      },
+      {
+        "@type": "ItemList",
+        name: "日常功课和概念之间的桥接路径",
+        itemListElement: conceptBridgeSteps.map((item, index) => ({
           "@type": "ListItem",
           position: index + 1,
           name: item.titleZh,
@@ -372,6 +429,12 @@ export default function DailyPracticePage() {
           </p>
           <p>
             <LocalizedText
+              zh="很多人做到这里以后，还会开始问：为什么我明明知道要修，节奏却总是断？为什么功课一多，就又只剩任务感？为什么晨起、白天和晚间这些小动作，做着做着又会回到因果、菩提心、六度、空性这些概念？这通常不是跑题，而是说明功课页已经把人带到更深一点的理解层了。先回到佛学基本概念总览，再决定自己更该继续看哪一张概念页，往往会比只在功课页里硬撑更稳。"
+              en="At this point many people begin to ask why the rhythm keeps breaking even when they know they should practice, why routines turn back into tasks when they multiply, or why these small actions across morning, daytime, and evening keep returning to karma, bodhicitta, the six paramitas, and emptiness. This is usually not a distraction. It often means the routine page has already carried the reader into a deeper layer of understanding. Returning to the concepts hub first, then choosing the concept page that matches the friction, is often steadier than forcing everything to remain inside a routine page alone."
+            />
+          </p>
+          <p>
+            <LocalizedText
               zh="Fabushi 更适合承接这条轻节奏里的辅助部分，例如经文听诵、禅修提醒、简短记录和帮助维持连续性。它不能替代长期学习本身，但能帮助你把“知道应该修”慢慢变成“今天真的做了一点”。"
               en="Fabushi fits best on the support side of this lighter rhythm through scripture listening, meditation reminders, short notes, and continuity. It does not replace long-term learning itself, but it can help practice move from something you know you should do to something you actually touched today."
             />
@@ -446,6 +509,32 @@ export default function DailyPracticePage() {
         <div className="compare-grid">
           {gentleSchedule.map((item) => (
             <article key={item.titleEn} className="compare-card">
+              <h3>
+                <LocalizedText zh={item.titleZh} en={item.titleEn} />
+              </h3>
+              <p>
+                <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band feature-band">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="回到概念" en="Return to Concepts" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="练着练着又回到因果、菩提心、六度和空性，往往不是岔开，而是路径开始变深。"
+              en="When practice keeps returning to karma, bodhicitta, the six paramitas, and emptiness, the path is often deepening rather than drifting."
+            />
+          </h2>
+        </div>
+        <div className="feature-grid">
+          {conceptBridgeSteps.map((item) => (
+            <article key={item.titleEn} className="feature-card">
               <h3>
                 <LocalizedText zh={item.titleZh} en={item.titleEn} />
               </h3>
@@ -540,8 +629,8 @@ export default function DailyPracticePage() {
           <a className="primary-action" href={siteHref("/download")}>
             <LocalizedText zh="下载法布施" en="Download Fabushi" />
           </a>
-          <a className="secondary-action" href={siteHref("/practice-guide")}>
-            <LocalizedText zh="返回修行方法总览" en="Back to Practice Guide" />
+          <a className="secondary-action" href={siteHref("/buddhist-concepts")}>
+            <LocalizedText zh="继续看佛学基本概念" en="Continue to Buddhist Concepts" />
           </a>
         </div>
       </section>
