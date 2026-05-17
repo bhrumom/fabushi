@@ -144,6 +144,8 @@ dependencies:
 dependency_overrides:
   flutter_gl:
     path: lib/packages/flutter_gl
+  three_dart:
+    path: lib/packages/three_dart
   archive: ^4.0.7
   http: ^1.2.0
   image: ^4.5.4

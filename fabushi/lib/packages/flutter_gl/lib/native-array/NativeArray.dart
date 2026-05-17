@@ -1,3 +1,5 @@
+// @dart=2.17
+
 part of native_array;
 
 class Float32Array extends NativeFloat32Array {

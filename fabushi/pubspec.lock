@@ -1887,10 +1887,9 @@ packages:
   three_dart:
     dependency: "direct main"
     description:
-      name: three_dart
-      sha256: "102ff2cc65c2dcb805166c7dc5fa00a9a3252b5aec34fb435cc558a7487dc40b"
-      url: "https://pub.dev"
-    source: hosted
+      path: "lib/packages/three_dart"
+      relative: true
+    source: path
     version: "0.0.16"
   three_dart_jsm:
     dependency: "direct main"
