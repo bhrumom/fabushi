@@ -182,6 +182,29 @@ const FAQ_PREVIEW = [
   },
 ] as const;
 
+const HERO_GUIDE_LINKS = [
+  {
+    href: "/start-learning-buddhism",
+    zh: "学佛从哪里开始",
+    en: "Where to Begin",
+  },
+  {
+    href: "/buddhist-concepts",
+    zh: "佛学基本概念",
+    en: "Buddhist Concepts",
+  },
+  {
+    href: "/practice-guide",
+    zh: "修行方法总览",
+    en: "Practice Guide",
+  },
+  {
+    href: "/sutra-guide",
+    zh: "佛经导读",
+    en: "Sutra Guide",
+  },
+] as const;
+
 const DHARMA_PATHS = [
   {
     href: "/start-learning-buddhism",
@@ -447,10 +470,13 @@ export default async function HomePage() {
               </span>
             </div>
             <h1 id="home-title">
-              <LocalizedText zh="全球法布施" en="Global Dharma Sharing" />
+              <LocalizedText zh="学佛，从今天的一小步开始。" en="Begin buddhadharma with one small step." />
             </h1>
             <p className="hero-subtitle">
-              <LocalizedText zh="让善意跨越地域，流向世界各地。" en="Let compassion travel across regions and reach the world." />
+              <LocalizedText
+                zh="从学佛入门、佛学基本概念、因果、菩提心、六度与空性，到经文听诵、禅修、日常功课与全球法布施，先把学习路径和练习工具放回同一个入口。"
+                en="From beginner dharma questions and a clearer concepts hub to sutra listening, meditation, daily rhythm, and global giving, Fabushi keeps learning paths and practice tools inside one entry point."
+              />
             </p>
             <div className="hero-actions">
               {androidBetaChannel ? (
@@ -472,6 +498,19 @@ export default async function HomePage() {
                 </a>
               )}
             </div>
+            <div className="release-section-stack" aria-label="Dharma learning shortcuts / 学佛入口">
+              <p className="eyebrow">
+                <LocalizedText zh="先从这些入口开始" en="Start with these paths" />
+              </p>
+              <div className="site-nav-links">
+                {HERO_GUIDE_LINKS.map((item) => (
+                  <a key={item.href} href={siteHref(item.href)}>
+                    <LocalizedText zh={item.zh} en={item.en} />
+                  </a>
+                ))}
+              </div>
+            </div>
+
             <div className="release-pill-grid" aria-label="Current download status / 当前下载状态">
               {channels.length > 0 ? (
                 channels.map((item) => {
