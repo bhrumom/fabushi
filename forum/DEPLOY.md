@@ -40,14 +40,18 @@ That preflight step surfaces the effective deployment stage, write posture, acce
 
 The repository workflow `Live deployment checks - Forum` can now run every hour against one configured live forum target. This turns the current highest-priority deployment question from a manual reminder into a standing smoke check.
 
-Scheduled runs read these repository variables:
+Scheduled runs read either:
 
-- `FORUM_LIVE_URL`
-- `FORUM_LIVE_DEPLOYMENT_STAGE`
-- `FORUM_LIVE_PUBLIC_BASE_URL`
-- `FORUM_LIVE_WRITES_ENABLED`
-- `FORUM_LIVE_REQUIRES_ACCESS_CODE`
-- `FORUM_LIVE_EXERCISE_WRITE_FLOW`
+- a single repository variable `FORUM_LIVE_TARGET`
+- or the existing split repository variables:
+  - `FORUM_LIVE_URL`
+  - `FORUM_LIVE_DEPLOYMENT_STAGE`
+  - `FORUM_LIVE_PUBLIC_BASE_URL`
+  - `FORUM_LIVE_WRITES_ENABLED`
+  - `FORUM_LIVE_REQUIRES_ACCESS_CODE`
+  - `FORUM_LIVE_EXERCISE_WRITE_FLOW`
+
+If both are present, `FORUM_LIVE_TARGET` wins. This keeps the hourly workflow backward-compatible while letting the first real live target be stored as one cohesive bundle instead of six separate values.
 
 If the live target still requires the shared preview code, also store it in the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE`.
 
@@ -60,7 +64,27 @@ node scripts/prepare-live-deployment-vars.mjs \
   --deploy-env-path .env.deploy
 ```
 
-That command prints the exact `FORUM_LIVE_*` block expected by the hourly workflow. When you want copy-pasteable GitHub CLI commands instead, use:
+That command prints the existing split `FORUM_LIVE_*` block. If you want one bundled JSON payload for the repository variable `FORUM_LIVE_TARGET`, use:
+
+```bash
+cd forum
+node scripts/prepare-live-deployment-vars.mjs \
+  --forum-url https://forum-preview.example.com \
+  --deploy-env-path .env.deploy \
+  --format json
+```
+
+If you want copy-pasteable GitHub CLI commands for the single bundled variable instead, use:
+
+```bash
+cd forum
+node scripts/prepare-live-deployment-vars.mjs \
+  --forum-url https://forum-preview.example.com \
+  --deploy-env-path .env.deploy \
+  --format github-cli-bundled
+```
+
+The original split-variable CLI output is still available too:
 
 ```bash
 cd forum
@@ -76,7 +100,7 @@ If the preview runtime is intentionally writable and you want the hourly workflo
 --exercise-write-flow true
 ```
 
-When `.env.deploy` includes `FORUM_WRITE_ACCESS_CODE`, the `github-cli` output also prints the matching `gh secret set FORUM_LIVE_WRITE_ACCESS_CODE` command so the shared preview gate stays aligned with the live smoke check.
+When `.env.deploy` includes `FORUM_WRITE_ACCESS_CODE`, both `github-cli` formats also print the matching `gh secret set FORUM_LIVE_WRITE_ACCESS_CODE` command so the shared preview gate stays aligned with the live smoke check.
 
 Recommended preview baseline:
 
@@ -87,6 +111,19 @@ FORUM_LIVE_PUBLIC_BASE_URL=
 FORUM_LIVE_WRITES_ENABLED=false
 FORUM_LIVE_REQUIRES_ACCESS_CODE=false
 FORUM_LIVE_EXERCISE_WRITE_FLOW=false
+```
+
+Equivalent bundled target:
+
+```json
+{
+  "forumUrl": "https://forum-preview.example.com",
+  "deploymentStage": "preview",
+  "publicBaseUrl": "",
+  "writesEnabled": false,
+  "requiresAccessCode": false,
+  "exerciseWriteFlow": false
+}
 ```
 
 When preview writes are intentionally open behind the shared code, switch only the runtime flags you actually expect:
@@ -104,7 +141,7 @@ The hourly workflow now validates that live-target settings describe a coherent 
 - `FORUM_LIVE_EXERCISE_WRITE_FLOW=true` while writes are still disabled
 - `FORUM_LIVE_EXERCISE_WRITE_FLOW=true` and `FORUM_LIVE_REQUIRES_ACCESS_CODE=true` without the secret `FORUM_LIVE_WRITE_ACCESS_CODE`
 
-If `FORUM_LIVE_URL` is still empty, the hourly workflow exits cleanly without failing. Manual `workflow_dispatch` runs keep working with the explicit inputs.
+If `FORUM_LIVE_URL` and `FORUM_LIVE_TARGET` are both empty, the hourly workflow exits cleanly without failing. Manual `workflow_dispatch` runs keep working with the explicit inputs.
 
 The hourly workflow now also writes a job summary for both skip and check paths, so the run itself tells you which target posture it resolved and whether the repository variables are still incomplete. When preview checks carry a public base URL, or production checks still omit one, the summary also surfaces that mismatch as a warning instead of leaving it buried in the smoke-check logs.
 
