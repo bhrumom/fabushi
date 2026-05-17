@@ -51,6 +51,10 @@ function normalizeUrl(value) {
   return value ? value.replace(/\/$/, "") : "";
 }
 
+function buildLocalSmokeUrl(port) {
+  return normalizeUrl(`http://127.0.0.1:${port}`);
+}
+
 function buildDeployPosture({ deployEnvPath, deployEnv }) {
   const deploymentStage = deployEnv.FORUM_DEPLOYMENT_STAGE?.trim() || "preview";
   if (deploymentStage !== "preview" && deploymentStage !== "production") {
@@ -68,6 +72,7 @@ function buildDeployPosture({ deployEnvPath, deployEnv }) {
   const port = deployEnv.FORUM_PORT?.trim() || "3000";
   const dataDir = deployEnv.FORUM_DATA_DIR?.trim() || "./data";
   const deployCheckUrl = normalizeUrl(deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || "");
+  const defaultSmokeUrl = deployCheckUrl || buildLocalSmokeUrl(port);
   const publicBaseUrl = normalizeUrl(deployEnv.FORUM_PUBLIC_BASE_URL?.trim() || "");
   const writesEnabled = parseBoolean(deployEnv.FORUM_ENABLE_WRITES ?? "false", "FORUM_ENABLE_WRITES");
   const writeAccessCode = (deployEnv.FORUM_WRITE_ACCESS_CODE || "").trim();
@@ -76,7 +81,9 @@ function buildDeployPosture({ deployEnvPath, deployEnv }) {
   const warnings = [];
 
   if (!deployCheckUrl) {
-    warnings.push("FORUM_DEPLOY_CHECK_URL is empty, so smoke and handoff helpers still require an explicit --forum-url.");
+    warnings.push(
+      `FORUM_DEPLOY_CHECK_URL is empty, so handoff helpers still require an explicit --forum-url. smoke:deploy-env will fall back to ${defaultSmokeUrl} on the target host.`,
+    );
   }
 
   if (deploymentStage === "preview" && publicBaseUrl) {
@@ -110,6 +117,7 @@ function buildDeployPosture({ deployEnvPath, deployEnv }) {
     port,
     dataDir,
     deployCheckUrl,
+    defaultSmokeUrl,
     dataSource,
     deploymentStage,
     publicBaseUrl,
@@ -129,6 +137,7 @@ function renderSummary(posture) {
     `- port: ${posture.port}`,
     `- data_dir: ${posture.dataDir}`,
     `- deploy_check_url: ${posture.deployCheckUrl || "(empty)"}`,
+    `- default_smoke_url: ${posture.defaultSmokeUrl}`,
     `- data_source: ${posture.dataSource}`,
     `- deployment_stage: ${posture.deploymentStage}`,
     `- public_base_url: ${posture.publicBaseUrl || "(empty)"}`,

@@ -67,6 +67,8 @@ That preflight step surfaces the effective deployment stage, write posture, acce
 - write access code present while writes are still disabled
 - production runtime left writable before governance posture is ready
 
+When `FORUM_DEPLOY_CHECK_URL` is still empty, `pnpm smoke:deploy-env` now falls back to `http://127.0.0.1:${FORUM_PORT}` on the same host. That lets the first compose rollout verify itself before a real preview or production URL exists. `pnpm handoff:live-target` still needs the real external URL unless `FORUM_DEPLOY_CHECK_URL` is already filled in.
+
 ## Hourly live deployment checks
 
 The repository workflow `Live deployment checks - Forum` can now run every hour against one configured live forum target. This turns the current highest-priority deployment question from a manual reminder into a standing smoke check.
@@ -86,7 +88,7 @@ If both are present, `FORUM_LIVE_TARGET` wins. This keeps the hourly workflow ba
 
 If the live target still requires the shared preview code, also store it in the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE`.
 
-Once the target host has a working `forum/.env.deploy`, the shortest recommended handoff is now one command:
+Once the target host has a working `forum/.env.deploy` and the runtime is reachable at its real preview or production URL, the shortest recommended handoff is now one command:
 
 ```bash
 cd forum
@@ -221,6 +223,7 @@ Equivalent deploy env:
 FORUM_IMAGE=ghcr.io/bhrumom/fabushi-forum:main
 FORUM_PORT=3000
 FORUM_DATA_DIR=./data
+FORUM_DEPLOY_CHECK_URL=
 FORUM_DEPLOYMENT_STAGE=preview
 FORUM_PUBLIC_BASE_URL=
 FORUM_DATA_SOURCE=sqlite
@@ -232,9 +235,7 @@ Start the forum:
 
 ```bash
 docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
-pnpm smoke:deploy-env -- \
-  --forum-url http://127.0.0.1:3000 \
-  --deploy-env-path .env.deploy
+pnpm smoke:deploy-env -- --deploy-env-path .env.deploy
 curl http://localhost:3000/api/health
 curl http://localhost:3000/api/status
 curl http://localhost:3000/robots.txt
@@ -317,9 +318,7 @@ Bring the stack back up and verify:
 
 ```bash
 docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
-pnpm smoke:deploy-env -- \
-  --forum-url https://forum.fabushi.com \
-  --deploy-env-path .env.deploy
+pnpm smoke:deploy-env -- --deploy-env-path .env.deploy
 curl https://forum.fabushi.com/api/health
 curl https://forum.fabushi.com/api/status
 curl https://forum.fabushi.com/robots.txt

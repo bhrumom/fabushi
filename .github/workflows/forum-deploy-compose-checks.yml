@@ -3,9 +3,11 @@ name: Deploy compose checks - Forum
 on:
   pull_request:
     paths:
-      - "forum/docker-compose.deploy.yml"
+      - ".github/workflows/forum-deploy-compose-checks.yml"
+      - ".github/workflows/forum-live-deployment-checks.yml"
       - "forum/.env.deploy.example"
       - "forum/DEPLOY.md"
+      - "forum/docker-compose.deploy.yml"
       - "forum/package.json"
       - "forum/scripts/check-deployment-contract.mjs"
       - "forum/scripts/handoff-live-deployment-target.mjs"
@@ -15,15 +17,15 @@ on:
       - "forum/scripts/scaffold-deploy-env.mjs"
       - "forum/scripts/smoke-deployment-from-env.mjs"
       - "forum/scripts/validate-deploy-env.mjs"
-      - ".github/workflows/forum-deploy-compose-checks.yml"
-      - ".github/workflows/forum-live-deployment-checks.yml"
   push:
     branches:
       - main
     paths:
-      - "forum/docker-compose.deploy.yml"
+      - ".github/workflows/forum-deploy-compose-checks.yml"
+      - ".github/workflows/forum-live-deployment-checks.yml"
       - "forum/.env.deploy.example"
       - "forum/DEPLOY.md"
+      - "forum/docker-compose.deploy.yml"
       - "forum/package.json"
       - "forum/scripts/check-deployment-contract.mjs"
       - "forum/scripts/handoff-live-deployment-target.mjs"
@@ -33,8 +35,6 @@ on:
       - "forum/scripts/scaffold-deploy-env.mjs"
       - "forum/scripts/smoke-deployment-from-env.mjs"
       - "forum/scripts/validate-deploy-env.mjs"
-      - ".github/workflows/forum-deploy-compose-checks.yml"
-      - ".github/workflows/forum-live-deployment-checks.yml"
 
 permissions:
   contents: read
@@ -61,12 +61,11 @@ jobs:
           node forum/scripts/scaffold-deploy-env.mjs \
             --deploy-env-path /tmp/forum-deploy-preview-scaffold.env \
             --forum-port 3001 \
-            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data \
-            --deploy-check-url http://127.0.0.1:3001
+            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data
 
           grep "FORUM_DEPLOYMENT_STAGE=preview" /tmp/forum-deploy-preview-scaffold.env
           grep "FORUM_ENABLE_WRITES=false" /tmp/forum-deploy-preview-scaffold.env
-          grep "FORUM_DEPLOY_CHECK_URL=http://127.0.0.1:3001" /tmp/forum-deploy-preview-scaffold.env
+          grep '^FORUM_DEPLOY_CHECK_URL=$' /tmp/forum-deploy-preview-scaffold.env
 
       - name: Reject writable preview scaffold without access code
         shell: bash
@@ -152,7 +151,7 @@ jobs:
 
           grep "gh variable set FORUM_LIVE_TARGET" /tmp/forum-live-target-cli.txt
           grep "gh secret set FORUM_LIVE_WRITE_ACCESS_CODE" /tmp/forum-live-target-cli.txt
-          grep "--repo 'bhrumom/fabushi'" /tmp/forum-live-target-cli.txt
+          grep --fixed-strings -- "--repo 'bhrumom/fabushi'" /tmp/forum-live-target-cli.txt
 
       - name: Reject production scaffold without public base URL
         shell: bash
@@ -212,8 +211,7 @@ jobs:
       - name: Smoke test forum deploy compose read-only preview contract from deploy env
         run: |
           node forum/scripts/smoke-deployment-from-env.mjs \
-            --forum-url http://127.0.0.1:3001 \
-            --deploy-env-path forum/.env.deploy.example
+            --deploy-env-path /tmp/forum-deploy-preview-scaffold.env
 
       - name: Stop forum deploy compose read-only preview runtime
         run: |
@@ -319,7 +317,6 @@ jobs:
       - name: Smoke test forum deploy compose production contract from deploy env
         run: |
           node forum/scripts/smoke-deployment-from-env.mjs \
-            --forum-url http://127.0.0.1:3001 \
             --deploy-env-path /tmp/forum-deploy-production.env
 
       - name: Stop forum deploy compose
