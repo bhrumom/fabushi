@@ -10,6 +10,7 @@
     "start:standalone": "node .next/standalone/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke:deployment": "node ./scripts/check-deployment-contract.mjs",
+    "smoke:deploy-env": "node ./scripts/smoke-deployment-from-env.mjs",
     "prepare:live-target": "node ./scripts/prepare-live-deployment-vars.mjs",
     "check:deploy-env": "node ./scripts/validate-deploy-env.mjs"
   },
