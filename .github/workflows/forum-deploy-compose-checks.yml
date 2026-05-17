@@ -61,12 +61,11 @@ jobs:
           node forum/scripts/scaffold-deploy-env.mjs \
             --deploy-env-path /tmp/forum-deploy-preview-scaffold.env \
             --forum-port 3001 \
-            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data \
-            --deploy-check-url http://127.0.0.1:3001
+            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data
 
           grep "FORUM_DEPLOYMENT_STAGE=preview" /tmp/forum-deploy-preview-scaffold.env
           grep "FORUM_ENABLE_WRITES=false" /tmp/forum-deploy-preview-scaffold.env
-          grep "FORUM_DEPLOY_CHECK_URL=http://127.0.0.1:3001" /tmp/forum-deploy-preview-scaffold.env
+          grep '^FORUM_DEPLOY_CHECK_URL=$' /tmp/forum-deploy-preview-scaffold.env
 
       - name: Reject writable preview scaffold without access code
         shell: bash
@@ -212,8 +211,7 @@ jobs:
       - name: Smoke test forum deploy compose read-only preview contract from deploy env
         run: |
           node forum/scripts/smoke-deployment-from-env.mjs \
-            --forum-url http://127.0.0.1:3001 \
-            --deploy-env-path forum/.env.deploy.example
+            --deploy-env-path /tmp/forum-deploy-preview-scaffold.env
 
       - name: Stop forum deploy compose read-only preview runtime
         run: |
@@ -319,7 +317,6 @@ jobs:
       - name: Smoke test forum deploy compose production contract from deploy env
         run: |
           node forum/scripts/smoke-deployment-from-env.mjs \
-            --forum-url http://127.0.0.1:3001 \
             --deploy-env-path /tmp/forum-deploy-production.env
 
       - name: Stop forum deploy compose
