@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/practice-guide");
 const pageTitle = `修行方法总览 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，才能把因果、菩提心、六度、空性与佛学基本概念理解一起接回日常生活。";
+  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，先读什么佛经更合适、听诵怎样接回阅读，以及怎样把《心经》《阿弥陀经》《普门品》《金刚经》的入口接进第一周练习节奏。";
 
 const practicePrinciples = [
   {
@@ -79,6 +79,36 @@ const weeklyRhythm = [
   },
 ] as const;
 
+const scripturePracticePaths = [
+  {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "先读什么佛经",
+    labelEn: "Choose a First Sutra",
+    titleZh: "如果你已经想从经典进入，先把《心经》《阿弥陀经》《普门品》《金刚经》哪一部更适合作为起点单独理清。",
+    titleEn: "If scripture already feels like your doorway, first clarify which of the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra fits best as the starting point.",
+    descriptionZh: "很多人练习迟迟开始不了，不是因为不知道方法，而是先卡在“到底该从哪部经进”。先把起点选清楚，练习节奏会更容易真正落下来。",
+    descriptionEn: "Many people cannot settle into practice not because they lack methods, but because they are still stuck on which scripture should come first. Once the entry point is clearer, the rhythm of practice usually becomes easier to keep alive.",
+  },
+  {
+    href: "/sutra-listening",
+    labelZh: "听诵和读经怎么配合",
+    labelEn: "Listening and Reading",
+    titleZh: "如果你已经开始听经，下一步把通勤里的听诵、安静时的阅读和一句记录接成同一条线。",
+    titleEn: "If you have already begun listening to sutras, the next step is to connect commute listening, quieter reading, and one short note into the same line of practice.",
+    descriptionZh: "对很多初学者来说，真正的卡点不是“要不要听”，而是听了以后怎样回到文字、怎样不让经典只停在背景声音里。",
+    descriptionEn: "For many beginners, the real friction is not whether to listen, but how listening returns to the text and keeps scripture from remaining only background sound.",
+  },
+  {
+    href: "/daily-practice",
+    labelZh: "经典怎样接回日常功课",
+    labelEn: "Return Sutras to Daily Practice",
+    titleZh: "如果你已经知道要练什么，下一步先把《阿弥陀经》、听诵、念佛或短段阅读放进晨起、白天和晚间。",
+    titleEn: "If you already know what to practice, the next step is to place the Amitabha Sutra, listening, recitation, or short reading into morning, daytime, and evening rhythm.",
+    descriptionZh: "很多人不是不知道要做什么，而是不知道怎样让经典入口真的留在生活里。先把最轻的一日节奏排出来，会比继续停在方法清单里更稳。",
+    descriptionEn: "Many people do not lack methods. They lack a way to let a scripture doorway remain alive inside ordinary life. Building the lightest daily rhythm first is steadier than remaining inside a methods list alone.",
+  },
+] as const;
+
 const conceptBridgeSteps = [
   {
     titleZh: "因果：为什么修行方法一断再断，常常会回到习惯和结果这层问题",
@@ -109,6 +139,24 @@ const relatedPaths = [
     titleEn: "Make the first step into buddhadharma lighter and clearer.",
     descriptionZh: "如果你现在最卡的是不知道先从哪一条路开始，先回到这页会更合适。",
     descriptionEn: "Return here first if your main difficulty is still deciding where to begin.",
+  },
+  {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "初学者佛经推荐",
+    labelEn: "Beginner Sutra Picks",
+    titleZh: "先把“先读哪部经”这一步理清，练习方法才更容易落地。",
+    titleEn: "Clarify which sutra to begin with before the practice rhythm asks too many questions at once.",
+    descriptionZh: "如果你已经知道自己想从经典进入，但卡在《心经》《阿弥陀经》《普门品》还是《金刚经》更适合作为起点，这一页会更适合先打开。",
+    descriptionEn: "Open this first if you already know scripture is the doorway but still need to choose between the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra.",
+  },
+  {
+    href: "/sutra-listening",
+    labelZh: "听诵和读经怎么配合",
+    labelEn: "Listening and Reading",
+    titleZh: "把通勤里的听诵、安静时的阅读和一条记录接回同一条练习线。",
+    titleEn: "Reconnect listening on the move, reading in quiet moments, and one short note inside the same practice line.",
+    descriptionZh: "如果你已经开始听经，却还不知道怎样把它接回阅读、念佛和记录，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you have already begun listening to sutras but still need to reconnect it with reading, recitation, and notes.",
   },
   {
     href: "/daily-practice",
@@ -216,6 +264,18 @@ const faqItems = [
     answerEn: "The better question is what you need most right now. Meditation can come first if you need steadiness, recitation or listening can come first if you need an easier rhythm, and reading can come first if you need clearer direction.",
   },
   {
+    questionZh: "如果我想从佛经开始，先读哪部经，再怎样接回练习？",
+    questionEn: "If I want to begin from scripture, which sutra should come first and how should it return to practice?",
+    answerZh: "很多初学者更稳的起点，不是一张固定书单，而是先看自己当下更需要方向、安定，还是慈悲与愿心。常见入口如《心经》《阿弥陀经》《普门品》《金刚经》，各自适合承接不同问题。选定一部以后，再把听诵、短段阅读和一句记录接回第一周节奏，会比只停在“看推荐”更容易真正开始。",
+    answerEn: "For many beginners, the steadier start is not a rigid list but a better match between the present need and the first text. Common gateways such as the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, and Diamond Sutra each fit different questions. Once one text is chosen, reconnect it to the first week through listening, short reading, and one small note.",
+  },
+  {
+    questionZh: "听诵、读经和念佛怎么排进第一周，才不会一下太重？",
+    questionEn: "How can listening, reading, and recitation fit into the first week without becoming too heavy?",
+    answerZh: "更稳的安排通常是先定一个最轻的主线，例如晨起听一段经文，或每天念佛几分钟，再配一个辅助动作，例如晚间读一小段导读或留一句记录。先让一条线活下来，比一开始同时做很多更容易持续。",
+    answerEn: "A steadier arrangement is usually one light main line, such as listening to one short passage in the morning or reciting for a few minutes each day, then one support action such as reading a short guide at night or leaving one note. Let one line stay alive before trying to do many things together.",
+  },
+  {
     questionZh: "因果是什么意思，和修行方法有什么关系？",
     questionEn: "What does karma have to do with actual practice methods?",
     answerZh: "如果不知道因果怎样和习惯、选择、结果连在一起，修行方法很容易只剩下一阵一阵的热情。回到因果，会更容易看见：今天怎么说话、怎么安排时间、断掉以后有没有回来，这些看起来很小的动作，正是在慢慢形成后面的结果。",
@@ -264,6 +324,9 @@ export const metadata: Metadata = {
     "学佛修行",
     "佛教修行方法",
     "初学者怎么修行",
+    "先读什么佛经",
+    "初学者佛经推荐",
+    "听诵和读经怎么配合",
     "佛学基本概念",
     "因果是什么意思",
     "菩提心是什么意思",
@@ -303,7 +366,17 @@ export default function PracticeGuidePage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["修行方法", "学佛修行", "因果", "佛学基本概念", "菩提心", "日常功课", "空性理解"],
+        about: [
+          "修行方法",
+          "学佛修行",
+          "因果",
+          "佛学基本概念",
+          "菩提心",
+          "日常功课",
+          "空性理解",
+          "先读什么佛经",
+          "经文听诵",
+        ],
       },
       {
         "@type": "BreadcrumbList",
@@ -335,6 +408,17 @@ export default function PracticeGuidePage() {
           "@type": "ListItem",
           position: index + 1,
           name: item.titleZh,
+          description: item.descriptionZh,
+        })),
+      },
+      {
+        "@type": "ItemList",
+        name: "经典入口如何接回练习",
+        itemListElement: scripturePracticePaths.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.labelZh,
+          url: siteUrl(item.href),
           description: item.descriptionZh,
         })),
       },
@@ -418,6 +502,12 @@ export default function PracticeGuidePage() {
           </p>
           <p>
             <LocalizedText
+              zh="很多人到了这里以后，问题会从“我要不要练”慢慢变成“如果想从经典开始，先读哪部经更合适”“听诵以后怎样接回阅读”“《阿弥陀经》、念佛和日常功课又该怎么排进第一周”。这些问题看起来像是在换题，其实正说明方法页已经走到了真正会落地的地方。先把经典入口和练习节奏接上，方法才不只是一张总览。"
+              en="At this point, many questions shift from whether to practice at all into which sutra should come first, how listening returns to reading, or how the Amitabha Sutra, recitation, and a first-week routine can fit together. These are not detours. They show that the methods page has arrived at the point where practice becomes real. Once scripture doorways reconnect with rhythm, a methods page becomes more than an overview."
+            />
+          </p>
+          <p>
+            <LocalizedText
               zh="修行方法最后不只是在练几种技能。随着节奏慢慢稳定，人也会开始看见：很多急躁、执着和判断，并没有想象中那样固定，这也是为什么菩提心、六度和空性会和方法页放在同一条路上。方法越回到这里，练习就越不只是完成任务，而是在帮助自己少一点抓得太死。"
               en="Practice methods are not only a set of techniques. As the rhythm steadies, people often begin to see that agitation, attachment, and judgment are less fixed than they seem. This is why bodhicitta, the six paramitas, and emptiness belong on the same path as method pages. The more practice returns here, the less it becomes task-completion and the more it helps loosen rigid grasping."
             />
@@ -490,6 +580,37 @@ export default function PracticeGuidePage() {
       </section>
 
       <section className="band alt">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="经典接回练习" en="Scripture Into Practice" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="把“先读哪部经、怎样听、怎样接回功课”这些真实问题，直接收进练习路径里。"
+              en="Bring the real questions of which sutra to start with, how to listen, and how to return scripture to practice directly into the path."
+            />
+          </h2>
+        </div>
+        <div className="editorial-list">
+          {scripturePracticePaths.map((item) => (
+            <a key={item.href} className="editorial-row" href={siteHref(item.href)}>
+              <span>
+                <LocalizedText zh={item.labelZh} en={item.labelEn} />
+              </span>
+              <div>
+                <strong>
+                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
+                </strong>
+                <p>
+                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+                </p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="band">
         <div className="section-heading tight">
           <p>
             <LocalizedText zh="第一周节奏" en="First Week" />
@@ -598,8 +719,8 @@ export default function PracticeGuidePage() {
           <a className="primary-action" href={siteHref("/download")}>
             <LocalizedText zh="下载法布施" en="Download Fabushi" />
           </a>
-          <a className="secondary-action" href={siteHref("/buddhist-concepts")}>
-            <LocalizedText zh="继续看佛学基本概念" en="Continue to Buddhist Concepts" />
+          <a className="secondary-action" href={siteHref("/beginner-sutra-recommendations")}>
+            <LocalizedText zh="继续看初学者佛经推荐" en="Continue to Beginner Sutra Picks" />
           </a>
         </div>
       </section>
