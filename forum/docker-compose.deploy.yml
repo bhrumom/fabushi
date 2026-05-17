@@ -1,0 +1,25 @@
+services:
+  forum:
+    image: "${FORUM_IMAGE:-ghcr.io/bhrumom/fabushi-forum:main}"
+    ports:
+      - "${FORUM_PORT:-3000}:3000"
+    environment:
+      FORUM_DEPLOYMENT_STAGE: "${FORUM_DEPLOYMENT_STAGE:-preview}"
+      FORUM_PUBLIC_BASE_URL: "${FORUM_PUBLIC_BASE_URL:-}"
+      FORUM_DATA_SOURCE: "${FORUM_DATA_SOURCE:-sqlite}"
+      FORUM_ENABLE_WRITES: "${FORUM_ENABLE_WRITES:-false}"
+      FORUM_DATABASE_URL: file:/data/forum.db
+      FORUM_WRITE_ACCESS_CODE: "${FORUM_WRITE_ACCESS_CODE:-}"
+    volumes:
+      - "${FORUM_DATA_DIR:-./data}:/data"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then((response) => { process.exit(response.ok ? 0 : 1); }).catch(() => process.exit(1));"
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+    restart: unless-stopped
