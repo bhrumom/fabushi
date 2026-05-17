@@ -2,6 +2,8 @@
 
 import { readFile } from "node:fs/promises";
 
+import { parseDotEnv } from "./parse-deploy-env.mjs";
+
 function parseArgs(argv) {
   const parsed = {
     "deploy-env-path": ".env.deploy",
@@ -47,29 +49,6 @@ function parseBoolean(value, key) {
 
 function normalizeUrl(value) {
   return value ? value.replace(/\/$/, "") : "";
-}
-
-function parseDotEnv(content) {
-  const values = {};
-
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-
-    if (!line || line.startsWith("#")) {
-      continue;
-    }
-
-    const separatorIndex = line.indexOf("=");
-    if (separatorIndex === -1) {
-      throw new Error(`Expected KEY=VALUE line in deploy env file, received: ${rawLine}`);
-    }
-
-    const key = line.slice(0, separatorIndex).trim();
-    const value = line.slice(separatorIndex + 1).trim();
-    values[key] = value;
-  }
-
-  return values;
 }
 
 function buildDeployPosture({ deployEnvPath, deployEnv }) {

@@ -22,6 +22,12 @@ cp .env.deploy.example .env.deploy
 
 Then edit `.env.deploy` for the target runtime.
 
+`forum/.env.deploy` follows Docker Compose env-file syntax. That means the deploy helpers now accept the same common forms that Compose itself accepts, including:
+
+- quoted values such as `FORUM_IMAGE="ghcr.io/bhrumom/fabushi-forum:main"`
+- empty quoted values such as `FORUM_PUBLIC_BASE_URL=""`
+- inline comments after a value such as `FORUM_ENABLE_WRITES=true # preview cohort only`
+
 Before you start the compose stack, validate the deploy posture from the same file:
 
 ```bash
@@ -259,30 +265,15 @@ docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
 pnpm smoke:deploy-env -- \
   --forum-url https://forum.fabushi.com \
   --deploy-env-path .env.deploy
-curl http://localhost:3000/api/health
-curl http://localhost:3000/api/status
-curl http://localhost:3000/robots.txt
-curl -I http://localhost:3000/threads
+curl https://forum.fabushi.com/api/health
+curl https://forum.fabushi.com/api/status
+curl https://forum.fabushi.com/robots.txt
 ```
 
 Expected production signals:
 
-- `/api/health` and `/api/status` both report `deploymentStage=production`
-- indexing becomes enabled only after `FORUM_PUBLIC_BASE_URL` is also set
-- `robots.txt` switches to `Allow: /` and includes the configured `Host:`
-- page responses stop emitting the preview `x-robots-tag`
-
-## Rolling to a newer forum image
-
-Update only the image tag in `.env.deploy`, then refresh the stack:
-
-```dotenv
-FORUM_IMAGE=ghcr.io/bhrumom/fabushi-forum:sha-<commit>
-```
-
-```bash
-docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull
-docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
-```
-
-This keeps the deploy path aligned with the already published forum artifact instead of rebuilding from source on the server.
+- `/api/health` returns `ready: true`
+- `/api/status` reports `deploymentStage=production`
+- `robots.txt` allows crawling
+- page metadata resolves canonical URLs against `FORUM_PUBLIC_BASE_URL`
+- headers stop advertising the preview noindex posture

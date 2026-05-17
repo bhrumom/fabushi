@@ -9,6 +9,7 @@ on:
       - "forum/package.json"
       - "forum/scripts/check-deployment-contract.mjs"
       - "forum/scripts/handoff-live-deployment-target.mjs"
+      - "forum/scripts/parse-deploy-env.mjs"
       - "forum/scripts/prepare-live-deployment-vars.mjs"
       - "forum/scripts/resolve-live-deployment-target.mjs"
       - "forum/scripts/smoke-deployment-from-env.mjs"
@@ -25,6 +26,7 @@ on:
       - "forum/package.json"
       - "forum/scripts/check-deployment-contract.mjs"
       - "forum/scripts/handoff-live-deployment-target.mjs"
+      - "forum/scripts/parse-deploy-env.mjs"
       - "forum/scripts/prepare-live-deployment-vars.mjs"
       - "forum/scripts/resolve-live-deployment-target.mjs"
       - "forum/scripts/smoke-deployment-from-env.mjs"
@@ -70,6 +72,24 @@ jobs:
           node forum/scripts/validate-deploy-env.mjs \
             --deploy-env-path /tmp/forum-deploy-writable-preview.env
 
+      - name: Prepare quoted writable preview deploy env sample
+        run: |
+          cat <<'ENVEOF' >/tmp/forum-deploy-writable-preview-quoted.env
+          FORUM_IMAGE="fabushi-forum"
+          FORUM_PORT="3001"
+          FORUM_DATA_DIR="/tmp/fabushi-forum-deploy-compose-data" # quoted path should still parse cleanly
+          FORUM_DEPLOYMENT_STAGE="preview"
+          FORUM_PUBLIC_BASE_URL="" # preview should stay noindex
+          FORUM_DATA_SOURCE='sqlite'
+          FORUM_ENABLE_WRITES=true # leave this unquoted so the parser still reads the boolean string
+          FORUM_WRITE_ACCESS_CODE="forum-preview-2026" # quoted shared gate should stay aligned with docker compose parsing
+          ENVEOF
+
+      - name: Validate quoted writable preview deploy env posture
+        run: |
+          node forum/scripts/validate-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-writable-preview-quoted.env
+
       - name: Prepare bundled live target sample
         run: |
           node forum/scripts/prepare-live-deployment-vars.mjs \
@@ -77,6 +97,18 @@ jobs:
             --deploy-env-path /tmp/forum-deploy-writable-preview.env \
             --exercise-write-flow true \
             --format json >/tmp/forum-live-target.json
+
+      - name: Prepare bundled live target sample from quoted deploy env
+        run: |
+          node forum/scripts/prepare-live-deployment-vars.mjs \
+            --forum-url "https://forum-preview.fabushi.test/" \
+            --deploy-env-path /tmp/forum-deploy-writable-preview-quoted.env \
+            --exercise-write-flow true \
+            --format github-cli-bundled \
+            --github-repo bhrumom/fabushi >/tmp/forum-live-target-quoted-cli.txt
+
+          grep --fixed-strings "gh variable set FORUM_LIVE_TARGET --body '{\"forumUrl\":\"https://forum-preview.fabushi.test\",\"deploymentStage\":\"preview\",\"publicBaseUrl\":\"\",\"writesEnabled\":true,\"requiresAccessCode\":true,\"exerciseWriteFlow\":true}' --repo 'bhrumom/fabushi'" /tmp/forum-live-target-quoted-cli.txt
+          grep --fixed-strings "gh secret set FORUM_LIVE_WRITE_ACCESS_CODE --body 'forum-preview-2026' --repo 'bhrumom/fabushi'" /tmp/forum-live-target-quoted-cli.txt
 
       - name: Validate bundled live target sample
         run: |
