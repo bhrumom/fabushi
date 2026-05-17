@@ -54,6 +54,11 @@ function normalizeUrl(value) {
   return value ? value.replace(/\/$/, "") : "";
 }
 
+function buildLocalForumUrl(deployEnv) {
+  const port = deployEnv.FORUM_PORT?.trim() || "3000";
+  return normalizeUrl(`http://127.0.0.1:${port}`);
+}
+
 function buildExpectedRuntime({ forumUrl, deployEnv, exerciseWriteFlow }) {
   const deploymentStage = deployEnv.FORUM_DEPLOYMENT_STAGE?.trim() || "preview";
   if (deploymentStage !== "preview" && deploymentStage !== "production") {
@@ -145,11 +150,9 @@ async function main() {
   const exerciseWriteFlow = parseBoolean(args["exercise-write-flow"], "exercise_write_flow");
   const deployEnvContent = await readFile(args["deploy-env-path"], "utf-8");
   const deployEnv = parseDotEnv(deployEnvContent);
-  const forumUrl = normalizeUrl(args["forum-url"]?.trim() || deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || "");
-
-  if (!forumUrl) {
-    throw new Error("Missing required --forum-url and deploy env FORUM_DEPLOY_CHECK_URL.");
-  }
+  const forumUrl = normalizeUrl(
+    args["forum-url"]?.trim() || deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || buildLocalForumUrl(deployEnv),
+  );
 
   const expectedRuntime = buildExpectedRuntime({ forumUrl, deployEnv, exerciseWriteFlow });
 
