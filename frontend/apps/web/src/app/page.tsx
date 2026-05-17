@@ -54,7 +54,7 @@ const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "main-sutra";
 const homeUrl = siteUrl("/");
 const homeTitle = `学佛入门、佛法导读与官网资讯首页 | ${brand.name}`;
 const homeDescription =
-  "大乘官网首页聚合学佛从哪里开始、佛法入门、佛学基本概念、佛经导读、修行方法、FAQ 与官网最新内容；App 下载保留为清晰服务入口，不再占据首页主叙事。";
+  "大乘官网首页聚合学佛从哪里开始、佛法入门、佛学基本概念、佛经导读、念佛入门、听诵和读经怎么配合、修行方法、FAQ 与官网最新内容；App 下载保留为清晰服务入口，不再占据首页主叙事。";
 
 const PRODUCT_MOMENTS: ProductMoment[] = [
   {
@@ -132,6 +132,18 @@ const FAQ_PREVIEW = [
     answerZh: "可以先按自己现在最想弄明白的问题来选，而不是只按名气来选。想先熟悉佛法常见词汇，可以从《心经》或导读开始；想从愿心、念佛或安住感进入，也可以先看《阿弥陀经》或《普门品》的相关说明。",
     answerEn: "It usually helps to choose by the question you are actually living with instead of fame alone. The Heart Sutra can be a good start for familiar language, while the Amitabha Sutra or Universal Gate Chapter may fit better if aspiration, recitation, or steadiness feel closer.",
   },
+  {
+    questionZh: "念佛入门是不是要一开始就念很多遍？",
+    questionEn: "Does beginner recitation need a large count right away?",
+    answerZh: "通常不需要。对多数初学者来说，更稳的起点往往是先让一句佛号和一个固定时段留下来，再慢慢把白天的短回返点接进去。入口够轻，念佛才更容易真的回到生活里，而不是只剩下任务感。",
+    answerEn: "Usually not. For most beginners, the steadier start is to let one phrase and one stable time of day stay first, then gradually add one short daytime return. When the doorway stays light, recitation is more likely to enter life instead of becoming only a task.",
+  },
+  {
+    questionZh: "已经在通勤里听经了，下一步怎样不只停在背景声音里？",
+    questionEn: "If I already listen during commutes, how do I keep it from staying only in the background?",
+    answerZh: "更稳的下一步通常不是继续换更多音频，而是隔一两天回到同一段内容，再读一小段原文或导读，最后留一句记录。这样听诵、阅读和日常节奏才会真正接成同一条线。",
+    answerEn: "A steadier next step is usually not switching to more audio, but returning to the same passage after a day or two, reading a short section of the text or guide, and leaving one short note. That is how listening, reading, and daily rhythm begin forming one line together.",
+  },
 ] as const;
 
 const HERO_GUIDE_LINKS = [
@@ -195,6 +207,15 @@ const DHARMA_PATHS = [
     descriptionEn: "Open this first if you know you want to practice but still need a clearer map for how the methods support each other.",
   },
   {
+    href: "/nianfo-guide",
+    labelZh: "念佛入门",
+    labelEn: "Nianfo Guide",
+    titleZh: "先让一句佛号和白天的回返点慢慢留下来。",
+    titleEn: "Let one recited phrase and one daytime return point begin to stay.",
+    descriptionZh: "如果你更需要一条比长时间坐下来更轻、更容易接进通勤与日常空档的练习入口，这一页会更合适。",
+    descriptionEn: "This page is a better fit if you need a lighter practice entry that can return during commuting and ordinary pauses.",
+  },
+  {
     href: "/daily-practice",
     labelZh: "日常功课怎么安排",
     labelEn: "Daily Practice",
@@ -202,6 +223,24 @@ const DHARMA_PATHS = [
     titleEn: "Connect a lighter morning, daytime, and evening rhythm that can stay alive.",
     descriptionZh: "如果你最关心第一周功课怎么排、白天怎么接进生活，这一页会更具体。",
     descriptionEn: "If your main question is how to arrange the first week and carry practice through the day, this page is more specific.",
+  },
+  {
+    href: "/sutra-guide",
+    labelZh: "佛经导读",
+    labelEn: "Sutra Guide",
+    titleZh: "先把常见经典入口、阅读问题和下一步路径放清楚。",
+    titleEn: "Clarify the common scripture doorways, reading questions, and next-step paths first.",
+    descriptionZh: "如果你已经知道想从经典进入，但还需要一张更完整的佛经入门地图，这一页更适合先打开。",
+    descriptionEn: "This page is the better first stop if scripture already feels like your doorway and you need a fuller beginner map.",
+  },
+  {
+    href: "/sutra-listening",
+    labelZh: "听诵和读经怎么配合",
+    labelEn: "Listening and Reading",
+    titleZh: "把通勤里的听诵、安静时的阅读和一句记录接回同一条线。",
+    titleEn: "Reconnect listening on the move, reading in quiet moments, and one short note inside the same line.",
+    descriptionZh: "如果你已经开始听经，却还不知道怎样把熟悉感接回文字、义理和稳定节奏，这一页会更适合继续往下看。",
+    descriptionEn: "This page is a better next step if you have begun listening but still need to return that familiarity to text, meaning, and stable rhythm.",
   },
   {
     href: "/beginner-sutra-recommendations",
@@ -257,6 +296,9 @@ export const metadata: Metadata = {
     "佛学基本概念",
     "佛经导读",
     "修行方法",
+    "念佛入门",
+    "经文听诵",
+    "听诵和读经怎么配合",
     "官网资讯",
     "佛教 FAQ",
     "初学者佛经推荐",
