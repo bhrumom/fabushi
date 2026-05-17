@@ -9,18 +9,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vector;
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
 
-import '../core/config/app_config.dart';
 import '../services/asset_loader_service.dart';
 import '../utils/model_auto_fit.dart';
+import 'buddha_model_screen_android_three.dart';
 
-enum _BuddhaRendererPath {
-  androidThreePrimary,
-  flutterScenePrimary,
-  flutterSceneFallback,
-}
+enum _BuddhaRendererPath { androidThreePrimary, flutterScenePrimary }
 
 class BuddhaModelScreen extends StatefulWidget {
   final bool autoRotate;
@@ -48,9 +42,6 @@ class BuddhaModelScreen extends StatefulWidget {
 
 class BuddhaModelScreenState extends State<BuddhaModelScreen>
     with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
-  static const String _legacyFallbackChannelName = 'FabushiBuddhaFallback';
-  static const Duration _androidThreeTimeout = Duration(seconds: 90);
-
   late final Ticker _ticker;
 
   Scene? _scene;
@@ -60,8 +51,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   bool _isLoading = true;
   bool _loadFailed = false;
   bool _renderFailed = false;
-  bool _legacyWebViewReady = false;
-  bool _useLegacyWebViewFallback = false;
   double _loadingProgress = 0.0;
   double _rotationY = 0.0;
   double _currentIncenseProgress = 0.0;
@@ -73,20 +62,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   bool _isAutoRotating = false;
 
   _BuddhaRendererPath? _activeRendererPath;
-  bool _androidThreeFallbackEnabled = false;
 
   String? _lastLoadError;
   String? _androidThreeError;
   String? _flutterSceneError;
   String _loadingLabel = '恭请佛像...';
-
-  WebViewController? _legacyWebViewController;
-  Timer? _legacyFallbackTimeout;
-
-  bool get _canUseLegacyWebViewFallback =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
 
   bool get _shouldUseAndroidThreePrimary =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -115,16 +95,12 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     required String loadingLabel,
     _BuddhaRendererPath? activePath,
   }) {
-    _cancelLegacyFallbackTimeout();
     _lastLoadError = null;
     _renderFailed = false;
     _loadFailed = false;
     _isLoading = true;
     _loadingProgress = 0.0;
     _loadingLabel = loadingLabel;
-    _legacyWebViewReady = false;
-    _useLegacyWebViewFallback = false;
-    _legacyWebViewController = null;
     _activeRendererPath = activePath;
     if (widget.isVisible && !_ticker.isTicking) {
       _lastTime = 0.0;
@@ -133,7 +109,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   Future<void> _startAndroidThreePrimary() async {
-    _androidThreeFallbackEnabled = true;
     if (!mounted) return;
     setState(() {
       _flutterSceneError = null;
@@ -143,7 +118,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         activePath: _BuddhaRendererPath.androidThreePrimary,
       );
     });
-    await _activateLegacyWebViewFallback();
   }
 
   Future<void> _startFlutterScenePrimary() async {
@@ -162,27 +136,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     );
   }
 
-  Future<void> _startFlutterSceneFallback(String reason) async {
-    if (!mounted) return;
-    _androidThreeError = reason;
-    _lastLoadError = reason;
-    setState(() {
-      _resetForFreshLoad(
-        loadingLabel: 'Three 主渲染失败，切换 flutter_scene...',
-        activePath: _BuddhaRendererPath.flutterSceneFallback,
-      );
-    });
-    await _loadFlutterSceneModel(
-      asFallback: true,
-      reasonLabel: 'Three 主渲染失败，切换 flutter_scene...',
-    );
-  }
-
   Future<void> _loadFlutterSceneModel({
     required bool asFallback,
     required String reasonLabel,
   }) async {
-    _androidThreeFallbackEnabled = false;
     try {
       await _ensureFlutterSceneEnvironment();
     } catch (error) {
@@ -237,9 +194,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       }
     }
 
-    _markFlutterSceneFailed(
-      _flutterSceneError ?? 'flutter_scene 备用渲染失败',
-    );
+    _markFlutterSceneFailed(_flutterSceneError ?? 'flutter_scene 备用渲染失败');
   }
 
   Future<void> _ensureFlutterSceneEnvironment() async {
@@ -331,11 +286,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       ..shader = ui.Gradient.radial(
         Offset(width * 0.5, height * 0.2),
         width * 0.46,
-        const [
-          Color(0xFFFFF0B8),
-          Color(0xFFFFD43B),
-          Color(0x00000000),
-        ],
+        const [Color(0xFFFFF0B8), Color(0xFFFFD43B), Color(0x00000000)],
         const [0.0, 0.35, 1.0],
       );
     canvas.drawRect(
@@ -347,112 +298,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     return picture.toImage(width, height);
   }
 
-  Future<void> _activateLegacyWebViewFallback() async {
-    if (!_canUseLegacyWebViewFallback || !mounted) {
-      _markLoadFailed('当前平台不支持 Android Three 兼容链路');
-      return;
-    }
-
-    _cancelLegacyFallbackTimeout();
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000))
-      ..setOnConsoleMessage((message) {
-        debugPrint(
-          '🧭 [BuddhaModel][AndroidThree] ${message.level.name}: ${message.message}',
-        );
-      })
-      ..addJavaScriptChannel(
-        _legacyFallbackChannelName,
-        onMessageReceived: (message) {
-          _handleLegacyFallbackMessage(message.message);
-        },
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (_) {
-            if (!mounted) return;
-            setState(() {
-              _useLegacyWebViewFallback = true;
-              _legacyWebViewReady = false;
-              _isLoading = true;
-              _loadFailed = false;
-              _renderFailed = false;
-            });
-          },
-          onPageFinished: (_) {
-            if (!mounted) return;
-            setState(() {
-              _useLegacyWebViewFallback = true;
-              _legacyWebViewReady = false;
-            });
-          },
-          onWebResourceError: (error) {
-            final message =
-                'Android Three 资源异常 ${error.errorCode}: '
-                '${error.description}'
-                '${error.url == null ? '' : ' (${error.url})'}';
-            _handleAndroidThreeFailure(message);
-          },
-        ),
-      );
-
-    _legacyWebViewController = controller;
-    _startLegacyFallbackTimeout();
-
-    try {
-      if (controller.platform is AndroidWebViewController) {
-        final androidController = controller.platform as AndroidWebViewController;
-        await androidController.setAllowFileAccess(true);
-        await androidController.setAllowContentAccess(true);
-      }
-
-      await controller.loadFlutterAsset(
-        AppConfig.bundledBuddhaFallbackHtmlAssetPath,
-      );
-    } catch (error) {
-      _handleAndroidThreeFailure('Android Three 初始化失败: $error');
-    }
-  }
-
-  void _startLegacyFallbackTimeout() {
-    _cancelLegacyFallbackTimeout();
-    _legacyFallbackTimeout = Timer(_androidThreeTimeout, () {
-      if (!mounted || _legacyWebViewReady || _loadFailed) {
-        return;
-      }
-      _handleAndroidThreeFailure(
-        'Android Three 超时: ${_androidThreeTimeout.inSeconds} 秒内未收到就绪信号',
-      );
-    });
-  }
-
-  void _cancelLegacyFallbackTimeout() {
-    _legacyFallbackTimeout?.cancel();
-    _legacyFallbackTimeout = null;
-  }
-
-  void _handleLegacyFallbackMessage(String message) {
-    if (message == 'ready' || message.startsWith('ready:')) {
-      _markLegacyFallbackReady();
-      return;
-    }
-    if (message.startsWith('error:')) {
-      final details = message.substring('error:'.length).trim();
-      _handleAndroidThreeFailure(
-        details.isEmpty ? 'Android Three 返回空错误' : details,
-      );
-      return;
-    }
-    debugPrint('ℹ️ [BuddhaModel] 收到 Android Three 消息: $message');
-  }
-
-  void _markLegacyFallbackReady() {
-    _cancelLegacyFallbackTimeout();
+  void _markAndroidThreeReady() {
     if (!mounted) return;
     setState(() {
-      _legacyWebViewReady = true;
-      _useLegacyWebViewFallback = true;
       _isLoading = false;
       _loadFailed = false;
       _renderFailed = false;
@@ -461,17 +309,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   void _handleAndroidThreeFailure(String details) {
-    _cancelLegacyFallbackTimeout();
     _androidThreeError = details;
     _lastLoadError = details;
-    debugPrint('❌ [BuddhaModel] Android Three 失败: $details');
-
-    if (_androidThreeFallbackEnabled) {
-      _androidThreeFallbackEnabled = false;
-      unawaited(_startFlutterSceneFallback(details));
-      return;
-    }
-
+    debugPrint('❌ [BuddhaModel] Android three_dart 失败: $details');
     _markLoadFailed(details);
   }
 
@@ -483,7 +323,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   void _markLoadFailed(String details) {
-    _cancelLegacyFallbackTimeout();
     if (_ticker.isTicking) {
       _ticker.stop();
     }
@@ -492,8 +331,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       _loadFailed = true;
       _renderFailed = true;
       _isLoading = false;
-      _legacyWebViewReady = false;
-      _useLegacyWebViewFallback = false;
     });
   }
 
@@ -516,7 +353,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     if (_flutterSceneError != null && _flutterSceneError!.isNotEmpty) {
       details.add('flutter_scene：${_cleanLoadError(_flutterSceneError!)}');
     }
-    if (details.isEmpty && _lastLoadError != null && _lastLoadError!.isNotEmpty) {
+    if (details.isEmpty &&
+        _lastLoadError != null &&
+        _lastLoadError!.isNotEmpty) {
       details.add(_cleanLoadError(_lastLoadError!));
     }
     if (details.isEmpty) {
@@ -526,11 +365,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   void _onTick(Duration elapsed) {
-    if (!mounted || !widget.isVisible || _useLegacyWebViewFallback) {
-      return;
-    }
-    final camera = _camera;
-    if (camera == null) {
+    if (!mounted || !widget.isVisible) {
       return;
     }
     final now = elapsed.inMicroseconds / 1000000.0;
@@ -548,7 +383,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
           _isReturningToStart = false;
         }
       }
-      _updateCamera();
+      if (_activeRendererPath == _BuddhaRendererPath.flutterScenePrimary) {
+        _updateCamera();
+      }
       setState(() {});
     }
   }
@@ -586,9 +423,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   void _updateVisibilityState(bool isVisible) {
-    if (_useLegacyWebViewFallback) {
-      return;
-    }
     if (isVisible) {
       _lastTime = 0.0;
       if (!_ticker.isTicking && !_renderFailed) {
@@ -614,11 +448,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   String get _compatibilityBanner {
-    if (_activeRendererPath == _BuddhaRendererPath.flutterSceneFallback) {
-      return 'Android Three 失败，已切换 flutter_scene 备用展示';
-    }
     if (_activeRendererPath == _BuddhaRendererPath.androidThreePrimary) {
-      return '安卓佛像使用 Three 兼容渲染';
+      return '安卓佛像使用 three_dart 原生渲染';
     }
     return '佛像已切换为兼容展示';
   }
@@ -635,16 +466,17 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
         return Listener(
           onPointerDown: (event) {
-            if (_useLegacyWebViewFallback) return;
             _isUserDragging = true;
             _lastPointerX = event.position.dx;
           },
           onPointerMove: (event) {
-            if (_useLegacyWebViewFallback) return;
             if (_isUserDragging && _lastPointerX != null) {
               _rotationY += (event.position.dx - _lastPointerX!) * 0.01;
               _lastPointerX = event.position.dx;
-              _updateCamera();
+              if (_activeRendererPath ==
+                  _BuddhaRendererPath.flutterScenePrimary) {
+                _updateCamera();
+              }
               setState(() {});
             }
           },
@@ -666,13 +498,30 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                 ),
                 child: SizedBox.expand(),
               ),
-              if (!_isLoading && !_loadFailed && _useLegacyWebViewFallback)
+              if (!_loadFailed &&
+                  _activeRendererPath ==
+                      _BuddhaRendererPath.androidThreePrimary)
                 Positioned.fill(
-                  child: _legacyWebViewController == null
-                      ? const SizedBox.shrink()
-                      : WebViewWidget(controller: _legacyWebViewController!),
+                  child: AndroidThreeBuddhaView(
+                    key: ValueKey(
+                      'android-three-${_loadFailed ? 'failed' : 'active'}',
+                    ),
+                    rotationY: _rotationY,
+                    isVisible: widget.isVisible,
+                    onProgress: (progress) {
+                      if (!mounted) return;
+                      setState(() {
+                        _loadingProgress = progress;
+                      });
+                    },
+                    onReady: _markAndroidThreeReady,
+                    onError: _handleAndroidThreeFailure,
+                  ),
                 )
-              else if (!_isLoading && !_loadFailed && scene != null && camera != null)
+              else if (!_isLoading &&
+                  !_loadFailed &&
+                  scene != null &&
+                  camera != null)
                 Positioned.fill(
                   child: CustomPaint(
                     size: size,
@@ -697,7 +546,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                 ),
               if (!_isLoading &&
                   !_loadFailed &&
-                  _activeRendererPath != _BuddhaRendererPath.flutterScenePrimary)
+                  _activeRendererPath !=
+                      _BuddhaRendererPath.flutterScenePrimary)
                 Positioned(
                   top: 18,
                   left: 20,
@@ -714,7 +564,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                           color: Colors.black.withValues(alpha: 0.48),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: const Color(0xFFD4AF37).withValues(alpha: 0.36),
+                            color: const Color(
+                              0xFFD4AF37,
+                            ).withValues(alpha: 0.36),
                           ),
                         ),
                         child: Text(
@@ -845,7 +697,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
   @override
   void dispose() {
-    _cancelLegacyFallbackTimeout();
     _ticker.dispose();
     super.dispose();
   }
@@ -1002,7 +853,8 @@ class _IncensePainter extends CustomPainter {
       );
 
       for (var i = 0; i < 9; i++) {
-        final t = ((DateTime.now().millisecondsSinceEpoch / 1000) * 0.2 +
+        final t =
+            ((DateTime.now().millisecondsSinceEpoch / 1000) * 0.2 +
                 i / 9 +
                 offset * 0.006) %
             1.0;

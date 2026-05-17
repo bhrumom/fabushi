@@ -53,6 +53,10 @@ dependencies:
   # 3D渲染
   flutter_earth_globe:
     path: lib/packages/flutter_earth_globe
+  flutter_gl:
+    path: lib/packages/flutter_gl
+  three_dart: ^0.0.16
+  three_dart_jsm: ^0.0.10
 
   # Firebase
   firebase_core: ^4.2.0
@@ -137,6 +141,13 @@ dependencies:
   flutter_scene:
     path: lib/packages/flutter_scene
 
+dependency_overrides:
+  flutter_gl:
+    path: lib/packages/flutter_gl
+  archive: ^4.0.7
+  http: ^1.2.0
+  image: ^4.5.4
+
 # Tobias 配置
 tobias:
   url_scheme: fabushi
@@ -164,11 +175,8 @@ flutter:
     - assets/earth_texture.jpg
     - assets/ip_data/
     - assets/sherpa_models/streaming-paraformer-zh-en/
-    - assets/buddha_fallback/index.html
-    - assets/buddha_fallback/buddha_fallback.js
-    - assets/buddha_fallback/buddha_fallback.js.LEGAL.txt
     - web/assets/models/佛像模型.glb
-    # 佛像模型优先从 R2 加载原始版本，不默认打包本地简化 .model
+    # iOS 使用 R2 上的 .model；Android 使用 three_dart 渲染打包 GLB，失败时再读远端 GLB
   
   fonts:
     # 使用子集化后的字体（从80MB压缩至~4.5MB）

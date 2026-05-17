@@ -546,6 +546,21 @@ packages:
       relative: true
     source: path
     version: "1.1.0"
+  flutter_gl:
+    dependency: "direct main"
+    description:
+      path: "lib/packages/flutter_gl"
+      relative: true
+    source: path
+    version: "0.0.21"
+  flutter_gl_platform_interface:
+    dependency: transitive
+    description:
+      name: flutter_gl_platform_interface
+      sha256: "03062491fac26d0fda80703e4a01894ecc4fec4f7e5cec131ef021fbf46b2fda"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.4"
   flutter_gpu:
     dependency: transitive
     description: flutter
@@ -1240,6 +1255,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.5.0"
+  opentype_dart:
+    dependency: transitive
+    description:
+      name: opentype_dart
+      sha256: "4bd96aeed494289a87e92bde20afe60f59648dcef253c0a7159b65ffa23899dc"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.1"
   package_config:
     dependency: transitive
     description:
@@ -1861,6 +1884,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.7"
+  three_dart:
+    dependency: "direct main"
+    description:
+      name: three_dart
+      sha256: "102ff2cc65c2dcb805166c7dc5fa00a9a3252b5aec34fb435cc558a7487dc40b"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.16"
+  three_dart_jsm:
+    dependency: "direct main"
+    description:
+      name: three_dart_jsm
+      sha256: "26a71aff4aa842ac8178d2ba8e64b997c434ce9f604fa4fa3ee49f343d2c84b4"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.10"
   timezone:
     dependency: transitive
     description:
@@ -1893,6 +1932,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.0"
+  typr_dart:
+    dependency: transitive
+    description:
+      name: typr_dart
+      sha256: e8aa717c1445ceccd77bd6ba471683c8e17a9b14797ac09db3bd52d6fbd2fe7b
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.2"
   unicode:
     dependency: transitive
     description:
