@@ -54,7 +54,7 @@ jobs:
 
       - name: Prepare writable preview deploy env sample
         run: |
-          cat <<'EOF' >/tmp/forum-deploy-writable-preview.env
+          cat <<'ENVEOF' >/tmp/forum-deploy-writable-preview.env
           FORUM_IMAGE=fabushi-forum
           FORUM_PORT=3001
           FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data
@@ -63,7 +63,7 @@ jobs:
           FORUM_DATA_SOURCE=sqlite
           FORUM_ENABLE_WRITES=true
           FORUM_WRITE_ACCESS_CODE=forum-preview-2026
-          EOF
+          ENVEOF
 
       - name: Validate writable preview deploy env posture
         run: |
@@ -93,14 +93,16 @@ jobs:
             --forum-url https://forum-preview.fabushi.test \
             --deploy-env-path /tmp/forum-deploy-writable-preview.env \
             --exercise-write-flow true \
-            --format github-cli-bundled >/tmp/forum-live-target-cli.txt
+            --format github-cli-bundled \
+            --github-repo bhrumom/fabushi >/tmp/forum-live-target-cli.txt
 
           grep "gh variable set FORUM_LIVE_TARGET" /tmp/forum-live-target-cli.txt
           grep "gh secret set FORUM_LIVE_WRITE_ACCESS_CODE" /tmp/forum-live-target-cli.txt
+          grep "--repo 'bhrumom/fabushi'" /tmp/forum-live-target-cli.txt
 
       - name: Prepare production deploy env sample
         run: |
-          cat <<'EOF' >/tmp/forum-deploy-production.env
+          cat <<'ENVEOF' >/tmp/forum-deploy-production.env
           FORUM_IMAGE=fabushi-forum
           FORUM_PORT=3001
           FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data
@@ -109,7 +111,7 @@ jobs:
           FORUM_DATA_SOURCE=sqlite
           FORUM_ENABLE_WRITES=false
           FORUM_WRITE_ACCESS_CODE=
-          EOF
+          ENVEOF
 
       - name: Validate production deploy env posture
         run: |
@@ -189,17 +191,30 @@ jobs:
 
           cat /tmp/forum-deploy-health.json
 
-      - name: Handoff writable preview live target from deploy env
+      - name: Apply writable preview live target to GitHub via mocked gh
         run: |
+          mkdir -p /tmp/forum-mock-gh-bin
+          cat <<'GHEOF' >/tmp/forum-mock-gh-bin/gh
+          #!/usr/bin/env bash
+          printf '%s\n' "$*" >> /tmp/forum-gh-invocations.txt
+          GHEOF
+          chmod +x /tmp/forum-mock-gh-bin/gh
+          : >/tmp/forum-gh-invocations.txt
+
+          PATH="/tmp/forum-mock-gh-bin:$PATH" \
           node forum/scripts/handoff-live-deployment-target.mjs \
             --forum-url http://127.0.0.1:3001 \
             --deploy-env-path /tmp/forum-deploy-writable-preview.env \
             --exercise-write-flow true \
-            --format github-cli-bundled >/tmp/forum-live-target-handoff.txt
+            --apply-github-live-target true >/tmp/forum-live-target-handoff.txt
 
           cat /tmp/forum-live-target-handoff.txt
+          cat /tmp/forum-gh-invocations.txt
           grep "gh variable set FORUM_LIVE_TARGET" /tmp/forum-live-target-handoff.txt
-          grep "gh secret set FORUM_LIVE_WRITE_ACCESS_CODE" /tmp/forum-live-target-handoff.txt
+          grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-live-target-handoff.txt
+          grep "variable set FORUM_LIVE_TARGET --body" /tmp/forum-gh-invocations.txt
+          grep "secret set FORUM_LIVE_WRITE_ACCESS_CODE --body" /tmp/forum-gh-invocations.txt
+          grep -- "--repo bhrumom/fabushi" /tmp/forum-gh-invocations.txt
 
       - name: Stop forum deploy compose writable preview runtime
         run: |
