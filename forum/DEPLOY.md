@@ -6,6 +6,7 @@ This guide turns the forum's published GHCR image into a repeatable preview or p
 
 - `docker-compose.deploy.yml`
 - `.env.deploy.example`
+- `scripts/scaffold-deploy-env.mjs`
 
 The repository workflow `Deploy compose checks - Forum` now boots this same compose path in three deployment postures so the server-facing runtime stays covered in CI:
 
@@ -13,7 +14,31 @@ The repository workflow `Deploy compose checks - Forum` now boots this same comp
 - sqlite writable preview with a shared write-access code
 - sqlite production indexing with an explicit public base URL
 
-Copy the example environment file first:
+On a fresh host, the quickest path is now to scaffold `.env.deploy` from a preset instead of hand-editing from a blank file:
+
+```bash
+cd forum
+pnpm scaffold:deploy-env -- --deploy-env-path .env.deploy
+```
+
+That default preset produces the safe read-only preview posture. For the other two deployment shapes, switch the preset and add only the values that are truly required:
+
+```bash
+cd forum
+pnpm scaffold:deploy-env -- \
+  --preset writable-preview \
+  --deploy-env-path .env.deploy \
+  --write-access-code forum-preview-2026
+
+pnpm scaffold:deploy-env -- \
+  --preset production \
+  --deploy-env-path .env.deploy \
+  --public-base-url https://forum.fabushi.com
+```
+
+The scaffold command refuses to overwrite an existing file unless you add `--force true`. Every generated file is immediately passed through the same deploy posture validator used elsewhere in the repository, then prints the next deploy, smoke, and handoff commands.
+
+If you prefer to start from the checked-in example instead, this still works:
 
 ```bash
 cd forum
@@ -21,6 +46,12 @@ cp .env.deploy.example .env.deploy
 ```
 
 Then edit `.env.deploy` for the target runtime.
+
+`forum/.env.deploy` follows Docker Compose env-file syntax. That means the deploy helpers now accept the same common forms that Compose itself accepts, including:
+
+- quoted values such as `FORUM_IMAGE="ghcr.io/bhrumom/fabushi-forum:main"`
+- empty quoted values such as `FORUM_PUBLIC_BASE_URL=""`
+- inline comments after a value such as `FORUM_ENABLE_WRITES=true # preview cohort only`
 
 Before you start the compose stack, validate the deploy posture from the same file:
 
@@ -178,7 +209,13 @@ Live HTTP requests now time out after 15 seconds per call. That keeps an unreach
 
 ## Preview baseline
 
-Keep the safe default first:
+Keep the safe default first. The new scaffold command is the shortest way to get there:
+
+```bash
+pnpm scaffold:deploy-env -- --deploy-env-path .env.deploy
+```
+
+Equivalent deploy env:
 
 ```dotenv
 FORUM_IMAGE=ghcr.io/bhrumom/fabushi-forum:main
@@ -224,6 +261,18 @@ Expected preview signals:
 
 Only open writes when the preview runtime is ready to accept real submissions.
 
+The shortest path is:
+
+```bash
+pnpm scaffold:deploy-env -- \
+  --preset writable-preview \
+  --deploy-env-path .env.deploy \
+  --write-access-code forum-preview-2026 \
+  --force true
+```
+
+Equivalent runtime flags:
+
 ```dotenv
 FORUM_ENABLE_WRITES=true
 FORUM_WRITE_ACCESS_CODE=forum-preview-2026
@@ -244,7 +293,19 @@ Add `--apply-github-live-target true` when you want the verified bundled live ta
 
 ## Production indexing runtime
 
-Switch the deployment boundary only when the public origin is ready:
+Switch the deployment boundary only when the public origin is ready.
+
+The shortest path is:
+
+```bash
+pnpm scaffold:deploy-env -- \
+  --preset production \
+  --deploy-env-path .env.deploy \
+  --public-base-url https://forum.fabushi.com \
+  --force true
+```
+
+Equivalent runtime flags:
 
 ```dotenv
 FORUM_DEPLOYMENT_STAGE=production
@@ -259,30 +320,15 @@ docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
 pnpm smoke:deploy-env -- \
   --forum-url https://forum.fabushi.com \
   --deploy-env-path .env.deploy
-curl http://localhost:3000/api/health
-curl http://localhost:3000/api/status
-curl http://localhost:3000/robots.txt
-curl -I http://localhost:3000/threads
+curl https://forum.fabushi.com/api/health
+curl https://forum.fabushi.com/api/status
+curl https://forum.fabushi.com/robots.txt
 ```
 
 Expected production signals:
 
-- `/api/health` and `/api/status` both report `deploymentStage=production`
-- indexing becomes enabled only after `FORUM_PUBLIC_BASE_URL` is also set
-- `robots.txt` switches to `Allow: /` and includes the configured `Host:`
-- page responses stop emitting the preview `x-robots-tag`
-
-## Rolling to a newer forum image
-
-Update only the image tag in `.env.deploy`, then refresh the stack:
-
-```dotenv
-FORUM_IMAGE=ghcr.io/bhrumom/fabushi-forum:sha-<commit>
-```
-
-```bash
-docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull
-docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
-```
-
-This keeps the deploy path aligned with the already published forum artifact instead of rebuilding from source on the server.
+- `/api/health` returns `ready: true`
+- `/api/status` reports `deploymentStage=production`
+- `robots.txt` allows crawling
+- page metadata resolves canonical URLs against `FORUM_PUBLIC_BASE_URL`
+- headers stop advertising the preview noindex posture
