@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/practice-guide");
 const pageTitle = `修行方法总览 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，才能把菩提心、修行、六度、空性理解与日常生活接在一起。";
+  "面向初学者梳理学佛修行可以从哪些方法开始：禅修、经文听诵、阅读、念佛与日常记录如何配合，才能把因果、菩提心、六度、空性与佛学基本概念理解一起接回日常生活。";
 
 const practicePrinciples = [
   {
@@ -79,6 +79,27 @@ const weeklyRhythm = [
   },
 ] as const;
 
+const conceptBridgeSteps = [
+  {
+    titleZh: "因果：为什么修行方法一断再断，常常会回到习惯和结果这层问题",
+    titleEn: "Karma: why broken rhythm often returns to habit and result",
+    descriptionZh: "很多人练着练着会发现，真正卡住的不是不知道做什么，而是同样的急躁、拖延和起伏总在重复。这时回到因果，会更容易看见方法为什么需要相续，而不是只靠一时热情。",
+    descriptionEn: "Many people discover that the real obstacle is not knowing what to do, but watching the same impatience, delay, and fluctuation repeat. Returning to karma helps explain why methods need continuity instead of depending on temporary enthusiasm.",
+  },
+  {
+    titleZh: "菩提心与六度：为什么方法不只是技巧，而会慢慢长成待人处事的方向",
+    titleEn: "Bodhicitta and the six paramitas: why methods become more than technique",
+    descriptionZh: "如果修行方法只是让自己舒服一点，它很容易变成任务清单。回到菩提心和六度，会更容易看见禅修、听诵、念佛和记录，怎样慢慢长成更宽的发心、忍耐与待人处事。",
+    descriptionEn: "If methods are only about feeling better, they can quickly shrink into tasks. Returning to bodhicitta and the six paramitas helps show how meditation, listening, recitation, and notes can widen into aspiration, patience, and conduct.",
+  },
+  {
+    titleZh: "空性与概念总览：为什么练习越往前走，越需要一张更完整的理解地图",
+    titleEn: "Emptiness and the concepts hub: why practice needs a wider map as it matures",
+    descriptionZh: "练习一段时间以后，很多人会开始卡在“我是不是又把功课抓得太死”或“这些概念彼此到底怎么连起来”。这时先回到佛学基本概念总览，再决定是继续看空性、因果还是六度，通常比在方法页里硬撑更稳。",
+    descriptionEn: "After some time, many people start asking whether they are gripping the routine too tightly or how the concepts actually connect. Returning to the concepts hub first, then moving into emptiness, karma, or the six paramitas, is often steadier than forcing the answer to stay inside a methods page alone.",
+  },
+] as const;
+
 const relatedPaths = [
   {
     href: "/start-learning-buddhism",
@@ -97,6 +118,24 @@ const relatedPaths = [
     titleEn: "Connect a lighter routine across morning, daytime, and evening.",
     descriptionZh: "如果你已经确定要开始练习，但卡在功课怎么安排、怎么做得更稳，这一页会更具体。",
     descriptionEn: "If you already know you want to practice but feel stuck on arranging a routine that can last, this page is more concrete.",
+  },
+  {
+    href: "/buddhist-concepts",
+    labelZh: "佛学基本概念",
+    labelEn: "Buddhist Concepts",
+    titleZh: "先回到一张更完整的概念地图，再决定自己卡在哪个概念上。",
+    titleEn: "Return to a wider concepts map before choosing which concept needs attention now.",
+    descriptionZh: "如果你已经发现自己不是缺方法，而是总被因果、菩提心、六度、空性这些词反复卡住，这一页会更适合先打开。",
+    descriptionEn: "Open this first if you have started to see that the problem is not a lack of methods, but repeated friction around karma, bodhicitta, the six paramitas, or emptiness.",
+  },
+  {
+    href: "/what-is-karma",
+    labelZh: "因果是什么意思",
+    labelEn: "What Karma Means",
+    titleZh: "把习惯、选择和结果怎样慢慢形成先放清楚。",
+    titleEn: "Clarify how habit, choice, and result gradually take shape together.",
+    descriptionZh: "如果你已经发现自己最常卡在“为什么知道应该修，却总是留不住节奏”，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if your main friction has become why you know you should practice but still cannot keep the rhythm alive.",
   },
   {
     href: "/what-is-bodhicitta",
@@ -177,6 +216,12 @@ const faqItems = [
     answerEn: "The better question is what you need most right now. Meditation can come first if you need steadiness, recitation or listening can come first if you need an easier rhythm, and reading can come first if you need clearer direction.",
   },
   {
+    questionZh: "因果是什么意思，和修行方法有什么关系？",
+    questionEn: "What does karma have to do with actual practice methods?",
+    answerZh: "如果不知道因果怎样和习惯、选择、结果连在一起，修行方法很容易只剩下一阵一阵的热情。回到因果，会更容易看见：今天怎么说话、怎么安排时间、断掉以后有没有回来，这些看起来很小的动作，正是在慢慢形成后面的结果。",
+    answerEn: "When karma is separated from habit, choice, and result, practice methods can shrink into bursts of enthusiasm. Returning to karma helps show how speech, time, and whether you come back after a break are already shaping later results.",
+  },
+  {
     questionZh: "菩提心是什么意思，和修行方法有什么关系？",
     questionEn: "What does bodhicitta have to do with actual practice methods?",
     answerZh: "如果没有发心，修行方法很容易只剩技巧和任务。更稳的方向，是让禅修、听诵、阅读、念佛和记录，慢慢回到“我为什么学、愿意把这条路带向哪里”这件事上。这样方法才不只是让自己舒服一点，也会开始长出更宽的方向。",
@@ -219,6 +264,8 @@ export const metadata: Metadata = {
     "学佛修行",
     "佛教修行方法",
     "初学者怎么修行",
+    "佛学基本概念",
+    "因果是什么意思",
     "菩提心是什么意思",
     "日常功课",
     "六度分别是什么",
@@ -256,7 +303,7 @@ export default function PracticeGuidePage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["修行方法", "学佛修行", "菩提心", "日常功课", "空性理解"],
+        about: ["修行方法", "学佛修行", "因果", "佛学基本概念", "菩提心", "日常功课", "空性理解"],
       },
       {
         "@type": "BreadcrumbList",
@@ -285,6 +332,16 @@ export default function PracticeGuidePage() {
         "@type": "ItemList",
         name: "初学者常见修行方法",
         itemListElement: practiceMethods.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.titleZh,
+          description: item.descriptionZh,
+        })),
+      },
+      {
+        "@type": "ItemList",
+        name: "修行方法和概念之间的桥接路径",
+        itemListElement: conceptBridgeSteps.map((item, index) => ({
           "@type": "ListItem",
           position: index + 1,
           name: item.titleZh,
@@ -363,6 +420,12 @@ export default function PracticeGuidePage() {
             <LocalizedText
               zh="修行方法最后不只是在练几种技能。随着节奏慢慢稳定，人也会开始看见：很多急躁、执着和判断，并没有想象中那样固定，这也是为什么菩提心、六度和空性会和方法页放在同一条路上。方法越回到这里，练习就越不只是完成任务，而是在帮助自己少一点抓得太死。"
               en="Practice methods are not only a set of techniques. As the rhythm steadies, people often begin to see that agitation, attachment, and judgment are less fixed than they seem. This is why bodhicitta, the six paramitas, and emptiness belong on the same path as method pages. The more practice returns here, the less it becomes task-completion and the more it helps loosen rigid grasping."
+            />
+          </p>
+          <p>
+            <LocalizedText
+              zh="很多人练到这里以后，还会开始问：为什么我明明知道要修，节奏却总是断？为什么方法一多就又只剩任务感？为什么做着做着又会回到因果、菩提心、六度、空性这些概念？这通常不是跑题，而是说明方法页已经开始把人带到更深一点的理解层了。先回到佛学基本概念总览，再决定自己更该继续看哪一张概念页，往往会比只在方法页里硬撑更稳。"
+              en="At this point many people begin to ask why the rhythm keeps breaking even when they know they should practice, why methods turn back into tasks when they multiply, or why the path keeps returning to karma, bodhicitta, the six paramitas, and emptiness. This is usually not a distraction. It often means the methods page has already carried the reader into a deeper layer of understanding. Returning to the concepts hub first, then choosing the concept page that matches the friction, is often steadier than forcing everything to remain inside a methods page alone."
             />
           </p>
           <p>
@@ -452,6 +515,32 @@ export default function PracticeGuidePage() {
         </div>
       </section>
 
+      <section className="band feature-band">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="回到概念" en="Return to Concepts" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="练着练着又回到因果、菩提心、六度和空性，往往不是岔开，而是路径开始变深。"
+              en="When practice keeps returning to karma, bodhicitta, the six paramitas, and emptiness, the path is often deepening rather than drifting."
+            />
+          </h2>
+        </div>
+        <div className="feature-grid">
+          {conceptBridgeSteps.map((item) => (
+            <article key={item.titleEn} className="feature-card">
+              <h3>
+                <LocalizedText zh={item.titleZh} en={item.titleEn} />
+              </h3>
+              <p>
+                <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section className="band">
         <div className="section-heading tight">
           <p>
@@ -509,8 +598,8 @@ export default function PracticeGuidePage() {
           <a className="primary-action" href={siteHref("/download")}>
             <LocalizedText zh="下载法布施" en="Download Fabushi" />
           </a>
-          <a className="secondary-action" href={siteHref("/start-learning-buddhism")}>
-            <LocalizedText zh="回到学佛从哪里开始" en="Back to Where to Begin" />
+          <a className="secondary-action" href={siteHref("/buddhist-concepts")}>
+            <LocalizedText zh="继续看佛学基本概念" en="Continue to Buddhist Concepts" />
           </a>
         </div>
       </section>
