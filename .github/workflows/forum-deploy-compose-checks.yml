@@ -6,7 +6,9 @@ on:
       - "forum/docker-compose.deploy.yml"
       - "forum/.env.deploy.example"
       - "forum/DEPLOY.md"
+      - "forum/package.json"
       - "forum/scripts/check-deployment-contract.mjs"
+      - "forum/scripts/validate-deploy-env.mjs"
       - ".github/workflows/forum-deploy-compose-checks.yml"
   push:
     branches:
@@ -15,7 +17,9 @@ on:
       - "forum/docker-compose.deploy.yml"
       - "forum/.env.deploy.example"
       - "forum/DEPLOY.md"
+      - "forum/package.json"
       - "forum/scripts/check-deployment-contract.mjs"
+      - "forum/scripts/validate-deploy-env.mjs"
       - ".github/workflows/forum-deploy-compose-checks.yml"
 
 permissions:
@@ -32,6 +36,47 @@ jobs:
             .github
             forum
           fetch-depth: 1
+
+      - name: Validate read-only preview deploy env baseline
+        run: |
+          node forum/scripts/validate-deploy-env.mjs \
+            --deploy-env-path forum/.env.deploy.example
+
+      - name: Prepare writable preview deploy env sample
+        run: |
+          cat <<'EOF' >/tmp/forum-deploy-writable-preview.env
+          FORUM_IMAGE=fabushi-forum
+          FORUM_PORT=3001
+          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data
+          FORUM_DEPLOYMENT_STAGE=preview
+          FORUM_PUBLIC_BASE_URL=
+          FORUM_DATA_SOURCE=sqlite
+          FORUM_ENABLE_WRITES=true
+          FORUM_WRITE_ACCESS_CODE=forum-preview-2026
+          EOF
+
+      - name: Validate writable preview deploy env posture
+        run: |
+          node forum/scripts/validate-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-writable-preview.env
+
+      - name: Prepare production deploy env sample
+        run: |
+          cat <<'EOF' >/tmp/forum-deploy-production.env
+          FORUM_IMAGE=fabushi-forum
+          FORUM_PORT=3001
+          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data
+          FORUM_DEPLOYMENT_STAGE=production
+          FORUM_PUBLIC_BASE_URL=https://forum.fabushi.test
+          FORUM_DATA_SOURCE=sqlite
+          FORUM_ENABLE_WRITES=false
+          FORUM_WRITE_ACCESS_CODE=
+          EOF
+
+      - name: Validate production deploy env posture
+        run: |
+          node forum/scripts/validate-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-production.env
 
       - name: Build forum container image
         run: docker build -t fabushi-forum ./forum

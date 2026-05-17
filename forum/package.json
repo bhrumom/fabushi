@@ -10,7 +10,8 @@
     "start:standalone": "node .next/standalone/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke:deployment": "node ./scripts/check-deployment-contract.mjs",
-    "prepare:live-target": "node ./scripts/prepare-live-deployment-vars.mjs"
+    "prepare:live-target": "node ./scripts/prepare-live-deployment-vars.mjs",
+    "check:deploy-env": "node ./scripts/validate-deploy-env.mjs"
   },
   "dependencies": {
     "next": "^15.5.2",
