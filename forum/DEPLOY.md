@@ -55,7 +55,28 @@ If both are present, `FORUM_LIVE_TARGET` wins. This keeps the hourly workflow ba
 
 If the live target still requires the shared preview code, also store it in the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE`.
 
-Once the target host has a working `forum/.env.deploy`, generate the matching hourly-check variables from that same file instead of retyping them by hand:
+Once the target host has a working `forum/.env.deploy`, the shortest recommended handoff is now one command:
+
+```bash
+cd forum
+pnpm handoff:live-target -- \
+  --forum-url https://forum-preview.example.com \
+  --deploy-env-path .env.deploy
+```
+
+That single entrypoint will:
+
+- re-run the deploy env posture summary
+- smoke the live runtime against that same `.env.deploy`
+- print the bundled `gh variable set FORUM_LIVE_TARGET ...` command that matches the verified runtime
+
+If the preview runtime is intentionally writable and you want the handoff itself to prove the real thread-and-reply flow before printing the hourly config, add:
+
+```bash
+--exercise-write-flow true
+```
+
+If you want the underlying translation outputs directly instead of the full handoff command, the lower-level helper is still available:
 
 ```bash
 cd forum
@@ -92,12 +113,6 @@ node scripts/prepare-live-deployment-vars.mjs \
   --forum-url https://forum-preview.example.com \
   --deploy-env-path .env.deploy \
   --format github-cli
-```
-
-If the preview runtime is intentionally writable and you want the hourly workflow to exercise the live thread-and-reply flow, add:
-
-```bash
---exercise-write-flow true
 ```
 
 When `.env.deploy` includes `FORUM_WRITE_ACCESS_CODE`, both `github-cli` formats also print the matching `gh secret set FORUM_LIVE_WRITE_ACCESS_CODE` command so the shared preview gate stays aligned with the live smoke check.
@@ -176,6 +191,14 @@ curl http://localhost:3000/robots.txt
 
 The smoke command derives the expected runtime directly from `.env.deploy` and verifies the deployed forum's health endpoint, runtime status, headers, `robots.txt`, and page metadata against that same file.
 
+Once this local or server-side preview is reachable at its real target URL, run the one-command handoff so the hourly repository variable stays aligned with the verified runtime:
+
+```bash
+pnpm handoff:live-target -- \
+  --forum-url https://forum-preview.example.com \
+  --deploy-env-path .env.deploy
+```
+
 Expected preview signals:
 
 - `/api/health` returns `ready: true`
@@ -197,7 +220,7 @@ After restarting the compose stack, the runtime stays preview-only and still req
 To validate the writable preview against the same deploy env and also exercise the live thread-and-reply path, run:
 
 ```bash
-pnpm smoke:deploy-env -- \
+pnpm handoff:live-target -- \
   --forum-url http://127.0.0.1:3000 \
   --deploy-env-path .env.deploy \
   --exercise-write-flow true
