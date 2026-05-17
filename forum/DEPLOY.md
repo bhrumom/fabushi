@@ -68,9 +68,21 @@ That single entrypoint will:
 
 - re-run the deploy env posture summary
 - smoke the live runtime against that same `.env.deploy`
-- print the bundled `gh variable set FORUM_LIVE_TARGET ...` command that matches the verified runtime
+- print the bundled `gh variable set FORUM_LIVE_TARGET ... --repo bhrumom/fabushi` command that matches the verified runtime
 
-If the preview runtime is intentionally writable and you want the handoff itself to prove the real thread-and-reply flow before printing the hourly config, add:
+The command defaults to `bhrumom/fabushi` as the target repository. If you need a different target, add:
+
+```bash
+--github-repo owner/name
+```
+
+If the host already has `gh` authenticated and you want to push the verified hourly target into GitHub immediately instead of running the printed commands yourself, add:
+
+```bash
+--apply-github-live-target true
+```
+
+If the preview runtime is intentionally writable and you want the handoff itself to prove the real thread-and-reply flow before printing or syncing the hourly config, add:
 
 ```bash
 --exercise-write-flow true
@@ -102,7 +114,8 @@ cd forum
 node scripts/prepare-live-deployment-vars.mjs \
   --forum-url https://forum-preview.example.com \
   --deploy-env-path .env.deploy \
-  --format github-cli-bundled
+  --format github-cli-bundled \
+  --github-repo bhrumom/fabushi
 ```
 
 The original split-variable CLI output is still available too:
@@ -112,7 +125,8 @@ cd forum
 node scripts/prepare-live-deployment-vars.mjs \
   --forum-url https://forum-preview.example.com \
   --deploy-env-path .env.deploy \
-  --format github-cli
+  --format github-cli \
+  --github-repo bhrumom/fabushi
 ```
 
 When `.env.deploy` includes `FORUM_WRITE_ACCESS_CODE`, both `github-cli` formats also print the matching `gh secret set FORUM_LIVE_WRITE_ACCESS_CODE` command so the shared preview gate stays aligned with the live smoke check.
@@ -225,6 +239,8 @@ pnpm handoff:live-target -- \
   --deploy-env-path .env.deploy \
   --exercise-write-flow true
 ```
+
+Add `--apply-github-live-target true` when you want the verified bundled live target and preview access-code secret written to GitHub immediately.
 
 ## Production indexing runtime
 
