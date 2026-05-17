@@ -11,6 +11,7 @@ on:
       - "forum/scripts/handoff-live-deployment-target.mjs"
       - "forum/scripts/prepare-live-deployment-vars.mjs"
       - "forum/scripts/resolve-live-deployment-target.mjs"
+      - "forum/scripts/scaffold-deploy-env.mjs"
       - "forum/scripts/smoke-deployment-from-env.mjs"
       - "forum/scripts/validate-deploy-env.mjs"
       - ".github/workflows/forum-deploy-compose-checks.yml"
@@ -27,6 +28,7 @@ on:
       - "forum/scripts/handoff-live-deployment-target.mjs"
       - "forum/scripts/prepare-live-deployment-vars.mjs"
       - "forum/scripts/resolve-live-deployment-target.mjs"
+      - "forum/scripts/scaffold-deploy-env.mjs"
       - "forum/scripts/smoke-deployment-from-env.mjs"
       - "forum/scripts/validate-deploy-env.mjs"
       - ".github/workflows/forum-deploy-compose-checks.yml"
@@ -52,23 +54,39 @@ jobs:
           node forum/scripts/validate-deploy-env.mjs \
             --deploy-env-path forum/.env.deploy.example
 
-      - name: Prepare writable preview deploy env sample
+      - name: Scaffold read-only preview deploy env sample
         run: |
-          cat <<'ENVEOF' >/tmp/forum-deploy-writable-preview.env
-          FORUM_IMAGE=fabushi-forum
-          FORUM_PORT=3001
-          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data
-          FORUM_DEPLOYMENT_STAGE=preview
-          FORUM_PUBLIC_BASE_URL=
-          FORUM_DATA_SOURCE=sqlite
-          FORUM_ENABLE_WRITES=true
-          FORUM_WRITE_ACCESS_CODE=forum-preview-2026
-          ENVEOF
+          node forum/scripts/scaffold-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-preview-scaffold.env \
+            --forum-port 3001 \
+            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data
 
-      - name: Validate writable preview deploy env posture
+          grep "FORUM_DEPLOYMENT_STAGE=preview" /tmp/forum-deploy-preview-scaffold.env
+          grep "FORUM_ENABLE_WRITES=false" /tmp/forum-deploy-preview-scaffold.env
+
+      - name: Reject writable preview scaffold without access code
+        shell: bash
         run: |
-          node forum/scripts/validate-deploy-env.mjs \
-            --deploy-env-path /tmp/forum-deploy-writable-preview.env
+          if node forum/scripts/scaffold-deploy-env.mjs \
+            --preset writable-preview \
+            --deploy-env-path /tmp/forum-should-not-exist.env; then
+            echo "Expected writable preview scaffold to fail without --write-access-code." >&2
+            exit 1
+          fi
+
+      - name: Scaffold writable preview deploy env sample
+        run: |
+          node forum/scripts/scaffold-deploy-env.mjs \
+            --preset writable-preview \
+            --deploy-env-path /tmp/forum-deploy-writable-preview.env \
+            --forum-image fabushi-forum \
+            --forum-port 3001 \
+            --forum-data-dir "/tmp/fabushi forum deploy compose data" \
+            --write-access-code forum-preview-2026
+
+          grep 'FORUM_DATA_DIR="/tmp/fabushi forum deploy compose data"' /tmp/forum-deploy-writable-preview.env
+          grep "FORUM_ENABLE_WRITES=true" /tmp/forum-deploy-writable-preview.env
+          grep "FORUM_WRITE_ACCESS_CODE=forum-preview-2026" /tmp/forum-deploy-writable-preview.env
 
       - name: Prepare bundled live target sample
         run: |
@@ -100,23 +118,29 @@ jobs:
           grep "gh secret set FORUM_LIVE_WRITE_ACCESS_CODE" /tmp/forum-live-target-cli.txt
           grep "--repo 'bhrumom/fabushi'" /tmp/forum-live-target-cli.txt
 
-      - name: Prepare production deploy env sample
+      - name: Reject production scaffold without public base URL
+        shell: bash
         run: |
-          cat <<'ENVEOF' >/tmp/forum-deploy-production.env
-          FORUM_IMAGE=fabushi-forum
-          FORUM_PORT=3001
-          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data
-          FORUM_DEPLOYMENT_STAGE=production
-          FORUM_PUBLIC_BASE_URL=https://forum.fabushi.test
-          FORUM_DATA_SOURCE=sqlite
-          FORUM_ENABLE_WRITES=false
-          FORUM_WRITE_ACCESS_CODE=
-          ENVEOF
+          if node forum/scripts/scaffold-deploy-env.mjs \
+            --preset production \
+            --deploy-env-path /tmp/forum-production-should-not-exist.env; then
+            echo "Expected production scaffold to fail without --public-base-url." >&2
+            exit 1
+          fi
 
-      - name: Validate production deploy env posture
+      - name: Scaffold production deploy env sample
         run: |
-          node forum/scripts/validate-deploy-env.mjs \
-            --deploy-env-path /tmp/forum-deploy-production.env
+          node forum/scripts/scaffold-deploy-env.mjs \
+            --preset production \
+            --deploy-env-path /tmp/forum-deploy-production.env \
+            --forum-image fabushi-forum \
+            --forum-port 3001 \
+            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data \
+            --public-base-url https://forum.fabushi.test
+
+          grep "FORUM_DEPLOYMENT_STAGE=production" /tmp/forum-deploy-production.env
+          grep "FORUM_PUBLIC_BASE_URL=https://forum.fabushi.test" /tmp/forum-deploy-production.env
+          grep "FORUM_ENABLE_WRITES=false" /tmp/forum-deploy-production.env
 
       - name: Build forum container image
         run: docker build -t fabushi-forum ./forum
