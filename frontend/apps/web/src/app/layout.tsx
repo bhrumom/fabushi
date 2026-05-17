@@ -6,9 +6,9 @@ import { siteUrl } from "../lib/site-url";
 import "./globals.css";
 
 const homeUrl = siteUrl("/");
-const siteTitle = `${brand.name} | Dharma Sharing, Meditation, and Global Practice`;
+const siteTitle = `${brand.name} | 全球法布施、佛法入门与修行路径`;
 const siteDescription =
-  "Fabushi offers sutra listening, meditation, dharma videos, practice tracking, and Android / iOS beta downloads.";
+  "Fabushi 提供学佛从哪里开始、佛法入门、佛学基本概念、佛经导读、禅修、日常功课、经文听诵与修行记录，帮助把修行路径慢慢接回日常生活。";
 
 export const metadata: Metadata = {
   title: siteTitle,
@@ -16,9 +16,15 @@ export const metadata: Metadata = {
   keywords: [
     "Fabushi",
     "法布施",
-    "meditation",
-    "sutra",
-    "practice tracker",
+    "全球法布施",
+    "学佛从哪里开始",
+    "佛法入门",
+    "佛学基本概念",
+    "佛经导读",
+    "禅修",
+    "日常功课",
+    "经文听诵",
+    "修行记录",
     "Android Beta",
     "iOS TestFlight",
   ],
@@ -37,7 +43,7 @@ export const metadata: Metadata = {
     description: siteDescription,
     url: homeUrl,
     siteName: "Fabushi",
-    locale: "en_US",
+    locale: "zh_CN",
     type: "website",
   },
   twitter: {
