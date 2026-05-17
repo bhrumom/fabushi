@@ -27,6 +27,7 @@ Current scope:
 - persisted author-role and newcomer-guidance signals for new threads and replies
 - a dedicated GitHub Actions workflow that checks the forum app when `forum/**` changes
 - a container deployment baseline built from Next.js standalone output
+- a GitHub Actions workflow that publishes versioned forum container images to GHCR whenever `main` accepts forum changes
 - a container healthcheck plus smoke checks that validate both the default sqlite read-only runtime and the explicitly writable sqlite runtime
 - a preview compose example that keeps sqlite on a mounted volume so data survives container restarts
 
@@ -211,15 +212,35 @@ If the preview runtime still requires a shared write-access code, store it in th
 
 This closes the gap between “container checks passed in CI” and “the actual preview or production forum URL is configured correctly”.
 
+## Published container image
+
+The forum no longer stops at a local `docker build`. The GitHub Actions workflow `Publish forum container image` now publishes a reusable GHCR image whenever `main` accepts changes under `forum/**`.
+
+Published tags:
+
+- `ghcr.io/bhrumom/fabushi-forum:sha-<commit>`
+- `ghcr.io/bhrumom/fabushi-forum:main`
+- `ghcr.io/bhrumom/fabushi-forum:latest`
+
+Use `workflow_dispatch` when you need to republish the current `main` image without waiting for another forum merge.
+
 ## Container deployment
 
-The app now builds with `output: "standalone"`, so deployment does not need the whole repository at runtime.
+The app now builds with `output: "standalone"`, so deployment does not need the whole repository at runtime. Mainline forum changes can now be consumed either from a local build or from the published GHCR image.
 
 Build and run locally with Docker:
 
 ```bash
 docker build -t fabushi-forum ./forum
 ```
+
+Or pull the current mainline image directly:
+
+```bash
+docker pull ghcr.io/bhrumom/fabushi-forum:main
+```
+
+In the examples below, replace `fabushi-forum` with `ghcr.io/bhrumom/fabushi-forum:main` if you want to run the published image instead of a local build.
 
 Run sqlite in durable read-only preview mode first:
 
