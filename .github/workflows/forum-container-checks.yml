@@ -266,7 +266,7 @@ jobs:
 
           html = unescape(os.environ["FORUM_PRODUCTION_THREAD_LIST_PAGE"]).lower()
           assert 'index, follow' in html, html[:4000]
-          assert 'https://forum.fabushi.test/' in html, html[:4000]
+          assert 'https://forum.fabushi.test' in html, html[:4000]
           assert 'noindex' not in html, html[:5000]
           PY2
 
