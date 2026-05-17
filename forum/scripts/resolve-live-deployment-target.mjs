@@ -15,6 +15,10 @@ function parseBoolean(value, key) {
     return false;
   }
 
+  if (value === true || value === false) {
+    return value;
+  }
+
   throw new Error(`Expected ${key} to be true or false, received: ${value}`);
 }
 
@@ -33,7 +37,7 @@ function buildSummaryLines(target) {
       "",
       "- status: skipped",
       `- reason: ${target.reason}`,
-      "- next config: set FORUM_LIVE_URL and the related FORUM_LIVE_* repository variables before expecting hourly checks to hit a real target",
+      "- next config: set FORUM_LIVE_URL or FORUM_LIVE_TARGET before expecting hourly checks to hit a real target",
     ];
   }
 
@@ -52,9 +56,68 @@ function buildSummaryLines(target) {
   ];
 }
 
+function parseBundledTarget(rawValue) {
+  if (!rawValue?.trim()) {
+    return {};
+  }
+
+  let parsed;
+
+  try {
+    parsed = JSON.parse(rawValue);
+  } catch (error) {
+    throw new Error(`FORUM_LIVE_TARGET must be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("FORUM_LIVE_TARGET must decode to a JSON object.");
+  }
+
+  return {
+    forumUrl: typeof parsed.forumUrl === "string" ? parsed.forumUrl : parsed.FORUM_LIVE_URL,
+    deploymentStage:
+      typeof parsed.deploymentStage === "string" ? parsed.deploymentStage : parsed.FORUM_LIVE_DEPLOYMENT_STAGE,
+    publicBaseUrl:
+      typeof parsed.publicBaseUrl === "string" ? parsed.publicBaseUrl : parsed.FORUM_LIVE_PUBLIC_BASE_URL,
+    writesEnabled:
+      typeof parsed.writesEnabled === "boolean"
+        ? parsed.writesEnabled
+        : parseBoolean(parsed.FORUM_LIVE_WRITES_ENABLED, "FORUM_LIVE_TARGET.FORUM_LIVE_WRITES_ENABLED"),
+    requiresAccessCode:
+      typeof parsed.requiresAccessCode === "boolean"
+        ? parsed.requiresAccessCode
+        : parseBoolean(
+            parsed.FORUM_LIVE_REQUIRES_ACCESS_CODE,
+            "FORUM_LIVE_TARGET.FORUM_LIVE_REQUIRES_ACCESS_CODE",
+          ),
+    exerciseWriteFlow:
+      typeof parsed.exerciseWriteFlow === "boolean"
+        ? parsed.exerciseWriteFlow
+        : parseBoolean(
+            parsed.FORUM_LIVE_EXERCISE_WRITE_FLOW,
+            "FORUM_LIVE_TARGET.FORUM_LIVE_EXERCISE_WRITE_FLOW",
+          ),
+  };
+}
+
+function resolveConfigValue({ bundledValue, envValue, normalize = (value) => value }) {
+  if (bundledValue !== undefined) {
+    return normalize(bundledValue);
+  }
+
+  return normalize(envValue);
+}
+
 async function main() {
   const source = process.env.FORUM_LIVE_SOURCE || "scheduled";
-  const forumUrl = normalizeUrl(process.env.FORUM_LIVE_URL?.trim() || "");
+  const bundledTarget = parseBundledTarget(process.env.FORUM_LIVE_TARGET || "");
+  const forumUrl = normalizeUrl(
+    resolveConfigValue({
+      bundledValue: bundledTarget.forumUrl,
+      envValue: process.env.FORUM_LIVE_URL?.trim() || "",
+      normalize: (value) => (typeof value === "string" ? normalizeUrl(value.trim()) : ""),
+    }),
+  );
 
   if (!forumUrl) {
     const skippedTarget = {
@@ -77,18 +140,42 @@ async function main() {
     return;
   }
 
-  const deploymentStage = process.env.FORUM_LIVE_DEPLOYMENT_STAGE?.trim() || "preview";
+  const deploymentStage = resolveConfigValue({
+    bundledValue: bundledTarget.deploymentStage,
+    envValue: process.env.FORUM_LIVE_DEPLOYMENT_STAGE?.trim() || "preview",
+    normalize: (value) => (typeof value === "string" ? value.trim() || "preview" : "preview"),
+  });
   if (deploymentStage !== "preview" && deploymentStage !== "production") {
     throw new Error(`Expected FORUM_LIVE_DEPLOYMENT_STAGE to be preview or production, received: ${deploymentStage}`);
   }
 
-  const writesEnabled = parseBoolean(process.env.FORUM_LIVE_WRITES_ENABLED ?? "false", "FORUM_LIVE_WRITES_ENABLED") ?? false;
+  const writesEnabled =
+    resolveConfigValue({
+      bundledValue: bundledTarget.writesEnabled,
+      envValue: parseBoolean(process.env.FORUM_LIVE_WRITES_ENABLED ?? "false", "FORUM_LIVE_WRITES_ENABLED") ?? false,
+    }) ?? false;
   const requiresAccessCode =
-    parseBoolean(process.env.FORUM_LIVE_REQUIRES_ACCESS_CODE ?? "false", "FORUM_LIVE_REQUIRES_ACCESS_CODE") ?? false;
+    resolveConfigValue({
+      bundledValue: bundledTarget.requiresAccessCode,
+      envValue:
+        parseBoolean(process.env.FORUM_LIVE_REQUIRES_ACCESS_CODE ?? "false", "FORUM_LIVE_REQUIRES_ACCESS_CODE") ??
+        false,
+    }) ?? false;
   const exerciseWriteFlow =
-    parseBoolean(process.env.FORUM_LIVE_EXERCISE_WRITE_FLOW ?? "false", "FORUM_LIVE_EXERCISE_WRITE_FLOW") ?? false;
+    resolveConfigValue({
+      bundledValue: bundledTarget.exerciseWriteFlow,
+      envValue:
+        parseBoolean(process.env.FORUM_LIVE_EXERCISE_WRITE_FLOW ?? "false", "FORUM_LIVE_EXERCISE_WRITE_FLOW") ??
+        false,
+    }) ?? false;
 
-  const publicBaseUrl = normalizeUrl(process.env.FORUM_LIVE_PUBLIC_BASE_URL?.trim() || "");
+  const publicBaseUrl = normalizeUrl(
+    resolveConfigValue({
+      bundledValue: bundledTarget.publicBaseUrl,
+      envValue: process.env.FORUM_LIVE_PUBLIC_BASE_URL?.trim() || "",
+      normalize: (value) => (typeof value === "string" ? normalizeUrl(value.trim()) : ""),
+    }),
+  );
   const writeAccessCode = process.env.FORUM_LIVE_WRITE_ACCESS_CODE?.trim() || "";
   const requestTimeoutMs = Number.parseInt(process.env.FORUM_LIVE_REQUEST_TIMEOUT_MS || "15000", 10);
 
@@ -117,6 +204,10 @@ async function main() {
   }
 
   const warnings = [];
+
+  if (process.env.FORUM_LIVE_TARGET?.trim()) {
+    warnings.push("live checks are reading the bundled FORUM_LIVE_TARGET variable; keep it aligned with the deploy env.");
+  }
 
   if (deploymentStage === "preview" && publicBaseUrl) {
     warnings.push("preview checks received FORUM_LIVE_PUBLIC_BASE_URL; indexing still stays off until production mode.");

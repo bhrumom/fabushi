@@ -103,15 +103,34 @@ function buildLiveTarget({ forumUrl, deployEnv, exerciseWriteFlow }) {
   };
 }
 
+function buildBundledLiveTarget(liveTarget) {
+  return {
+    forumUrl: liveTarget.FORUM_LIVE_URL,
+    deploymentStage: liveTarget.FORUM_LIVE_DEPLOYMENT_STAGE,
+    publicBaseUrl: liveTarget.FORUM_LIVE_PUBLIC_BASE_URL,
+    writesEnabled: liveTarget.FORUM_LIVE_WRITES_ENABLED === "true",
+    requiresAccessCode: liveTarget.FORUM_LIVE_REQUIRES_ACCESS_CODE === "true",
+    exerciseWriteFlow: liveTarget.FORUM_LIVE_EXERCISE_WRITE_FLOW === "true",
+  };
+}
+
+function quoteForSingleQuotedShell(value) {
+  return value.replace(/'/g, "'\"'\"'");
+}
+
 function renderEnvFormat(liveTarget) {
   return Object.entries(liveTarget)
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
 }
 
+function renderJsonFormat(liveTarget) {
+  return JSON.stringify(buildBundledLiveTarget(liveTarget), null, 2);
+}
+
 function renderGithubCliFormat(liveTarget, deployEnv) {
   const lines = Object.entries(liveTarget).map(
-    ([key, value]) => `gh variable set ${key} --body '${value.replace(/'/g, "'\"'\"'")}'`,
+    ([key, value]) => `gh variable set ${key} --body '${quoteForSingleQuotedShell(value)}'`,
   );
 
   if (liveTarget.FORUM_LIVE_REQUIRES_ACCESS_CODE === "true") {
@@ -119,7 +138,22 @@ function renderGithubCliFormat(liveTarget, deployEnv) {
 
     lines.push("");
     lines.push("# Run this once if the preview write gate is enabled for the live target.");
-    lines.push(`gh secret set FORUM_LIVE_WRITE_ACCESS_CODE --body '${accessCode.replace(/'/g, "'\"'\"'")}'`);
+    lines.push(`gh secret set FORUM_LIVE_WRITE_ACCESS_CODE --body '${quoteForSingleQuotedShell(accessCode)}'`);
+  }
+
+  return lines.join("\n");
+}
+
+function renderGithubCliBundledFormat(liveTarget, deployEnv) {
+  const bundledTargetJson = JSON.stringify(buildBundledLiveTarget(liveTarget));
+  const lines = [`gh variable set FORUM_LIVE_TARGET --body '${quoteForSingleQuotedShell(bundledTargetJson)}'`];
+
+  if (liveTarget.FORUM_LIVE_REQUIRES_ACCESS_CODE === "true") {
+    const accessCode = (deployEnv.FORUM_WRITE_ACCESS_CODE || "").trim();
+
+    lines.push("");
+    lines.push("# Run this once if the preview write gate is enabled for the live target.");
+    lines.push(`gh secret set FORUM_LIVE_WRITE_ACCESS_CODE --body '${quoteForSingleQuotedShell(accessCode)}'`);
   }
 
   return lines.join("\n");
@@ -134,8 +168,8 @@ async function main() {
   }
 
   const format = args.format?.trim() || "env";
-  if (format !== "env" && format !== "github-cli") {
-    throw new Error(`Expected --format to be env or github-cli, received: ${format}`);
+  if (!["env", "json", "github-cli", "github-cli-bundled"].includes(format)) {
+    throw new Error(`Expected --format to be env, json, github-cli, or github-cli-bundled, received: ${format}`);
   }
 
   const exerciseWriteFlow = parseBoolean(args["exercise-write-flow"], "exercise_write_flow");
@@ -146,6 +180,16 @@ async function main() {
 
   if (format === "github-cli") {
     console.log(renderGithubCliFormat(liveTarget, deployEnv));
+    return;
+  }
+
+  if (format === "github-cli-bundled") {
+    console.log(renderGithubCliBundledFormat(liveTarget, deployEnv));
+    return;
+  }
+
+  if (format === "json") {
+    console.log(renderJsonFormat(liveTarget));
     return;
   }
 

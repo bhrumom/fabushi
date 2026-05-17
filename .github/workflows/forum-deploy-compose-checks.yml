@@ -8,8 +8,11 @@ on:
       - "forum/DEPLOY.md"
       - "forum/package.json"
       - "forum/scripts/check-deployment-contract.mjs"
+      - "forum/scripts/prepare-live-deployment-vars.mjs"
+      - "forum/scripts/resolve-live-deployment-target.mjs"
       - "forum/scripts/validate-deploy-env.mjs"
       - ".github/workflows/forum-deploy-compose-checks.yml"
+      - ".github/workflows/forum-live-deployment-checks.yml"
   push:
     branches:
       - main
@@ -19,8 +22,11 @@ on:
       - "forum/DEPLOY.md"
       - "forum/package.json"
       - "forum/scripts/check-deployment-contract.mjs"
+      - "forum/scripts/prepare-live-deployment-vars.mjs"
+      - "forum/scripts/resolve-live-deployment-target.mjs"
       - "forum/scripts/validate-deploy-env.mjs"
       - ".github/workflows/forum-deploy-compose-checks.yml"
+      - ".github/workflows/forum-live-deployment-checks.yml"
 
 permissions:
   contents: read
@@ -59,6 +65,34 @@ jobs:
         run: |
           node forum/scripts/validate-deploy-env.mjs \
             --deploy-env-path /tmp/forum-deploy-writable-preview.env
+
+      - name: Prepare bundled live target sample
+        run: |
+          node forum/scripts/prepare-live-deployment-vars.mjs \
+            --forum-url https://forum-preview.fabushi.test \
+            --deploy-env-path /tmp/forum-deploy-writable-preview.env \
+            --exercise-write-flow true \
+            --format json >/tmp/forum-live-target.json
+
+      - name: Validate bundled live target sample
+        run: |
+          export FORUM_LIVE_TARGET="$(cat /tmp/forum-live-target.json)"
+          export FORUM_LIVE_WRITE_ACCESS_CODE=forum-preview-2026
+          export FORUM_LIVE_TARGET_PATH=/tmp/forum-live-target-resolved.json
+
+          node forum/scripts/resolve-live-deployment-target.mjs
+          cat /tmp/forum-live-target-resolved.json
+
+      - name: Validate bundled live target GitHub CLI output
+        run: |
+          node forum/scripts/prepare-live-deployment-vars.mjs \
+            --forum-url https://forum-preview.fabushi.test \
+            --deploy-env-path /tmp/forum-deploy-writable-preview.env \
+            --exercise-write-flow true \
+            --format github-cli-bundled >/tmp/forum-live-target-cli.txt
+
+          grep "gh variable set FORUM_LIVE_TARGET" /tmp/forum-live-target-cli.txt
+          grep "gh secret set FORUM_LIVE_WRITE_ACCESS_CODE" /tmp/forum-live-target-cli.txt
 
       - name: Prepare production deploy env sample
         run: |

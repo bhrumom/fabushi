@@ -78,6 +78,7 @@ jobs:
       - name: Resolve and validate live forum target
         env:
           FORUM_LIVE_SOURCE: ${{ github.event_name }}
+          FORUM_LIVE_TARGET: ${{ vars.FORUM_LIVE_TARGET }}
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
