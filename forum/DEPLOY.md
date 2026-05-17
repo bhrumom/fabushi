@@ -56,9 +56,16 @@ FORUM_LIVE_REQUIRES_ACCESS_CODE=true
 FORUM_LIVE_EXERCISE_WRITE_FLOW=true
 ```
 
+The hourly workflow now validates that live-target settings describe a coherent runtime before it makes any HTTP requests. It will fail fast when the repository variables disagree with each other, including these cases:
+
+- `FORUM_LIVE_REQUIRES_ACCESS_CODE=true` while `FORUM_LIVE_WRITES_ENABLED=false`
+- `FORUM_LIVE_EXERCISE_WRITE_FLOW=true` outside preview mode
+- `FORUM_LIVE_EXERCISE_WRITE_FLOW=true` while writes are still disabled
+- `FORUM_LIVE_EXERCISE_WRITE_FLOW=true` and `FORUM_LIVE_REQUIRES_ACCESS_CODE=true` without the secret `FORUM_LIVE_WRITE_ACCESS_CODE`
+
 If `FORUM_LIVE_URL` is still empty, the hourly workflow exits cleanly without failing. Manual `workflow_dispatch` runs keep working with the explicit inputs.
 
-The hourly workflow now also writes a job summary for both skip and check paths, so the run itself tells you which target posture it resolved and whether the repository variables are still incomplete.
+The hourly workflow now also writes a job summary for both skip and check paths, so the run itself tells you which target posture it resolved and whether the repository variables are still incomplete. When preview checks carry a public base URL, or production checks still omit one, the summary also surfaces that mismatch as a warning instead of leaving it buried in the smoke-check logs.
 
 Live HTTP requests now time out after 15 seconds per call. That keeps an unreachable preview or production target from leaving the hourly workflow hanging for too long before it reports the failure.
 
