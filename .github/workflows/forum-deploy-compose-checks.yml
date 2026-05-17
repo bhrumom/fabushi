@@ -190,13 +190,20 @@ jobs:
 
       - name: Roll out forum deploy compose read-only preview runtime through combined helper
         run: |
+          rm -f /tmp/forum-rollout-preview-bootstrap.env
+
           COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
           FORUM_IMAGE=fabushi-forum \
           node forum/scripts/rollout-deploy-env.mjs \
-            --deploy-env-path /tmp/forum-deploy-preview-scaffold.env \
+            --deploy-env-path /tmp/forum-rollout-preview-bootstrap.env \
             --compose-file forum/docker-compose.deploy.yml \
-            --compose-project-name fabushi-forum-deploy-check | tee /tmp/forum-rollout-preview.txt
+            --compose-project-name fabushi-forum-deploy-check \
+            --scaffold-if-missing true \
+            --forum-image fabushi-forum \
+            --forum-port 3001 \
+            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data | tee /tmp/forum-rollout-preview.txt
 
+          grep "== Scaffold deploy env ==" /tmp/forum-rollout-preview.txt
           grep "Health probe ready at http://127.0.0.1:3001/api/health" /tmp/forum-rollout-preview.txt
           grep "Skipping handoff because neither --forum-url nor FORUM_DEPLOY_CHECK_URL is available yet." /tmp/forum-rollout-preview.txt
 
