@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/what-is-bodhicitta");
 const pageTitle = `菩提心是什么意思 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理菩提心是什么意思：菩提心不是一时的好心，也不只是口号，而是愿意走向觉悟、同时把众生利益放进发心、选择、六度与日常练习里的方向。";
+  "面向初学者梳理菩提心是什么意思：菩提心不是一时的好心，也不只是口号，而是愿意走向觉悟、同时把众生利益放进发心、选择、六度、《普门品》等经典阅读与日常练习里的方向。";
 
 const bodhicittaFoundations = [
   {
@@ -73,6 +73,36 @@ const conceptBlocks = [
   },
 ] as const;
 
+const scriptureBridgeSteps = [
+  {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "从《普门品》接到菩提心",
+    labelEn: "Universal Gate to Bodhicitta",
+    titleZh: "如果你是从《普门品》里的慈悲与依止感被打动，下一步先把这种感受接回更清楚的发心方向。",
+    titleEn: "If the Universal Gate Chapter first moved you through compassion and refuge, the next step is to return that feeling to a clearer direction of aspiration.",
+    descriptionZh: "很多人第一次真正碰到菩提心，不是在概念词条里，而是在《普门品》或观音法门的语气里，开始隐约感觉修行不只为了自己轻松一点。把这一步说清楚，感动才不容易只停在当下。",
+    descriptionEn: "Many people first touch bodhicitta not through a glossary page, but through the tone of compassion in the Universal Gate Chapter or Guanyin practice. Clarifying that bridge keeps the feeling from stopping in the moment alone.",
+  },
+  {
+    href: "/what-are-the-six-paramitas",
+    labelZh: "从菩提心接到六度",
+    labelEn: "Bodhicitta to Six Paramitas",
+    titleZh: "如果你已经知道菩提心不是一句口号，下一步更值得看它怎样长成布施、持戒、忍辱、精进、禅定和般若。",
+    titleEn: "If bodhicitta is no longer just a slogan, the next useful step is to see how it grows into generosity, discipline, patience, diligence, meditation, and wisdom.",
+    descriptionZh: "很多人会在这里继续追问：为什么发心不会只停在心里，而会慢慢变成做人做事和修行节奏？这正是六度最自然接进来的地方。",
+    descriptionEn: "Many readers continue by asking why aspiration does not remain only in the heart but gradually becomes conduct and practice rhythm. This is exactly where the six paramitas enter most naturally.",
+  },
+  {
+    href: "/daily-practice",
+    labelZh: "从发心接回日常功课",
+    labelEn: "Aspiration to Daily Practice",
+    titleZh: "如果你最关心的是怎样让发心不要只停在一时触动，下一步先把它接回晨起、白天和晚间的小练习。",
+    titleEn: "If your main concern is how aspiration can remain more than a passing feeling, the next step is to return it to small practices across morning, daytime, and evening.",
+    descriptionZh: "菩提心真正留得住，往往不是靠一次很强的感动，而是靠很轻但持续的功课把它慢慢放进生活里。",
+    descriptionEn: "Bodhicitta usually stays alive not through one intense inspiration, but through a light and continuous routine that slowly places it inside ordinary life.",
+  },
+] as const;
+
 const commonMistakes = [
   {
     titleZh: "把菩提心理解成“人好一点就够了”",
@@ -114,6 +144,15 @@ const relatedPaths = [
     descriptionEn: "Return here first if you are still looking for the doorway that fits your present question best.",
   },
   {
+    href: "/buddhist-concepts",
+    labelZh: "佛学基本概念",
+    labelEn: "Buddhist Concepts",
+    titleZh: "先回到一张更完整的概念地图，再决定自己现在更该继续看哪一个词。",
+    titleEn: "Return to a wider concepts map before deciding which concept deserves attention next.",
+    descriptionZh: "如果你已经发现自己的问题不只停在菩提心一个词上，而是开始和因果、六度、空性连在一起，这一页会更适合先打开。",
+    descriptionEn: "Open this first if your question is no longer only about bodhicitta and is beginning to connect with karma, the six paramitas, and emptiness as well.",
+  },
+  {
     href: "/what-is-karma",
     labelZh: "因果是什么意思",
     labelEn: "What Karma Means",
@@ -121,6 +160,24 @@ const relatedPaths = [
     titleEn: "Read intention together with the way actions gradually become results.",
     descriptionZh: "如果你想把“发心”这件事放回因果、习惯和日常选择里一起理解，这一页更适合继续往下看。",
     descriptionEn: "This is the better next page if you want to understand intention together with karma, habits, and ordinary choices.",
+  },
+  {
+    href: "/sutra-guide",
+    labelZh: "佛经导读",
+    labelEn: "Sutra Guide",
+    titleZh: "把慈悲、发心和经典阅读重新放回同一条路上。",
+    titleEn: "Return compassion, aspiration, and scripture reading to the same path.",
+    descriptionZh: "如果你已经发现自己常常是从《普门品》、听诵或经典语气里先被打动，这一页会更适合继续往下走。",
+    descriptionEn: "This page is the better next step if you often find yourself moved first through the Universal Gate Chapter, listening, or the tone of scripture itself.",
+  },
+  {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "初学者佛经推荐",
+    labelEn: "Beginner Sutra Picks",
+    titleZh: "把《普门品》为什么常会把人带到菩提心，放回更具体的经典入口里。",
+    titleEn: "Return the bridge from the Universal Gate Chapter to bodhicitta to a more specific beginner scripture entry point.",
+    descriptionZh: "如果你已经发现自己的问题更贴近《普门品》、慈悲和依止感，而不是抽象概念本身，这一页会更适合继续往下看。",
+    descriptionEn: "This page is more specific if your question is already closer to the Universal Gate Chapter, compassion, and refuge than to abstract concept language alone.",
   },
   {
     href: "/what-are-the-six-paramitas",
@@ -148,15 +205,6 @@ const relatedPaths = [
     titleEn: "Let aspiration become steadier through the small actions of a day.",
     descriptionZh: "如果你想把菩提心从概念接回晨起、白天和晚间的日常节奏，这一页会更具体。",
     descriptionEn: "This page is more concrete if you want to return bodhicitta from concept into morning, daytime, and evening rhythm.",
-  },
-  {
-    href: "/faq",
-    labelZh: "常见问题",
-    labelEn: "FAQ",
-    titleZh: "先清掉下载、测试和使用前的实际问题。",
-    titleEn: "Clear the practical questions before you begin using the product.",
-    descriptionZh: "如果你正准备安装 Fabushi 或了解产品入口，可以先从这里开始。",
-    descriptionEn: "Start here if you are preparing to install Fabushi or need product entry details first.",
   },
   {
     href: "/download",
@@ -189,6 +237,18 @@ const faqItems = [
     answerEn: "No. Steady bodhicitta is not self-destruction. It lets your own study, practice, and care for body and mind become part of a path that can truly benefit others. Sustaining yourself is often what keeps the path alive.",
   },
   {
+    questionZh: "《普门品》和菩提心有什么关系？",
+    questionEn: "What does the Universal Gate Chapter have to do with bodhicitta?",
+    answerZh: "很多人先从《普门品》感到慈悲和依止感，但继续往前时，常会追问：这种感受为什么不会只停在一时安慰，而会慢慢长成更宽的发心？这正是它和菩提心最自然接起来的地方。",
+    answerEn: "Many readers first feel compassion and refuge through the Universal Gate Chapter, then begin to ask how that feeling becomes more than temporary comfort and grows into a wider aspiration. That is where it most naturally connects with bodhicitta.",
+  },
+  {
+    questionZh: "菩提心和六度是什么关系？",
+    questionEn: "How are bodhicitta and the six paramitas related?",
+    answerZh: "可以把菩提心看成方向，把六度看成这种方向慢慢长成做法和习惯的路径。没有发心，六度容易只剩条目；没有六度，发心也容易只停在感动和口号里。",
+    answerEn: "You can think of bodhicitta as direction and the six paramitas as the way that direction slowly becomes practice and habit. Without aspiration, the paramitas can shrink into a list. Without the paramitas, aspiration can remain only inspiration or slogan.",
+  },
+  {
     questionZh: "菩提心一定要先懂很多教理，才能开始吗？",
     questionEn: "Do I need to understand a lot of doctrine before I can begin cultivating bodhicitta?",
     answerZh: "不一定。理解当然会慢慢加深，但起点可以很朴素：先愿意少一点只围着自己打转，多一点愿意让学习和练习对别人也有益处。然后再随着阅读、思考和练习慢慢加深。",
@@ -212,6 +272,8 @@ export const metadata: Metadata = {
     "菩提心是什么意思",
     "菩提心",
     "发菩提心",
+    "普门品 菩提心",
+    "观音 慈悲",
     "六度分别是什么",
     "大乘佛教",
     "学佛入门",
@@ -248,7 +310,7 @@ export default function WhatIsBodhicittaPage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["菩提心", "发菩提心", "大乘佛教"],
+        about: ["菩提心", "发菩提心", "大乘佛教", "普门品", "六度"],
       },
       {
         "@type": "BreadcrumbList",
@@ -268,6 +330,12 @@ export default function WhatIsBodhicittaPage() {
           {
             "@type": "ListItem",
             position: 3,
+            name: "佛学基本概念入门",
+            item: siteUrl("/buddhist-concepts"),
+          },
+          {
+            "@type": "ListItem",
+            position: 4,
             name: "菩提心是什么意思",
             item: pageUrl,
           },
@@ -280,6 +348,17 @@ export default function WhatIsBodhicittaPage() {
           "@type": "ListItem",
           position: index + 1,
           name: item.titleZh,
+          description: item.descriptionZh,
+        })),
+      },
+      {
+        "@type": "ItemList",
+        name: "菩提心的经典与实践桥接路径",
+        itemListElement: scriptureBridgeSteps.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.labelZh,
+          url: siteUrl(item.href),
           description: item.descriptionZh,
         })),
       },
@@ -349,6 +428,12 @@ export default function WhatIsBodhicittaPage() {
             <LocalizedText
               zh="所以，菩提心并不是否定自己的痛苦，也不是要求人立刻承担一切。很多人开始学佛，本来就是因为自己先有烦恼、先有困惑。菩提心真正加进来的，是一个更宽的方向：如果我真的越来越明白、越来越稳，这种明白和稳，能不能不只停在我这里？"
               en="Bodhicitta does not deny one’s own suffering, nor does it demand carrying everything immediately. Many people begin buddhadharma because their own confusion and pain are already present. What bodhicitta adds is a wider direction: if understanding and steadiness really grow, can they stop ending only with me?"
+            />
+          </p>
+          <p>
+            <LocalizedText
+              zh="很多人第一次真正碰到菩提心，并不是在概念词条里，而是在读《普门品》、听观音圣号，或被慈悲与依止感安住时，开始隐约感觉修行不只为了自己轻松一点。可如果这一步没有被接回更清楚的概念和练习，感动很容易停在当下，过几天又散掉。把《普门品》、愿心和日常小练习重新接回同一条路上，菩提心才更容易从一时触动慢慢长成方向。"
+              en="Many people first touch bodhicitta not through a concept page, but while reading the Universal Gate Chapter, hearing Guanyin recitation, or being steadied by compassion and refuge. Without a clearer bridge into concept and practice, that feeling can fade quickly. Returning the Universal Gate Chapter, aspiration, and small daily practice to the same path helps bodhicitta grow from a passing impression into direction."
             />
           </p>
           <p>
@@ -438,6 +523,37 @@ export default function WhatIsBodhicittaPage() {
         </div>
       </section>
 
+      <section className="band feature-band">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="下一步接哪里" en="Where to Go Next" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="把《普门品》里的慈悲、六度里的做法和日常功课里的小动作，重新接回同一条发心路径。"
+              en="Return the compassion of scripture, the conduct of the paramitas, and the small actions of daily practice to one continuous path of aspiration."
+            />
+          </h2>
+        </div>
+        <div className="editorial-list">
+          {scriptureBridgeSteps.map((item) => (
+            <a key={item.href} className="editorial-row" href={siteHref(item.href)}>
+              <span>
+                <LocalizedText zh={item.labelZh} en={item.labelEn} />
+              </span>
+              <div>
+                <strong>
+                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
+                </strong>
+                <p>
+                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+                </p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+
       <section className="band">
         <div className="section-heading tight">
           <p>
@@ -471,8 +587,8 @@ export default function WhatIsBodhicittaPage() {
           </p>
           <h2>
             <LocalizedText
-              zh="把这张概念页接回更完整的入门、修行和日常路径。"
-              en="Use this concept page as a bridge back into the wider beginner, practice, and daily-life paths."
+              zh="把这张概念页接回更完整的入门、经典、修行和日常路径。"
+              en="Use this concept page as a bridge back into the wider beginner, scripture, practice, and daily-life paths."
             />
           </h2>
         </div>
@@ -521,8 +637,8 @@ export default function WhatIsBodhicittaPage() {
           <a className="primary-action" href={siteHref("/download")}>
             <LocalizedText zh="下载法布施" en="Download Fabushi" />
           </a>
-          <a className="secondary-action" href={siteHref("/buddhadharma")}>
-            <LocalizedText zh="返回佛法入门" en="Back to Dharma Basics" />
+          <a className="secondary-action" href={siteHref("/buddhist-concepts")}>
+            <LocalizedText zh="继续看佛学基本概念" en="Continue to Buddhist Concepts" />
           </a>
         </div>
       </section>
