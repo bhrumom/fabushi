@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import urllib.request
 from datetime import datetime, timezone
@@ -18,6 +19,46 @@ if not mirror_lines:
         "国内镜像 2|https://ghfast.top/https://github.com/",
     ]
 
+TECHNICAL_RELEASE_LINE_PATTERN = re.compile(
+    r"(^pr\s*#\d+)|"
+    r"\b(ci|workflow|checkout|token|sha|commit|submodule|api|github|dispatch|"
+    r"globals\.css|page\.tsx|framer-motion|bentocard|settings\.gradle|build\.gradle|"
+    r"flutter_gl|threeegl|maven|material)\b|"
+    r"(^\[(x| )\])|"
+    r"(behavior-free|mobile-input|document why)",
+    re.IGNORECASE,
+)
+
+RELEASE_SUMMARY_RULES = [
+    (
+        re.compile(
+            r"ui/ux|bento|design|layout|hero section|spotlight hover|scroll reveal|floating screenshots|dark theme",
+            re.IGNORECASE,
+        ),
+        "改进官网界面与浏览体验。",
+    ),
+    (
+        re.compile(r"cache|stale|refresh", re.IGNORECASE),
+        "减少更新后仍显示旧内容的情况。",
+    ),
+    (
+        re.compile(r"android|apk|mirror", re.IGNORECASE),
+        "改进 Android 测试版下载与安装稳定性。",
+    ),
+    (
+        re.compile(r"ios|testflight", re.IGNORECASE),
+        "改进 iOS TestFlight 测试入口与发布准备。",
+    ),
+    (
+        re.compile(r"sync|release publish|release state|latest release|immutable release|published", re.IGNORECASE),
+        "提升版本同步与发布状态更新的可靠性。",
+    ),
+    (
+        re.compile(r"screenshot|preview", re.IGNORECASE),
+        "更新产品预览与发布信息展示。",
+    ),
+]
+
 release = json.loads(
     subprocess.check_output(
         ["gh", "api", f"repos/{release_repo}/releases/tags/{release_tag}"],
@@ -27,6 +68,81 @@ release = json.loads(
 
 assets = release.get("assets", [])
 screenshots = {}
+
+
+def normalize_summary_line(line):
+    normalized = re.sub(r"`", "", line or "")
+    normalized = re.sub(r"^pr\s*#\d+:\s*", "", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"^\[(x| )\]\s*", "", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def build_fallback_release_summary(title):
+    normalized_title = (title or "").lower()
+
+    if "ios" in normalized_title or "testflight" in normalized_title:
+        return [
+            "改进 iOS TestFlight 测试入口与发布准备。",
+            "优化最新版本信息的展示方式。",
+        ]
+
+    if "android" in normalized_title or "apk" in normalized_title:
+        return [
+            "改进 Android 测试版下载与安装稳定性。",
+            "优化最新版本信息的展示方式。",
+        ]
+
+    return [
+        "改进下载体验与版本信息展示。",
+        "优化整体稳定性与页面呈现。",
+    ]
+
+
+def map_release_line_to_user_facing(line):
+    normalized = normalize_summary_line(line)
+    if not normalized:
+        return None
+
+    for pattern, text in RELEASE_SUMMARY_RULES:
+        if pattern.search(normalized):
+            return text
+
+    if TECHNICAL_RELEASE_LINE_PATTERN.search(normalized):
+        return None
+
+    return normalized
+
+
+def sanitize_release_summaries(lines, fallback):
+    seen = set()
+    summary = []
+
+    for line in lines:
+        user_facing_line = map_release_line_to_user_facing(line)
+        if not user_facing_line:
+            continue
+
+        key = user_facing_line.lower()
+        if key in seen:
+            continue
+
+        seen.add(key)
+        summary.append(user_facing_line)
+        if len(summary) == 6:
+            return summary
+
+    if summary:
+        return summary
+
+    for fallback_line in build_fallback_release_summary(fallback):
+        key = fallback_line.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        summary.append(fallback_line)
+
+    return summary or [fallback]
 
 
 def extract_summary(body, fallback):
@@ -44,7 +160,7 @@ def extract_summary(body, fallback):
             cleaned = line[2:].strip()
             if cleaned:
                 lines.append(cleaned)
-    return lines[:6] if lines else [fallback]
+    return sanitize_release_summaries(lines, fallback)
 
 
 releases_list = []
