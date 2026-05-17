@@ -330,6 +330,12 @@ export default function WhatIsBodhicittaPage() {
           {
             "@type": "ListItem",
             position: 3,
+            name: "佛学基本概念入门",
+            item: siteUrl("/buddhist-concepts"),
+          },
+          {
+            "@type": "ListItem",
+            position: 4,
             name: "菩提心是什么意思",
             item: pageUrl,
           },
