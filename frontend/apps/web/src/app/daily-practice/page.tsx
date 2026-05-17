@@ -10,117 +10,531 @@ const pageTitle = `日常功课怎么安排 | ${brand.name}`;
 const pageDescription =
   "面向初学者梳理日常功课怎么安排：晨起、白天与晚间可以怎样放进禅修、经文听诵、念佛、阅读与简短回顾，先读什么佛经更合适、听诵以后怎样接回晨起与晚间阅读，以及怎样把《心经》《阿弥陀经》《普门品》《金刚经》的入口真正留在生活里。";
 
+const cardStyles = `
+  .practice-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 18px;
+  }
+
+  .practice-card-shell {
+    display: grid;
+    gap: 12px;
+  }
+
+  .practice-card-toggle {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .practice-card {
+    position: relative;
+    display: block;
+    min-height: 368px;
+    cursor: pointer;
+    perspective: 1800px;
+  }
+
+  .practice-card-toggle:focus-visible + .practice-card {
+    outline: 2px solid var(--gold-soft);
+    outline-offset: 4px;
+    border-radius: 8px;
+  }
+
+  .practice-card-inner {
+    position: relative;
+    min-height: 368px;
+    transform-style: preserve-3d;
+    transition: transform 760ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
+  .practice-card:hover .practice-card-inner,
+  .practice-card-toggle:checked + .practice-card .practice-card-inner {
+    transform: rotateY(180deg);
+  }
+
+  .practice-card-face {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    align-content: start;
+    gap: 16px;
+    padding: 22px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(255, 249, 235, 0.08), rgba(10, 15, 22, 0.96));
+    box-shadow: var(--shadow);
+    backface-visibility: hidden;
+  }
+
+  .practice-card-back {
+    transform: rotateY(180deg);
+    align-content: space-between;
+    background: linear-gradient(180deg, rgba(8, 12, 18, 0.98), rgba(18, 24, 34, 0.98));
+  }
+
+  .practice-card-visual {
+    position: relative;
+    min-height: 148px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    padding: 18px;
+    display: grid;
+    align-content: end;
+    gap: 8px;
+    background:
+      radial-gradient(circle at top right, rgba(255, 249, 235, 0.2), transparent 42%),
+      linear-gradient(145deg, rgba(232, 189, 107, 0.16), rgba(120, 214, 232, 0.1));
+  }
+
+  .practice-card-visual::before,
+  .practice-card-visual::after {
+    content: "";
+    position: absolute;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 249, 235, 0.18);
+    opacity: 0.7;
+  }
+
+  .practice-card-visual::before {
+    inset: 14px 18px auto auto;
+    width: 84px;
+    height: 84px;
+  }
+
+  .practice-card-visual::after {
+    inset: auto auto 14px 18px;
+    width: 120px;
+    height: 120px;
+  }
+
+  .practice-tone-gold .practice-card-visual {
+    background:
+      radial-gradient(circle at top right, rgba(255, 227, 163, 0.24), transparent 42%),
+      linear-gradient(145deg, rgba(232, 189, 107, 0.22), rgba(120, 214, 232, 0.08));
+  }
+
+  .practice-tone-cyan .practice-card-visual {
+    background:
+      radial-gradient(circle at top right, rgba(120, 214, 232, 0.26), transparent 42%),
+      linear-gradient(145deg, rgba(120, 214, 232, 0.18), rgba(158, 215, 191, 0.1));
+  }
+
+  .practice-tone-jade .practice-card-visual {
+    background:
+      radial-gradient(circle at top right, rgba(158, 215, 191, 0.24), transparent 42%),
+      linear-gradient(145deg, rgba(158, 215, 191, 0.18), rgba(232, 189, 107, 0.08));
+  }
+
+  .practice-tone-earth .practice-card-visual {
+    background:
+      radial-gradient(circle at top right, rgba(255, 249, 235, 0.18), transparent 42%),
+      linear-gradient(145deg, rgba(255, 249, 235, 0.08), rgba(120, 214, 232, 0.06));
+  }
+
+  .practice-card-symbol {
+    position: relative;
+    z-index: 1;
+    color: var(--ink);
+    font-size: clamp(1.9rem, 4vw, 3rem);
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .practice-card-visual small {
+    position: relative;
+    z-index: 1;
+    color: var(--gold-soft);
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .practice-card-kicker,
+  .practice-card-hint,
+  .practice-card-stage {
+    margin: 0;
+    color: var(--gold-soft);
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .practice-card-copy,
+  .practice-card-back-copy {
+    display: grid;
+    gap: 10px;
+  }
+
+  .practice-card-copy h3,
+  .practice-card-back-copy h3 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 1.16rem;
+    line-height: 1.36;
+  }
+
+  .practice-card-copy p,
+  .practice-card-back-copy p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  .practice-card-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted-strong);
+  }
+
+  .practice-card-hint::before {
+    content: "";
+    width: 34px;
+    height: 1px;
+    background: rgba(255, 249, 235, 0.26);
+  }
+
+  .practice-card-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 48px;
+    padding: 12px 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 249, 235, 0.05);
+    color: var(--muted-strong);
+    transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+  }
+
+  .practice-card-link strong {
+    color: var(--ink);
+    font-size: 1rem;
+    line-height: 1.3;
+  }
+
+  .practice-card-link span {
+    color: var(--gold-soft);
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .practice-card-link:hover {
+    transform: translateY(-1px);
+    border-color: var(--line-strong);
+    background: rgba(255, 249, 235, 0.08);
+  }
+
+  .practice-card-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 249, 235, 0.04);
+    color: var(--muted-strong);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .practice-card-inner {
+      transition: none;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .practice-card,
+    .practice-card-inner {
+      min-height: 344px;
+    }
+  }
+`;
+
+type CardTone = "gold" | "cyan" | "jade" | "earth";
+
+interface FlipCardItem {
+  id: string;
+  tone: CardTone;
+  eyebrowZh: string;
+  eyebrowEn: string;
+  labelZh: string;
+  labelEn: string;
+  visualZh: string;
+  visualEn: string;
+  frontTitleZh: string;
+  frontTitleEn: string;
+  frontBodyZh: string;
+  frontBodyEn: string;
+  backTitleZh: string;
+  backTitleEn: string;
+  backBodyZh: string;
+  backBodyEn: string;
+  href?: string;
+  ctaZh?: string;
+  ctaEn?: string;
+}
+
+const rhythmCards: FlipCardItem[] = [
+  {
+    id: "morning-rhythm",
+    tone: "gold",
+    eyebrowZh: "一日节奏",
+    eyebrowEn: "Daily Rhythm",
+    labelZh: "晨起先安住",
+    labelEn: "Morning First",
+    visualZh: "晨起",
+    visualEn: "Morning",
+    frontTitleZh: "先让晨起有一个真实回返点，而不是一醒来就被整天带着走。",
+    frontTitleEn: "Give the morning one real point of return before the whole day carries you away.",
+    frontBodyZh: "先留几分钟静坐、念佛，或听一小段经文，比一开始就排很多项目更容易留下来。",
+    frontBodyEn: "A few minutes of sitting, recitation, or one short scripture passage usually stays more easily than a full schedule right away.",
+    backTitleZh: "晨起这一张卡想帮你做什么",
+    backTitleEn: "What this morning card is for",
+    backBodyZh: "它不是让你早晨做得很满，而是先让一天开始时，心里有一个愿意回来的地方。只要这一步稳定了，白天和晚间才更容易慢慢接上。",
+    backBodyEn: "This card does not ask for a full morning. It asks for a place the mind is willing to return to at the start of the day so daytime and evening can join more naturally later.",
+  },
+  {
+    id: "daytime-rhythm",
+    tone: "cyan",
+    eyebrowZh: "一日节奏",
+    eyebrowEn: "Daily Rhythm",
+    labelZh: "白天留短动作",
+    labelEn: "One Daytime Action",
+    visualZh: "白天",
+    visualEn: "Daytime",
+    frontTitleZh: "白天最值钱的，不是做很多，而是留一个最容易实现的短动作。",
+    frontTitleEn: "The most valuable daytime move is not doing a lot, but keeping one action that is easy to realize.",
+    frontBodyZh: "通勤、步行、午休前后，都可以放进一段听诵、一轮念佛，或一句简短提醒。",
+    frontBodyEn: "A commute, walk, or the edges of a break can hold one listening passage, one short recitation, or a brief reminder.",
+    backTitleZh: "白天这一张卡想帮你做什么",
+    backTitleEn: "What this daytime card is for",
+    backBodyZh: "这一步是在避免功课只留在早晚两端。白天哪怕只有一个很轻的回返点，修行也更容易开始回到说话、做事和与人相处里。",
+    backBodyEn: "This step keeps the routine from living only at the edges of the day. Even one light daytime return point helps practice re-enter speech, work, and relationships.",
+  },
+  {
+    id: "evening-rhythm",
+    tone: "jade",
+    eyebrowZh: "一日节奏",
+    eyebrowEn: "Daily Rhythm",
+    labelZh: "晚间用短回顾收住",
+    labelEn: "Close with Review",
+    visualZh: "晚间",
+    visualEn: "Evening",
+    frontTitleZh: "晚间不一定再做很重，只要把今天怎样走过轻轻收住。",
+    frontTitleEn: "The evening does not need to be heavy. It only needs to gather the day gently back together.",
+    frontBodyZh: "回顾今天有没有练习、哪一句最有触动，再补一小段阅读或静坐，就已经很有帮助。",
+    frontBodyEn: "Review whether you practiced, which line stayed with you, then add a short reading or quiet sit if it still feels natural.",
+    backTitleZh: "晚间这一张卡想帮你做什么",
+    backTitleEn: "What this evening card is for",
+    backBodyZh: "晚间卡不是为了一天结束前再加任务，而是让你有一个很轻的机会，把听过、做过和散掉的地方重新看见一次。",
+    backBodyEn: "This evening card is not another task before bed. It is a light chance to see once more what you heard, what you practiced, and where the rhythm scattered.",
+  },
+];
+
+const scriptureCards: FlipCardItem[] = [
+  {
+    id: "scripture-entry",
+    tone: "gold",
+    eyebrowZh: "经典接回功课",
+    eyebrowEn: "Scripture Into Routine",
+    labelZh: "先把入口经选清楚",
+    labelEn: "Choose the First Sutra",
+    visualZh: "入口经",
+    visualEn: "Gateway",
+    frontTitleZh: "很多人功课排不下来，不是不肯练，而是先卡在“到底从哪部经进”。",
+    frontTitleEn: "Many people cannot settle into a routine not because they resist practice, but because they are still stuck on which sutra should come first.",
+    frontBodyZh: "先把《心经》《阿弥陀经》《普门品》还是《金刚经》更适合作为起点单独理清。",
+    frontBodyEn: "Clarify first whether the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra fits best as the beginning.",
+    backTitleZh: "这张卡会带你去哪",
+    backTitleEn: "Where this card leads",
+    backBodyZh: "先把入口经典选清楚，晨起、白天和晚间要怎么接，通常也会一起变清楚。不要让功课一开始就背着“先读哪部经”这个没落地的问题。",
+    backBodyEn: "Once the gateway text is clearer, morning, daytime, and evening rhythm usually become clearer too. Do not let the whole routine start by carrying an unanswered question about which sutra comes first.",
+    href: "/beginner-sutra-recommendations",
+    ctaZh: "继续看初学者佛经推荐",
+    ctaEn: "Open beginner sutra picks",
+  },
+  {
+    id: "scripture-listening",
+    tone: "cyan",
+    eyebrowZh: "经典接回功课",
+    eyebrowEn: "Scripture Into Routine",
+    labelZh: "听诵接回文字",
+    labelEn: "Return Listening to Text",
+    visualZh: "听诵",
+    visualEn: "Listening",
+    frontTitleZh: "真正的难点常常不是“要不要听”，而是听了以后怎样回到文字。",
+    frontTitleEn: "The real difficulty is often not whether to listen, but how listening returns to the written text.",
+    frontBodyZh: "把声音、文字和一句记录接成同一条线，功课才不会只剩背景声音。",
+    frontBodyEn: "Once sound, text, and one short note join the same line, the routine stops becoming only background sound.",
+    backTitleZh: "这张卡会带你去哪",
+    backTitleEn: "Where this card leads",
+    backBodyZh: "晨起先听一小段，白天回到同一段，晚间再读一小段原文或导读，让熟悉感慢慢长成理解。这里接得住，功课才真的开始和经典连上。",
+    backBodyEn: "Listen to one short passage in the morning, return to the same one during the day, then read a little of the text or a guide at night so familiarity slowly grows into understanding. When this bridge holds, the routine finally joins scripture for real.",
+    href: "/sutra-listening",
+    ctaZh: "继续看听诵和读经怎么配合",
+    ctaEn: "Open listening and reading guide",
+  },
+  {
+    id: "scripture-map",
+    tone: "jade",
+    eyebrowZh: "经典接回功课",
+    eyebrowEn: "Scripture Into Routine",
+    labelZh: "回佛经导读重整理",
+    labelEn: "Return to Sutra Guide",
+    visualZh: "总导读",
+    visualEn: "Guide",
+    frontTitleZh: "当经典已经开始进入功课，就回到总导读把整条路重新理一遍。",
+    frontTitleEn: "Once scripture has begun to enter the routine, return to the wider guide and reorganize the whole path once again.",
+    frontBodyZh: "这样不是重复看总览，而是把晨起、白天和晚间节奏重新接回更完整的佛经学习地图。",
+    frontBodyEn: "This is not repeating an overview. It reconnects morning, daytime, and evening rhythm to a fuller map of scripture study.",
+    backTitleZh: "这张卡会带你去哪",
+    backTitleEn: "Where this card leads",
+    backBodyZh: "当你已经不只在问“先读什么”，而开始问“怎么读、怎么和练习配合”，佛经导读会比继续只在功课页里找答案更稳。",
+    backBodyEn: "When the question is no longer only what to read first but how to read and how scripture works with practice, the sutra guide is a steadier next step than staying only on the routine page.",
+    href: "/sutra-guide",
+    ctaZh: "继续看佛经导读",
+    ctaEn: "Open sutra guide",
+  },
+];
+
+const conceptCards: FlipCardItem[] = [
+  {
+    id: "concept-karma",
+    tone: "gold",
+    eyebrowZh: "概念回路",
+    eyebrowEn: "Concept Bridge",
+    labelZh: "因果会解释为什么总断",
+    labelEn: "Karma Explains Breaks",
+    visualZh: "因果",
+    visualEn: "Karma",
+    frontTitleZh: "为什么明明知道要修，节奏却总是断，往往会回到因果、习惯和结果。",
+    frontTitleEn: "Why the rhythm keeps breaking often returns to karma, habit, and result.",
+    frontBodyZh: "这不是把中断看成失败，而是开始看见小动作怎样慢慢养成后面的方向。",
+    frontBodyEn: "This does not treat interruption as failure, but begins to show how small actions slowly shape the direction that follows.",
+    backTitleZh: "这张卡会带你去哪",
+    backTitleEn: "Where this card leads",
+    backBodyZh: "如果你最常卡在“为什么留不住节奏”，先回因果页，会比继续硬排更多动作更稳。它会把习惯、选择和结果怎样互相牵动说得更清楚。",
+    backBodyEn: "If your main friction is why the rhythm will not stay, returning to the karma page is usually steadier than adding more actions. It clarifies how habit, choice, and result move together.",
+    href: "/what-is-karma",
+    ctaZh: "继续进入因果页",
+    ctaEn: "Open karma guide",
+  },
+  {
+    id: "concept-bodhicitta",
+    tone: "jade",
+    eyebrowZh: "概念回路",
+    eyebrowEn: "Concept Bridge",
+    labelZh: "菩提心会解释为什么不只是在完成任务",
+    labelEn: "Bodhicitta Widens the Why",
+    visualZh: "菩提心",
+    visualEn: "Bodhicitta",
+    frontTitleZh: "如果功课只剩“今天有没有做完”，它很容易越做越硬。",
+    frontTitleEn: "When the routine becomes only whether it was completed today, it quickly turns rigid.",
+    frontBodyZh: "回到菩提心，会更容易看见晨起、白天和晚间这些小动作为什么不只是维持自己。",
+    frontBodyEn: "Returning to bodhicitta makes it easier to see why the small actions of morning, daytime, and evening are more than self-maintenance.",
+    backTitleZh: "这张卡会带你去哪",
+    backTitleEn: "Where this card leads",
+    backBodyZh: "这一步会把“我为什么做这份功课”放清楚。功课一旦有了发心，节奏就不再只是任务单，而开始长出更宽的方向与柔软。",
+    backBodyEn: "This step clarifies why the routine is being kept at all. Once aspiration is present, the rhythm stops being only a checklist and begins to grow wider direction and softness.",
+    href: "/what-is-bodhicitta",
+    ctaZh: "继续进入菩提心页",
+    ctaEn: "Open bodhicitta guide",
+  },
+  {
+    id: "concept-paramitas",
+    tone: "cyan",
+    eyebrowZh: "概念回路",
+    eyebrowEn: "Concept Bridge",
+    labelZh: "六度会解释功课怎样落回做人做事",
+    labelEn: "Six Paramitas Return to Life",
+    visualZh: "六度",
+    visualEn: "Paramitas",
+    frontTitleZh: "功课为什么不只是一张任务清单，常常会在六度这里被说清楚。",
+    frontTitleEn: "Why a routine is more than a checklist is often clarified through the six paramitas.",
+    frontBodyZh: "布施、持戒、忍辱、精进、禅定和般若，都会慢慢回到晨起、白天和晚间的节奏里。",
+    frontBodyEn: "Generosity, discipline, patience, diligence, meditation, and wisdom all return gradually to morning, daytime, and evening rhythm.",
+    backTitleZh: "这张卡会带你去哪",
+    backTitleEn: "Where this card leads",
+    backBodyZh: "如果你想知道为什么功课越走越像待人处事和修心的训练，而不只是完成项目，六度页会把这一步讲得更具体。",
+    backBodyEn: "If you want to see why a routine slowly becomes training in conduct and mind rather than only finished tasks, the six paramitas page explains that step more concretely.",
+    href: "/what-are-the-six-paramitas",
+    ctaZh: "继续进入六度页",
+    ctaEn: "Open six paramitas guide",
+  },
+  {
+    id: "concept-emptiness",
+    tone: "earth",
+    eyebrowZh: "概念回路",
+    eyebrowEn: "Concept Bridge",
+    labelZh: "空性会解释怎样少一点抓得太死",
+    labelEn: "Emptiness Softens Rigid Grasping",
+    visualZh: "空性",
+    visualEn: "Emptiness",
+    frontTitleZh: "很多功课之所以越做越紧，是因为人把节奏、成败和判断都抓得太死。",
+    frontTitleEn: "Many routines grow tighter because rhythm, success, and judgment are held too rigidly.",
+    frontBodyZh: "回到空性，不是为了把生活否定掉，而是让晨起、白天和晚间多一点回观与松动。",
+    frontBodyEn: "Returning to emptiness does not cancel life. It lets morning, daytime, and evening hold more reflection and less rigidity.",
+    backTitleZh: "这张卡会带你去哪",
+    backTitleEn: "Where this card leads",
+    backBodyZh: "如果你已经发现自己最常卡在“为什么一散掉就觉得全盘失败”，空性页会帮助你把这种抓得太死的感觉慢慢松开。",
+    backBodyEn: "If your main friction has become the feeling that one break means the whole path has failed, the emptiness page helps loosen that rigid grip step by step.",
+    href: "/what-is-emptiness",
+    ctaZh: "继续进入空性页",
+    ctaEn: "Open emptiness guide",
+  },
+];
+
 const routinePrinciples = [
   {
     titleZh: "先让功课轻一点，才能让它留下来",
     titleEn: "Make the routine light enough to stay",
-    descriptionZh: "很多人一提到日常功课，就会想到必须做很多、做很满。对初学者来说，更稳的起点通常是每天留下一个真实的小动作，而不是把自己一下排得很重。",
-    descriptionEn: "Many people hear daily practice and imagine a routine that must be heavy and full. For beginners, a steadier beginning is usually one real small action each day instead of a schedule that becomes too heavy immediately.",
+    descriptionZh: "对初学者来说，更稳的起点通常不是第一天就排很满，而是每天留下一个真实的小动作，让自己愿意明天再回来一次。",
+    descriptionEn: "For beginners, the steadier beginning is usually not a full first day, but one real small action that leaves you willing to return tomorrow.",
   },
   {
     titleZh: "先定主线，再让其他方法做辅助",
     titleEn: "Choose a main line and let the rest support it",
     descriptionZh: "可以先以短时禅修、经文听诵、念佛或阅读中的一项做主线，再让其他方法帮助自己维持连续，而不是平均分配每一样。",
-    descriptionEn: "Let one method such as short meditation, scripture listening, recitation, or reading become the main line first, then allow the others to support continuity instead of giving every method equal weight.",
+    descriptionEn: "Let one method such as short meditation, scripture listening, recitation, or reading become the main line first, then let the others support continuity instead of competing equally.",
   },
   {
     titleZh: "功课的重点不是排满，而是相续",
     titleEn: "The point is continuity, not fullness",
-    descriptionZh: "传统修学常重视闻、思、修能否慢慢接续起来。日常功课真正有用的地方，不在于今天做了多少，而在于明天还愿不愿意继续。",
-    descriptionEn: "Traditional learning often values whether hearing, reflection, and practice can continue into one another. What makes a daily routine useful is not how much happened today, but whether you can return tomorrow.",
-  },
-] as const;
-
-const dailyMoments = [
-  {
-    titleZh: "晨起：先把方向安住下来",
-    titleEn: "Morning: settle the direction first",
-    descriptionZh: "刚起床时，先留几分钟静坐、念佛，或听一小段经文，让这一天的心先有一个回来的地方。功课不必很长，但最好稳定。",
-    descriptionEn: "Soon after waking, keep a few minutes for sitting, recitation, or one short scripture passage so the day begins with a place for the mind to return. The routine does not need to be long, but it helps when it is steady.",
-  },
-  {
-    titleZh: "白天：留一个最容易实现的短动作",
-    titleEn: "Daytime: keep one easy short action",
-    descriptionZh: "通勤、步行、午休前后，都可以放进一段听诵、一轮念佛，或一句简短提醒。白天这一步的价值，是让修行不只留在早晚，而能慢慢回到生活中间。",
-    descriptionEn: "Commuting, walking, or the edges of a break can hold one passage of listening, a short recitation, or a single reminder. The value of this daytime step is that practice starts to return to ordinary life instead of staying only in morning and evening blocks.",
-  },
-  {
-    titleZh: "晚间：用很短的回顾把一天收住",
-    titleEn: "Evening: close the day with a brief review",
-    descriptionZh: "晚上不一定要再做很重的功课。很多时候，只要回顾今天有没有练习、哪里容易散乱、哪一句经文最有触动，再补一小段阅读或静坐，就已经很有帮助。",
-    descriptionEn: "The evening does not need another heavy block. Often it is enough to review whether you practiced, where attention scattered, and which line stayed with you, then add a short reading or quiet sit if it still feels natural.",
+    descriptionZh: "真正有用的地方，不在于今天做了多少，而在于明天还愿不愿意继续回来。能相续，才慢慢长出力量。",
+    descriptionEn: "What matters most is not how much happened today, but whether you are willing to return tomorrow. Continuity is what slowly grows strength.",
   },
 ] as const;
 
 const gentleSchedule = [
   {
-    titleZh: "第一步：只先定一个早晚都做得到的动作",
-    titleEn: "Step 1: Set one action you can do both morning and night",
+    titleZh: "第一步：先定一个早晚都做得到的动作",
+    titleEn: "Step 1: Set one action for morning and night",
     descriptionZh: "例如晨起五分钟静坐，晚间两分钟回顾；或早晨听一段经文，晚上读一小段导读。先让两端连起来，比中间塞很多内容更稳。",
-    descriptionEn: "For example, sit for five minutes in the morning and review for two minutes at night, or listen in the morning and read a short guide at night. Connecting the two ends of the day is often steadier than filling the middle with too much content.",
+    descriptionEn: "For example, sit for five minutes in the morning and review for two minutes at night, or listen in the morning and read a short guide at night. Connecting the two ends of the day is steadier than filling the middle too early.",
   },
   {
-    titleZh: "第二步：再给白天加一个很轻的提醒点",
-    titleEn: "Step 2: Add one light reminder point during the day",
-    descriptionZh: "不用追求完整流程，只要有一个最容易完成的动作，例如通勤时听诵、午间念佛几分钟，或看到提醒时停一下呼吸，就能让功课开始进入日常。",
-    descriptionEn: "Do not chase a full sequence. One easy action such as listening during a commute, reciting for a few minutes at noon, or pausing with the breath when a reminder appears is enough to let practice enter daily life.",
+    titleZh: "第二步：白天只加一个最容易实现的提醒点",
+    titleEn: "Step 2: Add one easy daytime reminder",
+    descriptionZh: "不用追求完整流程，只要有一个最容易完成的动作，例如通勤时听诵、午间念佛几分钟，或看到提醒时停一下呼吸，就足够让功课开始进入日常。",
+    descriptionEn: "Do not chase a complete sequence. One easy move such as listening during a commute, reciting for a few minutes at noon, or pausing with the breath when a reminder appears is enough to let practice enter daily life.",
   },
   {
     titleZh: "第三步：一周后再决定要不要加量",
-    titleEn: "Step 3: Decide whether to add more only after a week",
+    titleEn: "Step 3: Decide whether to deepen only after a week",
     descriptionZh: "先让这条轻节奏活一周，再看自己是适合增加阅读、增加念佛，还是其实还需要再减一点。真正合适的功课，不是看起来很满，而是能继续走下去。",
-    descriptionEn: "Let the lighter rhythm stay alive for a week first, then decide whether to add reading, add recitation, or simplify even more. A fitting routine is not the one that looks full, but the one that can keep going.",
-  },
-] as const;
-
-const scriptureRoutinePaths = [
-  {
-    href: "/beginner-sutra-recommendations",
-    labelZh: "先把入口经典选清楚",
-    labelEn: "Choose a First Sutra",
-    titleZh: "如果你已经知道自己想从经典进入，先把《心经》《阿弥陀经》《普门品》还是《金刚经》更适合作为起点单独理清。",
-    titleEn: "If scripture already feels like the doorway, first clarify whether the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra fits best as the beginning.",
-    descriptionZh: "很多人排功课排不下来，并不是不愿意练，而是先卡在“到底从哪部经进”。先把入口经文选清楚，晨起、白天和晚间要怎么接，通常也会一起变清楚。",
-    descriptionEn: "Many people cannot settle into a routine not because they resist practice, but because they are still stuck on which sutra should come first. Once the entry scripture is clearer, the morning, daytime, and evening rhythm usually becomes clearer too.",
-  },
-  {
-    href: "/sutra-listening",
-    labelZh: "把听诵接回阅读和提醒",
-    labelEn: "Reconnect Listening and Reading",
-    titleZh: "如果你已经开始在通勤、步行或空档里听经，下一步把声音、文字和一句记录接成同一条日常线。",
-    titleEn: "If you already listen during commutes, walks, or spare moments, the next step is to connect sound, text, and one short note inside the same daily line.",
-    descriptionZh: "真正的难点常常不是“要不要听”，而是听了以后怎样回到文字、怎样让熟悉感继续长成理解。先把这一层接上，日常功课才不会只剩背景声音。",
-    descriptionEn: "The real difficulty is often not whether to listen, but how listening returns to the text and lets familiarity grow into understanding. Once that bridge is in place, the routine no longer remains only background sound.",
-  },
-  {
-    href: "/sutra-guide",
-    labelZh: "再回到佛经导读整理整条路",
-    labelEn: "Return to the Sutra Guide",
-    titleZh: "如果经典已经开始进入功课，回到佛经导读重新整理“先读什么、怎样读、怎样和练习互相配合”的整条路径。",
-    titleEn: "Once scripture has begun to enter the routine, return to the sutra guide to reorganize the wider path of what to read, how to read, and how scripture works with practice.",
-    descriptionZh: "这样做的价值，不是再看一遍总览，而是把已经开始落下来的晨起、白天和晚间节奏，重新接回更完整的佛经学习地图。",
-    descriptionEn: "The point is not to repeat an overview, but to reconnect the rhythm already taking shape across morning, daytime, and evening with a fuller map of scripture study.",
-  },
-] as const;
-
-const conceptBridgeSteps = [
-  {
-    titleZh: "因果：为什么功课总断，总会回到习惯、选择和结果这层问题",
-    titleEn: "Karma: why a broken routine often returns to habit, choice, and result",
-    descriptionZh: "很多人做日常功课时真正卡住的，并不是不知道该做什么，而是明明知道要修，却还是会拖延、散乱、一下太满一下全停。回到因果，会更容易看见这些小动作怎样慢慢养成后面的方向，而不是把中断只看成一次失败。",
-    descriptionEn: "Many people do not get stuck because they lack methods, but because they keep swinging between delay, distraction, overload, and stopping altogether. Returning to karma helps show how these small actions gradually shape direction instead of treating every interruption as a final failure.",
-  },
-  {
-    titleZh: "菩提心与六度：为什么功课不只是完成任务，而会慢慢长成待人处事的方向",
-    titleEn: "Bodhicitta and the six paramitas: why a routine becomes more than task completion",
-    descriptionZh: "如果功课只剩“今天有没有做完”，它很容易越做越硬。回到菩提心和六度，会更容易看见晨起、白天和晚间这些小动作，怎样慢慢长成更宽的发心、忍耐、节奏与待人处事，而不只是维持一份任务感。",
-    descriptionEn: "If a routine becomes only a question of whether it was completed, it can quickly grow rigid. Returning to bodhicitta and the six paramitas helps show how small actions across morning, daytime, and evening widen into aspiration, patience, steadiness, and conduct instead of remaining a checklist.",
-  },
-  {
-    titleZh: "空性与概念总览：为什么功课越往前走，越需要一张更完整的理解地图",
-    titleEn: "Emptiness and the concepts hub: why practice needs a wider map as it matures",
-    descriptionZh: "练习一段时间以后，很多人会开始问：我是不是又把功课抓得太死？这些概念之间到底怎么连？这时先回到佛学基本概念总览，再决定是继续看空性、因果、菩提心还是六度，往往会比只在功课页里硬撑更稳。",
-    descriptionEn: "After some time, many people begin asking whether they are gripping the routine too tightly and how the concepts actually connect. Returning to the concepts hub first, then moving into emptiness, karma, bodhicitta, or the six paramitas, is often steadier than forcing all those questions to remain inside a routine page alone.",
+    descriptionEn: "Let the lighter rhythm stay alive for a week first, then decide whether to add reading, add recitation, or simplify further. A fitting routine is not the one that looks full, but the one that can keep going.",
   },
 ] as const;
 
@@ -159,10 +573,10 @@ const relatedPaths = [
     href: "/beginner-sutra-recommendations",
     labelZh: "初学者佛经推荐",
     labelEn: "Beginner Sutra Picks",
-    titleZh: "先把“从哪部经进”放清楚，日常功课才更容易真正落下来。",
-    titleEn: "Clarify which sutra to begin with before the daily rhythm tries to carry too many questions at once.",
+    titleZh: "先把“从哪部经进”放清楚，功课才更容易真正落下来。",
+    titleEn: "Clarify which sutra to begin with before the routine carries too many questions at once.",
     descriptionZh: "如果你已经知道自己想从经典进入，但卡在《心经》《阿弥陀经》《普门品》还是《金刚经》更适合作为起点，这一页会更具体。",
-    descriptionEn: "Open this first if you already know scripture is your doorway but still need to choose between the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra.",
+    descriptionEn: "Open this first if scripture is your doorway but you still need to choose between the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra.",
   },
   {
     href: "/sutra-listening",
@@ -174,15 +588,6 @@ const relatedPaths = [
     descriptionEn: "This is the better next page if you already listen to sutras but still need to reconnect that rhythm with morning, daytime, and evening.",
   },
   {
-    href: "/sutra-guide",
-    labelZh: "佛经导读",
-    labelEn: "Sutra Guide",
-    titleZh: "把听诵和阅读重新接回每天的功课里。",
-    titleEn: "Bring listening and reading back into the daily routine.",
-    descriptionZh: "如果你想让佛经学习也进入稳定节奏，这一页会更适合继续往下看。",
-    descriptionEn: "If you want sutra study to enter a stable rhythm too, this is the better next page.",
-  },
-  {
     href: "/buddhist-concepts",
     labelZh: "佛学基本概念",
     labelEn: "Buddhist Concepts",
@@ -192,42 +597,6 @@ const relatedPaths = [
     descriptionEn: "Open this first if you have started to see that the problem is not only routine design, but repeated friction around karma, bodhicitta, the six paramitas, or emptiness.",
   },
   {
-    href: "/what-is-karma",
-    labelZh: "因果是什么意思",
-    labelEn: "What Karma Means",
-    titleZh: "把功课为什么总断、习惯怎样慢慢形成结果先放清楚。",
-    titleEn: "Clarify why routines keep breaking and how habits gradually become results.",
-    descriptionZh: "如果你已经发现自己最常卡在“为什么知道该修，却总是留不住节奏”，这一页会更适合继续往下看。",
-    descriptionEn: "This is the better next page if your main friction has become why you know you should practice but still cannot keep the rhythm alive.",
-  },
-  {
-    href: "/what-is-bodhicitta",
-    labelZh: "菩提心是什么意思",
-    labelEn: "What Bodhicitta Means",
-    titleZh: "把“为什么做这份功课”先放清楚。",
-    titleEn: "Clarify why you keep this routine and what direction it is meant to serve.",
-    descriptionZh: "如果你想知道日常功课为什么不只是一张任务清单，而要和发心一起慢慢站稳，这一页会更适合继续往下看。",
-    descriptionEn: "This is the better next page if you want to see why a daily routine is more than a checklist and needs to become steady together with aspiration.",
-  },
-  {
-    href: "/what-are-the-six-paramitas",
-    labelZh: "六度分别是什么",
-    labelEn: "Six Paramitas",
-    titleZh: "把日常功课为什么不只是一张任务清单说清楚。",
-    titleEn: "See why a daily routine is not only a checklist but part of a wider training of life.",
-    descriptionZh: "如果你想知道布施、持戒、忍辱、精进、禅定和般若怎样慢慢回到晨起、白天和晚间的节奏里，这一页会更适合继续往下看。",
-    descriptionEn: "This is the better next page if you want to see how generosity, discipline, patience, diligence, meditation, and wisdom slowly return to morning, daytime, and evening rhythm.",
-  },
-  {
-    href: "/what-is-emptiness",
-    labelZh: "空性怎么理解",
-    labelEn: "How to Understand Emptiness",
-    titleZh: "把“少一点抓得太死”慢慢接回晨起、白天和晚间。",
-    titleEn: "Return the loosening of rigid grasping to morning, daytime, and evening rhythm.",
-    descriptionZh: "如果你想知道空性为什么不只是离生活很远的名相，而会影响功课节奏、待人处事和每天的回观，这一页会更适合继续往下看。",
-    descriptionEn: "This is the better next page if you want to see why emptiness is not remote from life, but can reshape a routine, relationships, and daily reflection.",
-  },
-  {
     href: "/start-learning-buddhism",
     labelZh: "学佛从哪里开始",
     labelEn: "Where to Begin",
@@ -235,15 +604,6 @@ const relatedPaths = [
     titleEn: "Return to the lighter and clearer beginner question first.",
     descriptionZh: "如果你还没有决定该从哪一条路开始，这一页会更适合先打开。",
     descriptionEn: "If you still have not decided which path to begin with, this page is the better first stop.",
-  },
-  {
-    href: "/meditation",
-    labelZh: "禅修入门",
-    labelEn: "Meditation Guide",
-    titleZh: "把静坐练习放进更稳定的日常节奏。",
-    titleEn: "Place sitting practice into a steadier daily rhythm.",
-    descriptionZh: "如果你已经确定禅修是主线，这一页会给出更具体的落地方式。",
-    descriptionEn: "If meditation is already your main line, this page gives more direct practical detail.",
   },
   {
     href: "/download",
@@ -264,40 +624,28 @@ const faqItems = [
     answerEn: "Not necessarily. For beginners, continuity matters more than intensity. A lighter routine that can stay alive is usually more helpful than a heavy one that stops quickly.",
   },
   {
-    questionZh: "日常功课应该先放禅修、念佛，还是先读经？",
-    questionEn: "Should a daily routine begin with meditation, recitation, or reading?",
-    answerZh: "更适合先看你当下最需要什么。如果需要安定心念，可以先让短时禅修做主线；如果需要更容易进入的节奏，念佛或听诵也可以先开始；如果更需要方向感，则可以先把导读和短段阅读放进功课里。",
-    answerEn: "It helps more to ask what you need most right now. If steadiness is the need, let short meditation lead. If you need an easier rhythm, recitation or listening can come first. If you need orientation, begin by placing guide reading into the routine.",
-  },
-  {
     questionZh: "如果我想从佛经开始，第一周的日常功课怎么接？",
     questionEn: "If I want to begin from sutras, how should the first week of daily practice connect?",
     answerZh: "更稳的起点通常不是一下安排很多，而是先选一部更贴近自己当下问题的经典，再让晨起、白天和晚间各有一个很轻的小动作。例如晨起先听一小段，白天留一个提醒点或一句佛号，晚间再回到原文或导读读一小段。先让同一部经典连续出现几天，往往比每天都换内容更容易留下来。",
-    answerEn: "A steadier beginning is usually not to schedule many things at once, but to choose one scripture that fits your present question and then give morning, daytime, and evening one small action each. For example, listen to one short passage in the morning, keep one reminder or recitation point in the day, and return to the text or a guide in the evening. Let the same sutra return for a few days before changing tracks.",
+    answerEn: "A steadier beginning is usually not to schedule many things at once, but to choose one scripture that fits your present question and then give morning, daytime, and evening one small action each. Let the same sutra return for a few days before changing tracks.",
   },
   {
     questionZh: "听诵以后，怎样把经典接回晨起、白天和晚间？",
     questionEn: "After listening, how do I return scripture to morning, daytime, and evening?",
-    answerZh: "可以把听诵当成把经典带进一天的第一步，而不是最后一步。晨起先听一小段，让心先熟起来；白天在通勤、步行或空档里回到同一段内容，或留一句最有触动的话；晚间再读一小段原文或导读，把声音慢慢接回理解。这样听诵就不会只停在背景声音里。",
-    answerEn: "Treat listening as the first step that brings scripture into the day rather than the final step. Listen briefly in the morning, return to the same passage during the day through commuting, walking, or one short note, and then read a little of the text or a guide at night. That way listening grows into understanding instead of remaining background sound.",
+    answerZh: "可以把听诵当成把经典带进一天的第一步，而不是最后一步。晨起先听一小段，白天在通勤、步行或空档里回到同一段内容，晚间再读一小段原文或导读，把声音慢慢接回理解。这样听诵就不会只停在背景声音里。",
+    answerEn: "Treat listening as the first step that brings scripture into the day rather than the final step. Morning can start with one short passage, daytime can return to the same section, and evening can bring it back to text or a guide so familiarity grows into understanding.",
   },
   {
     questionZh: "因果是什么意思，和日常功课有什么关系？",
     questionEn: "What does karma have to do with a daily practice routine?",
     answerZh: "如果不知道因果怎样和习惯、选择、结果连在一起，功课很容易只剩一阵一阵的热情。回到因果，会更容易看见：晨起有没有回来、白天有没有一个提醒点、晚间断掉以后有没有重来，这些很小的动作，正在慢慢形成后面的方向。",
-    answerEn: "When karma is separated from habit, choice, and result, a routine can shrink into bursts of enthusiasm. Returning to karma helps show how coming back in the morning, keeping one reminder in the day, and beginning again at night are already shaping the path that follows.",
+    answerEn: "When karma is separated from habit, choice, and result, a routine can shrink into bursts of enthusiasm. Returning to karma helps show how small returns across the day are already shaping the path that follows.",
   },
   {
     questionZh: "菩提心是什么意思，和日常功课有什么关系？",
     questionEn: "What does bodhicitta have to do with a daily practice routine?",
     answerZh: "如果没有发心，功课很容易只剩完成任务。更稳的方向，是让晨起、白天和晚间的这些小动作，慢慢回到“我为什么学、愿意把这条路带向哪里”这件事上。这样功课才不只是维持自己，而会开始长出更宽的方向和柔软。",
-    answerEn: "Without aspiration, a daily routine can shrink into task completion. A steadier direction is to let the small actions of morning, daytime, and evening return to the question of why you practice and what direction you want the path to grow toward. Then the routine becomes more than self-maintenance and begins to open into a wider intention and softness.",
-  },
-  {
-    questionZh: "白天工作忙，还能有日常功课吗？",
-    questionEn: "Can I still keep a daily routine when work is busy?",
-    answerZh: "可以。日常功课不一定等于大块时间。很多人真正能留下来的，是晨起几分钟、白天一个短提醒点、晚间一点回顾。功课轻一点，反而更容易和现实生活接上。",
-    answerEn: "Yes. A daily routine does not require large blocks of time. Many people keep practice alive through a few minutes in the morning, one short reminder during the day, and a little review at night. Lighter often connects better with real life.",
+    answerEn: "Without aspiration, a daily routine can shrink into task completion. A steadier direction is to let the small actions of morning, daytime, and evening return to the question of why you practice and what direction you want the path to grow toward.",
   },
   {
     questionZh: "如果中断了几天，功课是不是就失败了？",
@@ -309,13 +657,7 @@ const faqItems = [
     questionZh: "空性怎么理解，和日常功课有什么关系？",
     questionEn: "How does understanding emptiness relate to a daily practice routine?",
     answerZh: "如果把空性只当成很远的名相，功课很容易变成完成任务。更稳的方向，是在晨起、白天和晚间慢慢看见：很多情绪和判断并没有想象中那样固定。这样禅修、听诵、念佛和回顾，就会变成帮助自己少一点抓得太死、更多一点清醒和柔软的练习。",
-    answerEn: "If emptiness is treated as a remote term, a daily routine can shrink into task completion. A steadier direction is to notice across morning, daytime, and evening that many emotions and judgments are less fixed than they seemed. Then meditation, listening, recitation, and review become practices of loosening rigid grasping and growing in clarity and softness.",
-  },
-  {
-    questionZh: "Fabushi 在日常功课里最适合扮演什么角色？",
-    questionEn: "What role does Fabushi play in a daily practice routine?",
-    answerZh: "它更适合作为经文听诵、禅修提醒、简短记录和帮助维持连续性的辅助工具，让功课更容易放进每天的生活，而不是只在偶尔想起时才做。",
-    answerEn: "It works best as a support tool for scripture listening, meditation reminders, short notes, and continuity so practice can live inside each day instead of appearing only occasionally.",
+    answerEn: "If emptiness is treated as a remote term, a daily routine can shrink into task completion. A steadier direction is to notice across morning, daytime, and evening that many emotions and judgments are less fixed than they seemed.",
   },
 ] as const;
 
@@ -356,6 +698,70 @@ export const metadata: Metadata = {
   },
 };
 
+function PracticeFlipCard({ item }: { item: FlipCardItem }) {
+  return (
+    <div className="practice-card-shell">
+      <input
+        className="practice-card-toggle"
+        type="checkbox"
+        id={item.id}
+        aria-label={`${item.labelZh} / ${item.labelEn}`}
+      />
+      <label className={`practice-card practice-tone-${item.tone}`} htmlFor={item.id}>
+        <span className="practice-card-inner">
+          <span className="practice-card-face practice-card-front">
+            <span className="practice-card-visual" aria-hidden="true">
+              <span className="practice-card-symbol">
+                <LocalizedText zh={item.visualZh} en={item.visualEn} />
+              </span>
+              <small>
+                <LocalizedText zh={item.labelZh} en={item.labelEn} />
+              </small>
+            </span>
+            <span className="practice-card-copy">
+              <p className="practice-card-kicker">
+                <LocalizedText zh={item.eyebrowZh} en={item.eyebrowEn} />
+              </p>
+              <h3>
+                <LocalizedText zh={item.frontTitleZh} en={item.frontTitleEn} />
+              </h3>
+              <p>
+                <LocalizedText zh={item.frontBodyZh} en={item.frontBodyEn} />
+              </p>
+            </span>
+            <span className="practice-card-hint">
+              <LocalizedText zh="翻卡看下一步" en="Flip for the next step" />
+            </span>
+          </span>
+          <span className="practice-card-face practice-card-back">
+            <span className="practice-card-back-copy">
+              <p className="practice-card-stage">
+                <LocalizedText zh="背面摘要" en="Back Summary" />
+              </p>
+              <h3>
+                <LocalizedText zh={item.backTitleZh} en={item.backTitleEn} />
+              </h3>
+              <p>
+                <LocalizedText zh={item.backBodyZh} en={item.backBodyEn} />
+              </p>
+            </span>
+            {item.href ? (
+              <a className="practice-card-link" href={siteHref(item.href)}>
+                <strong>
+                  <LocalizedText zh={item.ctaZh ?? item.labelZh} en={item.ctaEn ?? item.labelEn} />
+                </strong>
+                <span>
+                  <LocalizedText zh="继续阅读" en="Continue" />
+                </span>
+              </a>
+            ) : null}
+          </span>
+        </span>
+      </label>
+    </div>
+  );
+}
+
 export default function DailyPracticePage() {
   const structuredData = {
     "@context": "https://schema.org",
@@ -373,15 +779,13 @@ export default function DailyPracticePage() {
         },
         about: [
           "日常功课",
+          "经文听诵",
+          "佛经导读",
           "因果",
           "菩提心",
-          "佛学基本概念",
-          "学佛修行",
+          "六度",
+          "空性",
           "初学者功课安排",
-          "空性理解",
-          "先读什么佛经",
-          "经文听诵",
-          "听诵和读经怎么配合",
         ],
       },
       {
@@ -409,33 +813,34 @@ export default function DailyPracticePage() {
       },
       {
         "@type": "ItemList",
-        name: "日常功课的一日节奏",
-        itemListElement: dailyMoments.map((item, index) => ({
-          "@type": "ListItem",
-          position: index + 1,
-          name: item.titleZh,
-          description: item.descriptionZh,
-        })),
-      },
-      {
-        "@type": "ItemList",
-        name: "佛经入口怎样接回日常功课",
-        itemListElement: scriptureRoutinePaths.map((item, index) => ({
+        name: "日常功课卡牌：一日节奏",
+        itemListElement: rhythmCards.map((item, index) => ({
           "@type": "ListItem",
           position: index + 1,
           name: item.labelZh,
-          url: siteUrl(item.href),
-          description: item.descriptionZh,
+          description: item.frontBodyZh,
         })),
       },
       {
         "@type": "ItemList",
-        name: "日常功课和概念之间的桥接路径",
-        itemListElement: conceptBridgeSteps.map((item, index) => ({
+        name: "日常功课卡牌：经典接回功课",
+        itemListElement: scriptureCards.map((item, index) => ({
           "@type": "ListItem",
           position: index + 1,
-          name: item.titleZh,
-          description: item.descriptionZh,
+          name: item.labelZh,
+          url: siteUrl(item.href ?? "/daily-practice"),
+          description: item.frontBodyZh,
+        })),
+      },
+      {
+        "@type": "ItemList",
+        name: "日常功课卡牌：概念回路",
+        itemListElement: conceptCards.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.labelZh,
+          url: siteUrl(item.href ?? "/daily-practice"),
+          description: item.frontBodyZh,
         })),
       },
       {
@@ -482,6 +887,70 @@ export default function DailyPracticePage() {
       </section>
 
       <section className="band compact-band">
+        <style dangerouslySetInnerHTML={{ __html: cardStyles }} />
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="卡牌总览" en="Card Overview" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="先翻卡看摘要，再顺着自己当下最需要的一张，继续读下面正文或跳进下一页。"
+              en="Flip through the summaries first, then follow the card that best matches your present need into the detail below or the next page."
+            />
+          </h2>
+          <p className="practice-card-note">
+            <LocalizedText
+              zh="这一页现在改成“卡牌摘要入口 + 详情正文”的混合结构：正面先帮你判断入口，背面再给出更短的下一步。"
+              en="This page now uses a mixed structure of card summaries plus long-form detail: the front helps you choose a doorway, and the back gives a shorter next step."
+            />
+          </p>
+        </div>
+        <div className="practice-card-grid">
+          {rhythmCards.map((item) => (
+            <PracticeFlipCard key={item.id} item={item} />
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt feature-band">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="经典接回功课卡牌" en="Scripture Cards" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="把“先读哪部经、怎样听、怎样回到晚间阅读”这些真实问题，直接收进功课路径里。"
+              en="Bring the real questions of which sutra to begin with, how to listen, and how to return to evening reading directly into the routine itself."
+            />
+          </h2>
+        </div>
+        <div className="practice-card-grid">
+          {scriptureCards.map((item) => (
+            <PracticeFlipCard key={item.id} item={item} />
+          ))}
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="概念回路卡牌" en="Concept Cards" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="练着练着又回到因果、菩提心、六度和空性，往往不是岔开，而是路径开始变深。"
+              en="When practice keeps returning to karma, bodhicitta, the six paramitas, and emptiness, the path is often deepening rather than drifting."
+            />
+          </h2>
+        </div>
+        <div className="practice-card-grid">
+          {conceptCards.map((item) => (
+            <PracticeFlipCard key={item.id} item={item} />
+          ))}
+        </div>
+      </section>
+
+      <section className="band compact-band">
         <div className="section-heading tight">
           <p>
             <LocalizedText zh="导读" en="Guide" />
@@ -497,7 +966,7 @@ export default function DailyPracticePage() {
           <p>
             <LocalizedText
               zh="一说到日常功课，很多人脑中立刻会出现一张很满的清单：要读经、要听诵、要禅修、要念佛、要记笔记，仿佛这样才算真正开始修行。可多数初学者真正遇到的困难，并不是没有方法，而是第一天就把自己排得太重，结果几天后反而停下来了。"
-              en="When people hear daily practice, many immediately picture a full checklist of reading, listening, meditation, recitation, and notes, as if that is the only sincere beginning. Yet for most beginners, the problem is not a lack of methods. It is the weight of the schedule on day one, which often leads to stopping a few days later."
+              en="When people hear daily practice, many immediately picture a full checklist of reading, listening, meditation, recitation, and notes, as if that were the only sincere beginning. Yet for most beginners, the problem is not a lack of methods. It is the weight of the schedule on day one, which often leads to stopping a few days later."
             />
           </p>
           <p>
@@ -520,20 +989,8 @@ export default function DailyPracticePage() {
           </p>
           <p>
             <LocalizedText
-              zh="日常功课的价值，也不只是把几个动作做完。随着晨起、白天和晚间慢慢出现回返点，人会开始看见：很多急躁、执着和判断，并没有想象中那样固定，这也是为什么菩提心、六度和空性会和功课页放在同一条路上。功课越回到这里，练习就越不只是完成任务，而是在帮助自己多一点清醒和柔软。"
-              en="The value of a daily routine is not only finishing a few actions. As morning, daytime, and evening gain small points of return, people often begin to see that agitation, attachment, and judgment are less fixed than they seemed. This is why bodhicitta, the six paramitas, and emptiness belong on the same path as a routine page. The more practice returns here, the less it becomes task completion and the more it supports clarity and softness."
-            />
-          </p>
-          <p>
-            <LocalizedText
-              zh="很多人做到这里以后，还会开始问：为什么我明明知道要修，节奏却总是断？为什么功课一多，就又只剩任务感？为什么晨起、白天和晚间这些小动作，做着做着又会回到因果、菩提心、六度、空性这些概念？这通常不是跑题，而是说明功课页已经把人带到更深一点的理解层了。先回到佛学基本概念总览，再决定自己更该继续看哪一张概念页，往往会比只在功课页里硬撑更稳。"
-              en="At this point many people begin to ask why the rhythm keeps breaking even when they know they should practice, why routines turn back into tasks when they multiply, or why these small actions across morning, daytime, and evening keep returning to karma, bodhicitta, the six paramitas, and emptiness. This is usually not a distraction. It often means the routine page has already carried the reader into a deeper layer of understanding. Returning to the concepts hub first, then choosing the concept page that matches the friction, is often steadier than forcing everything to remain inside a routine page alone."
-            />
-          </p>
-          <p>
-            <LocalizedText
-              zh="Fabushi 更适合承接这条轻节奏里的辅助部分，例如经文听诵、禅修提醒、简短记录和帮助维持连续性。它不能替代长期学习本身，但能帮助你把“知道应该修”慢慢变成“今天真的做了一点”。"
-              en="Fabushi fits best on the support side of this lighter rhythm through scripture listening, meditation reminders, short notes, and continuity. It does not replace long-term learning itself, but it can help practice move from something you know you should do to something you actually touched today."
+              zh="日常功课的价值，也不只是把几个动作做完。随着晨起、白天和晚间慢慢出现回返点，人会开始看见：很多急躁、执着和判断，并没有想象中那样固定。功课越回到这里，练习就越不只是完成任务，而是在帮助自己多一点清醒和柔软。"
+              en="The value of a daily routine is not only finishing a few actions. As morning, daytime, and evening gain small points of return, people often begin to see that agitation, attachment, and judgment are less fixed than they seemed. The more practice returns here, the less it becomes task completion and the more it supports clarity and softness."
             />
           </p>
         </div>
@@ -565,32 +1022,6 @@ export default function DailyPracticePage() {
         </div>
       </section>
 
-      <section className="band">
-        <div className="section-heading tight">
-          <p>
-            <LocalizedText zh="一日节奏" en="Daily Rhythm" />
-          </p>
-          <h2>
-            <LocalizedText
-              zh="把日常功课放回晨起、白天和晚间，会比只在脑中想象更容易落地。"
-              en="Placing practice into morning, daytime, and evening makes it easier to live than keeping it only in the mind."
-            />
-          </h2>
-        </div>
-        <div className="path-grid">
-          {dailyMoments.map((item) => (
-            <article key={item.titleEn} className="path-card">
-              <h3>
-                <LocalizedText zh={item.titleZh} en={item.titleEn} />
-              </h3>
-              <p>
-                <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
-
       <section className="band alt">
         <div className="section-heading tight">
           <p>
@@ -606,63 +1037,6 @@ export default function DailyPracticePage() {
         <div className="compare-grid">
           {gentleSchedule.map((item) => (
             <article key={item.titleEn} className="compare-card">
-              <h3>
-                <LocalizedText zh={item.titleZh} en={item.titleEn} />
-              </h3>
-              <p>
-                <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band">
-        <div className="section-heading tight">
-          <p>
-            <LocalizedText zh="经典接回功课" en="Scripture Into Routine" />
-          </p>
-          <h2>
-            <LocalizedText
-              zh="把“先读哪部经、怎样听、怎样回到晚间阅读”这些真实问题，直接收进功课路径里。"
-              en="Bring the real questions of which sutra to begin with, how to listen, and how to return to evening reading directly into the routine itself."
-            />
-          </h2>
-        </div>
-        <div className="editorial-list">
-          {scriptureRoutinePaths.map((item) => (
-            <a key={item.href} className="editorial-row" href={siteHref(item.href)}>
-              <span>
-                <LocalizedText zh={item.labelZh} en={item.labelEn} />
-              </span>
-              <div>
-                <strong>
-                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
-                </strong>
-                <p>
-                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
-                </p>
-              </div>
-            </a>
-          ))}
-        </div>
-      </section>
-
-      <section className="band feature-band">
-        <div className="section-heading tight">
-          <p>
-            <LocalizedText zh="回到概念" en="Return to Concepts" />
-          </p>
-          <h2>
-            <LocalizedText
-              zh="练着练着又回到因果、菩提心、六度和空性，往往不是岔开，而是路径开始变深。"
-              en="When practice keeps returning to karma, bodhicitta, the six paramitas, and emptiness, the path is often deepening rather than drifting."
-            />
-          </h2>
-        </div>
-        <div className="feature-grid">
-          {conceptBridgeSteps.map((item) => (
-            <article key={item.titleEn} className="feature-card">
               <h3>
                 <LocalizedText zh={item.titleZh} en={item.titleEn} />
               </h3>
