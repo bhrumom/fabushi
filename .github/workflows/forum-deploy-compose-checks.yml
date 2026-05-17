@@ -8,6 +8,7 @@ on:
       - "forum/DEPLOY.md"
       - "forum/package.json"
       - "forum/scripts/check-deployment-contract.mjs"
+      - "forum/scripts/handoff-live-deployment-target.mjs"
       - "forum/scripts/prepare-live-deployment-vars.mjs"
       - "forum/scripts/resolve-live-deployment-target.mjs"
       - "forum/scripts/smoke-deployment-from-env.mjs"
@@ -23,6 +24,7 @@ on:
       - "forum/DEPLOY.md"
       - "forum/package.json"
       - "forum/scripts/check-deployment-contract.mjs"
+      - "forum/scripts/handoff-live-deployment-target.mjs"
       - "forum/scripts/prepare-live-deployment-vars.mjs"
       - "forum/scripts/resolve-live-deployment-target.mjs"
       - "forum/scripts/smoke-deployment-from-env.mjs"
@@ -187,12 +189,17 @@ jobs:
 
           cat /tmp/forum-deploy-health.json
 
-      - name: Smoke test forum deploy compose writable preview contract from deploy env
+      - name: Handoff writable preview live target from deploy env
         run: |
-          node forum/scripts/smoke-deployment-from-env.mjs \
+          node forum/scripts/handoff-live-deployment-target.mjs \
             --forum-url http://127.0.0.1:3001 \
             --deploy-env-path /tmp/forum-deploy-writable-preview.env \
-            --exercise-write-flow true
+            --exercise-write-flow true \
+            --format github-cli-bundled >/tmp/forum-live-target-handoff.txt
+
+          cat /tmp/forum-live-target-handoff.txt
+          grep "gh variable set FORUM_LIVE_TARGET" /tmp/forum-live-target-handoff.txt
+          grep "gh secret set FORUM_LIVE_WRITE_ACCESS_CODE" /tmp/forum-live-target-handoff.txt
 
       - name: Stop forum deploy compose writable preview runtime
         run: |
