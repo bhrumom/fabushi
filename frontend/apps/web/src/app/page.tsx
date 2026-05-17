@@ -37,6 +37,9 @@ interface ProductMoment {
   descriptionEn: string;
   screenshot: ProductScreenshotKey;
   alt: string;
+  href: string;
+  ctaZh: string;
+  ctaEn: string;
 }
 
 interface BulletinItem {
@@ -58,54 +61,50 @@ const homeDescription =
 
 const PRODUCT_MOMENTS: ProductMoment[] = [
   {
-    titleZh: "全球法布施",
-    titleEn: "Global Giving",
-    descriptionZh: "看见善意如何跨越地域，直接抵达世界各地。",
-    descriptionEn: "See compassion travel across regions and reach people around the world.",
+    titleZh: "佛学基本概念",
+    titleEn: "Buddhist Concepts",
+    descriptionZh: "把因果、菩提心、六度和空性先放回同一张概念地图里，再决定自己现在该先看哪一张。",
+    descriptionEn: "Place karma, bodhicitta, the six paramitas, and emptiness back on one map before deciding which concept page should come next.",
     screenshot: "global-dharma",
-    alt: "Fabushi global dharma screen",
+    alt: "Buddhist concepts topic entry",
+    href: "/buddhist-concepts",
+    ctaZh: "进入概念专题",
+    ctaEn: "Open concepts hub",
   },
   {
-    titleZh: "随时随地开始修行",
-    titleEn: "Start Practicing Anytime",
-    descriptionZh: "打开就能进入禅修状态，把修行节奏留在日常里。",
-    descriptionEn: "Open the app and return to practice without friction.",
+    titleZh: "修行方法总览",
+    titleEn: "Practice Guide",
+    descriptionZh: "把禅修、念佛、听诵、阅读和记录放回同一张练习地图里，先看自己最需要哪一种起步方式。",
+    descriptionEn: "Return meditation, nianfo, listening, reading, and note-taking to one practice map, then choose the entry that fits best.",
     screenshot: "start-meditation",
-    alt: "Fabushi meditation entry screen",
+    alt: "Practice guide topic entry",
+    href: "/practice-guide",
+    ctaZh: "进入修行方法",
+    ctaEn: "Open practice guide",
   },
   {
-    titleZh: "沉浸式禅修体验",
-    titleEn: "Immersive Meditation",
-    descriptionZh: "用更安静、更专注的界面承接每一次练习。",
-    descriptionEn: "A calmer, more focused interface for each meditation session.",
-    screenshot: "immersive-meditation",
-    alt: "Fabushi immersive meditation screen",
-  },
-  {
-    titleZh: "锁定主修功课",
-    titleEn: "Keep Your Main Practice Stable",
-    descriptionZh: "先确定主线，再围绕自己的路径稳定推进。",
-    descriptionEn: "Choose a main path first, then keep steady progress around it.",
-    screenshot: "main-sutra",
-    alt: "Fabushi main practice screen",
-  },
-  {
-    titleZh: "轻松加入共修小组",
-    titleEn: "Join Group Practice Easily",
-    descriptionZh: "搜索、申请、加入和管理共修关系都放在同一条路径里。",
-    descriptionEn: "Search, apply, join, and manage group practice from one flow.",
+    titleZh: "念佛入门",
+    titleEn: "Nianfo Guide",
+    descriptionZh: "把一句佛号、白天的回返点和轻量功课慢慢接起来，让练习更容易真正留在生活里。",
+    descriptionEn: "Let one recited phrase, one daytime return point, and a lighter routine begin to stay inside ordinary life.",
     screenshot: "group-practice",
-    alt: "Fabushi group practice screen",
+    alt: "Nianfo guide topic entry",
+    href: "/nianfo-guide",
+    ctaZh: "进入念佛入门",
+    ctaEn: "Open nianfo guide",
   },
   {
-    titleZh: "全球修行排行",
-    titleEn: "Global Practice Rankings",
-    descriptionZh: "修行进度和榜单变化一眼可见，方便持续跟进。",
-    descriptionEn: "Track progress and ranking changes at a glance.",
-    screenshot: "global-ranking",
-    alt: "Fabushi practice ranking screen",
+    titleZh: "听诵和读经怎么配合",
+    titleEn: "Listening and Reading",
+    descriptionZh: "把通勤里的听诵、安静时的阅读和一句短记录接回同一条线上，不让经典只停在背景声音里。",
+    descriptionEn: "Reconnect commute listening, quiet reading, and one short note so scripture does not remain only in the background.",
+    screenshot: "main-sutra",
+    alt: "Listening and reading topic entry",
+    href: "/sutra-listening",
+    ctaZh: "进入听诵导读",
+    ctaEn: "Open listening guide",
   },
-];
+] as const;
 
 const FAQ_PREVIEW = [
   {
@@ -621,18 +620,18 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="band alt product-band" id="feature-preview">
+      <section className="band alt product-band" id="featured-guides">
         <div className="section-heading tight">
           <p>
-            <LocalizedText zh="专题与产品预览" en="Preview" />
+            <LocalizedText zh="专题导流" en="Featured Guides" />
           </p>
           <h2>
-            <LocalizedText zh="保留克制的配图卡片，但只作为摘要入口，不让视觉盖过正文导览。" en="Keep restrained image cards as summary entry points without letting visuals overpower the homepage guidance." />
+            <LocalizedText zh="保留克制的静态图片卡片，但只让它们承担专题入口，不再承担产品展示叙事。" en="Keep restrained static image cards, but use them as topic gateways instead of product-showcase storytelling." />
           </h2>
         </div>
         <div className="moment-grid showcase-grid">
           {PRODUCT_MOMENTS.map((item) => (
-            <article key={item.titleEn} className="moment-card">
+            <a key={item.href} className="moment-card guide-card" href={siteHref(item.href)}>
               <div className="moment-image">
                 <img
                   src={siteHref(resolveScreenshot(screenshots, item.screenshot))}
@@ -646,7 +645,10 @@ export default async function HomePage() {
               <p>
                 <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
               </p>
-            </article>
+              <span className="eyebrow">
+                <LocalizedText zh={item.ctaZh} en={item.ctaEn} />
+              </span>
+            </a>
           ))}
         </div>
       </section>
