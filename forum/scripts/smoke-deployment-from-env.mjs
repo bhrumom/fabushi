@@ -142,15 +142,15 @@ function runCheckScript(expectedRuntime, args) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const forumUrl = normalizeUrl(args["forum-url"]?.trim() || "");
-
-  if (!forumUrl) {
-    throw new Error("Missing required --forum-url.");
-  }
-
   const exerciseWriteFlow = parseBoolean(args["exercise-write-flow"], "exercise_write_flow");
   const deployEnvContent = await readFile(args["deploy-env-path"], "utf-8");
   const deployEnv = parseDotEnv(deployEnvContent);
+  const forumUrl = normalizeUrl(args["forum-url"]?.trim() || deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || "");
+
+  if (!forumUrl) {
+    throw new Error("Missing required --forum-url and deploy env FORUM_DEPLOY_CHECK_URL.");
+  }
+
   const expectedRuntime = buildExpectedRuntime({ forumUrl, deployEnv, exerciseWriteFlow });
 
   await runCheckScript(expectedRuntime, args);

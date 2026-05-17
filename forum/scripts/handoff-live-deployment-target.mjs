@@ -131,11 +131,6 @@ async function runCommandBlock(commandBlock) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const forumUrl = normalizeUrl(args["forum-url"]?.trim() || "");
-
-  if (!forumUrl) {
-    throw new Error("Missing required --forum-url.");
-  }
-
   const format = args.format?.trim() || "github-cli-bundled";
   if (!["env", "json", "github-cli", "github-cli-bundled"].includes(format)) {
     throw new Error(`Expected --format to be env, json, github-cli, or github-cli-bundled, received: ${format}`);
@@ -150,13 +145,11 @@ async function main() {
   }
 
   const sharedArgs = ["--deploy-env-path", args["deploy-env-path"]];
-  const smokeArgs = [
-    "--forum-url",
-    forumUrl,
-    ...sharedArgs,
-    "--exercise-write-flow",
-    String(exerciseWriteFlow),
-  ];
+  const smokeArgs = [...sharedArgs, "--exercise-write-flow", String(exerciseWriteFlow)];
+  if (forumUrl) {
+    smokeArgs.unshift(forumUrl);
+    smokeArgs.unshift("--forum-url");
+  }
 
   if (args["request-timeout-ms"]) {
     smokeArgs.push("--request-timeout-ms", args["request-timeout-ms"]);
@@ -172,17 +165,12 @@ async function main() {
       return preparedOutputs.get(outputFormat);
     }
 
-    const prepareArgs = [
-      "--forum-url",
-      forumUrl,
-      ...sharedArgs,
-      "--exercise-write-flow",
-      String(exerciseWriteFlow),
-      "--format",
-      outputFormat,
-      "--github-repo",
-      githubRepo,
-    ];
+    const prepareArgs = [...sharedArgs, "--exercise-write-flow", String(exerciseWriteFlow), "--format", outputFormat, "--github-repo", githubRepo];
+    if (forumUrl) {
+      prepareArgs.unshift(forumUrl);
+      prepareArgs.unshift("--forum-url");
+    }
+
     const output = await runNodeScript("prepare-live-deployment-vars.mjs", prepareArgs, {
       captureStdout: true,
     });
