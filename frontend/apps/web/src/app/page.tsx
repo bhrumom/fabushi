@@ -470,12 +470,12 @@ export default async function HomePage() {
               </span>
             </div>
             <h1 id="home-title">
-              <LocalizedText zh="学佛，从今天的一小步开始。" en="Begin buddhadharma with one small step." />
+              <LocalizedText zh="全球法布施" en="Global Dharma Giving" />
             </h1>
             <p className="hero-subtitle">
               <LocalizedText
-                zh="从学佛入门、佛学基本概念、因果、菩提心、六度与空性，到经文听诵、禅修、日常功课与全球法布施，先把学习路径和练习工具放回同一个入口。"
-                en="From beginner dharma questions and a clearer concepts hub to sutra listening, meditation, daily rhythm, and global giving, Fabushi keeps learning paths and practice tools inside one entry point."
+                zh="从学佛入门、佛学基本概念到经文听诵、禅修与日常功课，把修行路径和练习工具放回同一个入口。"
+                en="From beginner dharma questions and core concepts to sutra listening, meditation, and daily rhythm, Fabushi keeps learning paths and practice tools inside one entry point."
               />
             </p>
             <div className="hero-actions">
