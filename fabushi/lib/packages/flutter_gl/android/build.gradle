@@ -16,6 +16,9 @@ buildscript {
 
 rootProject.allprojects {
     repositories {
+        maven {
+            url "${project(':flutter_gl').projectDir}/libs/maven"
+        }
         google()
         mavenCentral()
     }
@@ -57,5 +60,7 @@ dependencies {
 
     implementation 'androidx.annotation:annotation:1.9.1'
 
-    implementation files('libs/aars/threeegl.aar')
+    implementation 'com.google.android.material:material:1.12.0'
+
+    implementation 'com.futouapp.threeegl:threeegl:1.0.0'
 }
