@@ -40,7 +40,8 @@
     <application
         android:label="大乘"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        tools:replace="android:label">
         
         <!-- audio_service 音频服务 - 用于系统级MediaSession保活 -->
         <service
