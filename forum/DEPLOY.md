@@ -22,6 +22,20 @@ cp .env.deploy.example .env.deploy
 
 Then edit `.env.deploy` for the target runtime.
 
+Before you start the compose stack, validate the deploy posture from the same file:
+
+```bash
+cd forum
+pnpm check:deploy-env -- --deploy-env-path .env.deploy
+```
+
+That preflight step surfaces the effective deployment stage, write posture, access-code posture, and any mismatches that would otherwise only show up later during deploy or smoke-check time. It currently warns about cases like:
+
+- preview runtime carrying a public base URL
+- production runtime still missing a public base URL
+- write access code present while writes are still disabled
+- production runtime left writable before governance posture is ready
+
 ## Hourly live deployment checks
 
 The repository workflow `Live deployment checks - Forum` can now run every hour against one configured live forum target. This turns the current highest-priority deployment question from a manual reminder into a standing smoke check.
