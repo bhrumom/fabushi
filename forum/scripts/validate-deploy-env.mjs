@@ -67,12 +67,17 @@ function buildDeployPosture({ deployEnvPath, deployEnv }) {
   const image = deployEnv.FORUM_IMAGE?.trim() || "ghcr.io/bhrumom/fabushi-forum:main";
   const port = deployEnv.FORUM_PORT?.trim() || "3000";
   const dataDir = deployEnv.FORUM_DATA_DIR?.trim() || "./data";
+  const deployCheckUrl = normalizeUrl(deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || "");
   const publicBaseUrl = normalizeUrl(deployEnv.FORUM_PUBLIC_BASE_URL?.trim() || "");
   const writesEnabled = parseBoolean(deployEnv.FORUM_ENABLE_WRITES ?? "false", "FORUM_ENABLE_WRITES");
   const writeAccessCode = (deployEnv.FORUM_WRITE_ACCESS_CODE || "").trim();
   const requiresAccessCode = writesEnabled && Boolean(writeAccessCode);
 
   const warnings = [];
+
+  if (!deployCheckUrl) {
+    warnings.push("FORUM_DEPLOY_CHECK_URL is empty, so smoke and handoff helpers still require an explicit --forum-url.");
+  }
 
   if (deploymentStage === "preview" && publicBaseUrl) {
     warnings.push("preview deploy env sets FORUM_PUBLIC_BASE_URL; the runtime will still stay noindex until production mode.");
@@ -104,6 +109,7 @@ function buildDeployPosture({ deployEnvPath, deployEnv }) {
     image,
     port,
     dataDir,
+    deployCheckUrl,
     dataSource,
     deploymentStage,
     publicBaseUrl,
@@ -122,6 +128,7 @@ function renderSummary(posture) {
     `- image: ${posture.image}`,
     `- port: ${posture.port}`,
     `- data_dir: ${posture.dataDir}`,
+    `- deploy_check_url: ${posture.deployCheckUrl || "(empty)"}`,
     `- data_source: ${posture.dataSource}`,
     `- deployment_stage: ${posture.deploymentStage}`,
     `- public_base_url: ${posture.publicBaseUrl || "(empty)"}`,
