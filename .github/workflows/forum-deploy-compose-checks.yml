@@ -6,6 +6,7 @@ on:
       - "forum/docker-compose.deploy.yml"
       - "forum/.env.deploy.example"
       - "forum/DEPLOY.md"
+      - "forum/scripts/check-deployment-contract.mjs"
       - ".github/workflows/forum-deploy-compose-checks.yml"
   push:
     branches:
@@ -14,6 +15,7 @@ on:
       - "forum/docker-compose.deploy.yml"
       - "forum/.env.deploy.example"
       - "forum/DEPLOY.md"
+      - "forum/scripts/check-deployment-contract.mjs"
       - ".github/workflows/forum-deploy-compose-checks.yml"
 
 permissions:
@@ -39,7 +41,7 @@ jobs:
           rm -rf /tmp/fabushi-forum-deploy-compose-data
           mkdir -p /tmp/fabushi-forum-deploy-compose-data
 
-      - name: Start forum deploy compose with local image override
+      - name: Start forum deploy compose in sqlite read-only preview mode
         run: |
           COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
           FORUM_IMAGE=fabushi-forum \
@@ -47,8 +49,10 @@ jobs:
           FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data \
           docker compose -f forum/docker-compose.deploy.yml up -d
 
-      - name: Wait for forum deploy compose health endpoint
+      - name: Wait for forum deploy compose read-only preview health endpoint
         run: |
+          rm -f /tmp/forum-deploy-health.json
+
           for attempt in 1 2 3 4 5 6; do
             if curl --fail --show-error --silent http://127.0.0.1:3001/api/health >/tmp/forum-deploy-health.json; then
               break
@@ -59,52 +63,108 @@ jobs:
 
           cat /tmp/forum-deploy-health.json
 
-      - name: Smoke test forum deploy compose preview runtime
+      - name: Smoke test forum deploy compose read-only preview contract
         run: |
-          health_response="$(cat /tmp/forum-deploy-health.json)"
-          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY2'
-          import json
-          import os
+          node forum/scripts/check-deployment-contract.mjs \
+            --url http://127.0.0.1:3001 \
+            --deployment-stage preview \
+            --writes-enabled false \
+            --requires-access-code false
 
-          payload = json.loads(os.environ["FORUM_HEALTH_RESPONSE"])
-          assert payload["service"] == "forum", payload
-          assert payload["ready"] is True, payload
-          assert payload["dataSource"] == "sqlite", payload
-          assert payload["persistenceMode"] == "sqlite-file", payload
-          assert payload["deploymentStage"] == "preview", payload
-          assert payload["indexingEnabled"] is False, payload
-          assert payload["publicBaseUrlConfigured"] is False, payload
-          assert payload["writesEnabled"] is False, payload
-          assert payload["requiresAccessCode"] is False, payload
-          PY2
+      - name: Stop forum deploy compose read-only preview runtime
+        run: |
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          FORUM_PORT=3001 \
+          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data \
+          docker compose -f forum/docker-compose.deploy.yml down -v
 
-          status_response="$(curl --fail --show-error --silent http://127.0.0.1:3001/api/status)"
-          echo "$status_response"
-          FORUM_STATUS_RESPONSE="$status_response" python3 - <<'PY2'
-          import json
-          import os
+      - name: Reset deploy compose sqlite workspace before writable preview
+        run: |
+          rm -rf /tmp/fabushi-forum-deploy-compose-data
+          mkdir -p /tmp/fabushi-forum-deploy-compose-data
 
-          payload = json.loads(os.environ["FORUM_STATUS_RESPONSE"])
-          assert payload["service"] == "forum", payload
-          assert payload["dataSource"] == "sqlite", payload
-          assert payload["persistenceMode"] == "sqlite-file", payload
-          assert payload["deploymentStage"] == "preview", payload
-          assert payload["indexingEnabled"] is False, payload
-          assert payload["writesEnabled"] is False, payload
-          assert payload["requiresAccessCode"] is False, payload
-          assert payload["counts"]["threads"] >= 4, payload
-          assert payload["counts"]["moderationEvents"] >= 4, payload
-          PY2
+      - name: Start forum deploy compose in sqlite writable preview mode
+        run: |
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          FORUM_PORT=3001 \
+          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data \
+          FORUM_ENABLE_WRITES=true \
+          FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
+          docker compose -f forum/docker-compose.deploy.yml up -d
 
-          robots_response="$(curl --fail --show-error --silent http://127.0.0.1:3001/robots.txt)"
-          echo "$robots_response"
-          FORUM_ROBOTS_RESPONSE="$robots_response" python3 - <<'PY2'
-          import os
+      - name: Wait for forum deploy compose writable preview health endpoint
+        run: |
+          rm -f /tmp/forum-deploy-health.json
 
-          payload = os.environ["FORUM_ROBOTS_RESPONSE"]
-          assert "User-Agent: *" in payload, payload
-          assert "Disallow: /" in payload, payload
-          PY2
+          for attempt in 1 2 3 4 5 6; do
+            if curl --fail --show-error --silent http://127.0.0.1:3001/api/health >/tmp/forum-deploy-health.json; then
+              break
+            fi
+
+            sleep 3
+          done
+
+          cat /tmp/forum-deploy-health.json
+
+      - name: Smoke test forum deploy compose writable preview contract
+        run: |
+          FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
+          node forum/scripts/check-deployment-contract.mjs \
+            --url http://127.0.0.1:3001 \
+            --deployment-stage preview \
+            --writes-enabled true \
+            --requires-access-code true \
+            --exercise-write-flow true
+
+      - name: Stop forum deploy compose writable preview runtime
+        run: |
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          FORUM_PORT=3001 \
+          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data \
+          FORUM_ENABLE_WRITES=true \
+          FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
+          docker compose -f forum/docker-compose.deploy.yml down -v
+
+      - name: Reset deploy compose sqlite workspace before production runtime
+        run: |
+          rm -rf /tmp/fabushi-forum-deploy-compose-data
+          mkdir -p /tmp/fabushi-forum-deploy-compose-data
+
+      - name: Start forum deploy compose in sqlite production indexing mode
+        run: |
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          FORUM_PORT=3001 \
+          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data \
+          FORUM_DEPLOYMENT_STAGE=production \
+          FORUM_PUBLIC_BASE_URL=https://forum.fabushi.test \
+          docker compose -f forum/docker-compose.deploy.yml up -d
+
+      - name: Wait for forum deploy compose production health endpoint
+        run: |
+          rm -f /tmp/forum-deploy-health.json
+
+          for attempt in 1 2 3 4 5 6; do
+            if curl --fail --show-error --silent http://127.0.0.1:3001/api/health >/tmp/forum-deploy-health.json; then
+              break
+            fi
+
+            sleep 3
+          done
+
+          cat /tmp/forum-deploy-health.json
+
+      - name: Smoke test forum deploy compose production indexing contract
+        run: |
+          node forum/scripts/check-deployment-contract.mjs \
+            --url http://127.0.0.1:3001 \
+            --deployment-stage production \
+            --public-base-url https://forum.fabushi.test \
+            --writes-enabled false \
+            --requires-access-code false
 
       - name: Stop forum deploy compose
         if: always()
