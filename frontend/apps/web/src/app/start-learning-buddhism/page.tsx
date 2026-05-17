@@ -52,6 +52,54 @@ const firstSteps = [
   },
 ] as const;
 
+const starterDoors = [
+  {
+    href: "/buddhadharma",
+    labelZh: "想先看整体方向",
+    labelEn: "Need the Bigger Picture",
+    titleZh: "如果你最需要先把佛法、修行、经典和日常实践之间的关系看清，先从佛法入门开始。",
+    titleEn: "Start with dharma basics when you need the wider relationship between buddhadharma, practice, scripture, and daily life first.",
+    descriptionZh: "这条入口更适合还在分辨“佛法到底在讲什么”的人。先把整体地图放稳，后面的概念页、修行页和佛经页会更容易读进去。",
+    descriptionEn: "This doorway fits people who are still trying to see what buddhadharma is broadly pointing toward. Once the wider map is steadier, the concept, practice, and scripture pages become easier to enter.",
+  },
+  {
+    href: "/buddhist-concepts",
+    labelZh: "总被名相卡住",
+    labelEn: "Stuck on Core Terms",
+    titleZh: "如果你最常被因果、菩提心、六度、空性这些词挡住，先从佛学基本概念入门开始。",
+    titleEn: "Begin with the concepts hub if karma, bodhicitta, the six paramitas, or emptiness keep stopping you.",
+    descriptionZh: "这条入口不是为了背更多名词，而是先把这些概念放回同一张图里，让后面的读经和修行不再一页一页断开。",
+    descriptionEn: "This path is not for memorizing more vocabulary, but for placing those concepts back onto one map so scripture and practice no longer feel fragmented page by page.",
+  },
+  {
+    href: "/meditation",
+    labelZh: "想先从练习开始",
+    labelEn: "Want Practice First",
+    titleZh: "如果你最需要一个短时、稳定、可持续的入口，先从禅修入门开始。",
+    titleEn: "Start with meditation when you need a short, steady, sustainable doorway first.",
+    descriptionZh: "这条入口更适合先安定心念、建立一点点可持续节奏的人。先有一个做得到的练习，再回头补整体方向和概念，通常更容易留下来。",
+    descriptionEn: "This doorway fits people who need steadiness and a workable rhythm first. Once one real practice stays alive, it is usually easier to return and add the wider map and core concepts later.",
+  },
+  {
+    href: "/sutra-guide",
+    labelZh: "想先从经典进入",
+    labelEn: "Want Scripture First",
+    titleZh: "如果你更想从经典阅读和经文听诵进入，先从佛经导读开始。",
+    titleEn: "Start with the sutra guide if reading and listening to scripture feel like the most natural doorway.",
+    descriptionZh: "这条入口更适合已经知道自己会被《心经》《阿弥陀经》《普门品》或《金刚经》吸引，但还不知道先读什么、怎样听诵和怎样接回理解的人。",
+    descriptionEn: "This path fits people who already feel drawn toward gateway texts such as the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra, but still need help with what to start with and how listening returns to understanding.",
+  },
+  {
+    href: "/daily-practice",
+    labelZh: "怕功课一开始太重",
+    labelEn: "Worried the Routine Will Be Too Heavy",
+    titleZh: "如果你已经知道要开始修，但最怕第一周很快断掉，先看日常功课怎么安排。",
+    titleEn: "Open daily practice first if you already want to begin but worry the first week will become too heavy and break quickly.",
+    descriptionZh: "这条入口更适合想把晨起、白天和晚间先排成最轻节奏的人。先让功课留得下来，再决定要不要慢慢加深，通常会更稳。",
+    descriptionEn: "This doorway fits people who want to shape the lightest morning, daytime, and evening rhythm first. Let the routine stay alive before deepening it further.",
+  },
+] as const;
+
 const commonMistakes = [
   {
     titleZh: "一开始就想把佛经读很多",
@@ -200,6 +248,18 @@ const faqItems = [
     answerEn: "The better question is what you need most right now. If you need orientation, begin with basic reading and guides. If you need steadiness, begin with short meditation sessions. Many beginners eventually benefit from letting reading and practice support each other.",
   },
   {
+    questionZh: "学佛入门要先看佛学基本概念，还是先读佛经？",
+    questionEn: "Should I begin with buddhist concepts or with sutras?",
+    answerZh: "如果你现在最常被因果、菩提心、六度、空性这些词挡住，先看佛学基本概念入门通常更稳；如果你已经确定自己更愿意从《心经》《阿弥陀经》《普门品》或《金刚经》进入，再先看佛经导读也可以。更重要的不是统一顺序，而是先选最贴近当下问题的入口。",
+    answerEn: "If karma, bodhicitta, the six paramitas, or emptiness are the terms that keep stopping you, the concepts hub is usually steadier first. If you already know you want to enter through texts such as the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra, the sutra guide can come first. What matters more than one universal order is choosing the doorway closest to your present question.",
+  },
+  {
+    questionZh: "如果我想从经典开始，第一周该怎么安排才不会太重？",
+    questionEn: "If I want to begin from scripture, how can the first week stay light enough?",
+    answerZh: "更稳的方式通常是先听一小段经文建立熟悉感，再读一小段导读或原文，最后留下一句当天真正触动自己的意思。先让听诵、阅读和一点点记录活下来，比一开始把很多经典都摊开更容易继续。",
+    answerEn: "A steadier way is usually to listen to one short passage for familiarity, read a small guide section or a short bit of the text, and leave one line that truly stayed with you that day. Let listening, reading, and a little note-taking stay alive before opening many texts at once.",
+  },
+  {
     questionZh: "初学者每天做多久比较合适？",
     questionEn: "How much should a beginner do each day?",
     answerZh: "通常从一段很轻的节奏开始更容易持续，例如每天 5 到 10 分钟禅修，或读一小段、听一小段经文，再留下一点记录。能持续，比一开始做很多更重要。",
@@ -234,6 +294,9 @@ export const metadata: Metadata = {
     "因果是什么意思",
     "空性怎么理解",
     "六度分别是什么",
+    "禅修入门",
+    "初学者佛经推荐",
+    "日常功课怎么安排",
     "佛教入门",
     "Fabushi",
   ],
@@ -267,7 +330,14 @@ export default function StartLearningBuddhismPage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["学佛从哪里开始", "佛法入门", "修行方法", "佛学基本概念"],
+        about: [
+          "学佛从哪里开始",
+          "佛法入门",
+          "佛学基本概念",
+          "禅修入门",
+          "佛经导读",
+          "日常功课",
+        ],
       },
       {
         "@type": "BreadcrumbList",
@@ -291,6 +361,27 @@ export default function StartLearningBuddhismPage() {
             item: pageUrl,
           },
         ],
+      },
+      {
+        "@type": "ItemList",
+        name: "学佛起步入口",
+        itemListElement: starterDoors.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.labelZh,
+          url: siteUrl(item.href),
+          description: item.descriptionZh,
+        })),
+      },
+      {
+        "@type": "ItemList",
+        name: "学佛第一周起步步骤",
+        itemListElement: firstSteps.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.titleZh,
+          description: item.descriptionZh,
+        })),
       },
       {
         "@type": "FAQPage",
@@ -424,6 +515,37 @@ export default function StartLearningBuddhismPage() {
       <section className="band alt">
         <div className="section-heading tight">
           <p>
+            <LocalizedText zh="按问题选入口" en="Choose Your Doorway" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="把“我现在到底该先看哪一页”直接说清楚，往往比继续收藏资料更有用。"
+              en="It is often more useful to say clearly which page should come first now than to keep collecting more resources."
+            />
+          </h2>
+        </div>
+        <div className="editorial-list">
+          {starterDoors.map((item) => (
+            <a key={item.href} className="editorial-row" href={siteHref(item.href)}>
+              <span>
+                <LocalizedText zh={item.labelZh} en={item.labelEn} />
+              </span>
+              <div>
+                <strong>
+                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
+                </strong>
+                <p>
+                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+                </p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="section-heading tight">
+          <p>
             <LocalizedText zh="常见误区" en="Common Mistakes" />
           </p>
           <h2>
@@ -447,7 +569,7 @@ export default function StartLearningBuddhismPage() {
         </div>
       </section>
 
-      <section className="band">
+      <section className="band alt">
         <div className="section-heading tight">
           <p>
             <LocalizedText zh="继续阅读" en="Keep Going" />
