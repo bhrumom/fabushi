@@ -1,0 +1,116 @@
+name: Deploy compose checks - Forum
+
+on:
+  pull_request:
+    paths:
+      - "forum/docker-compose.deploy.yml"
+      - "forum/.env.deploy.example"
+      - "forum/DEPLOY.md"
+      - ".github/workflows/forum-deploy-compose-checks.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "forum/docker-compose.deploy.yml"
+      - "forum/.env.deploy.example"
+      - "forum/DEPLOY.md"
+      - ".github/workflows/forum-deploy-compose-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  forum-deploy-compose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout forum workspace only
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+            forum
+          fetch-depth: 1
+
+      - name: Build forum container image
+        run: docker build -t fabushi-forum ./forum
+
+      - name: Prepare deploy compose sqlite workspace
+        run: |
+          rm -rf /tmp/fabushi-forum-deploy-compose-data
+          mkdir -p /tmp/fabushi-forum-deploy-compose-data
+
+      - name: Start forum deploy compose with local image override
+        run: |
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          FORUM_PORT=3001 \
+          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data \
+          docker compose -f forum/docker-compose.deploy.yml up -d
+
+      - name: Wait for forum deploy compose health endpoint
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if curl --fail --show-error --silent http://127.0.0.1:3001/api/health >/tmp/forum-deploy-health.json; then
+              break
+            fi
+
+            sleep 3
+          done
+
+          cat /tmp/forum-deploy-health.json
+
+      - name: Smoke test forum deploy compose preview runtime
+        run: |
+          health_response="$(cat /tmp/forum-deploy-health.json)"
+          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY2'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_HEALTH_RESPONSE"])
+          assert payload["service"] == "forum", payload
+          assert payload["ready"] is True, payload
+          assert payload["dataSource"] == "sqlite", payload
+          assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["deploymentStage"] == "preview", payload
+          assert payload["indexingEnabled"] is False, payload
+          assert payload["publicBaseUrlConfigured"] is False, payload
+          assert payload["writesEnabled"] is False, payload
+          assert payload["requiresAccessCode"] is False, payload
+          PY2
+
+          status_response="$(curl --fail --show-error --silent http://127.0.0.1:3001/api/status)"
+          echo "$status_response"
+          FORUM_STATUS_RESPONSE="$status_response" python3 - <<'PY2'
+          import json
+          import os
+
+          payload = json.loads(os.environ["FORUM_STATUS_RESPONSE"])
+          assert payload["service"] == "forum", payload
+          assert payload["dataSource"] == "sqlite", payload
+          assert payload["persistenceMode"] == "sqlite-file", payload
+          assert payload["deploymentStage"] == "preview", payload
+          assert payload["indexingEnabled"] is False, payload
+          assert payload["writesEnabled"] is False, payload
+          assert payload["requiresAccessCode"] is False, payload
+          assert payload["counts"]["threads"] >= 4, payload
+          assert payload["counts"]["moderationEvents"] >= 4, payload
+          PY2
+
+          robots_response="$(curl --fail --show-error --silent http://127.0.0.1:3001/robots.txt)"
+          echo "$robots_response"
+          FORUM_ROBOTS_RESPONSE="$robots_response" python3 - <<'PY2'
+          import os
+
+          payload = os.environ["FORUM_ROBOTS_RESPONSE"]
+          assert "User-Agent: *" in payload, payload
+          assert "Disallow: /" in payload, payload
+          PY2
+
+      - name: Stop forum deploy compose
+        if: always()
+        run: |
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          FORUM_PORT=3001 \
+          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data \
+          docker compose -f forum/docker-compose.deploy.yml down -v || true
