@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/buddhist-concepts");
 const pageTitle = `佛学基本概念入门 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理佛学基本概念入门：从因果、菩提心、六度、空性，到这些概念怎样回到佛经阅读、修行方法与日常功课。";
+  "面向初学者梳理佛学基本概念入门：从因果、菩提心、六度、空性，到这些概念怎样回到《心经》《普门品》《金刚经》《阿弥陀经》的阅读问题、修行方法与日常功课。";
 
 const conceptPrinciples = [
   {
@@ -67,6 +67,45 @@ const conceptPaths = [
     titleEn: "Return emptiness from abstraction to dependent arising, lived experience, and a less rigid way of seeing.",
     descriptionZh: "如果你最卡的是“空性是不是就是什么都没有”，这一页更适合继续往下看。它会把空性和生活经验之间的距离拉近一些。",
     descriptionEn: "This is the better next page if your main question is whether emptiness means nothingness. It brings emptiness closer to ordinary experience.",
+  },
+] as const;
+
+const scriptureBridgeSteps = [
+  {
+    href: "/what-is-emptiness",
+    labelZh: "《心经》接向空性怎么理解",
+    labelEn: "Heart Sutra to Emptiness",
+    titleZh: "如果你是先在《心经》里反复碰到“空”这个字，下一步先把它从熟悉的经句接回更可用的理解。",
+    titleEn: "If the Heart Sutra is where the word emptiness first keeps returning, the next step is to bring it from familiar lines into more usable understanding.",
+    descriptionZh: "很多人第一次真正卡住的，不是《心经》本身，而是“色即是空”听熟了以后，不知道空性到底该怎么理解。先把这一层接清楚，再回头读经，通常更容易读进去。",
+    descriptionEn: "Many beginners do not stop at the Heart Sutra itself, but at the question of how to understand emptiness after the familiar lines have been heard many times. Clarifying that layer first often makes returning to the sutra easier.",
+  },
+  {
+    href: "/what-is-bodhicitta",
+    labelZh: "《普门品》接向菩提心是什么意思",
+    labelEn: "Universal Gate to Bodhicitta",
+    titleZh: "如果《普门品》先打动你的是慈悲与依止感，下一步可以把这种感受接到更宽的发心上。",
+    titleEn: "If the Universal Gate Chapter first moves you through compassion and refuge, the next step can connect that feeling to a wider aspiration.",
+    descriptionZh: "很多人从《普门品》开始，会先感到被安住，继续往前时常会追问：这种慈悲为什么不会只停在一时安慰，而会慢慢长成更宽的修行方向？这正是它和菩提心更容易接起来的地方。",
+    descriptionEn: "Many readers begin the Universal Gate Chapter by feeling steadied. The next question often becomes how that compassion grows into a wider direction of practice rather than remaining only temporary comfort. That is where it naturally connects with bodhicitta.",
+  },
+  {
+    href: "/what-are-the-six-paramitas",
+    labelZh: "《金刚经》接向六度分别是什么",
+    labelEn: "Diamond Sutra to Six Paramitas",
+    titleZh: "如果《金刚经》已经让你想继续往前走，下一步可以把般若怎样回到六度和做人做事里慢慢接起来。",
+    titleEn: "If the Diamond Sutra makes you want to continue, the next step is to see how wisdom returns to the six paramitas and ordinary conduct.",
+    descriptionZh: "很多人被《金刚经》吸引，是因为它能松动固着看法；继续往前时，更值得补上的往往是：这种般若为什么不只停在观念里，而会回到布施、持戒、忍辱、精进和禅定。",
+    descriptionEn: "Many readers are drawn to the Diamond Sutra because it loosens rigid views. The next useful bridge is often seeing why that wisdom does not stay in ideas alone, but returns to generosity, discipline, patience, diligence, and meditation.",
+  },
+  {
+    href: "/daily-practice",
+    labelZh: "《阿弥陀经》接向日常功课怎么安排",
+    labelEn: "Amitabha Sutra to Daily Practice",
+    titleZh: "如果《阿弥陀经》更能让你安住，下一步先把愿心、听诵和轻量功课放进每天的节奏。",
+    titleEn: "If the Amitabha Sutra helps you settle, the next step is to place aspiration, listening, and light practice into a daily rhythm.",
+    descriptionZh: "很多初学者从《阿弥陀经》进入时，真正更需要的不是立刻把全部义理讲透，而是先知道怎样让听诵、念佛、晨起和晚间的一点回顾真的留在生活里。",
+    descriptionEn: "For many beginners entering through the Amitabha Sutra, the next need is not a complete doctrinal account at once, but a way to let listening, recitation, morning rhythm, and evening review actually stay alive in daily life.",
   },
 ] as const;
 
@@ -132,23 +171,12 @@ const relatedPaths = [
     descriptionEn: "This is the better next page if you want concepts, practice methods, scripture study, and daily life back on one map.",
   },
   {
-    href: "/practice-guide",
-    labelZh: "修行方法总览",
-    labelEn: "Practice Guide",
-    titleZh: "把概念直接接回禅修、听诵、念佛和记录的实际方法。",
-    titleEn: "Return concepts directly to meditation, listening, recitation, and note-taking methods.",
-    descriptionZh: "如果你已经把概念看懂一些，下一步想知道怎样落回练习方式，这一页更适合继续往下走。",
-    descriptionEn: "This page is the better next step if the concepts are clearer and you now want to see how they land inside actual methods of practice.",
-  },
-  {
     href: "/beginner-sutra-recommendations",
     labelZh: "初学者佛经推荐",
     labelEn: "Beginner Sutra Picks",
     titleZh: "把概念问题重新接回读哪部经更合适。",
     titleEn: "Return concept questions to the question of which sutra fits best first.",
-    descriptionZh: "如果你已经发现自己的问题更接近《心经》、" +
-      "《阿弥陀经》、" +
-      "《普门品》或《金刚经》，这一页会更具体。",
+    descriptionZh: "如果你已经发现自己的问题更接近《心经》《阿弥陀经》《普门品》或《金刚经》，这一页会更具体。",
     descriptionEn: "This page is more specific if your questions are already pulling you toward the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra.",
   },
   {
@@ -159,6 +187,15 @@ const relatedPaths = [
     titleEn: "Return concept understanding to scripture reading and listening.",
     descriptionZh: "如果你已经发现很多概念其实都在读经时反复出现，这一页会更适合继续往下看。",
     descriptionEn: "This is the better next page if you have realized many of these concepts keep returning through sutra reading and listening.",
+  },
+  {
+    href: "/practice-guide",
+    labelZh: "修行方法总览",
+    labelEn: "Practice Guide",
+    titleZh: "把概念直接接回禅修、听诵、念佛和记录的实际方法。",
+    titleEn: "Return concepts directly to meditation, listening, recitation, and note-taking methods.",
+    descriptionZh: "如果你已经把概念看懂一些，下一步想知道怎样落回练习方式，这一页更适合继续往下走。",
+    descriptionEn: "This page is the better next step if the concepts are clearer and you now want to see how they land inside actual methods of practice.",
   },
 ] as const;
 
@@ -188,10 +225,22 @@ const faqItems = [
     answerEn: "You can pull the concept out and clarify it on its own instead of forcing yourself through the whole passage. If the Heart Sutra stalls you on emptiness, open the emptiness guide first. If the Universal Gate Chapter raises questions about compassion widening into a larger path, open bodhicitta first. Returning afterward usually makes the text easier to enter.",
   },
   {
-    questionZh: "Fabushi 在理解佛学概念这件事上最适合帮助什么？",
-    questionEn: "What is Fabushi most useful for when learning buddhist concepts?",
-    answerZh: "它更适合作为听诵、提醒和简短记录的辅助工具，帮助你把“今天碰到的概念”和“今天真的做了什么”接在一起。更系统的理解，仍然要回到导读、经典、老师和长期练习。",
-    answerEn: "It works best as a support tool for listening, reminders, and short notes so the concept you met today can connect with what you actually did today. Deeper understanding still depends on guides, texts, teachers, and sustained practice.",
+    questionZh: "《心经》为什么常把人带到空性？",
+    questionEn: "Why does the Heart Sutra so often lead people into the question of emptiness?",
+    answerZh: "因为很多人第一次真正碰到“色即是空、空即是色”这类句子时，会先被语言触动，但还没有足够的概念地图去接住它。于是问题很快会变成：空性到底是不是什麽都没有？这正是《心经》和空性导读最自然接起来的地方。",
+    answerEn: "Because many readers are first moved by lines such as 'form is emptiness' before they have a clear enough concept map to hold what they heard. The question quickly becomes whether emptiness means nothingness, which is exactly where the Heart Sutra and an emptiness guide connect most naturally.",
+  },
+  {
+    questionZh: "《普门品》为什么常和菩提心连在一起？",
+    questionEn: "Why does the Universal Gate Chapter often connect naturally with bodhicitta?",
+    answerZh: "很多人先从《普门品》感到慈悲和依止感，但继续往前时，会开始追问：这种感受为什么不会只停在一时安慰，而会慢慢长成更宽的发心与利他方向？这正是它和菩提心更容易接起来的地方。",
+    answerEn: "Many readers first feel compassion and refuge through the Universal Gate Chapter, then begin asking how that feeling grows into a wider aspiration and a path that includes others. That is why it connects so naturally with bodhicitta.",
+  },
+  {
+    questionZh: "《金刚经》为什么适合接到六度？",
+    questionEn: "Why does the Diamond Sutra connect well with the six paramitas?",
+    answerZh: "很多人被《金刚经》吸引，是因为它能松动固着看法；但继续往前时，更需要知道这种般若为什么不会只停在观念里，而会回到布施、持戒、忍辱、精进、禅定这些更具体的练习方向。六度正好能把这一步接起来。",
+    answerEn: "Many readers are drawn to the Diamond Sutra because it loosens rigid views, but the next need is often seeing why that wisdom does not remain only an idea and instead returns to generosity, discipline, patience, diligence, and meditation. The six paramitas are the natural bridge for that step.",
   },
 ] as const;
 
@@ -209,6 +258,10 @@ export const metadata: Metadata = {
     "菩提心是什么意思",
     "六度分别是什么",
     "空性怎么理解",
+    "心经 空性",
+    "普门品 菩提心",
+    "金刚经 六度",
+    "阿弥陀经 日常功课",
     "学佛入门",
     "Fabushi",
   ],
@@ -242,7 +295,7 @@ export default function BuddhistConceptsPage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["佛学基本概念", "因果", "菩提心", "六度", "空性"],
+        about: ["佛学基本概念", "因果", "菩提心", "六度", "空性", "心经", "普门品", "金刚经", "阿弥陀经"],
       },
       {
         "@type": "BreadcrumbList",
@@ -271,6 +324,17 @@ export default function BuddhistConceptsPage() {
         "@type": "ItemList",
         name: "佛学基本概念路径",
         itemListElement: conceptPaths.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.labelZh,
+          url: siteUrl(item.href),
+          description: item.descriptionZh,
+        })),
+      },
+      {
+        "@type": "ItemList",
+        name: "经典入口与概念路径",
+        itemListElement: scriptureBridgeSteps.map((item, index) => ({
           "@type": "ListItem",
           position: index + 1,
           name: item.labelZh,
@@ -348,6 +412,12 @@ export default function BuddhistConceptsPage() {
           </p>
           <p>
             <LocalizedText
+              zh="很多人第一次真正碰到这些概念，并不是在概念词条里，而是在《心经》《普门品》《金刚经》或《阿弥陀经》的阅读与听诵里。问题常常不是“有没有读”，而是读到一句以后，不知道这和空性、菩提心、六度或日常功课是什么关系。把经典入口和概念页收回同一张图里，后面的阅读才不容易断在第一页。"
+              en="Many people first truly meet these concepts not on glossary pages, but through reading and listening to texts such as the Heart Sutra, the Universal Gate Chapter, the Diamond Sutra, or the Amitabha Sutra. The real question is often not whether they read, but how a striking line relates to emptiness, bodhicitta, the six paramitas, or daily practice. Bringing scripture doorways and concept pages back onto one map keeps reading from ending on the first page."
+            />
+          </p>
+          <p>
+            <LocalizedText
               zh="真正有价值的概念页，也不应该只停在解释上。看完以后，最好立刻回到佛经阅读、修行方法、日常功课或经文听诵里，看看这些概念怎样开始影响这一周真实的一点点选择。Fabushi 更适合承接这种“把理解慢慢留在日常里”的部分。"
               en="A useful concept page should not stop at explanation alone. After reading, it helps to return immediately to scripture, practice methods, daily routine, or listening and see how one concept begins to influence one real choice this week. Fabushi fits best on the side of helping that understanding stay inside daily life."
             />
@@ -412,7 +482,38 @@ export default function BuddhistConceptsPage() {
         </div>
       </section>
 
-      <section className="band alt feature-band">
+      <section className="band alt">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="经典入口" en="Scripture Bridges" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="把常见经典入口，直接接回已经存在的概念页和日常修行页。"
+              en="Connect common scripture entry points directly to the concept and daily-practice pages that already exist."
+            />
+          </h2>
+        </div>
+        <div className="editorial-list">
+          {scriptureBridgeSteps.map((item) => (
+            <a key={item.href} className="editorial-row" href={siteHref(item.href)}>
+              <span>
+                <LocalizedText zh={item.labelZh} en={item.labelEn} />
+              </span>
+              <div>
+                <strong>
+                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
+                </strong>
+                <p>
+                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+                </p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="band feature-band">
         <div className="section-heading tight">
           <p>
             <LocalizedText zh="怎么使用" en="How to Use This" />
@@ -471,8 +572,8 @@ export default function BuddhistConceptsPage() {
           </p>
           <h2>
             <LocalizedText
-              zh="把概念页重新接回更完整的起步、修行和佛经路径。"
-              en="Return this concept hub to the wider beginner, practice, and scripture paths."
+              zh="把概念页重新接回更完整的起步、佛经和修行路径。"
+              en="Return this concept hub to the wider beginner, scripture, and practice paths."
             />
           </h2>
         </div>
@@ -500,8 +601,8 @@ export default function BuddhistConceptsPage() {
           <p>FAQ</p>
           <h2>
             <LocalizedText
-              zh="先回答理解佛学基本概念时最容易遇到的几个问题。"
-              en="Answer the questions people most often hit when learning basic buddhist concepts."
+              zh="先回答理解佛学基本概念时最容易继续追问的几个问题。"
+              en="Answer the questions people most often keep asking after they begin learning these concepts."
             />
           </h2>
         </div>
@@ -518,8 +619,8 @@ export default function BuddhistConceptsPage() {
           ))}
         </div>
         <div className="inline-cta">
-          <a className="primary-action" href={siteHref("/start-learning-buddhism")}>
-            <LocalizedText zh="先看学佛从哪里开始" en="Start with Where to Begin" />
+          <a className="primary-action" href={siteHref("/beginner-sutra-recommendations")}>
+            <LocalizedText zh="继续看初学者佛经推荐" en="Continue to Beginner Sutra Picks" />
           </a>
           <a className="secondary-action" href={siteHref("/practice-guide")}>
             <LocalizedText zh="继续看修行方法总览" en="Continue to the Practice Guide" />
