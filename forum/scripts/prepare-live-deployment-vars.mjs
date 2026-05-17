@@ -1,0 +1,158 @@
+#!/usr/bin/env node
+
+import { readFile } from "node:fs/promises";
+
+function parseArgs(argv) {
+  const parsed = {
+    "deploy-env-path": ".env.deploy",
+    "exercise-write-flow": "false",
+    format: "env",
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const part = argv[index];
+
+    if (!part.startsWith("--")) {
+      throw new Error(`Unexpected argument: ${part}`);
+    }
+
+    const key = part.slice(2);
+    const value = argv[index + 1];
+
+    if (value === undefined || value.startsWith("--")) {
+      throw new Error(`Missing value for --${key}`);
+    }
+
+    parsed[key] = value;
+    index += 1;
+  }
+
+  return parsed;
+}
+
+function parseBoolean(value, key) {
+  if (value === undefined || value === null || value === "") {
+    return false;
+  }
+
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  throw new Error(`Expected ${key} to be true or false, received: ${value}`);
+}
+
+function normalizeUrl(value) {
+  return value ? value.replace(/\/$/, "") : "";
+}
+
+function parseDotEnv(content) {
+  const values = {};
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex === -1) {
+      throw new Error(`Expected KEY=VALUE line in deploy env file, received: ${rawLine}`);
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1).trim();
+    values[key] = value;
+  }
+
+  return values;
+}
+
+function buildLiveTarget({ forumUrl, deployEnv, exerciseWriteFlow }) {
+  const deploymentStage = deployEnv.FORUM_DEPLOYMENT_STAGE?.trim() || "preview";
+  if (deploymentStage !== "preview" && deploymentStage !== "production") {
+    throw new Error(
+      `Expected FORUM_DEPLOYMENT_STAGE in deploy env to be preview or production, received: ${deploymentStage}`,
+    );
+  }
+
+  const writesEnabled = parseBoolean(deployEnv.FORUM_ENABLE_WRITES ?? "false", "FORUM_ENABLE_WRITES");
+  const requiresAccessCode = writesEnabled && Boolean((deployEnv.FORUM_WRITE_ACCESS_CODE || "").trim());
+  const publicBaseUrl = normalizeUrl(deployEnv.FORUM_PUBLIC_BASE_URL?.trim() || "");
+
+  if (exerciseWriteFlow && deploymentStage !== "preview") {
+    throw new Error("exercise_write_flow can only be enabled for preview deployments.");
+  }
+
+  if (exerciseWriteFlow && !writesEnabled) {
+    throw new Error("exercise_write_flow=true requires FORUM_ENABLE_WRITES=true in the deploy env file.");
+  }
+
+  return {
+    FORUM_LIVE_URL: normalizeUrl(forumUrl),
+    FORUM_LIVE_DEPLOYMENT_STAGE: deploymentStage,
+    FORUM_LIVE_PUBLIC_BASE_URL: publicBaseUrl,
+    FORUM_LIVE_WRITES_ENABLED: String(writesEnabled),
+    FORUM_LIVE_REQUIRES_ACCESS_CODE: String(requiresAccessCode),
+    FORUM_LIVE_EXERCISE_WRITE_FLOW: String(exerciseWriteFlow),
+  };
+}
+
+function renderEnvFormat(liveTarget) {
+  return Object.entries(liveTarget)
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+}
+
+function renderGithubCliFormat(liveTarget, deployEnv) {
+  const lines = Object.entries(liveTarget).map(
+    ([key, value]) => `gh variable set ${key} --body '${value.replace(/'/g, "'\"'\"'")}'`,
+  );
+
+  if (liveTarget.FORUM_LIVE_REQUIRES_ACCESS_CODE === "true") {
+    const accessCode = (deployEnv.FORUM_WRITE_ACCESS_CODE || "").trim();
+
+    lines.push("");
+    lines.push("# Run this once if the preview write gate is enabled for the live target.");
+    lines.push(`gh secret set FORUM_LIVE_WRITE_ACCESS_CODE --body '${accessCode.replace(/'/g, "'\"'\"'")}'`);
+  }
+
+  return lines.join("\n");
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const forumUrl = normalizeUrl(args["forum-url"]?.trim() || "");
+
+  if (!forumUrl) {
+    throw new Error("Missing required --forum-url.");
+  }
+
+  const format = args.format?.trim() || "env";
+  if (format !== "env" && format !== "github-cli") {
+    throw new Error(`Expected --format to be env or github-cli, received: ${format}`);
+  }
+
+  const exerciseWriteFlow = parseBoolean(args["exercise-write-flow"], "exercise_write_flow");
+
+  const deployEnvContent = await readFile(args["deploy-env-path"], "utf-8");
+  const deployEnv = parseDotEnv(deployEnvContent);
+  const liveTarget = buildLiveTarget({ forumUrl, deployEnv, exerciseWriteFlow });
+
+  if (format === "github-cli") {
+    console.log(renderGithubCliFormat(liveTarget, deployEnv));
+    return;
+  }
+
+  console.log(renderEnvFormat(liveTarget));
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});
