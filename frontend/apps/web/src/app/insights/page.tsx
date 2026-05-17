@@ -5,6 +5,7 @@ import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import { getAllArticles } from "../../lib/content";
 import { siteHref, siteUrl } from "../../lib/site-url";
+import type { InsightArticle } from "../../content/articles";
 
 const insightsUrl = siteUrl("/insights");
 const insightsTitle = `官网资讯与内容建设 | ${brand.name}`;
@@ -71,6 +72,24 @@ const INSIGHT_FAQS = [
   },
 ] as const;
 
+function ArticleMeta({ article }: { article: InsightArticle }) {
+  const label = article.updatedAt
+    ? {
+        zh: `更新 ${article.updatedAt}`,
+        en: `Updated ${article.updatedAt}`,
+      }
+    : {
+        zh: `发布 ${article.publishedAt}`,
+        en: `Published ${article.publishedAt}`,
+      };
+
+  return (
+    <small>
+      <LocalizedText zh={label.zh} en={label.en} /> · {article.author} · {article.readTime}
+    </small>
+  );
+}
+
 export const metadata: Metadata = {
   title: insightsTitle,
   description: insightsDescription,
@@ -120,6 +139,8 @@ export default function InsightsIndexPage() {
           headline: item.title,
           description: item.description,
           url: siteUrl(`/insights/${item.slug}`),
+          datePublished: item.publishedAt,
+          dateModified: item.updatedAt ?? item.publishedAt,
         })),
       },
       {
@@ -195,9 +216,7 @@ export default function InsightsIndexPage() {
               <div>
                 <strong>{item.title}</strong>
                 <p>{item.description}</p>
-                <small>
-                  {item.author} · {item.readTime}
-                </small>
+                <ArticleMeta article={item} />
               </div>
             </a>
           ))}

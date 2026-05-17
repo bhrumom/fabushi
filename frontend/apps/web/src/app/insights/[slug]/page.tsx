@@ -6,6 +6,7 @@ import { SiteFooter } from "../../../components/site-footer";
 import { SiteHeader } from "../../../components/site-header";
 import { getAllArticles, getArticleBySlug } from "../../../lib/content";
 import { siteHref, siteUrl } from "../../../lib/site-url";
+import type { InsightArticle } from "../../../content/articles";
 
 type ArticlePageParams = Promise<{ slug: string }>;
 
@@ -77,6 +78,41 @@ const ARTICLE_FAQS = [
     answerEn: "If your goal is simply to download the app, the dedicated download page is clearer. Article pages can still mention related updates, but they do not act as the download conversion page.",
   },
 ] as const;
+
+function ArticleMeta({ article }: { article: InsightArticle }) {
+  return (
+    <span className="article-date">
+      {article.updatedAt ? (
+        <>
+          <LocalizedText zh={`更新 ${article.updatedAt}`} en={`Updated ${article.updatedAt}`} /> ·{" "}
+          <LocalizedText zh={`首发 ${article.publishedAt}`} en={`Published ${article.publishedAt}`} />
+        </>
+      ) : (
+        <LocalizedText zh={`发布 ${article.publishedAt}`} en={`Published ${article.publishedAt}`} />
+      )}
+      {" · "}
+      {article.author} · {article.readTime}
+    </span>
+  );
+}
+
+function ArticleListMeta({ article }: { article: InsightArticle }) {
+  const label = article.updatedAt
+    ? {
+        zh: `更新 ${article.updatedAt}`,
+        en: `Updated ${article.updatedAt}`,
+      }
+    : {
+        zh: `发布 ${article.publishedAt}`,
+        en: `Published ${article.publishedAt}`,
+      };
+
+  return (
+    <small>
+      <LocalizedText zh={label.zh} en={label.en} /> · {article.author} · {article.readTime}
+    </small>
+  );
+}
 
 export function generateStaticParams() {
   return getAllArticles().map((article) => ({ slug: article.slug }));
@@ -219,9 +255,7 @@ export default async function InsightArticlePage({ params }: { params: ArticlePa
           <p className="eyebrow">{article.category}</p>
           <h1>{article.title}</h1>
           <p className="lede">{article.description}</p>
-          <span className="article-date">
-            {article.publishedAt} · {article.author} · {article.readTime}
-          </span>
+          <ArticleMeta article={article} />
         </div>
       </section>
 
@@ -279,9 +313,7 @@ export default async function InsightArticlePage({ params }: { params: ArticlePa
                 <div>
                   <strong>{item.title}</strong>
                   <p>{item.description}</p>
-                  <small>
-                    {item.author} · {item.readTime}
-                  </small>
+                  <ArticleListMeta article={item} />
                 </div>
               </a>
             ))}
