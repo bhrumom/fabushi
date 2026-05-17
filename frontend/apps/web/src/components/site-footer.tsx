@@ -10,17 +10,17 @@ export function SiteFooter() {
         </p>
         <p className="footer-copy">
           <LocalizedText
-            zh="经文、禅修、法流与全球法布施。"
-            en="Sutras, meditation, dharma videos, and global giving."
+            zh="佛法导览、禅修、念佛、佛经与全球法布施。"
+            en="Dharma guides, meditation, nianfo, sutras, and global giving."
           />
         </p>
       </div>
       <div className="footer-links">
         <a href={siteHref("/download")}>
-          <LocalizedText zh="下载入口" en="Download" />
+          <LocalizedText zh="下载 App" en="Download App" />
         </a>
-        <a href={siteHref("/apply")}>
-          <LocalizedText zh="申请测试" en="Apply" />
+        <a href={siteHref("/insights")}>
+          <LocalizedText zh="官网资讯" en="Site News" />
         </a>
         <a href={siteHref("/faq")}>
           <LocalizedText zh="常见问题" en="FAQ" />
@@ -46,11 +46,11 @@ export function SiteFooter() {
         <a href={siteHref("/what-is-emptiness")}>
           <LocalizedText zh="空性怎么理解" en="How to Understand Emptiness" />
         </a>
-        <a href={siteHref("/meditation")}>
-          <LocalizedText zh="禅修入门" en="Meditation Guide" />
-        </a>
         <a href={siteHref("/practice-guide")}>
           <LocalizedText zh="修行方法总览" en="Practice Guide" />
+        </a>
+        <a href={siteHref("/meditation")}>
+          <LocalizedText zh="禅修入门" en="Meditation Guide" />
         </a>
         <a href={siteHref("/daily-practice")}>
           <LocalizedText zh="日常功课怎么安排" en="Daily Practice" />
@@ -72,9 +72,6 @@ export function SiteFooter() {
         </a>
         <a href={siteHref("/contact")}>
           <LocalizedText zh="联系" en="Contact" />
-        </a>
-        <a href={siteHref("/insights")}>
-          <LocalizedText zh="内容专栏" en="Insights" />
         </a>
         <a href="mailto:support@ombhrum.com">support@ombhrum.com</a>
       </div>
