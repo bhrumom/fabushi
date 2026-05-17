@@ -56,6 +56,7 @@ concurrency:
 jobs:
   forum-live-deployment:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       FORUM_WRITE_ACCESS_CODE: ${{ secrets.FORUM_LIVE_WRITE_ACCESS_CODE }}
     steps:
@@ -113,6 +114,29 @@ jobs:
             echo "exercise_write_flow=$exercise_write_flow"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Write live deployment target summary
+        shell: bash
+        run: |
+          {
+            echo "## Live forum target"
+            echo ""
+
+            if [[ "${{ steps.resolve.outputs.skip }}" == "true" ]]; then
+              echo "- status: skipped"
+              echo "- reason: ${{ steps.resolve.outputs.reason }}"
+              echo "- next config: set FORUM_LIVE_URL and the related FORUM_LIVE_* repository variables before expecting hourly checks to hit a real target"
+            else
+              echo "- status: ready to check"
+              echo "- forum_url: ${{ steps.resolve.outputs.forum_url }}"
+              echo "- deployment_stage: ${{ steps.resolve.outputs.deployment_stage }}"
+              echo "- public_base_url: ${{ steps.resolve.outputs.public_base_url || '(empty)' }}"
+              echo "- writes_enabled: ${{ steps.resolve.outputs.writes_enabled }}"
+              echo "- requires_access_code: ${{ steps.resolve.outputs.requires_access_code }}"
+              echo "- exercise_write_flow: ${{ steps.resolve.outputs.exercise_write_flow }}"
+              echo "- request_timeout_ms: 15000"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Skip scheduled check when live target is not configured
         if: steps.resolve.outputs.skip == 'true'
         run: echo "${{ steps.resolve.outputs.reason }}"
@@ -126,4 +150,24 @@ jobs:
             --public-base-url "${{ steps.resolve.outputs.public_base_url }}" \
             --writes-enabled "${{ steps.resolve.outputs.writes_enabled }}" \
             --requires-access-code "${{ steps.resolve.outputs.requires_access_code }}" \
-            --exercise-write-flow "${{ steps.resolve.outputs.exercise_write_flow }}"
+            --exercise-write-flow "${{ steps.resolve.outputs.exercise_write_flow }}" \
+            --request-timeout-ms 15000 \
+            --report-path /tmp/forum-live-deployment-report.json
+
+      - name: Append live smoke check report to job summary
+        if: always() && steps.resolve.outputs.skip != 'true'
+        shell: bash
+        run: |
+          {
+            echo ""
+            echo "## Live smoke check report"
+            echo ""
+
+            if [[ -f /tmp/forum-live-deployment-report.json ]]; then
+              echo '```json'
+              cat /tmp/forum-live-deployment-report.json
+              echo '```'
+            else
+              echo "Report file was not created. Inspect the smoke-check step logs for details."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
