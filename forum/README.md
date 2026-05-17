@@ -18,6 +18,7 @@ Current scope:
 - an optional write-access code gate so writable sqlite deployments can stay in a small preview cohort before full authentication lands
 - a preview/production deployment contract that keeps preview responses noindex until the public forum origin is explicit
 - a reusable deployment smoke script plus a manual GitHub Actions workflow for checking real preview and production forum URLs against that contract
+- an optional live preview write smoke check that can create a thread and reply against a deployed runtime before broader rollout
 - a minimal thread-creation API when sqlite mode is enabled and writes are explicitly opened
 - a page-level thread composer on top of the thread-creation API in writable mode
 - a minimal reply-creation API for existing threads when sqlite writes are enabled
@@ -53,6 +54,7 @@ Included:
 - a no-store health endpoint for deployment readiness probes
 - a preview-safe indexing contract driven by deployment stage plus public forum origin
 - a reusable smoke check for real deployment URLs
+- an optional write-path smoke check for deployed preview runtimes
 
 Not included yet:
 
@@ -131,6 +133,8 @@ curl -X POST http://localhost:3000/api/thread/first-year-stability/replies \
     "trustSignal": "回复已按主题聚焦提交，等待更多互动后再决定是否沉淀。",
     "body": ["我发现先把睡前十分钟固定下来，比一下子改整天作息更容易坚持。"]
   }'
+FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
+  pnpm smoke:deployment -- --url http://localhost:3000 --deployment-stage preview --writes-enabled=true --requires-access-code=true --exercise-write-flow true
 curl http://localhost:3000/api/thread/first-year-stability
 curl http://localhost:3000/threads/new
 curl http://localhost:3000/threads
@@ -188,12 +192,22 @@ pnpm smoke:deployment -- --url https://forum-preview.example.com --deployment-st
 pnpm smoke:deployment -- --url https://forum.example.com --deployment-stage production --public-base-url https://forum.example.com --writes-enabled=false --requires-access-code=false
 ```
 
-The same check is also available as the manual GitHub Actions workflow `Live deployment checks - Forum`. Provide:
+If you want the live check to also verify the preview write path, opt in explicitly and provide the shared preview code through an environment variable. This mode creates a real thread and a real reply on the deployed runtime, so it is intended for preview environments and other safe rollout targets, not public production forums.
+
+```bash
+FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
+  pnpm smoke:deployment -- --url https://forum-preview.example.com --deployment-stage preview --writes-enabled=true --requires-access-code=true --exercise-write-flow true
+```
+
+The same checks are also available as the manual GitHub Actions workflow `Live deployment checks - Forum`. Provide:
 
 - `forum_url` for the real forum entry you want to verify
 - `deployment_stage` as `preview` or `production`
 - `public_base_url` when the target should already be publicly indexable
 - `writes_enabled` and `requires_access_code` so the live runtime is checked against the current rollout posture
+- `exercise_write_flow=true` only when you intentionally want the workflow to create a preview thread and reply during the run
+
+If the preview runtime still requires a shared write-access code, store it in the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE` before triggering the workflow. The workflow passes that secret into the live smoke script only when the write-path check is enabled.
 
 This closes the gap between “container checks passed in CI” and “the actual preview or production forum URL is configured correctly”.
 
@@ -248,6 +262,8 @@ docker run --rm -p 3000:3000 \
 curl http://localhost:3000/api/health
 curl http://localhost:3000/api/status
 pnpm smoke:deployment -- --url http://localhost:3000 --deployment-stage preview --writes-enabled=true --requires-access-code=true
+FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
+  pnpm smoke:deployment -- --url http://localhost:3000 --deployment-stage preview --writes-enabled=true --requires-access-code=true --exercise-write-flow true
 ```
 
 When the forum is actually ready to advertise a public origin, switch both deployment fields together:

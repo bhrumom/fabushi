@@ -54,41 +54,281 @@ function expect(condition, message, details) {
   }
 }
 
-async function fetchJson(target) {
-  const response = await fetch(target, {
-    headers: {
-      accept: "application/json",
-    },
-    redirect: "follow",
-  });
-
-  const body = await response.text();
-  expect(response.ok, `Request failed for ${target}`, {
-    status: response.status,
-    body,
-  });
-
-  try {
-    return JSON.parse(body);
-  } catch (error) {
-    throw new Error(`Expected JSON from ${target}: ${error}`);
-  }
-}
-
-async function fetchText(target) {
+async function request(target, init = {}, expectedStatus = 200) {
+  const allowedStatuses = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
   const response = await fetch(target, {
     redirect: "follow",
+    ...init,
   });
   const body = await response.text();
 
-  expect(response.ok, `Request failed for ${target}`, {
+  expect(allowedStatuses.includes(response.status), `Request failed for ${target}`, {
     status: response.status,
     body,
+    expectedStatus: allowedStatuses,
   });
 
   return {
     body,
     headers: response.headers,
+    status: response.status,
+  };
+}
+
+async function fetchJson(target, init = {}, expectedStatus = 200) {
+  const response = await request(
+    target,
+    {
+      headers: {
+        accept: "application/json",
+        ...(init.headers ?? {}),
+      },
+      ...init,
+    },
+    expectedStatus,
+  );
+
+  try {
+    return {
+      ...response,
+      json: JSON.parse(response.body),
+    };
+  } catch (error) {
+    throw new Error(`Expected JSON from ${target}: ${error}`);
+  }
+}
+
+function createThreadPayload(runId) {
+  return {
+    sectionSlug: "newcomer-path",
+    title: `Live deployment smoke ${runId}`,
+    author: "Live deployment check",
+    authorRoleLabel: "Preview cohort tester",
+    guidanceSignal: "Please confirm the smallest next step appears in live readback.",
+    summary: "This thread verifies the deployed forum write path before broader rollout.",
+    tags: ["live-smoke", "preview"],
+    openingPost: [
+      "This thread is created by the live deployment smoke check to verify thread creation, page readback, and moderation timeline persistence.",
+    ],
+  };
+}
+
+function createReplyPayload() {
+  return {
+    author: "Live reply check",
+    roleLabel: "Preview reply verifier",
+    guidanceSignal: "Please surface one concrete next step in the live thread detail.",
+    trustSignal: "Written by the live deployment smoke check to verify reply persistence.",
+    body: [
+      "This reply verifies that the deployed forum can persist and read back a new response.",
+    ],
+  };
+}
+
+async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, writeAccessCode }) {
+  const runId = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+  const threadPayload = createThreadPayload(runId);
+
+  if (expectedRequiresAccessCode) {
+    const deniedCreate = await fetchJson(
+      `${forumUrl}/api/threads`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(threadPayload),
+      },
+      403,
+    );
+
+    expect(
+      typeof deniedCreate.json.error === "string" && deniedCreate.json.error.toLowerCase().includes("write access code"),
+      "thread creation without a write access code should be rejected before live writes run",
+      deniedCreate.json,
+    );
+  }
+
+  const createPayload = {
+    ...threadPayload,
+    ...(writeAccessCode ? { writeAccessCode } : {}),
+  };
+  const createdThread = await fetchJson(
+    `${forumUrl}/api/threads`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(createPayload),
+    },
+    201,
+  );
+
+  expect(createdThread.json.source === "sqlite", "created thread should be backed by sqlite", createdThread.json);
+  expect(createdThread.json.thread.sectionSlug === threadPayload.sectionSlug, "thread section mismatch", createdThread.json);
+  expect(createdThread.json.thread.title === threadPayload.title, "thread title mismatch", createdThread.json);
+  expect(createdThread.json.thread.author === threadPayload.author, "thread author mismatch", createdThread.json);
+  expect(
+    createdThread.json.thread.authorRoleLabel === threadPayload.authorRoleLabel,
+    "thread authorRoleLabel mismatch",
+    createdThread.json,
+  );
+  expect(
+    createdThread.json.thread.guidanceSignal === threadPayload.guidanceSignal,
+    "thread guidanceSignal mismatch",
+    createdThread.json,
+  );
+  expect(
+    createdThread.json.moderationEvents.at(-1)?.eventType === "thread-created",
+    "thread creation should append a moderation event",
+    createdThread.json,
+  );
+
+  const threadSlug = createdThread.json.thread.slug;
+  expect(Boolean(threadSlug), "thread slug should be returned after live thread creation", createdThread.json);
+
+  const threadDetail = await fetchJson(`${forumUrl}/api/thread/${threadSlug}`);
+  expect(threadDetail.json.source === "sqlite", "thread detail should resolve from sqlite", threadDetail.json);
+  expect(threadDetail.json.thread.slug === threadSlug, "thread detail slug mismatch", threadDetail.json);
+  expect(threadDetail.json.thread.author === threadPayload.author, "thread detail author mismatch", threadDetail.json);
+  expect(
+    threadDetail.json.moderationEvents.at(-1)?.eventType === "thread-created",
+    "thread detail should expose the creation moderation event",
+    threadDetail.json,
+  );
+
+  const threadListPage = await request(`${forumUrl}/threads`);
+  expect(threadListPage.body.includes(threadPayload.title), "thread list HTML should include the created thread title", {
+    threadTitle: threadPayload.title,
+    snippet: threadListPage.body.slice(0, 6000),
+  });
+  expect(threadListPage.body.includes(threadPayload.author), "thread list HTML should include the created thread author", {
+    author: threadPayload.author,
+    snippet: threadListPage.body.slice(0, 6000),
+  });
+  expect(
+    threadListPage.body.includes(threadPayload.authorRoleLabel),
+    "thread list HTML should include the created thread role label",
+    {
+      roleLabel: threadPayload.authorRoleLabel,
+      snippet: threadListPage.body.slice(0, 6000),
+    },
+  );
+  expect(
+    threadListPage.body.includes(threadPayload.guidanceSignal),
+    "thread list HTML should include the created thread guidance signal",
+    {
+      guidanceSignal: threadPayload.guidanceSignal,
+      snippet: threadListPage.body.slice(0, 6000),
+    },
+  );
+
+  const threadDetailPageBeforeReply = await request(`${forumUrl}/threads/${threadSlug}`);
+  expect(
+    threadDetailPageBeforeReply.body.includes(threadPayload.title),
+    "thread detail HTML should include the created thread title",
+    {
+      threadTitle: threadPayload.title,
+      snippet: threadDetailPageBeforeReply.body.slice(0, 7000),
+    },
+  );
+  expect(
+    threadDetailPageBeforeReply.body.includes(threadPayload.guidanceSignal),
+    "thread detail HTML should include the thread guidance signal",
+    {
+      guidanceSignal: threadPayload.guidanceSignal,
+      snippet: threadDetailPageBeforeReply.body.slice(0, 7000),
+    },
+  );
+  expect(
+    threadDetailPageBeforeReply.body.includes("审核时间线"),
+    "thread detail HTML should expose the moderation timeline block",
+    {
+      snippet: threadDetailPageBeforeReply.body.slice(0, 7000),
+    },
+  );
+
+  const replyPayload = createReplyPayload();
+  const createdReply = await fetchJson(
+    `${forumUrl}/api/thread/${threadSlug}/replies`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        ...replyPayload,
+        ...(writeAccessCode ? { writeAccessCode } : {}),
+      }),
+    },
+    201,
+  );
+
+  expect(createdReply.json.source === "sqlite", "created reply should be backed by sqlite", createdReply.json);
+  expect(createdReply.json.thread.slug === threadSlug, "reply response slug mismatch", createdReply.json);
+  expect(createdReply.json.thread.replyCount >= 1, "reply count should increase after live reply creation", createdReply.json);
+  expect(createdReply.json.thread.lastActivity === "刚刚回复", "lastActivity should reflect a new reply", createdReply.json);
+  expect(createdReply.json.replies.at(-1)?.author === replyPayload.author, "reply author mismatch", createdReply.json);
+  expect(createdReply.json.replies.at(-1)?.roleLabel === replyPayload.roleLabel, "reply roleLabel mismatch", createdReply.json);
+  expect(
+    createdReply.json.replies.at(-1)?.guidanceSignal === replyPayload.guidanceSignal,
+    "reply guidanceSignal mismatch",
+    createdReply.json,
+  );
+  expect(
+    createdReply.json.replies.at(-1)?.trustSignal === replyPayload.trustSignal,
+    "reply trustSignal mismatch",
+    createdReply.json,
+  );
+  expect(
+    createdReply.json.moderationEvents.at(-1)?.eventType === "reply-created",
+    "reply creation should append a moderation event",
+    createdReply.json,
+  );
+
+  const threadDetailAfterReply = await fetchJson(`${forumUrl}/api/thread/${threadSlug}`);
+  expect(
+    threadDetailAfterReply.json.replies.at(-1)?.author === replyPayload.author,
+    "thread detail should include the live reply author",
+    threadDetailAfterReply.json,
+  );
+  expect(
+    threadDetailAfterReply.json.moderationEvents.at(-1)?.eventType === "reply-created",
+    "thread detail should expose the reply moderation event",
+    threadDetailAfterReply.json,
+  );
+
+  const threadDetailPageAfterReply = await request(`${forumUrl}/threads/${threadSlug}`);
+  expect(
+    threadDetailPageAfterReply.body.includes(replyPayload.author),
+    "thread detail HTML should include the live reply author",
+    {
+      author: replyPayload.author,
+      snippet: threadDetailPageAfterReply.body.slice(0, 9000),
+    },
+  );
+  expect(
+    threadDetailPageAfterReply.body.includes(replyPayload.roleLabel),
+    "thread detail HTML should include the live reply role label",
+    {
+      roleLabel: replyPayload.roleLabel,
+      snippet: threadDetailPageAfterReply.body.slice(0, 9000),
+    },
+  );
+  expect(
+    threadDetailPageAfterReply.body.includes(replyPayload.guidanceSignal),
+    "thread detail HTML should include the live reply guidance signal",
+    {
+      guidanceSignal: replyPayload.guidanceSignal,
+      snippet: threadDetailPageAfterReply.body.slice(0, 9000),
+    },
+  );
+
+  return {
+    threadSlug,
+    threadTitle: threadPayload.title,
+    replyAuthor: replyPayload.author,
   };
 }
 
@@ -98,6 +338,8 @@ const deploymentStage = args["deployment-stage"];
 const publicBaseUrl = args["public-base-url"] ? normalizeUrl(args["public-base-url"]) : "";
 const expectedWritesEnabled = parseBoolean(args["writes-enabled"], "writes-enabled");
 const expectedRequiresAccessCode = parseBoolean(args["requires-access-code"], "requires-access-code");
+const exerciseWriteFlow = parseBoolean(args["exercise-write-flow"], "exercise-write-flow") ?? false;
+const writeAccessCode = args["write-access-code"]?.trim() || process.env.FORUM_WRITE_ACCESS_CODE?.trim() || "";
 
 expect(Boolean(forumUrl), "--url is required");
 expect(
@@ -110,62 +352,62 @@ const expectedIndexingEnabled = deploymentStage === "production" && Boolean(publ
 
 const health = await fetchJson(`${forumUrl}/api/health`);
 const status = await fetchJson(`${forumUrl}/api/status`);
-const robots = await fetchText(`${forumUrl}/robots.txt`);
-const threadList = await fetchText(`${forumUrl}/threads`);
+const robots = await request(`${forumUrl}/robots.txt`);
+const threadList = await request(`${forumUrl}/threads`);
 const threadListHtml = threadList.body.toLowerCase();
 const robotsText = robots.body;
 
-expect(health.service === "forum", "health service should be forum", health);
-expect(health.ready === true, "health ready should be true", health);
-expect(health.deploymentStage === deploymentStage, "health deployment stage mismatch", health);
-expect(health.indexingEnabled === expectedIndexingEnabled, "health indexingEnabled mismatch", {
+expect(health.json.service === "forum", "health service should be forum", health.json);
+expect(health.json.ready === true, "health ready should be true", health.json);
+expect(health.json.deploymentStage === deploymentStage, "health deployment stage mismatch", health.json);
+expect(health.json.indexingEnabled === expectedIndexingEnabled, "health indexingEnabled mismatch", {
   expectedIndexingEnabled,
-  health,
+  health: health.json,
 });
 expect(
-  health.publicBaseUrlConfigured === Boolean(publicBaseUrl),
+  health.json.publicBaseUrlConfigured === Boolean(publicBaseUrl),
   "health publicBaseUrlConfigured mismatch",
   {
     expected: Boolean(publicBaseUrl),
-    health,
+    health: health.json,
   },
 );
 
-expect(status.service === "forum", "status service should be forum", status);
-expect(status.deploymentStage === deploymentStage, "status deployment stage mismatch", status);
-expect(status.indexingEnabled === expectedIndexingEnabled, "status indexingEnabled mismatch", {
+expect(status.json.service === "forum", "status service should be forum", status.json);
+expect(status.json.deploymentStage === deploymentStage, "status deployment stage mismatch", status.json);
+expect(status.json.indexingEnabled === expectedIndexingEnabled, "status indexingEnabled mismatch", {
   expectedIndexingEnabled,
-  status,
+  status: status.json,
 });
 
 if (publicBaseUrl) {
-  expect(status.publicBaseUrl === publicBaseUrl, "status publicBaseUrl mismatch", {
+  expect(status.json.publicBaseUrl === publicBaseUrl, "status publicBaseUrl mismatch", {
     expected: publicBaseUrl,
-    status,
+    status: status.json,
   });
 } else {
-  expect(!status.publicBaseUrl, "status publicBaseUrl should be empty when no public base URL is expected", status);
+  expect(!status.json.publicBaseUrl, "status publicBaseUrl should be empty when no public base URL is expected", status.json);
 }
 
 if (expectedWritesEnabled !== undefined) {
-  expect(health.writesEnabled === expectedWritesEnabled, "health writesEnabled mismatch", {
+  expect(health.json.writesEnabled === expectedWritesEnabled, "health writesEnabled mismatch", {
     expectedWritesEnabled,
-    health,
+    health: health.json,
   });
-  expect(status.writesEnabled === expectedWritesEnabled, "status writesEnabled mismatch", {
+  expect(status.json.writesEnabled === expectedWritesEnabled, "status writesEnabled mismatch", {
     expectedWritesEnabled,
-    status,
+    status: status.json,
   });
 }
 
 if (expectedRequiresAccessCode !== undefined) {
-  expect(health.requiresAccessCode === expectedRequiresAccessCode, "health requiresAccessCode mismatch", {
+  expect(health.json.requiresAccessCode === expectedRequiresAccessCode, "health requiresAccessCode mismatch", {
     expectedRequiresAccessCode,
-    health,
+    health: health.json,
   });
-  expect(status.requiresAccessCode === expectedRequiresAccessCode, "status requiresAccessCode mismatch", {
+  expect(status.json.requiresAccessCode === expectedRequiresAccessCode, "status requiresAccessCode mismatch", {
     expectedRequiresAccessCode,
-    status,
+    status: status.json,
   });
 }
 
@@ -232,6 +474,27 @@ if (expectedIndexingEnabled) {
   });
 }
 
+let liveWriteVerification = null;
+
+if (exerciseWriteFlow) {
+  expect(deploymentStage === "preview", "--exercise-write-flow is only supported for preview runtimes.", {
+    deploymentStage,
+  });
+  expect(expectedWritesEnabled === true, "--exercise-write-flow requires --writes-enabled=true.", {
+    expectedWritesEnabled,
+  });
+
+  if (expectedRequiresAccessCode) {
+    expect(Boolean(writeAccessCode), "A write access code is required to exercise the live preview write flow. Pass --write-access-code or set FORUM_WRITE_ACCESS_CODE.");
+  }
+
+  liveWriteVerification = await verifyPreviewWriteFlow({
+    forumUrl,
+    expectedRequiresAccessCode: expectedRequiresAccessCode === true,
+    writeAccessCode,
+  });
+}
+
 console.log(
   JSON.stringify(
     {
@@ -242,6 +505,8 @@ console.log(
       publicBaseUrl: publicBaseUrl || null,
       writesEnabled: expectedWritesEnabled ?? null,
       requiresAccessCode: expectedRequiresAccessCode ?? null,
+      exerciseWriteFlow,
+      liveWriteVerification,
     },
     null,
     2,
