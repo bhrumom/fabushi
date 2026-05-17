@@ -78,14 +78,24 @@ jobs:
       - name: Resolve and validate live forum target
         env:
           FORUM_LIVE_SOURCE: ${{ github.event_name }}
-          FORUM_LIVE_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.forum_url || vars.FORUM_LIVE_URL }}
-          FORUM_LIVE_DEPLOYMENT_STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.deployment_stage || vars.FORUM_LIVE_DEPLOYMENT_STAGE }}
-          FORUM_LIVE_PUBLIC_BASE_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.public_base_url || vars.FORUM_LIVE_PUBLIC_BASE_URL }}
-          FORUM_LIVE_WRITES_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.writes_enabled || vars.FORUM_LIVE_WRITES_ENABLED }}
-          FORUM_LIVE_REQUIRES_ACCESS_CODE: ${{ github.event_name == 'workflow_dispatch' && inputs.requires_access_code || vars.FORUM_LIVE_REQUIRES_ACCESS_CODE }}
-          FORUM_LIVE_EXERCISE_WRITE_FLOW: ${{ github.event_name == 'workflow_dispatch' && inputs.exercise_write_flow || vars.FORUM_LIVE_EXERCISE_WRITE_FLOW }}
         shell: bash
         run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            export FORUM_LIVE_URL="${{ inputs.forum_url }}"
+            export FORUM_LIVE_DEPLOYMENT_STAGE="${{ inputs.deployment_stage }}"
+            export FORUM_LIVE_PUBLIC_BASE_URL="${{ inputs.public_base_url }}"
+            export FORUM_LIVE_WRITES_ENABLED="${{ inputs.writes_enabled }}"
+            export FORUM_LIVE_REQUIRES_ACCESS_CODE="${{ inputs.requires_access_code }}"
+            export FORUM_LIVE_EXERCISE_WRITE_FLOW="${{ inputs.exercise_write_flow }}"
+          else
+            export FORUM_LIVE_URL="${{ vars.FORUM_LIVE_URL }}"
+            export FORUM_LIVE_DEPLOYMENT_STAGE="${{ vars.FORUM_LIVE_DEPLOYMENT_STAGE }}"
+            export FORUM_LIVE_PUBLIC_BASE_URL="${{ vars.FORUM_LIVE_PUBLIC_BASE_URL }}"
+            export FORUM_LIVE_WRITES_ENABLED="${{ vars.FORUM_LIVE_WRITES_ENABLED }}"
+            export FORUM_LIVE_REQUIRES_ACCESS_CODE="${{ vars.FORUM_LIVE_REQUIRES_ACCESS_CODE }}"
+            export FORUM_LIVE_EXERCISE_WRITE_FLOW="${{ vars.FORUM_LIVE_EXERCISE_WRITE_FLOW }}"
+          fi
+
           node forum/scripts/resolve-live-deployment-target.mjs
 
       - name: Load resolved live forum target
