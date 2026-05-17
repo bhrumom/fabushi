@@ -10,6 +10,7 @@ on:
       - "forum/scripts/check-deployment-contract.mjs"
       - "forum/scripts/prepare-live-deployment-vars.mjs"
       - "forum/scripts/resolve-live-deployment-target.mjs"
+      - "forum/scripts/smoke-deployment-from-env.mjs"
       - "forum/scripts/validate-deploy-env.mjs"
       - ".github/workflows/forum-deploy-compose-checks.yml"
       - ".github/workflows/forum-live-deployment-checks.yml"
@@ -24,6 +25,7 @@ on:
       - "forum/scripts/check-deployment-contract.mjs"
       - "forum/scripts/prepare-live-deployment-vars.mjs"
       - "forum/scripts/resolve-live-deployment-target.mjs"
+      - "forum/scripts/smoke-deployment-from-env.mjs"
       - "forum/scripts/validate-deploy-env.mjs"
       - ".github/workflows/forum-deploy-compose-checks.yml"
       - ".github/workflows/forum-live-deployment-checks.yml"
@@ -142,13 +144,11 @@ jobs:
 
           cat /tmp/forum-deploy-health.json
 
-      - name: Smoke test forum deploy compose read-only preview contract
+      - name: Smoke test forum deploy compose read-only preview contract from deploy env
         run: |
-          node forum/scripts/check-deployment-contract.mjs \
-            --url http://127.0.0.1:3001 \
-            --deployment-stage preview \
-            --writes-enabled false \
-            --requires-access-code false
+          node forum/scripts/smoke-deployment-from-env.mjs \
+            --forum-url http://127.0.0.1:3001 \
+            --deploy-env-path forum/.env.deploy.example
 
       - name: Stop forum deploy compose read-only preview runtime
         run: |
@@ -187,14 +187,11 @@ jobs:
 
           cat /tmp/forum-deploy-health.json
 
-      - name: Smoke test forum deploy compose writable preview contract
+      - name: Smoke test forum deploy compose writable preview contract from deploy env
         run: |
-          FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
-          node forum/scripts/check-deployment-contract.mjs \
-            --url http://127.0.0.1:3001 \
-            --deployment-stage preview \
-            --writes-enabled true \
-            --requires-access-code true \
+          node forum/scripts/smoke-deployment-from-env.mjs \
+            --forum-url http://127.0.0.1:3001 \
+            --deploy-env-path /tmp/forum-deploy-writable-preview.env \
             --exercise-write-flow true
 
       - name: Stop forum deploy compose writable preview runtime
@@ -236,14 +233,11 @@ jobs:
 
           cat /tmp/forum-deploy-health.json
 
-      - name: Smoke test forum deploy compose production indexing contract
+      - name: Smoke test forum deploy compose production contract from deploy env
         run: |
-          node forum/scripts/check-deployment-contract.mjs \
-            --url http://127.0.0.1:3001 \
-            --deployment-stage production \
-            --public-base-url https://forum.fabushi.test \
-            --writes-enabled false \
-            --requires-access-code false
+          node forum/scripts/smoke-deployment-from-env.mjs \
+            --forum-url http://127.0.0.1:3001 \
+            --deploy-env-path /tmp/forum-deploy-production.env
 
       - name: Stop forum deploy compose
         if: always()
