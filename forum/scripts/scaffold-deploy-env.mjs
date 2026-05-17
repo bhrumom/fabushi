@@ -230,9 +230,7 @@ async function main() {
 
   const deployEnvPath = config.deployEnvPath;
   const forumUrlHint = config.deployCheckUrl || "https://forum-preview.example.com";
-  const smokeCommand = config.deployCheckUrl
-    ? `- pnpm smoke:deploy-env -- --deploy-env-path ${deployEnvPath}`
-    : `- pnpm smoke:deploy-env -- --forum-url ${forumUrlHint} --deploy-env-path ${deployEnvPath}`;
+  const smokeCommand = `- pnpm smoke:deploy-env -- --deploy-env-path ${deployEnvPath}`;
   const handoffCommand = config.deployCheckUrl
     ? `- pnpm handoff:live-target -- --deploy-env-path ${deployEnvPath}`
     : `- pnpm handoff:live-target -- --forum-url ${forumUrlHint} --deploy-env-path ${deployEnvPath}`;
