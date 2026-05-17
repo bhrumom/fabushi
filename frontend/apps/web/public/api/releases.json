@@ -11,12 +11,7 @@
       "version": "v1.0.0-264-mobile.9343bf8a0543",
       "publishedAt": "2026-05-17T11:51:40Z",
       "updateSummary": [
-        "PR #509: docs(android): document flutter_gl release wiring invariants",
-        "document why `fabushi/android/settings.gradle.kts` must expose the vendored `flutter_gl` Maven repo from settings",
-        "document why `fabushi/lib/packages/flutter_gl/android/build.gradle` must keep both Material Components and the `threeegl` Maven coordinate together for Android release packaging",
-        "keep the change behavior-free while still re-exercising the real mobile package release path on `main` once merged",
-        "make one tiny mobile-input change",
-        "keep it behavior-free"
+        "改进 Android 测试版下载与安装稳定性。"
       ],
       "mirrorLinks": [
         {
@@ -42,12 +37,7 @@
       "version": "264",
       "publishedAt": "2026-05-17T11:49:53Z",
       "updateSummary": [
-        "PR #509: docs(android): document flutter_gl release wiring invariants",
-        "document why `fabushi/android/settings.gradle.kts` must expose the vendored `flutter_gl` Maven repo from settings",
-        "document why `fabushi/lib/packages/flutter_gl/android/build.gradle` must keep both Material Components and the `threeegl` Maven coordinate together for Android release packaging",
-        "keep the change behavior-free while still re-exercising the real mobile package release path on `main` once merged",
-        "make one tiny mobile-input change",
-        "keep it behavior-free"
+        "改进 Android 测试版下载与安装稳定性。"
       ],
       "mirrorLinks": [],
       "note": "",
@@ -63,12 +53,7 @@
       "publishedAt": "2026-05-17T11:51:40Z",
       "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-264-mobile.9343bf8a0543",
       "summary": [
-        "PR #509: docs(android): document flutter_gl release wiring invariants",
-        "document why `fabushi/android/settings.gradle.kts` must expose the vendored `flutter_gl` Maven repo from settings",
-        "document why `fabushi/lib/packages/flutter_gl/android/build.gradle` must keep both Material Components and the `threeegl` Maven coordinate together for Android release packaging",
-        "keep the change behavior-free while still re-exercising the real mobile package release path on `main` once merged",
-        "make one tiny mobile-input change",
-        "keep it behavior-free"
+        "改进 Android 测试版下载与安装稳定性。"
       ]
     },
     {
@@ -77,12 +62,8 @@
       "publishedAt": "2026-05-16T21:22:02Z",
       "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-229-mobile.d723b0a32d1d",
       "summary": [
-        "PR #470: Android 佛像优先使用 Three，失败后回退 flutter_scene",
-        "Android 端佛像展示优先走 Three WebView 兼容渲染",
-        "Three 链路失败时，自动回退到 `flutter_scene` 备用渲染",
-        "补齐 Android Three 页面初始化、脚本报错、Promise 异常、资源异常、候选地址为空、加载超时等错误回传",
-        "在 Flutter 侧区分并汇总 `Android Three` 和 `flutter_scene` 两条链路的错误，失败页可直接看到具体原因",
-        "Android 佛像加载路径变更为 Three 优先"
+        "改进 Android 测试版下载与安装稳定性。",
+        "Three 链路失败时，自动回退到 flutter_scene 备用渲染"
       ]
     },
     {
@@ -91,12 +72,11 @@
       "publishedAt": "2026-05-16T13:53:58Z",
       "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-208-mobile.56c0652a910d",
       "summary": [
-        "PR #445: [codex] fix android buddha model fallback",
-        "Android 禅室不再先下载/解包远端 293MB `buddha_model.model`，直接走内置 WebView + GLB 兼容渲染，避免 `.model` 在 Android 上的下载和内存峰值。",
-        "新增打包进 App 的 fallback HTML/Three.js bundle，并优先加载官网 GLB，失败时再尝试 APK 内置 GLB。",
-        "失败页现在展示原生 `.model` 与兼容 GLB 的具体失败阶段；资源校验也会带上 HTTP URL 和首字节签名，方便判断是否拿到了 GLB、HTML 错误页或错误 R2 对象。",
-        "`flutter test --no-pub test/unit/core/app_config_buddha_model_test.dart test/unit/services/asset_loader_service_test.dart`",
-        "`flutter analyze --no-pub lib/screens/buddha_model_screen_native.dart lib/services/asset_loader_service.dart lib/core/config/app_config.dart test/unit/core/app_config_buddha_model_test.dart`"
+        "改进 Android 测试版下载与安装稳定性。",
+        "失败页现在展示原生 .model 与兼容 GLB 的具体失败阶段；资源校验也会带上 HTTP URL 和首字节签名，方便判断是否拿到了 GLB、HTML 错误页或错误 R2 对象。",
+        "flutter test --no-pub test/unit/core/app_config_buddha_model_test.dart test/unit/services/asset_loader_service_test.dart",
+        "flutter analyze --no-pub lib/screens/buddha_model_screen_native.dart lib/services/asset_loader_service.dart lib/core/config/app_config.dart test/unit/core/app_config_buddha_model_test.dart",
+        "node --check fabushi/assets/buddha_fallback/buddha_fallback.js"
       ]
     },
     {
@@ -105,12 +85,10 @@
       "publishedAt": "2026-05-16T07:45:09Z",
       "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-190-mobile.9c1e747f7d76",
       "summary": [
-        "PR #425: fix(android): harden CI release builds against flaky Maven mirrors",
-        "失败点：`Build Android install packages`",
-        "首个确定性错误：`Could not GET https://maven.aliyun.com/repository/public/androidx/test/rules/maven-metadata.xml` -> `502 Bad Gateway`",
-        "失败任务：`:integration_test:mapReleaseSourceSetPaths`",
-        "当前 app 配置的 NDK 还是 `27.0.12077973`",
-        "但 `integration_test` 已明确要求 `28.2.13676358`"
+        "改进 Android 测试版下载与安装稳定性。",
+        "失败任务：:integration_test:mapReleaseSourceSetPaths",
+        "当前 app 配置的 NDK 还是 27.0.12077973",
+        "但 integration_test 已明确要求 28.2.13676358"
       ]
     },
     {
@@ -119,12 +97,12 @@
       "publishedAt": "2026-05-16T00:46:01Z",
       "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-173-mobile.8b1008e548ed",
       "summary": [
-        "PR #394: feat(web): surface dharma learning paths on homepage",
+        "feat(web): surface dharma learning paths on homepage",
         "首页对佛法内容集群的内部链接传递还不够强，学习型页面更多只能靠导航、页脚或站内深链被发现。",
         "首页自己的主题信号仍偏产品下载站，无法把“学佛从哪里开始 / 佛法入门 / 禅修入门 / 佛经导读”这条学习路径清楚地展示给用户和搜索引擎。",
-        "为首页新增 `metadata`，把 title、description、keywords、canonical、open graph、twitter 明确对齐到佛法学习路径与产品实践入口。",
-        "在首页新增 `学佛路径` 区块，用更接近初学者真实问题的方式承接四条内容路径：",
-        "在首页结构化数据中新增 `ItemList`，把四条学习路径作为首页可理解的内容列表输出。"
+        "为首页新增 metadata，把 title、description、keywords、canonical、open graph、twitter 明确对齐到佛法学习路径与产品实践入口。",
+        "在首页新增 学佛路径 区块，用更接近初学者真实问题的方式承接四条内容路径：",
+        "在首页结构化数据中新增 ItemList，把四条学习路径作为首页可理解的内容列表输出。"
       ]
     }
   ],
