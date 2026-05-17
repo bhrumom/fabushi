@@ -37,6 +37,33 @@ Scheduled runs read these repository variables:
 
 If the live target still requires the shared preview code, also store it in the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE`.
 
+Once the target host has a working `forum/.env.deploy`, generate the matching hourly-check variables from that same file instead of retyping them by hand:
+
+```bash
+cd forum
+node scripts/prepare-live-deployment-vars.mjs \
+  --forum-url https://forum-preview.example.com \
+  --deploy-env-path .env.deploy
+```
+
+That command prints the exact `FORUM_LIVE_*` block expected by the hourly workflow. When you want copy-pasteable GitHub CLI commands instead, use:
+
+```bash
+cd forum
+node scripts/prepare-live-deployment-vars.mjs \
+  --forum-url https://forum-preview.example.com \
+  --deploy-env-path .env.deploy \
+  --format github-cli
+```
+
+If the preview runtime is intentionally writable and you want the hourly workflow to exercise the live thread-and-reply flow, add:
+
+```bash
+--exercise-write-flow true
+```
+
+When `.env.deploy` includes `FORUM_WRITE_ACCESS_CODE`, the `github-cli` output also prints the matching `gh secret set FORUM_LIVE_WRITE_ACCESS_CODE` command so the shared preview gate stays aligned with the live smoke check.
+
 Recommended preview baseline:
 
 ```text
