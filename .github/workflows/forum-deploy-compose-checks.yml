@@ -317,6 +317,7 @@ jobs:
       - name: Smoke test forum deploy compose production contract from deploy env
         run: |
           node forum/scripts/smoke-deployment-from-env.mjs \
+            --forum-url http://127.0.0.1:3001 \
             --deploy-env-path /tmp/forum-deploy-production.env
 
       - name: Stop forum deploy compose
