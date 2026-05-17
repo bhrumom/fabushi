@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { writeFile } from "node:fs/promises";
+
 function parseArgs(argv) {
   const parsed = {};
 
@@ -44,6 +46,20 @@ function parseBoolean(value, key) {
   throw new Error(`Expected --${key} to be true or false, received: ${value}`);
 }
 
+function parseInteger(value, key) {
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Expected --${key} to be a positive integer, received: ${value}`);
+  }
+
+  return parsed;
+}
+
 function expect(condition, message, details) {
   if (!condition) {
     if (details === undefined) {
@@ -54,15 +70,29 @@ function expect(condition, message, details) {
   }
 }
 
-async function request(target, init = {}, expectedStatus = 200) {
+async function request(target, init = {}, expectedStatus = 200, timeoutMs = 15000) {
   const allowedStatuses = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
-  const response = await fetch(target, {
-    redirect: "follow",
-    ...init,
-  });
+  const method = init.method ?? "GET";
+
+  let response;
+
+  try {
+    response = await fetch(target, {
+      redirect: "follow",
+      ...init,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    if (error?.name === "TimeoutError") {
+      throw new Error(`Request timed out after ${timeoutMs}ms for ${method} ${target}`);
+    }
+
+    throw new Error(`Request failed for ${method} ${target}: ${error}`);
+  }
+
   const body = await response.text();
 
-  expect(allowedStatuses.includes(response.status), `Request failed for ${target}`, {
+  expect(allowedStatuses.includes(response.status), `Request failed for ${method} ${target}`, {
     status: response.status,
     body,
     expectedStatus: allowedStatuses,
@@ -75,7 +105,7 @@ async function request(target, init = {}, expectedStatus = 200) {
   };
 }
 
-async function fetchJson(target, init = {}, expectedStatus = 200) {
+async function fetchJson(target, init = {}, expectedStatus = 200, timeoutMs = 15000) {
   const response = await request(
     target,
     {
@@ -86,6 +116,7 @@ async function fetchJson(target, init = {}, expectedStatus = 200) {
       ...init,
     },
     expectedStatus,
+    timeoutMs,
   );
 
   try {
@@ -125,7 +156,7 @@ function createReplyPayload() {
   };
 }
 
-async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, writeAccessCode }) {
+async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, writeAccessCode, requestTimeoutMs }) {
   const runId = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
   const threadPayload = createThreadPayload(runId);
 
@@ -140,6 +171,7 @@ async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, wr
         body: JSON.stringify(threadPayload),
       },
       403,
+      requestTimeoutMs,
     );
 
     expect(
@@ -163,6 +195,7 @@ async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, wr
       body: JSON.stringify(createPayload),
     },
     201,
+    requestTimeoutMs,
   );
 
   expect(createdThread.json.source === "sqlite", "created thread should be backed by sqlite", createdThread.json);
@@ -188,7 +221,7 @@ async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, wr
   const threadSlug = createdThread.json.thread.slug;
   expect(Boolean(threadSlug), "thread slug should be returned after live thread creation", createdThread.json);
 
-  const threadDetail = await fetchJson(`${forumUrl}/api/thread/${threadSlug}`);
+  const threadDetail = await fetchJson(`${forumUrl}/api/thread/${threadSlug}`, {}, 200, requestTimeoutMs);
   expect(threadDetail.json.source === "sqlite", "thread detail should resolve from sqlite", threadDetail.json);
   expect(threadDetail.json.thread.slug === threadSlug, "thread detail slug mismatch", threadDetail.json);
   expect(threadDetail.json.thread.author === threadPayload.author, "thread detail author mismatch", threadDetail.json);
@@ -198,7 +231,7 @@ async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, wr
     threadDetail.json,
   );
 
-  const threadListPage = await request(`${forumUrl}/threads`);
+  const threadListPage = await request(`${forumUrl}/threads`, {}, 200, requestTimeoutMs);
   expect(threadListPage.body.includes(threadPayload.title), "thread list HTML should include the created thread title", {
     threadTitle: threadPayload.title,
     snippet: threadListPage.body.slice(0, 6000),
@@ -224,7 +257,7 @@ async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, wr
     },
   );
 
-  const threadDetailPageBeforeReply = await request(`${forumUrl}/threads/${threadSlug}`);
+  const threadDetailPageBeforeReply = await request(`${forumUrl}/threads/${threadSlug}`, {}, 200, requestTimeoutMs);
   expect(
     threadDetailPageBeforeReply.body.includes(threadPayload.title),
     "thread detail HTML should include the created thread title",
@@ -263,6 +296,7 @@ async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, wr
       }),
     },
     201,
+    requestTimeoutMs,
   );
 
   expect(createdReply.json.source === "sqlite", "created reply should be backed by sqlite", createdReply.json);
@@ -287,7 +321,7 @@ async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, wr
     createdReply.json,
   );
 
-  const threadDetailAfterReply = await fetchJson(`${forumUrl}/api/thread/${threadSlug}`);
+  const threadDetailAfterReply = await fetchJson(`${forumUrl}/api/thread/${threadSlug}`, {}, 200, requestTimeoutMs);
   expect(
     threadDetailAfterReply.json.replies.at(-1)?.author === replyPayload.author,
     "thread detail should include the live reply author",
@@ -299,7 +333,7 @@ async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, wr
     threadDetailAfterReply.json,
   );
 
-  const threadDetailPageAfterReply = await request(`${forumUrl}/threads/${threadSlug}`);
+  const threadDetailPageAfterReply = await request(`${forumUrl}/threads/${threadSlug}`, {}, 200, requestTimeoutMs);
   expect(
     threadDetailPageAfterReply.body.includes(replyPayload.author),
     "thread detail HTML should include the live reply author",
@@ -332,6 +366,14 @@ async function verifyPreviewWriteFlow({ forumUrl, expectedRequiresAccessCode, wr
   };
 }
 
+async function writeReport(reportPath, payload) {
+  if (!reportPath) {
+    return;
+  }
+
+  await writeFile(reportPath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
+}
+
 const args = parseArgs(process.argv.slice(2));
 const forumUrl = normalizeUrl(args.url ?? "");
 const deploymentStage = args["deployment-stage"];
@@ -340,175 +382,200 @@ const expectedWritesEnabled = parseBoolean(args["writes-enabled"], "writes-enabl
 const expectedRequiresAccessCode = parseBoolean(args["requires-access-code"], "requires-access-code");
 const exerciseWriteFlow = parseBoolean(args["exercise-write-flow"], "exercise-write-flow") ?? false;
 const writeAccessCode = args["write-access-code"]?.trim() || process.env.FORUM_WRITE_ACCESS_CODE?.trim() || "";
+const requestTimeoutMs = parseInteger(args["request-timeout-ms"], "request-timeout-ms") ?? 15000;
+const reportPath = args["report-path"]?.trim() || "";
+const startedAt = new Date().toISOString();
 
-expect(Boolean(forumUrl), "--url is required");
-expect(
-  deploymentStage === "preview" || deploymentStage === "production",
-  "--deployment-stage must be preview or production",
-  { deploymentStage },
-);
-
-const expectedIndexingEnabled = deploymentStage === "production" && Boolean(publicBaseUrl);
-
-const health = await fetchJson(`${forumUrl}/api/health`);
-const status = await fetchJson(`${forumUrl}/api/status`);
-const robots = await request(`${forumUrl}/robots.txt`);
-const threadList = await request(`${forumUrl}/threads`);
-const threadListHtml = threadList.body.toLowerCase();
-const robotsText = robots.body;
-
-expect(health.json.service === "forum", "health service should be forum", health.json);
-expect(health.json.ready === true, "health ready should be true", health.json);
-expect(health.json.deploymentStage === deploymentStage, "health deployment stage mismatch", health.json);
-expect(health.json.indexingEnabled === expectedIndexingEnabled, "health indexingEnabled mismatch", {
-  expectedIndexingEnabled,
-  health: health.json,
-});
-expect(
-  health.json.publicBaseUrlConfigured === Boolean(publicBaseUrl),
-  "health publicBaseUrlConfigured mismatch",
-  {
-    expected: Boolean(publicBaseUrl),
-    health: health.json,
-  },
-);
-
-expect(status.json.service === "forum", "status service should be forum", status.json);
-expect(status.json.deploymentStage === deploymentStage, "status deployment stage mismatch", status.json);
-expect(status.json.indexingEnabled === expectedIndexingEnabled, "status indexingEnabled mismatch", {
-  expectedIndexingEnabled,
-  status: status.json,
-});
-
-if (publicBaseUrl) {
-  expect(status.json.publicBaseUrl === publicBaseUrl, "status publicBaseUrl mismatch", {
-    expected: publicBaseUrl,
-    status: status.json,
-  });
-} else {
-  expect(!status.json.publicBaseUrl, "status publicBaseUrl should be empty when no public base URL is expected", status.json);
-}
-
-if (expectedWritesEnabled !== undefined) {
-  expect(health.json.writesEnabled === expectedWritesEnabled, "health writesEnabled mismatch", {
-    expectedWritesEnabled,
-    health: health.json,
-  });
-  expect(status.json.writesEnabled === expectedWritesEnabled, "status writesEnabled mismatch", {
-    expectedWritesEnabled,
-    status: status.json,
-  });
-}
-
-if (expectedRequiresAccessCode !== undefined) {
-  expect(health.json.requiresAccessCode === expectedRequiresAccessCode, "health requiresAccessCode mismatch", {
-    expectedRequiresAccessCode,
-    health: health.json,
-  });
-  expect(status.json.requiresAccessCode === expectedRequiresAccessCode, "status requiresAccessCode mismatch", {
-    expectedRequiresAccessCode,
-    status: status.json,
-  });
-}
-
-const stageHeader = threadList.headers.get("x-forum-deployment-stage");
-const indexingHeader = threadList.headers.get("x-forum-indexing-enabled");
-const publicBaseUrlHeader = threadList.headers.get("x-forum-public-base-url");
-const robotsTagHeader = threadList.headers.get("x-robots-tag");
-
-expect(stageHeader === deploymentStage, "page deployment stage header mismatch", {
-  expected: deploymentStage,
-  actual: stageHeader,
-});
-expect(indexingHeader === String(expectedIndexingEnabled), "page indexing header mismatch", {
-  expected: String(expectedIndexingEnabled),
-  actual: indexingHeader,
-});
-
-if (publicBaseUrl) {
-  expect(publicBaseUrlHeader === publicBaseUrl, "page public base URL header mismatch", {
-    expected: publicBaseUrl,
-    actual: publicBaseUrlHeader,
-  });
-} else {
-  expect(!publicBaseUrlHeader, "page public base URL header should be empty", {
-    actual: publicBaseUrlHeader,
-  });
-}
-
-if (expectedIndexingEnabled) {
-  expect(!robotsTagHeader, "x-robots-tag should be absent when indexing is enabled", {
-    robotsTagHeader,
-  });
-  expect(robotsText.includes("Allow: /"), "robots.txt should allow crawling", {
-    robotsText,
-  });
-  expect(robotsText.includes(`Host: ${publicBaseUrl}`), "robots.txt Host should match expected public base URL", {
-    publicBaseUrl,
-    robotsText,
-  });
-  expect(!robotsText.includes("Disallow: /"), "robots.txt should not disallow crawling", {
-    robotsText,
-  });
-  expect(threadListHtml.includes("index, follow"), "thread list HTML should be indexable", {
-    snippet: threadList.body.slice(0, 4000),
-  });
-  expect(threadListHtml.includes(publicBaseUrl.toLowerCase()), "thread list HTML should include the configured public base URL", {
-    publicBaseUrl,
-    snippet: threadList.body.slice(0, 4000),
-  });
-  expect(!threadListHtml.includes("noindex"), "thread list HTML should not include noindex metadata", {
-    snippet: threadList.body.slice(0, 4000),
-  });
-} else {
+async function main() {
+  expect(Boolean(forumUrl), "--url is required");
   expect(
-    robotsTagHeader?.toLowerCase().includes("noindex") ?? false,
-    "x-robots-tag should keep preview/noindex deployments private",
-    { robotsTagHeader },
+    deploymentStage === "preview" || deploymentStage === "production",
+    "--deployment-stage must be preview or production",
+    { deploymentStage },
   );
-  expect(robotsText.includes("Disallow: /"), "robots.txt should disallow crawling", {
-    robotsText,
-  });
-  expect(threadListHtml.includes("noindex"), "thread list HTML should include noindex metadata", {
-    snippet: threadList.body.slice(0, 4000),
-  });
-}
 
-let liveWriteVerification = null;
+  const expectedIndexingEnabled = deploymentStage === "production" && Boolean(publicBaseUrl);
 
-if (exerciseWriteFlow) {
-  expect(deploymentStage === "preview", "--exercise-write-flow is only supported for preview runtimes.", {
-    deploymentStage,
+  const health = await fetchJson(`${forumUrl}/api/health`, {}, 200, requestTimeoutMs);
+  const status = await fetchJson(`${forumUrl}/api/status`, {}, 200, requestTimeoutMs);
+  const robots = await request(`${forumUrl}/robots.txt`, {}, 200, requestTimeoutMs);
+  const threadList = await request(`${forumUrl}/threads`, {}, 200, requestTimeoutMs);
+  const threadListHtml = threadList.body.toLowerCase();
+  const robotsText = robots.body;
+
+  expect(health.json.service === "forum", "health service should be forum", health.json);
+  expect(health.json.ready === true, "health ready should be true", health.json);
+  expect(health.json.deploymentStage === deploymentStage, "health deployment stage mismatch", health.json);
+  expect(health.json.indexingEnabled === expectedIndexingEnabled, "health indexingEnabled mismatch", {
+    expectedIndexingEnabled,
+    health: health.json,
   });
-  expect(expectedWritesEnabled === true, "--exercise-write-flow requires --writes-enabled=true.", {
-    expectedWritesEnabled,
+  expect(
+    health.json.publicBaseUrlConfigured === Boolean(publicBaseUrl),
+    "health publicBaseUrlConfigured mismatch",
+    {
+      expected: Boolean(publicBaseUrl),
+      health: health.json,
+    },
+  );
+
+  expect(status.json.service === "forum", "status service should be forum", status.json);
+  expect(status.json.deploymentStage === deploymentStage, "status deployment stage mismatch", status.json);
+  expect(status.json.indexingEnabled === expectedIndexingEnabled, "status indexingEnabled mismatch", {
+    expectedIndexingEnabled,
+    status: status.json,
   });
 
-  if (expectedRequiresAccessCode) {
-    expect(Boolean(writeAccessCode), "A write access code is required to exercise the live preview write flow. Pass --write-access-code or set FORUM_WRITE_ACCESS_CODE.");
+  if (publicBaseUrl) {
+    expect(status.json.publicBaseUrl === publicBaseUrl, "status publicBaseUrl mismatch", {
+      expected: publicBaseUrl,
+      status: status.json,
+    });
+  } else {
+    expect(!status.json.publicBaseUrl, "status publicBaseUrl should be empty when no public base URL is expected", status.json);
   }
 
-  liveWriteVerification = await verifyPreviewWriteFlow({
-    forumUrl,
-    expectedRequiresAccessCode: expectedRequiresAccessCode === true,
-    writeAccessCode,
+  if (expectedWritesEnabled !== undefined) {
+    expect(health.json.writesEnabled === expectedWritesEnabled, "health writesEnabled mismatch", {
+      expectedWritesEnabled,
+      health: health.json,
+    });
+    expect(status.json.writesEnabled === expectedWritesEnabled, "status writesEnabled mismatch", {
+      expectedWritesEnabled,
+      status: status.json,
+    });
+  }
+
+  if (expectedRequiresAccessCode !== undefined) {
+    expect(health.json.requiresAccessCode === expectedRequiresAccessCode, "health requiresAccessCode mismatch", {
+      expectedRequiresAccessCode,
+      health: health.json,
+    });
+    expect(status.json.requiresAccessCode === expectedRequiresAccessCode, "status requiresAccessCode mismatch", {
+      expectedRequiresAccessCode,
+      status: status.json,
+    });
+  }
+
+  const stageHeader = threadList.headers.get("x-forum-deployment-stage");
+  const indexingHeader = threadList.headers.get("x-forum-indexing-enabled");
+  const publicBaseUrlHeader = threadList.headers.get("x-forum-public-base-url");
+  const robotsTagHeader = threadList.headers.get("x-robots-tag");
+
+  expect(stageHeader === deploymentStage, "page deployment stage header mismatch", {
+    expected: deploymentStage,
+    actual: stageHeader,
   });
+  expect(indexingHeader === String(expectedIndexingEnabled), "page indexing header mismatch", {
+    expected: String(expectedIndexingEnabled),
+    actual: indexingHeader,
+  });
+
+  if (publicBaseUrl) {
+    expect(publicBaseUrlHeader === publicBaseUrl, "page public base URL header mismatch", {
+      expected: publicBaseUrl,
+      actual: publicBaseUrlHeader,
+    });
+  } else {
+    expect(!publicBaseUrlHeader, "page public base URL header should be empty", {
+      actual: publicBaseUrlHeader,
+    });
+  }
+
+  if (expectedIndexingEnabled) {
+    expect(!robotsTagHeader, "x-robots-tag should be absent when indexing is enabled", {
+      robotsTagHeader,
+    });
+    expect(robotsText.includes("Allow: /"), "robots.txt should allow crawling", {
+      robotsText,
+    });
+    expect(robotsText.includes(`Host: ${publicBaseUrl}`), "robots.txt Host should match expected public base URL", {
+      publicBaseUrl,
+      robotsText,
+    });
+    expect(!robotsText.includes("Disallow: /"), "robots.txt should not disallow crawling", {
+      robotsText,
+    });
+    expect(threadListHtml.includes("index, follow"), "thread list HTML should be indexable", {
+      snippet: threadList.body.slice(0, 4000),
+    });
+    expect(threadListHtml.includes(publicBaseUrl.toLowerCase()), "thread list HTML should include the configured public base URL", {
+      publicBaseUrl,
+      snippet: threadList.body.slice(0, 4000),
+    });
+    expect(!threadListHtml.includes("noindex"), "thread list HTML should not include noindex metadata", {
+      snippet: threadList.body.slice(0, 4000),
+    });
+  } else {
+    expect(
+      robotsTagHeader?.toLowerCase().includes("noindex") ?? false,
+      "x-robots-tag should keep preview/noindex deployments private",
+      { robotsTagHeader },
+    );
+    expect(robotsText.includes("Disallow: /"), "robots.txt should disallow crawling", {
+      robotsText,
+    });
+    expect(threadListHtml.includes("noindex"), "thread list HTML should include noindex metadata", {
+      snippet: threadList.body.slice(0, 4000),
+    });
+  }
+
+  let liveWriteVerification = null;
+
+  if (exerciseWriteFlow) {
+    expect(deploymentStage === "preview", "--exercise-write-flow is only supported for preview runtimes.", {
+      deploymentStage,
+    });
+    expect(expectedWritesEnabled === true, "--exercise-write-flow requires --writes-enabled=true.", {
+      expectedWritesEnabled,
+    });
+
+    if (expectedRequiresAccessCode) {
+      expect(Boolean(writeAccessCode), "A write access code is required to exercise the live preview write flow. Pass --write-access-code or set FORUM_WRITE_ACCESS_CODE.");
+    }
+
+    liveWriteVerification = await verifyPreviewWriteFlow({
+      forumUrl,
+      expectedRequiresAccessCode: expectedRequiresAccessCode === true,
+      writeAccessCode,
+      requestTimeoutMs,
+    });
+  }
+
+  const report = {
+    ok: true,
+    forumUrl,
+    deploymentStage,
+    indexingEnabled: expectedIndexingEnabled,
+    publicBaseUrl: publicBaseUrl || null,
+    writesEnabled: expectedWritesEnabled ?? null,
+    requiresAccessCode: expectedRequiresAccessCode ?? null,
+    exerciseWriteFlow,
+    requestTimeoutMs,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    liveWriteVerification,
+  };
+
+  await writeReport(reportPath, report);
+  console.log(JSON.stringify(report, null, 2));
 }
 
-console.log(
-  JSON.stringify(
-    {
-      ok: true,
-      forumUrl,
-      deploymentStage,
-      indexingEnabled: expectedIndexingEnabled,
-      publicBaseUrl: publicBaseUrl || null,
-      writesEnabled: expectedWritesEnabled ?? null,
-      requiresAccessCode: expectedRequiresAccessCode ?? null,
-      exerciseWriteFlow,
-      liveWriteVerification,
-    },
-    null,
-    2,
-  ),
-);
+main().catch(async (error) => {
+  await writeReport(reportPath, {
+    ok: false,
+    forumUrl: forumUrl || null,
+    deploymentStage: deploymentStage || null,
+    publicBaseUrl: publicBaseUrl || null,
+    writesEnabled: expectedWritesEnabled ?? null,
+    requiresAccessCode: expectedRequiresAccessCode ?? null,
+    exerciseWriteFlow,
+    requestTimeoutMs,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    error: error instanceof Error ? error.message : String(error),
+  });
+
+  console.error(error);
+  process.exit(1);
+});
