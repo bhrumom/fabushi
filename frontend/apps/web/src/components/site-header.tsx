@@ -29,6 +29,11 @@ const NAV_ITEMS = [
     en: "Practice Guide",
   },
   {
+    href: "/nianfo-guide",
+    zh: "念佛入门",
+    en: "Nianfo Guide",
+  },
+  {
     href: "/sutra-guide",
     zh: "佛经导读",
     en: "Sutra Guide",
