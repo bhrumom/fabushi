@@ -18,43 +18,25 @@ void main() {
       expect(AppConfig.legacyBuddhaGlbUrl, isNot(contains('/r2?file=')));
     });
 
-    test('packages the Android WebView fallback assets explicitly', () {
+    test('packages the Android three_dart GLB explicitly', () {
       expect(
-        AppConfig.bundledBuddhaFallbackHtmlAssetPath,
-        'assets/buddha_fallback/index.html',
+        AppConfig.androidThreeBuddhaGlbAssetPath,
+        'web/assets/models/佛像模型.glb',
       );
-      expect(AppConfig.bundledBuddhaGlbAssetPath, 'web/assets/models/佛像模型.glb');
+      expect(AppConfig.minBuddhaGlbSizeBytes, 10 * 1024 * 1024);
     });
 
-    test('keeps the bundled Android fallback self-contained', () {
-      final fallbackHtml = File(AppConfig.bundledBuddhaFallbackHtmlAssetPath);
-      final fallbackScript = File('assets/buddha_fallback/buddha_fallback.js');
-      final fallbackGlb = File(AppConfig.bundledBuddhaGlbAssetPath);
+    test('keeps the bundled Android GLB usable by three_dart', () {
+      final fallbackGlb = File(AppConfig.androidThreeBuddhaGlbAssetPath);
 
-      expect(fallbackHtml.existsSync(), isTrue);
-      expect(fallbackScript.existsSync(), isTrue);
       expect(fallbackGlb.existsSync(), isTrue);
-
-      final html = fallbackHtml.readAsStringSync();
-      expect(html, contains('buddha_fallback.js'));
-      expect(html, isNot(contains('cdn.jsdelivr.net')));
-      expect(html, isNot(contains('esm.sh')));
-    });
-
-    test('prefers bundled GLB candidates before the remote static URL', () {
-      final html = File(AppConfig.bundledBuddhaFallbackHtmlAssetPath)
-          .readAsStringSync();
-
-      expect(html, contains('bundled-glb-relative-two-up'));
-      expect(html, contains('bundled-glb-relative-one-up'));
-      expect(html, contains('bundled-glb-origin-assets-root'));
-      expect(html, contains('bundled-glb-origin-web-root'));
-      expect(html.indexOf('bundled-glb-relative-two-up'), isNonNegative);
-      expect(html.indexOf('remote-static-glb'), isNonNegative);
       expect(
-        html.indexOf('bundled-glb-relative-two-up'),
-        lessThan(html.indexOf('remote-static-glb')),
+        fallbackGlb.lengthSync(),
+        greaterThanOrEqualTo(AppConfig.minBuddhaGlbSizeBytes),
       );
+
+      final header = fallbackGlb.openSync().readSync(4);
+      expect(String.fromCharCodes(header), 'glTF');
     });
   });
 }
