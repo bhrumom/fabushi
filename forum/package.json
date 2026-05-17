@@ -11,6 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke:deployment": "node ./scripts/check-deployment-contract.mjs",
     "smoke:deploy-env": "node ./scripts/smoke-deployment-from-env.mjs",
+    "rollout:deploy-env": "node ./scripts/rollout-deploy-env.mjs",
     "handoff:live-target": "node ./scripts/handoff-live-deployment-target.mjs",
     "prepare:live-target": "node ./scripts/prepare-live-deployment-vars.mjs",
     "scaffold:deploy-env": "node ./scripts/scaffold-deploy-env.mjs",
