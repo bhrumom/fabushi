@@ -13,6 +13,7 @@ function parseArgs(argv) {
     "forum-image": "ghcr.io/bhrumom/fabushi-forum:main",
     "forum-port": "3000",
     "forum-data-dir": "./data",
+    "deploy-check-url": "",
     "data-source": "sqlite",
     "writes-enabled": "",
     "write-access-code": "",
@@ -85,6 +86,7 @@ function buildConfig(args) {
   const deploymentStageOverride = args["deployment-stage"]?.trim() || "";
   const writesEnabledOverride = parseBoolean(args["writes-enabled"], "writes_enabled");
   const publicBaseUrlOverride = normalizeUrl(args["public-base-url"]?.trim() || "");
+  const deployCheckUrlOverride = normalizeUrl(args["deploy-check-url"]?.trim() || "");
   const writeAccessCode = args["write-access-code"] ?? "";
   const dataSource = args["data-source"]?.trim() || "sqlite";
 
@@ -137,12 +139,15 @@ function buildConfig(args) {
     throw new Error("Refusing to scaffold a writable production deploy env. Use preview for write validation first.");
   }
 
+  const deployCheckUrl = deployCheckUrlOverride || (deploymentStage === "production" ? publicBaseUrl : "");
+
   return {
     preset,
     deployEnvPath: args["deploy-env-path"],
     forumImage: args["forum-image"]?.trim() || "ghcr.io/bhrumom/fabushi-forum:main",
     forumPort: args["forum-port"]?.trim() || "3000",
     forumDataDir: args["forum-data-dir"]?.trim() || "./data",
+    deployCheckUrl,
     dataSource,
     deploymentStage,
     publicBaseUrl,
@@ -159,6 +164,7 @@ function renderDeployEnv(config) {
     `FORUM_IMAGE=${quoteEnvValue(config.forumImage)}`,
     `FORUM_PORT=${quoteEnvValue(config.forumPort)}`,
     `FORUM_DATA_DIR=${quoteEnvValue(config.forumDataDir)}`,
+    `FORUM_DEPLOY_CHECK_URL=${quoteEnvValue(config.deployCheckUrl)}`,
     `FORUM_DEPLOYMENT_STAGE=${config.deploymentStage}`,
     `FORUM_PUBLIC_BASE_URL=${quoteEnvValue(config.publicBaseUrl)}`,
     `FORUM_DATA_SOURCE=${config.dataSource}`,
@@ -223,18 +229,21 @@ async function main() {
   await runValidateScript(config.deployEnvPath);
 
   const deployEnvPath = config.deployEnvPath;
-  const forumUrlHint =
-    config.deploymentStage === "production" && config.publicBaseUrl
-      ? config.publicBaseUrl
-      : "https://forum-preview.example.com";
+  const forumUrlHint = config.deployCheckUrl || "https://forum-preview.example.com";
+  const smokeCommand = config.deployCheckUrl
+    ? `- pnpm smoke:deploy-env -- --deploy-env-path ${deployEnvPath}`
+    : `- pnpm smoke:deploy-env -- --forum-url ${forumUrlHint} --deploy-env-path ${deployEnvPath}`;
+  const handoffCommand = config.deployCheckUrl
+    ? `- pnpm handoff:live-target -- --deploy-env-path ${deployEnvPath}`
+    : `- pnpm handoff:live-target -- --forum-url ${forumUrlHint} --deploy-env-path ${deployEnvPath}`;
 
   console.log("");
   console.log("## Next steps");
   console.log("");
   console.log(`- Review ${deployEnvPath} and adjust any host-specific values if needed.`);
   console.log(`- docker compose --env-file ${deployEnvPath} -f docker-compose.deploy.yml up -d`);
-  console.log(`- pnpm smoke:deploy-env -- --forum-url ${forumUrlHint} --deploy-env-path ${deployEnvPath}`);
-  console.log(`- pnpm handoff:live-target -- --forum-url ${forumUrlHint} --deploy-env-path ${deployEnvPath}`);
+  console.log(smokeCommand);
+  console.log(handoffCommand);
 }
 
 main().catch((error) => {
