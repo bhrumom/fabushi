@@ -1,6 +1,8 @@
 name: Live deployment checks - Forum
 
 on:
+  schedule:
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       forum_url:
@@ -47,6 +49,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: forum-live-deployment-checks
+  cancel-in-progress: false
+
 jobs:
   forum-live-deployment:
     runs-on: ubuntu-latest
@@ -66,12 +72,58 @@ jobs:
         with:
           node-version: 24
 
+      - name: Resolve live forum target
+        id: resolve
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            forum_url="${{ inputs.forum_url }}"
+            deployment_stage="${{ inputs.deployment_stage }}"
+            public_base_url="${{ inputs.public_base_url }}"
+            writes_enabled="${{ inputs.writes_enabled }}"
+            requires_access_code="${{ inputs.requires_access_code }}"
+            exercise_write_flow="${{ inputs.exercise_write_flow }}"
+          else
+            forum_url="${{ vars.FORUM_LIVE_URL }}"
+            deployment_stage="${{ vars.FORUM_LIVE_DEPLOYMENT_STAGE }}"
+            public_base_url="${{ vars.FORUM_LIVE_PUBLIC_BASE_URL }}"
+            writes_enabled="${{ vars.FORUM_LIVE_WRITES_ENABLED }}"
+            requires_access_code="${{ vars.FORUM_LIVE_REQUIRES_ACCESS_CODE }}"
+            exercise_write_flow="${{ vars.FORUM_LIVE_EXERCISE_WRITE_FLOW }}"
+          fi
+
+          if [[ -z "$forum_url" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "reason=No forum URL configured for scheduled live deployment checks." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          deployment_stage="${deployment_stage:-preview}"
+          writes_enabled="${writes_enabled:-false}"
+          requires_access_code="${requires_access_code:-false}"
+          exercise_write_flow="${exercise_write_flow:-false}"
+
+          {
+            echo "skip=false"
+            echo "forum_url=$forum_url"
+            echo "deployment_stage=$deployment_stage"
+            echo "public_base_url=$public_base_url"
+            echo "writes_enabled=$writes_enabled"
+            echo "requires_access_code=$requires_access_code"
+            echo "exercise_write_flow=$exercise_write_flow"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Skip scheduled check when live target is not configured
+        if: steps.resolve.outputs.skip == 'true'
+        run: echo "${{ steps.resolve.outputs.reason }}"
+
       - name: Smoke test live forum deployment contract
+        if: steps.resolve.outputs.skip != 'true'
         run: |
           node forum/scripts/check-deployment-contract.mjs \
-            --url "${{ inputs.forum_url }}" \
-            --deployment-stage "${{ inputs.deployment_stage }}" \
-            --public-base-url "${{ inputs.public_base_url }}" \
-            --writes-enabled "${{ inputs.writes_enabled }}" \
-            --requires-access-code "${{ inputs.requires_access_code }}" \
-            --exercise-write-flow "${{ inputs.exercise_write_flow }}"
+            --url "${{ steps.resolve.outputs.forum_url }}" \
+            --deployment-stage "${{ steps.resolve.outputs.deployment_stage }}" \
+            --public-base-url "${{ steps.resolve.outputs.public_base_url }}" \
+            --writes-enabled "${{ steps.resolve.outputs.writes_enabled }}" \
+            --requires-access-code "${{ steps.resolve.outputs.requires_access_code }}" \
+            --exercise-write-flow "${{ steps.resolve.outputs.exercise_write_flow }}"

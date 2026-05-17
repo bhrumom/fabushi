@@ -22,6 +22,42 @@ cp .env.deploy.example .env.deploy
 
 Then edit `.env.deploy` for the target runtime.
 
+## Hourly live deployment checks
+
+The repository workflow `Live deployment checks - Forum` can now run every hour against one configured live forum target. This turns the current highest-priority deployment question from a manual reminder into a standing smoke check.
+
+Scheduled runs read these repository variables:
+
+- `FORUM_LIVE_URL`
+- `FORUM_LIVE_DEPLOYMENT_STAGE`
+- `FORUM_LIVE_PUBLIC_BASE_URL`
+- `FORUM_LIVE_WRITES_ENABLED`
+- `FORUM_LIVE_REQUIRES_ACCESS_CODE`
+- `FORUM_LIVE_EXERCISE_WRITE_FLOW`
+
+If the live target still requires the shared preview code, also store it in the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE`.
+
+Recommended preview baseline:
+
+```text
+FORUM_LIVE_URL=https://forum-preview.example.com
+FORUM_LIVE_DEPLOYMENT_STAGE=preview
+FORUM_LIVE_PUBLIC_BASE_URL=
+FORUM_LIVE_WRITES_ENABLED=false
+FORUM_LIVE_REQUIRES_ACCESS_CODE=false
+FORUM_LIVE_EXERCISE_WRITE_FLOW=false
+```
+
+When preview writes are intentionally open behind the shared code, switch only the runtime flags you actually expect:
+
+```text
+FORUM_LIVE_WRITES_ENABLED=true
+FORUM_LIVE_REQUIRES_ACCESS_CODE=true
+FORUM_LIVE_EXERCISE_WRITE_FLOW=true
+```
+
+If `FORUM_LIVE_URL` is still empty, the hourly workflow exits cleanly without failing. Manual `workflow_dispatch` runs keep working with the explicit inputs.
+
 ## Preview baseline
 
 Keep the safe default first:
