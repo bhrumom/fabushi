@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const pageUrl = siteUrl("/daily-practice");
 const pageTitle = `日常功课怎么安排 | ${brand.name}`;
 const pageDescription =
-  "面向初学者梳理日常功课怎么安排：晨起、白天与晚间可以怎样放进禅修、经文听诵、念佛、阅读与简短回顾，并帮助因果、菩提心、六度、空性与佛学基本概念理解真正接回生活。";
+  "面向初学者梳理日常功课怎么安排：晨起、白天与晚间可以怎样放进禅修、经文听诵、念佛、阅读与简短回顾，先读什么佛经更合适、听诵以后怎样接回晨起与晚间阅读，以及怎样把《心经》《阿弥陀经》《普门品》《金刚经》的入口真正留在生活里。";
 
 const routinePrinciples = [
   {
@@ -73,6 +73,36 @@ const gentleSchedule = [
   },
 ] as const;
 
+const scriptureRoutinePaths = [
+  {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "先把入口经典选清楚",
+    labelEn: "Choose a First Sutra",
+    titleZh: "如果你已经知道自己想从经典进入，先把《心经》《阿弥陀经》《普门品》还是《金刚经》更适合作为起点单独理清。",
+    titleEn: "If scripture already feels like the doorway, first clarify whether the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra fits best as the beginning.",
+    descriptionZh: "很多人排功课排不下来，并不是不愿意练，而是先卡在“到底从哪部经进”。先把入口经文选清楚，晨起、白天和晚间要怎么接，通常也会一起变清楚。",
+    descriptionEn: "Many people cannot settle into a routine not because they resist practice, but because they are still stuck on which sutra should come first. Once the entry scripture is clearer, the morning, daytime, and evening rhythm usually becomes clearer too.",
+  },
+  {
+    href: "/sutra-listening",
+    labelZh: "把听诵接回阅读和提醒",
+    labelEn: "Reconnect Listening and Reading",
+    titleZh: "如果你已经开始在通勤、步行或空档里听经，下一步把声音、文字和一句记录接成同一条日常线。",
+    titleEn: "If you already listen during commutes, walks, or spare moments, the next step is to connect sound, text, and one short note inside the same daily line.",
+    descriptionZh: "真正的难点常常不是“要不要听”，而是听了以后怎样回到文字、怎样让熟悉感继续长成理解。先把这一层接上，日常功课才不会只剩背景声音。",
+    descriptionEn: "The real difficulty is often not whether to listen, but how listening returns to the text and lets familiarity grow into understanding. Once that bridge is in place, the routine no longer remains only background sound.",
+  },
+  {
+    href: "/sutra-guide",
+    labelZh: "再回到佛经导读整理整条路",
+    labelEn: "Return to the Sutra Guide",
+    titleZh: "如果经典已经开始进入功课，回到佛经导读重新整理“先读什么、怎样读、怎样和练习互相配合”的整条路径。",
+    titleEn: "Once scripture has begun to enter the routine, return to the sutra guide to reorganize the wider path of what to read, how to read, and how scripture works with practice.",
+    descriptionZh: "这样做的价值，不是再看一遍总览，而是把已经开始落下来的晨起、白天和晚间节奏，重新接回更完整的佛经学习地图。",
+    descriptionEn: "The point is not to repeat an overview, but to reconnect the rhythm already taking shape across morning, daytime, and evening with a fuller map of scripture study.",
+  },
+] as const;
+
 const conceptBridgeSteps = [
   {
     titleZh: "因果：为什么功课总断，总会回到习惯、选择和结果这层问题",
@@ -124,6 +154,33 @@ const relatedPaths = [
     titleEn: "Return to the broader map of beginner practice methods.",
     descriptionZh: "如果你还在看禅修、听诵、念佛、阅读和记录之间如何配合，可以先回到总览页。",
     descriptionEn: "Return to the overview first if you are still mapping how meditation, listening, recitation, reading, and notes fit together.",
+  },
+  {
+    href: "/beginner-sutra-recommendations",
+    labelZh: "初学者佛经推荐",
+    labelEn: "Beginner Sutra Picks",
+    titleZh: "先把“从哪部经进”放清楚，日常功课才更容易真正落下来。",
+    titleEn: "Clarify which sutra to begin with before the daily rhythm tries to carry too many questions at once.",
+    descriptionZh: "如果你已经知道自己想从经典进入，但卡在《心经》《阿弥陀经》《普门品》还是《金刚经》更适合作为起点，这一页会更具体。",
+    descriptionEn: "Open this first if you already know scripture is your doorway but still need to choose between the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra.",
+  },
+  {
+    href: "/sutra-listening",
+    labelZh: "听诵和读经怎么配合",
+    labelEn: "Listening and Reading",
+    titleZh: "把通勤里的听诵、安静时的阅读和一句记录接回同一条功课线。",
+    titleEn: "Reconnect listening on the move, reading in quiet moments, and one short note inside the same routine.",
+    descriptionZh: "如果你已经在听经，却还不知道怎样把它接回晨起、白天和晚间，这一页会更适合继续往下看。",
+    descriptionEn: "This is the better next page if you already listen to sutras but still need to reconnect that rhythm with morning, daytime, and evening.",
+  },
+  {
+    href: "/sutra-guide",
+    labelZh: "佛经导读",
+    labelEn: "Sutra Guide",
+    titleZh: "把听诵和阅读重新接回每天的功课里。",
+    titleEn: "Bring listening and reading back into the daily routine.",
+    descriptionZh: "如果你想让佛经学习也进入稳定节奏，这一页会更适合继续往下看。",
+    descriptionEn: "If you want sutra study to enter a stable rhythm too, this is the better next page.",
   },
   {
     href: "/buddhist-concepts",
@@ -189,15 +246,6 @@ const relatedPaths = [
     descriptionEn: "If meditation is already your main line, this page gives more direct practical detail.",
   },
   {
-    href: "/sutra-guide",
-    labelZh: "佛经导读",
-    labelEn: "Sutra Guide",
-    titleZh: "把听诵和阅读接回每天的功课里。",
-    titleEn: "Bring listening and reading back into the daily routine.",
-    descriptionZh: "如果你想让佛经学习也进入稳定节奏，这一页会更适合继续往下看。",
-    descriptionEn: "If you want sutra study to enter a stable rhythm too, this is the better next page.",
-  },
-  {
     href: "/download",
     labelZh: "下载入口",
     labelEn: "Download",
@@ -220,6 +268,18 @@ const faqItems = [
     questionEn: "Should a daily routine begin with meditation, recitation, or reading?",
     answerZh: "更适合先看你当下最需要什么。如果需要安定心念，可以先让短时禅修做主线；如果需要更容易进入的节奏，念佛或听诵也可以先开始；如果更需要方向感，则可以先把导读和短段阅读放进功课里。",
     answerEn: "It helps more to ask what you need most right now. If steadiness is the need, let short meditation lead. If you need an easier rhythm, recitation or listening can come first. If you need orientation, begin by placing guide reading into the routine.",
+  },
+  {
+    questionZh: "如果我想从佛经开始，第一周的日常功课怎么接？",
+    questionEn: "If I want to begin from sutras, how should the first week of daily practice connect?",
+    answerZh: "更稳的起点通常不是一下安排很多，而是先选一部更贴近自己当下问题的经典，再让晨起、白天和晚间各有一个很轻的小动作。例如晨起先听一小段，白天留一个提醒点或一句佛号，晚间再回到原文或导读读一小段。先让同一部经典连续出现几天，往往比每天都换内容更容易留下来。",
+    answerEn: "A steadier beginning is usually not to schedule many things at once, but to choose one scripture that fits your present question and then give morning, daytime, and evening one small action each. For example, listen to one short passage in the morning, keep one reminder or recitation point in the day, and return to the text or a guide in the evening. Let the same sutra return for a few days before changing tracks.",
+  },
+  {
+    questionZh: "听诵以后，怎样把经典接回晨起、白天和晚间？",
+    questionEn: "After listening, how do I return scripture to morning, daytime, and evening?",
+    answerZh: "可以把听诵当成把经典带进一天的第一步，而不是最后一步。晨起先听一小段，让心先熟起来；白天在通勤、步行或空档里回到同一段内容，或留一句最有触动的话；晚间再读一小段原文或导读，把声音慢慢接回理解。这样听诵就不会只停在背景声音里。",
+    answerEn: "Treat listening as the first step that brings scripture into the day rather than the final step. Listen briefly in the morning, return to the same passage during the day through commuting, walking, or one short note, and then read a little of the text or a guide at night. That way listening grows into understanding instead of remaining background sound.",
   },
   {
     questionZh: "因果是什么意思，和日常功课有什么关系？",
@@ -270,6 +330,9 @@ export const metadata: Metadata = {
     "学佛日常功课",
     "初学者功课安排",
     "居士日常修行",
+    "先读什么佛经",
+    "听诵和读经怎么配合",
+    "佛经导读",
     "佛学基本概念",
     "因果是什么意思",
     "菩提心是什么意思",
@@ -308,7 +371,18 @@ export default function DailyPracticePage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["日常功课", "因果", "菩提心", "佛学基本概念", "学佛修行", "初学者功课安排", "空性理解"],
+        about: [
+          "日常功课",
+          "因果",
+          "菩提心",
+          "佛学基本概念",
+          "学佛修行",
+          "初学者功课安排",
+          "空性理解",
+          "先读什么佛经",
+          "经文听诵",
+          "听诵和读经怎么配合",
+        ],
       },
       {
         "@type": "BreadcrumbList",
@@ -340,6 +414,17 @@ export default function DailyPracticePage() {
           "@type": "ListItem",
           position: index + 1,
           name: item.titleZh,
+          description: item.descriptionZh,
+        })),
+      },
+      {
+        "@type": "ItemList",
+        name: "佛经入口怎样接回日常功课",
+        itemListElement: scriptureRoutinePaths.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.labelZh,
+          url: siteUrl(item.href),
           description: item.descriptionZh,
         })),
       },
@@ -419,6 +504,18 @@ export default function DailyPracticePage() {
             <LocalizedText
               zh="比较稳妥的功课，不是看起来最完整的那一种，而是最能留下来的那一种。传统修学常重视闻、思、修能否慢慢接续起来。放到今天的生活里，日常功课更像是一条轻轻贯穿一天的线，而不是早晚各做一大段、白天完全断开。"
               en="The steadier routine is usually not the one that looks most complete, but the one that can truly stay alive. Traditional learning often values whether hearing, reflection, and practice can continue into one another. Inside modern life, a daily routine often works better as a light thread through the day than as two heavy blocks that leave the middle empty."
+            />
+          </p>
+          <p>
+            <LocalizedText
+              zh="很多人排功课时，问题其实会慢慢变成：如果我是从《心经》或《阿弥陀经》开始，晨起该听还是读？白天只有碎片时间，经典怎么不只停在背景声音里？晚间又该怎样把听过的一句接回一点阅读或回顾？这些都不是岔题，而是日常功课真正开始落地时最自然会出现的问题。"
+              en="As people begin arranging a routine, the question often shifts into whether the Heart Sutra or Amitabha Sutra should lead the day, whether morning should begin with listening or reading, how scripture can avoid becoming background sound during the day, and how one heard line can return to evening reading or review. These are not detours. They are the natural questions that appear when a daily routine begins to become real."
+            />
+          </p>
+          <p>
+            <LocalizedText
+              zh="比较稳的方式，常常不是把经典和功课分成两条线，而是先定一部较合适的入口经典，再让晨起有一小段听诵或念佛，白天留一个提醒点，晚间回到原文或导读里读一小段。这样经典不只是偶尔想起时才接触，而会慢慢变成一天里的真实回返点。"
+              en="A steadier way is usually not to separate scripture from routine, but to choose one fitting gateway text first, then give the morning a short listening or recitation action, the daytime one reminder point, and the evening a short return to the text or a guide. Scripture then becomes a real point of return inside the day instead of something touched only occasionally."
             />
           </p>
           <p>
@@ -516,6 +613,37 @@ export default function DailyPracticePage() {
                 <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
               </p>
             </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="经典接回功课" en="Scripture Into Routine" />
+          </p>
+          <h2>
+            <LocalizedText
+              zh="把“先读哪部经、怎样听、怎样回到晚间阅读”这些真实问题，直接收进功课路径里。"
+              en="Bring the real questions of which sutra to begin with, how to listen, and how to return to evening reading directly into the routine itself."
+            />
+          </h2>
+        </div>
+        <div className="editorial-list">
+          {scriptureRoutinePaths.map((item) => (
+            <a key={item.href} className="editorial-row" href={siteHref(item.href)}>
+              <span>
+                <LocalizedText zh={item.labelZh} en={item.labelEn} />
+              </span>
+              <div>
+                <strong>
+                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
+                </strong>
+                <p>
+                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+                </p>
+              </div>
+            </a>
           ))}
         </div>
       </section>
@@ -629,8 +757,8 @@ export default function DailyPracticePage() {
           <a className="primary-action" href={siteHref("/download")}>
             <LocalizedText zh="下载法布施" en="Download Fabushi" />
           </a>
-          <a className="secondary-action" href={siteHref("/buddhist-concepts")}>
-            <LocalizedText zh="继续看佛学基本概念" en="Continue to Buddhist Concepts" />
+          <a className="secondary-action" href={siteHref("/beginner-sutra-recommendations")}>
+            <LocalizedText zh="继续看初学者佛经推荐" en="Continue to Beginner Sutra Picks" />
           </a>
         </div>
       </section>
