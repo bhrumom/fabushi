@@ -58,6 +58,10 @@ FORUM_LIVE_EXERCISE_WRITE_FLOW=true
 
 If `FORUM_LIVE_URL` is still empty, the hourly workflow exits cleanly without failing. Manual `workflow_dispatch` runs keep working with the explicit inputs.
 
+The hourly workflow now also writes a job summary for both skip and check paths, so the run itself tells you which target posture it resolved and whether the repository variables are still incomplete.
+
+Live HTTP requests now time out after 15 seconds per call. That keeps an unreachable preview or production target from leaving the hourly workflow hanging for too long before it reports the failure.
+
 ## Preview baseline
 
 Keep the safe default first:
