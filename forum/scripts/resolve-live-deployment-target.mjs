@@ -41,6 +41,23 @@ function buildBundledLiveTarget(target) {
   };
 }
 
+function quoteForSingleQuotedShell(value) {
+  return value.replace(/'/g, "'\"'\"'");
+}
+
+function buildGithubRepoArg(githubRepo) {
+  if (!githubRepo) {
+    return "";
+  }
+
+  return ` --repo '${quoteForSingleQuotedShell(githubRepo)}'`;
+}
+
+function buildBundledTargetGithubVariableCommand(target) {
+  const bundledTargetJson = JSON.stringify(target.bundledTarget);
+  return `gh variable set FORUM_LIVE_TARGET --body '${quoteForSingleQuotedShell(bundledTargetJson)}'${buildGithubRepoArg(target.githubRepo)}`;
+}
+
 function buildSkipNextStepLines(target) {
   return [
     "### How to unblock",
@@ -76,7 +93,7 @@ function buildSkipNextStepLines(target) {
     "```",
     "",
     "That generic rollout command can scaffold `.env.deploy`, validate the deploy posture, bring the compose stack up, wait for health, and smoke-check the runtime.",
-    "That generic handoff command re-validates `.env.deploy`, smoke-checks the live runtime, and syncs `FORUM_LIVE_TARGET` back to `bhrumom/fabushi`.",
+    `That generic handoff command re-validates .env.deploy, smoke-checks the live runtime, and syncs FORUM_LIVE_TARGET back to ${target.githubRepo}.`,
     "For preview, the shorter handoff command above can stay deploy-env driven once `.env.deploy` already declares `FORUM_DEPLOY_CHECK_URL`.",
     "For production, the shorter commands above can stay fully deploy-env driven once `.env.deploy` already declares the final `FORUM_PUBLIC_BASE_URL`.",
     "With `--apply-github-live-target true`, writable preview can also sync `FORUM_LIVE_WRITE_ACCESS_CODE`.",
@@ -96,8 +113,14 @@ function buildReadySaveLines(target) {
     "```json",
     JSON.stringify(target.bundledTarget, null, 2),
     "```",
+    "",
+    "If `gh` is already authenticated on a trusted shell, you can sync the same verified bundle directly with:",
+    "",
+    "```bash",
+    target.recommendedRepositoryCommand,
+    "```",
     target.requiresAccessCode
-      ? "Keep the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE` aligned with the preview write gate too."
+      ? "Keep the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE` aligned with the preview write gate too. This summary intentionally does not print the secret value."
       : "No `FORUM_LIVE_WRITE_ACCESS_CODE` secret update is required for this posture.",
   ];
 }
@@ -186,6 +209,7 @@ function resolveConfigValue({ bundledValue, envValue, normalize = (value) => val
 
 async function main() {
   const source = process.env.FORUM_LIVE_SOURCE || "scheduled";
+  const githubRepo = process.env.FORUM_LIVE_GITHUB_REPO?.trim() || "bhrumom/fabushi";
   const bundledTarget = parseBundledTarget(process.env.FORUM_LIVE_TARGET || "");
   const forumUrl = normalizeUrl(
     resolveConfigValue({
@@ -198,6 +222,7 @@ async function main() {
   if (!forumUrl) {
     const skippedTarget = {
       source,
+      githubRepo,
       skip: true,
       reason: "No forum URL configured for scheduled live deployment checks.",
       missingConfig: ["FORUM_LIVE_TARGET or FORUM_LIVE_URL"],
@@ -328,8 +353,18 @@ async function main() {
     warnings.push("production checks are running without FORUM_LIVE_PUBLIC_BASE_URL, so the live forum is expected to stay noindex.");
   }
 
+  const bundledTargetPayload = buildBundledLiveTarget({
+    forumUrl,
+    deploymentStage,
+    publicBaseUrl,
+    writesEnabled,
+    requiresAccessCode,
+    exerciseWriteFlow,
+  });
+
   const resolvedTarget = {
     source,
+    githubRepo,
     skip: false,
     forumUrl,
     deploymentStage,
@@ -339,13 +374,10 @@ async function main() {
     exerciseWriteFlow,
     requestTimeoutMs,
     warnings,
-    bundledTarget: buildBundledLiveTarget({
-      forumUrl,
-      deploymentStage,
-      publicBaseUrl,
-      writesEnabled,
-      requiresAccessCode,
-      exerciseWriteFlow,
+    bundledTarget: bundledTargetPayload,
+    recommendedRepositoryCommand: buildBundledTargetGithubVariableCommand({
+      bundledTarget: bundledTargetPayload,
+      githubRepo,
     }),
     repositoryConfigTargets: ["FORUM_LIVE_TARGET"],
     optionalSecretTargets: requiresAccessCode ? ["FORUM_LIVE_WRITE_ACCESS_CODE"] : [],
