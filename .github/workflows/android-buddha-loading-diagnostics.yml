@@ -1,0 +1,84 @@
+name: Android Buddha Loading Diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      api-level:
+        description: Android emulator API level
+        required: false
+        default: '35'
+      profile:
+        description: Android emulator profile
+        required: false
+        default: pixel_7
+
+jobs:
+  android-buddha-diagnostics:
+    name: Android Buddha diagnostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Run Android Buddha diagnostics
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ inputs.api-level }}
+          arch: x86_64
+          profile: ${{ inputs.profile }}
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          working-directory: fabushi
+          script: |
+            set +e
+            adb wait-for-device
+            adb logcat -c
+            flutter test integration_test/buddha_loading_android_diagnostics_test.dart -d emulator-5554 --reporter expanded | tee "$GITHUB_WORKSPACE/buddha_flutter_test.log"
+            test_exit=${PIPESTATUS[0]}
+            adb logcat -d > "$GITHUB_WORKSPACE/buddha_logcat_full.log"
+            grep -E 'BuddhaDiag|BuddhaModel|three_dart|AssetLoader' "$GITHUB_WORKSPACE/buddha_logcat_full.log" > "$GITHUB_WORKSPACE/buddha_logcat_filtered.log" || true
+            exit "$test_exit"
+
+      - name: Write diagnostics summary
+        if: always()
+        run: |
+          {
+            echo '## Android Buddha diagnostics'
+            echo
+            echo '### Filtered log tail'
+            echo
+            echo '```text'
+            tail -n 120 "$GITHUB_WORKSPACE/buddha_logcat_filtered.log" 2>/dev/null || echo 'No filtered diagnostics captured.'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload diagnostics artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-buddha-diagnostics
+          path: |
+            buddha_flutter_test.log
+            buddha_logcat_full.log
+            buddha_logcat_filtered.log
+          if-no-files-found: warn
