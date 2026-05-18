@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ class AndroidThreeBuddhaView extends StatefulWidget {
   final ValueChanged<double>? onProgress;
   final VoidCallback? onReady;
   final ValueChanged<String>? onError;
+  final ValueChanged<String>? onStatus;
 
   const AndroidThreeBuddhaView({
     super.key,
@@ -24,6 +26,7 @@ class AndroidThreeBuddhaView extends StatefulWidget {
     this.onProgress,
     this.onReady,
     this.onError,
+    this.onStatus,
   });
 
   @override
@@ -33,6 +36,8 @@ class AndroidThreeBuddhaView extends StatefulWidget {
 class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
   static const Duration _initDelay = Duration(milliseconds: 100);
   static const Duration _modelLoadTimeout = Duration(seconds: 90);
+
+  final Stopwatch _diagnosticStopwatch = Stopwatch();
 
   FlutterGlPlugin? _glPlugin;
   three.WebGLRenderer? _renderer;
@@ -46,6 +51,7 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
   bool _ready = false;
   bool _failed = false;
   bool _disposed = false;
+  bool _firstFrameLogged = false;
 
   @override
   Widget build(BuildContext context) {
@@ -88,6 +94,18 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
 
   Future<void> _initialize(Size size, double dpr) async {
     final plugin = FlutterGlPlugin();
+    _diagnosticStopwatch
+      ..reset()
+      ..start();
+    _emitStatus(
+      'initialize_start',
+      '开始初始化 Android Three 渲染上下文',
+      extra: {
+        'size': '${size.width.round()}x${size.height.round()}',
+        'dpr': dpr.toStringAsFixed(2),
+      },
+    );
+
     try {
       await plugin.initialize(
         options: {
@@ -98,6 +116,7 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
           'dpr': dpr,
         },
       );
+      _emitStatus('gl_plugin_ready', 'Flutter GL 插件初始化完成');
 
       if (!mounted || _disposed) {
         plugin.dispose();
@@ -110,6 +129,7 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
 
       await Future<void>.delayed(_initDelay);
       await plugin.prepareContext();
+      _emitStatus('gl_context_ready', 'OpenGL 上下文准备完成');
 
       if (!mounted || _disposed) {
         plugin.dispose();
@@ -118,6 +138,7 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
 
       _initRenderer(plugin, size, dpr);
       _initScene(size);
+      _emitStatus('scene_ready', 'Three 场景和灯光准备完成');
       widget.onProgress?.call(0.24);
 
       final model = await _loadBuddhaModel();
@@ -125,11 +146,13 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
 
       _fitAndRetuneModel(model);
       _scene!.add(model);
+      _emitStatus('model_attached', '佛像模型已挂载到 Three 场景');
       _updateCamera();
 
       _ready = true;
       _initializing = false;
       widget.onProgress?.call(1.0);
+      _emitStatus('ready', 'Android Three 渲染完成，可以展示佛像');
       widget.onReady?.call();
 
       if (mounted) {
@@ -211,21 +234,43 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
   }
 
   Future<three.Object3D> _loadBuddhaModel() async {
+    _emitStatus('bundled_glb_start', '开始读取打包 GLB');
     try {
       final bytes = await _loadBundledGlbBytes();
       widget.onProgress?.call(0.58);
-      return _parseGlbBytes(bytes);
+      _emitStatus(
+        'bundled_glb_ready',
+        '打包 GLB 校验通过，开始解析',
+        extra: {
+          'bytes': bytes.lengthInBytes,
+          'header': _formatHeader(bytes),
+        },
+      );
+      final model = await _parseGlbBytes(bytes);
+      _emitStatus('bundled_glb_parsed', '打包 GLB 解析完成');
+      return model;
     } catch (error) {
+      _emitStatus(
+        'bundled_glb_failed',
+        '打包 GLB 加载失败，切换远端 GLB',
+        extra: {'error': error},
+      );
       debugPrint(
         '⚠️ [BuddhaModel][three_dart] bundled GLB 加载失败，尝试远端 GLB: $error',
       );
     }
 
     widget.onProgress?.call(0.32);
+    _emitStatus(
+      'remote_glb_start',
+      '开始读取远端 GLB',
+      extra: {'url': AppConfig.legacyBuddhaGlbUrl},
+    );
     final loader = three_jsm.GLTFLoader();
     final result = await loader
         .loadAsync(AppConfig.legacyBuddhaGlbUrl)
         .timeout(_modelLoadTimeout);
+    _emitStatus('remote_glb_ready', '远端 GLB 下载和解析完成');
     return _extractScene(result);
   }
 
@@ -340,6 +385,10 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
       if (!kIsWeb && _sourceTexture != null) {
         unawaited(plugin.updateTexture(_sourceTexture));
       }
+      if (!_firstFrameLogged) {
+        _firstFrameLogged = true;
+        _emitStatus('first_frame', 'Android Three 首帧已经提交到纹理');
+      }
     } catch (error) {
       _fail('Android three_dart 渲染失败: $error');
     }
@@ -349,9 +398,34 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
     if (_failed || _disposed) return;
     _failed = true;
     _ready = false;
+    _emitStatus('error', message, extra: {'failed': true});
     debugPrint('❌ [BuddhaModel][three_dart] $message');
     widget.onError?.call(message);
     if (mounted) setState(() {});
+  }
+
+  void _emitStatus(
+    String stage,
+    String message, {
+    Map<String, Object?> extra = const {},
+  }) {
+    final payload = <String, Object?>{
+      'stage': stage,
+      'elapsed_ms': _diagnosticStopwatch.elapsedMilliseconds,
+      ...extra,
+    };
+    final fields = payload.entries
+        .where((entry) => entry.value != null)
+        .map(
+          (entry) =>
+              '${entry.key}=${_normalizeDiagnosticValue(entry.value)}',
+        )
+        .join(' ');
+    debugPrint(
+      '[BuddhaDiag][android_three] $fields '
+      'message=${_normalizeDiagnosticValue(message)}',
+    );
+    widget.onStatus?.call(message);
   }
 
   static bool _isGlb(Uint8List bytes) {
@@ -368,6 +442,10 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
         .take(math.min(12, bytes.lengthInBytes))
         .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
         .join(' ');
+  }
+
+  static String _normalizeDiagnosticValue(Object? value) {
+    return value.toString().replaceAll(RegExp(r'\s+'), '_');
   }
 
   @override
@@ -387,6 +465,7 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
     _renderTarget?.dispose();
     _scene = null;
     _camera = null;
+    _diagnosticStopwatch.stop();
     super.dispose();
   }
 }
