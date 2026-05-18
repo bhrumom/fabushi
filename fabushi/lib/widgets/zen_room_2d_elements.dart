@@ -203,6 +203,126 @@ class IncensePainter extends CustomPainter {
   }
 }
 
+class IncenseSmokeOverlay extends StatelessWidget {
+  final double incenseProgress;
+  final bool isBurning;
+  final double smokeRise;
+
+  const IncenseSmokeOverlay({
+    super.key,
+    required this.incenseProgress,
+    required this.isBurning,
+    this.smokeRise = 150,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isBurning) {
+      return const SizedBox.expand();
+    }
+
+    return CustomPaint(
+      painter: IncenseSmokeOverlayPainter(
+        incenseProgress: incenseProgress,
+        smokeRise: smokeRise,
+      ),
+      child: const SizedBox.expand(),
+    );
+  }
+}
+
+class IncenseSmokeOverlayPainter extends CustomPainter {
+  static const double _baseHeight = 196;
+  static const double _stickBaseBottom = 58;
+
+  final double incenseProgress;
+  final double smokeRise;
+
+  const IncenseSmokeOverlayPainter({
+    required this.incenseProgress,
+    required this.smokeRise,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty || !size.width.isFinite || !size.height.isFinite) return;
+
+    final time = DateTime.now().millisecondsSinceEpoch * 0.001;
+    final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
+    final stickHeight = 88.0 * remaining;
+    final incenseAreaHeight = (size.height - smokeRise).clamp(
+      _baseHeight,
+      size.height,
+    );
+    final incenseTop = smokeRise + (incenseAreaHeight - _baseHeight) / 2;
+    final tipY = incenseTop + _baseHeight - _stickBaseBottom - stickHeight;
+    final centerX = size.width / 2;
+
+    for (final seed in const [-18.0, 0.0, 18.0]) {
+      final tip = Offset(centerX + seed, tipY);
+      _drawSmokeColumn(canvas, tip, time, seed);
+    }
+  }
+
+  void _drawSmokeColumn(Canvas canvas, Offset tip, double time, double seed) {
+    for (var i = 0; i < 8; i++) {
+      final t = (time * 0.055 + i / 8 + seed * 0.011) % 1.0;
+      final drift = math.sin(t * math.pi * 2.0 + seed) * (10 + t * 28);
+      final sideDrift = math.cos(time * 0.45 + i + seed) * (2 + t * 8);
+      final end = Offset(
+        tip.dx + drift + sideDrift,
+        tip.dy - smokeRise * (0.20 + t * 0.78),
+      );
+      final controlOne = Offset(
+        tip.dx + math.sin(time * 0.35 + i) * 18,
+        tip.dy - smokeRise * (0.12 + t * 0.14),
+      );
+      final controlTwo = Offset(
+        tip.dx + drift * 0.55 + math.cos(i + seed) * 12,
+        tip.dy - smokeRise * (0.36 + t * 0.36),
+      );
+      final opacity = ((1 - t) * 0.23 + 0.04).clamp(0.0, 0.24).toDouble();
+      final stroke = (2.8 - t * 1.15).clamp(1.1, 2.8).toDouble();
+
+      final path = Path()
+        ..moveTo(tip.dx, tip.dy)
+        ..cubicTo(
+          controlOne.dx,
+          controlOne.dy,
+          controlTwo.dx,
+          controlTwo.dy,
+          end.dx,
+          end.dy,
+        );
+
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = Color.fromRGBO(244, 238, 222, opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = stroke
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2.5 + t * 5.5),
+      );
+
+      if (i.isEven) {
+        canvas.drawCircle(
+          end,
+          5.5 + t * 10.0,
+          Paint()
+            ..color = Color.fromRGBO(236, 231, 218, opacity * 0.72)
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 7 + t * 8),
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant IncenseSmokeOverlayPainter oldDelegate) {
+    return true;
+  }
+}
+
 class IncenseOffering extends StatelessWidget {
   final double incenseProgress;
   final bool isBurning;
