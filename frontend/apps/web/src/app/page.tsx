@@ -17,6 +17,7 @@ import {
   getUserFacingStatus,
 } from "../lib/channel-display";
 import { siteHref, siteUrl } from "../lib/site-url";
+import type { InsightArticle } from "../content/articles";
 
 const SCREENSHOT_KEYS = [
   "global-dharma",
@@ -52,12 +53,176 @@ interface BulletinItem {
   descriptionEn: string;
 }
 
+interface HomepageClusterLink {
+  href: string;
+  labelZh: string;
+  labelEn: string;
+}
+
+interface HomepageCluster {
+  labelZh: string;
+  labelEn: string;
+  titleZh: string;
+  titleEn: string;
+  descriptionZh: string;
+  descriptionEn: string;
+  links: readonly HomepageClusterLink[];
+}
+
 const HERO_MAIN_IMAGE_KEY: ProductScreenshotKey = "global-dharma";
 const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "main-sutra";
 const homeUrl = siteUrl("/");
 const homeTitle = `学佛入门、佛法导读与官网资讯首页 | ${brand.name}`;
 const homeDescription =
   "大乘官网首页聚合学佛从哪里开始、佛法入门、佛学基本概念、佛经导读、念佛入门、听诵和读经怎么配合、修行方法、FAQ 与官网最新内容；App 下载保留为清晰服务入口，不再占据首页主叙事。";
+
+const HOMEPAGE_CLUSTER_STYLES = `
+  .homepage-cluster-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+  }
+
+  .homepage-cluster-card {
+    display: grid;
+    gap: 16px;
+    padding: 22px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(255, 249, 235, 0.08), rgba(10, 15, 22, 0.96));
+    box-shadow: var(--shadow);
+  }
+
+  .homepage-cluster-kicker {
+    margin: 0;
+    color: var(--gold-soft);
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .homepage-cluster-card h3,
+  .homepage-cluster-card p,
+  .homepage-cluster-link {
+    margin: 0;
+  }
+
+  .homepage-cluster-card h3 {
+    color: var(--ink);
+    font-size: 1.16rem;
+    line-height: 1.36;
+  }
+
+  .homepage-cluster-card p {
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  .homepage-cluster-links {
+    display: grid;
+    gap: 10px;
+  }
+
+  .homepage-cluster-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 48px;
+    padding: 12px 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 249, 235, 0.05);
+    color: var(--muted-strong);
+    transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+  }
+
+  .homepage-cluster-link strong {
+    color: var(--ink);
+    font-size: 1rem;
+    line-height: 1.3;
+  }
+
+  .homepage-cluster-link span {
+    color: var(--gold-soft);
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .homepage-cluster-link:hover {
+    transform: translateY(-1px);
+    border-color: var(--line-strong);
+    background: rgba(255, 249, 235, 0.08);
+  }
+
+  .homepage-cluster-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 249, 235, 0.04);
+    color: var(--muted-strong);
+  }
+`;
+
+const HOMEPAGE_CLUSTERS: readonly HomepageCluster[] = [
+  {
+    labelZh: "学佛起步",
+    labelEn: "Begin Here",
+    titleZh: "先把入口顺序放轻一点，再决定自己现在要往哪一条走。",
+    titleEn: "Lighten the entry order first, then decide which path fits your present need.",
+    descriptionZh: "首页不再把所有内容挤成一串长列表，而是先把第一次来站、需要方向感的人，送进更清楚的起步入口。",
+    descriptionEn: "The homepage no longer compresses every path into one long list. It first helps first-time visitors find the clearest doorway.",
+    links: [
+      { href: "/start-learning-buddhism", labelZh: "学佛从哪里开始", labelEn: "Where to Begin" },
+      { href: "/buddhadharma", labelZh: "佛法入门", labelEn: "Dharma Basics" },
+      { href: "/insights", labelZh: "官网资讯", labelEn: "Site News" },
+    ],
+  },
+  {
+    labelZh: "佛学概念",
+    labelEn: "Concept Cluster",
+    titleZh: "先把常见名相放回同一张地图里，再决定继续读哪一个概念页。",
+    titleEn: "Place the common terms on one map before choosing which concept page comes next.",
+    descriptionZh: "如果读者已经开始被因果、菩提心、六度和空性这些词拦住，首页要先把概念入口直接露出来。",
+    descriptionEn: "When readers are already being stopped by karma, bodhicitta, the six paramitas, or emptiness, the concept doorway should stay visible from the homepage.",
+    links: [
+      { href: "/buddhist-concepts", labelZh: "佛学基本概念", labelEn: "Buddhist Concepts" },
+      { href: "/what-is-karma", labelZh: "因果是什么意思", labelEn: "What Karma Means" },
+      { href: "/what-is-bodhicitta", labelZh: "菩提心是什么意思", labelEn: "What Bodhicitta Means" },
+    ],
+  },
+  {
+    labelZh: "修行实践",
+    labelEn: "Practice Cluster",
+    titleZh: "把禅修、念佛、功课安排这些真正会落回日常的问题收成一组静态卡片。",
+    titleEn: "Gather meditation, recitation, and daily-rhythm questions into one static practice cluster.",
+    descriptionZh: "这里不做翻转，直接把修行方法、念佛入门和日常功课安排并排露出，让首页更像真正的学习总入口。",
+    descriptionEn: "No flip interaction here. Practice methods, nianfo, and daily routine stay directly visible so the homepage acts more like a real learning hub.",
+    links: [
+      { href: "/practice-guide", labelZh: "修行方法总览", labelEn: "Practice Guide" },
+      { href: "/nianfo-guide", labelZh: "念佛入门", labelEn: "Nianfo Guide" },
+      { href: "/daily-practice", labelZh: "日常功课怎么安排", labelEn: "Daily Practice" },
+    ],
+  },
+  {
+    labelZh: "佛经学习",
+    labelEn: "Scripture Cluster",
+    titleZh: "把“先读哪一部”“听诵和阅读怎么配合”这些第二层问题收成同一组入口。",
+    titleEn: "Keep second-layer scripture questions such as where to begin and how listening meets reading inside one cluster.",
+    descriptionZh: "这样首页不只停在“佛经导读”一个总入口，而会把已经存在的推荐页和听诵页一起显性分发出来。",
+    descriptionEn: "This keeps the homepage from stopping at only one sutra hub and surfaces the recommendation and listening pages together.",
+    links: [
+      { href: "/sutra-guide", labelZh: "佛经导读", labelEn: "Sutra Guide" },
+      { href: "/beginner-sutra-recommendations", labelZh: "初学者佛经推荐", labelEn: "Beginner Sutra Picks" },
+      { href: "/sutra-listening", labelZh: "听诵和读经怎么配合", labelEn: "Listening and Reading" },
+    ],
+  },
+] as const;
 
 const PRODUCT_MOMENTS: ProductMoment[] = [
   {
@@ -267,6 +432,24 @@ function formatPublishedAt(value?: string) {
   }
 
   return date.toISOString().slice(0, 10);
+}
+
+function HomeArticleMeta({ article }: { article: InsightArticle }) {
+  const label = article.updatedAt
+    ? {
+        zh: `更新 ${article.updatedAt}`,
+        en: `Updated ${article.updatedAt}`,
+      }
+    : {
+        zh: `发布 ${article.publishedAt}`,
+        en: `Published ${article.publishedAt}`,
+      };
+
+  return (
+    <small>
+      <LocalizedText zh={label.zh} en={label.en} /> · {article.author} · {article.readTime}
+    </small>
+  );
 }
 
 function getChannelActionCopy(channel: OfficialSiteChannel) {
@@ -487,7 +670,7 @@ export default async function HomePage() {
                   );
                 })
               ) : (
-                <a className="release-pill" href={siteHref("/download")}>
+                <a className="release-pill" href={siteHref("/download") }>
                   <span>
                     <LocalizedText zh="App 下载" en="App Download" />
                   </span>
@@ -563,9 +746,7 @@ export default async function HomePage() {
               <div>
                 <strong>{featuredArticle.title}</strong>
                 <p>{featuredArticle.description}</p>
-                <small>
-                  {featuredArticle.author} · {featuredArticle.readTime}
-                </small>
+                <HomeArticleMeta article={featuredArticle} />
               </div>
             </a>
             {spotlightArticles.map((item) => (
@@ -574,48 +755,65 @@ export default async function HomePage() {
                 <div>
                   <strong>{item.title}</strong>
                   <p>{item.description}</p>
-                  <small>
-                    {item.author} · {item.readTime}
-                  </small>
+                  <HomeArticleMeta article={item} />
                 </div>
               </a>
             ))}
           </div>
         ) : null}
         <div className="inline-cta">
-          <a className="primary-action" href={siteHref("/insights")}>
+          <a className="primary-action" href={siteHref("/insights") }>
             <LocalizedText zh="进入官网资讯" en="Open Site News" />
           </a>
         </div>
       </section>
 
       <section className="band" id="dharma-paths">
+        <style dangerouslySetInnerHTML={{ __html: HOMEPAGE_CLUSTER_STYLES }} />
         <div className="section-heading tight">
           <p>
             <LocalizedText zh="宗派与修行导览" en="Learning Paths" />
           </p>
           <h2>
             <LocalizedText
-              zh="把之前已经写好的内容收成静态卡片集群，让首页更像内容总入口，而不是下载落地页。"
-              en="Gather existing content into static card clusters so the homepage works as a true content gateway instead of a download landing page."
+              zh="按起步、概念、修行、佛经四组静态专题卡片来组织首页主体分发层。"
+              en="Organize the homepage body around four static clusters: beginnings, concepts, practice, and scripture."
             />
           </h2>
+          <p className="homepage-cluster-note">
+            <LocalizedText
+              zh="这里取消任何翻转设想，保留可抓取、可扫描、移动端更稳的静态卡片与直接入口。"
+              en="No flip treatment here. Keep static cards and direct links so the section stays crawlable, scannable, and steadier on mobile."
+            />
+          </p>
         </div>
-        <div className="editorial-list">
-          {DHARMA_PATHS.map((item) => (
-            <a key={item.href} className="editorial-row" href={siteHref(item.href)}>
-              <span>
-                <LocalizedText zh={item.labelZh} en={item.labelEn} />
-              </span>
+        <div className="homepage-cluster-grid">
+          {HOMEPAGE_CLUSTERS.map((cluster) => (
+            <article key={cluster.labelEn} className="homepage-cluster-card">
               <div>
-                <strong>
-                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
-                </strong>
-                <p>
-                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+                <p className="homepage-cluster-kicker">
+                  <LocalizedText zh={cluster.labelZh} en={cluster.labelEn} />
                 </p>
+                <h3>
+                  <LocalizedText zh={cluster.titleZh} en={cluster.titleEn} />
+                </h3>
               </div>
-            </a>
+              <p>
+                <LocalizedText zh={cluster.descriptionZh} en={cluster.descriptionEn} />
+              </p>
+              <div className="homepage-cluster-links">
+                {cluster.links.map((link) => (
+                  <a key={link.href} className="homepage-cluster-link" href={siteHref(link.href)}>
+                    <strong>
+                      <LocalizedText zh={link.labelZh} en={link.labelEn} />
+                    </strong>
+                    <span>
+                      <LocalizedText zh="进入" en="Open" />
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </article>
           ))}
         </div>
       </section>
@@ -676,7 +874,7 @@ export default async function HomePage() {
           ))}
         </div>
         <div className="inline-cta">
-          <a className="secondary-action" href={siteHref("/faq")}>
+          <a className="secondary-action" href={siteHref("/faq") }>
             <LocalizedText zh="查看全部常见问题" en="View all FAQs" />
           </a>
           <a className="secondary-action" href={`mailto:${supportEmail}`}>
@@ -729,7 +927,7 @@ export default async function HomePage() {
               </DownloadLink>
             );
           })}
-          <a className="platform-row accent-row" href={siteHref("/download")}>
+          <a className="platform-row accent-row" href={siteHref("/download") }>
             <div>
               <span className="platform-name">
                 <LocalizedText zh="全部下载入口" en="All Downloads" />
