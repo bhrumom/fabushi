@@ -93,7 +93,7 @@ function buildSkipNextStepLines(target) {
     "```",
     "",
     "That generic rollout command can scaffold `.env.deploy`, validate the deploy posture, bring the compose stack up, wait for health, and smoke-check the runtime.",
-    `That generic handoff command re-validates .env.deploy, smoke-checks the live runtime, and syncs \`FORUM_LIVE_TARGET\` back to \`${target.githubRepo}\`.`,
+    `That generic handoff command re-validates .env.deploy, smoke-checks the live runtime, and syncs FORUM_LIVE_TARGET back to ${target.githubRepo}.`,
     "For preview, the shorter handoff command above can stay deploy-env driven once `.env.deploy` already declares `FORUM_DEPLOY_CHECK_URL`.",
     "For production, the shorter commands above can stay fully deploy-env driven once `.env.deploy` already declares the final `FORUM_PUBLIC_BASE_URL`.",
     "With `--apply-github-live-target true`, writable preview can also sync `FORUM_LIVE_WRITE_ACCESS_CODE`.",
