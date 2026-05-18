@@ -192,7 +192,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          rm -f /tmp/forum-rollout-preview-bootstrap.env
+          rm -f /tmp/forum-rollout-preview-bootstrap.env /tmp/forum-rollout-preview-report.json
 
           COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
           FORUM_IMAGE=fabushi-forum \
@@ -204,14 +204,16 @@ jobs:
             --forum-image fabushi-forum \
             --forum-port 3001 \
             --forum-data-dir /tmp/fabushi-forum-deploy-compose-data \
+            --report-path /tmp/forum-rollout-preview-report.json \
             2>&1 | tee /tmp/forum-rollout-preview.txt
 
           grep "== Scaffold deploy env ==" /tmp/forum-rollout-preview.txt
           grep "FORUM_DEPLOYMENT_STAGE=preview" /tmp/forum-rollout-preview-bootstrap.env
           grep "FORUM_ENABLE_WRITES=false" /tmp/forum-rollout-preview-bootstrap.env
           grep '^FORUM_DEPLOY_CHECK_URL=$' /tmp/forum-rollout-preview-bootstrap.env
-          curl --fail --show-error --silent http://127.0.0.1:3001/api/health >/tmp/forum-rollout-preview-health.json
-          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-rollout-preview-health.json", "utf8")); if (!(data.ready === true && data.deploymentStage === "preview" && data.writesEnabled === false && data.requiresAccessCode === false)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
+          test -f /tmp/forum-rollout-preview-report.json
+          cat /tmp/forum-rollout-preview-report.json
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-rollout-preview-report.json", "utf8")); if (!(data.ok === true && data.forumUrl === "http://127.0.0.1:3001" && data.deploymentStage === "preview" && data.indexingEnabled === false && data.writesEnabled === false && data.requiresAccessCode === false && data.exerciseWriteFlow === false)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
 
       - name: Stop forum deploy compose read-only preview runtime
         run: |
@@ -230,6 +232,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          rm -f /tmp/forum-live-target-report.json
           mkdir -p /tmp/forum-mock-gh-bin
           cat <<'GHEOF' >/tmp/forum-mock-gh-bin/gh
           #!/usr/bin/env bash
@@ -247,13 +250,15 @@ jobs:
             --compose-project-name fabushi-forum-deploy-check \
             --exercise-write-flow true \
             --apply-github-live-target true \
+            --report-path /tmp/forum-live-target-report.json \
             2>&1 | tee /tmp/forum-live-target-handoff.txt
 
           cat /tmp/forum-gh-invocations.txt
           grep "gh variable set FORUM_LIVE_TARGET" /tmp/forum-live-target-handoff.txt
           grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-live-target-handoff.txt
-          curl --fail --show-error --silent http://127.0.0.1:3001/api/status >/tmp/forum-live-target-status.json
-          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-live-target-status.json", "utf8")); if (!(data.deploymentStage === "preview" && data.writesEnabled === true && data.requiresAccessCode === true)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
+          test -f /tmp/forum-live-target-report.json
+          cat /tmp/forum-live-target-report.json
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-live-target-report.json", "utf8")); if (!(data.ok === true && data.forumUrl === "http://127.0.0.1:3001" && data.deploymentStage === "preview" && data.indexingEnabled === false && data.writesEnabled === true && data.requiresAccessCode === true && data.exerciseWriteFlow === true && data.liveWriteVerification && data.liveWriteVerification.threadSlug)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
           grep "variable set FORUM_LIVE_TARGET --body" /tmp/forum-gh-invocations.txt
           grep "secret set FORUM_LIVE_WRITE_ACCESS_CODE --body" /tmp/forum-gh-invocations.txt
           grep -- "--repo bhrumom/fabushi" /tmp/forum-gh-invocations.txt
