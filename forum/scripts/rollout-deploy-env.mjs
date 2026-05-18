@@ -148,6 +148,47 @@ function runDockerComposeUp({ deployEnvPath, composeFile, detach, composeProject
   });
 }
 
+function runCommand(command, commandArgs, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, commandArgs, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        ...(options.composeProjectName ? { COMPOSE_PROJECT_NAME: options.composeProjectName } : {}),
+      },
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+    });
+
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+    });
+
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      if (signal) {
+        reject(new Error(`${command} exited via signal: ${signal}`));
+        return;
+      }
+
+      if (code !== 0) {
+        const details = stderr.trim() || stdout.trim();
+        reject(new Error(`${command} ${commandArgs.join(" ")} exited with code ${code}.${details ? ` ${details}` : ""}`));
+        return;
+      }
+
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
 async function deployEnvExists(deployEnvPath) {
   try {
     await access(deployEnvPath, fsConstants.F_OK);
@@ -188,6 +229,54 @@ async function loadDeployEnv(deployEnvPath) {
   return parseDotEnv(deployEnvContent);
 }
 
+async function resolveComposeContainerId({ deployEnvPath, composeFile, composeProjectName, serviceName = "forum" }) {
+  const result = await runCommand(
+    "docker",
+    ["compose", "--env-file", deployEnvPath, "-f", composeFile, "ps", "-q", serviceName],
+    { composeProjectName },
+  );
+  return result.stdout.trim();
+}
+
+async function inspectContainerState(containerId) {
+  const result = await runCommand("docker", ["inspect", "--format", "{{json .State}}", containerId]);
+  return JSON.parse(result.stdout.trim());
+}
+
+async function waitForComposeHealth({ deployEnvPath, composeFile, composeProjectName, requestTimeoutMs }) {
+  const maxAttempts = 20;
+  const intervalMs = 2000;
+  let lastSummary = "container id not available yet";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const containerId = await resolveComposeContainerId({ deployEnvPath, composeFile, composeProjectName });
+      if (!containerId) {
+        lastSummary = "container id not available yet";
+      } else {
+        const state = await inspectContainerState(containerId);
+        const status = state?.Status || "unknown";
+        const health = state?.Health?.Status || "no-healthcheck";
+        const exitCode = state?.ExitCode;
+        lastSummary = `status=${status}, health=${health}, exitCode=${String(exitCode)}`;
+        console.log(`Compose health attempt ${attempt}/${maxAttempts}: ${lastSummary}.`);
+
+        if (status === "running" && health === "healthy") {
+          console.log(`Compose health stabilized after attempt ${attempt}.`);
+          return;
+        }
+      }
+    } catch (error) {
+      lastSummary = error instanceof Error ? error.message : String(error);
+      console.log(`Compose health attempt ${attempt}/${maxAttempts} failed: ${lastSummary}`);
+    }
+
+    await sleep(Math.min(intervalMs, requestTimeoutMs ?? intervalMs));
+  }
+
+  throw new Error(`Timed out waiting for docker compose health to become healthy: ${lastSummary}`);
+}
+
 async function waitForLocalHealth(deployEnv, requestTimeoutMs) {
   const port = deployEnv.FORUM_PORT?.trim() || "3000";
   const healthUrl = `http://127.0.0.1:${port}/api/health`;
@@ -208,6 +297,7 @@ async function waitForLocalHealth(deployEnv, requestTimeoutMs) {
       if (!response.ok) {
         consecutiveReadyResponses = 0;
         lastError = new Error(`Health probe returned ${response.status}: ${body}`);
+        console.log(`Local health attempt ${attempt}/12 failed: ${lastError.message}`);
       } else {
         let payload = null;
         try {
@@ -215,12 +305,14 @@ async function waitForLocalHealth(deployEnv, requestTimeoutMs) {
         } catch (error) {
           consecutiveReadyResponses = 0;
           lastError = new Error(`Health probe returned non-JSON body: ${error}`);
+          console.log(`Local health attempt ${attempt}/12 failed: ${lastError.message}`);
         }
 
         if (payload) {
           if (payload.ready !== true) {
             consecutiveReadyResponses = 0;
             lastError = new Error(`Health probe returned ready=${String(payload.ready)}: ${body}`);
+            console.log(`Local health attempt ${attempt}/12 failed: ${lastError.message}`);
           } else {
             consecutiveReadyResponses += 1;
             console.log(
@@ -237,6 +329,9 @@ async function waitForLocalHealth(deployEnv, requestTimeoutMs) {
     } catch (error) {
       consecutiveReadyResponses = 0;
       lastError = error;
+      console.log(
+        `Local health attempt ${attempt}/12 failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     await sleep(2000);
@@ -292,6 +387,9 @@ async function main() {
 
   console.log("\n== Deploy compose up ==");
   await runDockerComposeUp({ deployEnvPath, composeFile, detach, composeProjectName });
+
+  console.log("\n== Wait for compose health ==");
+  await waitForComposeHealth({ deployEnvPath, composeFile, composeProjectName, requestTimeoutMs });
 
   console.log("\n== Wait for local health probe ==");
   await waitForLocalHealth(deployEnv, requestTimeoutMs);
