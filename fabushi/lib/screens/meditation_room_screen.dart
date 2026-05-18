@@ -844,8 +844,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           final offeringTop = (size.height * 0.58)
               .clamp(0.0, size.height - 300)
               .toDouble();
+          final bookWidth = (size.width * 0.16).clamp(88.0, 112.0).toDouble();
+          final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
           final incenseLeft = (size.width - incenseWidth) / 2;
-          final bookLeft = (size.width - 184) / 2;
+          final bookLeft = (size.width - bookWidth) / 2;
 
           return Stack(
             children: [
@@ -870,10 +872,12 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               ),
               Positioned(
                 left: bookLeft,
-                top: offeringTop - 126,
+                top: offeringTop - 20,
                 child: RepaintBoundary(
                   child: SutraBookButton(
                     title: title,
+                    width: bookWidth,
+                    height: bookHeight,
                     onTap: opensSelection
                         ? _showPracticeSelection
                         : _openSutraReader,
