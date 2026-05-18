@@ -135,12 +135,24 @@ jobs:
 
       - name: Validate bundled live target sample
         run: |
+          rm -f /tmp/forum-live-target-resolved.json /tmp/forum-live-target-ready-summary.md
+
           export FORUM_LIVE_TARGET="$(cat /tmp/forum-live-target.json)"
           export FORUM_LIVE_WRITE_ACCESS_CODE=forum-preview-2026
           export FORUM_LIVE_TARGET_PATH=/tmp/forum-live-target-resolved.json
+          export GITHUB_STEP_SUMMARY=/tmp/forum-live-target-ready-summary.md
 
           node forum/scripts/resolve-live-deployment-target.mjs
           cat /tmp/forum-live-target-resolved.json
+          cat /tmp/forum-live-target-ready-summary.md
+
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-live-target-resolved.json", "utf8")); const expected = JSON.parse(fs.readFileSync("/tmp/forum-live-target.json", "utf8")); if (!(data.skip === false && data.forumUrl === "https://forum-preview.fabushi.test" && data.deploymentStage === "preview" && data.writesEnabled === true && data.requiresAccessCode === true && data.exerciseWriteFlow === true && JSON.stringify(data.bundledTarget) === JSON.stringify(expected) && Array.isArray(data.repositoryConfigTargets) && data.repositoryConfigTargets.includes("FORUM_LIVE_TARGET") && Array.isArray(data.optionalSecretTargets) && data.optionalSecretTargets.includes("FORUM_LIVE_WRITE_ACCESS_CODE"))) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
+          grep --fixed-strings "### Save for hourly checks" /tmp/forum-live-target-ready-summary.md
+          grep --fixed-strings "FORUM_LIVE_TARGET" /tmp/forum-live-target-ready-summary.md
+          grep --fixed-strings '"forumUrl": "https://forum-preview.fabushi.test"' /tmp/forum-live-target-ready-summary.md
+          grep --fixed-strings '"deploymentStage": "preview"' /tmp/forum-live-target-ready-summary.md
+          grep --fixed-strings '"requiresAccessCode": true' /tmp/forum-live-target-ready-summary.md
+          grep --fixed-strings 'Keep the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE` aligned with the preview write gate too.' /tmp/forum-live-target-ready-summary.md
 
       - name: Validate skipped live target guidance
         run: |
