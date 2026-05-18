@@ -50,6 +50,7 @@ const weeklyRoutes = new Set([
 
 const routeLastModified: Partial<Record<(typeof staticRoutes)[number], string>> = {
   "/": "2026-05-18",
+  "/download": "2026-05-18",
   "/faq": "2026-05-17",
   "/privacy": "2026-05-08",
   "/insights": "2026-05-17",
