@@ -5,7 +5,6 @@ import { LocalizedText } from "../components/localized-text";
 import { SiteFooter } from "../components/site-footer";
 import { SiteHeader } from "../components/site-header";
 import { ZenOrbit } from "../components/zen-orbit";
-import { getAllArticles } from "../lib/content";
 import {
   FALLBACK_SCREENSHOTS,
   getOfficialSiteReleaseCollection,
@@ -17,7 +16,6 @@ import {
   getUserFacingStatus,
 } from "../lib/channel-display";
 import { siteHref, siteUrl } from "../lib/site-url";
-import type { InsightArticle } from "../content/articles";
 
 const SCREENSHOT_KEYS = [
   "global-dharma",
@@ -31,389 +29,128 @@ const SCREENSHOT_KEYS = [
 ] as const;
 type ProductScreenshotKey = (typeof SCREENSHOT_KEYS)[number];
 
-interface ProductMoment {
+interface ProductScreenshot {
   titleZh: string;
   titleEn: string;
   descriptionZh: string;
   descriptionEn: string;
   screenshot: ProductScreenshotKey;
   alt: string;
-  href: string;
-  ctaZh: string;
-  ctaEn: string;
-}
-
-interface BulletinItem {
-  href: string;
-  categoryZh: string;
-  categoryEn: string;
-  titleZh: string;
-  titleEn: string;
-  descriptionZh: string;
-  descriptionEn: string;
-}
-
-interface HomepageClusterLink {
-  href: string;
-  labelZh: string;
-  labelEn: string;
-}
-
-interface HomepageCluster {
-  labelZh: string;
-  labelEn: string;
-  titleZh: string;
-  titleEn: string;
-  descriptionZh: string;
-  descriptionEn: string;
-  links: readonly HomepageClusterLink[];
 }
 
 const HERO_MAIN_IMAGE_KEY: ProductScreenshotKey = "global-dharma";
 const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "main-sutra";
 const homeUrl = siteUrl("/");
-const homeTitle = `学佛入门、佛法导读与官网资讯首页 | ${brand.name}`;
+const homeTitle = `全球法布施 App 下载与修行工具首页 | ${brand.name}`;
 const homeDescription =
-  "大乘官网首页聚合学佛从哪里开始、佛法入门、佛学基本概念、佛经导读、念佛入门、听诵和读经怎么配合、修行方法、FAQ 与官网最新内容；App 下载保留为清晰服务入口，不再占据首页主叙事。";
+  "全球法布施是法布施大乘 App 的官网首页，集中展示下载入口、核心界面、禅修听诵与佛经学习功能，以及版本、支持与常见问题。";
 
-const HOMEPAGE_CLUSTER_STYLES = `
-  .homepage-cluster-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 18px;
-  }
-
-  .homepage-cluster-card {
-    display: grid;
-    gap: 16px;
-    padding: 22px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: linear-gradient(180deg, rgba(255, 249, 235, 0.08), rgba(10, 15, 22, 0.96));
-    box-shadow: var(--shadow);
-  }
-
-  .homepage-cluster-kicker {
-    margin: 0;
-    color: var(--gold-soft);
-    font-size: 0.78rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .homepage-cluster-card h3,
-  .homepage-cluster-card p,
-  .homepage-cluster-link {
-    margin: 0;
-  }
-
-  .homepage-cluster-card h3 {
-    color: var(--ink);
-    font-size: 1.16rem;
-    line-height: 1.36;
-  }
-
-  .homepage-cluster-card p {
-    color: var(--muted);
-    line-height: 1.7;
-  }
-
-  .homepage-cluster-links {
-    display: grid;
-    gap: 10px;
-  }
-
-  .homepage-cluster-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 48px;
-    padding: 12px 16px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: rgba(255, 249, 235, 0.05);
-    color: var(--muted-strong);
-    transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
-  }
-
-  .homepage-cluster-link strong {
-    color: var(--ink);
-    font-size: 1rem;
-    line-height: 1.3;
-  }
-
-  .homepage-cluster-link span {
-    color: var(--gold-soft);
-    font-size: 0.82rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .homepage-cluster-link:hover {
-    transform: translateY(-1px);
-    border-color: var(--line-strong);
-    background: rgba(255, 249, 235, 0.08);
-  }
-
-  .homepage-cluster-note {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 10px;
-    padding: 10px 14px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: rgba(255, 249, 235, 0.04);
-    color: var(--muted-strong);
-  }
-`;
-
-const HOMEPAGE_CLUSTERS: readonly HomepageCluster[] = [
+const APP_SCREENSHOTS: ProductScreenshot[] = [
   {
-    labelZh: "学佛起步",
-    labelEn: "Begin Here",
-    titleZh: "先把入口顺序放轻一点，再决定自己现在要往哪一条走。",
-    titleEn: "Lighten the entry order first, then decide which path fits your present need.",
-    descriptionZh: "首页不再把所有内容挤成一串长列表，而是先把第一次来站、需要方向感的人，送进更清楚的起步入口。",
-    descriptionEn: "The homepage no longer compresses every path into one long list. It first helps first-time visitors find the clearest doorway.",
-    links: [
-      { href: "/start-learning-buddhism", labelZh: "学佛从哪里开始", labelEn: "Where to Begin" },
-      { href: "/buddhadharma", labelZh: "佛法入门", labelEn: "Dharma Basics" },
-      { href: "/insights", labelZh: "官网资讯", labelEn: "Site News" },
-    ],
-  },
-  {
-    labelZh: "佛学概念",
-    labelEn: "Concept Cluster",
-    titleZh: "先把常见名相放回同一张地图里，再决定继续读哪一个概念页。",
-    titleEn: "Place the common terms on one map before choosing which concept page comes next.",
-    descriptionZh: "如果读者已经开始被因果、菩提心、六度和空性这些词拦住，首页要先把概念入口直接露出来。",
-    descriptionEn: "When readers are already being stopped by karma, bodhicitta, the six paramitas, or emptiness, the concept doorway should stay visible from the homepage.",
-    links: [
-      { href: "/buddhist-concepts", labelZh: "佛学基本概念", labelEn: "Buddhist Concepts" },
-      { href: "/what-is-karma", labelZh: "因果是什么意思", labelEn: "What Karma Means" },
-      { href: "/what-is-bodhicitta", labelZh: "菩提心是什么意思", labelEn: "What Bodhicitta Means" },
-    ],
-  },
-  {
-    labelZh: "修行实践",
-    labelEn: "Practice Cluster",
-    titleZh: "把禅修、念佛、功课安排这些真正会落回日常的问题收成一组静态卡片。",
-    titleEn: "Gather meditation, recitation, and daily-rhythm questions into one static practice cluster.",
-    descriptionZh: "这里不做翻转，直接把修行方法、念佛入门和日常功课安排并排露出，让首页更像真正的学习总入口。",
-    descriptionEn: "No flip interaction here. Practice methods, nianfo, and daily routine stay directly visible so the homepage acts more like a real learning hub.",
-    links: [
-      { href: "/practice-guide", labelZh: "修行方法总览", labelEn: "Practice Guide" },
-      { href: "/nianfo-guide", labelZh: "念佛入门", labelEn: "Nianfo Guide" },
-      { href: "/daily-practice", labelZh: "日常功课怎么安排", labelEn: "Daily Practice" },
-    ],
-  },
-  {
-    labelZh: "佛经学习",
-    labelEn: "Scripture Cluster",
-    titleZh: "把“先读哪一部”“听诵和阅读怎么配合”这些第二层问题收成同一组入口。",
-    titleEn: "Keep second-layer scripture questions such as where to begin and how listening meets reading inside one cluster.",
-    descriptionZh: "这样首页不只停在“佛经导读”一个总入口，而会把已经存在的推荐页和听诵页一起显性分发出来。",
-    descriptionEn: "This keeps the homepage from stopping at only one sutra hub and surfaces the recommendation and listening pages together.",
-    links: [
-      { href: "/sutra-guide", labelZh: "佛经导读", labelEn: "Sutra Guide" },
-      { href: "/beginner-sutra-recommendations", labelZh: "初学者佛经推荐", labelEn: "Beginner Sutra Picks" },
-      { href: "/sutra-listening", labelZh: "听诵和读经怎么配合", labelEn: "Listening and Reading" },
-    ],
-  },
-] as const;
-
-const PRODUCT_MOMENTS: ProductMoment[] = [
-  {
-    titleZh: "佛学基本概念",
-    titleEn: "Buddhist Concepts",
-    descriptionZh: "把因果、菩提心、六度和空性先放回同一张概念地图里，再决定自己现在该先看哪一张。",
-    descriptionEn: "Place karma, bodhicitta, the six paramitas, and emptiness back on one map before deciding which concept page should come next.",
+    titleZh: "全球法布施总览",
+    titleEn: "Global Dharma Overview",
+    descriptionZh: "把法布施、修行和学习入口收在同一套界面里。",
+    descriptionEn: "Bring giving, practice, and learning into one interface.",
     screenshot: "global-dharma",
-    alt: "Buddhist concepts topic entry",
-    href: "/buddhist-concepts",
-    ctaZh: "进入概念专题",
-    ctaEn: "Open concepts hub",
+    alt: "Fabushi global dharma overview screenshot",
   },
   {
-    titleZh: "修行方法总览",
-    titleEn: "Practice Guide",
-    descriptionZh: "把禅修、念佛、听诵、阅读和记录放回同一张练习地图里，先看自己最需要哪一种起步方式。",
-    descriptionEn: "Return meditation, nianfo, listening, reading, and note-taking to one practice map, then choose the entry that fits best.",
+    titleZh: "开始禅修",
+    titleEn: "Start Meditation",
+    descriptionZh: "更轻地进入一次练习，不需要先做复杂设置。",
+    descriptionEn: "Enter a session lightly without a complex setup first.",
     screenshot: "start-meditation",
-    alt: "Practice guide topic entry",
-    href: "/practice-guide",
-    ctaZh: "进入修行方法",
-    ctaEn: "Open practice guide",
+    alt: "Fabushi start meditation screenshot",
   },
   {
-    titleZh: "念佛入门",
-    titleEn: "Nianfo Guide",
-    descriptionZh: "把一句佛号、白天的回返点和轻量功课慢慢接起来，让练习更容易真正留在生活里。",
-    descriptionEn: "Let one recited phrase, one daytime return point, and a lighter routine begin to stay inside ordinary life.",
-    screenshot: "group-practice",
-    alt: "Nianfo guide topic entry",
-    href: "/nianfo-guide",
-    ctaZh: "进入念佛入门",
-    ctaEn: "Open nianfo guide",
+    titleZh: "沉浸式练习",
+    titleEn: "Immersive Practice",
+    descriptionZh: "让一次安静练习更容易稳定留下来。",
+    descriptionEn: "Make a quiet session easier to sustain.",
+    screenshot: "immersive-meditation",
+    alt: "Fabushi immersive meditation screenshot",
   },
   {
-    titleZh: "听诵和读经怎么配合",
-    titleEn: "Listening and Reading",
-    descriptionZh: "把通勤里的听诵、安静时的阅读和一句短记录接回同一条线上，不让经典只停在背景声音里。",
-    descriptionEn: "Reconnect commute listening, quiet reading, and one short note so scripture does not remain only in the background.",
+    titleZh: "主修功课",
+    titleEn: "Main Practice",
+    descriptionZh: "把当前最重要的功课固定在自己眼前。",
+    descriptionEn: "Keep the main practice path visible every day.",
     screenshot: "main-sutra",
-    alt: "Listening and reading topic entry",
-    href: "/sutra-listening",
-    ctaZh: "进入听诵导读",
-    ctaEn: "Open listening guide",
+    alt: "Fabushi main practice screenshot",
+  },
+  {
+    titleZh: "共修小组",
+    titleEn: "Group Practice",
+    descriptionZh: "把申请、加入和共修关系放回一条清楚的路径里。",
+    descriptionEn: "Keep applying, joining, and practicing together on one clear path.",
+    screenshot: "group-practice",
+    alt: "Fabushi group practice screenshot",
+  },
+  {
+    titleZh: "全球修行排行",
+    titleEn: "Global Rankings",
+    descriptionZh: "更直观看见修行进度与同行者节奏。",
+    descriptionEn: "See progress and community rhythm more clearly.",
+    screenshot: "global-ranking",
+    alt: "Fabushi global rankings screenshot",
+  },
+  {
+    titleZh: "全球法布施入口",
+    titleEn: "Giving Entry",
+    descriptionZh: "把善意送往世界各地，而不是只停在本地。",
+    descriptionEn: "Let giving travel farther than one local circle.",
+    screenshot: "global-donation",
+    alt: "Fabushi global donation screenshot",
+  },
+  {
+    titleZh: "法布施榜单",
+    titleEn: "Giving Leaderboard",
+    descriptionZh: "看见法布施参与的持续性与回响。",
+    descriptionEn: "See the continuity and response around giving.",
+    screenshot: "global-donation-leaderboard",
+    alt: "Fabushi donation leaderboard screenshot",
   },
 ] as const;
 
-const FAQ_PREVIEW = [
+const PRODUCT_BENEFITS = [
   {
-    questionZh: "学佛从哪里开始，才不会一开始就太重？",
-    questionEn: "How can I begin buddhadharma without making it too heavy immediately?",
-    answerZh: "更稳的起点通常不是一下子学很多，而是先看清自己当下最需要的入口。可以先从“学佛从哪里开始”理清方向，再决定先走佛法入门、修行方法，还是佛经导读。",
-    answerEn: "A steadier beginning is usually not to learn everything at once, but to clarify the doorway that matches your present question. Start with where to begin, then decide whether dharma basics, practice methods, or sutra study should come first.",
+    titleZh: "把修行入口留在手机里",
+    titleEn: "Keep practice close at hand",
+    descriptionZh: "禅修、听诵、佛经与日常节奏可以在同一个 App 里接起来，不需要来回切换很多工具。",
+    descriptionEn: "Meditation, listening, sutras, and daily rhythm stay in one app instead of across many tools.",
   },
   {
-    questionZh: "先读经、先禅修，还是先把日常功课排出来？",
-    questionEn: "Should I begin with sutras, meditation, or a daily routine?",
-    answerZh: "更重要的是看你当下最需要什么。如果需要方向感，可以先看佛法入门；如果常常卡在因果、菩提心、六度、空性这些词，就先看佛学基本概念入门；如果需要把练习留在生活里，再继续看修行方法总览和日常功课安排。",
-    answerEn: "The better question is what you need most right now. If you need orientation, begin with dharma basics. If core terms such as karma, bodhicitta, the six paramitas, or emptiness keep stopping you, begin with the concepts hub. If you need practice to stay inside daily life, continue into the practice guide and daily routine page.",
+    titleZh: "先看懂核心界面，再决定要不要下载",
+    titleEn: "See the product before you install",
+    descriptionZh: "首页直接把关键界面完整摆出来，让人先看清真实体验，而不是只看口号。",
+    descriptionEn: "The homepage shows the key screens up front so people can inspect the actual experience first.",
   },
   {
-    questionZh: "佛学基本概念应该先看哪几个？",
-    questionEn: "Which buddhist concepts should a beginner clarify first?",
-    answerZh: "对很多初学者来说，先把因果、菩提心、六度和空性放进同一张地图里，往往比零散地碰到一个算一个更稳。先看概念总览页，再决定自己现在更该先读哪一张概念页，会更容易继续往下走。",
-    answerEn: "For many beginners, it is steadier to place karma, bodhicitta, the six paramitas, and emptiness onto one map before treating them as isolated terms. Start with the concepts hub, then decide which concept page matches the question you are living with now.",
-  },
-  {
-    questionZh: "初学者先读什么佛经会更合适？",
-    questionEn: "Which sutra is a better first choice for beginners?",
-    answerZh: "可以先按自己现在最想弄明白的问题来选，而不是只按名气来选。想先熟悉佛法常见词汇，可以从《心经》或导读开始；想从愿心、念佛或安住感进入，也可以先看《阿弥陀经》或《普门品》的相关说明。",
-    answerEn: "It usually helps to choose by the question you are actually living with instead of fame alone. The Heart Sutra can be a good start for familiar language, while the Amitabha Sutra or Universal Gate Chapter may fit better if aspiration, recitation, or steadiness feel closer.",
-  },
-  {
-    questionZh: "念佛入门是不是要一开始就念很多遍？",
-    questionEn: "Does beginner recitation need a large count right away?",
-    answerZh: "通常不需要。对多数初学者来说，更稳的起点往往是先让一句佛号和一个固定时段留下来，再慢慢把白天的短回返点接进去。入口够轻，念佛才更容易真的回到生活里，而不是只剩下任务感。",
-    answerEn: "Usually not. For most beginners, the steadier start is to let one phrase and one stable time of day stay first, then gradually add one short daytime return. When the doorway stays light, recitation is more likely to enter life instead of becoming only a task.",
-  },
-  {
-    questionZh: "已经在通勤里听经了，下一步怎样不只停在背景声音里？",
-    questionEn: "If I already listen during commutes, how do I keep it from staying only in the background?",
-    answerZh: "更稳的下一步通常不是继续换更多音频，而是隔一两天回到同一段内容，再读一小段原文或导读，最后留一句记录。这样听诵、阅读和日常节奏才会真正接成同一条线。",
-    answerEn: "A steadier next step is usually not switching to more audio, but returning to the same passage after a day or two, reading a short section of the text or guide, and leaving one short note. That is how listening, reading, and daily rhythm begin forming one line together.",
+    titleZh: "下载、支持与版本信息放在同一条线里",
+    titleEn: "Download, support, and release info stay together",
+    descriptionZh: "正式版、测试版、下载说明和支持方式都留在官网，不让安装过程变成找入口。",
+    descriptionEn: "Stable, beta, download notes, and support all stay on the site so installation does not turn into a hunt.",
   },
 ] as const;
 
-const HERO_GUIDE_LINKS = [
+const HOME_FAQS = [
   {
-    href: "/insights",
-    zh: "官网资讯",
-    en: "Site News",
+    questionZh: "首页现在最适合先做什么？",
+    questionEn: "What is the homepage best for now?",
+    answerZh: "首页现在主要承担四件事：说明 App 是什么、促成下载、完整展示核心界面，以及给出最基础的支持与信任信息。内容类入口已经收回到顶部导航和底部导航。",
+    answerEn: "The homepage now focuses on four jobs: explain the app, support download, show the core screens, and provide basic support and trust signals. Content entry points have been pushed back into the header and footer.",
   },
   {
-    href: "/start-learning-buddhism",
-    zh: "学佛从哪里开始",
-    en: "Where to Begin",
+    questionZh: "我应该从首页直接下载，还是先去下载页？",
+    questionEn: "Should I download from the homepage or open the download page first?",
+    answerZh: "如果你已经知道自己要安装，可以直接从首页进入下载；如果你还想看版本、镜像和更新说明，再继续进入独立下载页会更稳。",
+    answerEn: "If you already know you want to install, the homepage is enough to start. If you want version notes, mirrors, and release details first, the dedicated download page is the steadier next step.",
   },
   {
-    href: "/buddhist-concepts",
-    zh: "佛学基本概念",
-    en: "Buddhist Concepts",
-  },
-  {
-    href: "/sutra-guide",
-    zh: "佛经导读",
-    en: "Sutra Guide",
-  },
-] as const;
-
-const DHARMA_PATHS = [
-  {
-    href: "/start-learning-buddhism",
-    labelZh: "学佛从哪里开始",
-    labelEn: "Where to Begin",
-    titleZh: "先把学佛的第一步放轻一点、放清楚一点。",
-    titleEn: "Make the first step into buddhadharma lighter and clearer.",
-    descriptionZh: "如果你最关心的是先读经、先禅修，还是先建立日常节奏，这一页会更直接地回答。",
-    descriptionEn: "If your main question is whether to begin with sutras, meditation, or a daily rhythm, this page answers it more directly.",
-  },
-  {
-    href: "/buddhadharma",
-    labelZh: "佛法入门",
-    labelEn: "Dharma Basics",
-    titleZh: "先看清佛法、修行与日常实践之间的关系。",
-    titleEn: "See how buddhadharma, practice, and daily life fit together.",
-    descriptionZh: "如果你想先理清佛法是什么、佛教与修行有什么关系，这里是更完整的入门地图。",
-    descriptionEn: "If you first need to clarify what buddhadharma is and how Buddhism relates to practice, this is the broader beginner map.",
-  },
-  {
-    href: "/buddhist-concepts",
-    labelZh: "佛学基本概念入门",
-    labelEn: "Buddhist Concepts",
-    titleZh: "先把因果、菩提心、六度和空性放回同一张概念地图里。",
-    titleEn: "Place karma, bodhicitta, the six paramitas, and emptiness back on one concept map.",
-    descriptionZh: "如果你已经发现自己总被这些名相反复挡住，却还看不清它们彼此是什么关系，这一页会更适合继续往下看。",
-    descriptionEn: "This page is the better next step if these terms keep stopping you and you still need a clearer sense of how they relate to one another.",
-  },
-  {
-    href: "/practice-guide",
-    labelZh: "修行方法总览",
-    labelEn: "Practice Guide",
-    titleZh: "把禅修、听诵、念佛、阅读和记录放回同一张地图里。",
-    titleEn: "Place meditation, listening, recitation, reading, and notes back onto one map.",
-    descriptionZh: "如果你已经知道要开始练习，但还不清楚这些方法该怎么配合，这一页更适合先打开。",
-    descriptionEn: "Open this first if you know you want to practice but still need a clearer map for how the methods support each other.",
-  },
-  {
-    href: "/nianfo-guide",
-    labelZh: "念佛入门",
-    labelEn: "Nianfo Guide",
-    titleZh: "先让一句佛号和白天的回返点慢慢留下来。",
-    titleEn: "Let one recited phrase and one daytime return point begin to stay.",
-    descriptionZh: "如果你更需要一条比长时间坐下来更轻、更容易接进通勤与日常空档的练习入口，这一页会更合适。",
-    descriptionEn: "This page is a better fit if you need a lighter practice entry that can return during commuting and ordinary pauses.",
-  },
-  {
-    href: "/daily-practice",
-    labelZh: "日常功课怎么安排",
-    labelEn: "Daily Practice",
-    titleZh: "把晨起、白天和晚间的轻量功课慢慢接起来。",
-    titleEn: "Connect a lighter morning, daytime, and evening rhythm that can stay alive.",
-    descriptionZh: "如果你最关心第一周功课怎么排、白天怎么接进生活，这一页会更具体。",
-    descriptionEn: "If your main question is how to arrange the first week and carry practice through the day, this page is more specific.",
-  },
-  {
-    href: "/sutra-guide",
-    labelZh: "佛经导读",
-    labelEn: "Sutra Guide",
-    titleZh: "先把常见经典入口、阅读问题和下一步路径放清楚。",
-    titleEn: "Clarify the common scripture doorways, reading questions, and next-step paths first.",
-    descriptionZh: "如果你已经知道想从经典进入，但还需要一张更完整的佛经入门地图，这一页更适合先打开。",
-    descriptionEn: "This page is the better first stop if scripture already feels like your doorway and you need a fuller beginner map.",
-  },
-  {
-    href: "/sutra-listening",
-    labelZh: "听诵和读经怎么配合",
-    labelEn: "Listening and Reading",
-    titleZh: "把通勤里的听诵、安静时的阅读和一句记录接回同一条线。",
-    titleEn: "Reconnect listening on the move, reading in quiet moments, and one short note inside the same line.",
-    descriptionZh: "如果你已经开始听经，却还不知道怎样把熟悉感接回文字、义理和稳定节奏，这一页会更适合继续往下看。",
-    descriptionEn: "This page is a better next step if you have begun listening but still need to return that familiarity to text, meaning, and stable rhythm.",
-  },
-  {
-    href: "/beginner-sutra-recommendations",
-    labelZh: "初学者佛经推荐",
-    labelEn: "Beginner Sutra Picks",
-    titleZh: "把“先读什么佛经”这个问题单独说明白。",
-    titleEn: "Answer the question of which sutra to begin with more directly.",
-    descriptionZh: "如果你已经确定想从经典进入，但卡在《心经》《阿弥陀经》《普门品》或《金刚经》之间，这一页更适合继续往下走。",
-    descriptionEn: "If scripture already feels like the doorway but you are choosing between the Heart Sutra, Amitabha Sutra, Universal Gate Chapter, or Diamond Sutra, this page goes further.",
+    questionZh: "官网为什么不再把首页做成资讯或内容门户？",
+    questionEn: "Why is the homepage no longer treated like a news or content portal?",
+    answerZh: "因为首页权重最高，也最直接影响下载转化。把资讯、专题和学习内容入口收进顶部与底部导航后，首页主体可以更专注地把产品说清楚、把下载链路做顺。",
+    answerEn: "Because the homepage carries the strongest authority and the clearest download intent. Once news, topic, and learning entry points move back into the header and footer, the homepage body can focus on product clarity and conversion.",
   },
 ] as const;
 
@@ -432,24 +169,6 @@ function formatPublishedAt(value?: string) {
   }
 
   return date.toISOString().slice(0, 10);
-}
-
-function HomeArticleMeta({ article }: { article: InsightArticle }) {
-  const label = article.updatedAt
-    ? {
-        zh: `更新 ${article.updatedAt}`,
-        en: `Updated ${article.updatedAt}`,
-      }
-    : {
-        zh: `发布 ${article.publishedAt}`,
-        en: `Published ${article.publishedAt}`,
-      };
-
-  return (
-    <small>
-      <LocalizedText zh={label.zh} en={label.en} /> · {article.author} · {article.readTime}
-    </small>
-  );
 }
 
 function getChannelActionCopy(channel: OfficialSiteChannel) {
@@ -473,19 +192,14 @@ export const metadata: Metadata = {
     canonical: homeUrl,
   },
   keywords: [
-    "学佛从哪里开始",
-    "佛法入门",
-    "佛学基本概念",
-    "佛经导读",
-    "修行方法",
-    "念佛入门",
-    "经文听诵",
-    "听诵和读经怎么配合",
-    "官网资讯",
-    "佛教 FAQ",
-    "初学者佛经推荐",
-    "Fabushi",
-    "法布施",
+    "全球法布施",
+    "法布施大乘",
+    "Fabushi app",
+    "佛教 app 下载",
+    "禅修 app",
+    "佛经听诵 app",
+    "学佛 app",
+    "佛法修行工具",
   ],
   openGraph: {
     title: homeTitle,
@@ -508,77 +222,45 @@ export default async function HomePage() {
     ...FALLBACK_SCREENSHOTS,
     ...releaseCollection.screenshots,
   };
-  const allArticles = getAllArticles();
-  const featuredArticle = allArticles[0] ?? null;
-  const spotlightArticles = allArticles.slice(1, 4);
   const channels = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels].slice(0, 2);
   const supportEmail =
     contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
   const latestRelease = releaseCollection.releases[0] ?? null;
-
-  const bulletinItems: BulletinItem[] = [
-    ...(latestRelease
-      ? [
-          {
-            href: "/download#release-changelog",
-            categoryZh: "重要公告",
-            categoryEn: "Notice",
-            titleZh: latestRelease.title,
-            titleEn: latestRelease.title,
-            descriptionZh:
-              latestRelease.summary[0] ?? "查看最近版本、发布时间和下载说明。",
-            descriptionEn:
-              latestRelease.summary[0] ?? "Check the latest release, publish date, and download notes.",
-          },
-        ]
-      : []),
-    ...allArticles.slice(0, 2).map((article) => ({
-      href: `/insights/${article.slug}`,
-      categoryZh: "官网资讯",
-      categoryEn: "Site News",
-      titleZh: article.title,
-      titleEn: article.title,
-      descriptionZh: article.description,
-      descriptionEn: article.description,
-    })),
-  ];
 
   const structuredData = {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "WebPage",
-        name: "大乘官网首页",
-        url: siteUrl("/"),
+        name: "全球法布施首页",
+        url: homeUrl,
         description: homeDescription,
         inLanguage: "zh-CN",
         isPartOf: {
           "@type": "WebSite",
           name: `${brand.name} Fabushi`,
-          url: siteUrl("/"),
+          url: homeUrl,
         },
       },
       {
         "@type": "Organization",
         name: `${brand.name} Fabushi`,
-        url: siteUrl("/"),
+        url: homeUrl,
         email: supportEmail,
         description: "Fabushi offers meditation, sutra listening, and global giving.",
       },
       {
-        "@type": "ItemList",
-        name: "Fabushi 佛法学习路径",
-        itemListElement: DHARMA_PATHS.map((item, index) => ({
-          "@type": "ListItem",
-          position: index + 1,
-          name: item.labelZh,
-          url: siteUrl(item.href),
-          description: item.descriptionZh,
-        })),
+        "@type": "SoftwareApplication",
+        name: `${brand.name} Fabushi`,
+        applicationCategory: "LifestyleApplication",
+        operatingSystem: "iOS, Android",
+        downloadUrl: siteUrl("/download"),
+        description: homeDescription,
+        screenshot: APP_SCREENSHOTS.map((item) => siteUrl(resolveScreenshot(screenshots, item.screenshot))),
       },
       {
         "@type": "FAQPage",
-        mainEntity: FAQ_PREVIEW.map((item) => ({
+        mainEntity: HOME_FAQS.map((item) => ({
           "@type": "Question",
           name: item.questionZh,
           acceptedAnswer: {
@@ -605,40 +287,25 @@ export default async function HomePage() {
             <div className="brand-kicker">
               <img src={siteHref("/product/app-icon.png")} alt="" />
               <span>
-                <LocalizedText zh="大乘官网首页" en="Fabushi Home" />
+                <LocalizedText zh="法布施大乘 App" en="Fabushi App" />
               </span>
             </div>
             <h1 id="home-title">
-              <LocalizedText zh="学佛入门、佛法导读与官网资讯入口" en="Dharma Guides, Learning Paths, and Site News" />
+              <LocalizedText zh="全球法布施" en="Global Dharma Sharing" />
             </h1>
             <p className="hero-subtitle">
               <LocalizedText
-                zh="首页先承担资讯导览、学习路径与官网总入口职责；App 下载仍然保留，但回到清晰的服务入口位置，不再压过内容主叙事。"
-                en="The homepage now leads with guidance, learning paths, and official site news, while app download remains a clear service entry instead of dominating the main story."
+                zh="把禅修、听诵、佛经学习与全球法布施放进同一个 App，先看清界面，再决定下载。"
+                en="Bring meditation, listening, sutra study, and global giving into one app, then decide to download after seeing the interface clearly."
               />
             </p>
             <div className="hero-actions">
-              <a className="primary-action" href={siteHref("/start-learning-buddhism")}>
-                <LocalizedText zh="先看学佛从哪里开始" en="Start with Where to Begin" />
-              </a>
-              <a className="secondary-action" href={siteHref("/insights")}>
-                <LocalizedText zh="查看官网资讯" en="View Site News" />
-              </a>
-              <a className="secondary-action" href={siteHref("/download")}>
+              <a className="primary-action" href={siteHref("/download")}>
                 <LocalizedText zh="下载 App" en="Download App" />
               </a>
-            </div>
-            <div className="release-section-stack" aria-label="Homepage shortcuts / 首页入口">
-              <p className="eyebrow">
-                <LocalizedText zh="先从这些入口开始" en="Start here" />
-              </p>
-              <div className="site-nav-links">
-                {HERO_GUIDE_LINKS.map((item) => (
-                  <a key={item.href} href={siteHref(item.href)}>
-                    <LocalizedText zh={item.zh} en={item.en} />
-                  </a>
-                ))}
-              </div>
+              <a className="secondary-action" href={siteHref("/download#release-changelog")}>
+                <LocalizedText zh="查看版本说明" en="View release notes" />
+              </a>
             </div>
             <div className="release-pill-grid" aria-label="Quick service entry / 服务入口">
               {channels.length > 0 ? (
@@ -670,7 +337,7 @@ export default async function HomePage() {
                   );
                 })
               ) : (
-                <a className="release-pill" href={siteHref("/download") }>
+                <a className="release-pill" href={siteHref("/download")}>
                   <span>
                     <LocalizedText zh="App 下载" en="App Download" />
                   </span>
@@ -702,134 +369,21 @@ export default async function HomePage() {
         </div>
       </header>
 
-      <section className="band compact-band" id="bulletins">
+      <section className="band alt product-band" id="app-screenshots">
         <div className="section-heading tight">
           <p>
-            <LocalizedText zh="焦点快讯" en="Bulletins" />
-          </p>
-          <h2>
-            <LocalizedText zh="先把最近最值得知道的入口放在首屏之后。" en="Put the most important recent entry points right after the hero." />
-          </h2>
-        </div>
-        <div className="editorial-list">
-          {bulletinItems.map((item) => (
-            <a key={item.href} className="editorial-row" href={siteHref(item.href)}>
-              <span>
-                <LocalizedText zh={item.categoryZh} en={item.categoryEn} />
-              </span>
-              <div>
-                <strong>
-                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
-                </strong>
-                <p>
-                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
-                </p>
-              </div>
-            </a>
-          ))}
-        </div>
-      </section>
-
-      <section className="band alt" id="latest-news">
-        <div className="section-heading tight">
-          <p>
-            <LocalizedText zh="最新资讯" en="Latest News" />
-          </p>
-          <h2>
-            <LocalizedText zh="首页先承担官网资讯首页职责，再把人带去专题页和下载页。" en="The homepage first acts as a news hub, then guides people into topic pages and services." />
-          </h2>
-        </div>
-        {featuredArticle ? (
-          <div className="editorial-list">
-            <a className="editorial-row" href={siteHref(`/insights/${featuredArticle.slug}`)}>
-              <span>{featuredArticle.category}</span>
-              <div>
-                <strong>{featuredArticle.title}</strong>
-                <p>{featuredArticle.description}</p>
-                <HomeArticleMeta article={featuredArticle} />
-              </div>
-            </a>
-            {spotlightArticles.map((item) => (
-              <a key={item.slug} className="editorial-row" href={siteHref(`/insights/${item.slug}`)}>
-                <span>{item.category}</span>
-                <div>
-                  <strong>{item.title}</strong>
-                  <p>{item.description}</p>
-                  <HomeArticleMeta article={item} />
-                </div>
-              </a>
-            ))}
-          </div>
-        ) : null}
-        <div className="inline-cta">
-          <a className="primary-action" href={siteHref("/insights") }>
-            <LocalizedText zh="进入官网资讯" en="Open Site News" />
-          </a>
-        </div>
-      </section>
-
-      <section className="band" id="dharma-paths">
-        <style dangerouslySetInnerHTML={{ __html: HOMEPAGE_CLUSTER_STYLES }} />
-        <div className="section-heading tight">
-          <p>
-            <LocalizedText zh="宗派与修行导览" en="Learning Paths" />
+            <LocalizedText zh="App 截图" en="App Screens" />
           </p>
           <h2>
             <LocalizedText
-              zh="按起步、概念、修行、佛经四组静态专题卡片来组织首页主体分发层。"
-              en="Organize the homepage body around four static clusters: beginnings, concepts, practice, and scripture."
+              zh="先把关键界面尽量完整地摆出来，让首页直接承担理解与转化。"
+              en="Show the key screens as fully as possible so the homepage carries both understanding and conversion."
             />
-          </h2>
-          <p className="homepage-cluster-note">
-            <LocalizedText
-              zh="这里取消任何翻转设想，保留可抓取、可扫描、移动端更稳的静态卡片与直接入口。"
-              en="No flip treatment here. Keep static cards and direct links so the section stays crawlable, scannable, and steadier on mobile."
-            />
-          </p>
-        </div>
-        <div className="homepage-cluster-grid">
-          {HOMEPAGE_CLUSTERS.map((cluster) => (
-            <article key={cluster.labelEn} className="homepage-cluster-card">
-              <div>
-                <p className="homepage-cluster-kicker">
-                  <LocalizedText zh={cluster.labelZh} en={cluster.labelEn} />
-                </p>
-                <h3>
-                  <LocalizedText zh={cluster.titleZh} en={cluster.titleEn} />
-                </h3>
-              </div>
-              <p>
-                <LocalizedText zh={cluster.descriptionZh} en={cluster.descriptionEn} />
-              </p>
-              <div className="homepage-cluster-links">
-                {cluster.links.map((link) => (
-                  <a key={link.href} className="homepage-cluster-link" href={siteHref(link.href)}>
-                    <strong>
-                      <LocalizedText zh={link.labelZh} en={link.labelEn} />
-                    </strong>
-                    <span>
-                      <LocalizedText zh="进入" en="Open" />
-                    </span>
-                  </a>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="band alt product-band" id="featured-guides">
-        <div className="section-heading tight">
-          <p>
-            <LocalizedText zh="专题导流" en="Featured Guides" />
-          </p>
-          <h2>
-            <LocalizedText zh="保留克制的静态图片卡片，但只让它们承担专题入口，不再承担产品展示叙事。" en="Keep restrained static image cards, but use them as topic gateways instead of product-showcase storytelling." />
           </h2>
         </div>
         <div className="moment-grid showcase-grid">
-          {PRODUCT_MOMENTS.map((item) => (
-            <a key={item.href} className="moment-card guide-card" href={siteHref(item.href)}>
+          {APP_SCREENSHOTS.map((item) => (
+            <article key={item.titleEn} className="moment-card guide-card">
               <div className="moment-image">
                 <img
                   src={siteHref(resolveScreenshot(screenshots, item.screenshot))}
@@ -843,53 +397,52 @@ export default async function HomePage() {
               <p>
                 <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
               </p>
-              <span className="eyebrow">
-                <LocalizedText zh={item.ctaZh} en={item.ctaEn} />
-              </span>
-            </a>
+            </article>
           ))}
         </div>
       </section>
 
-      <section className="band faq-band" id="faq">
+      <section className="band" id="product-value">
         <div className="section-heading tight">
-          <p>FAQ</p>
+          <p>
+            <LocalizedText zh="产品说明" en="Product Value" />
+          </p>
           <h2>
             <LocalizedText
-              zh="把高频问题做成 SEO 安全的 FAQ 卡片集群，不使用翻转。"
-              en="Keep common questions in an SEO-safe FAQ cluster without flip interactions."
+              zh="首页只把最该知道的三件事讲清楚。"
+              en="Keep the homepage focused on the three things people most need to understand."
             />
           </h2>
         </div>
-        <div className="faq-list">
-          {FAQ_PREVIEW.map((item) => (
-            <details key={item.questionEn} className="faq-item">
-              <summary>
-                <LocalizedText zh={item.questionZh} en={item.questionEn} />
-              </summary>
-              <p>
-                <LocalizedText zh={item.answerZh} en={item.answerEn} />
-              </p>
-            </details>
+        <div className="editorial-list">
+          {PRODUCT_BENEFITS.map((item) => (
+            <article key={item.titleEn} className="editorial-row">
+              <span>
+                <LocalizedText zh="核心价值" en="Core Value" />
+              </span>
+              <div>
+                <strong>
+                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
+                </strong>
+                <p>
+                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+                </p>
+              </div>
+            </article>
           ))}
-        </div>
-        <div className="inline-cta">
-          <a className="secondary-action" href={siteHref("/faq") }>
-            <LocalizedText zh="查看全部常见问题" en="View all FAQs" />
-          </a>
-          <a className="secondary-action" href={`mailto:${supportEmail}`}>
-            <LocalizedText zh="联系支持" en="Contact support" />
-          </a>
         </div>
       </section>
 
-      <section className="band" id="services">
+      <section className="band alt" id="service-entry">
         <div className="section-heading tight">
           <p>
-            <LocalizedText zh="服务入口" en="Service Entry" />
+            <LocalizedText zh="下载与支持" en="Download and Support" />
           </p>
           <h2>
-            <LocalizedText zh="把 App 下载放回服务区，而不是首页主叙事中间。" en="Keep app download in the service zone instead of the middle of the homepage narrative." />
+            <LocalizedText
+              zh="把下载、版本、支持和最基础的信任信息放回同一个服务区。"
+              en="Keep download, release details, support, and the basic trust signals inside one service zone."
+            />
           </h2>
         </div>
         <div className="platform-strip">
@@ -927,7 +480,7 @@ export default async function HomePage() {
               </DownloadLink>
             );
           })}
-          <a className="platform-row accent-row" href={siteHref("/download") }>
+          <a className="platform-row accent-row" href={siteHref("/download")}>
             <div>
               <span className="platform-name">
                 <LocalizedText zh="全部下载入口" en="All Downloads" />
@@ -944,6 +497,52 @@ export default async function HomePage() {
                 <LocalizedText zh="进入" en="Open" />
               </span>
             </div>
+          </a>
+        </div>
+        <div className="note-grid">
+          <p>
+            <LocalizedText
+              zh={latestRelease ? `最近版本：${latestRelease.title}` : "最近版本与下载说明会同步更新到官网下载页。"}
+              en={latestRelease ? `Latest release: ${latestRelease.title}` : "Latest release notes stay synced on the official download page."}
+            />
+          </p>
+          <p>
+            <LocalizedText zh={`下载或安装遇到问题，可联系 ${supportEmail}。`} en={`If download or install fails, contact ${supportEmail}.`} />
+          </p>
+          <p>
+            <LocalizedText zh="隐私说明、FAQ 和官网资讯保留在导航中，不再挤进首页主体里。" en="Privacy, FAQ, and site news stay in navigation instead of crowding the homepage body." />
+          </p>
+        </div>
+      </section>
+
+      <section className="band faq-band" id="faq">
+        <div className="section-heading tight">
+          <p>FAQ</p>
+          <h2>
+            <LocalizedText
+              zh="只保留最直接影响下载理解的几个问题。"
+              en="Keep only the questions that most directly support understanding and download intent."
+            />
+          </h2>
+        </div>
+        <div className="faq-list">
+          {HOME_FAQS.map((item) => (
+            <details key={item.questionEn} className="faq-item">
+              <summary>
+                <LocalizedText zh={item.questionZh} en={item.questionEn} />
+              </summary>
+              <p>
+                <LocalizedText zh={item.answerZh} en={item.answerEn} />
+              </p>
+            </details>
+          ))}
+        </div>
+        <div className="inline-cta">
+          <a className="secondary-action" href={siteHref("/faq")}>
+            <LocalizedText zh="查看全部常见问题" en="View all FAQs" />
+          </a>
+          <a className="secondary-action" href={`mailto:${supportEmail}`}>
+            <LocalizedText zh="联系支持" en="Contact support" />
           </a>
         </div>
       </section>
