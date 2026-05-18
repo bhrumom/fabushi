@@ -53,7 +53,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   bool _renderFailed = false;
   double _loadingProgress = 0.0;
   double _rotationY = 0.0;
-  double _currentIncenseProgress = 0.0;
   final double _cameraDistance = 250.0;
 
   bool _isUserDragging = false;
@@ -75,7 +74,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   void initState() {
     super.initState();
     _isAutoRotating = widget.autoRotate;
-    _currentIncenseProgress = widget.incenseProgress;
     _ticker = createTicker(_onTick);
     if (widget.isVisible) {
       _ticker.start();
@@ -109,7 +107,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     setState(() {
       _androidThreeError = null;
       _resetForFreshLoad(
-        loadingLabel: '正在切换备用佛像渲染...',
+        loadingLabel: '正在安奉佛像...',
         activePath: _BuddhaRendererPath.androidThreeFallback,
       );
     });
@@ -125,10 +123,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         activePath: _BuddhaRendererPath.flutterScenePrimary,
       );
     });
-    await _loadFlutterSceneModel(
-      asFallback: false,
-      reasonLabel: 'flutter_scene 渲染准备中...',
-    );
+    await _loadFlutterSceneModel(asFallback: false, reasonLabel: '正在安奉佛像...');
   }
 
   Future<void> _loadFlutterSceneModel({
@@ -150,9 +145,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       try {
         if (mounted) {
           setState(() {
-            _loadingLabel = attempt == 1
-                ? reasonLabel
-                : '$reasonLabel（重试 $attempt/$maxRetries）';
+            _loadingLabel = reasonLabel;
           });
         }
 
@@ -180,7 +173,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
           _flutterSceneError = null;
           _loadingProgress = 1.0;
           if (asFallback) {
-            _loadingLabel = '已切换 flutter_scene 备用展示';
+            _loadingLabel = '佛像已安奉';
           }
         });
         return;
@@ -224,11 +217,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         irradianceImage: goldEnvImage,
       );
       scene.environment.environmentMap = envMap;
-      scene.environment.intensity = 2.0;
-      scene.environment.exposure = 1.12;
+      scene.environment.intensity = 2.85;
+      scene.environment.exposure = 1.32;
     } catch (_) {
-      scene.environment.intensity = 1.75;
-      scene.environment.exposure = 1.05;
+      scene.environment.intensity = 2.35;
+      scene.environment.exposure = 1.22;
     }
   }
 
@@ -257,10 +250,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       for (final MeshPrimitive primitive in mesh.primitives) {
         final material = primitive.material;
         if (material is PhysicallyBasedMaterial) {
-          material.baseColorFactor = vector.Vector4(1.0, 0.86, 0.08, 1.0);
-          material.metallicFactor = 0.68;
-          material.roughnessFactor = 0.18;
-          material.emissiveFactor = vector.Vector4(0.10, 0.07, 0.012, 1.0);
+          material.baseColorFactor = vector.Vector4(1.0, 0.92, 0.22, 1.0);
+          material.metallicFactor = 0.6;
+          material.roughnessFactor = 0.16;
+          material.emissiveFactor = vector.Vector4(0.18, 0.12, 0.03, 1.0);
           material.vertexColorWeight = 0.0;
         }
       }
@@ -430,9 +423,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     if (oldWidget.isVisible != widget.isVisible) {
       _updateVisibilityState(widget.isVisible);
     }
-    if (oldWidget.incenseProgress != widget.incenseProgress) {
-      _currentIncenseProgress = widget.incenseProgress;
-    }
   }
 
   void _updateVisibilityState(bool isVisible) {
@@ -446,25 +436,13 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     }
   }
 
-  void updateIncenseProgress(double progress) {
-    _currentIncenseProgress = progress;
-    if (mounted) {
-      setState(() {});
-    }
-  }
+  void updateIncenseProgress(double _) {}
 
   void setAutoRotate(bool enabled) {
     _isAutoRotating = enabled;
     if (!enabled) {
       _isReturningToStart = true;
     }
-  }
-
-  String get _compatibilityBanner {
-    if (_activeRendererPath == _BuddhaRendererPath.androidThreeFallback) {
-      return '已切换到 three_dart 备用渲染';
-    }
-    return '佛像使用 flutter_scene 渲染';
   }
 
   @override
@@ -543,67 +521,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                       camera: camera,
                       onRenderError: _handleRenderFailure,
                     ),
-                  ),
-                ),
-              if (!_isLoading && !_loadFailed)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: CustomPaint(
-                      size: size,
-                      painter: _IncensePainter(
-                        incenseProgress: _currentIncenseProgress,
-                        isBurning: widget.isBurning,
-                      ),
-                    ),
-                  ),
-                ),
-              if (!_isLoading &&
-                  !_loadFailed &&
-                  _activeRendererPath !=
-                      _BuddhaRendererPath.flutterScenePrimary)
-                Positioned(
-                  top: 18,
-                  left: 20,
-                  right: 20,
-                  child: IgnorePointer(
-                    child: Center(
-                      child: Container(
-                        constraints: const BoxConstraints(maxWidth: 360),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.48),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: const Color(
-                              0xFFD4AF37,
-                            ).withValues(alpha: 0.36),
-                          ),
-                        ),
-                        child: Text(
-                          _compatibilityBanner,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Color(0xFFFFD700),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              if (widget.showBook && widget.bookTitle != null && !_isLoading)
-                Positioned(
-                  left: (size.width - 184) / 2,
-                  top: (size.height * 0.58)
-                      .clamp(0.0, size.height - 180)
-                      .toDouble(),
-                  child: _SutraBookButton(
-                    title: widget.bookTitle!,
-                    onTap: widget.onBookTap,
                   ),
                 ),
               if (_isLoading)
@@ -729,7 +646,12 @@ class _ScenePainter extends CustomPainter {
     }
 
     try {
-      scene.render(camera, canvas, viewport: Offset.zero & size);
+      canvas.save();
+      try {
+        scene.render(camera, canvas, viewport: Offset.zero & size);
+      } finally {
+        canvas.restore();
+      }
     } catch (error) {
       onRenderError?.call(error);
     }
@@ -737,157 +659,4 @@ class _ScenePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ScenePainter oldDelegate) => true;
-}
-
-class _SutraBookButton extends StatelessWidget {
-  final String title;
-  final VoidCallback? onTap;
-
-  const _SutraBookButton({required this.title, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: title,
-      child: SizedBox(
-        width: 184,
-        child: FilledButton(
-          onPressed: onTap,
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xAA5E0707),
-            foregroundColor: const Color(0xFFFFE6A3),
-            side: const BorderSide(color: Color(0xFFD4AF37)),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                '经卷',
-                style: TextStyle(fontSize: 11, color: Color(0xCCFFF4C2)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _IncensePainter extends CustomPainter {
-  final double incenseProgress;
-  final bool isBurning;
-
-  const _IncensePainter({
-    required this.incenseProgress,
-    required this.isBurning,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty || !size.width.isFinite || !size.height.isFinite) {
-      return;
-    }
-
-    final base = Offset(size.width / 2, size.height * 0.82);
-    final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
-    final stickHeight = 74.0 * remaining;
-
-    canvas.drawOval(
-      Rect.fromCenter(center: base.translate(0, 36), width: 108, height: 20),
-      Paint()
-        ..color = const Color(0x55000000)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: base.translate(0, 22), width: 92, height: 22),
-        const Radius.circular(10),
-      ),
-      Paint()
-        ..shader = ui.Gradient.linear(
-          base.translate(-46, 12),
-          base.translate(46, 34),
-          const [Color(0xFFFFD36A), Color(0xFF7A4314), Color(0xFFD4AF37)],
-          const [0.0, 0.55, 1.0],
-        ),
-    );
-
-    for (final offset in const [-14.0, 0.0, 14.0]) {
-      final stickBase = base.translate(offset, 6);
-      final stickTip = stickBase.translate(0, -stickHeight - 14);
-      canvas.drawLine(
-        stickBase,
-        stickTip,
-        Paint()
-          ..shader = ui.Gradient.linear(
-            stickBase,
-            stickTip,
-            const [Color(0xFF5A2E16), Color(0xFFB07136), Color(0xFF2B1509)],
-            const [0.0, 0.5, 1.0],
-          )
-          ..strokeWidth = 3.3
-          ..strokeCap = StrokeCap.round,
-      );
-
-      if (!isBurning) {
-        continue;
-      }
-
-      canvas.drawCircle(
-        stickTip,
-        6,
-        Paint()
-          ..shader = ui.Gradient.radial(
-            stickTip,
-            8,
-            const [Color(0xFFFFF1A3), Color(0xFFFF6B1A), Color(0x00FF6B1A)],
-            const [0.0, 0.5, 1.0],
-          ),
-      );
-
-      for (var i = 0; i < 9; i++) {
-        final t =
-            ((DateTime.now().millisecondsSinceEpoch / 1000) * 0.2 +
-                i / 9 +
-                offset * 0.006) %
-            1.0;
-        final smokeCenter = Offset(
-          stickTip.dx + math.sin(t * math.pi * 2.0 + offset) * (7 + t * 24),
-          stickTip.dy - t * 118 - i * 3.0,
-        );
-        canvas.drawCircle(
-          smokeCenter,
-          2.4 + t * 9.0,
-          Paint()
-            ..color = Color.fromRGBO(
-              235,
-              229,
-              214,
-              ((1 - t) * 0.45 + 0.05).clamp(0.0, 0.5),
-            )
-            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2 + t * 5),
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _IncensePainter oldDelegate) => true;
 }

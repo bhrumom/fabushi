@@ -158,9 +158,9 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
     renderer.setPixelRatio(dpr);
     renderer.setSize(size.width, size.height, false);
     renderer.shadowMap.enabled = false;
-    renderer.outputEncoding = three.LinearEncoding;
+    renderer.outputEncoding = three.sRGBEncoding;
     renderer.toneMapping = three.NoToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = 1.25;
     renderer.setClearColor(three.Color(0x000000), 0.0);
 
     final renderTargetOptions = three.WebGLRenderTargetOptions({
@@ -191,18 +191,18 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
     );
     camera.position.set(0, 120, 290);
 
-    final ambientLight = three.AmbientLight(0xffffff, 1.1);
+    final ambientLight = three.AmbientLight(0xffffff, 1.55);
     scene.add(ambientLight);
 
-    final keyLight = three.DirectionalLight(0xffd05b, 1.8);
+    final keyLight = three.DirectionalLight(0xffd05b, 2.35);
     keyLight.position.set(80, 200, 120);
     scene.add(keyLight);
 
-    final fillLight = three.PointLight(0xffe7aa, 1.1, 620);
+    final fillLight = three.PointLight(0xffe7aa, 1.45, 620);
     fillLight.position.set(-120, 110, 90);
     scene.add(fillLight);
 
-    final rimLight = three.PointLight(0x8b5a16, 0.9, 520);
+    final rimLight = three.PointLight(0x8b5a16, 1.1, 520);
     rimLight.position.set(0, 40, -180);
     scene.add(rimLight);
 
@@ -285,7 +285,7 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
     }
 
     model.position.y += 18;
-    model.rotation.y = math.pi;
+    model.rotation.y = 0.0;
     model.rotation.x = 0.08;
 
     model.traverse((child) {
@@ -302,7 +302,7 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
     }
 
     final simpleMaterial = three.MeshBasicMaterial({
-      'color': three.Color.fromHex(0xffcc4a),
+      'color': three.Color.fromHex(0xffdf75),
       'fog': false,
       'toneMapped': false,
     });

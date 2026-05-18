@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import '../models/auth_model.dart';
+import '../models/meditation_practice_model.dart';
 import '../models/sutra_model.dart';
 import '../services/practice_stats_service.dart';
 import '../services/meditation_session_manager.dart';
@@ -16,6 +18,7 @@ import '../widgets/online_counter_widget.dart';
 import '../widgets/practice_selection_sheet.dart';
 import '../widgets/practice_leaderboard_sheet.dart';
 import '../widgets/reflection_dialog.dart';
+import '../widgets/zen_room_2d_elements.dart';
 
 /// 禅室修行界面 - 零摩擦版本
 ///
@@ -25,7 +28,7 @@ import '../widgets/reflection_dialog.dart';
 /// - 灵活时长：随时可停，无最低要求
 /// - 即时反馈：成就系统实时激励
 class MeditationRoomScreen extends StatefulWidget {
-  const MeditationRoomScreen({Key? key}) : super(key: key);
+  const MeditationRoomScreen({super.key});
 
   @override
   State<MeditationRoomScreen> createState() => MeditationRoomScreenState();
@@ -444,7 +447,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: Colors.white.withOpacity(0.7))),
+          Text(
+            label,
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+          ),
           Text(
             value,
             style: const TextStyle(
@@ -522,7 +528,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                         height: 40,
                         decoration: BoxDecoration(
                           color: isSelected
-                              ? const Color(0xFFD4AF37).withOpacity(0.2)
+                              ? const Color(0xFFD4AF37).withValues(alpha: 0.2)
                               : const Color(0xFF2A2A2A),
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -631,9 +637,11 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
+                  color: Colors.green.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  border: Border.all(
+                    color: Colors.green.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: const Row(
                   children: [
@@ -766,20 +774,23 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   autoRotate: _isCircumambulating,
                   isBurning: _sessionManager.isInSession,
                   incenseProgress: _incenseController.value,
-                  showBook: true,
-                  bookTitle: practice?.title ?? '选择功课',
-                  onBookTap:
-                      practice == null ||
-                          practice.filePath.startsWith('manual:')
-                      ? _showPracticeSelection
-                      : _openSutraReader,
+                  showBook: kIsWeb,
+                  bookTitle: kIsWeb ? practice?.title ?? '选择功课' : null,
+                  onBookTap: kIsWeb
+                      ? practice == null ||
+                                practice.filePath.startsWith('manual:')
+                            ? _showPracticeSelection
+                            : _openSutraReader
+                      : null,
                 ),
               ),
             ),
 
+            if (!kIsWeb) _buildNativeZenOfferings(practice),
+
             // 沉浸式遮罩
             if (_sessionManager.isInSession)
-              Container(color: Colors.black.withOpacity(0.15)),
+              Container(color: Colors.black.withValues(alpha: 0.15)),
 
             // UI 覆盖层
             Positioned.fill(
@@ -818,6 +829,66 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     );
   }
 
+  Widget _buildNativeZenOfferings(MeditationPractice? practice) {
+    return Positioned.fill(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final size = Size(constraints.maxWidth, constraints.maxHeight);
+          final title = practice?.title ?? '选择功课';
+          final opensSelection =
+              practice == null || practice.filePath.startsWith('manual:');
+          final incenseWidth = (size.width * 0.30)
+              .clamp(180.0, 230.0)
+              .toDouble();
+          final incenseHeight = incenseWidth * 1.12;
+          final offeringTop = (size.height * 0.58)
+              .clamp(0.0, size.height - 300)
+              .toDouble();
+          final incenseLeft = (size.width * 0.18 - incenseWidth / 2)
+              .clamp(16.0, size.width - incenseWidth - 16)
+              .toDouble();
+          final bookRight = (size.width * 0.10).clamp(16.0, 120.0).toDouble();
+
+          return Stack(
+            children: [
+              Positioned(
+                left: incenseLeft,
+                top: offeringTop,
+                width: incenseWidth,
+                height: incenseHeight,
+                child: IgnorePointer(
+                  child: RepaintBoundary(
+                    child: AnimatedBuilder(
+                      animation: _incenseController,
+                      builder: (context, _) {
+                        return IncenseOffering(
+                          incenseProgress: _incenseController.value,
+                          isBurning: _sessionManager.isInSession,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                right: bookRight,
+                top: offeringTop + 16,
+                child: RepaintBoundary(
+                  child: SutraBookButton(
+                    title: title,
+                    onTap: opensSelection
+                        ? _showPracticeSelection
+                        : _openSutraReader,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildTopBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -828,16 +899,16 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.36),
+              color: Colors.black.withValues(alpha: 0.36),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: const Color(0xFFD4AF37).withOpacity(0.22),
+                color: const Color(0xFFD4AF37).withValues(alpha: 0.22),
               ),
             ),
             child: CompactOnlineCounterWidget(
               countStream: _onlineCounterService.onlineCountStream,
               initialCount: _onlineCounterService.currentCount,
-              icon: Icons.self_improvement,
+              icon: Icons.people_alt_rounded,
               color: const Color(0xFFD4AF37),
             ),
           ),
@@ -861,7 +932,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.4),
+                  color: Colors.black.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
                     color: isActive
@@ -878,7 +949,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                           BoxShadow(
                             color: const Color(
                               0xFFD4AF37,
-                            ).withOpacity(0.2 * _pulseController.value),
+                            ).withValues(alpha: 0.2 * _pulseController.value),
                             blurRadius: 8,
                           ),
                         ]
@@ -930,7 +1001,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           width: 42,
           height: 42,
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.36),
+            color: Colors.black.withValues(alpha: 0.36),
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white24, width: 0.5),
           ),
@@ -966,10 +1037,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(30),
                 border: Border.all(
-                  color: const Color(0xFFD4AF37).withOpacity(0.3),
+                  color: const Color(0xFFD4AF37).withValues(alpha: 0.3),
                 ),
               ),
               child: Column(
@@ -1047,7 +1118,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                               (_sessionManager.isInSession
                                       ? Colors.red
                                       : const Color(0xFFD4AF37))
-                                  .withOpacity(0.3),
+                                  .withValues(alpha: 0.3),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -1106,8 +1177,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         height: 56,
         decoration: BoxDecoration(
           color: isActive
-              ? const Color(0xFFD4AF37).withOpacity(0.2)
-              : Colors.black.withOpacity(0.4),
+              ? const Color(0xFFD4AF37).withValues(alpha: 0.2)
+              : Colors.black.withValues(alpha: 0.4),
           shape: BoxShape.circle,
           border: Border.all(
             color: isActive ? const Color(0xFFD4AF37) : Colors.white24,
@@ -1125,7 +1196,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
   Widget _buildLoadingOverlay() {
     return Container(
-      color: Colors.black.withOpacity(0.7),
+      color: Colors.black.withValues(alpha: 0.7),
       child: const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,

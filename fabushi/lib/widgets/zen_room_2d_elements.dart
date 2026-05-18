@@ -15,9 +15,20 @@ class IncensePainter extends CustomPainter {
   }
 
   void _drawFixedIncense(Canvas canvas, Size size) {
-    final base = Offset(size.width / 2, size.height * 0.82);
+    final base = Offset(size.width / 2, size.height * 0.70);
     final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
-    final stickHeight = 74.0 * remaining;
+    final stickHeight = 88.0 * remaining;
+    final haloRect = Rect.fromCenter(
+      center: base.translate(0, -24),
+      width: 170,
+      height: 178,
+    );
+    canvas.drawOval(
+      haloRect,
+      Paint()
+        ..color = const Color(0x66000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+    );
     _drawIncenseBurner(canvas, base, stickHeight);
 
     for (final offset in const [-14.0, 0.0, 14.0]) {
@@ -27,12 +38,21 @@ class IncensePainter extends CustomPainter {
         stickBase,
         stickTip,
         Paint()
+          ..color = const Color(0xAA1A0904)
+          ..strokeWidth = 7
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+      );
+      canvas.drawLine(
+        stickBase,
+        stickTip,
+        Paint()
           ..shader = ui.Gradient.linear(stickBase, stickTip, const [
             Color(0xFF5A2E16),
-            Color(0xFFB07136),
+            Color(0xFFE7B45F),
             Color(0xFF2B1509),
           ])
-          ..strokeWidth = 3.3
+          ..strokeWidth = 4.0
           ..strokeCap = StrokeCap.round,
       );
 
@@ -96,7 +116,7 @@ class IncensePainter extends CustomPainter {
   }
 
   void _drawIncenseBurner(Canvas canvas, Offset center, double stickHeight) {
-    final width = (stickHeight * 1.22).clamp(48.0, 88.0).toDouble();
+    final width = (stickHeight * 1.24).clamp(58.0, 112.0).toDouble();
     final topHeight = (stickHeight * 0.22).clamp(10.0, 16.0).toDouble();
     final bodyHeight = (stickHeight * 0.45).clamp(20.0, 34.0).toDouble();
     final topCenter = center.translate(0, 8);
@@ -183,12 +203,168 @@ class IncensePainter extends CustomPainter {
   }
 }
 
+class IncenseOffering extends StatelessWidget {
+  final double incenseProgress;
+  final bool isBurning;
+
+  const IncenseOffering({
+    super.key,
+    required this.incenseProgress,
+    required this.isBurning,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
+    final stickHeight = 88.0 * remaining;
+    const centerX = 85.0;
+    final flameBottom = 58.0 + stickHeight - 6.0;
+
+    return SizedBox.expand(
+      child: Center(
+        child: SizedBox(
+          width: 170,
+          height: 196,
+          child: Stack(
+            alignment: Alignment.bottomCenter,
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                bottom: 4,
+                child: Container(
+                  width: 124,
+                  height: 22,
+                  decoration: const BoxDecoration(
+                    color: Color(0x66000000),
+                    borderRadius: BorderRadius.all(Radius.elliptical(62, 11)),
+                    boxShadow: [
+                      BoxShadow(color: Color(0x99000000), blurRadius: 14),
+                    ],
+                  ),
+                ),
+              ),
+              for (final dx in const [-18.0, 0.0, 18.0]) ...[
+                Positioned(
+                  left: centerX + dx - 3,
+                  bottom: 58,
+                  child: Container(
+                    width: 6,
+                    height: stickHeight,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(3),
+                      gradient: const LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [
+                          Color(0xFF2B1509),
+                          Color(0xFFE7B45F),
+                          Color(0xFF5A2E16),
+                        ],
+                      ),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0xAA000000), blurRadius: 5),
+                      ],
+                    ),
+                  ),
+                ),
+                if (isBurning) ...[
+                  Positioned(
+                    left: centerX + dx - 9,
+                    bottom: flameBottom,
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            Color(0xFFFFF1A3),
+                            Color(0xFFFF6B1A),
+                            Color(0x00FF6B1A),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  for (var i = 0; i < 3; i++)
+                    Positioned(
+                      left: centerX + dx - 7 + (i.isEven ? -8 : 8),
+                      bottom: flameBottom + 22 + i * 24,
+                      child: Container(
+                        width: 14.0 + i * 6,
+                        height: 14.0 + i * 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color.fromRGBO(235, 229, 214, 0.16 - i * 0.03),
+                          boxShadow: const [
+                            BoxShadow(color: Color(0x66EDE5D8), blurRadius: 12),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ],
+              Positioned(
+                bottom: 18,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 112,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFFD4AF37),
+                            Color(0xFF6F3514),
+                            Color(0xFFFFD36A),
+                          ],
+                        ),
+                        border: Border.all(color: const Color(0x99D4AF37)),
+                      ),
+                    ),
+                    Transform.translate(
+                      offset: const Offset(0, -4),
+                      child: Container(
+                        width: 94,
+                        height: 34,
+                        decoration: const BoxDecoration(
+                          borderRadius: BorderRadius.vertical(
+                            bottom: Radius.circular(38),
+                            top: Radius.circular(8),
+                          ),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF9A5A24),
+                              Color(0xFF4A2111),
+                              Color(0xFF2A1208),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(color: Color(0x99000000), blurRadius: 8),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class SutraBookButton extends StatelessWidget {
   final String title;
   final VoidCallback? onTap;
 
-  const SutraBookButton({Key? key, required this.title, this.onTap})
-    : super(key: key);
+  const SutraBookButton({super.key, required this.title, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -200,7 +376,38 @@ class SutraBookButton extends StatelessWidget {
         child: SizedBox(
           width: 184,
           height: 128,
-          child: CustomPaint(painter: _SutraBookPainter(title)),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Positioned.fill(
+                child: CustomPaint(painter: _SutraBookPainter(title)),
+              ),
+              Container(
+                width: 74,
+                height: 74,
+                decoration: BoxDecoration(
+                  color: const Color(0xAA2A0202),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFFD4AF37),
+                    width: 1.4,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x99000000),
+                      blurRadius: 14,
+                      offset: Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.auto_stories_rounded,
+                  color: Color(0xFFFFE6A3),
+                  size: 40,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
