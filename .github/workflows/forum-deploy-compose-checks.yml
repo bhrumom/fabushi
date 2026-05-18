@@ -221,7 +221,6 @@ jobs:
             --report-path /tmp/forum-rollout-preview-report.json \
             2>&1 | tee /tmp/forum-rollout-preview.txt
 
-          trap - ERR
           grep "== Scaffold deploy env ==" /tmp/forum-rollout-preview.txt
           grep "FORUM_DEPLOYMENT_STAGE=preview" /tmp/forum-rollout-preview-bootstrap.env
           grep "FORUM_ENABLE_WRITES=false" /tmp/forum-rollout-preview-bootstrap.env
@@ -282,7 +281,6 @@ jobs:
             --report-path /tmp/forum-live-target-report.json \
             2>&1 | tee /tmp/forum-live-target-handoff.txt
 
-          trap - ERR
           cat /tmp/forum-gh-invocations.txt
           grep "gh variable set FORUM_LIVE_TARGET" /tmp/forum-live-target-handoff.txt
           grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-live-target-handoff.txt
