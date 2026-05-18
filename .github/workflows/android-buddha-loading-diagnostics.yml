@@ -3,7 +3,7 @@ name: Android Buddha Loading Diagnostics
 on:
   workflow_dispatch:
     inputs:
-      api-level:
+      api_level:
         description: Android emulator API level
         required: false
         default: '35'
@@ -44,13 +44,13 @@ jobs:
       - name: Run Android Buddha diagnostics
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: ${{ inputs.api-level }}
+          api-level: ${{ inputs.api_level }}
           arch: x86_64
           profile: ${{ inputs.profile }}
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          working-directory: fabushi
           script: |
             set +e
+            cd fabushi
             adb wait-for-device
             adb logcat -c
             flutter test integration_test/buddha_loading_android_diagnostics_test.dart -d emulator-5554 --reporter expanded | tee "$GITHUB_WORKSPACE/buddha_flutter_test.log"
