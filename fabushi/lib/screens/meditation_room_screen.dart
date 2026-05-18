@@ -841,13 +841,20 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               .clamp(180.0, 230.0)
               .toDouble();
           final incenseHeight = incenseWidth * 1.12;
+          const smokeRise = 156.0;
           final offeringTop = (size.height * 0.58)
               .clamp(0.0, size.height - 300)
               .toDouble();
           final bookWidth = (size.width * 0.16).clamp(88.0, 112.0).toDouble();
           final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
           final incenseLeft = (size.width - incenseWidth) / 2;
-          final bookLeft = (size.width - bookWidth) / 2;
+          final bookCenterX = (size.width * 0.56)
+              .clamp(bookWidth / 2 + 12, size.width - bookWidth / 2 - 12)
+              .toDouble();
+          final bookLeft = bookCenterX - bookWidth / 2;
+          final bookTop = (size.height * 0.50 - bookHeight * 0.55)
+              .clamp(0.0, offeringTop - bookHeight - 16)
+              .toDouble();
 
           return Stack(
             children: [
@@ -872,7 +879,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               ),
               Positioned(
                 left: bookLeft,
-                top: offeringTop - 20,
+                top: bookTop,
                 child: RepaintBoundary(
                   child: SutraBookButton(
                     title: title,
@@ -881,6 +888,26 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                     onTap: opensSelection
                         ? _showPracticeSelection
                         : _openSutraReader,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: incenseLeft,
+                top: offeringTop - smokeRise,
+                width: incenseWidth,
+                height: incenseHeight + smokeRise,
+                child: IgnorePointer(
+                  child: RepaintBoundary(
+                    child: AnimatedBuilder(
+                      animation: _incenseController,
+                      builder: (context, _) {
+                        return IncenseSmokeOverlay(
+                          incenseProgress: _incenseController.value,
+                          isBurning: _sessionManager.isInSession,
+                          smokeRise: smokeRise,
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
