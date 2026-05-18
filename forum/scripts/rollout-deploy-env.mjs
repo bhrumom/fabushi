@@ -98,10 +98,11 @@ function resolveHandoffUrl({ explicitForumUrl, deployEnv }) {
 }
 
 function renderCommandBlock(command, args) {
-  const lines = ["cd forum", `${command} -- \\`];
+  const continuation = " \\\";
+  const lines = ["cd forum", `${command} --${continuation}`];
 
   args.forEach((arg, index) => {
-    const suffix = index === args.length - 1 ? "" : " \\\";
+    const suffix = index === args.length - 1 ? "" : continuation;
     lines.push(`  ${arg}${suffix}`);
   });
 
