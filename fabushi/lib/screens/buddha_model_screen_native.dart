@@ -44,6 +44,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   late final Ticker _ticker;
 
+  final List<String> _diagnosticTrail = <String>[];
+
   Scene? _scene;
   PerspectiveCamera? _camera;
   double _lastTime = 0.0;
@@ -95,6 +97,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     required String loadingLabel,
     _BuddhaRendererPath? activePath,
   }) {
+    _diagnosticTrail.clear();
     _lastLoadError = null;
     _renderFailed = false;
     _loadFailed = false;
@@ -108,6 +111,21 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     }
   }
 
+  void _pushDiagnostic(String message, {bool updateLoadingLabel = false}) {
+    final normalized = message.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    _diagnosticTrail.removeWhere((item) => item == normalized);
+    _diagnosticTrail.add(normalized);
+    if (_diagnosticTrail.length > 6) {
+      _diagnosticTrail.removeRange(0, _diagnosticTrail.length - 6);
+    }
+    if (updateLoadingLabel) {
+      _loadingLabel = normalized;
+    }
+  }
+
   Future<void> _startAndroidThreePrimary() async {
     if (!mounted) return;
     setState(() {
@@ -117,6 +135,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         loadingLabel: '安卓佛像加载中...',
         activePath: _BuddhaRendererPath.androidThreePrimary,
       );
+      _pushDiagnostic('安卓佛像加载中...', updateLoadingLabel: true);
     });
   }
 
@@ -129,6 +148,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         loadingLabel: '恭请佛像...',
         activePath: _BuddhaRendererPath.flutterScenePrimary,
       );
+      _pushDiagnostic('flutter_scene 渲染准备中...', updateLoadingLabel: true);
     });
     await _loadFlutterSceneModel(
       asFallback: false,
@@ -153,9 +173,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       try {
         if (mounted) {
           setState(() {
-            _loadingLabel = attempt == 1
+            final status = attempt == 1
                 ? reasonLabel
                 : '$reasonLabel（重试 $attempt/$maxRetries）';
+            _pushDiagnostic(status, updateLoadingLabel: true);
           });
         }
 
@@ -169,6 +190,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         );
 
         if (!mounted) return;
+        setState(() {
+          _pushDiagnostic('flutter_scene 已拿到模型字节，开始解析', updateLoadingLabel: true);
+        });
         await _buildBuddhaNode(modelData);
         AssetLoaderService.releaseBuddhaModelMemoryCache();
 
@@ -178,14 +202,23 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
           _renderFailed = false;
           _flutterSceneError = null;
           _loadingProgress = 1.0;
-          if (asFallback) {
-            _loadingLabel = '已切换 flutter_scene 备用展示';
-          }
+          _pushDiagnostic(
+            asFallback ? '已切换 flutter_scene 备用展示' : 'flutter_scene 渲染完成',
+            updateLoadingLabel: asFallback,
+          );
         });
         return;
       } catch (error) {
         _flutterSceneError = 'flutter_scene 解析失败: $error';
         _lastLoadError = _flutterSceneError;
+        if (mounted) {
+          setState(() {
+            _pushDiagnostic(
+              'flutter_scene 解析失败: ${_cleanLoadError(_flutterSceneError!)}',
+              updateLoadingLabel: true,
+            );
+          });
+        }
         AssetLoaderService.releaseBuddhaModelMemoryCache();
         if (attempt < maxRetries) {
           await Future.delayed(Duration(seconds: 1 << attempt));
@@ -301,6 +334,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   void _markAndroidThreeReady() {
     if (!mounted) return;
     setState(() {
+      _pushDiagnostic('Android Three 渲染完成，可以展示佛像');
       _isLoading = false;
       _loadFailed = false;
       _renderFailed = false;
@@ -311,6 +345,14 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   void _handleAndroidThreeFailure(String details) {
     _androidThreeError = details;
     _lastLoadError = details;
+    if (mounted) {
+      setState(() {
+        _pushDiagnostic(
+          'Android Three 失败: ${_cleanLoadError(details)}',
+          updateLoadingLabel: true,
+        );
+      });
+    }
     debugPrint('❌ [BuddhaModel] Android three_dart 失败: $details');
     _markLoadFailed(details);
   }
@@ -318,6 +360,14 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   void _markFlutterSceneFailed(String details) {
     _flutterSceneError = details;
     _lastLoadError = details;
+    if (mounted) {
+      setState(() {
+        _pushDiagnostic(
+          'flutter_scene 失败: ${_cleanLoadError(details)}',
+          updateLoadingLabel: true,
+        );
+      });
+    }
     debugPrint('❌ [BuddhaModel] flutter_scene 失败: $details');
     _markLoadFailed(details);
   }
@@ -357,6 +407,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         _lastLoadError != null &&
         _lastLoadError!.isNotEmpty) {
       details.add(_cleanLoadError(_lastLoadError!));
+    }
+    if (_diagnosticTrail.isNotEmpty) {
+      details.add(
+        '最近进度：${_diagnosticTrail.map(_cleanLoadError).join(' -> ')}',
+      );
     }
     if (details.isEmpty) {
       return '未收到具体错误，请重试后查看设备日志。';
@@ -514,6 +569,15 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                         _loadingProgress = progress;
                       });
                     },
+                    onStatus: (message) {
+                      if (!mounted) return;
+                      setState(() {
+                        _pushDiagnostic(
+                          message,
+                          updateLoadingLabel: _isLoading,
+                        );
+                      });
+                    },
                     onReady: _markAndroidThreeReady,
                     onError: _handleAndroidThreeFailure,
                   ),
@@ -607,6 +671,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                           const SizedBox(height: 16),
                           Text(
                             _loadingLabel,
+                            textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Color(0xFFFFD700),
                               fontSize: 14,
@@ -621,6 +686,23 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                                 style: const TextStyle(
                                   color: Colors.white70,
                                   fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          if (_diagnosticTrail.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 320),
+                                child: Text(
+                                  _diagnosticTrail.last,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: 11,
+                                    height: 1.35,
+                                  ),
                                 ),
                               ),
                             ),
