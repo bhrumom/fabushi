@@ -98,7 +98,7 @@ function resolveHandoffUrl({ explicitForumUrl, deployEnv }) {
 }
 
 function renderCommandBlock(command, args) {
-  const continuation = " \\\";
+  const continuation = ` ${String.fromCharCode(92)}`;
   const lines = ["cd forum", `${command} --${continuation}`];
 
   args.forEach((arg, index) => {
