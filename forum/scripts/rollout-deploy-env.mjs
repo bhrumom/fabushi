@@ -192,28 +192,54 @@ async function waitForLocalHealth(deployEnv, requestTimeoutMs) {
   const port = deployEnv.FORUM_PORT?.trim() || "3000";
   const healthUrl = `http://127.0.0.1:${port}/api/health`;
   const timeoutMs = requestTimeoutMs ?? 5000;
+  const requiredStableSuccesses = 2;
 
+  let consecutiveReadyResponses = 0;
   let lastError = null;
 
-  for (let attempt = 1; attempt <= 10; attempt += 1) {
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
     try {
       const response = await fetch(healthUrl, {
         redirect: "follow",
         signal: AbortSignal.timeout(timeoutMs),
       });
 
-      if (response.ok) {
-        console.log(`Health probe ready at ${healthUrl} after attempt ${attempt}.`);
-        return;
-      }
-
       const body = await response.text();
-      lastError = new Error(`Health probe returned ${response.status}: ${body}`);
+      if (!response.ok) {
+        consecutiveReadyResponses = 0;
+        lastError = new Error(`Health probe returned ${response.status}: ${body}`);
+      } else {
+        let payload = null;
+        try {
+          payload = JSON.parse(body);
+        } catch (error) {
+          consecutiveReadyResponses = 0;
+          lastError = new Error(`Health probe returned non-JSON body: ${error}`);
+        }
+
+        if (payload) {
+          if (payload.ready !== true) {
+            consecutiveReadyResponses = 0;
+            lastError = new Error(`Health probe returned ready=${String(payload.ready)}: ${body}`);
+          } else {
+            consecutiveReadyResponses += 1;
+            console.log(
+              `Health probe responded ready at ${healthUrl} on attempt ${attempt} (${consecutiveReadyResponses}/${requiredStableSuccesses} stable successes).`,
+            );
+
+            if (consecutiveReadyResponses >= requiredStableSuccesses) {
+              console.log(`Health probe stabilized at ${healthUrl} after attempt ${attempt}.`);
+              return;
+            }
+          }
+        }
+      }
     } catch (error) {
+      consecutiveReadyResponses = 0;
       lastError = error;
     }
 
-    await sleep(3000);
+    await sleep(2000);
   }
 
   throw new Error(
@@ -269,6 +295,10 @@ async function main() {
 
   console.log("\n== Wait for local health probe ==");
   await waitForLocalHealth(deployEnv, requestTimeoutMs);
+
+  console.log("\n== Post-health stabilization ==");
+  await sleep(1500);
+  console.log("Local runtime stayed ready across the stabilization window.");
 
   console.log("\n== Deployed runtime smoke check ==");
   const smokeArgs = [...sharedArgs, "--exercise-write-flow", String(exerciseWriteFlow)];
@@ -326,6 +356,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(error instanceof Error ? error.stack || error.message : String(error));
   process.exitCode = 1;
 });
