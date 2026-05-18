@@ -58,6 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      FORUM_LIVE_GITHUB_REPO: ${{ github.repository }}
       FORUM_LIVE_REQUEST_TIMEOUT_MS: "15000"
       FORUM_LIVE_TARGET_PATH: /tmp/forum-live-target.json
       FORUM_LIVE_WRITE_ACCESS_CODE: ${{ secrets.FORUM_LIVE_WRITE_ACCESS_CODE }}
