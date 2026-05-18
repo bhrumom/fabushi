@@ -53,6 +53,20 @@ function normalizeUrl(value) {
   return value ? value.replace(/\/$/, "") : "";
 }
 
+function resolveForumUrl({ explicitForumUrl, deployEnv }) {
+  const forumUrl = normalizeUrl(explicitForumUrl?.trim() || deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || "");
+  if (forumUrl) {
+    return forumUrl;
+  }
+
+  const deploymentStage = deployEnv.FORUM_DEPLOYMENT_STAGE?.trim() || "preview";
+  if (deploymentStage === "production") {
+    return normalizeUrl(deployEnv.FORUM_PUBLIC_BASE_URL?.trim() || "");
+  }
+
+  return "";
+}
+
 function buildLiveTarget({ forumUrl, deployEnv, exerciseWriteFlow }) {
   const deploymentStage = deployEnv.FORUM_DEPLOYMENT_STAGE?.trim() || "preview";
   if (deploymentStage !== "preview" && deploymentStage !== "production") {
@@ -163,10 +177,15 @@ async function main() {
 
   const deployEnvContent = await readFile(args["deploy-env-path"], "utf-8");
   const deployEnv = parseDotEnv(deployEnvContent);
-  const forumUrl = normalizeUrl(args["forum-url"]?.trim() || deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || "");
+  const forumUrl = resolveForumUrl({
+    explicitForumUrl: args["forum-url"],
+    deployEnv,
+  });
 
   if (!forumUrl) {
-    throw new Error("Missing required --forum-url and deploy env FORUM_DEPLOY_CHECK_URL.");
+    throw new Error(
+      "Missing required --forum-url and deploy env FORUM_DEPLOY_CHECK_URL. Production deploy envs may also infer from FORUM_PUBLIC_BASE_URL.",
+    );
   }
 
   const liveTarget = buildLiveTarget({ forumUrl, deployEnv, exerciseWriteFlow });
