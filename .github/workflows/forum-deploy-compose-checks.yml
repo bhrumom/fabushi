@@ -189,8 +189,24 @@ jobs:
           mkdir -p /tmp/fabushi-forum-deploy-compose-data
 
       - name: Roll out forum deploy compose read-only preview runtime through combined helper
+        shell: bash
         run: |
-          rm -f /tmp/forum-rollout-preview-bootstrap.env
+          set -o pipefail
+          dump_rollout_preview_diagnostics() {
+            local exit_code="$?"
+            echo "::group::Read-only preview rollout diagnostics"
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-rollout-preview-bootstrap.env -f forum/docker-compose.deploy.yml ps || true
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-rollout-preview-bootstrap.env -f forum/docker-compose.deploy.yml logs --no-color || true
+            echo "::endgroup::"
+            return "${exit_code}"
+          }
+          trap 'dump_rollout_preview_diagnostics' ERR
+
+          rm -f /tmp/forum-rollout-preview-bootstrap.env /tmp/forum-rollout-preview-report.json
 
           COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
           FORUM_IMAGE=fabushi-forum \
@@ -201,11 +217,17 @@ jobs:
             --scaffold-if-missing true \
             --forum-image fabushi-forum \
             --forum-port 3001 \
-            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data | tee /tmp/forum-rollout-preview.txt
+            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data \
+            --report-path /tmp/forum-rollout-preview-report.json \
+            2>&1 | tee /tmp/forum-rollout-preview.txt
 
           grep "== Scaffold deploy env ==" /tmp/forum-rollout-preview.txt
-          grep "Health probe ready at http://127.0.0.1:3001/api/health" /tmp/forum-rollout-preview.txt
-          grep "Skipping handoff because neither --forum-url nor FORUM_DEPLOY_CHECK_URL is available yet." /tmp/forum-rollout-preview.txt
+          grep "FORUM_DEPLOYMENT_STAGE=preview" /tmp/forum-rollout-preview-bootstrap.env
+          grep "FORUM_ENABLE_WRITES=false" /tmp/forum-rollout-preview-bootstrap.env
+          grep '^FORUM_DEPLOY_CHECK_URL=$' /tmp/forum-rollout-preview-bootstrap.env
+          test -f /tmp/forum-rollout-preview-report.json
+          cat /tmp/forum-rollout-preview-report.json
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-rollout-preview-report.json", "utf8")); if (!(data.ok === true && data.forumUrl === "http://127.0.0.1:3001" && data.deploymentStage === "preview" && data.indexingEnabled === false && data.writesEnabled === false && data.requiresAccessCode === false && data.exerciseWriteFlow === false)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
 
       - name: Stop forum deploy compose read-only preview runtime
         run: |
@@ -221,7 +243,24 @@ jobs:
           mkdir -p /tmp/fabushi-forum-deploy-compose-data
 
       - name: Roll out forum deploy compose writable preview runtime through combined helper
+        shell: bash
         run: |
+          set -o pipefail
+          dump_rollout_writable_preview_diagnostics() {
+            local exit_code="$?"
+            echo "::group::Writable preview rollout diagnostics"
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-deploy-writable-preview.env -f forum/docker-compose.deploy.yml ps || true
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-deploy-writable-preview.env -f forum/docker-compose.deploy.yml logs --no-color || true
+            echo "::endgroup::"
+            return "${exit_code}"
+          }
+          trap 'dump_rollout_writable_preview_diagnostics' ERR
+
+          rm -f /tmp/forum-live-target-report.json
           mkdir -p /tmp/forum-mock-gh-bin
           cat <<'GHEOF' >/tmp/forum-mock-gh-bin/gh
           #!/usr/bin/env bash
@@ -238,12 +277,16 @@ jobs:
             --compose-file forum/docker-compose.deploy.yml \
             --compose-project-name fabushi-forum-deploy-check \
             --exercise-write-flow true \
-            --apply-github-live-target true | tee /tmp/forum-live-target-handoff.txt
+            --apply-github-live-target true \
+            --report-path /tmp/forum-live-target-report.json \
+            2>&1 | tee /tmp/forum-live-target-handoff.txt
 
           cat /tmp/forum-gh-invocations.txt
           grep "gh variable set FORUM_LIVE_TARGET" /tmp/forum-live-target-handoff.txt
           grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-live-target-handoff.txt
-          grep "Health probe ready at http://127.0.0.1:3001/api/health" /tmp/forum-live-target-handoff.txt
+          test -f /tmp/forum-live-target-report.json
+          cat /tmp/forum-live-target-report.json
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-live-target-report.json", "utf8")); if (!(data.ok === true && data.forumUrl === "http://127.0.0.1:3001" && data.deploymentStage === "preview" && data.indexingEnabled === false && data.writesEnabled === true && data.requiresAccessCode === true && data.exerciseWriteFlow === true && data.liveWriteVerification && data.liveWriteVerification.threadSlug)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
           grep "variable set FORUM_LIVE_TARGET --body" /tmp/forum-gh-invocations.txt
           grep "secret set FORUM_LIVE_WRITE_ACCESS_CODE --body" /tmp/forum-gh-invocations.txt
           grep -- "--repo bhrumom/fabushi" /tmp/forum-gh-invocations.txt
@@ -290,7 +333,8 @@ jobs:
       - name: Smoke test forum deploy compose production contract from deploy env
         run: |
           node forum/scripts/smoke-deployment-from-env.mjs \
-            --deploy-env-path /tmp/forum-deploy-production.env
+            --deploy-env-path /tmp/forum-deploy-production.env \
+            --forum-url http://127.0.0.1:3001
 
       - name: Stop forum deploy compose
         if: always()
