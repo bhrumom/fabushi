@@ -30,6 +30,17 @@ function createPayload(target) {
   return JSON.stringify(target, null, 2);
 }
 
+function buildBundledLiveTarget(target) {
+  return {
+    forumUrl: target.forumUrl,
+    deploymentStage: target.deploymentStage,
+    publicBaseUrl: target.publicBaseUrl,
+    writesEnabled: target.writesEnabled,
+    requiresAccessCode: target.requiresAccessCode,
+    exerciseWriteFlow: target.exerciseWriteFlow,
+  };
+}
+
 function buildSkipNextStepLines(target) {
   return [
     "### How to unblock",
@@ -68,6 +79,22 @@ function buildSkipNextStepLines(target) {
   ];
 }
 
+function buildReadySaveLines(target) {
+  return [
+    "",
+    "### Save for hourly checks",
+    "",
+    "If this verified runtime should become the standing hourly target, save the bundled payload below into the repository variable `FORUM_LIVE_TARGET`:",
+    "",
+    "```json",
+    JSON.stringify(target.bundledTarget, null, 2),
+    "```",
+    target.requiresAccessCode
+      ? "Keep the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE` aligned with the preview write gate too."
+      : "No `FORUM_LIVE_WRITE_ACCESS_CODE` secret update is required for this posture.",
+  ];
+}
+
 function buildSummaryLines(target) {
   if (target.skip) {
     return [
@@ -94,6 +121,7 @@ function buildSummaryLines(target) {
     `- exercise_write_flow: ${String(target.exerciseWriteFlow)}`,
     `- request_timeout_ms: ${target.requestTimeoutMs}`,
     ...target.warnings.map((warning) => `- warning: ${warning}`),
+    ...buildReadySaveLines(target),
   ];
 }
 
@@ -298,6 +326,16 @@ async function main() {
     exerciseWriteFlow,
     requestTimeoutMs,
     warnings,
+    bundledTarget: buildBundledLiveTarget({
+      forumUrl,
+      deploymentStage,
+      publicBaseUrl,
+      writesEnabled,
+      requiresAccessCode,
+      exerciseWriteFlow,
+    }),
+    repositoryConfigTargets: ["FORUM_LIVE_TARGET"],
+    optionalSecretTargets: requiresAccessCode ? ["FORUM_LIVE_WRITE_ACCESS_CODE"] : [],
   };
 
   if (process.env.FORUM_LIVE_TARGET_PATH) {
