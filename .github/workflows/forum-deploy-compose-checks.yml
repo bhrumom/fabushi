@@ -154,6 +154,30 @@ jobs:
           grep --fixed-strings '"requiresAccessCode": true' /tmp/forum-live-target-ready-summary.md
           grep --fixed-strings 'Keep the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE` aligned with the preview write gate too.' /tmp/forum-live-target-ready-summary.md
 
+      - name: Validate split live target fallback sample
+        run: |
+          rm -f /tmp/forum-live-target-split.json /tmp/forum-live-target-split-summary.md
+
+          export FORUM_LIVE_URL=https://forum.fabushi.test
+          export FORUM_LIVE_DEPLOYMENT_STAGE=production
+          export FORUM_LIVE_PUBLIC_BASE_URL=https://forum.fabushi.test
+          export FORUM_LIVE_WRITES_ENABLED=false
+          export FORUM_LIVE_REQUIRES_ACCESS_CODE=false
+          export FORUM_LIVE_EXERCISE_WRITE_FLOW=false
+          export FORUM_LIVE_TARGET_PATH=/tmp/forum-live-target-split.json
+          export GITHUB_STEP_SUMMARY=/tmp/forum-live-target-split-summary.md
+
+          node forum/scripts/resolve-live-deployment-target.mjs
+          cat /tmp/forum-live-target-split.json
+          cat /tmp/forum-live-target-split-summary.md
+
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-live-target-split.json", "utf8")); const expected = { forumUrl: "https://forum.fabushi.test", deploymentStage: "production", publicBaseUrl: "https://forum.fabushi.test", writesEnabled: false, requiresAccessCode: false, exerciseWriteFlow: false }; if (!(data.skip === false && data.forumUrl === expected.forumUrl && data.deploymentStage === expected.deploymentStage && data.publicBaseUrl === expected.publicBaseUrl && data.writesEnabled === expected.writesEnabled && data.requiresAccessCode === expected.requiresAccessCode && data.exerciseWriteFlow === expected.exerciseWriteFlow && JSON.stringify(data.bundledTarget) === JSON.stringify(expected) && Array.isArray(data.repositoryConfigTargets) && data.repositoryConfigTargets.includes("FORUM_LIVE_TARGET") && Array.isArray(data.optionalSecretTargets) && data.optionalSecretTargets.length === 0)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
+          grep --fixed-strings "### Save for hourly checks" /tmp/forum-live-target-split-summary.md
+          grep --fixed-strings "FORUM_LIVE_TARGET" /tmp/forum-live-target-split-summary.md
+          grep --fixed-strings '"deploymentStage": "production"' /tmp/forum-live-target-split-summary.md
+          grep --fixed-strings '"requiresAccessCode": false' /tmp/forum-live-target-split-summary.md
+          grep --fixed-strings 'No `FORUM_LIVE_WRITE_ACCESS_CODE` secret update is required for this posture.' /tmp/forum-live-target-split-summary.md
+
       - name: Validate skipped live target guidance
         run: |
           rm -f /tmp/forum-live-target-skip.json /tmp/forum-live-target-skip-summary.md
