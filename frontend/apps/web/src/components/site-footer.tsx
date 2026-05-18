@@ -1,6 +1,44 @@
 import { LocalizedText } from "./localized-text";
 import { siteHref } from "../lib/site-url";
 
+const FOOTER_LINKS = [
+  {
+    href: "/download",
+    zh: "下载 App",
+    en: "Download App",
+  },
+  {
+    href: "/insights",
+    zh: "官网资讯",
+    en: "Site News",
+  },
+  {
+    href: "/buddhadharma",
+    zh: "佛法学习",
+    en: "Dharma Learning",
+  },
+  {
+    href: "/practice-guide",
+    zh: "修行方法",
+    en: "Practice Guide",
+  },
+  {
+    href: "/sutra-guide",
+    zh: "佛经导读",
+    en: "Sutra Guide",
+  },
+  {
+    href: "/faq",
+    zh: "常见问题",
+    en: "FAQ",
+  },
+  {
+    href: "/contact",
+    zh: "联系支持",
+    en: "Contact",
+  },
+] as const;
+
 export function SiteFooter() {
   return (
     <footer className="site-footer">
@@ -10,69 +48,17 @@ export function SiteFooter() {
         </p>
         <p className="footer-copy">
           <LocalizedText
-            zh="佛法导览、禅修、念佛、佛经与全球法布施。"
-            en="Dharma guides, meditation, nianfo, sutras, and global giving."
+            zh="全球法布施、禅修、听诵、佛经与稳定下载入口。"
+            en="Global giving, meditation, listening, sutras, and stable download access."
           />
         </p>
       </div>
       <div className="footer-links">
-        <a href={siteHref("/download")}>
-          <LocalizedText zh="下载 App" en="Download App" />
-        </a>
-        <a href={siteHref("/insights")}>
-          <LocalizedText zh="官网资讯" en="Site News" />
-        </a>
-        <a href={siteHref("/faq")}>
-          <LocalizedText zh="常见问题" en="FAQ" />
-        </a>
-        <a href={siteHref("/buddhadharma")}>
-          <LocalizedText zh="佛法入门" en="Dharma Basics" />
-        </a>
-        <a href={siteHref("/start-learning-buddhism")}>
-          <LocalizedText zh="学佛从哪里开始" en="Where to Begin" />
-        </a>
-        <a href={siteHref("/buddhist-concepts")}>
-          <LocalizedText zh="佛学基本概念" en="Buddhist Concepts" />
-        </a>
-        <a href={siteHref("/what-is-karma")}>
-          <LocalizedText zh="因果是什么意思" en="What Karma Means" />
-        </a>
-        <a href={siteHref("/what-is-bodhicitta")}>
-          <LocalizedText zh="菩提心是什么意思" en="What Bodhicitta Means" />
-        </a>
-        <a href={siteHref("/what-are-the-six-paramitas")}>
-          <LocalizedText zh="六度分别是什么" en="Six Paramitas" />
-        </a>
-        <a href={siteHref("/what-is-emptiness")}>
-          <LocalizedText zh="空性怎么理解" en="How to Understand Emptiness" />
-        </a>
-        <a href={siteHref("/practice-guide")}>
-          <LocalizedText zh="修行方法总览" en="Practice Guide" />
-        </a>
-        <a href={siteHref("/meditation")}>
-          <LocalizedText zh="禅修入门" en="Meditation Guide" />
-        </a>
-        <a href={siteHref("/daily-practice")}>
-          <LocalizedText zh="日常功课怎么安排" en="Daily Practice" />
-        </a>
-        <a href={siteHref("/nianfo-guide")}>
-          <LocalizedText zh="念佛入门怎么开始" en="Beginning Nianfo" />
-        </a>
-        <a href={siteHref("/sutra-guide")}>
-          <LocalizedText zh="佛经导读" en="Sutra Guide" />
-        </a>
-        <a href={siteHref("/sutra-listening")}>
-          <LocalizedText zh="听诵和读经怎么配合" en="Listening and Reading" />
-        </a>
-        <a href={siteHref("/beginner-sutra-recommendations")}>
-          <LocalizedText zh="初学者佛经推荐" en="Beginner Sutra Picks" />
-        </a>
-        <a href={siteHref("/privacy")}>
-          <LocalizedText zh="隐私说明" en="Privacy" />
-        </a>
-        <a href={siteHref("/contact")}>
-          <LocalizedText zh="联系" en="Contact" />
-        </a>
+        {FOOTER_LINKS.map((item) => (
+          <a key={item.href} href={siteHref(item.href)}>
+            <LocalizedText zh={item.zh} en={item.en} />
+          </a>
+        ))}
         <a href="mailto:support@ombhrum.com">support@ombhrum.com</a>
       </div>
     </footer>
