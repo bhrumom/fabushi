@@ -67,7 +67,7 @@ That preflight step surfaces the effective deployment stage, write posture, acce
 - write access code present while writes are still disabled
 - production runtime left writable before governance posture is ready
 
-When `FORUM_DEPLOY_CHECK_URL` is still empty, `pnpm smoke:deploy-env` now falls back to `http://127.0.0.1:${FORUM_PORT}` on the same host. That lets the first compose rollout verify itself before a real preview or production URL exists. `pnpm handoff:live-target` still needs the real external URL unless `FORUM_DEPLOY_CHECK_URL` is already filled in.
+When `FORUM_DEPLOY_CHECK_URL` is still empty, `pnpm smoke:deploy-env` now falls back to `http://127.0.0.1:${FORUM_PORT}` on the same host. That lets the first compose rollout verify itself before a real preview or production URL exists. `pnpm handoff:live-target` still needs the real external URL unless the deploy env already includes `FORUM_DEPLOY_CHECK_URL`; for production, it can also reuse `FORUM_PUBLIC_BASE_URL` when that public origin is already final.
 
 ## Hourly live deployment checks
 
@@ -96,6 +96,8 @@ pnpm handoff:live-target -- \
   --forum-url https://forum-preview.example.com \
   --deploy-env-path .env.deploy
 ```
+
+If `.env.deploy` already carries `FORUM_DEPLOY_CHECK_URL`, you can omit `--forum-url`. Production runtimes can also omit it when `.env.deploy` already declares the final `FORUM_PUBLIC_BASE_URL`.
 
 That single entrypoint will:
 
@@ -322,6 +324,14 @@ pnpm smoke:deploy-env -- --deploy-env-path .env.deploy
 curl https://forum.fabushi.com/api/health
 curl https://forum.fabushi.com/api/status
 curl https://forum.fabushi.com/robots.txt
+```
+
+Once the production origin is correct, the handoff can now stay fully deploy-env driven even if `FORUM_DEPLOY_CHECK_URL` is blank:
+
+```bash
+pnpm handoff:live-target -- \
+  --deploy-env-path .env.deploy \
+  --apply-github-live-target true
 ```
 
 Expected production signals:

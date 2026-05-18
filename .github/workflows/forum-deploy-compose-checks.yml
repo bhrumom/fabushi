@@ -199,6 +199,30 @@ jobs:
           grep "FORUM_ENABLE_WRITES=false" /tmp/forum-deploy-production.env
           grep "FORUM_DEPLOY_CHECK_URL=https://forum.fabushi.test" /tmp/forum-deploy-production.env
 
+      - name: Prepare production deploy env sample without deploy check URL
+        run: |
+          cp /tmp/forum-deploy-production.env /tmp/forum-deploy-production-no-check-url.env
+          sed -i 's#^FORUM_DEPLOY_CHECK_URL=.*#FORUM_DEPLOY_CHECK_URL=#' /tmp/forum-deploy-production-no-check-url.env
+          grep '^FORUM_DEPLOY_CHECK_URL=$' /tmp/forum-deploy-production-no-check-url.env
+
+      - name: Validate production handoff inference from public base URL
+        run: |
+          node forum/scripts/validate-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-production-no-check-url.env >/tmp/forum-deploy-production-no-check-url-summary.txt
+
+          grep --fixed-strings "handoff_forum_url: https://forum.fabushi.test" /tmp/forum-deploy-production-no-check-url-summary.txt
+          grep --fixed-strings "FORUM_DEPLOY_CHECK_URL is empty, but production handoff helpers can reuse FORUM_PUBLIC_BASE_URL=https://forum.fabushi.test." /tmp/forum-deploy-production-no-check-url-summary.txt
+
+      - name: Prepare production live target sample from public base URL
+        run: |
+          node forum/scripts/prepare-live-deployment-vars.mjs \
+            --deploy-env-path /tmp/forum-deploy-production-no-check-url.env \
+            --format json >/tmp/forum-production-live-target.json
+
+          grep --fixed-strings '"forumUrl": "https://forum.fabushi.test"' /tmp/forum-production-live-target.json
+          grep --fixed-strings '"deploymentStage": "production"' /tmp/forum-production-live-target.json
+          grep --fixed-strings '"publicBaseUrl": "https://forum.fabushi.test"' /tmp/forum-production-live-target.json
+
       - name: Build forum container image
         run: docker build -t fabushi-forum ./forum
 
@@ -354,6 +378,27 @@ jobs:
           node forum/scripts/smoke-deployment-from-env.mjs \
             --deploy-env-path /tmp/forum-deploy-production.env \
             --forum-url http://127.0.0.1:3001
+
+      - name: Handoff production live target from public base URL
+        run: |
+          rm -f /tmp/forum-production-gh-invocations.txt
+          mkdir -p /tmp/forum-mock-gh-bin-production
+          cat <<'GHEOF' >/tmp/forum-mock-gh-bin-production/gh
+          #!/usr/bin/env bash
+          printf '%s\n' "$*" >> /tmp/forum-production-gh-invocations.txt
+          GHEOF
+          chmod +x /tmp/forum-mock-gh-bin-production/gh
+          : >/tmp/forum-production-gh-invocations.txt
+
+          PATH="/tmp/forum-mock-gh-bin-production:$PATH" \
+          node forum/scripts/handoff-live-deployment-target.mjs \
+            --deploy-env-path /tmp/forum-deploy-production-no-check-url.env \
+            --apply-github-live-target true \
+            2>&1 | tee /tmp/forum-production-live-target-handoff.txt
+
+          grep --fixed-strings "gh variable set FORUM_LIVE_TARGET --body '{\"forumUrl\":\"https://forum.fabushi.test\",\"deploymentStage\":\"production\",\"publicBaseUrl\":\"https://forum.fabushi.test\",\"writesEnabled\":false,\"requiresAccessCode\":false,\"exerciseWriteFlow\":false}' --repo 'bhrumom/fabushi'" /tmp/forum-production-live-target-handoff.txt
+          grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-production-live-target-handoff.txt
+          grep --fixed-strings "variable set FORUM_LIVE_TARGET --body {\"forumUrl\":\"https://forum.fabushi.test\",\"deploymentStage\":\"production\",\"publicBaseUrl\":\"https://forum.fabushi.test\",\"writesEnabled\":false,\"requiresAccessCode\":false,\"exerciseWriteFlow\":false} --repo bhrumom/fabushi" /tmp/forum-production-gh-invocations.txt
 
       - name: Stop forum deploy compose
         if: always()
