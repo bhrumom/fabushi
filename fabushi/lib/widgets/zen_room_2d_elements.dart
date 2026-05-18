@@ -361,10 +361,22 @@ class IncenseOffering extends StatelessWidget {
 }
 
 class SutraBookButton extends StatelessWidget {
+  static const double baseWidth = 184;
+  static const double baseHeight = 128;
+  static const double aspectRatioHeight = baseHeight / baseWidth;
+
   final String title;
   final VoidCallback? onTap;
+  final double width;
+  final double height;
 
-  const SutraBookButton({super.key, required this.title, this.onTap});
+  const SutraBookButton({
+    super.key,
+    required this.title,
+    this.onTap,
+    this.width = baseWidth,
+    this.height = baseHeight,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -374,173 +386,182 @@ class SutraBookButton extends StatelessWidget {
         button: true,
         label: title,
         child: SizedBox(
-          width: 184,
-          height: 128,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              Positioned(
-                left: 22,
-                right: 22,
-                bottom: 8,
-                child: Container(
-                  height: 18,
-                  decoration: const BoxDecoration(
-                    color: Color(0x99000000),
-                    borderRadius: BorderRadius.all(Radius.elliptical(70, 9)),
-                    boxShadow: [
-                      BoxShadow(color: Color(0x99000000), blurRadius: 14),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 18,
-                top: 28,
-                child: Transform.rotate(
-                  angle: -0.08,
-                  child: _BookPanel(
-                    width: 78,
-                    height: 68,
-                    colors: const [
-                      Color(0xFFFFF3C6),
-                      Color(0xFFE4C26F),
-                      Color(0xFF7A4A16),
-                    ],
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(10),
-                      bottomLeft: Radius.circular(8),
-                      bottomRight: Radius.circular(22),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                right: 18,
-                top: 28,
-                child: Transform.rotate(
-                  angle: 0.08,
-                  child: _BookPanel(
-                    width: 78,
-                    height: 68,
-                    colors: const [
-                      Color(0xFFFFF3C6),
-                      Color(0xFFE4C26F),
-                      Color(0xFF7A4A16),
-                    ],
-                    borderRadius: const BorderRadius.only(
-                      topRight: Radius.circular(10),
-                      bottomRight: Radius.circular(8),
-                      bottomLeft: Radius.circular(22),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 8,
-                top: 16,
-                child: Transform.rotate(
-                  angle: -0.08,
-                  child: _BookPanel(
-                    width: 84,
-                    height: 78,
-                    colors: const [
-                      Color(0xFFC0261E),
-                      Color(0xFF6B0808),
-                      Color(0xFF310303),
-                    ],
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(14),
-                      bottomLeft: Radius.circular(10),
-                      bottomRight: Radius.circular(24),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                right: 8,
-                top: 16,
-                child: Transform.rotate(
-                  angle: 0.08,
-                  child: _BookPanel(
-                    width: 84,
-                    height: 78,
-                    colors: const [
-                      Color(0xFFC0261E),
-                      Color(0xFF6B0808),
-                      Color(0xFF310303),
-                    ],
-                    borderRadius: const BorderRadius.only(
-                      topRight: Radius.circular(14),
-                      bottomRight: Radius.circular(10),
-                      bottomLeft: Radius.circular(24),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 12,
-                bottom: 32,
-                child: Container(
-                  width: 5,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD4AF37),
-                    borderRadius: BorderRadius.circular(3),
-                    boxShadow: const [
-                      BoxShadow(color: Color(0xAA3A1204), blurRadius: 5),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 30,
-                right: 30,
-                top: 44,
-                child: Container(
-                  height: 30,
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0x552A0202),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0x66D4AF37)),
-                  ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      style: const TextStyle(
-                        color: Color(0xFFFFE6A3),
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        shadows: [
-                          Shadow(color: Color(0xFF3A1204), blurRadius: 4),
+          width: width,
+          height: height,
+          child: FittedBox(
+            fit: BoxFit.contain,
+            child: SizedBox(
+              width: baseWidth,
+              height: baseHeight,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Positioned(
+                    left: 22,
+                    right: 22,
+                    bottom: 8,
+                    child: Container(
+                      height: 18,
+                      decoration: const BoxDecoration(
+                        color: Color(0x99000000),
+                        borderRadius: BorderRadius.all(
+                          Radius.elliptical(70, 9),
+                        ),
+                        boxShadow: [
+                          BoxShadow(color: Color(0x99000000), blurRadius: 14),
                         ],
                       ),
                     ),
                   ),
-                ),
-              ),
-              Positioned(
-                left: 18,
-                right: 18,
-                top: 16,
-                child: IgnorePointer(
-                  child: Container(
-                    height: 82,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: const Color(0xFFD4AF37),
-                        width: 1.8,
+                  Positioned(
+                    left: 18,
+                    top: 28,
+                    child: Transform.rotate(
+                      angle: -0.08,
+                      child: _BookPanel(
+                        width: 78,
+                        height: 68,
+                        colors: const [
+                          Color(0xFFFFF3C6),
+                          Color(0xFFE4C26F),
+                          Color(0xFF7A4A16),
+                        ],
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(10),
+                          bottomLeft: Radius.circular(8),
+                          bottomRight: Radius.circular(22),
+                        ),
                       ),
                     ),
                   ),
-                ),
+                  Positioned(
+                    right: 18,
+                    top: 28,
+                    child: Transform.rotate(
+                      angle: 0.08,
+                      child: _BookPanel(
+                        width: 78,
+                        height: 68,
+                        colors: const [
+                          Color(0xFFFFF3C6),
+                          Color(0xFFE4C26F),
+                          Color(0xFF7A4A16),
+                        ],
+                        borderRadius: const BorderRadius.only(
+                          topRight: Radius.circular(10),
+                          bottomRight: Radius.circular(8),
+                          bottomLeft: Radius.circular(22),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 8,
+                    top: 16,
+                    child: Transform.rotate(
+                      angle: -0.08,
+                      child: _BookPanel(
+                        width: 84,
+                        height: 78,
+                        colors: const [
+                          Color(0xFFC0261E),
+                          Color(0xFF6B0808),
+                          Color(0xFF310303),
+                        ],
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(14),
+                          bottomLeft: Radius.circular(10),
+                          bottomRight: Radius.circular(24),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 8,
+                    top: 16,
+                    child: Transform.rotate(
+                      angle: 0.08,
+                      child: _BookPanel(
+                        width: 84,
+                        height: 78,
+                        colors: const [
+                          Color(0xFFC0261E),
+                          Color(0xFF6B0808),
+                          Color(0xFF310303),
+                        ],
+                        borderRadius: const BorderRadius.only(
+                          topRight: Radius.circular(14),
+                          bottomRight: Radius.circular(10),
+                          bottomLeft: Radius.circular(24),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 12,
+                    bottom: 32,
+                    child: Container(
+                      width: 5,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD4AF37),
+                        borderRadius: BorderRadius.circular(3),
+                        boxShadow: const [
+                          BoxShadow(color: Color(0xAA3A1204), blurRadius: 5),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 30,
+                    right: 30,
+                    top: 44,
+                    child: Container(
+                      height: 30,
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0x552A0202),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0x66D4AF37)),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          style: const TextStyle(
+                            color: Color(0xFFFFE6A3),
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            shadows: [
+                              Shadow(color: Color(0xFF3A1204), blurRadius: 4),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 18,
+                    right: 18,
+                    top: 16,
+                    child: IgnorePointer(
+                      child: Container(
+                        height: 82,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: const Color(0xFFD4AF37),
+                            width: 1.8,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
