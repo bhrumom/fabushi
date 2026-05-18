@@ -4,24 +4,14 @@ import { siteHref } from "../lib/site-url";
 
 const NAV_ITEMS = [
   {
-    href: "/",
-    zh: "首页",
-    en: "Home",
-  },
-  {
     href: "/insights",
     zh: "官网资讯",
     en: "News",
   },
   {
     href: "/buddhadharma",
-    zh: "佛法入门",
-    en: "Dharma Basics",
-  },
-  {
-    href: "/buddhist-concepts",
-    zh: "佛学概念",
-    en: "Concepts",
+    zh: "佛法学习",
+    en: "Dharma Learning",
   },
   {
     href: "/practice-guide",
@@ -29,14 +19,14 @@ const NAV_ITEMS = [
     en: "Practice Guide",
   },
   {
-    href: "/nianfo-guide",
-    zh: "念佛入门",
-    en: "Nianfo Guide",
-  },
-  {
     href: "/sutra-guide",
     zh: "佛经导读",
     en: "Sutra Guide",
+  },
+  {
+    href: "/faq",
+    zh: "常见问题",
+    en: "FAQ",
   },
 ] as const;
 
