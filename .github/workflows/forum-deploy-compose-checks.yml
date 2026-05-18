@@ -155,9 +155,9 @@ jobs:
           cat /tmp/forum-live-target-skip-summary.md
 
           node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-live-target-skip.json", "utf8")); if (!(data.skip === true && typeof data.recommendedRolloutCommand === "string" && data.recommendedRolloutCommand.includes("pnpm rollout:deploy-env") && data.recommendedRolloutCommand.includes("--scaffold-if-missing true") && typeof data.recommendedHandoffCommand === "string" && data.recommendedHandoffCommand.includes("pnpm handoff:live-target") && Array.isArray(data.repositoryConfigTargets) && data.repositoryConfigTargets.includes("FORUM_LIVE_TARGET") && Array.isArray(data.optionalSecretTargets) && data.optionalSecretTargets.includes("FORUM_LIVE_WRITE_ACCESS_CODE"))) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
-          grep --fixed-strings "pnpm rollout:deploy-env -- \\" /tmp/forum-live-target-skip-summary.md
+          grep --fixed-strings "pnpm rollout:deploy-env --" /tmp/forum-live-target-skip-summary.md
           grep --fixed-strings -- "--scaffold-if-missing true" /tmp/forum-live-target-skip-summary.md
-          grep --fixed-strings "pnpm handoff:live-target -- \\" /tmp/forum-live-target-skip-summary.md
+          grep --fixed-strings "pnpm handoff:live-target --" /tmp/forum-live-target-skip-summary.md
           grep --fixed-strings -- "--apply-github-live-target true" /tmp/forum-live-target-skip-summary.md
           grep --fixed-strings "Guide: forum/DEPLOY.md" /tmp/forum-live-target-skip-summary.md
 
@@ -399,6 +399,33 @@ jobs:
           grep --fixed-strings "gh variable set FORUM_LIVE_TARGET --body '{\"forumUrl\":\"https://forum.fabushi.test\",\"deploymentStage\":\"production\",\"publicBaseUrl\":\"https://forum.fabushi.test\",\"writesEnabled\":false,\"requiresAccessCode\":false,\"exerciseWriteFlow\":false}' --repo 'bhrumom/fabushi'" /tmp/forum-production-live-target-handoff.txt
           grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-production-live-target-handoff.txt
           grep --fixed-strings "variable set FORUM_LIVE_TARGET --body {\"forumUrl\":\"https://forum.fabushi.test\",\"deploymentStage\":\"production\",\"publicBaseUrl\":\"https://forum.fabushi.test\",\"writesEnabled\":false,\"requiresAccessCode\":false,\"exerciseWriteFlow\":false} --repo bhrumom/fabushi" /tmp/forum-production-gh-invocations.txt
+
+      - name: Roll out production runtime and auto-handoff from public base URL
+        run: |
+          rm -f /tmp/forum-production-rollout-gh-invocations.txt
+          mkdir -p /tmp/forum-mock-gh-bin-production-rollout
+          cat <<'GHEOF' >/tmp/forum-mock-gh-bin-production-rollout/gh
+          #!/usr/bin/env bash
+          printf '%s\n' "$*" >> /tmp/forum-production-rollout-gh-invocations.txt
+          GHEOF
+          chmod +x /tmp/forum-mock-gh-bin-production-rollout/gh
+          : >/tmp/forum-production-rollout-gh-invocations.txt
+
+          PATH="/tmp/forum-mock-gh-bin-production-rollout:$PATH" \
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          node forum/scripts/rollout-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-production-no-check-url.env \
+            --compose-file forum/docker-compose.deploy.yml \
+            --compose-project-name fabushi-forum-deploy-check \
+            --handoff-live-target true \
+            --apply-github-live-target true \
+            2>&1 | tee /tmp/forum-production-rollout-handoff.txt
+
+          grep --fixed-strings "== Hourly live target handoff ==" /tmp/forum-production-rollout-handoff.txt
+          grep --fixed-strings "gh variable set FORUM_LIVE_TARGET --body '{\"forumUrl\":\"https://forum.fabushi.test\",\"deploymentStage\":\"production\",\"publicBaseUrl\":\"https://forum.fabushi.test\",\"writesEnabled\":false,\"requiresAccessCode\":false,\"exerciseWriteFlow\":false}' --repo 'bhrumom/fabushi'" /tmp/forum-production-rollout-handoff.txt
+          grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-production-rollout-handoff.txt
+          grep --fixed-strings "variable set FORUM_LIVE_TARGET --body {\"forumUrl\":\"https://forum.fabushi.test\",\"deploymentStage\":\"production\",\"publicBaseUrl\":\"https://forum.fabushi.test\",\"writesEnabled\":false,\"requiresAccessCode\":false,\"exerciseWriteFlow\":false} --repo bhrumom/fabushi" /tmp/forum-production-rollout-gh-invocations.txt
 
       - name: Stop forum deploy compose
         if: always()

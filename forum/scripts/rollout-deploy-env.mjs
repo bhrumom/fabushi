@@ -83,6 +83,20 @@ function validateHandoffMode(value) {
   throw new Error(`Expected --handoff-live-target to be auto, true, or false, received: ${value}`);
 }
 
+function resolveHandoffUrl({ explicitForumUrl, deployEnv }) {
+  const forumUrl = normalizeUrl(explicitForumUrl?.trim() || deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || "");
+  if (forumUrl) {
+    return forumUrl;
+  }
+
+  const deploymentStage = deployEnv.FORUM_DEPLOYMENT_STAGE?.trim() || "preview";
+  if (deploymentStage === "production") {
+    return normalizeUrl(deployEnv.FORUM_PUBLIC_BASE_URL?.trim() || "");
+  }
+
+  return "";
+}
+
 function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -377,8 +391,10 @@ async function main() {
   }
 
   const deployEnv = await loadDeployEnv(deployEnvPath);
-  const deployCheckUrl = normalizeUrl(deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || "");
-  const handoffUrl = explicitForumUrl || deployCheckUrl;
+  const handoffUrl = resolveHandoffUrl({
+    explicitForumUrl,
+    deployEnv,
+  });
 
   const sharedArgs = ["--deploy-env-path", deployEnvPath];
 
@@ -418,13 +434,13 @@ async function main() {
   if (!handoffUrl) {
     if (handoffMode === "true") {
       throw new Error(
-        "Handoff requires either --forum-url or FORUM_DEPLOY_CHECK_URL in the deploy env file.",
+        "Handoff requires either --forum-url, FORUM_DEPLOY_CHECK_URL, or production FORUM_PUBLIC_BASE_URL in the deploy env file.",
       );
     }
 
     console.log("\n== Hourly live target handoff ==");
     console.log(
-      "Skipping handoff because neither --forum-url nor FORUM_DEPLOY_CHECK_URL is available yet. Re-run with the real preview or production URL once it exists.",
+      "Skipping handoff because neither --forum-url, FORUM_DEPLOY_CHECK_URL, nor a production FORUM_PUBLIC_BASE_URL is available yet. Re-run with the real preview or production URL once it exists.",
     );
     return;
   }

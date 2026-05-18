@@ -334,6 +334,16 @@ pnpm handoff:live-target -- \
   --apply-github-live-target true
 ```
 
+If you want the same production host run to boot the compose stack, verify the local runtime, and sync the hourly target in one pass, the combined rollout helper now follows the same `FORUM_PUBLIC_BASE_URL` fallback:
+
+```bash
+pnpm rollout:deploy-env -- \
+  --deploy-env-path .env.deploy \
+  --apply-github-live-target true
+```
+
+That combined helper still smokes the local runtime through `http://127.0.0.1:${FORUM_PORT}` when `FORUM_DEPLOY_CHECK_URL` is blank, then hands the verified hourly target off using `FORUM_PUBLIC_BASE_URL`.
+
 Expected production signals:
 
 - `/api/health` returns `ready: true`
