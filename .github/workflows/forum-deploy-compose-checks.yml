@@ -371,6 +371,33 @@ jobs:
           grep "secret set FORUM_LIVE_WRITE_ACCESS_CODE --body" /tmp/forum-gh-invocations.txt
           grep -- "--repo bhrumom/fabushi" /tmp/forum-gh-invocations.txt
 
+      - name: Handoff writable preview live target directly from deploy env check URL
+        run: |
+          rm -f /tmp/forum-preview-direct-handoff-gh-invocations.txt /tmp/forum-preview-direct-handoff-report.json
+          mkdir -p /tmp/forum-mock-gh-bin-preview-direct
+          cat <<'GHEOF' >/tmp/forum-mock-gh-bin-preview-direct/gh
+          #!/usr/bin/env bash
+          printf '%s\n' "$*" >> /tmp/forum-preview-direct-handoff-gh-invocations.txt
+          GHEOF
+          chmod +x /tmp/forum-mock-gh-bin-preview-direct/gh
+          : >/tmp/forum-preview-direct-handoff-gh-invocations.txt
+
+          PATH="/tmp/forum-mock-gh-bin-preview-direct:$PATH" \
+          node forum/scripts/handoff-live-deployment-target.mjs \
+            --deploy-env-path /tmp/forum-deploy-writable-preview.env \
+            --exercise-write-flow true \
+            --apply-github-live-target true \
+            --report-path /tmp/forum-preview-direct-handoff-report.json \
+            2>&1 | tee /tmp/forum-preview-direct-handoff.txt
+
+          grep --fixed-strings "gh variable set FORUM_LIVE_TARGET --body '{\"forumUrl\":\"http://127.0.0.1:3001\",\"deploymentStage\":\"preview\",\"publicBaseUrl\":\"\",\"writesEnabled\":true,\"requiresAccessCode\":true,\"exerciseWriteFlow\":true}' --repo 'bhrumom/fabushi'" /tmp/forum-preview-direct-handoff.txt
+          grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-preview-direct-handoff.txt
+          test -f /tmp/forum-preview-direct-handoff-report.json
+          cat /tmp/forum-preview-direct-handoff-report.json
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-preview-direct-handoff-report.json", "utf8")); if (!(data.ok === true && data.forumUrl === "http://127.0.0.1:3001" && data.deploymentStage === "preview" && data.indexingEnabled === false && data.writesEnabled === true && data.requiresAccessCode === true && data.exerciseWriteFlow === true && data.liveWriteVerification && data.liveWriteVerification.threadSlug)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
+          grep --fixed-strings "variable set FORUM_LIVE_TARGET --body {\"forumUrl\":\"http://127.0.0.1:3001\",\"deploymentStage\":\"preview\",\"publicBaseUrl\":\"\",\"writesEnabled\":true,\"requiresAccessCode\":true,\"exerciseWriteFlow\":true} --repo bhrumom/fabushi" /tmp/forum-preview-direct-handoff-gh-invocations.txt
+          grep --fixed-strings "secret set FORUM_LIVE_WRITE_ACCESS_CODE --body forum-preview-2026 --repo bhrumom/fabushi" /tmp/forum-preview-direct-handoff-gh-invocations.txt
+
       - name: Stop forum deploy compose writable preview runtime
         run: |
           COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
