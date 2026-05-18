@@ -30,6 +30,28 @@ function createPayload(target) {
   return JSON.stringify(target, null, 2);
 }
 
+function buildSkipNextStepLines(target) {
+  return [
+    "### How to unblock",
+    "",
+    "Use a real preview or production forum URL from the host rollout, then hand it back to the hourly checks:",
+    "",
+    "```bash",
+    "cd forum",
+    "pnpm handoff:live-target -- \\",
+    "  --forum-url https://forum-preview.example.com \\",
+    "  --deploy-env-path .env.deploy \\",
+    "  --apply-github-live-target true",
+    "```",
+    "",
+    "That command re-validates `.env.deploy`, smoke-checks the live runtime, and syncs `FORUM_LIVE_TARGET` back to `bhrumom/fabushi`.",
+    "If the preview write gate stays enabled, it also syncs `FORUM_LIVE_WRITE_ACCESS_CODE`.",
+    "",
+    "If you want a one-off verification before saving hourly config, run this workflow manually with the same forum URL and posture inputs.",
+    `Guide: ${target.nextStepGuidePath}`,
+  ];
+}
+
 function buildSummaryLines(target) {
   if (target.skip) {
     return [
@@ -37,7 +59,10 @@ function buildSummaryLines(target) {
       "",
       "- status: skipped",
       `- reason: ${target.reason}`,
-      "- next config: set FORUM_LIVE_URL or FORUM_LIVE_TARGET before expecting hourly checks to hit a real target",
+      `- missing config: ${target.missingConfig.join(", ")}`,
+      `- guide: ${target.nextStepGuidePath}`,
+      "",
+      ...buildSkipNextStepLines(target),
     ];
   }
 
@@ -124,6 +149,17 @@ async function main() {
       source,
       skip: true,
       reason: "No forum URL configured for scheduled live deployment checks.",
+      missingConfig: ["FORUM_LIVE_TARGET or FORUM_LIVE_URL"],
+      nextStepGuidePath: "forum/DEPLOY.md",
+      recommendedHandoffCommand: [
+        "cd forum",
+        "pnpm handoff:live-target -- \\",
+        "  --forum-url https://forum-preview.example.com \\",
+        "  --deploy-env-path .env.deploy \\",
+        "  --apply-github-live-target true",
+      ].join("\n"),
+      repositoryConfigTargets: ["FORUM_LIVE_TARGET"],
+      optionalSecretTargets: ["FORUM_LIVE_WRITE_ACCESS_CODE"],
     };
 
     if (process.env.FORUM_LIVE_TARGET_PATH) {
