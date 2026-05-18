@@ -97,6 +97,64 @@ function resolveHandoffUrl({ explicitForumUrl, deployEnv }) {
   return "";
 }
 
+function renderCommandBlock(command, args) {
+  const continuation = ` ${String.fromCharCode(92)}`;
+  const lines = ["cd forum", `${command} --${continuation}`];
+
+  args.forEach((arg, index) => {
+    const suffix = index === args.length - 1 ? "" : continuation;
+    lines.push(`  ${arg}${suffix}`);
+  });
+
+  return lines.join("\n");
+}
+
+function buildSkippedHandoffCommand({ deployEnvPath, exerciseWriteFlow, applyGithubLiveTarget }) {
+  const args = [
+    "--forum-url https://forum-preview.example.com",
+    `--deploy-env-path ${deployEnvPath}`,
+  ];
+
+  if (exerciseWriteFlow) {
+    args.push("--exercise-write-flow true");
+  }
+
+  if (applyGithubLiveTarget) {
+    args.push("--apply-github-live-target true");
+  }
+
+  return renderCommandBlock("pnpm handoff:live-target", args);
+}
+
+function logSkippedHandoffGuidance({ deployEnvPath, deployEnv, exerciseWriteFlow, applyGithubLiveTarget }) {
+  const deploymentStage = deployEnv.FORUM_DEPLOYMENT_STAGE?.trim() || "preview";
+
+  console.log(
+    "Skipping handoff because neither --forum-url, FORUM_DEPLOY_CHECK_URL, nor a production FORUM_PUBLIC_BASE_URL is available yet. Re-run with the real preview or production URL once it exists.",
+  );
+  console.log("");
+  console.log(
+    "The local rollout already completed and passed the host-side smoke check. The remaining step is only to bind that verified runtime to a real external URL for hourly checks.",
+  );
+  console.log("");
+  console.log("Once the runtime is reachable at its real preview or production URL, run:");
+  console.log("");
+  console.log(buildSkippedHandoffCommand({ deployEnvPath, exerciseWriteFlow, applyGithubLiveTarget }));
+  console.log("");
+
+  if (deploymentStage === "production") {
+    console.log(
+      "If this is intended to become the final production origin, save that URL as FORUM_PUBLIC_BASE_URL in .env.deploy so future handoffs can stay fully deploy-env driven.",
+    );
+  } else {
+    console.log(
+      "If this preview host will keep the same external URL, save it as FORUM_DEPLOY_CHECK_URL in .env.deploy so future handoffs can omit --forum-url.",
+    );
+  }
+
+  console.log("Guide: forum/DEPLOY.md");
+}
+
 function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -439,9 +497,12 @@ async function main() {
     }
 
     console.log("\n== Hourly live target handoff ==");
-    console.log(
-      "Skipping handoff because neither --forum-url, FORUM_DEPLOY_CHECK_URL, nor a production FORUM_PUBLIC_BASE_URL is available yet. Re-run with the real preview or production URL once it exists.",
-    );
+    logSkippedHandoffGuidance({
+      deployEnvPath,
+      deployEnv,
+      exerciseWriteFlow,
+      applyGithubLiveTarget: true,
+    });
     return;
   }
 
