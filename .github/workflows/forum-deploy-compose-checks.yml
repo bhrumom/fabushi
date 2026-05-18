@@ -192,6 +192,20 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          dump_rollout_preview_diagnostics() {
+            local exit_code="$?"
+            echo "::group::Read-only preview rollout diagnostics"
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-rollout-preview-bootstrap.env -f forum/docker-compose.deploy.yml ps || true
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-rollout-preview-bootstrap.env -f forum/docker-compose.deploy.yml logs --no-color || true
+            echo "::endgroup::"
+            return "${exit_code}"
+          }
+          trap 'dump_rollout_preview_diagnostics' ERR
+
           rm -f /tmp/forum-rollout-preview-bootstrap.env /tmp/forum-rollout-preview-report.json
 
           COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
@@ -207,6 +221,7 @@ jobs:
             --report-path /tmp/forum-rollout-preview-report.json \
             2>&1 | tee /tmp/forum-rollout-preview.txt
 
+          trap - ERR
           grep "== Scaffold deploy env ==" /tmp/forum-rollout-preview.txt
           grep "FORUM_DEPLOYMENT_STAGE=preview" /tmp/forum-rollout-preview-bootstrap.env
           grep "FORUM_ENABLE_WRITES=false" /tmp/forum-rollout-preview-bootstrap.env
@@ -232,6 +247,20 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          dump_rollout_writable_preview_diagnostics() {
+            local exit_code="$?"
+            echo "::group::Writable preview rollout diagnostics"
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-deploy-writable-preview.env -f forum/docker-compose.deploy.yml ps || true
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-deploy-writable-preview.env -f forum/docker-compose.deploy.yml logs --no-color || true
+            echo "::endgroup::"
+            return "${exit_code}"
+          }
+          trap 'dump_rollout_writable_preview_diagnostics' ERR
+
           rm -f /tmp/forum-live-target-report.json
           mkdir -p /tmp/forum-mock-gh-bin
           cat <<'GHEOF' >/tmp/forum-mock-gh-bin/gh
@@ -253,6 +282,7 @@ jobs:
             --report-path /tmp/forum-live-target-report.json \
             2>&1 | tee /tmp/forum-live-target-handoff.txt
 
+          trap - ERR
           cat /tmp/forum-gh-invocations.txt
           grep "gh variable set FORUM_LIVE_TARGET" /tmp/forum-live-target-handoff.txt
           grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-live-target-handoff.txt
