@@ -20,27 +20,49 @@ import {
 import { siteHref, siteUrl } from "../../lib/site-url";
 
 const downloadUrl = siteUrl("/download");
-const downloadTitle = `Download | ${brand.name}`;
-const downloadDescription = "Choose Android beta, iOS TestFlight, or stable download paths for Fabushi.";
+const downloadTitle = `法布施大乘 App 下载 | Android、iOS、版本与安装说明 | ${brand.name}`;
+const downloadDescription =
+  "法布施大乘 App 下载页，集中提供 Android、iOS 下载入口、版本说明、安装步骤、镜像与常见下载问题。";
 
 const downloadFaqs = [
   {
-    questionZh: "我应该先点哪个入口？",
-    questionEn: "Which button should I open first?",
-    answerZh: "想尽快体验新版本，先看测试版；更想要稳定，就等正式版。",
-    answerEn: "Pick beta for the newest release quickly. Wait for stable if you want the calmer path.",
+    questionZh: "我应该下载测试版还是正式版？",
+    questionEn: "Should I choose beta or stable first?",
+    answerZh: "想尽快体验新版本或新功能，可以先看测试版；更在意稳定性，或准备长期使用，就优先看正式版。下载前先确认版本号和发布时间，会更稳。",
+    answerEn: "Choose beta if you want the newest build or features first. Choose stable if you care more about installation stability and long-term use. Checking the version number and publish date first is the steadier path.",
   },
   {
-    questionZh: "Android 下载慢怎么办？",
-    questionEn: "What if Android downloads are slow?",
-    answerZh: "优先尝试卡片里的镜像链接；如果仍不可用，把平台和错误截图发到支持邮箱。",
-    answerEn: "Try the mirror links on the card first. If that still fails, send the platform and screenshot to support.",
+    questionZh: "Android 下载慢或安装失败怎么办？",
+    questionEn: "What should I do if Android download is slow or installation fails?",
+    answerZh: "先尝试当前卡片里的镜像链接，再确认自己下载的是对应平台和版本；如果仍然失败，把设备型号、系统版本和错误截图发到支持邮箱。",
+    answerEn: "Try the mirror links on the current card first, then confirm that you downloaded the matching platform and version. If it still fails, send the device model, OS version, and an error screenshot to support.",
   },
   {
-    questionZh: "iOS 为什么会跳到 TestFlight？",
+    questionZh: "iOS 为什么会打开 TestFlight？",
     questionEn: "Why does iOS open TestFlight?",
-    answerZh: "iOS 内测通过 Apple TestFlight 分发。公开加入链接开放后，下载页会直接显示。",
-    answerEn: "iOS beta is distributed through Apple TestFlight. Once public access is ready, the page links there directly.",
+    answerZh: "iOS 测试版通过 Apple TestFlight 分发。入口开放后，下载按钮会直接跳转到对应测试页，这是正常流程。",
+    answerEn: "iOS beta is distributed through Apple TestFlight. Once access is open, the download button will jump there directly, which is the expected flow.",
+  },
+] as const;
+
+const installSteps = [
+  {
+    titleZh: "先确认你的设备平台和版本偏好",
+    titleEn: "Confirm your device and version preference first",
+    descriptionZh: "Android 与 iOS 入口分开显示；想先体验新功能可以看测试版，更想稳一点就先看正式版。",
+    descriptionEn: "Android and iOS paths are listed separately. Choose beta for newer features first, or stable for a calmer install path.",
+  },
+  {
+    titleZh: "进入对应下载入口并完成安装",
+    titleEn: "Open the matching download path and install",
+    descriptionZh: "Android 可以优先使用主下载入口，较慢时再切到镜像；iOS 测试版会通过 TestFlight 打开。",
+    descriptionEn: "Use the main Android link first and switch to a mirror only if needed. iOS beta opens through TestFlight.",
+  },
+  {
+    titleZh: "安装失败时先看 FAQ，再联系支持",
+    titleEn: "Check the FAQ first, then contact support if installation fails",
+    descriptionZh: "下载或安装异常时，先排查常见问题；仍然无法解决，再把设备信息和错误截图发给支持邮箱。",
+    descriptionEn: "If download or installation behaves unexpectedly, check the common questions first. If the issue remains, send device details and screenshots to support.",
   },
 ] as const;
 
@@ -62,7 +84,16 @@ const DOWNLOAD_NOTES = [
 export const metadata: Metadata = {
   title: downloadTitle,
   description: downloadDescription,
-  keywords: ["Fabushi download", "Android Beta", "iOS TestFlight", "release notes"],
+  keywords: [
+    "法布施大乘 App 下载",
+    "Fabushi 下载",
+    "Android 下载",
+    "iOS 下载",
+    "TestFlight",
+    "安装说明",
+    "版本说明",
+    "佛教 app",
+  ],
   alternates: {
     canonical: downloadUrl,
   },
@@ -71,7 +102,7 @@ export const metadata: Metadata = {
     description: downloadDescription,
     url: downloadUrl,
     siteName: "Fabushi",
-    locale: "en_US",
+    locale: "zh_CN",
     type: "website",
   },
   twitter: {
@@ -124,7 +155,10 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
       <div className="release-card-header">
         <div>
           <p className="eyebrow">
-            <LocalizedText zh={channel.audience === "beta" ? "测试版" : "正式版"} en={channel.audience === "beta" ? "Beta" : "Stable"} />
+            <LocalizedText
+              zh={channel.audience === "beta" ? "测试版" : "正式版"}
+              en={channel.audience === "beta" ? "Beta" : "Stable"}
+            />
           </p>
           <h2>{channel.title}</h2>
         </div>
@@ -137,8 +171,16 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
       </p>
       {(channel.version || publishedAt) && (
         <div className="release-card-meta">
-          {channel.version ? <span><LocalizedText zh="版本" en="Version" /> v{channel.version}</span> : null}
-          {publishedAt ? <span><LocalizedText zh="发布时间" en="Published" /> {publishedAt}</span> : null}
+          {channel.version ? (
+            <span>
+              <LocalizedText zh="版本" en="Version" /> v{channel.version}
+            </span>
+          ) : null}
+          {publishedAt ? (
+            <span>
+              <LocalizedText zh="发布时间" en="Published" /> {publishedAt}
+            </span>
+          ) : null}
         </div>
       )}
       {summary.length > 0 ? (
@@ -183,17 +225,50 @@ export default async function DownloadPage() {
   const betaChannels = releaseCollection.betaChannels;
   const stableChannels = releaseCollection.stableChannels;
   const allChannels = [...betaChannels, ...stableChannels];
-  const supportEmail = contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
+  const supportEmail =
+    contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
 
   const structuredData = {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "CollectionPage",
-        name: `${brand.name} Download`,
+        name: "法布施大乘 App 下载",
         url: downloadUrl,
         description: downloadDescription,
-        inLanguage: "en",
+        inLanguage: "zh-CN",
+        isPartOf: {
+          "@type": "WebSite",
+          name: `${brand.name} Fabushi`,
+          url: siteUrl("/"),
+        },
+        about: ["App 下载", "Android 下载", "iOS 下载", "安装说明", "版本说明"],
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          {
+            "@type": "ListItem",
+            position: 1,
+            name: "首页",
+            item: siteUrl("/"),
+          },
+          {
+            "@type": "ListItem",
+            position: 2,
+            name: "下载 App",
+            item: downloadUrl,
+          },
+        ],
+      },
+      {
+        "@type": "SoftwareApplication",
+        name: `${brand.name} Fabushi`,
+        applicationCategory: "LifestyleApplication",
+        operatingSystem: "Android, iOS",
+        url: downloadUrl,
+        downloadUrl,
+        description: downloadDescription,
       },
       {
         "@type": "ItemList",
@@ -210,13 +285,25 @@ export default async function DownloadPage() {
         })),
       },
       {
+        "@type": "HowTo",
+        name: "法布施大乘 App 下载与安装步骤",
+        description: "先确认平台与版本，再选择下载入口，安装失败时先查 FAQ，再联系支持。",
+        step: installSteps.map((item, index) => ({
+          "@type": "HowToStep",
+          position: index + 1,
+          name: item.titleZh,
+          text: item.descriptionZh,
+          url: `${downloadUrl}#install-steps`,
+        })),
+      },
+      {
         "@type": "FAQPage",
         mainEntity: downloadFaqs.map((item) => ({
           "@type": "Question",
-          name: item.questionEn,
+          name: item.questionZh,
           acceptedAnswer: {
             "@type": "Answer",
-            text: item.answerEn,
+            text: item.answerZh,
           },
         })),
       },
@@ -239,12 +326,15 @@ export default async function DownloadPage() {
             <LocalizedText zh="下载" en="Download" />
           </p>
           <h1>
-            <LocalizedText zh="选一个入口，知道自己下的是哪个版本。" en="Pick a download path and know exactly which version you are getting." />
+            <LocalizedText
+              zh="选对平台入口，再下载对应版本。"
+              en="Choose the right platform path before downloading the matching version."
+            />
           </h1>
           <p className="lede">
             <LocalizedText
-              zh="这里会集中显示可下载版本、发布时间和最近更新。"
-              en="This page brings the available builds, publish date, and recent updates into one place."
+              zh="这一页集中放置 Android、iOS、版本说明、镜像和安装步骤，让下载路径更短。"
+              en="This page keeps Android, iOS, release notes, mirrors, and install steps in one place so the download path stays short."
             />
           </p>
         </div>
@@ -309,7 +399,35 @@ export default async function DownloadPage() {
         </div>
       </section>
 
-      <section className="band">
+      <section className="band" id="install-steps">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="安装步骤" en="Install Steps" />
+          </p>
+          <h2>
+            <LocalizedText zh="按这三步走，下载与安装会更稳。" en="Follow these three steps for a steadier download and install flow." />
+          </h2>
+        </div>
+        <div className="editorial-list">
+          {installSteps.map((item, index) => (
+            <article key={item.titleEn} className="editorial-row">
+              <span>
+                <LocalizedText zh={`步骤 ${index + 1}`} en={`Step ${index + 1}`} />
+              </span>
+              <div>
+                <strong>
+                  <LocalizedText zh={item.titleZh} en={item.titleEn} />
+                </strong>
+                <p>
+                  <LocalizedText zh={item.descriptionZh} en={item.descriptionEn} />
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt">
         <div className="section-heading tight">
           <p>
             <LocalizedText zh="说明" en="Notes" />
@@ -325,12 +443,23 @@ export default async function DownloadPage() {
             </p>
           ))}
           <p>
-            <LocalizedText zh={`遇到下载或安装问题，发邮件到 ${supportEmail}。`} en={`If download or install fails, email ${supportEmail}.`} />
+            <LocalizedText
+              zh={`遇到下载或安装问题，发邮件到 ${supportEmail}。`}
+              en={`If download or install fails, email ${supportEmail}.`}
+            />
           </p>
+        </div>
+        <div className="inline-cta">
+          <a className="secondary-action" href={siteHref("/faq")}>
+            <LocalizedText zh="查看常见问题" en="View FAQ" />
+          </a>
+          <a className="secondary-action" href={`mailto:${supportEmail}`}>
+            <LocalizedText zh="联系支持" en="Contact support" />
+          </a>
         </div>
       </section>
 
-      <section className="band alt">
+      <section className="band">
         <div className="section-heading tight">
           <p>FAQ</p>
           <h2>
@@ -352,7 +481,7 @@ export default async function DownloadPage() {
       </section>
 
       {releaseCollection.releases.length > 0 && (
-        <section className="band" id="release-changelog">
+        <section className="band alt" id="release-changelog">
           <div className="section-heading tight">
             <p>
               <LocalizedText zh="更新日志" en="Release log" />
