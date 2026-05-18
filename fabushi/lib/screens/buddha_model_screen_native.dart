@@ -14,7 +14,7 @@ import '../services/asset_loader_service.dart';
 import '../utils/model_auto_fit.dart';
 import 'buddha_model_screen_android_three.dart';
 
-enum _BuddhaRendererPath { androidThreePrimary, flutterScenePrimary }
+enum _BuddhaRendererPath { flutterScenePrimary, androidThreeFallback }
 
 class BuddhaModelScreen extends StatefulWidget {
   final bool autoRotate;
@@ -68,7 +68,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   String? _flutterSceneError;
   String _loadingLabel = '恭请佛像...';
 
-  bool get _shouldUseAndroidThreePrimary =>
+  bool get _canUseAndroidThreeFallback =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   @override
@@ -84,10 +84,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   Future<void> _bootstrapRenderer() async {
-    if (_shouldUseAndroidThreePrimary) {
-      await _startAndroidThreePrimary();
-      return;
-    }
     await _startFlutterScenePrimary();
   }
 
@@ -108,14 +104,13 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     }
   }
 
-  Future<void> _startAndroidThreePrimary() async {
+  Future<void> _startAndroidThreeFallback() async {
     if (!mounted) return;
     setState(() {
-      _flutterSceneError = null;
       _androidThreeError = null;
       _resetForFreshLoad(
-        loadingLabel: '安卓佛像加载中...',
-        activePath: _BuddhaRendererPath.androidThreePrimary,
+        loadingLabel: '正在切换备用佛像渲染...',
+        activePath: _BuddhaRendererPath.androidThreeFallback,
       );
     });
   }
@@ -143,9 +138,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     try {
       await _ensureFlutterSceneEnvironment();
     } catch (error) {
-      _markFlutterSceneFailed('flutter_scene 初始化失败: $error');
+      await _handleFlutterSceneFailure('flutter_scene 初始化失败: $error');
       return;
     }
+
+    _scene?.removeAll();
 
     const maxRetries = 2;
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
@@ -170,6 +167,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
         if (!mounted) return;
         await _buildBuddhaNode(modelData);
+        debugPrint(
+          '✅ [BuddhaModel] flutter_scene 模型已加载: '
+          '${modelData.lengthInBytes} bytes',
+        );
         AssetLoaderService.releaseBuddhaModelMemoryCache();
 
         setState(() {
@@ -194,7 +195,9 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
       }
     }
 
-    _markFlutterSceneFailed(_flutterSceneError ?? 'flutter_scene 备用渲染失败');
+    await _handleFlutterSceneFailure(
+      _flutterSceneError ?? 'flutter_scene 渲染失败',
+    );
   }
 
   Future<void> _ensureFlutterSceneEnvironment() async {
@@ -315,10 +318,16 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     _markLoadFailed(details);
   }
 
-  void _markFlutterSceneFailed(String details) {
+  Future<void> _handleFlutterSceneFailure(String details) async {
     _flutterSceneError = details;
     _lastLoadError = details;
     debugPrint('❌ [BuddhaModel] flutter_scene 失败: $details');
+
+    if (_canUseAndroidThreeFallback) {
+      await _startAndroidThreeFallback();
+      return;
+    }
+
     _markLoadFailed(details);
   }
 
@@ -405,7 +414,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     if (_renderFailed || !mounted) {
       return;
     }
-    _markFlutterSceneFailed('flutter_scene 渲染失败: $error');
+    _renderFailed = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_handleFlutterSceneFailure('flutter_scene 渲染失败: $error'));
+    });
   }
 
   @override
@@ -448,10 +461,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   String get _compatibilityBanner {
-    if (_activeRendererPath == _BuddhaRendererPath.androidThreePrimary) {
-      return '安卓佛像使用 three_dart 原生渲染';
+    if (_activeRendererPath == _BuddhaRendererPath.androidThreeFallback) {
+      return '已切换到 three_dart 备用渲染';
     }
-    return '佛像已切换为兼容展示';
+    return '佛像使用 flutter_scene 渲染';
   }
 
   @override
@@ -500,7 +513,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
               ),
               if (!_loadFailed &&
                   _activeRendererPath ==
-                      _BuddhaRendererPath.androidThreePrimary)
+                      _BuddhaRendererPath.androidThreeFallback)
                 Positioned.fill(
                   child: AndroidThreeBuddhaView(
                     key: ValueKey(
@@ -672,11 +685,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                               side: const BorderSide(color: Color(0xFFFFD700)),
                             ),
                             onPressed: () {
-                              if (_shouldUseAndroidThreePrimary) {
-                                unawaited(_startAndroidThreePrimary());
-                              } else {
-                                unawaited(_startFlutterScenePrimary());
-                              }
+                              unawaited(_startFlutterScenePrimary());
                             },
                             child: const Text('静心重试'),
                           ),
@@ -816,6 +825,7 @@ class _IncensePainter extends CustomPainter {
           base.translate(-46, 12),
           base.translate(46, 34),
           const [Color(0xFFFFD36A), Color(0xFF7A4314), Color(0xFFD4AF37)],
+          const [0.0, 0.55, 1.0],
         ),
     );
 

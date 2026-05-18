@@ -158,9 +158,9 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
     renderer.setPixelRatio(dpr);
     renderer.setSize(size.width, size.height, false);
     renderer.shadowMap.enabled = false;
-    renderer.outputEncoding = three.sRGBEncoding;
-    renderer.toneMapping = three.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
+    renderer.outputEncoding = three.LinearEncoding;
+    renderer.toneMapping = three.NoToneMapping;
+    renderer.toneMappingExposure = 1.0;
     renderer.setClearColor(three.Color(0x000000), 0.0);
 
     final renderTargetOptions = three.WebGLRenderTargetOptions({
@@ -292,32 +292,25 @@ class _AndroidThreeBuddhaViewState extends State<AndroidThreeBuddhaView> {
       if (child is! three.Mesh) return;
       child.castShadow = false;
       child.receiveShadow = false;
-      _retuneMaterial(child.material);
+      child.material = _createBuddhaMaterial(child.material);
     });
   }
 
-  void _retuneMaterial(dynamic material) {
+  dynamic _createBuddhaMaterial(dynamic material) {
     if (material is Iterable) {
-      for (final item in material) {
-        _retuneMaterial(item);
-      }
-      return;
+      return material.map(_createBuddhaMaterial).toList();
     }
 
-    if (material is three.MeshStandardMaterial) {
-      material.color = three.Color.fromHex(0xffcc4a);
-      material.metalness = 0.72;
-      material.roughness = 0.24;
-      material.emissive = three.Color.fromHex(0x1a1203);
-      material.emissiveIntensity = 0.42;
-      material.needsUpdate = true;
-      return;
+    final simpleMaterial = three.MeshBasicMaterial({
+      'color': three.Color.fromHex(0xffcc4a),
+      'fog': false,
+      'toneMapped': false,
+    });
+    if (material is three.Material && material.transparent == true) {
+      simpleMaterial.transparent = true;
+      simpleMaterial.opacity = material.opacity;
     }
-
-    if (material is three.Material) {
-      material.color = three.Color.fromHex(0xffcc4a);
-      material.needsUpdate = true;
-    }
+    return simpleMaterial;
   }
 
   void _updateCamera() {

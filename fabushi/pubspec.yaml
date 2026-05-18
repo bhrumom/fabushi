@@ -178,7 +178,7 @@ flutter:
     - assets/ip_data/
     - assets/sherpa_models/streaming-paraformer-zh-en/
     - web/assets/models/佛像模型.glb
-    # iOS 使用 R2 上的 .model；Android 使用 three_dart 渲染打包 GLB，失败时再读远端 GLB
+    # Android/iOS 优先使用 R2 上的 .model；Android 仅在 flutter_scene 失败时回退到打包 GLB
   
   fonts:
     # 使用子集化后的字体（从80MB压缩至~4.5MB）

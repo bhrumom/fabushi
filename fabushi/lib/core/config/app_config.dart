@@ -168,7 +168,7 @@ class AppConfig {
   // 3D 佛像模型配置
   // 如果 R2 上需要切换到新的对象键，优先改这里，便于强制绕开旧缓存。
   static const String buddhaModelAssetPath = 'models/buddha_model.model';
-  // Android 使用 three_dart 直接渲染 GLB；iOS 继续使用 flutter_scene .model。
+  // Android/iOS 优先使用 R2 上的 flutter_scene .model；Android 失败时再回退到 three_dart GLB。
   static const String legacyBuddhaGlbAssetPath = 'models/佛像模型.glb';
   static const String androidThreeBuddhaGlbAssetPath =
       'web/assets/models/佛像模型.glb';
