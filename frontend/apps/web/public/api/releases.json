@@ -7,24 +7,26 @@
       "title": "Android Beta",
       "description": "官网直接读取最新发布版本的 APK 安装包，安装包发布后这里会自动更新。",
       "primaryLabel": "下载 Android Beta",
-      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/v1.0.0-264-mobile.9343bf8a0543/fabushi-android-arm64-9343bf8a0543.apk",
-      "version": "v1.0.0-264-mobile.9343bf8a0543",
-      "publishedAt": "2026-05-17T11:51:40Z",
+      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/v1.0.0-296-mobile.33e5d5f9d6f2/fabushi-android-arm64-33e5d5f9d6f2.apk",
+      "version": "v1.0.0-296-mobile.33e5d5f9d6f2",
+      "publishedAt": "2026-05-18T07:04:21Z",
       "updateSummary": [
-        "改进 Android 测试版下载与安装稳定性。"
+        "改进 Android 测试版下载与安装稳定性。",
+        "dart analyze lib/screens/buddha_model_screen_native.dart lib/core/config/app_config.dart",
+        "减少更新后仍显示旧内容的情况。"
       ],
       "mirrorLinks": [
         {
           "label": "国内镜像 1",
-          "href": "https://mirror.ghproxy.com/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-264-mobile.9343bf8a0543/fabushi-android-arm64-9343bf8a0543.apk"
+          "href": "https://mirror.ghproxy.com/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-296-mobile.33e5d5f9d6f2/fabushi-android-arm64-33e5d5f9d6f2.apk"
         },
         {
           "label": "国内镜像 2",
-          "href": "https://ghfast.top/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-264-mobile.9343bf8a0543/fabushi-android-arm64-9343bf8a0543.apk"
+          "href": "https://ghfast.top/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-296-mobile.33e5d5f9d6f2/fabushi-android-arm64-33e5d5f9d6f2.apk"
         }
       ],
       "note": "国内访问较慢时，可以优先尝试镜像下载入口。",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-264-mobile.9343bf8a0543"
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-296-mobile.33e5d5f9d6f2"
     },
     {
       "platform": "iOS",
@@ -34,19 +36,32 @@
       "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
       "primaryLabel": "加入 iOS TestFlight",
       "primaryHref": "https://testflight.apple.com/join/98KFgV2z",
-      "version": "264",
-      "publishedAt": "2026-05-17T11:49:53Z",
+      "version": "296",
+      "publishedAt": "2026-05-18T07:02:23Z",
       "updateSummary": [
-        "改进 Android 测试版下载与安装稳定性。"
+        "改进 Android 测试版下载与安装稳定性。",
+        "dart analyze lib/screens/buddha_model_screen_native.dart lib/core/config/app_config.dart",
+        "减少更新后仍显示旧内容的情况。"
       ],
       "mirrorLinks": [],
       "note": "",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-264-mobile.9343bf8a0543"
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-296-mobile.33e5d5f9d6f2"
     }
   ],
   "stableChannels": [],
   "screenshots": {},
   "releases": [
+    {
+      "tag": "v1.0.0-296-mobile.33e5d5f9d6f2",
+      "title": "Fabushi mobile 1.0.0+296 (33e5d5f9d6f2)",
+      "publishedAt": "2026-05-18T07:04:21Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-296-mobile.33e5d5f9d6f2",
+      "summary": [
+        "改进 Android 测试版下载与安装稳定性。",
+        "dart analyze lib/screens/buddha_model_screen_native.dart lib/core/config/app_config.dart",
+        "减少更新后仍显示旧内容的情况。"
+      ]
+    },
     {
       "tag": "v1.0.0-264-mobile.9343bf8a0543",
       "title": "Fabushi mobile 1.0.0+264 (9343bf8a0543)",
@@ -89,20 +104,6 @@
         "失败任务：:integration_test:mapReleaseSourceSetPaths",
         "当前 app 配置的 NDK 还是 27.0.12077973",
         "但 integration_test 已明确要求 28.2.13676358"
-      ]
-    },
-    {
-      "tag": "v1.0.0-173-mobile.8b1008e548ed",
-      "title": "Fabushi mobile 1.0.0+173 (8b1008e548ed)",
-      "publishedAt": "2026-05-16T00:46:01Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-173-mobile.8b1008e548ed",
-      "summary": [
-        "feat(web): surface dharma learning paths on homepage",
-        "首页对佛法内容集群的内部链接传递还不够强，学习型页面更多只能靠导航、页脚或站内深链被发现。",
-        "首页自己的主题信号仍偏产品下载站，无法把“学佛从哪里开始 / 佛法入门 / 禅修入门 / 佛经导读”这条学习路径清楚地展示给用户和搜索引擎。",
-        "为首页新增 metadata，把 title、description、keywords、canonical、open graph、twitter 明确对齐到佛法学习路径与产品实践入口。",
-        "在首页新增 学佛路径 区块，用更接近初学者真实问题的方式承接四条内容路径：",
-        "在首页结构化数据中新增 ItemList，把四条学习路径作为首页可理解的内容列表输出。"
       ]
     }
   ],
