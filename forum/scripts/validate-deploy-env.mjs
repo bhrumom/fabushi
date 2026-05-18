@@ -74,6 +74,7 @@ function buildDeployPosture({ deployEnvPath, deployEnv }) {
   const deployCheckUrl = normalizeUrl(deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || "");
   const defaultSmokeUrl = deployCheckUrl || buildLocalSmokeUrl(port);
   const publicBaseUrl = normalizeUrl(deployEnv.FORUM_PUBLIC_BASE_URL?.trim() || "");
+  const handoffForumUrl = deployCheckUrl || (deploymentStage === "production" ? publicBaseUrl : "");
   const writesEnabled = parseBoolean(deployEnv.FORUM_ENABLE_WRITES ?? "false", "FORUM_ENABLE_WRITES");
   const writeAccessCode = (deployEnv.FORUM_WRITE_ACCESS_CODE || "").trim();
   const requiresAccessCode = writesEnabled && Boolean(writeAccessCode);
@@ -81,9 +82,15 @@ function buildDeployPosture({ deployEnvPath, deployEnv }) {
   const warnings = [];
 
   if (!deployCheckUrl) {
-    warnings.push(
-      `FORUM_DEPLOY_CHECK_URL is empty, so handoff helpers still require an explicit --forum-url. smoke:deploy-env will fall back to ${defaultSmokeUrl} on the target host.`,
-    );
+    if (handoffForumUrl) {
+      warnings.push(
+        `FORUM_DEPLOY_CHECK_URL is empty, but production handoff helpers can reuse FORUM_PUBLIC_BASE_URL=${handoffForumUrl}. smoke:deploy-env will still fall back to ${defaultSmokeUrl} on the target host.`,
+      );
+    } else {
+      warnings.push(
+        `FORUM_DEPLOY_CHECK_URL is empty, so handoff helpers still require an explicit --forum-url. smoke:deploy-env will fall back to ${defaultSmokeUrl} on the target host.`,
+      );
+    }
   }
 
   if (deploymentStage === "preview" && publicBaseUrl) {
@@ -118,6 +125,7 @@ function buildDeployPosture({ deployEnvPath, deployEnv }) {
     dataDir,
     deployCheckUrl,
     defaultSmokeUrl,
+    handoffForumUrl,
     dataSource,
     deploymentStage,
     publicBaseUrl,
@@ -138,6 +146,7 @@ function renderSummary(posture) {
     `- data_dir: ${posture.dataDir}`,
     `- deploy_check_url: ${posture.deployCheckUrl || "(empty)"}`,
     `- default_smoke_url: ${posture.defaultSmokeUrl}`,
+    `- handoff_forum_url: ${posture.handoffForumUrl || "(requires --forum-url)"}`,
     `- data_source: ${posture.dataSource}`,
     `- deployment_stage: ${posture.deploymentStage}`,
     `- public_base_url: ${posture.publicBaseUrl || "(empty)"}`,
