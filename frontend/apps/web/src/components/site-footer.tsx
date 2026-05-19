@@ -8,34 +8,19 @@ const FOOTER_LINKS = [
     en: "Download App",
   },
   {
-    href: "/insights",
-    zh: "官网资讯",
-    en: "Site News",
-  },
-  {
-    href: "/buddhadharma",
-    zh: "佛法学习",
-    en: "Dharma Learning",
-  },
-  {
-    href: "/practice-guide",
-    zh: "修行方法",
-    en: "Practice Guide",
-  },
-  {
-    href: "/sutra-guide",
-    zh: "佛经导读",
-    en: "Sutra Guide",
-  },
-  {
     href: "/faq",
-    zh: "常见问题",
-    en: "FAQ",
+    zh: "下载 FAQ",
+    en: "Download FAQ",
   },
   {
     href: "/contact",
     zh: "联系支持",
     en: "Contact",
+  },
+  {
+    href: "/privacy",
+    zh: "隐私说明",
+    en: "Privacy",
   },
 ] as const;
 
@@ -48,8 +33,8 @@ export function SiteFooter() {
         </p>
         <p className="footer-copy">
           <LocalizedText
-            zh="全球法布施、禅修、听诵、佛经与稳定下载入口。"
-            en="Global giving, meditation, listening, sutras, and stable download access."
+            zh="App 下载、版本说明、安装支持与稳定入口。"
+            en="App download, release notes, installation support, and stable access."
           />
         </p>
       </div>
