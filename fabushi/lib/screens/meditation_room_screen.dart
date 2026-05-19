@@ -36,6 +36,10 @@ class MeditationRoomScreen extends StatefulWidget {
 
 class MeditationRoomScreenState extends State<MeditationRoomScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
+  static const Duration _minimumRecordedMeditationDuration = Duration(
+    minutes: 1,
+  );
+
   /// 公开方法：设置页面可见性（由主导航调用）
   void setVisible(bool visible) {
     _onVisibilityChanged(visible);
@@ -250,6 +254,45 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     return false;
   }
 
+  bool _shouldSkipPracticeRecord(Duration duration) {
+    return duration < _minimumRecordedMeditationDuration;
+  }
+
+  Future<bool> _confirmShortMeditationEnd() async {
+    if (!mounted) return false;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('提醒', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          '本次修行不足1分钟，不会记录入修行数据。确定结束修行吗？',
+          style: TextStyle(color: Colors.white70, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              '继续修行',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFD4AF37),
+            ),
+            child: const Text('确定结束', style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
+
+    return confirmed == true;
+  }
+
   void _onIncenseProgressChanged() {
     _buddhaKey.currentState?.updateIncenseProgress(_incenseController.value);
   }
@@ -303,64 +346,76 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   }
 
   /// 结束修行并同步数据
-  Future<void> _endMeditation() async {
+  Future<void> _endMeditation({bool skipRecording = false}) async {
     final result = await _sessionManager.endSession();
     _incenseController.stop();
     _incenseController.reset();
     _buddhaKey.currentState?.updateIncenseProgress(0);
 
     if (result.success) {
-      // 触发结束成就
-      await _achievementSystem.onSessionEnd(
-        duration: result.duration,
-        chantCount: result.chantCount,
-        sutra: result.sutra ?? '默认功课',
-      );
+      final shouldSkipRecording =
+          skipRecording || _shouldSkipPracticeRecord(result.duration);
 
       // 离开在线活动
       await _onlineCounterService.leaveActivity();
 
-      String? reflectionNotes;
-      final practice = _sessionManager.lockedPractice;
-      if (mounted && practice != null) {
-        reflectionNotes = await showReflectionDialog(
-          context,
+      if (!shouldSkipRecording) {
+        // 触发结束成就
+        await _achievementSystem.onSessionEnd(
           duration: result.duration,
           chantCount: result.chantCount,
-          sutraTitle: practice.title,
-          filePath: practice.filePath,
+          sutra: result.sutra ?? '默认功课',
         );
-      }
-      if (!mounted) return;
 
-      // 修行记录必须进入云端保存链路。网络异常时服务会放入待同步队列。
-      final savedToCloud = await _syncToCloud(result, notes: reflectionNotes);
+        String? reflectionNotes;
+        final practice = _sessionManager.lockedPractice;
+        if (mounted && practice != null) {
+          reflectionNotes = await showReflectionDialog(
+            context,
+            duration: result.duration,
+            chantCount: result.chantCount,
+            sutraTitle: practice.title,
+            filePath: practice.filePath,
+          );
+        }
+        if (!mounted) return;
 
-      if (mounted && !savedToCloud) {
+        // 修行记录必须进入云端保存链路。网络异常时服务会放入待同步队列。
+        final savedToCloud = await _syncToCloud(result, notes: reflectionNotes);
+
+        if (mounted && !savedToCloud) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('云端保存失败，请登录并检查网络后重试'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        } else if (mounted && PracticeStatsService().lastWriteQueued) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('网络暂不可用，记录已加入云端待同步'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else if (mounted && reflectionNotes?.isNotEmpty == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('心得已保存到修行记录，仅自己可见'),
+              backgroundColor: Color(0xFFD4AF37),
+            ),
+          );
+        }
+
+        if (mounted && practice == null) {
+          _showCompletionDialog(result);
+        }
+      } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('云端保存失败，请登录并检查网络后重试'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      } else if (mounted && PracticeStatsService().lastWriteQueued) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('网络暂不可用，记录已加入云端待同步'),
+            content: Text('本次修行不足1分钟，未计入修行数据'),
             backgroundColor: Colors.orange,
           ),
         );
-      } else if (mounted && reflectionNotes?.isNotEmpty == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('心得已保存到修行记录，仅自己可见'),
-            backgroundColor: Color(0xFFD4AF37),
-          ),
-        );
-      }
-
-      if (mounted && practice == null) {
-        _showCompletionDialog(result);
       }
     }
 
@@ -1129,6 +1184,15 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                 child: GestureDetector(
                   onTap: () async {
                     if (_sessionManager.isInSession) {
+                      if (_shouldSkipPracticeRecord(
+                        _sessionManager.currentDuration,
+                      )) {
+                        final confirmed = await _confirmShortMeditationEnd();
+                        if (!confirmed) return;
+                        await _endMeditation(skipRecording: true);
+                        return;
+                      }
+
                       await _endMeditation();
                     } else {
                       await _autoStartMeditation();
