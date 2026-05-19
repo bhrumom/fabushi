@@ -117,6 +117,12 @@ If the host already has `gh` authenticated and you want to push the verified hou
 --apply-github-live-target true
 ```
 
+If you prefer to drive the same path from GitHub Actions on an Oracle host, use the manual workflow `Deploy forum preview - Oracle`:
+
+- On the first rollout, `forum_url` can stay empty. The workflow will still clone or refresh the repo, scaffold or validate `forum/.env.deploy`, pull the published image, run `rollout:deploy-env`, and verify the local host runtime.
+- In that no-URL first-pass mode, the workflow now reports that live-target sync was intentionally skipped instead of failing late while trying to save `FORUM_LIVE_TARGET`.
+- Once the preview has a stable external URL, rerun the same workflow with `forum_url` filled in, or keep `FORUM_DEPLOY_CHECK_URL` or `FORUM_PUBLIC_BASE_URL` inside `forum/.env.deploy`, and the workflow will complete the verified live-target handoff.
+
 If the preview runtime is intentionally writable and you want the handoff itself to prove the real thread-and-reply flow before printing or syncing the hourly config, add:
 
 ```bash
