@@ -179,6 +179,17 @@ function pickFirstString(item: RawContentResult, keys: string[]) {
   return "";
 }
 
+function pickFirstNumber(item: RawContentResult, keys: string[]) {
+  for (const key of keys) {
+    const numberValue = getNumber(item[key]);
+    if (numberValue !== undefined) {
+      return numberValue;
+    }
+  }
+
+  return undefined;
+}
+
 function normalizeContentResult(item: RawContentResult): CbetaContentSearchResult | null {
   const work = pickFirstString(item, ["work", "work_id", "workId", "sutra", "id"]);
   const snippet = trimSnippet(
@@ -190,7 +201,7 @@ function normalizeContentResult(item: RawContentResult): CbetaContentSearchResul
   }
 
   const title = pickFirstString(item, ["title", "work_title", "workTitle", "sutra_name", "book", "name"]) || work;
-  const juan = getNumber(item.juan) ?? getNumber(item.juan_num) ?? getNumber(item.juanNum) ?? getNumber(item卷) ?? 1;
+  const juan = pickFirstNumber(item, ["juan", "juan_num", "juanNum", "卷"]) ?? 1;
 
   return {
     work,
