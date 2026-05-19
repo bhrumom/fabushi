@@ -378,7 +378,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       final saved = await service.syncRecord(
         sutra: result.sutra ?? '默认功课',
         sutraSource: 'auto',
-        chantCount: result.chantCount > 0 ? result.chantCount : 1,
+        chantCount: result.chantCount,
         duration: result.duration.inMinutes,
         startTime: result.startTime,
         endTime: result.endTime,
