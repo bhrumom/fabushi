@@ -4,6 +4,11 @@ import { siteHref } from "../lib/site-url";
 
 const NAV_ITEMS = [
   {
+    href: "/faliu",
+    zh: "法流",
+    en: "Faloo",
+  },
+  {
     href: "/faq",
     zh: "下载 FAQ",
     en: "Download FAQ",
