@@ -265,27 +265,32 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
   }
 
   void _drawSmokeColumn(Canvas canvas, Offset tip, double time, double seed) {
-    for (var i = 0; i < 8; i++) {
-      final t = (time * 0.055 + i / 8 + seed * 0.011) % 1.0;
-      final drift = math.sin(t * math.pi * 2.0 + seed) * (10 + t * 28);
-      final sideDrift = math.cos(time * 0.45 + i + seed) * (2 + t * 8);
+    for (var i = 0; i < 11; i++) {
+      final t = (time * 0.045 + i / 11 + seed * 0.009) % 1.0;
+      final phase = time * 0.32 + i * 1.73 + seed * 0.15;
+      final start = tip.translate(math.sin(phase) * 2.4, -1.5 - t * 10);
+      final drift =
+          math.sin(t * math.pi * 2.0 + seed * 0.2) * (7 + t * 38) +
+          math.cos(phase * 0.8) * (2 + t * 10);
       final end = Offset(
-        tip.dx + drift + sideDrift,
-        tip.dy - smokeRise * (0.20 + t * 0.78),
+        tip.dx + drift,
+        tip.dy - smokeRise * (0.16 + t * 0.82),
       );
       final controlOne = Offset(
-        tip.dx + math.sin(time * 0.35 + i) * 18,
-        tip.dy - smokeRise * (0.12 + t * 0.14),
+        tip.dx + math.sin(phase + 0.6) * (8 + t * 22),
+        tip.dy - smokeRise * (0.10 + t * 0.18),
       );
       final controlTwo = Offset(
-        tip.dx + drift * 0.55 + math.cos(i + seed) * 12,
-        tip.dy - smokeRise * (0.36 + t * 0.36),
+        tip.dx + drift * 0.48 + math.cos(phase + 1.4) * (10 + t * 18),
+        tip.dy - smokeRise * (0.34 + t * 0.34),
       );
-      final opacity = ((1 - t) * 0.23 + 0.04).clamp(0.0, 0.24).toDouble();
-      final stroke = (2.8 - t * 1.15).clamp(1.1, 2.8).toDouble();
+      final fade = math.sin(t * math.pi).clamp(0.0, 1.0).toDouble();
+      final opacity = (0.035 + fade * 0.105 + (1 - t) * 0.035)
+          .clamp(0.0, 0.17)
+          .toDouble();
 
       final path = Path()
-        ..moveTo(tip.dx, tip.dy)
+        ..moveTo(start.dx, start.dy)
         ..cubicTo(
           controlOne.dx,
           controlOne.dy,
@@ -298,20 +303,28 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
       canvas.drawPath(
         path,
         Paint()
-          ..color = Color.fromRGBO(244, 238, 222, opacity)
+          ..color = Color.fromRGBO(224, 221, 212, opacity * 0.34)
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
-          ..strokeWidth = stroke
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2.5 + t * 5.5),
+          ..strokeWidth = 5.0 + t * 7.0
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8 + t * 10),
+      );
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = Color.fromRGBO(248, 244, 232, opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = (1.45 - t * 0.65).clamp(0.55, 1.45).toDouble()
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 1.2 + t * 2.4),
       );
 
       if (i.isEven) {
-        canvas.drawCircle(
-          end,
-          5.5 + t * 10.0,
+        canvas.drawOval(
+          Rect.fromCenter(center: end, width: 9 + t * 32, height: 20 + t * 42),
           Paint()
-            ..color = Color.fromRGBO(236, 231, 218, opacity * 0.72)
-            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 7 + t * 8),
+            ..color = Color.fromRGBO(230, 226, 216, opacity * 0.16)
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 10 + t * 12),
         );
       }
     }
@@ -406,22 +419,6 @@ class IncenseOffering extends StatelessWidget {
                       ),
                     ),
                   ),
-                  for (var i = 0; i < 3; i++)
-                    Positioned(
-                      left: centerX + dx - 7 + (i.isEven ? -8 : 8),
-                      bottom: flameBottom + 22 + i * 24,
-                      child: Container(
-                        width: 14.0 + i * 6,
-                        height: 14.0 + i * 6,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Color.fromRGBO(235, 229, 214, 0.16 - i * 0.03),
-                          boxShadow: const [
-                            BoxShadow(color: Color(0x66EDE5D8), blurRadius: 12),
-                          ],
-                        ),
-                      ),
-                    ),
                 ],
               ],
               Positioned(
