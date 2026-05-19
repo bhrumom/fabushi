@@ -7,25 +7,24 @@
       "title": "Android Beta",
       "description": "官网直接读取最新发布版本的 APK 安装包，安装包发布后这里会自动更新。",
       "primaryLabel": "下载 Android Beta",
-      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/v1.0.0-325-mobile.d5059671747a/fabushi-android-arm64-d5059671747a.apk",
-      "version": "v1.0.0-325-mobile.d5059671747a",
-      "publishedAt": "2026-05-19T06:40:38Z",
+      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/v1.0.0-334-mobile.d2f85bce106e/fabushi-android-arm64-d2f85bce106e.apk",
+      "version": "v1.0.0-334-mobile.d2f85bce106e",
+      "publishedAt": "2026-05-19T12:16:46Z",
       "updateSummary": [
-        "改进官网界面与浏览体验。",
-        "优化整体稳定性与页面呈现。"
+        "改进 Android 测试版下载与安装稳定性。"
       ],
       "mirrorLinks": [
         {
           "label": "国内镜像 1",
-          "href": "https://mirror.ghproxy.com/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-325-mobile.d5059671747a/fabushi-android-arm64-d5059671747a.apk"
+          "href": "https://mirror.ghproxy.com/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-334-mobile.d2f85bce106e/fabushi-android-arm64-d2f85bce106e.apk"
         },
         {
           "label": "国内镜像 2",
-          "href": "https://ghfast.top/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-325-mobile.d5059671747a/fabushi-android-arm64-d5059671747a.apk"
+          "href": "https://ghfast.top/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-334-mobile.d2f85bce106e/fabushi-android-arm64-d2f85bce106e.apk"
         }
       ],
       "note": "国内访问较慢时，可以优先尝试镜像下载入口。",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-325-mobile.d5059671747a"
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-334-mobile.d2f85bce106e"
     },
     {
       "platform": "iOS",
@@ -35,28 +34,35 @@
       "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
       "primaryLabel": "加入 iOS TestFlight",
       "primaryHref": "https://testflight.apple.com/join/98KFgV2z",
-      "version": "325",
-      "publishedAt": "2026-05-19T06:38:04Z",
+      "version": "334",
+      "publishedAt": "2026-05-19T12:13:55Z",
       "updateSummary": [
-        "改进官网界面与浏览体验。",
-        "优化整体稳定性与页面呈现。"
+        "改进 Android 测试版下载与安装稳定性。"
       ],
       "mirrorLinks": [],
       "note": "",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-325-mobile.d5059671747a"
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-334-mobile.d2f85bce106e"
     }
   ],
   "stableChannels": [],
   "screenshots": {},
   "releases": [
     {
+      "tag": "v1.0.0-334-mobile.d2f85bce106e",
+      "title": "Fabushi mobile 1.0.0+334 (d2f85bce106e)",
+      "publishedAt": "2026-05-19T12:16:46Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-334-mobile.d2f85bce106e",
+      "summary": [
+        "改进 Android 测试版下载与安装稳定性。"
+      ]
+    },
+    {
       "tag": "v1.0.0-325-mobile.d5059671747a",
       "title": "Fabushi mobile 1.0.0+325 (d5059671747a)",
       "publishedAt": "2026-05-19T06:40:38Z",
       "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-325-mobile.d5059671747a",
       "summary": [
-        "改进官网界面与浏览体验。",
-        "优化整体稳定性与页面呈现。"
+        "改进官网界面与浏览体验。"
       ]
     },
     {
@@ -65,8 +71,7 @@
       "publishedAt": "2026-05-19T00:07:03Z",
       "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-316-mobile.792e8f00c9cd",
       "summary": [
-        "改进 Android 测试版下载与安装稳定性。",
-        "优化最新版本信息的展示方式。"
+        "改进 Android 测试版下载与安装稳定性。"
       ]
     },
     {
@@ -75,8 +80,7 @@
       "publishedAt": "2026-05-18T13:03:57Z",
       "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-307-mobile.fde8b7853fc8",
       "summary": [
-        "改进 Android 测试版下载与安装稳定性。",
-        "优化最新版本信息的展示方式。"
+        "改进 Android 测试版下载与安装稳定性。"
       ]
     },
     {
@@ -87,16 +91,6 @@
       "summary": [
         "改进官网界面与浏览体验。",
         "改进 Android 测试版下载与安装稳定性。"
-      ]
-    },
-    {
-      "tag": "v1.0.0-303-mobile.2605074f8f6d",
-      "title": "Fabushi mobile 1.0.0+303 (2605074f8f6d)",
-      "publishedAt": "2026-05-18T11:55:54Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-303-mobile.2605074f8f6d",
-      "summary": [
-        "改进 Android 测试版下载与安装稳定性。",
-        "优化最新版本信息的展示方式。"
       ]
     }
   ],
