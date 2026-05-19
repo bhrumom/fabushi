@@ -281,6 +281,7 @@ class PracticeStatsService extends ChangeNotifier {
 
   String? _authToken;
   String? _authUsername;
+  String? _authUserId;
   PracticeStats _stats = PracticeStats.empty();
   List<DayStats> _weeklyData = [];
   List<DayStats> _monthlyData = [];
@@ -312,7 +313,7 @@ class PracticeStatsService extends ChangeNotifier {
 
   void setAuthToken(String? token) {
     _authToken = token;
-    _authUsername = _usernameFromToken(token);
+    _setIdentityFromToken(token);
 
     if (token == null || token.isEmpty) {
       _clearCloudData();
@@ -330,8 +331,22 @@ class PracticeStatsService extends ChangeNotifier {
     'Content-Type': 'application/json',
   };
 
-  String get _pendingRecordsKey =>
-      'practice_pending_records_${_authUsername ?? 'unknown'}';
+  String get _pendingRecordsKey {
+    final userId = _authUserId;
+    if (userId != null && userId.isNotEmpty) {
+      return 'practice_pending_records_user_$userId';
+    }
+    return 'practice_pending_records_${_authUsername ?? 'unknown'}';
+  }
+
+  String? get _legacyUsernamePendingRecordsKey {
+    if (_authUserId == null ||
+        _authUsername == null ||
+        _authUsername!.isEmpty) {
+      return null;
+    }
+    return 'practice_pending_records_${_authUsername!}';
+  }
 
   void _clearCloudData() {
     _stats = PracticeStats.empty();
@@ -355,28 +370,34 @@ class PracticeStatsService extends ChangeNotifier {
     if (token == null || token.isEmpty) return false;
 
     _authToken = token;
-    _authUsername = _usernameFromToken(token);
+    _setIdentityFromToken(token);
     await _refreshPendingCount();
     return true;
   }
 
-  String? _usernameFromToken(String? token) {
-    if (token == null || token.isEmpty) return null;
+  void _setIdentityFromToken(String? token) {
+    _authUsername = null;
+    _authUserId = null;
+    if (token == null || token.isEmpty) return;
 
     try {
       final parts = token.split('.');
-      if (parts.length != 3) return null;
+      if (parts.length != 3) return;
       final normalized = base64Url.normalize(parts[1]);
       final payload = jsonDecode(utf8.decode(base64Url.decode(normalized)));
-      return (payload['username'] ?? payload['sub'])?.toString();
+      _authUsername = (payload['username'] ?? payload['sub'])?.toString();
+      _authUserId = (payload['userId'] ?? payload['user_id'] ?? payload['id'])
+          ?.toString();
     } catch (_) {
-      return null;
+      return;
     }
   }
 
-  Future<List<Map<String, dynamic>>> _loadPendingRecords() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_pendingRecordsKey);
+  Future<List<Map<String, dynamic>>> _readPendingRecords(
+    SharedPreferences prefs,
+    String key,
+  ) async {
+    final raw = prefs.getString(key);
     if (raw == null || raw.isEmpty) return [];
 
     try {
@@ -384,9 +405,27 @@ class PracticeStatsService extends ChangeNotifier {
       return items.map((e) => Map<String, dynamic>.from(e as Map)).toList();
     } catch (e) {
       debugPrint('读取待同步修行记录失败: $e');
-      await prefs.remove(_pendingRecordsKey);
+      await prefs.remove(key);
       return [];
     }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadPendingRecords() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = _pendingRecordsKey;
+    final records = await _readPendingRecords(prefs, key);
+    final legacyKey = _legacyUsernamePendingRecordsKey;
+
+    if (legacyKey != null && legacyKey != key) {
+      final legacyRecords = await _readPendingRecords(prefs, legacyKey);
+      if (legacyRecords.isNotEmpty) {
+        records.addAll(legacyRecords);
+        await prefs.remove(legacyKey);
+        await prefs.setString(key, jsonEncode(records));
+      }
+    }
+
+    return records;
   }
 
   Future<void> _savePendingRecords(List<Map<String, dynamic>> records) async {
