@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { brand, contactChannels } from "@fabushi/shared";
 import { DownloadLink } from "../components/download-link";
+import { HomeFaliuSearch } from "../components/home-faliu-search";
 import { LocalizedText } from "../components/localized-text";
 import { SiteFooter } from "../components/site-footer";
 import { SiteHeader } from "../components/site-header";
@@ -299,6 +300,7 @@ export default async function HomePage() {
                 en="Bring meditation, listening, daily practice, and global giving into one app, then decide to download after seeing the interface clearly."
               />
             </p>
+            <HomeFaliuSearch />
             <div className="hero-actions">
               <a className="primary-action" href={siteHref("/download")}>
                 <LocalizedText zh="下载 App" en="Download App" />
