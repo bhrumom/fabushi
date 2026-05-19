@@ -60,7 +60,9 @@ export interface AppComment {
 }
 
 const CBETA_API_ROOT = "https://cbdata.dila.edu.tw/stable";
-const APP_API_ROOT = "https://api.ombhrum.com";
+const APP_API_ROOT = "https://api.ombhrum.com/api";
+const CBETA_PROXY_ROOT = "/api/cbeta";
+const APP_PROXY_ROOT = "/api/app";
 
 function buildUrl(base: string, path: string, params?: Record<string, string | number | undefined>) {
   const url = new URL(path, `${base}/`);
@@ -78,18 +80,110 @@ function buildUrl(base: string, path: string, params?: Record<string, string | n
   return url.toString();
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-    },
-  });
+function buildRelativeUrl(base: string, path: string, params?: Record<string, string | number | undefined>) {
+  const normalizedBase = base.replace(/\/+$/g, "");
+  const normalizedPath = path.replace(/^\/+/g, "");
+  const query = new URLSearchParams();
 
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null || value === "") {
+        continue;
+      }
+
+      query.set(key, String(value));
+    }
   }
 
-  return (await response.json()) as T;
+  const suffix = query.toString();
+  return `${normalizedBase}/${normalizedPath}${suffix ? `?${suffix}` : ""}`;
+}
+
+function isBrowserRuntime() {
+  return typeof window !== "undefined";
+}
+
+function cbetaUrls(path: string, params?: Record<string, string | number | undefined>) {
+  const directUrl = buildUrl(CBETA_API_ROOT, path, params);
+
+  if (!isBrowserRuntime()) {
+    return [directUrl];
+  }
+
+  return [buildRelativeUrl(CBETA_PROXY_ROOT, path, params), directUrl];
+}
+
+function appUrls(path: string, params?: Record<string, string | number | undefined>) {
+  const directUrl = buildUrl(APP_API_ROOT, path, params);
+
+  if (!isBrowserRuntime()) {
+    return [directUrl];
+  }
+
+  return [buildRelativeUrl(APP_PROXY_ROOT, path, params), directUrl];
+}
+
+async function fetchJson<T>(urls: string | string[]): Promise<T> {
+  const candidates = Array.isArray(urls) ? urls : [urls];
+  let lastError: unknown = null;
+
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        lastError = new Error(`Request failed: ${response.status}`);
+        continue;
+      }
+
+      return (await response.json()) as T;
+    } catch (cause) {
+      lastError = cause;
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+
+  throw new Error("Request failed");
+}
+
+async function postJson<T>(urls: string | string[], body: unknown): Promise<T> {
+  const candidates = Array.isArray(urls) ? urls : [urls];
+  let lastError: unknown = null;
+
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        lastError = new Error(`Request failed: ${response.status}`);
+        continue;
+      }
+
+      return (await response.json()) as T;
+    } catch (cause) {
+      lastError = cause;
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+
+  throw new Error("Request failed");
 }
 
 export function buildCbetaContentId(work: string, juan: string) {
@@ -97,7 +191,7 @@ export function buildCbetaContentId(work: string, juan: string) {
 }
 
 export async function fetchAllWorks(): Promise<CbetaWorkIndexItem[]> {
-  return fetchJson<CbetaWorkIndexItem[]>(buildUrl(CBETA_API_ROOT, "download/all-works.json"));
+  return fetchJson<CbetaWorkIndexItem[]>(cbetaUrls("download/all-works.json"));
 }
 
 export async function searchWorksByTitle(query: string, start = 0, rows = 24): Promise<CbetaWorkInfo[]> {
@@ -109,7 +203,7 @@ export async function searchWorksByTitle(query: string, start = 0, rows = 24): P
       juan?: number;
       time_dynasty?: string;
     }>;
-  }>(buildUrl(CBETA_API_ROOT, "search/title", { q: query, start, rows }));
+  }>(cbetaUrls("search/title", { q: query, start, rows }));
 
   return (data.results ?? []).flatMap((item) => {
     if (!item.work || !item.content) {
@@ -129,18 +223,19 @@ export async function searchWorksByTitle(query: string, start = 0, rows = 24): P
 }
 
 export async function fetchWorkInfo(work: string): Promise<CbetaWorkInfo | null> {
-  const data = await fetchJson<{ results?: CbetaWorkInfo[] }>(buildUrl(CBETA_API_ROOT, "works", { work }));
+  const data = await fetchJson<{ results?: CbetaWorkInfo[] }>(cbetaUrls("works", { work }));
   return data.results?.[0] ?? null;
 }
 
 export async function fetchJuanDetail(work: string, juan: string): Promise<CbetaJuanDetail | null> {
   const data = await fetchJson<{
-    results?: Array<{ html?: string; juan?: string | number }>;
+    results?: Array<string | { html?: string; juan?: string | number }>;
     work_info?: CbetaWorkInfo;
     toc?: { mulu?: CbetaTocNode[]; juan?: CbetaTocNode[] };
-  }>(buildUrl(CBETA_API_ROOT, "juans", { work, juan, work_info: 1, toc: 1 }));
+  }>(cbetaUrls("juans", { work, juan, work_info: 1, toc: 1 }));
 
-  const html = data.results?.[0]?.html;
+  const firstResult = data.results?.[0];
+  const html = typeof firstResult === "string" ? firstResult : firstResult?.html;
   const workInfo = data.work_info;
 
   if (!html || !workInfo) {
@@ -164,22 +259,9 @@ export async function fetchBatchStats(contentIds: string[]): Promise<Record<stri
     return {};
   }
 
-  const response = await fetch(buildUrl(APP_API_ROOT, "api/content/batch-stats"), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({ contentIds }),
-  });
-
-  if (!response.ok) {
-    return {};
-  }
-
-  const data = (await response.json()) as {
+  const data = await postJson<{
     stats?: Record<string, { likeCount?: number; commentCount?: number }>;
-  };
+  }>(appUrls("content/batch-stats"), { contentIds });
 
   const entries = Object.entries(data.stats ?? {});
   const mapped: Record<string, ContentStats> = {};
@@ -209,7 +291,7 @@ export async function fetchComments(contentId: string): Promise<AppComment[]> {
       avatar?: string | null;
       main_practice?: string | null;
     }>;
-  }>(buildUrl(APP_API_ROOT, "api/comments", { contentId, page: 1, pageSize: 30 }));
+  }>(appUrls("comments", { contentId, page: 1, pageSize: 30 }));
 
   return (data.comments ?? []).map((item) => ({
     id: item.id,
