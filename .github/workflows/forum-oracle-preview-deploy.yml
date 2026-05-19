@@ -201,16 +201,6 @@ jobs:
             exit 1
           fi
 
-          if ! command -v pnpm >/dev/null 2>&1; then
-            if command -v corepack >/dev/null 2>&1; then
-              corepack enable
-              corepack prepare pnpm@10.9.0 --activate
-            else
-              echo "pnpm is missing and corepack is not available on the Oracle host." >&2
-              exit 1
-            fi
-          fi
-
           if [[ -n "${GHCR_USERNAME:-}" && -n "${GHCR_TOKEN:-}" ]]; then
             printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
           fi
@@ -226,7 +216,6 @@ jobs:
           git reset --hard origin/main
 
           cd forum
-          pnpm install --no-frozen-lockfile
 
           if [[ "$REGENERATE_DEPLOY_ENV" == "true" || ! -f .env.deploy ]]; then
             preset="read-only-preview"
@@ -252,14 +241,14 @@ jobs:
               scaffold_args+=(--write-access-code "$FORUM_WRITE_ACCESS_CODE")
             fi
 
-            pnpm scaffold:deploy-env -- "${scaffold_args[@]}"
+            node ./scripts/scaffold-deploy-env.mjs "${scaffold_args[@]}"
           else
-            pnpm check:deploy-env -- --deploy-env-path .env.deploy
+            node ./scripts/validate-deploy-env.mjs --deploy-env-path .env.deploy
           fi
 
           docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull
 
-          pnpm rollout:deploy-env -- \
+          node ./scripts/rollout-deploy-env.mjs \
             --deploy-env-path .env.deploy \
             --compose-file docker-compose.deploy.yml \
             --compose-project-name fabushi-forum-preview \
@@ -268,7 +257,7 @@ jobs:
             --request-timeout-ms "$REQUEST_TIMEOUT_MS" \
             --github-repo "$REPOSITORY"
 
-          pnpm prepare:live-target -- \
+          node ./scripts/prepare-live-deployment-vars.mjs \
             --deploy-env-path .env.deploy \
             --forum-url "$FORUM_URL" \
             --exercise-write-flow "$EXERCISE_WRITE_FLOW" \
