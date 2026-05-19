@@ -15,13 +15,13 @@ class IncensePainter extends CustomPainter {
   }
 
   void _drawFixedIncense(Canvas canvas, Size size) {
-    final base = Offset(size.width / 2, size.height * 0.70);
+    final base = Offset(size.width / 2, size.height * 0.72);
     final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
-    final stickHeight = 88.0 * remaining;
+    final stickHeight = 94.0 * remaining;
     final haloRect = Rect.fromCenter(
-      center: base.translate(0, -24),
-      width: 170,
-      height: 178,
+      center: base.translate(0, -28),
+      width: 176,
+      height: 182,
     );
     canvas.drawOval(
       haloRect,
@@ -116,9 +116,9 @@ class IncensePainter extends CustomPainter {
   }
 
   void _drawIncenseBurner(Canvas canvas, Offset center, double stickHeight) {
-    final width = (stickHeight * 1.24).clamp(58.0, 112.0).toDouble();
+    final width = (stickHeight * 1.16).clamp(62.0, 106.0).toDouble();
     final topHeight = (stickHeight * 0.22).clamp(10.0, 16.0).toDouble();
-    final bodyHeight = (stickHeight * 0.45).clamp(20.0, 34.0).toDouble();
+    final bodyHeight = (stickHeight * 0.46).clamp(20.0, 34.0).toDouble();
     final topCenter = center.translate(0, 8);
 
     final shadowPaint = Paint()
@@ -232,8 +232,8 @@ class IncenseSmokeOverlay extends StatelessWidget {
 }
 
 class IncenseSmokeOverlayPainter extends CustomPainter {
-  static const double _baseHeight = 196;
-  static const double _stickBaseBottom = 58;
+  static const double _baseHeight = 208;
+  static const double _stickBaseBottom = 64;
 
   final double incenseProgress;
   final double smokeRise;
@@ -249,7 +249,7 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
 
     final time = DateTime.now().millisecondsSinceEpoch * 0.001;
     final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
-    final stickHeight = 88.0 * remaining;
+    final stickHeight = 94.0 * remaining;
     final incenseAreaHeight = (size.height - smokeRise).clamp(
       _baseHeight,
       size.height,
@@ -349,27 +349,27 @@ class IncenseOffering extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
-    final stickHeight = 88.0 * remaining;
+    final stickHeight = 94.0 * remaining;
     const centerX = 85.0;
-    final flameBottom = 58.0 + stickHeight - 6.0;
+    final flameBottom = 64.0 + stickHeight - 6.0;
 
     return SizedBox.expand(
       child: Center(
         child: SizedBox(
           width: 170,
-          height: 196,
+          height: 208,
           child: Stack(
             alignment: Alignment.bottomCenter,
             clipBehavior: Clip.none,
             children: [
               Positioned(
-                bottom: 4,
+                bottom: 6,
                 child: Container(
-                  width: 124,
-                  height: 22,
+                  width: 122,
+                  height: 24,
                   decoration: const BoxDecoration(
                     color: Color(0x66000000),
-                    borderRadius: BorderRadius.all(Radius.elliptical(62, 11)),
+                    borderRadius: BorderRadius.all(Radius.elliptical(61, 12)),
                     boxShadow: [
                       BoxShadow(color: Color(0x99000000), blurRadius: 14),
                     ],
@@ -379,7 +379,7 @@ class IncenseOffering extends StatelessWidget {
               for (final dx in const [-18.0, 0.0, 18.0]) ...[
                 Positioned(
                   left: centerX + dx - 3,
-                  bottom: 58,
+                  bottom: 64,
                   child: Container(
                     width: 6,
                     height: stickHeight,
@@ -422,15 +422,15 @@ class IncenseOffering extends StatelessWidget {
                 ],
               ],
               Positioned(
-                bottom: 18,
+                bottom: 20,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      width: 112,
-                      height: 20,
+                      width: 106,
+                      height: 18,
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(18),
                         gradient: const LinearGradient(
                           colors: [
                             Color(0xFFD4AF37),
@@ -444,18 +444,18 @@ class IncenseOffering extends StatelessWidget {
                     Transform.translate(
                       offset: const Offset(0, -4),
                       child: Container(
-                        width: 94,
-                        height: 34,
+                        width: 90,
+                        height: 36,
                         decoration: const BoxDecoration(
                           borderRadius: BorderRadius.vertical(
-                            bottom: Radius.circular(38),
+                            bottom: Radius.circular(40),
                             top: Radius.circular(8),
                           ),
                           gradient: LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [
-                              Color(0xFF9A5A24),
+                              Color(0xFFA5652B),
                               Color(0xFF4A2111),
                               Color(0xFF2A1208),
                             ],
@@ -478,8 +478,8 @@ class IncenseOffering extends StatelessWidget {
 }
 
 class SutraBookButton extends StatelessWidget {
-  static const double baseWidth = 184;
-  static const double baseHeight = 128;
+  static const double baseWidth = 224;
+  static const double baseHeight = 158;
   static const double aspectRatioHeight = baseHeight / baseWidth;
 
   final String title;
@@ -515,15 +515,15 @@ class SutraBookButton extends StatelessWidget {
                 alignment: Alignment.center,
                 children: [
                   Positioned(
-                    left: 22,
-                    right: 22,
+                    left: 28,
+                    right: 28,
                     bottom: 8,
                     child: Container(
                       height: 18,
                       decoration: const BoxDecoration(
                         color: Color(0x99000000),
                         borderRadius: BorderRadius.all(
-                          Radius.elliptical(70, 9),
+                          Radius.elliptical(72, 9),
                         ),
                         boxShadow: [
                           BoxShadow(color: Color(0x99000000), blurRadius: 14),
@@ -532,97 +532,87 @@ class SutraBookButton extends StatelessWidget {
                     ),
                   ),
                   Positioned(
-                    left: 18,
+                    left: 16,
                     top: 28,
                     child: Transform.rotate(
                       angle: -0.08,
-                      child: _BookPanel(
-                        width: 78,
-                        height: 68,
-                        colors: const [
-                          Color(0xFFFFF3C6),
-                          Color(0xFFE4C26F),
-                          Color(0xFF7A4A16),
-                        ],
+                      child: _BookPage(
+                        width: 94,
+                        height: 84,
+                        alignment: Alignment.centerRight,
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(10),
                           bottomLeft: Radius.circular(8),
-                          bottomRight: Radius.circular(22),
+                          bottomRight: Radius.circular(26),
                         ),
                       ),
                     ),
                   ),
                   Positioned(
-                    right: 18,
+                    right: 16,
                     top: 28,
                     child: Transform.rotate(
                       angle: 0.08,
-                      child: _BookPanel(
-                        width: 78,
-                        height: 68,
-                        colors: const [
-                          Color(0xFFFFF3C6),
-                          Color(0xFFE4C26F),
-                          Color(0xFF7A4A16),
-                        ],
+                      child: _BookPage(
+                        width: 94,
+                        height: 84,
+                        alignment: Alignment.centerLeft,
                         borderRadius: const BorderRadius.only(
                           topRight: Radius.circular(10),
                           bottomRight: Radius.circular(8),
-                          bottomLeft: Radius.circular(22),
+                          bottomLeft: Radius.circular(26),
                         ),
                       ),
                     ),
                   ),
                   Positioned(
-                    left: 8,
-                    top: 16,
+                    left: 4,
+                    top: 10,
                     child: Transform.rotate(
                       angle: -0.08,
-                      child: _BookPanel(
-                        width: 84,
-                        height: 78,
-                        colors: const [
-                          Color(0xFFC0261E),
-                          Color(0xFF6B0808),
-                          Color(0xFF310303),
-                        ],
+                      child: _BookCover(
+                        width: 104,
+                        height: 92,
                         borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(14),
-                          bottomLeft: Radius.circular(10),
-                          bottomRight: Radius.circular(24),
+                          topLeft: Radius.circular(16),
+                          bottomLeft: Radius.circular(12),
+                          bottomRight: Radius.circular(28),
                         ),
                       ),
                     ),
                   ),
                   Positioned(
-                    right: 8,
-                    top: 16,
+                    right: 4,
+                    top: 10,
                     child: Transform.rotate(
                       angle: 0.08,
-                      child: _BookPanel(
-                        width: 84,
-                        height: 78,
-                        colors: const [
-                          Color(0xFFC0261E),
-                          Color(0xFF6B0808),
-                          Color(0xFF310303),
-                        ],
+                      child: _BookCover(
+                        width: 104,
+                        height: 92,
                         borderRadius: const BorderRadius.only(
-                          topRight: Radius.circular(14),
-                          bottomRight: Radius.circular(10),
-                          bottomLeft: Radius.circular(24),
+                          topRight: Radius.circular(16),
+                          bottomRight: Radius.circular(12),
+                          bottomLeft: Radius.circular(28),
                         ),
                       ),
                     ),
                   ),
                   Positioned(
-                    top: 12,
-                    bottom: 32,
+                    top: 8,
+                    bottom: 30,
                     child: Container(
-                      width: 5,
+                      width: 6,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFD4AF37),
-                        borderRadius: BorderRadius.circular(3),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0xFFFFD36A),
+                            Color(0xFFD4AF37),
+                            Color(0xFF6F3514),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(4),
                         boxShadow: const [
                           BoxShadow(color: Color(0xAA3A1204), blurRadius: 5),
                         ],
@@ -630,42 +620,12 @@ class SutraBookButton extends StatelessWidget {
                     ),
                   ),
                   Positioned(
-                    left: 30,
-                    right: 30,
-                    top: 44,
-                    child: Container(
-                      height: 30,
-                      alignment: Alignment.center,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0x552A0202),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0x66D4AF37)),
-                      ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          style: const TextStyle(
-                            color: Color(0xFFFFE6A3),
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            shadows: [
-                              Shadow(color: Color(0xFF3A1204), blurRadius: 4),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 18,
-                    right: 18,
-                    top: 16,
+                    left: 22,
+                    right: 22,
+                    top: 18,
                     child: IgnorePointer(
                       child: Container(
-                        height: 82,
+                        height: 94,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(
@@ -674,6 +634,55 @@ class SutraBookButton extends StatelessWidget {
                           ),
                         ),
                       ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 42,
+                    right: 42,
+                    top: 50,
+                    child: Column(
+                      children: [
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: const Color(0x552A0202),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0x66D4AF37)),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                title,
+                                maxLines: 1,
+                                style: const TextStyle(
+                                  color: Color(0xFFFFE6A3),
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  shadows: [
+                                    Shadow(
+                                      color: Color(0xFF3A1204),
+                                      blurRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '经卷',
+                          style: TextStyle(
+                            color: const Color(0xFFFFE6A3).withValues(alpha: 0.72),
+                            fontSize: 12,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -686,16 +695,16 @@ class SutraBookButton extends StatelessWidget {
   }
 }
 
-class _BookPanel extends StatelessWidget {
+class _BookPage extends StatelessWidget {
   final double width;
   final double height;
-  final List<Color> colors;
+  final Alignment alignment;
   final BorderRadius borderRadius;
 
-  const _BookPanel({
+  const _BookPage({
     required this.width,
     required this.height,
-    required this.colors,
+    required this.alignment,
     required this.borderRadius,
   });
 
@@ -706,19 +715,130 @@ class _BookPanel extends StatelessWidget {
       height: height,
       decoration: BoxDecoration(
         borderRadius: borderRadius,
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: colors,
+          colors: [
+            Color(0xFFFFF3C6),
+            Color(0xFFE4C26F),
+            Color(0xFF7A4A16),
+          ],
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Align(
+        alignment: alignment,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              4,
+              (index) => Container(
+                margin: const EdgeInsets.symmetric(vertical: 3),
+                height: 1.4,
+                width: double.infinity,
+                color: const Color(0x66A2671A),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BookCover extends StatelessWidget {
+  final double width;
+  final double height;
+  final BorderRadius borderRadius;
+
+  const _BookCover({
+    required this.width,
+    required this.height,
+    required this.borderRadius,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFFD63C2D),
+            Color(0xFF8F1210),
+            Color(0xFF3A0404),
+          ],
         ),
         boxShadow: const [
           BoxShadow(
             color: Color(0x99000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
+            blurRadius: 12,
+            offset: Offset(0, 5),
           ),
         ],
       ),
+      child: CustomPaint(
+        painter: _BookCoverPainter(borderRadius: borderRadius),
+      ),
     );
+  }
+}
+
+class _BookCoverPainter extends CustomPainter {
+  final BorderRadius borderRadius;
+
+  const _BookCoverPainter({required this.borderRadius});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..addRRect(borderRadius.toRRect(Offset.zero & size));
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..shader = ui.Gradient.linear(
+          Offset.zero,
+          Offset(size.width, size.height),
+          const [Color(0xFFFFD36A), Color(0xFF8B4E14), Color(0xFFFFE7A8)],
+        ),
+    );
+
+    final guidePaint = Paint()
+      ..color = const Color(0x33FFD36A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    for (var i = 0; i < 4; i++) {
+      final inset = 10.0 + i * 8.0;
+      final guide = Path()
+        ..moveTo(inset, size.height * 0.62)
+        ..quadraticBezierTo(
+          size.width / 2,
+          size.height * (0.48 + i * 0.03),
+          size.width - inset,
+          size.height * 0.62,
+        );
+      canvas.drawPath(guide, guidePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BookCoverPainter oldDelegate) {
+    return false;
   }
 }
