@@ -220,6 +220,7 @@ jobs:
           git reset --hard origin/main
 
           cd forum
+          rm -f .forum-deploy-posture.json .forum-rollout-report.json .forum-live-target.json .forum-live-target.skip.txt
 
           if [[ "$REGENERATE_DEPLOY_ENV" == "true" || ! -f .env.deploy ]]; then
             preset="read-only-preview"
@@ -250,6 +251,10 @@ jobs:
             node ./scripts/validate-deploy-env.mjs --deploy-env-path .env.deploy
           fi
 
+          node ./scripts/validate-deploy-env.mjs \
+            --deploy-env-path .env.deploy \
+            --format json > .forum-deploy-posture.json
+
           docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull
 
           node ./scripts/rollout-deploy-env.mjs \
@@ -259,6 +264,7 @@ jobs:
             --forum-url "$FORUM_URL" \
             --exercise-write-flow "$EXERCISE_WRITE_FLOW" \
             --request-timeout-ms "$REQUEST_TIMEOUT_MS" \
+            --report-path .forum-rollout-report.json \
             --github-repo "$REPOSITORY"
 
           resolved_live_target="$(
@@ -314,6 +320,28 @@ jobs:
           fi
           REMOTE
 
+      - name: Fetch Oracle deployment evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          remote="${ORACLE_SSH_USER}@${ORACLE_SSH_HOST}"
+
+          fetch_remote_file() {
+            local remote_path="$1"
+            local local_path="$2"
+
+            ssh \
+              -i ~/.ssh/oracle_deploy_key \
+              -p "$ORACLE_SSH_PORT" \
+              -o StrictHostKeyChecking=yes \
+              "$remote" \
+              "cat $(printf '%q' "$remote_path")" > "$local_path"
+          }
+
+          fetch_remote_file "$DEPLOY_DIR/forum/.forum-deploy-posture.json" /tmp/forum-deploy-posture.json
+          fetch_remote_file "$DEPLOY_DIR/forum/.forum-rollout-report.json" /tmp/forum-rollout-report.json
+
       - name: Fetch verified live target from Oracle host
         id: live-target
         shell: bash
@@ -365,6 +393,17 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n## Live target handoff skipped\n\n- ${reason}\n`);
           '
 
+      - name: Upload Oracle deployment evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: forum-oracle-deployment-evidence
+          path: |
+            /tmp/forum-deploy-posture.json
+            /tmp/forum-rollout-report.json
+            /tmp/forum-live-target.json
+            /tmp/forum-live-target-skip.txt
+          if-no-files-found: warn
+
       - name: Save verified target to GitHub repository variable
         if: env.UPDATE_GITHUB_LIVE_TARGET == 'true' && steps.live-target.outputs.skipped != 'true'
         env:
@@ -398,3 +437,49 @@ jobs:
             echo "- Server: ${ORACLE_SSH_USER}@${ORACLE_SSH_HOST}:${ORACLE_SSH_PORT}"
             echo "- Deploy directory: ${DEPLOY_DIR}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          node -e '
+            const fs = require("node:fs");
+
+            const posture = JSON.parse(fs.readFileSync("/tmp/forum-deploy-posture.json", "utf8"));
+            const report = JSON.parse(fs.readFileSync("/tmp/forum-rollout-report.json", "utf8"));
+
+            const warningLines = Array.isArray(posture.warnings) && posture.warnings.length > 0
+              ? posture.warnings.map((warning) => `- ${warning}`).join("\n")
+              : "- none";
+
+            const writeFlowSummary = report.liveWriteVerification
+              ? `- live write verification: thread \`${report.liveWriteVerification.threadSlug}\`, reply author \`${report.liveWriteVerification.replyAuthor}\``
+              : `- live write verification: skipped`;
+
+            const summary = [
+              "",
+              "## Oracle host evidence",
+              "",
+              `- deploy posture: ${posture.status} (${posture.deploymentStage})`,
+              `- smoke target: ${posture.defaultSmokeUrl}`,
+              `- writes enabled: ${String(posture.writesEnabled)}`,
+              `- requires access code: ${String(posture.requiresAccessCode)}`,
+              `- rollout smoke ok: ${String(report.ok)}`,
+              `- rollout report forum URL: ${report.forumUrl ?? "(empty)"}`,
+              writeFlowSummary,
+              "",
+              "### Deploy posture warnings",
+              "",
+              warningLines,
+              "",
+              "### Deploy posture JSON",
+              "",
+              "```json",
+              JSON.stringify(posture, null, 2),
+              "```",
+              "",
+              "### Rollout report JSON",
+              "",
+              "```json",
+              JSON.stringify(report, null, 2),
+              "```",
+            ].join("\n");
+
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+          '
