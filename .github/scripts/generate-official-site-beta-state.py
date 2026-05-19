@@ -32,7 +32,7 @@ TECHNICAL_RELEASE_LINE_PATTERN = re.compile(
 RELEASE_SUMMARY_RULES = [
     (
         re.compile(
-            r"ui/ux|bento|design|layout|hero section|spotlight hover|scroll reveal|floating screenshots|dark theme",
+            r"ui/ux|bento|design|layout|hero section|spotlight hover|scroll reveal|floating screenshots|dark theme|smoke bubbles|wisps|diffusion",
             re.IGNORECASE,
         ),
         "改进官网界面与浏览体验。",
@@ -78,6 +78,10 @@ def normalize_summary_line(line):
     return normalized.strip()
 
 
+def contains_cjk(text):
+    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+
+
 def build_fallback_release_summary(title):
     normalized_title = (title or "").lower()
 
@@ -109,6 +113,9 @@ def map_release_line_to_user_facing(line):
             return text
 
     if TECHNICAL_RELEASE_LINE_PATTERN.search(normalized):
+        return None
+
+    if re.search(r"[A-Za-z]", normalized) and not contains_cjk(normalized):
         return None
 
     return normalized
