@@ -167,13 +167,46 @@ jobs:
           if grep -q 'GH013: Repository rule violations found' "$push_log" && grep -q 'Changes must be made through the merge queue' "$push_log"; then
             cat "$push_log"
             sync_branch="automation/sync-official-site-beta-state"
+
+            if git ls-remote --exit-code --heads origin "$sync_branch" >/dev/null 2>&1; then
+              git fetch --depth=1 origin "refs/heads/$sync_branch:refs/remotes/origin/$sync_branch"
+              remote_state="$(mktemp)"
+              if git show "origin/$sync_branch:frontend/apps/web/public/api/releases.json" > "$remote_state" 2>/dev/null && cmp -s frontend/apps/web/public/api/releases.json "$remote_state"; then
+                echo "push_blocked_by_repo_rules=true" >> "$GITHUB_OUTPUT"
+                echo "sync_pr_branch=$sync_branch" >> "$GITHUB_OUTPUT"
+                echo "::notice::Direct push to main was blocked, and $sync_branch already carries the same beta-state update. Reusing the existing fallback PR path."
+                rm -f "$remote_state" "$push_log"
+                exit 0
+              fi
+              rm -f "$remote_state"
+            fi
+
             git checkout -B "$sync_branch"
-            git push origin "HEAD:$sync_branch" --force
-            echo "push_blocked_by_repo_rules=true" >> "$GITHUB_OUTPUT"
-            echo "sync_pr_branch=$sync_branch" >> "$GITHUB_OUTPUT"
-            echo "::notice::Direct push to main was blocked by repository rules, so the workflow pushed the beta state update to $sync_branch for PR fallback."
-            rm -f "$push_log"
-            exit 0
+            fallback_push_log="$(mktemp)"
+            if git push origin "HEAD:$sync_branch" --force 2>"$fallback_push_log"; then
+              echo "push_blocked_by_repo_rules=true" >> "$GITHUB_OUTPUT"
+              echo "sync_pr_branch=$sync_branch" >> "$GITHUB_OUTPUT"
+              echo "::notice::Direct push to main was blocked by repository rules, so the workflow pushed the beta state update to $sync_branch for PR fallback."
+              rm -f "$fallback_push_log" "$push_log"
+              exit 0
+            fi
+
+            if grep -q 'queued for merging cannot be updated' "$fallback_push_log"; then
+              cat "$fallback_push_log"
+              fallback_branch="automation/sync-official-site-beta-state-${RELEASE_TAG//\//-}"
+              fallback_branch="${fallback_branch//:/-}"
+              git checkout -B "$fallback_branch"
+              git push origin "HEAD:$fallback_branch" --force
+              echo "push_blocked_by_repo_rules=true" >> "$GITHUB_OUTPUT"
+              echo "sync_pr_branch=$fallback_branch" >> "$GITHUB_OUTPUT"
+              echo "::notice::$sync_branch is locked by an existing merge queue entry, so the workflow pushed the beta state update to $fallback_branch for a new fallback PR."
+              rm -f "$fallback_push_log" "$push_log"
+              exit 0
+            fi
+
+            cat "$fallback_push_log" >&2
+            rm -f "$fallback_push_log" "$push_log"
+            exit 1
           fi
 
           cat "$push_log" >&2
