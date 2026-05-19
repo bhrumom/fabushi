@@ -1,8 +1,10 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { LocalizedText } from "./localized-text";
 import { siteHref } from "../lib/site-url";
+import { CARD_LIMIT, FALIU_TABS, type FaliuTabKey } from "../lib/faliu-config";
 import {
   buildCbetaContentId,
   fetchAllWorks,
@@ -19,7 +21,11 @@ import {
 } from "../lib/faliu-api";
 import styles from "./faliu-shell.module.css";
 
-type TabKey = "featured" | "prajna" | "pureland" | "lotus" | "huayan" | "zen";
+export interface FaliuInitialData {
+  initialWorks?: CbetaWorkIndexItem[];
+  initialWorkInfo?: Record<string, CbetaWorkInfo | null>;
+  initialStats?: Record<string, ContentStats>;
+}
 
 interface WorkCardItem {
   work: string;
@@ -28,72 +34,29 @@ interface WorkCardItem {
   info?: CbetaWorkInfo | null;
 }
 
-const TAB_CONFIG: Array<{
-  key: TabKey;
-  labelZh: string;
-  labelEn: string;
-  hintZh: string;
-  hintEn: string;
-  featured: string[];
-  tokens: string[];
-}> = [
-  {
-    key: "featured",
-    labelZh: "精选",
-    labelEn: "Featured",
-    hintZh: "先看适合直接进入阅读的几部常见佛典。",
-    hintEn: "Start with a few approachable works that open quickly into reading.",
-    featured: ["T0365", "T0251", "T0262", "T0279", "T0261", "T0278", "T0235", "T0236", "T0270"],
-    tokens: [],
-  },
-  {
-    key: "prajna",
-    labelZh: "般若",
-    labelEn: "Prajna",
-    hintZh: "围绕般若、金刚、心经等主题聚合。",
-    hintEn: "Grouped around Prajna, Diamond, and Heart Sutra themes.",
-    featured: [],
-    tokens: ["般若", "金剛", "金刚", "心經", "心经"],
-  },
-  {
-    key: "pureland",
-    labelZh: "净土",
-    labelEn: "Pure Land",
-    hintZh: "以无量寿、阿弥陀、观经相关佛典为主。",
-    hintEn: "Centered on Amitabha, Infinite Life, and Visualization Sutra works.",
-    featured: [],
-    tokens: ["無量壽", "无量寿", "阿彌陀", "阿弥陀", "觀無量壽", "观无量寿"],
-  },
-  {
-    key: "lotus",
-    labelZh: "法华",
-    labelEn: "Lotus",
-    hintZh: "聚焦法华系统与相关注疏。",
-    hintEn: "Focused on the Lotus Sutra tradition and related commentaries.",
-    featured: [],
-    tokens: ["法華", "法华", "妙法蓮華", "妙法莲华"],
-  },
-  {
-    key: "huayan",
-    labelZh: "华严",
-    labelEn: "Huayan",
-    hintZh: "适合想直接切入华严体系的人。",
-    hintEn: "A direct entry into the Huayan corpus.",
-    featured: [],
-    tokens: ["華嚴", "华严"],
-  },
-  {
-    key: "zen",
-    labelZh: "禅门",
-    labelEn: "Zen",
-    hintZh: "偏向坛经、公案与禅宗相关文本。",
-    hintEn: "More oriented toward Chan texts, platform teachings, and koan material.",
-    featured: [],
-    tokens: ["壇經", "坛经", "禪", "禅", "祖師", "祖师"],
-  },
-];
+const SIDE_NAV_ITEMS = [
+  { href: "/faliu", labelZh: "精选", labelEn: "Featured", mark: "法", active: true },
+  { href: "/sutra-guide", labelZh: "推荐", labelEn: "Guide", mark: "荐" },
+  { href: "/sutra-listening", labelZh: "听经", labelEn: "Listen", mark: "听" },
+  { href: "/daily-practice", labelZh: "修行", labelEn: "Practice", mark: "修" },
+  { href: "/community", labelZh: "社区", labelEn: "Community", mark: "众" },
+  { href: "/download", labelZh: "下载", labelEn: "Download", mark: "下" },
+] as const;
 
-const CARD_LIMIT = 12;
+const TOP_ACTIONS = [
+  { href: "/download", labelZh: "客户端", labelEn: "App", mark: "下" },
+  { href: "/faq", labelZh: "说明", labelEn: "FAQ", mark: "问" },
+  { href: "/contact", labelZh: "联系", labelEn: "Contact", mark: "信" },
+] as const;
+
+const COVER_PALETTES = [
+  { a: "#13251f", b: "#d4a64a", c: "#f4efe1", ink: "#fff8e7" },
+  { a: "#182236", b: "#3fb7a4", c: "#f1c15d", ink: "#f8fbff" },
+  { a: "#2a1817", b: "#c45844", c: "#f7d17a", ink: "#fff4e8" },
+  { a: "#142735", b: "#77c0d8", c: "#e8bd6b", ink: "#f5fbff" },
+  { a: "#261c2b", b: "#9bc27f", c: "#f0d36c", ink: "#fff7ee" },
+  { a: "#1e2419", b: "#d78b56", c: "#b8d9ce", ink: "#fff9ed" },
+];
 
 function dedupeWorks(items: CbetaWorkIndexItem[]) {
   const seen = new Set<string>();
@@ -114,13 +77,13 @@ function dedupeWorks(items: CbetaWorkIndexItem[]) {
 function normalizeWorkCard(item: CbetaWorkIndexItem, info?: CbetaWorkInfo | null): WorkCardItem {
   return {
     work: item.work,
-    title: info?.title ?? item.title,
+    title: stripTags(info?.title ?? item.title),
     juans: item.juans,
     info,
   };
 }
 
-function flattenVisibleJuans(items: WorkCardItem[]) {
+function flattenVisibleJuans(items: CbetaWorkIndexItem[]) {
   return items.map((item) => ({
     contentId: buildCbetaContentId(item.work, item.juans[0] ?? "1"),
     work: item.work,
@@ -153,17 +116,65 @@ function formatCommentDate(value: string) {
   return date.toISOString().slice(0, 10);
 }
 
-export function FaliuShell() {
-  const [activeTab, setActiveTab] = useState<TabKey>("featured");
-  const [works, setWorks] = useState<CbetaWorkIndexItem[]>([]);
-  const [workInfoMap, setWorkInfoMap] = useState<Record<string, CbetaWorkInfo | null>>({});
-  const [statsMap, setStatsMap] = useState<Record<string, ContentStats>>({});
+function getHash(value: string) {
+  let hash = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+
+  return hash;
+}
+
+function getByline(info?: CbetaWorkInfo | null) {
+  return stripTags(info?.byline ?? info?.creators ?? "CBETA 佛典") || "CBETA 佛典";
+}
+
+function getTranslator(info?: CbetaWorkInfo | null) {
+  const creators = stripTags(info?.creators ?? "");
+
+  if (creators) {
+    return creators.endsWith("譯") || creators.endsWith("译") ? creators : `${creators} 譯`;
+  }
+
+  const byline = stripTags(info?.byline ?? "");
+  return byline || "譯者見 CBETA";
+}
+
+function getCoverStyle(item: WorkCardItem): CSSProperties {
+  const seed = getHash(`${item.title}:${getTranslator(item.info)}:${item.work}`);
+  const palette = COVER_PALETTES[seed % COVER_PALETTES.length];
+  const angle = 128 + (seed % 42);
+
+  return {
+    "--cover-a": palette.a,
+    "--cover-b": palette.b,
+    "--cover-c": palette.c,
+    "--cover-ink": palette.ink,
+    "--cover-angle": `${angle}deg`,
+  } as CSSProperties;
+}
+
+function getCategoryLabel(info?: CbetaWorkInfo | null, fallback?: string) {
+  const category = stripTags(info?.category ?? info?.orig_category ?? "");
+  return category ? category.split(/[，,]/)[0] : fallback ?? "CBETA";
+}
+
+export function FaliuShell({
+  initialWorks = [],
+  initialWorkInfo = {},
+  initialStats = {},
+}: FaliuInitialData) {
+  const [activeTab, setActiveTab] = useState<FaliuTabKey>("all");
+  const [works, setWorks] = useState<CbetaWorkIndexItem[]>(initialWorks);
+  const [workInfoMap, setWorkInfoMap] = useState<Record<string, CbetaWorkInfo | null>>(initialWorkInfo);
+  const [statsMap, setStatsMap] = useState<Record<string, ContentStats>>(initialStats);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<WorkCardItem | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<CbetaJuanDetail | null>(null);
   const [selectedComments, setSelectedComments] = useState<AppComment[]>([]);
   const [selectedJuan, setSelectedJuan] = useState("1");
-  const [isBootLoading, setIsBootLoading] = useState(true);
+  const [isBootLoading, setIsBootLoading] = useState(initialWorks.length === 0);
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,17 +186,20 @@ export function FaliuShell() {
 
     async function bootstrap() {
       try {
-        setIsBootLoading(true);
+        if (works.length === 0) {
+          setIsBootLoading(true);
+        }
+
         const allWorks = await fetchAllWorks();
 
         if (cancelled) {
           return;
         }
 
-        setWorks(allWorks);
+        setWorks((current) => dedupeWorks([...current, ...allWorks]));
         setError(null);
       } catch (cause) {
-        if (cancelled) {
+        if (cancelled || works.length > 0) {
           return;
         }
 
@@ -205,7 +219,7 @@ export function FaliuShell() {
     };
   }, []);
 
-  const activeTabConfig = TAB_CONFIG.find((item) => item.key === activeTab) ?? TAB_CONFIG[0];
+  const activeTabConfig = FALIU_TABS.find((item) => item.key === activeTab) ?? FALIU_TABS[0];
 
   const filteredWorks = useMemo(() => {
     if (works.length === 0) {
@@ -224,10 +238,7 @@ export function FaliuShell() {
       return works.filter((item) => set.has(item.work)).slice(0, CARD_LIMIT);
     }
 
-    const matched = works.filter((item) =>
-      activeTabConfig.tokens.some((token) => item.title.includes(token)),
-    );
-
+    const matched = works.filter((item) => activeTabConfig.tokens.some((token) => item.title.includes(token)));
     return matched.slice(0, CARD_LIMIT);
   }, [activeTabConfig, deferredQuery, works]);
 
@@ -306,16 +317,12 @@ export function FaliuShell() {
         const normalized = dedupeWorks(
           results.map((item) => ({
             work: item.work,
-            title: item.title,
+            title: stripTags(item.title),
             juans: [String(item.juan ?? 1)],
           })),
         );
 
-        setWorks((current) => {
-          const merged = [...normalized, ...current];
-          return dedupeWorks(merged);
-        });
-
+        setWorks((current) => dedupeWorks([...normalized, ...current]));
         setWorkInfoMap((current) => {
           const next = { ...current };
           for (const item of results) {
@@ -354,10 +361,11 @@ export function FaliuShell() {
     setSelectedComments([]);
 
     try {
+      const contentId = buildCbetaContentId(item.work, juan);
       const [detail, comments, stats] = await Promise.all([
         fetchJuanDetail(item.work, juan),
-        fetchComments(buildCbetaContentId(item.work, juan)),
-        fetchBatchStats([buildCbetaContentId(item.work, juan)]),
+        fetchComments(contentId),
+        fetchBatchStats([contentId]),
       ]);
 
       setSelectedDetail(detail);
@@ -377,35 +385,75 @@ export function FaliuShell() {
     : { likeCount: 0, commentCount: 0 };
 
   return (
-    <section className={`band ${styles.band}`}>
-      <div className={styles.shell}>
-        <div className={styles.topbar}>
-          <div className={styles.searchWrap}>
-            <label className={styles.searchBox}>
-              <span className={styles.searchIcon} aria-hidden="true">
-                Search
-              </span>
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索经名、经号或关键词"
-                aria-label="搜索佛典"
-              />
-            </label>
-            <p className={styles.searchHint}>
-              <LocalizedText
-                zh="输入 3 个字以上会直接调用 CBETA 题名搜索。"
-                en="Queries with 3 or more characters call the CBETA title search directly."
-              />
-            </p>
+    <section className={styles.appShell} aria-label="法流">
+      <aside className={styles.sidebar}>
+        <a className={styles.brand} href={siteHref("/")}>
+          <span className={styles.brandMark}>法</span>
+          <span>
+            <strong>
+              <LocalizedText zh="法布施" en="Fabushi" />
+            </strong>
+            <small>
+              <LocalizedText zh="CBETA 法流" en="CBETA Faloo" />
+            </small>
+          </span>
+        </a>
+
+        <nav className={styles.sideNav} aria-label="法流导航">
+          {SIDE_NAV_ITEMS.map((item) => (
+            <a
+              key={item.href}
+              className={"active" in item && item.active ? styles.activeSideItem : styles.sideItem}
+              href={siteHref(item.href)}
+            >
+              <span aria-hidden="true">{item.mark}</span>
+              <LocalizedText zh={item.labelZh} en={item.labelEn} />
+            </a>
+          ))}
+        </nav>
+
+        <a className={styles.installPanel} href={siteHref("/download")}>
+          <span className={styles.installMark}>法</span>
+          <span>
+            <strong>
+              <LocalizedText zh="下载 APP" en="Download App" />
+            </strong>
+            <small>
+              <LocalizedText zh="手机随时看更方便" en="Read anywhere" />
+            </small>
+          </span>
+        </a>
+      </aside>
+
+      <div className={styles.mainPane}>
+        <header className={styles.topbar}>
+          <form className={styles.searchBox} onSubmit={(event) => event.preventDefault()}>
+            <span className={styles.searchGlyph} aria-hidden="true" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索你感兴趣的经名"
+              aria-label="搜索佛典"
+            />
+            <button type="submit">
+              <LocalizedText zh="搜索" en="Search" />
+            </button>
+          </form>
+
+          <div className={styles.actionRow}>
+            {TOP_ACTIONS.map((item) => (
+              <a key={item.href} className={styles.actionButton} href={siteHref(item.href)}>
+                <span aria-hidden="true">{item.mark}</span>
+                <small>
+                  <LocalizedText zh={item.labelZh} en={item.labelEn} />
+                </small>
+              </a>
+            ))}
           </div>
-          <a className={styles.downloadLink} href={siteHref("/download")}>
-            <LocalizedText zh="下载 App" en="Download App" />
-          </a>
-        </div>
+        </header>
 
         <div className={styles.tabRow} role="tablist" aria-label="法流分类">
-          {TAB_CONFIG.map((item) => {
+          {FALIU_TABS.map((item) => {
             const isActive = item.key === activeTab;
             return (
               <button
@@ -425,33 +473,17 @@ export function FaliuShell() {
           })}
         </div>
 
-        <div className={styles.introRow}>
-          <div>
-            <h2 className={styles.sectionTitle}>
-              <LocalizedText zh={activeTabConfig.labelZh} en={activeTabConfig.labelEn} />
-            </h2>
-            <p className={styles.sectionHint}>
-              <LocalizedText zh={activeTabConfig.hintZh} en={activeTabConfig.hintEn} />
-            </p>
-          </div>
-          <div className={styles.metaNote}>
-            <span>CBETA API</span>
-            <span>App Stats</span>
-            <span>Read Flow</span>
-          </div>
-        </div>
-
         {error ? <p className={styles.errorBox}>{error}</p> : null}
 
         {isBootLoading ? (
           <div className={styles.stateBox}>
-            <LocalizedText zh="正在接入法流数据…" en="Loading the Faloo data surface..." />
+            <LocalizedText zh="正在接入法流数据..." en="Loading Faloo..." />
           </div>
         ) : null}
 
         {!isBootLoading && visibleCards.length === 0 ? (
           <div className={styles.stateBox}>
-            <LocalizedText zh="这一组暂时没有可展示的佛典。" en="No matching works are available in this slice yet." />
+            <LocalizedText zh="这一组暂时没有可展示的佛典。" en="No matching works are available yet." />
           </div>
         ) : null}
 
@@ -459,35 +491,34 @@ export function FaliuShell() {
           {visibleCards.map((item) => {
             const firstJuan = item.juans[0] ?? "1";
             const stats = statsMap[buildCbetaContentId(item.work, firstJuan)] ?? { likeCount: 0, commentCount: 0 };
-            const info = item.info;
+            const byline = getByline(item.info);
             return (
               <article key={item.work} className={styles.feedCard}>
-                <button type="button" className={styles.cardButton} onClick={() => void openDetail(item, firstJuan)}>
-                  <div className={styles.cardHeader}>
-                    <span className={styles.cardTag}>{info?.category ?? item.work}</span>
-                    <span className={styles.cardCanon}>{item.work}</span>
+                <button type="button" className={styles.coverButton} onClick={() => void openDetail(item, firstJuan)}>
+                  <div className={styles.cover} style={getCoverStyle(item)}>
+                    <div className={styles.coverTexture} aria-hidden="true" />
+                    <div className={styles.coverTopline}>
+                      <span>{getCategoryLabel(item.info, item.work)}</span>
+                      <span>{item.work}</span>
+                    </div>
+                    <div className={styles.coverCenter}>
+                      <span>{item.work}</span>
+                      <h2>{item.title}</h2>
+                      <p>{getTranslator(item.info)}</p>
+                    </div>
+                    <div className={styles.coverBottom}>
+                      <span>赞 {formatStats(stats.likeCount)}</span>
+                      <span>{item.juans.length > 1 ? `${item.juans.length} 卷` : `第 ${firstJuan} 卷`}</span>
+                    </div>
                   </div>
-                  <h3>{item.title}</h3>
-                  <p className={styles.byline}>{info?.byline ?? "CBETA 佛典"}</p>
-                  <dl className={styles.cardFacts}>
-                    <div>
-                      <dt>卷次</dt>
-                      <dd>{item.juans.length}</dd>
-                    </div>
-                    <div>
-                      <dt>点赞</dt>
-                      <dd>{formatStats(stats.likeCount)}</dd>
-                    </div>
-                    <div>
-                      <dt>评论</dt>
-                      <dd>{formatStats(stats.commentCount)}</dd>
-                    </div>
-                  </dl>
-                  <p className={styles.cardMeta}>
-                    {info?.time_dynasty ? `${info.time_dynasty} · ` : ""}
-                    {item.juans.length > 1 ? `共 ${item.juans.length} 卷` : `第 ${firstJuan} 卷`}
-                  </p>
                 </button>
+                <button type="button" className={styles.titleButton} onClick={() => void openDetail(item, firstJuan)}>
+                  {item.title}
+                </button>
+                <p className={styles.cardMeta}>
+                  <span>@ CBETA</span>
+                  <span>{item.info?.time_dynasty ? `${item.info.time_dynasty} · ${byline}` : byline}</span>
+                </p>
               </article>
             );
           })}
@@ -495,9 +526,15 @@ export function FaliuShell() {
 
         {isSearchLoading ? (
           <p className={styles.loadingLine}>
-            <LocalizedText zh="正在补充题名搜索结果…" en="Pulling more title search results..." />
+            <LocalizedText zh="正在补充题名搜索结果..." en="Pulling more title results..." />
           </p>
         ) : null}
+      </div>
+
+      <div className={styles.floatRail} aria-hidden="true">
+        <span>目</span>
+        <span>文</span>
+        <span>评</span>
       </div>
 
       {selected ? (
@@ -507,7 +544,7 @@ export function FaliuShell() {
               <div>
                 <p className={styles.modalEyebrow}>{selected.work}</p>
                 <h3>{selected.title}</h3>
-                <p className={styles.modalByline}>{selected.info?.byline ?? "CBETA 佛典"}</p>
+                <p className={styles.modalByline}>{getByline(selected.info)}</p>
               </div>
               <button type="button" className={styles.closeButton} onClick={() => setSelected(null)} aria-label="关闭">
                 X
@@ -515,8 +552,8 @@ export function FaliuShell() {
             </div>
 
             <div className={styles.modalMeta}>
-              <span>Like {formatStats(selectedStats.likeCount)}</span>
-              <span>Comments {formatStats(selectedStats.commentCount)}</span>
+              <span>赞 {formatStats(selectedStats.likeCount)}</span>
+              <span>评论 {formatStats(selectedStats.commentCount)}</span>
               <span>卷次 {selectedJuan}</span>
             </div>
 
@@ -537,15 +574,12 @@ export function FaliuShell() {
               <section className={styles.readerPanel}>
                 {isDetailLoading ? (
                   <div className={styles.readerState}>
-                    <LocalizedText zh="正文载入中…" en="Loading the text..." />
+                    <LocalizedText zh="正文载入中..." en="Loading the text..." />
                   </div>
                 ) : null}
 
                 {!isDetailLoading && selectedDetail ? (
-                  <div
-                    className={styles.readerHtml}
-                    dangerouslySetInnerHTML={{ __html: selectedDetail.html }}
-                  />
+                  <div className={styles.readerHtml} dangerouslySetInnerHTML={{ __html: selectedDetail.html }} />
                 ) : null}
 
                 {!isDetailLoading && !selectedDetail ? (

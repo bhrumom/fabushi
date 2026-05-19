@@ -1,9 +1,16 @@
 import type { Metadata } from "next";
 import { brand } from "@fabushi/shared";
-import { LocalizedText } from "../../components/localized-text";
-import { SiteFooter } from "../../components/site-footer";
-import { SiteHeader } from "../../components/site-header";
 import { FaliuShell } from "../../components/faliu-shell";
+import { FALIU_FEATURED_WORKS } from "../../lib/faliu-config";
+import {
+  buildCbetaContentId,
+  fetchAllWorks,
+  fetchBatchStats,
+  fetchWorkInfo,
+  type CbetaWorkInfo,
+  type ContentStats,
+  type CbetaWorkIndexItem,
+} from "../../lib/faliu-api";
 import { siteUrl } from "../../lib/site-url";
 
 const pageUrl = siteUrl("/faliu");
@@ -40,7 +47,42 @@ export const metadata: Metadata = {
   },
 };
 
-export default function FaliuPage() {
+async function loadInitialFaliuData() {
+  try {
+    const allWorks = await fetchAllWorks();
+    const featuredSet = new Set(FALIU_FEATURED_WORKS);
+    const featuredWorks = allWorks
+      .filter((item) => featuredSet.has(item.work))
+      .sort((left, right) => FALIU_FEATURED_WORKS.indexOf(left.work) - FALIU_FEATURED_WORKS.indexOf(right.work))
+      .slice(0, 12);
+    const fallbackWorks = featuredWorks.length > 0 ? featuredWorks : allWorks.slice(0, 12);
+    const infoEntries = await Promise.all(
+      fallbackWorks.map(async (item) => {
+        const info = await fetchWorkInfo(item.work).catch(() => null);
+        return [item.work, info] as const;
+      }),
+    );
+    const initialWorkInfo: Record<string, CbetaWorkInfo | null> = Object.fromEntries(infoEntries);
+    const initialStats: Record<string, ContentStats> = await fetchBatchStats(
+      fallbackWorks.map((item) => buildCbetaContentId(item.work, item.juans[0] ?? "1")),
+    ).catch(() => ({}));
+
+    return {
+      initialWorks: fallbackWorks,
+      initialWorkInfo,
+      initialStats,
+    };
+  } catch {
+    return {
+      initialWorks: [] as CbetaWorkIndexItem[],
+      initialWorkInfo: {},
+      initialStats: {},
+    };
+  }
+}
+
+export default async function FaliuPage() {
+  const initialData = await loadInitialFaliuData();
   const structuredData = {
     "@context": "https://schema.org",
     "@graph": [
@@ -66,36 +108,14 @@ export default function FaliuPage() {
   };
 
   return (
-    <main className="inner-page">
+    <main>
       <script
         type="application/ld+json"
         suppressHydrationWarning
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
 
-      <section className="inner-hero">
-        <SiteHeader />
-        <div className="inner-copy">
-          <p className="eyebrow">
-            <LocalizedText zh="法流" en="Faloo" />
-          </p>
-          <h1>
-            <LocalizedText
-              zh="把佛典浏览做成更顺手的流式入口。"
-              en="Turn scripture browsing into a calmer flowing surface."
-            />
-          </h1>
-          <p className="lede">
-            <LocalizedText
-              zh="这里用 CBETA API 提供正文与经目信息，同时接入 App 后端里的点赞、评论等互动统计。"
-              en="This surface uses the CBETA API for text and catalog data, while pulling engagement stats from the app backend."
-            />
-          </p>
-        </div>
-      </section>
-
-      <FaliuShell />
-      <SiteFooter />
+      <FaliuShell {...initialData} />
     </main>
   );
 }
