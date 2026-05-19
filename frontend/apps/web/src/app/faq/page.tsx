@@ -6,58 +6,40 @@ import { SiteHeader } from "../../components/site-header";
 import { siteHref, siteUrl } from "../../lib/site-url";
 
 const faqUrl = siteUrl("/faq");
-const faqTitle = `学佛常见问题 | ${brand.name}`;
+const faqTitle = `App 下载常见问题 | Android、iOS、安装与版本说明 | ${brand.name}`;
 const faqDescription =
-  "面向初学者整理学佛常见问题：学佛从哪里开始、先读经还是先禅修、佛学基本概念先看哪些、因果是什么意思、菩提心是什么意思、六度分别是什么、空性怎么理解，以及 Fabushi 在日常练习里最适合帮助什么。";
+  "集中说明法布施大乘 App 的下载问题：正式版和测试版怎么选、Android 下载慢怎么办、iOS 为什么跳到 TestFlight、安装失败怎么排查，以及联系支持前需要准备什么。";
 
 const faqItems = [
   {
-    questionZh: "学佛从哪里开始，才不会一开始就太重？",
-    questionEn: "How can I begin buddhadharma without making it too heavy immediately?",
-    answerZh: "更稳的起点通常不是一下子学很多，而是先看清自己当下最需要的入口。可以先从“学佛从哪里开始”理清方向，再决定先走佛法入门、佛学基本概念、修行方法，还是佛经导读。",
-    answerEn: "A steadier beginning is usually not to learn everything at once, but to clarify the doorway that matches your present question. Start by seeing where to begin, then choose whether dharma basics, core concepts, practice methods, or sutra study should come first.",
+    questionZh: "我应该先下载正式版还是测试版？",
+    questionEn: "Should I install the stable build or the beta build first?",
+    answerZh: "更在意稳定性、准备长期使用，优先看正式版；想尽快体验新版本或新功能，再看测试版。下载前先确认平台、版本号和发布时间，会更稳。",
+    answerEn: "Choose stable if you care more about installation stability and long-term use. Choose beta if you want newer builds or features first. It is steadier to confirm the platform, version, and publish date before downloading.",
   },
   {
-    questionZh: "先读经、先禅修，还是先把日常功课排出来？",
-    questionEn: "Should I begin with sutras, meditation, or a daily routine?",
-    answerZh: "更重要的是看你当下最需要什么。如果需要方向感，可以先看佛法入门；如果常常卡在因果、菩提心、六度、空性这些词，就先看佛学基本概念入门；如果需要把练习留在生活里，再继续看修行方法总览和日常功课安排。",
-    answerEn: "The better question is what you need most right now. If you need orientation, begin with dharma basics. If core terms such as karma, bodhicitta, the six paramitas, or emptiness keep stopping you, begin with the concepts hub. If you need practice to stay inside daily life, continue into the practice guide and daily routine page.",
+    questionZh: "Android 下载慢或安装失败怎么办？",
+    questionEn: "What should I do if Android download is slow or installation fails?",
+    answerZh: "先尝试当前版本卡片里的镜像链接，再确认下载的是对应平台和版本；如果仍然失败，把设备型号、系统版本和错误截图发给支持邮箱。",
+    answerEn: "Try the mirror link on the current release card first, then confirm that you downloaded the matching platform and version. If it still fails, send the device model, OS version, and an error screenshot to support.",
   },
   {
-    questionZh: "佛学基本概念应该先看哪几个？",
-    questionEn: "Which buddhist concepts should a beginner clarify first?",
-    answerZh: "对很多初学者来说，先把因果、菩提心、六度和空性放进同一张地图里，往往比零散地碰到一个算一个更稳。先看概念总览页，再决定自己现在更该先读哪一张概念页，会更容易继续往下走。",
-    answerEn: "For many beginners, it is steadier to place karma, bodhicitta, the six paramitas, and emptiness onto one map before treating them as isolated terms. Start with the concepts hub, then decide which concept page best matches the question you are living with now.",
+    questionZh: "iOS 为什么会跳到 TestFlight？",
+    questionEn: "Why does the iOS download button open TestFlight?",
+    answerZh: "iOS 测试版通过 Apple TestFlight 分发。入口开放后，下载按钮会直接跳到对应测试页，这是正常流程。",
+    answerEn: "The iOS beta build is distributed through Apple TestFlight. Once access is open, the download button jumps there directly, which is the expected flow.",
   },
   {
-    questionZh: "因果是不是就是做好事得好报、做坏事受惩罚？",
-    questionEn: "Is karma just reward for good deeds and punishment for bad ones?",
-    answerZh: "更稳妥的理解不是这样简单。因果更像是起心动念、说话做事和长期习惯怎样慢慢形成结果，中间还会受到很多因缘影响，所以不适合被理解成一句立刻兑现的判断。",
-    answerEn: "A steadier understanding is not that simple. Karma is closer to the way intention, speech, action, and repeated habits gradually shape results together with many conditions, rather than an instant verdict.",
+    questionZh: "下载前我最少要确认哪些信息？",
+    questionEn: "What should I confirm before downloading?",
+    answerZh: "至少先确认设备平台、版本偏好、发布时间，以及是否需要镜像或 TestFlight。这样能明显减少下错包或装不上去的概率。",
+    answerEn: "At minimum, confirm the device platform, version preference, publish date, and whether you need a mirror or TestFlight. That reduces the chance of downloading the wrong build or hitting an avoidable install failure.",
   },
   {
-    questionZh: "菩提心是不是只要对人好一点就够了？",
-    questionEn: "Is bodhicitta simply a matter of being a little nicer to people?",
-    answerZh: "不完全是。善意当然重要，但菩提心更深一层，它牵涉愿意把觉悟之路和众生利益一起放进修行方向里，而不是只让学习围着自己的得失打转。",
-    answerEn: "Not exactly. Kindness matters, but bodhicitta points more deeply toward placing awakening and the welfare of others inside the direction of practice instead of circling only around personal gain and loss.",
-  },
-  {
-    questionZh: "六度是不是一定要等懂很多教理以后，才谈得到？",
-    questionEn: "Do the six paramitas only matter after I understand a lot of doctrine?",
-    answerZh: "不一定。对初学者来说，六度可以先从很小的地方开始，例如今天多一点耐心、少一点急躁、练习断掉以后再回来一次。它不是离生活很远的清单，而是把发心慢慢接回日常的六个方向。",
-    answerEn: "Not necessarily. For beginners, the six paramitas can begin in very small ways, such as a little more patience today, a little less reactivity, or returning once more after the rhythm breaks. They are not distant doctrine, but six directions that slowly bring aspiration back into daily life.",
-  },
-  {
-    questionZh: "空性是不是就是“什么都没有”？",
-    questionEn: "Does emptiness mean that nothing exists at all?",
-    answerZh: "通常不是这样理解。更稳妥的方向，是说一切法都依赖因缘条件而成立，没有一个永远固定、不依赖任何条件的自性。它不是把生活否定掉，而是帮助人少一点把事情抓得太实、太绝对。",
-    answerEn: "Usually not. A steadier understanding is that all phenomena arise through conditions and do not possess an eternal self-existing essence. Emptiness does not cancel life, but helps loosen the tendency to treat things as too solid and absolute.",
-  },
-  {
-    questionZh: "Fabushi 在学佛入门阶段最适合帮助什么？",
-    questionEn: "What is Fabushi most useful for at the beginner stage?",
-    answerZh: "它更适合作为经文听诵、禅修提醒、简单记录和维持连续性的辅助工具，帮助你把修行节奏留在日常里。系统学习仍然要回到经典、老师和长期实践。",
-    answerEn: "It works best as a support tool for scripture listening, meditation reminders, simple notes, and continuity so practice can stay inside daily life. Deeper learning still depends on texts, teachers, and sustained practice.",
+    questionZh: "联系支持前最好准备什么？",
+    questionEn: "What should I prepare before contacting support?",
+    answerZh: "把设备型号、系统版本、下载入口、版本号，以及错误截图或报错文案一起发出，支持会更快定位问题。",
+    answerEn: "Send the device model, OS version, download path, version number, and an error screenshot or message. That gives support enough context to diagnose the issue faster.",
   },
 ] as const;
 
@@ -68,16 +50,14 @@ export const metadata: Metadata = {
     canonical: faqUrl,
   },
   keywords: [
-    "学佛常见问题",
-    "学佛从哪里开始",
-    "佛法入门",
-    "佛学基本概念",
-    "因果是什么意思",
-    "菩提心是什么意思",
-    "六度分别是什么",
-    "空性怎么理解",
-    "初学者佛经推荐",
-    "修行方法",
+    "下载 FAQ",
+    "App 下载常见问题",
+    "Android 下载",
+    "iOS 下载",
+    "TestFlight",
+    "安装失败",
+    "镜像下载",
+    "版本说明",
     "Fabushi",
   ],
   openGraph: {
@@ -101,7 +81,7 @@ export default function FaqPage() {
     "@graph": [
       {
         "@type": "WebPage",
-        name: "学佛常见问题",
+        name: "App 下载常见问题",
         url: faqUrl,
         description: faqDescription,
         inLanguage: "zh-CN",
@@ -111,14 +91,12 @@ export default function FaqPage() {
           url: siteUrl("/"),
         },
         about: [
-          "学佛常见问题",
-          "学佛从哪里开始",
-          "佛法入门",
-          "佛学基本概念",
-          "因果",
-          "菩提心",
-          "六度",
-          "空性",
+          "App 下载",
+          "Android 下载",
+          "iOS 下载",
+          "TestFlight",
+          "安装说明",
+          "版本说明",
         ],
       },
       {
@@ -133,7 +111,7 @@ export default function FaqPage() {
           {
             "@type": "ListItem",
             position: 2,
-            name: "学佛常见问题",
+            name: "下载 FAQ",
             item: faqUrl,
           },
         ],
@@ -164,13 +142,13 @@ export default function FaqPage() {
         <SiteHeader />
         <div className="inner-copy">
           <p className="eyebrow">
-            <LocalizedText zh="学佛常见问题" en="Beginner FAQ" />
+            <LocalizedText zh="下载 FAQ" en="Download FAQ" />
           </p>
           <h1>
-            <LocalizedText zh="先把学佛入门最常卡住的几个问题放清楚。" en="Clarify the beginner questions that most often block the next step." />
+            <LocalizedText zh="先把下载、安装和版本选择里最常卡住的问题讲清楚。" en="Clarify the download, installation, and version questions that block setup most often." />
           </h1>
           <p className="lede">
-            <LocalizedText zh="从学佛从哪里开始，到因果、菩提心、六度、空性，再到佛经、禅修和日常功课，这一页先把最常见的问题收在一起。" en="From where to begin, to karma, bodhicitta, the six paramitas, emptiness, sutras, meditation, and daily rhythm, this page gathers the questions beginners ask most often." />
+            <LocalizedText zh="这一页只保留和下载转化直接相关的问题，帮助更快完成平台选择、安装排查和支持沟通。" en="This page keeps only the questions that directly support download conversion, platform choice, installation troubleshooting, and support handoff." />
           </p>
         </div>
       </section>
@@ -189,11 +167,11 @@ export default function FaqPage() {
           ))}
         </div>
         <div className="inline-cta">
-          <a className="primary-action" href={siteHref("/start-learning-buddhism")}>
-            <LocalizedText zh="先看学佛从哪里开始" en="Start with Where to Begin" />
+          <a className="primary-action" href={siteHref("/download")}>
+            <LocalizedText zh="查看下载入口" en="View downloads" />
           </a>
-          <a className="secondary-action" href={siteHref("/download")}>
-            <LocalizedText zh="再看下载入口" en="Then View Downloads" />
+          <a className="secondary-action" href={siteHref("/contact")}>
+            <LocalizedText zh="联系支持" en="Contact support" />
           </a>
         </div>
       </section>
