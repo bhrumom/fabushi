@@ -842,19 +842,26 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               .toDouble();
           final incenseHeight = incenseWidth * 1.12;
           const smokeRise = 156.0;
+          final bottomClearance = 116.0 + MediaQuery.of(context).padding.bottom;
           final offeringTop = (size.height * 0.58)
               .clamp(0.0, size.height - 300)
               .toDouble();
-          final bookWidth = (size.width * 0.16).clamp(88.0, 112.0).toDouble();
+          final isCompactPortrait =
+              size.width < 430 && size.height > size.width;
+          final bookWidth = (size.width * (isCompactPortrait ? 0.145 : 0.16))
+              .clamp(isCompactPortrait ? 76.0 : 88.0, 108.0)
+              .toDouble();
           final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
           final incenseLeft = (size.width - incenseWidth) / 2;
-          final bookCenterX = (size.width * 0.56)
-              .clamp(bookWidth / 2 + 12, size.width - bookWidth / 2 - 12)
-              .toDouble();
+          final bookCenterX =
+              (incenseLeft + incenseWidth * 0.88 + bookWidth * 0.48)
+                  .clamp(bookWidth / 2 + 12, size.width - bookWidth / 2 - 12)
+                  .toDouble();
           final bookLeft = bookCenterX - bookWidth / 2;
-          final bookTop = (size.height * 0.50 - bookHeight * 0.55)
-              .clamp(0.0, offeringTop - bookHeight - 16)
-              .toDouble();
+          final bookTop =
+              (offeringTop + incenseHeight * (isCompactPortrait ? 0.42 : 0.34))
+                  .clamp(0.0, size.height - bookHeight - bottomClearance)
+                  .toDouble();
 
           return Stack(
             children: [
