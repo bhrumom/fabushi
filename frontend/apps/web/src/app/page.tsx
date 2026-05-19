@@ -41,16 +41,16 @@ interface ProductScreenshot {
 const HERO_MAIN_IMAGE_KEY: ProductScreenshotKey = "global-dharma";
 const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "main-sutra";
 const homeUrl = siteUrl("/");
-const homeTitle = `全球法布施 App 下载与修行工具首页 | ${brand.name}`;
+const homeTitle = `全球法布施 App 下载官网 | ${brand.name}`;
 const homeDescription =
-  "全球法布施是法布施大乘 App 的官网首页，集中展示下载入口、核心界面、禅修听诵与佛经学习功能，以及版本、支持与常见问题。";
+  "全球法布施是法布施大乘 App 的下载官网，集中展示下载入口、核心界面、版本说明、安装支持与下载 FAQ。";
 
 const APP_SCREENSHOTS: ProductScreenshot[] = [
   {
     titleZh: "全球法布施总览",
     titleEn: "Global Dharma Overview",
-    descriptionZh: "把法布施、修行和学习入口收在同一套界面里。",
-    descriptionEn: "Bring giving, practice, and learning into one interface.",
+    descriptionZh: "把法布施、修行和听诵等核心功能收在同一套界面里。",
+    descriptionEn: "Keep giving, practice, and listening inside one core interface.",
     screenshot: "global-dharma",
     alt: "Fabushi global dharma overview screenshot",
   },
@@ -137,8 +137,8 @@ const HOME_FAQS = [
   {
     questionZh: "首页现在最适合先做什么？",
     questionEn: "What is the homepage best for now?",
-    answerZh: "首页现在主要承担四件事：说明 App 是什么、促成下载、完整展示核心界面，以及给出最基础的支持与信任信息。内容类入口已经收回到顶部导航和底部导航。",
-    answerEn: "The homepage now focuses on four jobs: explain the app, support download, show the core screens, and provide basic support and trust signals. Content entry points have been pushed back into the header and footer.",
+    answerZh: "首页现在主要承担四件事：说明 App 是什么、促成下载、完整展示核心界面，以及给出最基础的支持与信任信息。非下载型栏目入口已经从官网主入口移除。",
+    answerEn: "The homepage now focuses on four jobs: explain the app, support download, show the core screens, and provide basic support and trust signals. Non-download sections have been removed from the main site entry.",
   },
   {
     questionZh: "我应该从首页直接下载，还是先去下载页？",
@@ -149,8 +149,8 @@ const HOME_FAQS = [
   {
     questionZh: "官网为什么不再把首页做成资讯或内容门户？",
     questionEn: "Why is the homepage no longer treated like a news or content portal?",
-    answerZh: "因为首页权重最高，也最直接影响下载转化。把资讯、专题和学习内容入口收进顶部与底部导航后，首页主体可以更专注地把产品说清楚、把下载链路做顺。",
-    answerEn: "Because the homepage carries the strongest authority and the clearest download intent. Once news, topic, and learning entry points move back into the header and footer, the homepage body can focus on product clarity and conversion.",
+    answerZh: "因为首页权重最高，也最直接影响下载转化。把资讯和学习类分流入口移除后，首页主体可以更专注地把产品说清楚、把下载链路做顺。",
+    answerEn: "Because the homepage carries the strongest authority and the clearest download intent. Once news and learning detours are removed, the homepage body can focus on product clarity and conversion.",
   },
 ] as const;
 
@@ -198,8 +198,8 @@ export const metadata: Metadata = {
     "佛教 app 下载",
     "禅修 app",
     "佛经听诵 app",
-    "学佛 app",
-    "佛法修行工具",
+    "iOS TestFlight",
+    "Android APK",
   ],
   openGraph: {
     title: homeTitle,
@@ -247,7 +247,7 @@ export default async function HomePage() {
         name: `${brand.name} Fabushi`,
         url: homeUrl,
         email: supportEmail,
-        description: "Fabushi offers meditation, sutra listening, and global giving.",
+        description: "Fabushi offers meditation, listening, and global giving in one downloadable app.",
       },
       {
         "@type": "SoftwareApplication",
@@ -295,8 +295,8 @@ export default async function HomePage() {
             </h1>
             <p className="hero-subtitle">
               <LocalizedText
-                zh="把禅修、听诵、佛经学习与全球法布施放进同一个 App，先看清界面，再决定下载。"
-                en="Bring meditation, listening, sutra study, and global giving into one app, then decide to download after seeing the interface clearly."
+                zh="把禅修、听诵、日常功课与全球法布施放进同一个 App，先看清界面，再决定下载。"
+                en="Bring meditation, listening, daily practice, and global giving into one app, then decide to download after seeing the interface clearly."
               />
             </p>
             <div className="hero-actions">
@@ -510,7 +510,7 @@ export default async function HomePage() {
             <LocalizedText zh={`下载或安装遇到问题，可联系 ${supportEmail}。`} en={`If download or install fails, contact ${supportEmail}.`} />
           </p>
           <p>
-            <LocalizedText zh="隐私说明、FAQ 和官网资讯保留在导航中，不再挤进首页主体里。" en="Privacy, FAQ, and site news stay in navigation instead of crowding the homepage body." />
+            <LocalizedText zh="隐私说明、下载 FAQ 和联系支持保留在官网主路径中，避免把下载流程分散出去。" en="Privacy, download FAQ, and support stay in the main path so the install flow does not get scattered." />
           </p>
         </div>
       </section>
