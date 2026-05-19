@@ -41,9 +41,9 @@ interface ProductScreenshot {
 const HERO_MAIN_IMAGE_KEY: ProductScreenshotKey = "global-dharma";
 const HERO_SIDE_IMAGE_KEY: ProductScreenshotKey = "main-sutra";
 const homeUrl = siteUrl("/");
-const homeTitle = `全球法布施 App 下载与修行工具首页 | ${brand.name}`;
+const homeTitle = `全球法布施 App 下载官网 | ${brand.name}`;
 const homeDescription =
-  "全球法布施是法布施大乘 App 的官网首页，集中展示下载入口、核心界面、禅修听诵与佛经学习功能，以及版本、支持与常见问题。";
+  "全球法布施是法布施大乘 App 的下载官网，集中展示下载入口、核心界面、版本说明、安装支持与常见问题。";
 
 const APP_SCREENSHOTS: ProductScreenshot[] = [
   {
@@ -137,8 +137,8 @@ const HOME_FAQS = [
   {
     questionZh: "首页现在最适合先做什么？",
     questionEn: "What is the homepage best for now?",
-    answerZh: "首页现在主要承担四件事：说明 App 是什么、促成下载、完整展示核心界面，以及给出最基础的支持与信任信息。内容类入口已经收回到顶部导航和底部导航。",
-    answerEn: "The homepage now focuses on four jobs: explain the app, support download, show the core screens, and provide basic support and trust signals. Content entry points have been pushed back into the header and footer.",
+    answerZh: "先看核心截图、平台入口和版本说明，再决定直接下载还是进入独立下载页。首页现在只承担解释 App、促成下载和提供基础支持信息。",
+    answerEn: "Start with the key screens, platform paths, and release details, then decide whether to download directly or open the dedicated download page. The homepage now focuses on explaining the app, supporting download, and providing basic support information.",
   },
   {
     questionZh: "我应该从首页直接下载，还是先去下载页？",
@@ -149,8 +149,8 @@ const HOME_FAQS = [
   {
     questionZh: "官网为什么不再把首页做成资讯或内容门户？",
     questionEn: "Why is the homepage no longer treated like a news or content portal?",
-    answerZh: "因为首页权重最高，也最直接影响下载转化。把资讯、专题和学习内容入口收进顶部与底部导航后，首页主体可以更专注地把产品说清楚、把下载链路做顺。",
-    answerEn: "Because the homepage carries the strongest authority and the clearest download intent. Once news, topic, and learning entry points move back into the header and footer, the homepage body can focus on product clarity and conversion.",
+    answerZh: "因为首页最直接影响下载转化。把主入口收敛到下载、FAQ、联系支持和隐私说明后，用户更容易看清产品、少走弯路并完成安装。",
+    answerEn: "Because the homepage has the clearest impact on download conversion. Once the main entry points narrow to download, FAQ, support, and privacy, people can understand the product faster, take fewer detours, and finish installation more easily.",
   },
 ] as const;
 
@@ -195,11 +195,11 @@ export const metadata: Metadata = {
     "全球法布施",
     "法布施大乘",
     "Fabushi app",
-    "佛教 app 下载",
+    "App 下载官网",
+    "Android 下载",
+    "iOS 下载",
     "禅修 app",
     "佛经听诵 app",
-    "学佛 app",
-    "佛法修行工具",
   ],
   openGraph: {
     title: homeTitle,
@@ -247,7 +247,7 @@ export default async function HomePage() {
         name: `${brand.name} Fabushi`,
         url: homeUrl,
         email: supportEmail,
-        description: "Fabushi offers meditation, sutra listening, and global giving.",
+        description: "Fabushi offers app download, meditation, sutra listening, and global giving.",
       },
       {
         "@type": "SoftwareApplication",
@@ -510,7 +510,7 @@ export default async function HomePage() {
             <LocalizedText zh={`下载或安装遇到问题，可联系 ${supportEmail}。`} en={`If download or install fails, contact ${supportEmail}.`} />
           </p>
           <p>
-            <LocalizedText zh="隐私说明、FAQ 和官网资讯保留在导航中，不再挤进首页主体里。" en="Privacy, FAQ, and site news stay in navigation instead of crowding the homepage body." />
+            <LocalizedText zh="隐私说明、FAQ 和联系支持保留在导航里，让首页主体继续围绕下载。" en="Privacy, FAQ, and support stay in navigation so the homepage body can stay centered on download." />
           </p>
         </div>
       </section>
