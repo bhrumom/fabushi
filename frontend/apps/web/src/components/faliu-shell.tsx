@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { LocalizedText } from "./localized-text";
 import { siteHref } from "../lib/site-url";
 import { CARD_LIMIT, FALIU_TABS, type FaliuTabKey } from "../lib/faliu-config";
@@ -12,6 +12,7 @@ import {
   fetchComments,
   fetchJuanDetail,
   fetchWorkInfo,
+  normalizeCbetaQuery,
   searchWorksByTitle,
   type AppComment,
   type CbetaJuanDetail,
@@ -25,6 +26,7 @@ export interface FaliuInitialData {
   initialWorks?: CbetaWorkIndexItem[];
   initialWorkInfo?: Record<string, CbetaWorkInfo | null>;
   initialStats?: Record<string, ContentStats>;
+  initialQuery?: string;
 }
 
 interface WorkCardItem {
@@ -93,6 +95,14 @@ function flattenVisibleJuans(items: CbetaWorkIndexItem[]) {
 
 function stripTags(value: string) {
   return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function getInitialSearchQuery(fallback: string) {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  return new URLSearchParams(window.location.search).get("q")?.trim() ?? fallback;
 }
 
 function formatStats(value: number) {
@@ -164,12 +174,15 @@ export function FaliuShell({
   initialWorks = [],
   initialWorkInfo = {},
   initialStats = {},
+  initialQuery = "",
 }: FaliuInitialData) {
   const [activeTab, setActiveTab] = useState<FaliuTabKey>("all");
   const [works, setWorks] = useState<CbetaWorkIndexItem[]>(initialWorks);
   const [workInfoMap, setWorkInfoMap] = useState<Record<string, CbetaWorkInfo | null>>(initialWorkInfo);
   const [statsMap, setStatsMap] = useState<Record<string, ContentStats>>(initialStats);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
+  const [visibleLimit, setVisibleLimit] = useState(CARD_LIMIT);
+  const [searchRevision, setSearchRevision] = useState(0);
   const [selected, setSelected] = useState<WorkCardItem | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<CbetaJuanDetail | null>(null);
   const [selectedComments, setSelectedComments] = useState<AppComment[]>([]);
@@ -178,8 +191,21 @@ export function FaliuShell({
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mainPaneRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const deferredQuery = useDeferredValue(query.trim());
+  const normalizedDeferredQuery = useMemo(() => normalizeCbetaQuery(deferredQuery), [deferredQuery]);
+
+  useEffect(() => {
+    const nextQuery = getInitialSearchQuery(initialQuery);
+
+    if (nextQuery) {
+      setQuery(nextQuery);
+      setActiveTab("all");
+      setSearchRevision((current) => current + 1);
+    }
+  }, [initialQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -226,32 +252,87 @@ export function FaliuShell({
       return [];
     }
 
-    if (deferredQuery.length >= 2) {
-      const lowered = deferredQuery.toLowerCase();
-      return works
-        .filter((item) => item.title.toLowerCase().includes(lowered) || item.work.toLowerCase().includes(lowered))
-        .slice(0, CARD_LIMIT);
+    if (normalizedDeferredQuery.length >= 2) {
+      const rawQuery = deferredQuery.toLowerCase();
+      const normalizedQuery = normalizedDeferredQuery.toLowerCase();
+
+      return works.filter((item) => {
+        const rawTitle = item.title.toLowerCase();
+        const normalizedTitle = normalizeCbetaQuery(item.title).toLowerCase();
+        const work = item.work.toLowerCase();
+
+        return rawTitle.includes(rawQuery) || normalizedTitle.includes(normalizedQuery) || work.includes(rawQuery);
+      });
+    }
+
+    if (activeTab === "all" && activeTabConfig.featured.length > 0) {
+      const set = new Set(activeTabConfig.featured);
+      const featured = works
+        .filter((item) => set.has(item.work))
+        .sort((left, right) => activeTabConfig.featured.indexOf(left.work) - activeTabConfig.featured.indexOf(right.work));
+      const rest = works.filter((item) => !set.has(item.work));
+
+      return [...featured, ...rest];
     }
 
     if (activeTabConfig.featured.length > 0) {
       const set = new Set(activeTabConfig.featured);
-      return works.filter((item) => set.has(item.work)).slice(0, CARD_LIMIT);
+      return works.filter((item) => set.has(item.work));
     }
 
     const matched = works.filter((item) => activeTabConfig.tokens.some((token) => item.title.includes(token)));
-    return matched.slice(0, CARD_LIMIT);
-  }, [activeTabConfig, deferredQuery, works]);
+    return matched;
+  }, [activeTab, activeTabConfig, deferredQuery, normalizedDeferredQuery, works]);
+
+  const visibleWorks = useMemo(() => filteredWorks.slice(0, visibleLimit), [filteredWorks, visibleLimit]);
+  const hasMoreWorks = visibleLimit < filteredWorks.length;
+
+  const loadMoreWorks = useCallback(() => {
+    setVisibleLimit((current) => Math.min(current + CARD_LIMIT, filteredWorks.length));
+  }, [filteredWorks.length]);
+
+  useEffect(() => {
+    setVisibleLimit(CARD_LIMIT);
+  }, [activeTab, normalizedDeferredQuery]);
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    const rootElement = mainPaneRef.current;
+
+    if (!target || !hasMoreWorks) {
+      return;
+    }
+
+    const root = rootElement && rootElement.scrollHeight > rootElement.clientHeight ? rootElement : null;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadMoreWorks();
+        }
+      },
+      {
+        root,
+        rootMargin: "420px 0px",
+      },
+    );
+
+    observer.observe(target);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMoreWorks, loadMoreWorks, visibleWorks.length]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function hydrateCards() {
-      if (filteredWorks.length === 0) {
+      if (visibleWorks.length === 0) {
         return;
       }
 
-      const missing = filteredWorks.filter((item) => !(item.work in workInfoMap));
-      const visibleJuans = flattenVisibleJuans(filteredWorks);
+      const missing = visibleWorks.filter((item) => !(item.work in workInfoMap));
+      const visibleJuans = flattenVisibleJuans(visibleWorks);
       const missingContentIds = visibleJuans.filter((item) => !(item.contentId in statsMap));
 
       if (missing.length === 0 && missingContentIds.length === 0) {
@@ -260,9 +341,11 @@ export function FaliuShell({
 
       try {
         const [infos, stats] = await Promise.all([
-          missing.length > 0 ? Promise.all(missing.map((item) => fetchWorkInfo(item.work))) : Promise.resolve([]),
+          missing.length > 0
+            ? Promise.all(missing.map((item) => fetchWorkInfo(item.work).catch(() => null)))
+            : Promise.resolve([]),
           missingContentIds.length > 0
-            ? fetchBatchStats(missingContentIds.map((item) => item.contentId))
+            ? fetchBatchStats(missingContentIds.map((item) => item.contentId)).catch(() => ({}))
             : Promise.resolve({}),
         ]);
 
@@ -284,9 +367,7 @@ export function FaliuShell({
           setStatsMap((current) => ({ ...current, ...stats }));
         }
       } catch {
-        if (!cancelled) {
-          setError("部分法流数据暂时没能补齐，请稍后再试。");
-        }
+        return;
       }
     }
 
@@ -295,10 +376,10 @@ export function FaliuShell({
     return () => {
       cancelled = true;
     };
-  }, [filteredWorks, statsMap, workInfoMap]);
+  }, [statsMap, visibleWorks, workInfoMap]);
 
   useEffect(() => {
-    if (deferredQuery.length < 3) {
+    if (normalizedDeferredQuery.length < 2) {
       setIsSearchLoading(false);
       return;
     }
@@ -308,7 +389,7 @@ export function FaliuShell({
     async function runRemoteSearch() {
       try {
         setIsSearchLoading(true);
-        const results = await searchWorksByTitle(deferredQuery, 0, CARD_LIMIT);
+        const results = await searchWorksByTitle(deferredQuery, 0, CARD_LIMIT * 4);
 
         if (cancelled) {
           return;
@@ -346,11 +427,11 @@ export function FaliuShell({
     return () => {
       cancelled = true;
     };
-  }, [deferredQuery]);
+  }, [deferredQuery, normalizedDeferredQuery, searchRevision]);
 
   const visibleCards = useMemo(
-    () => filteredWorks.map((item) => normalizeWorkCard(item, workInfoMap[item.work])),
-    [filteredWorks, workInfoMap],
+    () => visibleWorks.map((item) => normalizeWorkCard(item, workInfoMap[item.work])),
+    [visibleWorks, workInfoMap],
   );
 
   async function openDetail(item: WorkCardItem, juan: string) {
@@ -362,16 +443,20 @@ export function FaliuShell({
 
     try {
       const contentId = buildCbetaContentId(item.work, juan);
-      const [detail, comments, stats] = await Promise.all([
-        fetchJuanDetail(item.work, juan),
+      const detail = await fetchJuanDetail(item.work, juan);
+      const [commentsResult, statsResult] = await Promise.allSettled([
         fetchComments(contentId),
         fetchBatchStats([contentId]),
       ]);
 
       setSelectedDetail(detail);
-      setSelectedComments(comments);
-      setStatsMap((current) => ({ ...current, ...stats }));
-      setError(null);
+      setSelectedComments(commentsResult.status === "fulfilled" ? commentsResult.value : []);
+
+      if (statsResult.status === "fulfilled") {
+        setStatsMap((current) => ({ ...current, ...statsResult.value }));
+      }
+
+      setError(detail ? null : "暂时没有拿到这一卷正文。");
     } catch {
       setSelectedDetail(null);
       setError("正文载入失败，请稍后重试。");
@@ -425,9 +510,24 @@ export function FaliuShell({
         </a>
       </aside>
 
-      <div className={styles.mainPane}>
+      <div ref={mainPaneRef} className={styles.mainPane}>
         <header className={styles.topbar}>
-          <form className={styles.searchBox} onSubmit={(event) => event.preventDefault()}>
+          <form
+            className={styles.searchBox}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const nextQuery = query.trim();
+              setQuery(nextQuery);
+              setActiveTab("all");
+              setVisibleLimit(CARD_LIMIT);
+              setSearchRevision((current) => current + 1);
+
+              if (typeof window !== "undefined") {
+                const target = nextQuery ? `/faliu?q=${encodeURIComponent(nextQuery)}` : "/faliu";
+                window.history.replaceState(null, "", siteHref(target));
+              }
+            }}
+          >
             <span className={styles.searchGlyph} aria-hidden="true" />
             <input
               value={query}
@@ -465,6 +565,7 @@ export function FaliuShell({
                 onClick={() => {
                   setActiveTab(item.key);
                   setQuery("");
+                  setSearchRevision((current) => current + 1);
                 }}
               >
                 <LocalizedText zh={item.labelZh} en={item.labelEn} />
@@ -528,6 +629,20 @@ export function FaliuShell({
           <p className={styles.loadingLine}>
             <LocalizedText zh="正在补充题名搜索结果..." en="Pulling more title results..." />
           </p>
+        ) : null}
+
+        {visibleCards.length > 0 ? (
+          <div ref={loadMoreRef} className={styles.loadMoreRow}>
+            {hasMoreWorks ? (
+              <button type="button" onClick={loadMoreWorks}>
+                <LocalizedText zh="继续加载" en="Load more" />
+              </button>
+            ) : (
+              <span>
+                <LocalizedText zh="已显示当前法流结果" en="All current Faloo results are shown" />
+              </span>
+            )}
+          </div>
         ) : null}
       </div>
 

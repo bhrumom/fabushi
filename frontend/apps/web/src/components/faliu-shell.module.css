@@ -457,6 +457,29 @@
   text-align: center;
 }
 
+.loadMoreRow {
+  display: grid;
+  place-items: center;
+  min-height: 92px;
+  padding: 16px 0 0;
+}
+
+.loadMoreRow button {
+  min-height: 44px;
+  padding: 0 22px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-weight: 820;
+  cursor: pointer;
+}
+
+.loadMoreRow span {
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 0.92rem;
+}
+
 .floatRail {
   position: fixed;
   right: 18px;
@@ -491,6 +514,8 @@
 }
 
 .modal {
+  display: flex;
+  flex-direction: column;
   width: min(1440px, 100%);
   max-height: calc(100svh - 36px);
   overflow: hidden;
@@ -572,10 +597,13 @@
 }
 
 .modalBody {
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: minmax(0, 1.42fr) minmax(320px, 0.7fr);
+  height: calc(100svh - 226px);
   min-height: 0;
   max-height: calc(100svh - 226px);
+  overflow: hidden;
 }
 
 .readerPanel,
@@ -587,6 +615,8 @@
   overflow: auto;
   padding: 0 28px 28px;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .readerHtml {
@@ -727,6 +757,7 @@
   }
 
   .modalBody {
+    height: calc(100svh - 200px);
     grid-template-columns: minmax(0, 1fr);
     max-height: calc(100svh - 200px);
   }
@@ -818,6 +849,7 @@
   }
 
   .modalBody {
+    height: calc(100svh - 250px);
     max-height: calc(100svh - 250px);
   }
 
