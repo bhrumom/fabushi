@@ -6,9 +6,9 @@ import { siteUrl } from "../lib/site-url";
 import "./globals.css";
 
 const homeUrl = siteUrl("/");
-const siteTitle = `${brand.name} | 全球法布施、佛法入门与修行路径`;
+const siteTitle = `${brand.name} | 全球法布施 App 下载官网`;
 const siteDescription =
-  "Fabushi 提供学佛从哪里开始、佛法入门、佛学基本概念、佛经导读、禅修、日常功课、经文听诵与修行记录，帮助把修行路径慢慢接回日常生活。";
+  "Fabushi 官网只保留 App 下载、版本说明、安装步骤、平台选择、常见下载问题与支持入口，帮助更快完成 iOS 与 Android 安装。";
 
 export const metadata: Metadata = {
   title: siteTitle,
@@ -17,16 +17,14 @@ export const metadata: Metadata = {
     "Fabushi",
     "法布施",
     "全球法布施",
-    "学佛从哪里开始",
-    "佛法入门",
-    "佛学基本概念",
-    "佛经导读",
-    "禅修",
-    "日常功课",
-    "经文听诵",
-    "修行记录",
-    "Android Beta",
-    "iOS TestFlight",
+    "App 下载官网",
+    "Android 下载",
+    "iOS 下载",
+    "安装说明",
+    "版本说明",
+    "下载 FAQ",
+    "TestFlight",
+    "APK 下载",
   ],
   applicationName: `${brand.name} Fabushi`,
   authors: [{ name: "Fabushi" }],
@@ -36,7 +34,7 @@ export const metadata: Metadata = {
   alternates: {
     canonical: homeUrl,
   },
-  category: "religion and spirituality",
+  category: "software",
   manifest: siteUrl("/manifest.webmanifest"),
   openGraph: {
     title: siteTitle,
