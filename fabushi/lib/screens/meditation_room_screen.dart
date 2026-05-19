@@ -36,10 +36,6 @@ class MeditationRoomScreen extends StatefulWidget {
 
 class MeditationRoomScreenState extends State<MeditationRoomScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  static const Duration _minimumRecordedMeditationDuration = Duration(
-    minutes: 1,
-  );
-
   /// 公开方法：设置页面可见性（由主导航调用）
   void setVisible(bool visible) {
     _onVisibilityChanged(visible);
@@ -254,45 +250,6 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     return false;
   }
 
-  bool _shouldSkipPracticeRecord(Duration duration) {
-    return duration < _minimumRecordedMeditationDuration;
-  }
-
-  Future<bool> _confirmShortMeditationEnd() async {
-    if (!mounted) return false;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('提醒', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          '本次修行不足1分钟，不会记录入修行数据。确定结束修行吗？',
-          style: TextStyle(color: Colors.white70, height: 1.5),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(
-              '继续修行',
-              style: TextStyle(color: Colors.white70),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFD4AF37),
-            ),
-            child: const Text('确定结束', style: TextStyle(color: Colors.black)),
-          ),
-        ],
-      ),
-    );
-
-    return confirmed == true;
-  }
-
   void _onIncenseProgressChanged() {
     _buddhaKey.currentState?.updateIncenseProgress(_incenseController.value);
   }
@@ -346,76 +303,64 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   }
 
   /// 结束修行并同步数据
-  Future<void> _endMeditation({bool skipRecording = false}) async {
+  Future<void> _endMeditation() async {
     final result = await _sessionManager.endSession();
     _incenseController.stop();
     _incenseController.reset();
     _buddhaKey.currentState?.updateIncenseProgress(0);
 
     if (result.success) {
-      final shouldSkipRecording =
-          skipRecording || _shouldSkipPracticeRecord(result.duration);
+      // 触发结束成就
+      await _achievementSystem.onSessionEnd(
+        duration: result.duration,
+        chantCount: result.chantCount,
+        sutra: result.sutra ?? '默认功课',
+      );
 
       // 离开在线活动
       await _onlineCounterService.leaveActivity();
 
-      if (!shouldSkipRecording) {
-        // 触发结束成就
-        await _achievementSystem.onSessionEnd(
+      String? reflectionNotes;
+      final practice = _sessionManager.lockedPractice;
+      if (mounted && practice != null) {
+        reflectionNotes = await showReflectionDialog(
+          context,
           duration: result.duration,
           chantCount: result.chantCount,
-          sutra: result.sutra ?? '默认功课',
+          sutraTitle: practice.title,
+          filePath: practice.filePath,
         );
+      }
+      if (!mounted) return;
 
-        String? reflectionNotes;
-        final practice = _sessionManager.lockedPractice;
-        if (mounted && practice != null) {
-          reflectionNotes = await showReflectionDialog(
-            context,
-            duration: result.duration,
-            chantCount: result.chantCount,
-            sutraTitle: practice.title,
-            filePath: practice.filePath,
-          );
-        }
-        if (!mounted) return;
+      // 修行记录必须进入云端保存链路。网络异常时服务会放入待同步队列。
+      final savedToCloud = await _syncToCloud(result, notes: reflectionNotes);
 
-        // 修行记录必须进入云端保存链路。网络异常时服务会放入待同步队列。
-        final savedToCloud = await _syncToCloud(result, notes: reflectionNotes);
-
-        if (mounted && !savedToCloud) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('云端保存失败，请登录并检查网络后重试'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-        } else if (mounted && PracticeStatsService().lastWriteQueued) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('网络暂不可用，记录已加入云端待同步'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        } else if (mounted && reflectionNotes?.isNotEmpty == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('心得已保存到修行记录，仅自己可见'),
-              backgroundColor: Color(0xFFD4AF37),
-            ),
-          );
-        }
-
-        if (mounted && practice == null) {
-          _showCompletionDialog(result);
-        }
-      } else if (mounted) {
+      if (mounted && !savedToCloud) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('本次修行不足1分钟，未计入修行数据'),
+            content: Text('云端保存失败，请登录并检查网络后重试'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      } else if (mounted && PracticeStatsService().lastWriteQueued) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('网络暂不可用，记录已加入云端待同步'),
             backgroundColor: Colors.orange,
           ),
         );
+      } else if (mounted && reflectionNotes?.isNotEmpty == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('心得已保存到修行记录，仅自己可见'),
+            backgroundColor: Color(0xFFD4AF37),
+          ),
+        );
+      }
+
+      if (mounted && practice == null) {
+        _showCompletionDialog(result);
       }
     }
 
@@ -892,31 +837,28 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           final title = practice?.title ?? '选择功课';
           final opensSelection =
               practice == null || practice.filePath.startsWith('manual:');
-          final incenseWidth = (size.width * 0.30)
-              .clamp(180.0, 230.0)
-              .toDouble();
-          final incenseHeight = incenseWidth * 1.12;
-          const smokeRise = 156.0;
-          final bottomClearance = 116.0 + MediaQuery.of(context).padding.bottom;
-          final offeringTop = (size.height * 0.58)
-              .clamp(0.0, size.height - 300)
-              .toDouble();
           final isCompactPortrait =
               size.width < 430 && size.height > size.width;
-          final bookWidth = (size.width * (isCompactPortrait ? 0.145 : 0.16))
-              .clamp(isCompactPortrait ? 76.0 : 88.0, 108.0)
+
+          final incenseWidth = (size.width * (isCompactPortrait ? 0.27 : 0.25))
+              .clamp(158.0, 214.0)
+              .toDouble();
+          final incenseHeight = incenseWidth * 1.20;
+          const smokeRise = 172.0;
+          final bottomClearance = 124.0 + MediaQuery.of(context).padding.bottom;
+          final offeringTop = (size.height * (isCompactPortrait ? 0.70 : 0.66))
+              .clamp(0.0, size.height - 260.0)
+              .toDouble();
+          final bookWidth = (size.width * (isCompactPortrait ? 0.36 : 0.33))
+              .clamp(168.0, 228.0)
               .toDouble();
           final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
           final incenseLeft = (size.width - incenseWidth) / 2;
-          final bookCenterX =
-              (incenseLeft + incenseWidth * 0.88 + bookWidth * 0.48)
-                  .clamp(bookWidth / 2 + 12, size.width - bookWidth / 2 - 12)
-                  .toDouble();
-          final bookLeft = bookCenterX - bookWidth / 2;
-          final bookTop =
-              (offeringTop + incenseHeight * (isCompactPortrait ? 0.42 : 0.34))
-                  .clamp(0.0, size.height - bookHeight - bottomClearance)
-                  .toDouble();
+          final bookLeft = (size.width - bookWidth) / 2;
+          final bookTop = (offeringTop -
+                  bookHeight * (isCompactPortrait ? 0.94 : 0.90))
+              .clamp(96.0, size.height - bookHeight - bottomClearance)
+              .toDouble();
 
           return Stack(
             children: [
@@ -1184,15 +1126,6 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                 child: GestureDetector(
                   onTap: () async {
                     if (_sessionManager.isInSession) {
-                      if (_shouldSkipPracticeRecord(
-                        _sessionManager.currentDuration,
-                      )) {
-                        final confirmed = await _confirmShortMeditationEnd();
-                        if (!confirmed) return;
-                        await _endMeditation(skipRecording: true);
-                        return;
-                      }
-
                       await _endMeditation();
                     } else {
                       await _autoStartMeditation();
