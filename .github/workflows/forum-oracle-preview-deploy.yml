@@ -157,6 +157,7 @@ jobs:
           ssh-keyscan -p "$ORACLE_SSH_PORT" "$ORACLE_SSH_HOST" >> ~/.ssh/known_hosts
 
       - name: Roll out forum on Oracle host
+        id: rollout
         shell: bash
         run: |
           set -euo pipefail
@@ -321,28 +322,43 @@ jobs:
           REMOTE
 
       - name: Fetch Oracle deployment evidence
+        if: ${{ always() && steps.rollout.outcome != 'skipped' }}
+        id: evidence
         shell: bash
         run: |
           set -euo pipefail
 
           remote="${ORACLE_SSH_USER}@${ORACLE_SSH_HOST}"
+          rm -f /tmp/forum-deploy-posture.json /tmp/forum-rollout-report.json
 
-          fetch_remote_file() {
+          try_fetch_remote_file() {
             local remote_path="$1"
             local local_path="$2"
+            local output_name="$3"
 
-            ssh \
+            if ssh \
               -i ~/.ssh/oracle_deploy_key \
               -p "$ORACLE_SSH_PORT" \
               -o StrictHostKeyChecking=yes \
               "$remote" \
-              "cat $(printf '%q' "$remote_path")" > "$local_path"
+              "test -f $(printf '%q' "$remote_path")"; then
+              ssh \
+                -i ~/.ssh/oracle_deploy_key \
+                -p "$ORACLE_SSH_PORT" \
+                -o StrictHostKeyChecking=yes \
+                "$remote" \
+                "cat $(printf '%q' "$remote_path")" > "$local_path"
+              printf '%s=true\n' "$output_name" >> "$GITHUB_OUTPUT"
+            else
+              printf '%s=false\n' "$output_name" >> "$GITHUB_OUTPUT"
+            fi
           }
 
-          fetch_remote_file "$DEPLOY_DIR/forum/.forum-deploy-posture.json" /tmp/forum-deploy-posture.json
-          fetch_remote_file "$DEPLOY_DIR/forum/.forum-rollout-report.json" /tmp/forum-rollout-report.json
+          try_fetch_remote_file "$DEPLOY_DIR/forum/.forum-deploy-posture.json" /tmp/forum-deploy-posture.json posture_present
+          try_fetch_remote_file "$DEPLOY_DIR/forum/.forum-rollout-report.json" /tmp/forum-rollout-report.json report_present
 
       - name: Fetch verified live target from Oracle host
+        if: ${{ always() && steps.rollout.outcome != 'skipped' }}
         id: live-target
         shell: bash
         run: |
@@ -351,6 +367,7 @@ jobs:
           remote="${ORACLE_SSH_USER}@${ORACLE_SSH_HOST}"
           remote_target_path="$(printf '%q' "$DEPLOY_DIR/forum/.forum-live-target.json")"
           remote_skip_path="$(printf '%q' "$DEPLOY_DIR/forum/.forum-live-target.skip.txt")"
+          rm -f /tmp/forum-live-target.json /tmp/forum-live-target-skip.txt
 
           if ssh \
             -i ~/.ssh/oracle_deploy_key \
@@ -378,22 +395,39 @@ jobs:
             exit 0
           fi
 
-          ssh \
+          if ssh \
             -i ~/.ssh/oracle_deploy_key \
             -p "$ORACLE_SSH_PORT" \
             -o StrictHostKeyChecking=yes \
             "$remote" \
-            "cat $remote_skip_path" > /tmp/forum-live-target-skip.txt
+            "test -f $remote_skip_path"; then
+            ssh \
+              -i ~/.ssh/oracle_deploy_key \
+              -p "$ORACLE_SSH_PORT" \
+              -o StrictHostKeyChecking=yes \
+              "$remote" \
+              "cat $remote_skip_path" > /tmp/forum-live-target-skip.txt
+
+            node -e '
+              const fs = require("node:fs");
+              const reason = fs.readFileSync("/tmp/forum-live-target-skip.txt", "utf8").trim();
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `skipped=true\n`);
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `skip_reason=${reason}\n`);
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n## Live target handoff skipped\n\n- ${reason}\n`);
+            '
+            exit 0
+          fi
 
           node -e '
             const fs = require("node:fs");
-            const reason = fs.readFileSync("/tmp/forum-live-target-skip.txt", "utf8").trim();
+            const reason = "Oracle rollout stopped before live-target handoff artifacts were written.";
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `skipped=true\n`);
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `skip_reason=${reason}\n`);
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n## Live target handoff skipped\n\n- ${reason}\n`);
           '
 
       - name: Upload Oracle deployment evidence
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: forum-oracle-deployment-evidence
@@ -405,7 +439,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Save verified target to GitHub repository variable
-        if: env.UPDATE_GITHUB_LIVE_TARGET == 'true' && steps.live-target.outputs.skipped != 'true'
+        if: env.UPDATE_GITHUB_LIVE_TARGET == 'true' && steps.live-target.outcome == 'success' && steps.live-target.outputs.skipped != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -417,15 +451,25 @@ jobs:
             --repo "$GITHUB_REPOSITORY"
 
       - name: Report deployment result
+        if: ${{ always() }}
+        env:
+          ROLLOUT_OUTCOME: ${{ steps.rollout.outcome }}
         shell: bash
         run: |
           set -euo pipefail
+
+          rollout_outcome="${ROLLOUT_OUTCOME:-skipped}"
 
           {
             echo ""
             echo "## Oracle forum deployment"
             echo ""
-            if [[ "${{ steps.live-target.outputs.skipped }}" == "true" ]]; then
+            echo "- Rollout step outcome: ${rollout_outcome}"
+            if [[ "$rollout_outcome" == "skipped" ]]; then
+              echo "- URL: (not attempted)"
+              echo "- Live target sync: not attempted"
+              echo "- Why: Oracle rollout did not complete, so host evidence and live-target handoff were not attempted."
+            elif [[ "${{ steps.live-target.outputs.skipped }}" == "true" ]]; then
               echo "- URL: (not saved yet)"
               echo "- Live target sync: skipped until a real external URL is available"
               echo "- Why: ${{ steps.live-target.outputs.skip_reason }}"
@@ -441,45 +485,66 @@ jobs:
           node -e '
             const fs = require("node:fs");
 
-            const posture = JSON.parse(fs.readFileSync("/tmp/forum-deploy-posture.json", "utf8"));
-            const report = JSON.parse(fs.readFileSync("/tmp/forum-rollout-report.json", "utf8"));
-
-            const warningLines = Array.isArray(posture.warnings) && posture.warnings.length > 0
-              ? posture.warnings.map((warning) => `- ${warning}`).join("\n")
-              : "- none";
-
-            const writeFlowSummary = report.liveWriteVerification
-              ? `- live write verification: thread \`${report.liveWriteVerification.threadSlug}\`, reply author \`${report.liveWriteVerification.replyAuthor}\``
-              : `- live write verification: skipped`;
-
+            const posturePath = "/tmp/forum-deploy-posture.json";
+            const reportPath = "/tmp/forum-rollout-report.json";
+            const rolloutOutcome = process.env.ROLLOUT_OUTCOME || "skipped";
+            const postureExists = fs.existsSync(posturePath);
+            const reportExists = fs.existsSync(reportPath);
             const summary = [
               "",
               "## Oracle host evidence",
               "",
-              `- deploy posture: ${posture.status} (${posture.deploymentStage})`,
-              `- smoke target: ${posture.defaultSmokeUrl}`,
-              `- writes enabled: ${String(posture.writesEnabled)}`,
-              `- requires access code: ${String(posture.requiresAccessCode)}`,
-              `- rollout smoke ok: ${String(report.ok)}`,
-              `- rollout report forum URL: ${report.forumUrl ?? "(empty)"}`,
-              writeFlowSummary,
-              "",
-              "### Deploy posture warnings",
-              "",
-              warningLines,
-              "",
-              "### Deploy posture JSON",
-              "",
-              "```json",
-              JSON.stringify(posture, null, 2),
-              "```",
-              "",
-              "### Rollout report JSON",
-              "",
-              "```json",
-              JSON.stringify(report, null, 2),
-              "```",
-            ].join("\n");
+              `- rollout step outcome: ${rolloutOutcome}`,
+              `- deploy posture fetched: ${String(postureExists)}`,
+              `- rollout report fetched: ${String(reportExists)}`,
+            ];
 
-            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+            if (postureExists) {
+              const posture = JSON.parse(fs.readFileSync(posturePath, "utf8"));
+              const warningLines = Array.isArray(posture.warnings) && posture.warnings.length > 0
+                ? posture.warnings.map((warning) => `- ${warning}`).join("\n")
+                : "- none";
+
+              summary.push(
+                `- deploy posture: ${posture.status} (${posture.deploymentStage})`,
+                `- smoke target: ${posture.defaultSmokeUrl ?? "(empty)"}`,
+                `- writes enabled: ${String(posture.writesEnabled)}`,
+                `- requires access code: ${String(posture.requiresAccessCode)}`,
+                "",
+                "### Deploy posture warnings",
+                "",
+                warningLines,
+                "",
+                "### Deploy posture JSON",
+                "",
+                "```json",
+                JSON.stringify(posture, null, 2),
+                "```",
+              );
+            }
+
+            if (reportExists) {
+              const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+              const writeFlowSummary = report.liveWriteVerification
+                ? `- live write verification: thread \`${report.liveWriteVerification.threadSlug}\`, reply author \`${report.liveWriteVerification.replyAuthor}\``
+                : "- live write verification: skipped";
+
+              summary.push(
+                `- rollout smoke ok: ${String(report.ok)}`,
+                `- rollout report forum URL: ${report.forumUrl ?? "(empty)"}`,
+                writeFlowSummary,
+                "",
+                "### Rollout report JSON",
+                "",
+                "```json",
+                JSON.stringify(report, null, 2),
+                "```",
+              );
+            } else if (rolloutOutcome !== "success") {
+              summary.push(
+                "- rollout report JSON is missing because the remote rollout did not reach the report-writing phase."
+              );
+            }
+
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary.join("\n")}\n`);
           '
