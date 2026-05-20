@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { brand } from "@fabushi/shared";
 import { FaliuContentSearchEnhancer } from "../../components/faliu-content-search-enhancer";
+import { FaliuMeritBenefitEnhancer } from "../../components/faliu-merit-benefit-enhancer";
 import { FaliuShell } from "../../components/faliu-shell";
 import { FaliuSynonymEnhancer } from "../../components/faliu-synonym-enhancer";
 import { FALIU_FEATURED_WORKS } from "../../lib/faliu-config";
@@ -120,6 +121,7 @@ export default async function FaliuPage() {
       <FaliuShell {...initialData} />
       <FaliuSynonymEnhancer />
       <FaliuContentSearchEnhancer />
+      <FaliuMeritBenefitEnhancer />
     </main>
   );
 }
