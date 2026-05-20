@@ -473,8 +473,17 @@ class IncenseOfferingPainter extends CustomPainter {
       base,
       tip,
       Paint()
-        ..color = const Color(0xAA220C04)
-        ..strokeWidth = 4.6 * scale
+        ..color = const Color(0x66FFF0A8)
+        ..strokeWidth = 7.0 * scale
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2.2 * scale),
+    );
+    canvas.drawLine(
+      base,
+      tip,
+      Paint()
+        ..color = const Color(0xDD1C0903)
+        ..strokeWidth = 5.2 * scale
         ..strokeCap = StrokeCap.round,
     );
     canvas.drawLine(
@@ -482,12 +491,17 @@ class IncenseOfferingPainter extends CustomPainter {
       tip,
       Paint()
         ..shader = ui.Gradient.linear(base, tip, const [
-          Color(0xFF2F1307),
-          Color(0xFFC47D34),
-          Color(0xFFECC36C),
+          Color(0xFF5A2109),
+          Color(0xFFE5A94D),
+          Color(0xFFFFE6A3),
         ])
-        ..strokeWidth = 2.4 * scale
+        ..strokeWidth = 2.9 * scale
         ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawCircle(
+      tip,
+      2.4 * scale,
+      Paint()..color = const Color(0xFFFFE29A),
     );
   }
 
