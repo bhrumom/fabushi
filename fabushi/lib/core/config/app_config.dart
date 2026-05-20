@@ -168,21 +168,9 @@ class AppConfig {
   // 3D 佛像模型配置
   // 如果 R2 上需要切换到新的对象键，优先改这里，便于强制绕开旧缓存。
   static const String buddhaModelAssetPath = 'models/buddha_model.model';
-  // Android/iOS 优先使用 R2 上的 flutter_scene .model；Android 失败时再回退到 three_dart GLB。
-  static const String legacyBuddhaGlbAssetPath = 'models/佛像模型.glb';
-  static const String androidThreeBuddhaGlbAssetPath =
-      'web/assets/models/佛像模型.glb';
-  static String get legacyBuddhaGlbUrl {
-    final encodedPath = legacyBuddhaGlbAssetPath
-        .split('/')
-        .map(Uri.encodeComponent)
-        .join('/');
-    return '$publicWebUrl/assets/$encodedPath';
-  }
-
-  // 当前线上正确模型明显大于 48MB，小于该阈值视为误传/降质文件。
+  // Android/iOS 均只使用 R2 上的 flutter_scene .model；本地无有效缓存时再下载。
+  // 当前线上正确模型明显大于 100MB，小于该阈值视为误传/降质文件。
   static const int minBuddhaModelSizeBytes = 100 * 1024 * 1024;
-  static const int minBuddhaGlbSizeBytes = 10 * 1024 * 1024;
 
   // 请求头
   static Map<String, String> get defaultHeaders => {

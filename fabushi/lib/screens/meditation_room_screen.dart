@@ -837,27 +837,23 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           final title = practice?.title ?? '选择功课';
           final opensSelection =
               practice == null || practice.filePath.startsWith('manual:');
-          final isCompactPortrait =
-              size.width < 430 && size.height > size.width;
-
-          final incenseWidth = (size.width * (isCompactPortrait ? 0.27 : 0.25))
-              .clamp(158.0, 214.0)
+          final incenseWidth = (size.width * 0.22)
+              .clamp(128.0, 168.0)
               .toDouble();
-          final incenseHeight = incenseWidth * 1.20;
-          const smokeRise = 172.0;
-          final bottomClearance = 124.0 + MediaQuery.of(context).padding.bottom;
-          final offeringTop = (size.height * (isCompactPortrait ? 0.70 : 0.66))
-              .clamp(0.0, size.height - 260.0)
+          final incenseHeight = incenseWidth * 1.24;
+          const smokeRise = 142.0;
+          final offeringTop = (size.height * 0.60)
+              .clamp(0.0, size.height - incenseHeight - 180)
               .toDouble();
-          final bookWidth = (size.width * (isCompactPortrait ? 0.36 : 0.33))
-              .clamp(168.0, 228.0)
-              .toDouble();
+          final bookWidth = (size.width * 0.13).clamp(68.0, 88.0).toDouble();
           final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
           final incenseLeft = (size.width - incenseWidth) / 2;
-          final bookLeft = (size.width - bookWidth) / 2;
-          final bookTop = (offeringTop -
-                  bookHeight * (isCompactPortrait ? 0.94 : 0.90))
-              .clamp(96.0, size.height - bookHeight - bottomClearance)
+          final bookCenterX = (size.width * 0.50)
+              .clamp(bookWidth / 2 + 12, size.width - bookWidth / 2 - 12)
+              .toDouble();
+          final bookLeft = bookCenterX - bookWidth / 2;
+          final bookTop = (offeringTop - bookHeight - 8)
+              .clamp(0.0, size.height - bookHeight)
               .toDouble();
 
           return Stack(

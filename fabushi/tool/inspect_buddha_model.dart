@@ -1,11 +1,24 @@
+// ignore_for_file: avoid_print
+
 import 'dart:io';
 
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
-void main() {
-  final data = File('assets/models/buddha_model.model').readAsBytesSync();
-  final scene = fb.Scene(data.buffer.asByteData(), 0);
-  print('scene nodes=${scene.nodes?.length} textures=${scene.textures?.length}');
+void main(List<String> args) {
+  final path = args.isNotEmpty ? args.first : null;
+  if (path == null || path.isEmpty) {
+    stderr.writeln(
+      'Usage: dart run tool/inspect_buddha_model.dart <downloaded .model path>',
+    );
+    exitCode = 64;
+    return;
+  }
+
+  final data = File(path).readAsBytesSync();
+  final scene = fb.Scene(data);
+  print(
+    'scene nodes=${scene.nodes?.length} textures=${scene.textures?.length}',
+  );
   if (scene.nodes == null || scene.nodes!.isEmpty) {
     return;
   }
@@ -27,7 +40,9 @@ void main() {
       );
       final color = mat?.baseColorFactor;
       if (color != null) {
-        print('    baseColorFactor=${color.r},${color.g},${color.b},${color.a}');
+        print(
+          '    baseColorFactor=${color.r},${color.g},${color.b},${color.a}',
+        );
       }
       print('    verticesType=${primitive.vertices.runtimeType}');
     }

@@ -3,8 +3,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_scene/scene.dart';
@@ -12,9 +10,8 @@ import 'package:vector_math/vector_math.dart' as vector;
 
 import '../services/asset_loader_service.dart';
 import '../utils/model_auto_fit.dart';
-import 'buddha_model_screen_android_three.dart';
 
-enum _BuddhaRendererPath { flutterScenePrimary, androidThreeFallback }
+enum _BuddhaRendererPath { flutterScenePrimary }
 
 class BuddhaModelScreen extends StatefulWidget {
   final bool autoRotate;
@@ -63,12 +60,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   _BuddhaRendererPath? _activeRendererPath;
 
   String? _lastLoadError;
-  String? _androidThreeError;
   String? _flutterSceneError;
   String _loadingLabel = '恭请佛像...';
-
-  bool get _canUseAndroidThreeFallback =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   @override
   void initState() {
@@ -102,22 +95,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     }
   }
 
-  Future<void> _startAndroidThreeFallback() async {
-    if (!mounted) return;
-    setState(() {
-      _androidThreeError = null;
-      _resetForFreshLoad(
-        loadingLabel: '正在安奉佛像...',
-        activePath: _BuddhaRendererPath.androidThreeFallback,
-      );
-    });
-  }
-
   Future<void> _startFlutterScenePrimary() async {
     if (!mounted) return;
     setState(() {
       _flutterSceneError = null;
-      _androidThreeError = null;
       _resetForFreshLoad(
         loadingLabel: '恭请佛像...',
         activePath: _BuddhaRendererPath.flutterScenePrimary,
@@ -294,32 +275,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     return picture.toImage(width, height);
   }
 
-  void _markAndroidThreeReady() {
-    if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-      _loadFailed = false;
-      _renderFailed = false;
-      _loadingProgress = 1.0;
-    });
-  }
-
-  void _handleAndroidThreeFailure(String details) {
-    _androidThreeError = details;
-    _lastLoadError = details;
-    debugPrint('❌ [BuddhaModel] Android three_dart 失败: $details');
-    _markLoadFailed(details);
-  }
-
   Future<void> _handleFlutterSceneFailure(String details) async {
     _flutterSceneError = details;
     _lastLoadError = details;
     debugPrint('❌ [BuddhaModel] flutter_scene 失败: $details');
-
-    if (_canUseAndroidThreeFallback) {
-      await _startAndroidThreeFallback();
-      return;
-    }
 
     _markLoadFailed(details);
   }
@@ -349,9 +308,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
   String get _loadFailureDetails {
     final details = <String>[];
-    if (_androidThreeError != null && _androidThreeError!.isNotEmpty) {
-      details.add('Android Three：${_cleanLoadError(_androidThreeError!)}');
-    }
     if (_flutterSceneError != null && _flutterSceneError!.isNotEmpty) {
       details.add('flutter_scene：${_cleanLoadError(_flutterSceneError!)}');
     }
@@ -489,27 +445,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                 ),
                 child: SizedBox.expand(),
               ),
-              if (!_loadFailed &&
-                  _activeRendererPath ==
-                      _BuddhaRendererPath.androidThreeFallback)
-                Positioned.fill(
-                  child: AndroidThreeBuddhaView(
-                    key: ValueKey(
-                      'android-three-${_loadFailed ? 'failed' : 'active'}',
-                    ),
-                    rotationY: _rotationY,
-                    isVisible: widget.isVisible,
-                    onProgress: (progress) {
-                      if (!mounted) return;
-                      setState(() {
-                        _loadingProgress = progress;
-                      });
-                    },
-                    onReady: _markAndroidThreeReady,
-                    onError: _handleAndroidThreeFailure,
-                  ),
-                )
-              else if (!_isLoading &&
+              if (!_isLoading &&
                   !_loadFailed &&
                   scene != null &&
                   camera != null)
