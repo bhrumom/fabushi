@@ -845,15 +845,23 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           final offeringTop = (size.height * 0.60)
               .clamp(0.0, size.height - incenseHeight - 180)
               .toDouble();
-          final bookWidth = (size.width * 0.13).clamp(68.0, 88.0).toDouble();
+
+          // Premium traditional book sizing (slightly larger & taller aspect ratio)
+          final bookWidth = (size.width * 0.16).clamp(72.0, 96.0).toDouble();
           final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
+          
+          // Horizontally centered incense censer
           final incenseLeft = (size.width - incenseWidth) / 2;
-          final bookCenterX = (size.width * 0.50)
-              .clamp(bookWidth / 2 + 12, size.width - bookWidth / 2 - 12)
+
+          // Position the sutra book to the right of the censer, resting harmoniously on the virtual altar table
+          final bookLeft = (size.width / 2 + incenseWidth / 2 + 16)
+              .clamp(0.0, size.width - bookWidth - 16)
               .toDouble();
-          final bookLeft = bookCenterX - bookWidth / 2;
-          final bookTop = (offeringTop - bookHeight - 8)
-              .clamp(0.0, size.height - bookHeight)
+
+          // Align the book's bottom with the censer's base tabletop (censer feet touch point)
+          final scale = incenseWidth / 150.0;
+          final bookTop = (offeringTop + incenseHeight - bookHeight - 12 * scale)
+              .clamp(0.0, size.height - bookHeight - 16)
               .toDouble();
 
           return Stack(
