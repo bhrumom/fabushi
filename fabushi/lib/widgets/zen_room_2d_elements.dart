@@ -232,9 +232,6 @@ class IncenseSmokeOverlay extends StatelessWidget {
 }
 
 class IncenseSmokeOverlayPainter extends CustomPainter {
-  static const double _baseHeight = 196;
-  static const double _stickBaseBottom = 58;
-
   final double incenseProgress;
   final double smokeRise;
 
@@ -248,19 +245,18 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
     if (size.isEmpty || !size.width.isFinite || !size.height.isFinite) return;
 
     final time = DateTime.now().millisecondsSinceEpoch * 0.001;
-    final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
-    final stickHeight = 88.0 * remaining;
-    final incenseAreaHeight = (size.height - smokeRise).clamp(
-      _baseHeight,
-      size.height,
-    );
-    final incenseTop = smokeRise + (incenseAreaHeight - _baseHeight) / 2;
-    final tipY = incenseTop + _baseHeight - _stickBaseBottom - stickHeight;
+    final remaining = (1.0 - incenseProgress).clamp(0.18, 1.0).toDouble();
+    final incenseAreaHeight = (size.height - smokeRise).clamp(1.0, size.height);
+    final scale = math.min(size.width / 150.0, incenseAreaHeight / 184.0);
+    final bowlTop = smokeRise + incenseAreaHeight - 52.0 * scale;
+    final stickHeight = 78.0 * scale * remaining;
+    final tipY = bowlTop - 4.0 * scale - stickHeight;
     final centerX = size.width / 2;
 
-    for (final seed in const [-18.0, 0.0, 18.0]) {
-      final tip = Offset(centerX + seed, tipY);
-      _drawSmokeColumn(canvas, tip, time, seed);
+    for (final seed in const [-11.0, 0.0, 11.0]) {
+      final scaledSeed = seed * scale;
+      final tip = Offset(centerX + scaledSeed, tipY);
+      _drawSmokeColumn(canvas, tip, time, scaledSeed);
     }
   }
 
@@ -335,148 +331,188 @@ class IncenseOffering extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final remaining = (1.0 - incenseProgress).clamp(0.16, 1.0).toDouble();
-    final stickHeight = 88.0 * remaining;
-    const centerX = 85.0;
-    final flameBottom = 58.0 + stickHeight - 6.0;
-
-    return SizedBox.expand(
-      child: Center(
-        child: SizedBox(
-          width: 170,
-          height: 196,
-          child: Stack(
-            alignment: Alignment.bottomCenter,
-            clipBehavior: Clip.none,
-            children: [
-              Positioned(
-                bottom: 4,
-                child: Container(
-                  width: 124,
-                  height: 22,
-                  decoration: const BoxDecoration(
-                    color: Color(0x66000000),
-                    borderRadius: BorderRadius.all(Radius.elliptical(62, 11)),
-                    boxShadow: [
-                      BoxShadow(color: Color(0x99000000), blurRadius: 14),
-                    ],
-                  ),
-                ),
-              ),
-              for (final dx in const [-18.0, 0.0, 18.0]) ...[
-                Positioned(
-                  left: centerX + dx - 3,
-                  bottom: 58,
-                  child: Container(
-                    width: 6,
-                    height: stickHeight,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(3),
-                      gradient: const LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [
-                          Color(0xFF2B1509),
-                          Color(0xFFE7B45F),
-                          Color(0xFF5A2E16),
-                        ],
-                      ),
-                      boxShadow: const [
-                        BoxShadow(color: Color(0xAA000000), blurRadius: 5),
-                      ],
-                    ),
-                  ),
-                ),
-                if (isBurning) ...[
-                  Positioned(
-                    left: centerX + dx - 9,
-                    bottom: flameBottom,
-                    child: Container(
-                      width: 18,
-                      height: 18,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            Color(0xFFFFF1A3),
-                            Color(0xFFFF6B1A),
-                            Color(0x00FF6B1A),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  for (var i = 0; i < 3; i++)
-                    Positioned(
-                      left: centerX + dx - 7 + (i.isEven ? -8 : 8),
-                      bottom: flameBottom + 22 + i * 24,
-                      child: Container(
-                        width: 14.0 + i * 6,
-                        height: 14.0 + i * 6,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Color.fromRGBO(235, 229, 214, 0.16 - i * 0.03),
-                          boxShadow: const [
-                            BoxShadow(color: Color(0x66EDE5D8), blurRadius: 12),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ],
-              Positioned(
-                bottom: 18,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 112,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color(0xFFD4AF37),
-                            Color(0xFF6F3514),
-                            Color(0xFFFFD36A),
-                          ],
-                        ),
-                        border: Border.all(color: const Color(0x99D4AF37)),
-                      ),
-                    ),
-                    Transform.translate(
-                      offset: const Offset(0, -4),
-                      child: Container(
-                        width: 94,
-                        height: 34,
-                        decoration: const BoxDecoration(
-                          borderRadius: BorderRadius.vertical(
-                            bottom: Radius.circular(38),
-                            top: Radius.circular(8),
-                          ),
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFF9A5A24),
-                              Color(0xFF4A2111),
-                              Color(0xFF2A1208),
-                            ],
-                          ),
-                          boxShadow: [
-                            BoxShadow(color: Color(0x99000000), blurRadius: 8),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+    return CustomPaint(
+      painter: IncenseOfferingPainter(
+        incenseProgress: incenseProgress,
+        isBurning: isBurning,
       ),
+      child: const SizedBox.expand(),
     );
+  }
+}
+
+class IncenseOfferingPainter extends CustomPainter {
+  final double incenseProgress;
+  final bool isBurning;
+
+  const IncenseOfferingPainter({
+    required this.incenseProgress,
+    required this.isBurning,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty || !size.width.isFinite || !size.height.isFinite) return;
+
+    final scale = math.min(size.width / 150.0, size.height / 184.0);
+    final centerX = size.width / 2;
+    final bowlTop = size.height - 52 * scale;
+    final bowlBottom = size.height - 8 * scale;
+    final rimCenter = Offset(centerX, bowlTop);
+    final remaining = (1.0 - incenseProgress).clamp(0.18, 1.0).toDouble();
+    final stickHeight = 78.0 * scale * remaining;
+
+    _drawBowlShadow(canvas, centerX, bowlBottom, scale);
+    _drawBowl(canvas, rimCenter, bowlBottom, scale);
+
+    for (final dx in const [-11.0, 0.0, 11.0]) {
+      final base = Offset(centerX + dx * scale, bowlTop - 4 * scale);
+      final tip = base.translate(0, -stickHeight);
+      _drawStick(canvas, base, tip, scale);
+      if (isBurning) {
+        _drawEmber(canvas, tip, scale);
+      }
+    }
+  }
+
+  void _drawBowlShadow(
+    Canvas canvas,
+    double centerX,
+    double bottom,
+    double scale,
+  ) {
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(centerX, bottom + 4 * scale),
+        width: 104 * scale,
+        height: 18 * scale,
+      ),
+      Paint()
+        ..color = const Color(0x66000000)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8 * scale),
+    );
+  }
+
+  void _drawBowl(
+    Canvas canvas,
+    Offset rimCenter,
+    double bowlBottom,
+    double scale,
+  ) {
+    final rimRect = Rect.fromCenter(
+      center: rimCenter,
+      width: 106 * scale,
+      height: 18 * scale,
+    );
+    final body = Path()
+      ..moveTo(rimCenter.dx - 43 * scale, rimCenter.dy + 3 * scale)
+      ..cubicTo(
+        rimCenter.dx - 38 * scale,
+        rimCenter.dy + 34 * scale,
+        rimCenter.dx - 24 * scale,
+        bowlBottom,
+        rimCenter.dx,
+        bowlBottom,
+      )
+      ..cubicTo(
+        rimCenter.dx + 24 * scale,
+        bowlBottom,
+        rimCenter.dx + 38 * scale,
+        rimCenter.dy + 34 * scale,
+        rimCenter.dx + 43 * scale,
+        rimCenter.dy + 3 * scale,
+      )
+      ..close();
+
+    canvas.drawPath(
+      body,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(rimCenter.dx - 45 * scale, rimCenter.dy),
+          Offset(rimCenter.dx + 45 * scale, bowlBottom),
+          const [Color(0xFFD89236), Color(0xFF7B3A12), Color(0xFF2D1006)],
+          const [0.0, 0.48, 1.0],
+        ),
+    );
+    canvas.drawPath(
+      body,
+      Paint()
+        ..color = const Color(0xB8D4AF37)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2 * scale,
+    );
+
+    canvas.drawOval(
+      rimRect,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          rimRect.topLeft,
+          rimRect.bottomRight,
+          const [Color(0xFFFFD76B), Color(0xFF9C551F), Color(0xFFFFE08A)],
+        ),
+    );
+    canvas.drawOval(
+      rimRect.deflate(8 * scale),
+      Paint()..color = const Color(0xFF2C1208),
+    );
+    canvas.drawOval(
+      rimRect.deflate(16 * scale).translate(0, 1.4 * scale),
+      Paint()..color = const Color(0xFF77604A),
+    );
+
+    final foot = Rect.fromCenter(
+      center: Offset(rimCenter.dx, bowlBottom - 1 * scale),
+      width: 48 * scale,
+      height: 8 * scale,
+    );
+    canvas.drawOval(foot, Paint()..color = const Color(0xFF3A1609));
+  }
+
+  void _drawStick(Canvas canvas, Offset base, Offset tip, double scale) {
+    canvas.drawLine(
+      base,
+      tip,
+      Paint()
+        ..color = const Color(0xAA220C04)
+        ..strokeWidth = 4.6 * scale
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawLine(
+      base,
+      tip,
+      Paint()
+        ..shader = ui.Gradient.linear(base, tip, const [
+          Color(0xFF2F1307),
+          Color(0xFFC47D34),
+          Color(0xFFECC36C),
+        ])
+        ..strokeWidth = 2.4 * scale
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  void _drawEmber(Canvas canvas, Offset tip, double scale) {
+    canvas.drawCircle(
+      tip,
+      5.2 * scale,
+      Paint()
+        ..shader = ui.Gradient.radial(tip, 7.0 * scale, const [
+          Color(0xFFFFF1A3),
+          Color(0xFFFF6B1A),
+          Color(0x00FF6B1A),
+        ]),
+    );
+    canvas.drawCircle(
+      tip,
+      1.8 * scale,
+      Paint()..color = const Color(0xFFFFE6A3),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant IncenseOfferingPainter oldDelegate) {
+    return oldDelegate.incenseProgress != incenseProgress ||
+        oldDelegate.isBurning != isBurning;
   }
 }
 
@@ -517,23 +553,6 @@ class SutraBookButton extends StatelessWidget {
                 clipBehavior: Clip.none,
                 alignment: Alignment.center,
                 children: [
-                  Positioned(
-                    left: 22,
-                    right: 22,
-                    bottom: 8,
-                    child: Container(
-                      height: 18,
-                      decoration: const BoxDecoration(
-                        color: Color(0x99000000),
-                        borderRadius: BorderRadius.all(
-                          Radius.elliptical(70, 9),
-                        ),
-                        boxShadow: [
-                          BoxShadow(color: Color(0x99000000), blurRadius: 14),
-                        ],
-                      ),
-                    ),
-                  ),
                   Positioned(
                     left: 18,
                     top: 28,
@@ -626,9 +645,6 @@ class SutraBookButton extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: const Color(0xFFD4AF37),
                         borderRadius: BorderRadius.circular(3),
-                        boxShadow: const [
-                          BoxShadow(color: Color(0xAA3A1204), blurRadius: 5),
-                        ],
                       ),
                     ),
                   ),
@@ -654,9 +670,6 @@ class SutraBookButton extends StatelessWidget {
                             color: Color(0xFFFFE6A3),
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            shadows: [
-                              Shadow(color: Color(0xFF3A1204), blurRadius: 4),
-                            ],
                           ),
                         ),
                       ),
@@ -714,13 +727,6 @@ class _BookPanel extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: colors,
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x99000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
       ),
     );
   }

@@ -837,23 +837,23 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           final title = practice?.title ?? '选择功课';
           final opensSelection =
               practice == null || practice.filePath.startsWith('manual:');
-          final incenseWidth = (size.width * 0.30)
-              .clamp(180.0, 230.0)
+          final incenseWidth = (size.width * 0.22)
+              .clamp(128.0, 168.0)
               .toDouble();
-          final incenseHeight = incenseWidth * 1.12;
-          const smokeRise = 156.0;
-          final offeringTop = (size.height * 0.58)
-              .clamp(0.0, size.height - 300)
+          final incenseHeight = incenseWidth * 1.24;
+          const smokeRise = 142.0;
+          final offeringTop = (size.height * 0.60)
+              .clamp(0.0, size.height - incenseHeight - 180)
               .toDouble();
-          final bookWidth = (size.width * 0.16).clamp(88.0, 112.0).toDouble();
+          final bookWidth = (size.width * 0.13).clamp(68.0, 88.0).toDouble();
           final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
           final incenseLeft = (size.width - incenseWidth) / 2;
-          final bookCenterX = (size.width * 0.56)
+          final bookCenterX = (size.width * 0.50)
               .clamp(bookWidth / 2 + 12, size.width - bookWidth / 2 - 12)
               .toDouble();
           final bookLeft = bookCenterX - bookWidth / 2;
-          final bookTop = (size.height * 0.50 - bookHeight * 0.55)
-              .clamp(0.0, offeringTop - bookHeight - 16)
+          final bookTop = (offeringTop - bookHeight - 8)
+              .clamp(0.0, size.height - bookHeight)
               .toDouble();
 
           return Stack(
