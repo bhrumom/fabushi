@@ -7,28 +7,24 @@
       "title": "Android Beta",
       "description": "官网直接读取最新发布版本的 APK 安装包，安装包发布后这里会自动更新。",
       "primaryLabel": "下载 Android Beta",
-      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/v1.0.0-307-mobile.fde8b7853fc8/fabushi-android-arm64-fde8b7853fc8.apk",
-      "version": "v1.0.0-307-mobile.fde8b7853fc8",
-      "publishedAt": "2026-05-18T13:03:57Z",
+      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/v1.0.0-334-mobile.d2f85bce106e/fabushi-android-arm64-d2f85bce106e.apk",
+      "version": "v1.0.0-334-mobile.d2f85bce106e",
+      "publishedAt": "2026-05-19T12:16:46Z",
       "updateSummary": [
-        "改进 Android 测试版下载与安装稳定性。",
-        "Lower the book into the offering area above the centered incense burner",
-        "Keep the book-style red/gold visual and main-practice title on the cover",
-        "flutter analyze --no-pub lib\\\\screens\\\\meditation_room_screen.dart lib\\\\widgets\\\\zen_room_2d_elements.dart",
-        "flutter test --no-pub test\\\\unit\\\\core\\\\app_config_buddha_model_test.dart test\\\\unit\\\\services\\\\asset_loader_service_test.dart"
+        "改进 Android 测试版下载与安装稳定性。"
       ],
       "mirrorLinks": [
         {
           "label": "国内镜像 1",
-          "href": "https://mirror.ghproxy.com/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-307-mobile.fde8b7853fc8/fabushi-android-arm64-fde8b7853fc8.apk"
+          "href": "https://mirror.ghproxy.com/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-334-mobile.d2f85bce106e/fabushi-android-arm64-d2f85bce106e.apk"
         },
         {
           "label": "国内镜像 2",
-          "href": "https://ghfast.top/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-307-mobile.fde8b7853fc8/fabushi-android-arm64-fde8b7853fc8.apk"
+          "href": "https://ghfast.top/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-334-mobile.d2f85bce106e/fabushi-android-arm64-d2f85bce106e.apk"
         }
       ],
       "note": "国内访问较慢时，可以优先尝试镜像下载入口。",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-307-mobile.fde8b7853fc8"
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-334-mobile.d2f85bce106e"
     },
     {
       "platform": "iOS",
@@ -38,34 +34,53 @@
       "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
       "primaryLabel": "加入 iOS TestFlight",
       "primaryHref": "https://testflight.apple.com/join/98KFgV2z",
-      "version": "307",
-      "publishedAt": "2026-05-18T13:03:20Z",
+      "version": "334",
+      "publishedAt": "2026-05-19T12:13:55Z",
       "updateSummary": [
-        "改进 Android 测试版下载与安装稳定性。",
-        "Lower the book into the offering area above the centered incense burner",
-        "Keep the book-style red/gold visual and main-practice title on the cover",
-        "flutter analyze --no-pub lib\\\\screens\\\\meditation_room_screen.dart lib\\\\widgets\\\\zen_room_2d_elements.dart",
-        "flutter test --no-pub test\\\\unit\\\\core\\\\app_config_buddha_model_test.dart test\\\\unit\\\\services\\\\asset_loader_service_test.dart"
+        "改进 Android 测试版下载与安装稳定性。"
       ],
       "mirrorLinks": [],
       "note": "",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-307-mobile.fde8b7853fc8"
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-334-mobile.d2f85bce106e"
     }
   ],
   "stableChannels": [],
   "screenshots": {},
   "releases": [
     {
+      "tag": "v1.0.0-334-mobile.d2f85bce106e",
+      "title": "Fabushi mobile 1.0.0+334 (d2f85bce106e)",
+      "publishedAt": "2026-05-19T12:16:46Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-334-mobile.d2f85bce106e",
+      "summary": [
+        "改进 Android 测试版下载与安装稳定性。"
+      ]
+    },
+    {
+      "tag": "v1.0.0-325-mobile.d5059671747a",
+      "title": "Fabushi mobile 1.0.0+325 (d5059671747a)",
+      "publishedAt": "2026-05-19T06:40:38Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-325-mobile.d5059671747a",
+      "summary": [
+        "改进官网界面与浏览体验。"
+      ]
+    },
+    {
+      "tag": "v1.0.0-316-mobile.792e8f00c9cd",
+      "title": "Fabushi mobile 1.0.0+316 (792e8f00c9cd)",
+      "publishedAt": "2026-05-19T00:07:03Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-316-mobile.792e8f00c9cd",
+      "summary": [
+        "改进 Android 测试版下载与安装稳定性。"
+      ]
+    },
+    {
       "tag": "v1.0.0-307-mobile.fde8b7853fc8",
       "title": "Fabushi mobile 1.0.0+307 (fde8b7853fc8)",
       "publishedAt": "2026-05-18T13:03:57Z",
       "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-307-mobile.fde8b7853fc8",
       "summary": [
-        "改进 Android 测试版下载与安装稳定性。",
-        "Lower the book into the offering area above the centered incense burner",
-        "Keep the book-style red/gold visual and main-practice title on the cover",
-        "flutter analyze --no-pub lib\\\\screens\\\\meditation_room_screen.dart lib\\\\widgets\\\\zen_room_2d_elements.dart",
-        "flutter test --no-pub test\\\\unit\\\\core\\\\app_config_buddha_model_test.dart test\\\\unit\\\\services\\\\asset_loader_service_test.dart"
+        "改进 Android 测试版下载与安装稳定性。"
       ]
     },
     {
@@ -75,43 +90,7 @@
       "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-304-mobile.e392e9946a1a",
       "summary": [
         "改进官网界面与浏览体验。",
-        "改进 Android 测试版下载与安装稳定性。",
-        "Restore the sutra entry as a red/gold book instead of a circular icon",
-        "Show the current main practice title on the book face",
-        "flutter analyze --no-pub lib\\\\screens\\\\meditation_room_screen.dart lib\\\\widgets\\\\zen_room_2d_elements.dart",
-        "flutter test --no-pub test\\\\unit\\\\core\\\\app_config_buddha_model_test.dart test\\\\unit\\\\services\\\\asset_loader_service_test.dart"
-      ]
-    },
-    {
-      "tag": "v1.0.0-303-mobile.2605074f8f6d",
-      "title": "Fabushi mobile 1.0.0+303 (2605074f8f6d)",
-      "publishedAt": "2026-05-18T11:55:54Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-303-mobile.2605074f8f6d",
-      "summary": [
-        "改进 Android 测试版下载与安装稳定性。",
-        "only 3 files are touched"
-      ]
-    },
-    {
-      "tag": "v1.0.0-301-mobile.fe630b9fc1f1",
-      "title": "Fabushi mobile 1.0.0+301 (fe630b9fc1f1)",
-      "publishedAt": "2026-05-18T11:08:37Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-301-mobile.fe630b9fc1f1",
-      "summary": [
-        "改进 Android 测试版下载与安装稳定性。",
-        "Move the online count affordance out of the Buddha area and use a people icon",
-        "flutter test --no-pub test\\\\unit\\\\core\\\\app_config_buddha_model_test.dart test\\\\unit\\\\services\\\\asset_loader_service_test.dart"
-      ]
-    },
-    {
-      "tag": "v1.0.0-296-mobile.33e5d5f9d6f2",
-      "title": "Fabushi mobile 1.0.0+296 (33e5d5f9d6f2)",
-      "publishedAt": "2026-05-18T07:04:21Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-296-mobile.33e5d5f9d6f2",
-      "summary": [
-        "改进 Android 测试版下载与安装稳定性。",
-        "dart analyze lib/screens/buddha_model_screen_native.dart lib/core/config/app_config.dart",
-        "减少更新后仍显示旧内容的情况。"
+        "改进 Android 测试版下载与安装稳定性。"
       ]
     }
   ],

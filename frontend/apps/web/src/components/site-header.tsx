@@ -4,29 +4,24 @@ import { siteHref } from "../lib/site-url";
 
 const NAV_ITEMS = [
   {
-    href: "/insights",
-    zh: "官网资讯",
-    en: "News",
-  },
-  {
-    href: "/buddhadharma",
-    zh: "佛法学习",
-    en: "Dharma Learning",
-  },
-  {
-    href: "/practice-guide",
-    zh: "修行方法",
-    en: "Practice Guide",
-  },
-  {
-    href: "/sutra-guide",
-    zh: "佛经导读",
-    en: "Sutra Guide",
+    href: "/faliu",
+    zh: "法流",
+    en: "Faloo",
   },
   {
     href: "/faq",
-    zh: "常见问题",
-    en: "FAQ",
+    zh: "下载 FAQ",
+    en: "Download FAQ",
+  },
+  {
+    href: "/contact",
+    zh: "联系支持",
+    en: "Contact Support",
+  },
+  {
+    href: "/privacy",
+    zh: "隐私说明",
+    en: "Privacy",
   },
 ] as const;
 

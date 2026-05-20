@@ -660,12 +660,14 @@ jobs:
       - detect-changes
       - worker-module-checks
       - frontend-module-checks
+    if: always()
     steps:
       - name: Confirm module check results
         shell: bash
         run: |
           set -euo pipefail
           for pair in \
+            "Detect changes:${{ needs.detect-changes.result }}" \
             "Worker module checks:${{ needs.worker-module-checks.result }}" \
             "Frontend module checks:${{ needs.frontend-module-checks.result }}"
           do
@@ -685,12 +687,14 @@ jobs:
       - detect-changes
       - worker-contract-checks
       - workflow-contract-checks
+    if: always()
     steps:
       - name: Confirm contract check results
         shell: bash
         run: |
           set -euo pipefail
           for pair in \
+            "Detect changes:${{ needs.detect-changes.result }}" \
             "Worker contract checks:${{ needs.worker-contract-checks.result }}" \
             "Workflow contract checks:${{ needs.workflow-contract-checks.result }}"
           do
@@ -712,12 +716,14 @@ jobs:
       - android-gradle-bootstrap
       - worker-release-simulation
       - e2e-release-simulation
+    if: always()
     steps:
       - name: Confirm release simulation results
         shell: bash
         run: |
           set -euo pipefail
           for pair in \
+            "Detect changes:${{ needs.detect-changes.result }}" \
             "Mobile release simulation:${{ needs.mobile-release-simulation.result }}" \
             "Android Gradle bootstrap:${{ needs.android-gradle-bootstrap.result }}" \
             "Worker dry-run:${{ needs.worker-release-simulation.result }}" \
@@ -748,6 +754,7 @@ jobs:
         run: |
           set -euo pipefail
           for pair in \
+            "Detect changes:${{ needs.detect-changes.result }}" \
             "Fast checks:${{ needs.fast-checks.result }}" \
             "Module checks:${{ needs.module-checks.result }}" \
             "Contract checks:${{ needs.contract-checks.result }}" \
