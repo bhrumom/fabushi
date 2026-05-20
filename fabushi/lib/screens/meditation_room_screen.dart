@@ -837,31 +837,32 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           final title = practice?.title ?? '选择功课';
           final opensSelection =
               practice == null || practice.filePath.startsWith('manual:');
-          final incenseWidth = (size.width * 0.30)
-              .clamp(180.0, 230.0)
+          final incenseWidth = (size.width * 0.22)
+              .clamp(128.0, 168.0)
               .toDouble();
-          final incenseHeight = incenseWidth * 1.12;
-          const smokeRise = 156.0;
-          final bottomClearance = 116.0 + MediaQuery.of(context).padding.bottom;
-          final offeringTop = (size.height * 0.58)
-              .clamp(0.0, size.height - 300)
+          final incenseHeight = incenseWidth * 1.24;
+          const smokeRise = 142.0;
+          final offeringTop = (size.height * 0.60)
+              .clamp(0.0, size.height - incenseHeight - 180)
               .toDouble();
-          final isCompactPortrait =
-              size.width < 430 && size.height > size.width;
-          final bookWidth = (size.width * (isCompactPortrait ? 0.145 : 0.16))
-              .clamp(isCompactPortrait ? 76.0 : 88.0, 108.0)
-              .toDouble();
+
+          // Premium traditional book sizing (slightly larger & taller aspect ratio)
+          final bookWidth = (size.width * 0.16).clamp(72.0, 96.0).toDouble();
           final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
+          
+          // Horizontally centered incense censer
           final incenseLeft = (size.width - incenseWidth) / 2;
-          final bookCenterX =
-              (incenseLeft + incenseWidth * 0.88 + bookWidth * 0.48)
-                  .clamp(bookWidth / 2 + 12, size.width - bookWidth / 2 - 12)
-                  .toDouble();
-          final bookLeft = bookCenterX - bookWidth / 2;
-          final bookTop =
-              (offeringTop + incenseHeight * (isCompactPortrait ? 0.42 : 0.34))
-                  .clamp(0.0, size.height - bookHeight - bottomClearance)
-                  .toDouble();
+
+          // Position the sutra book to the right of the censer, resting harmoniously on the virtual altar table
+          final bookLeft = (size.width / 2 + incenseWidth / 2 + 16)
+              .clamp(0.0, size.width - bookWidth - 16)
+              .toDouble();
+
+          // Align the book's bottom with the censer's base tabletop (censer feet touch point)
+          final scale = incenseWidth / 150.0;
+          final bookTop = (offeringTop + incenseHeight - bookHeight - 12 * scale)
+              .clamp(0.0, size.height - bookHeight - 16)
+              .toDouble();
 
           return Stack(
             children: [
