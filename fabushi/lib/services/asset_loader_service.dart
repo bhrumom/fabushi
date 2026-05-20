@@ -285,7 +285,15 @@ class AssetLoaderService {
         'Web platform does not support local storage directory',
       );
     }
-    final appDir = await getApplicationSupportDirectory();
+    Directory appDir;
+    try {
+      appDir = await getApplicationSupportDirectory();
+    } catch (error) {
+      debugPrint(
+        '[AssetLoader] path_provider unavailable, using system temp cache: $error',
+      );
+      appDir = Directory('${Directory.systemTemp.path}/fabushi_support');
+    }
     final modelDir = Directory('${appDir.path}/assets_cache/models');
     if (!await modelDir.exists()) {
       await modelDir.create(recursive: true);
