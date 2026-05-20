@@ -359,7 +359,8 @@ class IncenseOfferingPainter extends CustomPainter {
     final bowlTop = size.height - 52 * scale;
     final bowlBottom = size.height - 8 * scale;
     final rimCenter = Offset(centerX, bowlTop);
-    final remaining = (1.0 - incenseProgress).clamp(0.18, 1.0).toDouble();
+    final visualProgress = isBurning ? incenseProgress : 0.0;
+    final remaining = (1.0 - visualProgress).clamp(0.34, 1.0).toDouble();
     final stickHeight = 78.0 * scale * remaining;
 
     _drawBowlShadow(canvas, centerX, bowlBottom, scale);
@@ -469,6 +470,15 @@ class IncenseOfferingPainter extends CustomPainter {
   }
 
   void _drawStick(Canvas canvas, Offset base, Offset tip, double scale) {
+    canvas.drawLine(
+      base,
+      tip,
+      Paint()
+        ..color = const Color(0xAA050200)
+        ..strokeWidth = 8.6 * scale
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 1.6 * scale),
+    );
     canvas.drawLine(
       base,
       tip,
