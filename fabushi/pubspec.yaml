@@ -53,10 +53,6 @@ dependencies:
   # 3D渲染
   flutter_earth_globe:
     path: lib/packages/flutter_earth_globe
-  flutter_gl:
-    path: lib/packages/flutter_gl
-  three_dart: ^0.0.16
-  three_dart_jsm: ^0.0.10
 
   # Firebase
   firebase_core: ^4.2.0
@@ -142,10 +138,6 @@ dependencies:
     path: lib/packages/flutter_scene
 
 dependency_overrides:
-  flutter_gl:
-    path: lib/packages/flutter_gl
-  three_dart:
-    path: lib/packages/three_dart
   archive: ^4.0.7
   http: ^1.2.0
   image: ^4.5.4
@@ -161,6 +153,7 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
+  flutter_scene_importer: ^0.9.0-0
   flutter_lints: ^6.0.0
   build_runner: ^2.4.13
   json_serializable: ^6.8.0
@@ -177,8 +170,7 @@ flutter:
     - assets/earth_texture.jpg
     - assets/ip_data/
     - assets/sherpa_models/streaming-paraformer-zh-en/
-    - web/assets/models/佛像模型.glb
-    # Android/iOS 优先使用 R2 上的 .model；Android 仅在 flutter_scene 失败时回退到打包 GLB
+    # Android/iOS 优先使用 R2 上的 .model，本地无有效缓存时再从云端下载。
   
   fonts:
     # 使用子集化后的字体（从80MB压缩至~4.5MB）
