@@ -8,6 +8,19 @@ const PANEL_TITLE = "功德利益";
 const READER_SELECTOR = 'section[aria-label="法流"] [class*="readerHtml"]';
 const MODAL_SELECTOR = 'section[aria-label="法流"] [role="dialog"][aria-modal="true"]';
 const HOST_SELECTOR = '[data-faliu-merit-benefit-host="true"]';
+const HIGHLIGHT_NAME = "faliu-merit-benefit-highlight";
+const SKIP_TEXT_SELECTOR = ".lb,.noteAnchor,.gaijiInfo,#cbeta-copyright,script,style,[aria-hidden='true']";
+
+interface IndexedCharacter {
+  node: Text;
+  offset: number;
+  length: number;
+}
+
+interface TextMatch {
+  range: Range;
+  element: HTMLElement;
+}
 
 function normalizeText(value: string) {
   return value.replace(/\s+/g, "").trim();
@@ -27,24 +40,122 @@ function getSelectedWorkAndJuan(modal: HTMLElement | null) {
   return { work, juan: juanMatch?.[1] ?? null };
 }
 
-function findTextNode(root: Node, anchorText: string, occurrence = 1) {
-  const normalizedAnchor = normalizeText(anchorText);
-  let foundCount = 0;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+function shouldSkipTextNode(node: Node, root: HTMLElement) {
+  const parent = node.parentElement;
+
+  if (!parent || !root.contains(parent)) {
+    return true;
+  }
+
+  return Boolean(parent.closest(SKIP_TEXT_SELECTOR));
+}
+
+function buildVisibleTextIndex(root: HTMLElement) {
+  const characters: IndexedCharacter[] = [];
+  let text = "";
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      return shouldSkipTextNode(node, root) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
   let node = walker.nextNode();
 
   while (node) {
-    const text = node.textContent ?? "";
-    const normalized = normalizeText(text);
+    const value = node.textContent ?? "";
+    let offset = 0;
 
-    if (normalized.includes(normalizedAnchor) || normalizedAnchor.includes(normalized)) {
-      foundCount += 1;
-      if (foundCount >= occurrence) {
-        return node;
+    for (const character of value) {
+      if (!/\s/.test(character)) {
+        text += character;
+        characters.push({ node: node as Text, offset, length: character.length });
       }
+
+      offset += character.length;
     }
 
     node = walker.nextNode();
+  }
+
+  return { text, characters };
+}
+
+function getCandidateAnchors(anchorText: string) {
+  const normalizedAnchor = normalizeText(anchorText);
+  const segments = normalizedAnchor
+    .split(/[，。；：！？、,.!?;:]/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 8)
+    .sort((left, right) => right.length - left.length);
+
+  return Array.from(new Set([normalizedAnchor, ...segments]));
+}
+
+function findOccurrence(source: string, candidate: string, occurrence: number) {
+  let fromIndex = 0;
+  let foundCount = 0;
+
+  while (fromIndex < source.length) {
+    const index = source.indexOf(candidate, fromIndex);
+
+    if (index < 0) {
+      return -1;
+    }
+
+    foundCount += 1;
+
+    if (foundCount >= occurrence) {
+      return index;
+    }
+
+    fromIndex = index + candidate.length;
+  }
+
+  return -1;
+}
+
+function getElementForRange(range: Range, reader: HTMLElement) {
+  const startElement = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement;
+  let current = startElement;
+
+  while (current && current !== reader) {
+    if (["P", "DIV", "LI", "SECTION", "ARTICLE"].includes(current.tagName)) {
+      return current;
+    }
+
+    current = current.parentElement;
+  }
+
+  return startElement ?? reader;
+}
+
+function findTextMatch(reader: HTMLElement, benefit: FaliuMeritBenefit): TextMatch | null {
+  const { text, characters } = buildVisibleTextIndex(reader);
+  const occurrence = benefit.occurrence ?? 1;
+
+  for (const candidate of getCandidateAnchors(benefit.anchorText)) {
+    const startIndex = findOccurrence(text, candidate, occurrence);
+
+    if (startIndex < 0) {
+      continue;
+    }
+
+    const endIndex = startIndex + candidate.length - 1;
+    const start = characters[startIndex];
+    const end = characters[endIndex];
+
+    if (!start || !end) {
+      continue;
+    }
+
+    const range = document.createRange();
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset + end.length);
+
+    return {
+      range,
+      element: getElementForRange(range, reader),
+    };
   }
 
   return null;
@@ -67,13 +178,77 @@ function getScrollableParent(element: HTMLElement | null) {
   return null;
 }
 
-function clearMarks(reader: HTMLElement) {
-  reader.querySelectorAll<HTMLElement>('[data-merit-benefit-highlight="true"]').forEach((node) => {
+function getHighlightsRegistry() {
+  const css = window.CSS as unknown as { highlights?: { delete: (name: string) => void; set: (name: string, value: unknown) => void } };
+  const HighlightConstructor = (window as unknown as { Highlight?: new (range: Range) => unknown }).Highlight;
+
+  if (!css.highlights || !HighlightConstructor) {
+    return null;
+  }
+
+  return { highlights: css.highlights, HighlightConstructor };
+}
+
+function ensureHighlightStyle() {
+  if (document.getElementById("faliu-merit-benefit-highlight-style")) {
+    return;
+  }
+
+  const style = document.createElement("style");
+  style.id = "faliu-merit-benefit-highlight-style";
+  style.textContent = `
+    ::highlight(${HIGHLIGHT_NAME}) {
+      background: rgba(232, 189, 107, 0.34);
+      color: inherit;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function clearMarks(reader?: HTMLElement | null) {
+  const registry = typeof window !== "undefined" ? getHighlightsRegistry() : null;
+  registry?.highlights.delete(HIGHLIGHT_NAME);
+
+  reader?.querySelectorAll<HTMLElement>('[data-merit-benefit-highlight="true"]').forEach((node) => {
     node.style.outline = "";
     node.style.background = "";
     node.style.borderRadius = "";
+    node.style.padding = "";
+    node.style.scrollMarginTop = "";
     node.removeAttribute("data-merit-benefit-highlight");
   });
+}
+
+function applyHighlight(match: TextMatch) {
+  const registry = getHighlightsRegistry();
+
+  if (registry) {
+    ensureHighlightStyle();
+    registry.highlights.set(HIGHLIGHT_NAME, new registry.HighlightConstructor(match.range));
+  }
+
+  match.element.dataset.meritBenefitHighlight = "true";
+  match.element.style.outline = "1px solid rgba(232, 189, 107, 0.72)";
+  match.element.style.background = "rgba(232, 189, 107, 0.08)";
+  match.element.style.borderRadius = "8px";
+  match.element.style.padding = "4px 6px";
+  match.element.style.scrollMarginTop = "24px";
+}
+
+function scrollToMatch(match: TextMatch) {
+  const scrollParent = getScrollableParent(match.element);
+  const rect = match.range.getBoundingClientRect();
+  const targetRect = rect.height > 0 ? rect : match.element.getBoundingClientRect();
+
+  if (scrollParent) {
+    const parentRect = scrollParent.getBoundingClientRect();
+    scrollParent.scrollTo({
+      top: scrollParent.scrollTop + targetRect.top - parentRect.top - 32,
+      behavior: "smooth",
+    });
+  } else {
+    match.element.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 }
 
 function scrollToBenefit(benefit: FaliuMeritBenefit) {
@@ -84,30 +259,14 @@ function scrollToBenefit(benefit: FaliuMeritBenefit) {
   }
 
   clearMarks(reader);
-  const targetNode = findTextNode(reader, benefit.anchorText, benefit.occurrence ?? 1);
-  const targetElement = targetNode?.parentElement;
+  const match = findTextMatch(reader, benefit);
 
-  if (!targetElement) {
+  if (!match) {
     return;
   }
 
-  targetElement.dataset.meritBenefitHighlight = "true";
-  targetElement.style.outline = "1px solid rgba(232, 189, 107, 0.72)";
-  targetElement.style.background = "rgba(232, 189, 107, 0.12)";
-  targetElement.style.borderRadius = "8px";
-
-  const scrollParent = getScrollableParent(targetElement);
-
-  if (scrollParent) {
-    const parentRect = scrollParent.getBoundingClientRect();
-    const targetRect = targetElement.getBoundingClientRect();
-    scrollParent.scrollTo({
-      top: scrollParent.scrollTop + targetRect.top - parentRect.top - 24,
-      behavior: "smooth",
-    });
-  } else {
-    targetElement.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
+  applyHighlight(match);
+  scrollToMatch(match);
 }
 
 function groupBenefits(benefits: FaliuMeritBenefit[]) {
@@ -254,6 +413,10 @@ export function FaliuMeritBenefitEnhancer() {
       restorePanelChildren(targetPanel, targetHost);
     };
   }, [benefits.length, targetHost, targetPanel]);
+
+  useEffect(() => {
+    return () => clearMarks(document.querySelector<HTMLElement>(READER_SELECTOR));
+  }, []);
 
   if (!targetHost || benefits.length === 0) {
     return null;
