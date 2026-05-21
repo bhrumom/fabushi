@@ -440,19 +440,28 @@ class IncenseOfferingPainter extends CustomPainter {
         rimCenter.dy - 6 * scale,
       );
 
-    final earPaint = Paint()
+    final leftEarPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6.5 * scale
       ..strokeCap = StrokeCap.round
       ..shader = ui.Gradient.linear(
         Offset(rimCenter.dx - 60 * scale, rimCenter.dy - 15 * scale),
-        Offset(rimCenter.dx + 60 * scale, rimCenter.dy + 10 * scale),
-        const [Color(0xFFD4AF37), Color(0xFF8B5A2B), Color(0xFF3E2010)],
-        const [0.0, 0.5, 1.0],
+        Offset(rimCenter.dx - 30 * scale, rimCenter.dy + 10 * scale),
+        const [Color(0xFFD4AF37), Color(0xFF8B5A2B)],
       );
 
-    canvas.drawPath(leftEar, earPaint);
-    canvas.drawPath(rightEar, earPaint);
+    final rightEarPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6.5 * scale
+      ..strokeCap = StrokeCap.round
+      ..shader = ui.Gradient.linear(
+        Offset(rimCenter.dx + 60 * scale, rimCenter.dy - 15 * scale),
+        Offset(rimCenter.dx + 30 * scale, rimCenter.dy + 10 * scale),
+        const [Color(0xFFD4AF37), Color(0xFF8B5A2B)],
+      );
+
+    canvas.drawPath(leftEar, leftEarPaint);
+    canvas.drawPath(rightEar, rightEarPaint);
 
     final earInnerPaint = Paint()
       ..style = PaintingStyle.stroke
@@ -1244,33 +1253,33 @@ class _FruitFlowerPainter extends CustomPainter {
 
     _drawFruit(
       canvas,
-      Offset(centerX - 20 * scale, fruitCenterY + 4 * scale),
-      16 * scale,
+      Offset(centerX - 24 * scale, fruitCenterY + 4 * scale),
+      20 * scale,
       const Color(0xFFE53935),
     );
     _drawFruit(
       canvas,
-      Offset(centerX + 20 * scale, fruitCenterY + 4 * scale),
-      16 * scale,
+      Offset(centerX + 24 * scale, fruitCenterY + 4 * scale),
+      20 * scale,
       const Color(0xFFF4511E),
     );
     _drawFruit(
       canvas,
-      Offset(centerX, fruitCenterY - 8 * scale),
-      18 * scale,
+      Offset(centerX, fruitCenterY - 12 * scale),
+      24 * scale,
       const Color(0xFFFFB300),
     );
 
     _drawLotus(
       canvas,
-      Offset(centerX - 35 * scale, fruitCenterY + 5 * scale),
-      scale * 0.6,
+      Offset(centerX - 42 * scale, fruitCenterY + 5 * scale),
+      scale * 1.2,
       -0.3,
     );
     _drawLotus(
       canvas,
-      Offset(centerX + 35 * scale, fruitCenterY + 5 * scale),
-      scale * 0.6,
+      Offset(centerX + 42 * scale, fruitCenterY + 5 * scale),
+      scale * 1.2,
       0.3,
     );
   }
