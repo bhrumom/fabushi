@@ -81,12 +81,30 @@ jobs:
             --name fabushi-official-site \
             --assets apps/web/out \
             --compatibility-date 2026-05-06 \
-            --domain fabushi.ombhrum.com \
-            --route ombhrum.com/*
+            --domain fabushi.ombhrum.com
 
           api_base="https://api.cloudflare.com/client/v4"
           root_domain="ombhrum.com"
+          root_route_pattern="${root_domain}/*"
+          root_route_worker="fabushi-official-site"
           zone_id="${CLOUDFLARE_ZONE_ID:-}"
+
+          cloudflare_request() {
+            local method="$1"
+            local url="$2"
+            local body="${3:-}"
+
+            if [ -n "${body}" ]; then
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "${body}"
+            else
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json"
+            fi
+          }
 
           assert_cloudflare_success() {
             local response="$1"
@@ -100,7 +118,7 @@ jobs:
           }
 
           if [ -z "${zone_id}" ]; then
-            zone_response="$(curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "${api_base}/zones?name=${root_domain}&status=active")"
+            zone_response="$(cloudflare_request GET "${api_base}/zones?name=${root_domain}&status=active")"
             assert_cloudflare_success "${zone_response}" "resolve zone ${root_domain}"
             zone_id="$(jq -r '.result[0].id // empty' <<< "${zone_response}")"
           fi
@@ -108,6 +126,27 @@ jobs:
           if [ -z "${zone_id}" ]; then
             echo "Could not resolve Cloudflare zone id for ${root_domain}." >&2
             exit 1
+          fi
+
+          routes_response="$(cloudflare_request GET "${api_base}/zones/${zone_id}/workers/routes")"
+          assert_cloudflare_success "${routes_response}" "list worker routes"
+          route_json="$(jq -c --arg pattern "${root_route_pattern}" '.result[]? | select(.pattern == $pattern)' <<< "${routes_response}" | head -n 1)"
+
+          if [ -z "${route_json}" ]; then
+            route_body="$(jq -n --arg pattern "${root_route_pattern}" --arg script "${root_route_worker}" '{pattern: $pattern, script: $script}')"
+            route_response="$(cloudflare_request POST "${api_base}/zones/${zone_id}/workers/routes" "${route_body}")"
+            assert_cloudflare_success "${route_response}" "create route ${root_route_pattern}"
+          else
+            route_id="$(jq -r '.id' <<< "${route_json}")"
+            current_worker="$(jq -r '.script // empty' <<< "${route_json}")"
+
+            if [ "${current_worker}" != "${root_route_worker}" ]; then
+              route_body="$(jq -n --arg pattern "${root_route_pattern}" --arg script "${root_route_worker}" '{pattern: $pattern, script: $script}')"
+              route_response="$(cloudflare_request PUT "${api_base}/zones/${zone_id}/workers/routes/${route_id}" "${route_body}")"
+              assert_cloudflare_success "${route_response}" "update route ${root_route_pattern}"
+            else
+              echo "${root_route_pattern} already points to ${root_route_worker}."
+            fi
           fi
 
           purge_body="$(
@@ -118,10 +157,5 @@ jobs:
               --arg download_slash "https://${root_domain}/download/" \
               '{files: [$root, $index, $download, $download_slash]}'
           )"
-          purge_response="$(
-            curl -fsS -X POST "${api_base}/zones/${zone_id}/purge_cache" \
-              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-              -H "Content-Type: application/json" \
-              --data "${purge_body}"
-          )"
+          purge_response="$(cloudflare_request POST "${api_base}/zones/${zone_id}/purge_cache" "${purge_body}")"
           assert_cloudflare_success "${purge_response}" "purge root redirect cache"
