@@ -1,0 +1,134 @@
+name: Migrate official site root route
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type migrate-ombhrum-root-route to update the Cloudflare route
+        required: true
+      domain:
+        description: Root domain to migrate
+        required: true
+        default: ombhrum.com
+      expected_current_worker:
+        description: Current Worker expected to own the root route
+        required: true
+        default: fabushi
+      target_worker:
+        description: Worker that should own the root route after migration
+        required: true
+        default: fabushi-official-site
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Migrate root route to official site Worker
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          ROOT_DOMAIN: ${{ inputs.domain }}
+          EXPECTED_CURRENT_WORKER: ${{ inputs.expected_current_worker }}
+          TARGET_WORKER: ${{ inputs.target_worker }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID || secrets.CF_ZONE_ID || vars.CLOUDFLARE_ZONE_ID || vars.CF_ZONE_ID }}
+        run: |
+          set -euo pipefail
+
+          if [ "${CONFIRM}" != "migrate-ombhrum-root-route" ]; then
+            echo "Confirmation mismatch. Refusing to update Cloudflare routes." >&2
+            exit 1
+          fi
+
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "Cloudflare API token is not configured." >&2
+            exit 1
+          fi
+
+          api_base="https://api.cloudflare.com/client/v4"
+          route_pattern="${ROOT_DOMAIN}/*"
+
+          cloudflare_request() {
+            local method="$1"
+            local url="$2"
+            local body="${3:-}"
+
+            if [ -n "${body}" ]; then
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "${body}"
+            else
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json"
+            fi
+          }
+
+          assert_success() {
+            local response="$1"
+            local context="$2"
+
+            if [ "$(jq -r '.success // false' <<< "${response}")" != "true" ]; then
+              echo "Cloudflare API request failed: ${context}" >&2
+              jq '.' <<< "${response}" >&2
+              exit 1
+            fi
+          }
+
+          if [ -z "${CLOUDFLARE_ZONE_ID:-}" ]; then
+            zone_response="$(cloudflare_request GET "${api_base}/zones?name=${ROOT_DOMAIN}&status=active")"
+            assert_success "${zone_response}" "resolve zone ${ROOT_DOMAIN}"
+            CLOUDFLARE_ZONE_ID="$(jq -r '.result[0].id // empty' <<< "${zone_response}")"
+          fi
+
+          if [ -z "${CLOUDFLARE_ZONE_ID:-}" ]; then
+            echo "Could not resolve Cloudflare zone id for ${ROOT_DOMAIN}." >&2
+            exit 1
+          fi
+
+          routes_response="$(cloudflare_request GET "${api_base}/zones/${CLOUDFLARE_ZONE_ID}/workers/routes")"
+          assert_success "${routes_response}" "list worker routes"
+
+          echo "Current matching routes:"
+          jq -r --arg root "${ROOT_DOMAIN}" '.result[]? | select(.pattern | contains($root)) | "- " + .pattern + " -> " + (.script // "<none>")' <<< "${routes_response}"
+
+          route_json="$(jq -c --arg pattern "${route_pattern}" '.result[]? | select(.pattern == $pattern)' <<< "${routes_response}" | head -n 1)"
+
+          if [ -z "${route_json}" ]; then
+            echo "Route ${route_pattern} does not exist. Creating it on ${TARGET_WORKER}."
+            create_body="$(jq -n --arg pattern "${route_pattern}" --arg script "${TARGET_WORKER}" '{pattern: $pattern, script: $script}')"
+            update_response="$(cloudflare_request POST "${api_base}/zones/${CLOUDFLARE_ZONE_ID}/workers/routes" "${create_body}")"
+            assert_success "${update_response}" "create route ${route_pattern}"
+          else
+            route_id="$(jq -r '.id' <<< "${route_json}")"
+            current_worker="$(jq -r '.script // empty' <<< "${route_json}")"
+
+            echo "Route ${route_pattern} is currently assigned to ${current_worker}."
+
+            if [ "${current_worker}" = "${TARGET_WORKER}" ]; then
+              echo "Route already points to ${TARGET_WORKER}; nothing to change."
+            else
+              if [ -n "${EXPECTED_CURRENT_WORKER}" ] && [ "${current_worker}" != "${EXPECTED_CURRENT_WORKER}" ]; then
+                echo "Expected ${route_pattern} to be assigned to ${EXPECTED_CURRENT_WORKER}, but found ${current_worker}." >&2
+                exit 1
+              fi
+
+              update_body="$(jq -n --arg pattern "${route_pattern}" --arg script "${TARGET_WORKER}" '{pattern: $pattern, script: $script}')"
+              update_response="$(cloudflare_request PUT "${api_base}/zones/${CLOUDFLARE_ZONE_ID}/workers/routes/${route_id}" "${update_body}")"
+              assert_success "${update_response}" "update route ${route_pattern}"
+            fi
+          fi
+
+          verify_response="$(cloudflare_request GET "${api_base}/zones/${CLOUDFLARE_ZONE_ID}/workers/routes")"
+          assert_success "${verify_response}" "verify worker routes"
+          verified_worker="$(jq -r --arg pattern "${route_pattern}" '.result[]? | select(.pattern == $pattern) | .script // empty' <<< "${verify_response}" | head -n 1)"
+
+          if [ "${verified_worker}" != "${TARGET_WORKER}" ]; then
+            echo "Verification failed: ${route_pattern} points to ${verified_worker}, expected ${TARGET_WORKER}." >&2
+            exit 1
+          fi
+
+          echo "::notice title=Cloudflare route migrated::${route_pattern} now points to ${TARGET_WORKER}."
