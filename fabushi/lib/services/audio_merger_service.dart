@@ -46,6 +46,10 @@ class AudioMergerService {
   /// 是否是 macOS 平台
   bool get _isMacOS => !kIsWeb && Platform.isMacOS;
 
+  /// Android disables FFmpegKit because its native library can fail during
+  /// plugin startup on some Android 14 / arm64 devices.
+  bool get _isAndroid => !kIsWeb && Platform.isAndroid;
+
   /// 合并 PCM 文件并嵌入字幕轨道，输出 M4A
   Future<String?> mergeWithSubtitle({
     required List<String> pcmPaths,
@@ -87,8 +91,12 @@ class AudioMergerService {
         }
 
         await _cleanupTempFiles([wavPath]);
+      } else if (_isAndroid) {
+        audioPath = '${tempDir.path}/audio_$timestamp.wav';
+        await _pcmToWav(mergedPcmPath, audioPath);
+        debugPrint('[AudioMerger] Android FFmpeg disabled, returning WAV');
       } else {
-        // iOS/Android: 使用 FFmpeg
+        // iOS: 使用 FFmpeg
         audioPath = '${tempDir.path}/audio_$timestamp.m4a';
         final success = await _pcmToAacFFmpeg(mergedPcmPath, audioPath);
         if (!success) {
@@ -101,7 +109,7 @@ class AudioMergerService {
       final outputPath = '${tempDir.path}/reading_$timestamp.m4a';
       bool embedSuccess = false;
 
-      if (!_isMacOS) {
+      if (!_isMacOS && !_isAndroid) {
         embedSuccess = await _embedSubtitleFFmpeg(
           audioPath,
           srtPath,
