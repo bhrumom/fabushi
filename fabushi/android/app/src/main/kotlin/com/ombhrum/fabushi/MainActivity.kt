@@ -12,8 +12,8 @@ import android.util.Log
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodChannel
-import io.flutter.plugins.GeneratedPluginRegistrant
 
 // 使用 FlutterFragmentActivity 以支持 audio_service 插件
 class MainActivity : FlutterFragmentActivity() {
@@ -42,7 +42,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
-        GeneratedPluginRegistrant.registerWith(flutterEngine)
+        registerFlutterPlugins(flutterEngine)
         
         // 热点相关 Method Channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
@@ -96,6 +96,56 @@ class MainActivity : FlutterFragmentActivity() {
         
         // 内存管理 Method Channel
         memoryChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, MEMORY_CHANNEL)
+    }
+
+    private fun registerFlutterPlugins(flutterEngine: FlutterEngine) {
+        // Skip ffmpeg_kit_flutter_new_audio on Android startup. Its native library can
+        // fail JNI loading on some Android 14 / arm64 devices and crash the app before
+        // Flutter renders the first frame.
+        registerPlugin(flutterEngine, "app_links") { com.llfbandit.app_links.AppLinksPlugin() }
+        registerPlugin(flutterEngine, "audio_service") { com.ryanheise.audioservice.AudioServicePlugin() }
+        registerPlugin(flutterEngine, "audio_session") { com.ryanheise.audio_session.AudioSessionPlugin() }
+        registerPlugin(flutterEngine, "cloud_firestore") { io.flutter.plugins.firebase.firestore.FlutterFirebaseFirestorePlugin() }
+        registerPlugin(flutterEngine, "connectivity_plus") { dev.fluttercommunity.plus.connectivity.ConnectivityPlugin() }
+        registerPlugin(flutterEngine, "device_info_plus") { dev.fluttercommunity.plus.device_info.DeviceInfoPlusPlugin() }
+        registerPlugin(flutterEngine, "file_picker") { com.mr.flutter.plugin.filepicker.FilePickerPlugin() }
+        registerPlugin(flutterEngine, "firebase_auth") { io.flutter.plugins.firebase.auth.FlutterFirebaseAuthPlugin() }
+        registerPlugin(flutterEngine, "firebase_core") { io.flutter.plugins.firebase.core.FlutterFirebaseCorePlugin() }
+        registerPlugin(flutterEngine, "flutter_inappwebview_android") { com.pichillilorenzo.flutter_inappwebview_android.InAppWebViewFlutterPlugin() }
+        registerPlugin(flutterEngine, "flutter_local_notifications") { com.dexterous.flutterlocalnotifications.FlutterLocalNotificationsPlugin() }
+        registerPlugin(flutterEngine, "flutter_plugin_android_lifecycle") { io.flutter.plugins.flutter_plugin_android_lifecycle.FlutterAndroidLifecyclePlugin() }
+        registerPlugin(flutterEngine, "flutter_sound") { xyz.canardoux.fluttersound.FlutterSound() }
+        registerPlugin(flutterEngine, "flutter_tts") { com.eyedeadevelopment.fluttertts.FlutterTtsPlugin() }
+        registerPlugin(flutterEngine, "flutter_volume_controller") { com.yosemiteyss.flutter_volume_controller.FlutterVolumeControllerPlugin() }
+        registerPlugin(flutterEngine, "geolocator_android") { com.baseflow.geolocator.GeolocatorPlugin() }
+        registerPlugin(flutterEngine, "google_sign_in_android") { io.flutter.plugins.googlesignin.GoogleSignInPlugin() }
+        registerPlugin(flutterEngine, "in_app_purchase_android") { io.flutter.plugins.inapppurchase.InAppPurchasePlugin() }
+        registerPlugin(flutterEngine, "just_audio") { com.ryanheise.just_audio.JustAudioPlugin() }
+        registerPlugin(flutterEngine, "network_info_plus") { dev.fluttercommunity.plus.network_info.NetworkInfoPlusPlugin() }
+        registerPlugin(flutterEngine, "package_info_plus") { dev.fluttercommunity.plus.packageinfo.PackageInfoPlugin() }
+        registerPlugin(flutterEngine, "path_provider_android") { io.flutter.plugins.pathprovider.PathProviderPlugin() }
+        registerPlugin(flutterEngine, "permission_handler_android") { com.baseflow.permissionhandler.PermissionHandlerPlugin() }
+        registerPlugin(flutterEngine, "record_android") { com.llfbandit.record.RecordPlugin() }
+        registerPlugin(flutterEngine, "shared_preferences_android") { io.flutter.plugins.sharedpreferences.SharedPreferencesPlugin() }
+        registerPlugin(flutterEngine, "sign_in_with_apple") { com.aboutyou.dart_packages.sign_in_with_apple.SignInWithApplePlugin() }
+        registerPlugin(flutterEngine, "sqflite_android") { com.tekartik.sqflite.SqflitePlugin() }
+        registerPlugin(flutterEngine, "tobias") { com.jarvan.tobias.TobiasPlugin() }
+        registerPlugin(flutterEngine, "url_launcher_android") { io.flutter.plugins.urllauncher.UrlLauncherPlugin() }
+        registerPlugin(flutterEngine, "video_player_android") { io.flutter.plugins.videoplayer.VideoPlayerPlugin() }
+        registerPlugin(flutterEngine, "webview_flutter_android") { io.flutter.plugins.webviewflutter.WebViewFlutterPlugin() }
+        registerPlugin(flutterEngine, "workmanager") { dev.fluttercommunity.workmanager.WorkmanagerPlugin() }
+    }
+
+    private fun registerPlugin(
+        flutterEngine: FlutterEngine,
+        name: String,
+        pluginFactory: () -> FlutterPlugin
+    ) {
+        try {
+            flutterEngine.plugins.add(pluginFactory())
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error registering plugin $name", t)
+        }
     }
     
     /**
