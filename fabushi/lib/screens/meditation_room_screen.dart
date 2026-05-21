@@ -868,8 +868,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           // Position them symmetrically on the sides of the incense
           final leftItemLeft =
               centerX - incenseWidth / 2 - fruitWidth - 12 * baseScale;
-          final rightItemLeft =
-              centerX + incenseWidth / 2 + 12 * baseScale;
+          final rightItemLeft = centerX + incenseWidth / 2 + 12 * baseScale;
 
           // Align their bottoms precisely with altarBaseY
           final sideItemTopOffset = altarBaseY - fruitWidth;
@@ -883,9 +882,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                 top: sideItemTopOffset,
                 width: fruitWidth,
                 height: fruitWidth,
-                child: const RepaintBoundary(
-                  child: FruitFlowerOffering(),
-                ),
+                child: const RepaintBoundary(child: FruitFlowerOffering()),
               ),
 
               // Far Right: Butter Lamp
