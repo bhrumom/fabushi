@@ -143,8 +143,8 @@ const HOME_FAQS = [
   {
     questionZh: "我应该从首页直接下载，还是先去下载页？",
     questionEn: "Should I download from the homepage or open the download page first?",
-    answerZh: "如果你已经知道自己要安装，可以直接从首页进入下载；如果你还想看版本、镜像和更新说明，再继续进入独立下载页会更稳。",
-    answerEn: "If you already know you want to install, the homepage is enough to start. If you want version notes, mirrors, and release details first, the dedicated download page is the steadier next step.",
+    answerZh: "如果你已经知道自己要安装，可以直接从首页进入下载；如果你还想看版本、R2 下载状态和更新说明，再继续进入独立下载页会更稳。",
+    answerEn: "If you already know you want to install, the homepage is enough to start. If you want version notes, R2 download status, and release details first, the dedicated download page is the steadier next step.",
   },
   {
     questionZh: "官网为什么不再把首页做成资讯或内容门户？",
@@ -494,7 +494,7 @@ export default async function HomePage() {
                 <LocalizedText zh="全部下载入口" en="All Downloads" />
               </span>
               <p>
-                <LocalizedText zh="进入独立下载页，查看正式版、测试版、镜像和更新日志。" en="Open the dedicated download page for stable, beta, mirror links, and release notes." />
+                <LocalizedText zh="进入独立下载页，查看正式版、测试版、R2 下载状态和更新日志。" en="Open the dedicated download page for stable, beta, R2 download status, and release notes." />
               </p>
             </div>
             <div className="platform-meta">

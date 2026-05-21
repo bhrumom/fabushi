@@ -64,6 +64,83 @@ jobs:
           sparse-checkout: |
             /.github/scripts/**
 
+      - name: Sync Android APK to R2
+        id: sync_android_r2
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+          OFFICIAL_SITE_R2_BUCKET: ${{ vars.OFFICIAL_SITE_R2_BUCKET || 'bushi' }}
+          OFFICIAL_SITE_ANDROID_R2_OBJECT_KEY: ${{ vars.OFFICIAL_SITE_ANDROID_R2_OBJECT_KEY || 'downloads/android/fabushi-android-beta.apk' }}
+          OFFICIAL_SITE_R2_PUBLIC_BASE_URL: ${{ vars.OFFICIAL_SITE_R2_PUBLIC_BASE_URL || '' }}
+        run: |
+          set -euo pipefail
+          apk_dir="$RUNNER_TEMP/android-r2"
+          mkdir -p "$apk_dir"
+
+          if ! gh release download "$RELEASE_TAG" --repo "$RELEASE_REPO" --pattern '*.apk' --dir "$apk_dir" --clobber; then
+            echo "::notice::Release $RELEASE_TAG does not contain an Android APK asset; R2 sync skipped."
+            echo "android_r2_href=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          mapfile -t apk_files < <(find "$apk_dir" -maxdepth 1 -type f -name '*.apk' | sort)
+          apk_path=""
+          for file in "${apk_files[@]}"; do
+            if basename "$file" | grep -qi 'arm64'; then
+              apk_path="$file"
+              break
+            fi
+          done
+          if [ -z "$apk_path" ] && [ "${#apk_files[@]}" -gt 0 ]; then
+            apk_path="${apk_files[0]}"
+          fi
+
+          if [ -z "$apk_path" ]; then
+            echo "::notice::No downloaded APK file was found; R2 sync skipped."
+            echo "android_r2_href=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "Cloudflare credentials are required to sync the Android APK to R2." >&2
+            exit 1
+          fi
+
+          bucket="${OFFICIAL_SITE_R2_BUCKET:-bushi}"
+          object_key="${OFFICIAL_SITE_ANDROID_R2_OBJECT_KEY:-downloads/android/fabushi-android-beta.apk}"
+          public_base="${OFFICIAL_SITE_R2_PUBLIC_BASE_URL:-}"
+
+          npx --yes wrangler@latest r2 object put "$bucket/$object_key" \
+            --file "$apk_path" \
+            --content-type application/vnd.android.package-archive \
+            --cache-control no-store \
+            --force
+
+          if [ -z "$public_base" ]; then
+            dev_url_output="$(npx --yes wrangler@latest r2 bucket dev-url get "$bucket" 2>&1 || true)"
+            public_base="$(printf '%s\n' "$dev_url_output" | sed -nE "s/.*'(https:\/\/[^']+)'.*/\1/p" | tail -n 1)"
+          fi
+
+          if [ -z "$public_base" ]; then
+            echo "Could not resolve an R2 public URL for bucket $bucket. Set OFFICIAL_SITE_R2_PUBLIC_BASE_URL." >&2
+            exit 1
+          fi
+
+          android_r2_href="${public_base%/}/${object_key}"
+          echo "android_r2_href=$android_r2_href" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Android APK synced to R2"
+            echo ""
+            echo "- Release tag: $RELEASE_TAG"
+            echo "- Bucket: $bucket"
+            echo "- Object key: $object_key"
+            echo "- Public href: $android_r2_href"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Generate beta state asset for the official site
         shell: bash
         env:
@@ -71,7 +148,7 @@ jobs:
           RELEASE_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
           IOS_TESTFLIGHT_PUBLIC_URL: ${{ vars.IOS_TESTFLIGHT_PUBLIC_URL || '' }}
-          OFFICIAL_SITE_GITHUB_MIRROR_BASES: ${{ vars.OFFICIAL_SITE_GITHUB_MIRROR_BASES || '' }}
+          ANDROID_APK_PUBLIC_HREF: ${{ steps.sync_android_r2.outputs.android_r2_href }}
         run: python3 .github/scripts/generate-official-site-beta-state.py
 
       - name: Upload beta state asset to the release
@@ -323,6 +400,9 @@ jobs:
               echo "- The official site will keep falling back to release metadata and TESTFLIGHT_UPLOAD_STATUS.txt until that PR merges"
             fi
             echo "- Available beta channels from this release were synced selectively."
+            if [ -n "${{ steps.sync_android_r2.outputs.android_r2_href }}" ]; then
+              echo "- Android APK was copied to R2 and the official site state now points to that R2 object."
+            fi
             echo "- If a release only contains one platform, the official site keeps the previous entry for the other platform."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -366,12 +446,12 @@ jobs:
                 '',
                 '- Android beta 下载入口不会自动切到最新发布版本 APK。',
                 '- iOS TestFlight 状态不会自动同步到官网。',
-                '- 官网“这次更新了什么”和国内镜像下载入口也不会随本次 release 刷新。',
+                '- 官网“这次更新了什么”和 Android R2 下载入口也不会随本次 release 刷新。',
                 '',
                 '### Release context',
                 '',
                 `- Release tag: ${process.env.RELEASE_TAG || 'unknown'}`,
                 '- Check whether the selected release contains an APK asset and TESTFLIGHT_UPLOAD_STATUS.txt when iOS beta should be updated.',
-                '- Check whether IOS_TESTFLIGHT_PUBLIC_URL or OFFICIAL_SITE_GITHUB_MIRROR_BASES variables are malformed when the sync script fails during metadata generation.',
+                '- Check whether IOS_TESTFLIGHT_PUBLIC_URL or OFFICIAL_SITE_R2_PUBLIC_BASE_URL variables are malformed when the sync script fails during metadata generation.',
               ],
             });

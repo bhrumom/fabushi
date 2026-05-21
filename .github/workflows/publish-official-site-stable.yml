@@ -26,6 +26,74 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Sync stable Android APK to R2
+        id: sync_android_r2
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          ANDROID_ASSET_NAME: ${{ inputs.android_asset_name }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+          OFFICIAL_SITE_R2_BUCKET: ${{ vars.OFFICIAL_SITE_R2_BUCKET || 'bushi' }}
+          OFFICIAL_SITE_ANDROID_STABLE_R2_OBJECT_KEY: ${{ vars.OFFICIAL_SITE_ANDROID_STABLE_R2_OBJECT_KEY || 'downloads/android/fabushi-android-stable.apk' }}
+          OFFICIAL_SITE_R2_PUBLIC_BASE_URL: ${{ vars.OFFICIAL_SITE_R2_PUBLIC_BASE_URL || '' }}
+        run: |
+          set -euo pipefail
+          apk_dir="$RUNNER_TEMP/android-stable-r2"
+          mkdir -p "$apk_dir"
+
+          if [ -n "${ANDROID_ASSET_NAME:-}" ]; then
+            gh release download "$RELEASE_TAG" --repo "$RELEASE_REPO" --pattern "$ANDROID_ASSET_NAME" --dir "$apk_dir" --clobber
+          else
+            gh release download "$RELEASE_TAG" --repo "$RELEASE_REPO" --pattern '*.apk' --dir "$apk_dir" --clobber
+          fi
+
+          mapfile -t apk_files < <(find "$apk_dir" -maxdepth 1 -type f -name '*.apk' | sort)
+          apk_path=""
+          for file in "${apk_files[@]}"; do
+            if basename "$file" | grep -qi 'arm64'; then
+              apk_path="$file"
+              break
+            fi
+          done
+          if [ -z "$apk_path" ] && [ "${#apk_files[@]}" -gt 0 ]; then
+            apk_path="${apk_files[0]}"
+          fi
+          if [ -z "$apk_path" ]; then
+            echo "No APK asset was found in the selected release." >&2
+            exit 1
+          fi
+
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "Cloudflare credentials are required to sync the stable Android APK to R2." >&2
+            exit 1
+          fi
+
+          bucket="${OFFICIAL_SITE_R2_BUCKET:-bushi}"
+          object_key="${OFFICIAL_SITE_ANDROID_STABLE_R2_OBJECT_KEY:-downloads/android/fabushi-android-stable.apk}"
+          public_base="${OFFICIAL_SITE_R2_PUBLIC_BASE_URL:-}"
+
+          npx --yes wrangler@latest r2 object put "$bucket/$object_key" \
+            --file "$apk_path" \
+            --content-type application/vnd.android.package-archive \
+            --cache-control no-store \
+            --force
+
+          if [ -z "$public_base" ]; then
+            dev_url_output="$(npx --yes wrangler@latest r2 bucket dev-url get "$bucket" 2>&1 || true)"
+            public_base="$(printf '%s\n' "$dev_url_output" | sed -nE "s/.*'(https:\/\/[^']+)'.*/\1/p" | tail -n 1)"
+          fi
+
+          if [ -z "$public_base" ]; then
+            echo "Could not resolve an R2 public URL for bucket $bucket. Set OFFICIAL_SITE_R2_PUBLIC_BASE_URL." >&2
+            exit 1
+          fi
+
+          android_r2_href="${public_base%/}/${object_key}"
+          echo "android_r2_href=$android_r2_href" >> "$GITHUB_OUTPUT"
+
       - name: Generate stable state asset for the official site
         shell: bash
         env:
@@ -34,7 +102,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
           ANDROID_ASSET_NAME: ${{ inputs.android_asset_name }}
           SUMMARY_OVERRIDE: ${{ inputs.summary_override }}
-          OFFICIAL_SITE_GITHUB_MIRROR_BASES: ${{ vars.OFFICIAL_SITE_GITHUB_MIRROR_BASES || '' }}
+          ANDROID_APK_PUBLIC_HREF: ${{ steps.sync_android_r2.outputs.android_r2_href }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -47,16 +115,9 @@ jobs:
           release_tag = os.environ["RELEASE_TAG"]
           requested_asset_name = os.environ.get("ANDROID_ASSET_NAME", "").strip()
           summary_override = os.environ.get("SUMMARY_OVERRIDE", "").strip()
-          mirror_lines = [
-              line.strip()
-              for line in os.environ.get("OFFICIAL_SITE_GITHUB_MIRROR_BASES", "").splitlines()
-              if line.strip()
-          ]
-          if not mirror_lines:
-              mirror_lines = [
-                  "GitHub 镜像 1|https://mirror.ghproxy.com/https://github.com/",
-                  "GitHub 镜像 2|https://ghfast.top/https://github.com/",
-              ]
+          android_apk_public_href = os.environ.get("ANDROID_APK_PUBLIC_HREF", "").strip()
+          if not android_apk_public_href:
+              raise SystemExit("ANDROID_APK_PUBLIC_HREF is required after syncing the stable APK to R2.")
 
           release = json.loads(
               subprocess.check_output(
@@ -97,29 +158,10 @@ jobs:
                           lines.append(cleaned)
               return lines[:6] if lines else [fallback]
 
-          def build_mirror_links(primary_href: str) -> list[dict[str, str]]:
-              prefix = "https://github.com/"
-              if not primary_href.startswith(prefix):
-                  return []
-              path = primary_href[len(prefix):]
-              result: list[dict[str, str]] = []
-              for line in mirror_lines:
-                  label, separator, mirror_prefix = line.partition("|")
-                  if not separator or not label.strip() or not mirror_prefix.strip():
-                      continue
-                  result.append(
-                      {
-                          "label": label.strip(),
-                          "href": f"{mirror_prefix.strip()}{path}",
-                      }
-                  )
-              return result
-
           summary = extract_summary(release.get("body"), release.get("name") or release_tag)
           if summary_override:
               summary = [summary_override, *summary]
 
-          release_url = release.get("html_url") or f"https://github.com/{release_repo}/releases/tag/{release_tag}"
           state = {
               "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
               "release": {
@@ -133,19 +175,18 @@ jobs:
                       "audience": "stable",
                       "status": "人工验证通过",
                       "title": "Android 正式版",
-                      "description": "这个入口由人工验证后手动发布到官网，适合直接对外公开。",
+                      "description": "这个入口由人工验证后手动发布到官网，并直接下载 R2 中的正式版 APK。",
                       "primaryLabel": "下载 Android 正式版",
-                      "primaryHref": apk_asset["browser_download_url"],
+                      "primaryHref": android_apk_public_href,
                       "version": release_tag,
                       "publishedAt": release.get("published_at"),
                       "updateSummary": summary,
-                      "mirrorLinks": build_mirror_links(apk_asset["browser_download_url"]),
-                      "note": "如果国内访问 GitHub 较慢，可以优先尝试镜像下载入口。",
-                      "releasePageHref": release_url,
+                      "mirrorLinks": [],
+                      "note": "每次发布新的正式版 Android APK 后，R2 中的安装包会被覆盖为最新版本。",
                   }
               ],
               "notes": [
-                  "正式版入口只会在人工验收通过后手动发布到官网。",
+                  "正式版入口只会在人工验收通过后手动发布到官网，并指向 R2 中的 APK。",
                   "如果后续需要切换到新的正式版，只需要再次运行这个 workflow 并指定新的 release_tag。",
               ],
           }
@@ -218,13 +259,13 @@ jobs:
                 '### Official site impact',
                 '',
                 '- 官网正式版下载入口不会切到这次人工验收通过的安装包。',
-                '- 正式版更新说明和国内镜像下载入口也不会随这次手动发布刷新。',
+                '- 正式版更新说明和 Android R2 下载入口也不会随这次手动发布刷新。',
                 '',
                 '### Release context',
                 '',
                 `- Release tag: ${process.env.RELEASE_TAG || 'unknown'}`,
                 `- Requested Android asset: ${process.env.ANDROID_ASSET_NAME || 'auto-select first APK'}`,
                 '- Check whether the target release contains the intended APK asset and whether the manual inputs match the release assets.',
-                '- If metadata generation fails, also verify OFFICIAL_SITE_GITHUB_MIRROR_BASES formatting.',
+                '- If metadata generation fails, also verify OFFICIAL_SITE_R2_PUBLIC_BASE_URL formatting.',
               ],
             });
