@@ -69,6 +69,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID || secrets.CF_ZONE_ID || vars.CLOUDFLARE_ZONE_ID || vars.CF_ZONE_ID }}
         run: |
           set -euo pipefail
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
@@ -80,4 +81,47 @@ jobs:
             --name fabushi-official-site \
             --assets apps/web/out \
             --compatibility-date 2026-05-06 \
-            --domain fabushi.ombhrum.com
+            --domain fabushi.ombhrum.com \
+            --route ombhrum.com/*
+
+          api_base="https://api.cloudflare.com/client/v4"
+          root_domain="ombhrum.com"
+          zone_id="${CLOUDFLARE_ZONE_ID:-}"
+
+          assert_cloudflare_success() {
+            local response="$1"
+            local context="$2"
+
+            if [ "$(jq -r '.success // false' <<< "${response}")" != "true" ]; then
+              echo "Cloudflare API request failed: ${context}" >&2
+              jq '.' <<< "${response}" >&2
+              exit 1
+            fi
+          }
+
+          if [ -z "${zone_id}" ]; then
+            zone_response="$(curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "${api_base}/zones?name=${root_domain}&status=active")"
+            assert_cloudflare_success "${zone_response}" "resolve zone ${root_domain}"
+            zone_id="$(jq -r '.result[0].id // empty' <<< "${zone_response}")"
+          fi
+
+          if [ -z "${zone_id}" ]; then
+            echo "Could not resolve Cloudflare zone id for ${root_domain}." >&2
+            exit 1
+          fi
+
+          purge_body="$(
+            jq -n \
+              --arg root "https://${root_domain}/" \
+              --arg index "https://${root_domain}/index.html" \
+              --arg download "https://${root_domain}/download" \
+              --arg download_slash "https://${root_domain}/download/" \
+              '{files: [$root, $index, $download, $download_slash]}'
+          )"
+          purge_response="$(
+            curl -fsS -X POST "${api_base}/zones/${zone_id}/purge_cache" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "${purge_body}"
+          )"
+          assert_cloudflare_success "${purge_response}" "purge root redirect cache"
