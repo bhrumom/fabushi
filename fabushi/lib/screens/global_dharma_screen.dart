@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/file_transfer_model.dart';
-import '../services/real_global_send_service.dart';
 import '../core/constants/country_servers.dart';
 import 'search_screen.dart';
 
@@ -60,9 +59,10 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
     final assetCount = await model.prepareDefaultNonR2AssetsForSending();
     if (assetCount == 0) {
       if (!mounted) return;
+      final detail = model.currentLog.isNotEmpty ? '\n${model.currentLog}' : '';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('未找到可发送的非 R2 经文素材')));
+      ).showSnackBar(SnackBar(content: Text('未下载到可发送的 CBETA 经文$detail')));
       return;
     }
 
