@@ -7,7 +7,6 @@ import { siteHref } from "../lib/site-url";
 interface DownloadLinkChannel {
   platform: "Android" | "iOS";
   primaryHref: string;
-  mirrorLinks: { href: string }[];
   audience?: "beta" | "stable";
 }
 

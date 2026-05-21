@@ -3,19 +3,12 @@ import { join } from "node:path";
 
 const officialSiteReleaseRepo = process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_REPO?.trim() || "bhrumom/fabushi";
 const iosTestFlightPublicUrl = process.env.NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL?.trim() || "";
+const androidApkPublicHref =
+  process.env.NEXT_PUBLIC_ANDROID_APK_PUBLIC_HREF?.trim() ||
+  process.env.NEXT_PUBLIC_OFFICIAL_SITE_ANDROID_R2_HREF?.trim() ||
+  "";
 const RELEASES_API_URL = `https://api.github.com/repos/${officialSiteReleaseRepo}/releases?per_page=8`;
 const PERSISTED_RELEASES_PATH = join(process.cwd(), "public", "api", "releases.json");
-
-const DEFAULT_MIRROR_BASES = [
-  {
-    label: "国内镜像 1",
-    prefix: "https://mirror.ghproxy.com/https://github.com/",
-  },
-  {
-    label: "国内镜像 2",
-    prefix: "https://ghfast.top/https://github.com/",
-  },
-] as const;
 
 const TECHNICAL_RELEASE_LINE_PATTERN =
   /(^pr\s*#\d+)|\b(ci|workflow|checkout|token|sha|commit|submodule|api|github|dispatch|globals\.css|page\.tsx|framer-motion|bentocard)\b|^\[(x| )\]/i;
@@ -30,7 +23,7 @@ const RELEASE_SUMMARY_RULES = [
     text: "Reduced cases where older content stayed visible after an update.",
   },
   {
-    pattern: /android|apk|mirror/i,
+    pattern: /android|apk|r2/i,
     text: "Improved Android download reliability and install guidance.",
   },
   {
@@ -151,7 +144,7 @@ const DEFAULT_STABLE_CHANNELS: OfficialSiteChannel[] = [
       "验证完成后，这里会切换为可公开下载的正式版入口。",
     ],
     mirrorLinks: [],
-    note: "正式版上线后，这里会显示 APK 原始下载地址和面向国内用户的镜像链接。",
+    note: "正式版上线后，这里会显示已经同步到 R2 的 APK 下载地址。",
   },
 ];
 
@@ -281,18 +274,6 @@ function extractUpdateSummary(body: string | null | undefined, fallback: string)
   return sanitizeReleaseSummaries(lines, fallback);
 }
 
-function buildMirrorLinks(primaryHref: string): OfficialSiteMirrorLink[] {
-  if (!primaryHref.startsWith("https://github.com/")) {
-    return [];
-  }
-
-  const path = primaryHref.slice("https://github.com/".length);
-  return DEFAULT_MIRROR_BASES.map((item) => ({
-    label: item.label,
-    href: `${item.prefix}${path}`,
-  }));
-}
-
 function buildReleaseEntries(releases: GitHubRelease[]): OfficialSiteReleaseEntry[] {
   return releases
     .filter((release) => !release.draft)
@@ -390,19 +371,7 @@ function normalizeChannel(input: unknown): OfficialSiteChannel | null {
     ? channel.updateSummary.filter((item): item is string => typeof item === "string" && item.length > 0)
     : [];
 
-  const mirrorLinks = Array.isArray(channel.mirrorLinks)
-    ? channel.mirrorLinks
-        .filter(
-          (item): item is OfficialSiteMirrorLink =>
-            Boolean(item) &&
-            typeof item === "object" &&
-            typeof (item as OfficialSiteMirrorLink).label === "string" &&
-            typeof (item as OfficialSiteMirrorLink).href === "string",
-        )
-        .map((item) => ({ label: item.label, href: item.href }))
-    : [];
-
-  return {
+  const normalizedChannel = {
     platform: channel.platform as OfficialSiteChannel["platform"],
     audience: channel.audience as OfficialSiteChannel["audience"],
     status: channel.status,
@@ -414,12 +383,21 @@ function normalizeChannel(input: unknown): OfficialSiteChannel | null {
     publishedAt:
       typeof channel.publishedAt === "string" && channel.publishedAt.length > 0 ? channel.publishedAt : undefined,
     updateSummary: sanitizeReleaseSummaries(rawSummary, channel.title),
-    mirrorLinks,
+    mirrorLinks: [],
     note: typeof channel.note === "string" && channel.note.length > 0 ? channel.note : undefined,
     releasePageHref:
       typeof channel.releasePageHref === "string" && channel.releasePageHref.length > 0
         ? channel.releasePageHref
         : undefined,
+  };
+
+  if (isDeprecatedAndroidDownloadHref(normalizedChannel)) {
+    return null;
+  }
+
+  return {
+    ...normalizedChannel,
+    mirrorLinks: [],
   };
 }
 
@@ -459,6 +437,15 @@ function normalizeReleaseEntries(input: unknown): OfficialSiteReleaseEntry[] {
       ),
     }))
     .filter((entry) => entry.tag.length > 0);
+}
+
+function isDeprecatedAndroidDownloadHref(channel: Pick<OfficialSiteChannel, "platform" | "primaryHref">): boolean {
+  if (channel.platform !== "Android") {
+    return false;
+  }
+
+  const href = channel.primaryHref.trim().toLowerCase();
+  return href.startsWith("https://github.com/") || href.startsWith("/downloads/android-");
 }
 
 function normalizeState(input: unknown): OfficialSiteReleaseAssetState | null {
@@ -565,21 +552,20 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
   const channels: OfficialSiteChannel[] = [];
   const apkAsset = release.assets.find((item) => item.name.endsWith(".apk"));
 
-  if (apkAsset) {
+  if (apkAsset && androidApkPublicHref) {
     channels.push({
       platform: "Android",
       audience: "beta",
       status: "Beta 自动同步",
       title: "Android Beta",
-      description: "最新 Android 测试包，适合尽快体验新版本并反馈问题。",
+      description: "官网按钮会直接下载已经同步到 R2 的最新 Android APK 安装包。",
       primaryLabel: "下载 Android Beta",
-      primaryHref: apkAsset.browser_download_url,
+      primaryHref: androidApkPublicHref,
       version: release.tag_name,
       publishedAt: release.published_at ?? undefined,
       updateSummary: summary,
-      mirrorLinks: buildMirrorLinks(apkAsset.browser_download_url),
-      note: "如镜像暂时不可用，请使用原始下载链接。",
-      releasePageHref: release.html_url,
+      mirrorLinks: [],
+      note: "每次发布新的 Android APK 后，R2 中的安装包会被覆盖为最新版本。",
     });
   }
 
@@ -621,9 +607,8 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
     channels,
     releases: buildReleaseEntries([release]),
     notes: [
-      "Android Beta 会优先显示最新 APK。",
+      "Android Beta 会优先显示已同步到 R2 的最新 APK。",
       "iOS TestFlight 可加入时会显示直接入口。",
-      "国内访问较慢时，可以优先尝试页面里给出的镜像下载入口。",
     ],
   };
 }
@@ -692,7 +677,7 @@ export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteRe
         : persistedCollection?.notes?.length
           ? persistedCollection.notes
           : [
-              "当前 Beta 入口会先显示公开发布记录里的可用信息。",
+              "当前 Beta 入口会先显示已经同步到 R2 或 TestFlight 的可用信息。",
               "TestFlight 公共加入链接开放后会显示直接入口。",
             ],
   };

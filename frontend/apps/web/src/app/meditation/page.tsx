@@ -125,8 +125,8 @@ const relatedPaths = [
     labelEn: "Download",
     titleZh: "把禅修节奏和修行记录放进日常。",
     titleEn: "Bring meditation rhythm and practice tracking into daily life.",
-    descriptionZh: "准备开始使用产品时，可以直接查看 Android、iOS 和镜像下载入口。",
-    descriptionEn: "When you are ready to use the product, go straight to Android, iOS, and mirror download paths.",
+    descriptionZh: "准备开始使用产品时，可以直接查看 Android 和 iOS 下载入口。",
+    descriptionEn: "When you are ready to use the product, go straight to Android and iOS download paths.",
   },
 ] as const;
 
