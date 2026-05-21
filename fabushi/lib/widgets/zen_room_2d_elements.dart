@@ -258,7 +258,6 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
     final tipY = bowlTop - 3.0 * scale - stickHeight;
     final centerX = size.width / 2;
 
-    // Draw embers here so they are above the 15% dark overlay and clearly visible
     if (isBurning) {
       for (final seed in const [-22.0, 0.0, 22.0]) {
         final scaledSeed = seed * scale;
@@ -267,7 +266,6 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
       }
     }
 
-    // Draw smoke from each of the 3 sticks
     for (final seed in const [-22.0, 0.0, 22.0]) {
       final scaledSeed = seed * scale;
       final tip = Offset(centerX + scaledSeed, tipY);
@@ -276,7 +274,6 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
   }
 
   void _drawEmber(Canvas canvas, Offset tip, double scale) {
-    // Outer bright glow
     canvas.drawCircle(
       tip,
       8.0 * scale,
@@ -287,7 +284,6 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
           Color(0x00FF0000),
         ], const [0.0, 0.5, 1.0]),
     );
-    // Inner hot core
     canvas.drawCircle(
       tip,
       2.5 * scale,
@@ -298,13 +294,13 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
   void _drawSmokeColumn(Canvas canvas, Offset tip, double time, double seed) {
     for (var i = 0; i < 6; i++) {
       final t = (time * 0.08 + i / 6 + seed * 0.02) % 1.0;
-      
+
       final drift = math.sin(t * math.pi * 2.0 + time * 0.4 + seed) * (2 + t * 8);
       final end = Offset(
         tip.dx + drift,
         tip.dy - smokeRise * t,
       );
-      
+
       final controlOne = Offset(
         tip.dx + math.sin(time * 0.3 + i) * (1 + t * 2),
         tip.dy - smokeRise * (t * 0.3),
@@ -313,7 +309,7 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
         tip.dx + drift * 0.5 + math.cos(time * 0.4 + seed) * (1 + t * 4),
         tip.dy - smokeRise * (t * 0.7),
       );
-      
+
       final opacity = (math.pow(1 - t, 1.5) * 0.55).clamp(0.0, 0.55).toDouble();
       final stroke = (1.5 + t * 1.0).clamp(1.2, 2.5).toDouble();
 
@@ -383,11 +379,11 @@ class IncenseOfferingPainter extends CustomPainter {
 
     final scale = math.min(size.width / 150.0, size.height / 184.0);
     final centerX = size.width / 2;
-    
+
     final bowlTop = size.height - 62 * scale;
     final bowlBottom = size.height - 24 * scale;
     final rimCenter = Offset(centerX, bowlTop);
-    
+
     final remaining = (1.0 - incenseProgress).clamp(0.18, 1.0).toDouble();
     final stickHeight = 90.0 * scale * remaining;
 
@@ -445,13 +441,13 @@ class IncenseOfferingPainter extends CustomPainter {
 
     canvas.drawPath(leftEar, earPaint);
     canvas.drawPath(rightEar, earPaint);
-    
+
     final earInnerPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0 * scale
       ..strokeCap = StrokeCap.round
       ..color = const Color(0xFFFFD76B);
-      
+
     canvas.drawPath(leftEar, earInnerPaint);
     canvas.drawPath(rightEar, earInnerPaint);
   }
@@ -467,7 +463,7 @@ class IncenseOfferingPainter extends CustomPainter {
       ..quadraticBezierTo(centerX - 38 * scale, bowlBottom + 12 * scale, centerX - 32 * scale, bowlBottom + 16 * scale)
       ..quadraticBezierTo(centerX - 24 * scale, bowlBottom + 12 * scale, centerX - 24 * scale, bowlBottom - 4 * scale)
       ..close();
-      
+
     final leftFootPaint = Paint()
       ..shader = ui.Gradient.linear(
         Offset(centerX - 38 * scale, bowlBottom),
@@ -483,7 +479,7 @@ class IncenseOfferingPainter extends CustomPainter {
       ..quadraticBezierTo(centerX + 24 * scale, bowlBottom + 12 * scale, centerX + 32 * scale, bowlBottom + 16 * scale)
       ..quadraticBezierTo(centerX + 38 * scale, bowlBottom + 12 * scale, centerX + 36 * scale, bowlBottom - 4 * scale)
       ..close();
-      
+
     final rightFootPaint = Paint()
       ..shader = ui.Gradient.linear(
         Offset(centerX + 24 * scale, bowlBottom),
@@ -499,7 +495,7 @@ class IncenseOfferingPainter extends CustomPainter {
       ..quadraticBezierTo(centerX - 10 * scale, bowlBottom + 15 * scale, centerX, bowlBottom + 18 * scale)
       ..quadraticBezierTo(centerX + 10 * scale, bowlBottom + 15 * scale, centerX + 8 * scale, bowlBottom - 2 * scale)
       ..close();
-      
+
     final centerFootPaint = Paint()
       ..shader = ui.Gradient.linear(
         Offset(centerX - 10 * scale, bowlBottom),
@@ -511,7 +507,7 @@ class IncenseOfferingPainter extends CustomPainter {
         ],
         const [0.0, 0.5, 1.0],
       );
-      
+
     canvas.drawPath(centerFoot, centerFootPaint);
     canvas.drawPath(centerFoot, footStroke);
   }
@@ -575,7 +571,7 @@ class IncenseOfferingPainter extends CustomPainter {
       width: 98 * scale,
       height: 16 * scale,
     );
-    
+
     canvas.drawOval(
       rimRect,
       Paint()
@@ -714,14 +710,11 @@ class SutraBookButton extends StatelessWidget {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // 1. Core book background and traditional stitching
                   Positioned.fill(
                     child: CustomPaint(
                       painter: _ThreadBoundBookPainter(),
                     ),
                   ),
-
-                  // 2. Vertical Ivory Label (书签)
                   Positioned(
                     left: 14,
                     top: 14,
@@ -784,21 +777,19 @@ class _ThreadBoundBookPainter extends CustomPainter {
     final rect = Offset.zero & size;
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(4));
 
-    // 1. Base Indigo/Navy Paper Gradient
     final coverPaint = Paint()
       ..shader = ui.Gradient.linear(
         rect.topLeft,
         rect.bottomRight,
         const [
-          Color(0xFF1C2C54), // Traditional deep indigo
-          Color(0xFF0F1A35), // Indigo shadow
-          Color(0xFF080E1E), // Deep dark spine edge
+          Color(0xFF1C2C54),
+          Color(0xFF0F1A35),
+          Color(0xFF080E1E),
         ],
         const [0.0, 0.70, 1.0],
       );
     canvas.drawRRect(rrect, coverPaint);
 
-    // 2. Gold border highlights
     final borderPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2
@@ -810,37 +801,28 @@ class _ThreadBoundBookPainter extends CustomPainter {
       );
     canvas.drawRRect(rrect.deflate(2.0), borderPaint);
 
-    // 3. Traditional Stitched Threads on the right edge (Spine is on the right)
     final threadPaint = Paint()
       ..color = const Color(0xFFECC36C)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
     final double spineX = size.width - 8.0;
-    
-    // Vertical binding line
     canvas.drawLine(Offset(spineX, 0), Offset(spineX, size.height), threadPaint);
 
-    // Stitch points and horizontal binding loops
     final double stitchOffset = 16.0;
     final int stitches = 6;
     final double step = (size.height - stitchOffset * 2) / (stitches - 1);
-    
+
     for (int i = 0; i < stitches; i++) {
       final double y = stitchOffset + i * step;
-      // Stitched loop going over the right spine edge
       canvas.drawLine(Offset(spineX, y), Offset(size.width, y), threadPaint);
-      
-      // Small needle hole dot
       canvas.drawCircle(Offset(spineX, y), 1.2, Paint()..color = const Color(0xFF3E2010));
       canvas.drawCircle(Offset(spineX, y), 0.7, Paint()..color = const Color(0xFFECC36C));
     }
-    
-    // Top & bottom diagonal spine corner stitches
+
     canvas.drawLine(Offset(spineX, stitchOffset), Offset(size.width - 2, 0), threadPaint);
     canvas.drawLine(Offset(spineX, size.height - stitchOffset), Offset(size.width - 2, size.height), threadPaint);
 
-    // 4. Gold Corner Guards
     final cornerPaint = Paint()
       ..style = PaintingStyle.fill
       ..shader = ui.Gradient.radial(
@@ -849,7 +831,6 @@ class _ThreadBoundBookPainter extends CustomPainter {
         const [Color(0xFFFFD76B), Color(0xFF8B5A2B)],
       );
 
-    // Left corners (outer edges since spine is on the right)
     final topLeftPath = Path()
       ..moveTo(0, 0)
       ..lineTo(10, 0)
@@ -871,7 +852,7 @@ class _ThreadBoundBookPainter extends CustomPainter {
 
 class ButterLampOffering extends StatefulWidget {
   final bool isBurning;
-  
+
   const ButterLampOffering({super.key, required this.isBurning});
 
   @override
@@ -927,7 +908,6 @@ class _ButterLampPainter extends CustomPainter {
     final centerX = size.width / 2;
     final bottomY = size.height - 10 * scale;
 
-    // Pedestal
     final pedestalPath = Path()
       ..moveTo(centerX - 24 * scale, bottomY)
       ..lineTo(centerX + 24 * scale, bottomY)
@@ -944,8 +924,7 @@ class _ButterLampPainter extends CustomPainter {
     );
 
     canvas.drawPath(pedestalPath, Paint()..shader = goldGradient);
-    
-    // Bowl
+
     final bowlY = bottomY - 30 * scale;
     final bowlPath = Path()
       ..moveTo(centerX - 12 * scale, bowlY)
@@ -971,20 +950,15 @@ class _ButterLampPainter extends CustomPainter {
       canvas.drawLine(rimCenter, wickTop, Paint()..color = const Color(0xFF1A1A1A)..strokeWidth = 2 * scale);
 
       final time = DateTime.now().millisecondsSinceEpoch * 0.001;
-      
-      // Physics-based flame flicker: combine multiple harmonic frequencies
-      // for a pseudo-random, organic wind/heat fluctuation.
       final noiseX = math.sin(time * 5.0) * 0.5 + math.sin(time * 3.1) * 0.3 + math.sin(time * 7.3) * 0.2;
       final noiseY = math.sin(time * 4.0) * 0.5 + math.sin(time * 2.7) * 0.3 + math.sin(time * 8.1) * 0.2;
-      
+
       final flutterX = noiseX * 2.5 * scale;
       final stretchY = noiseY * 3.0 * scale;
-      
-      // Base of the flame is mostly stationary, tip moves more
+
       final flameCenter = wickTop.translate(0, -2 * scale);
       final flameTip = flameCenter.translate(flutterX, -22 * scale - stretchY - flameIntensity * 2 * scale);
-      
-      // Ambient Glow (Halo)
+
       canvas.drawCircle(
         flameCenter.translate(0, -10 * scale),
         28 * scale + flameIntensity * 4 * scale,
@@ -996,7 +970,6 @@ class _ButterLampPainter extends CustomPainter {
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
       );
 
-      // Outer Flame (Orange/Red)
       final outerFlame = Path()
         ..moveTo(flameTip.dx, flameTip.dy)
         ..quadraticBezierTo(flameCenter.dx + 12 * scale, flameCenter.dy - 10 * scale, flameCenter.dx + 7 * scale, flameCenter.dy + 2 * scale)
@@ -1008,13 +981,12 @@ class _ButterLampPainter extends CustomPainter {
         outerFlame,
         Paint()
           ..shader = ui.Gradient.radial(flameCenter.translate(0, -4 * scale), 18 * scale, const [
-            Color(0x000000FF), // Slightly blue at the very hot base
+            Color(0x000000FF),
             Color(0xFFFF9900),
             Color(0xFFFF3300),
           ], const [0.0, 0.6, 1.0]),
       );
 
-      // Inner Flame Core (Bright Yellow/White)
       final innerTip = flameCenter.translate(flutterX * 0.5, -14 * scale - stretchY * 0.5);
       final innerFlame = Path()
         ..moveTo(innerTip.dx, innerTip.dy)
@@ -1093,23 +1065,21 @@ class _FruitFlowerPainter extends CustomPainter {
     );
 
     final fruitCenterY = bowlY - 22 * scale;
-    
+
     _drawFruit(canvas, Offset(centerX - 20 * scale, fruitCenterY + 4 * scale), 16 * scale, const Color(0xFFE53935));
     _drawFruit(canvas, Offset(centerX + 20 * scale, fruitCenterY + 4 * scale), 16 * scale, const Color(0xFFF4511E));
     _drawFruit(canvas, Offset(centerX, fruitCenterY - 8 * scale), 18 * scale, const Color(0xFFFFB300));
-    
+
     _drawLotus(canvas, Offset(centerX - 35 * scale, fruitCenterY + 5 * scale), scale * 0.6, -0.3);
     _drawLotus(canvas, Offset(centerX + 35 * scale, fruitCenterY + 5 * scale), scale * 0.6, 0.3);
   }
 
   void _drawFruit(Canvas canvas, Offset center, double radius, Color baseColor) {
-    // Drop shadow
     canvas.drawOval(
       Rect.fromCenter(center: center.translate(0, radius * 0.7), width: radius * 1.8, height: radius * 0.6),
       Paint()..color = const Color(0x66000000)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
     );
 
-    // Main body with 3D gradient
     final hsl = HSLColor.fromColor(baseColor);
     final darkColor = hsl.withLightness((hsl.lightness - 0.2).clamp(0.0, 1.0)).toColor();
     final shadowColor = hsl.withLightness((hsl.lightness - 0.4).clamp(0.0, 1.0)).toColor();
@@ -1122,7 +1092,7 @@ class _FruitFlowerPainter extends CustomPainter {
           center.translate(-radius * 0.3, -radius * 0.3),
           radius * 1.2,
           [
-            const Color(0xFFFFFFFF).withOpacity(0.9), // Specular
+            const Color(0xFFFFFFFF).withOpacity(0.9),
             baseColor,
             darkColor,
             shadowColor,
@@ -1131,7 +1101,6 @@ class _FruitFlowerPainter extends CustomPainter {
         ),
     );
 
-    // Stem dimple
     final dimpleCenter = center.translate(0, -radius * 0.8);
     canvas.drawOval(
       Rect.fromCenter(center: dimpleCenter, width: radius * 0.5, height: radius * 0.2),
@@ -1142,7 +1111,6 @@ class _FruitFlowerPainter extends CustomPainter {
           [const Color(0xFF2A1508), const Color(0x002A1508)],
         ),
     );
-    // Stem
     canvas.drawPath(
       Path()
         ..moveTo(dimpleCenter.dx, dimpleCenter.dy)
@@ -1159,8 +1127,7 @@ class _FruitFlowerPainter extends CustomPainter {
     canvas.save();
     canvas.translate(center.dx, center.dy);
     canvas.rotate(angle);
-    
-    // Add glowing halo behind lotus
+
     canvas.drawCircle(
       Offset.zero,
       20 * scale,
@@ -1169,17 +1136,16 @@ class _FruitFlowerPainter extends CustomPainter {
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
     );
 
-    // Draw petals from back to front
     final petalAngles = [-0.6, 0.6, -0.3, 0.3, 0.0];
-    
+
     for (int i = 0; i < petalAngles.length; i++) {
       canvas.save();
       canvas.rotate(petalAngles[i]);
-      
+
       final isFront = i >= 2;
       final color1 = isFront ? const Color(0xFFFCE4EC) : const Color(0xFFF8BBD0);
       final color2 = isFront ? const Color(0xFFE91E63) : const Color(0xFFC2185B);
-      
+
       final petalPaint = Paint()
         ..shader = ui.Gradient.linear(
           Offset(0, -28 * scale),
@@ -1192,10 +1158,8 @@ class _FruitFlowerPainter extends CustomPainter {
         ..quadraticBezierTo(-18 * scale, 0, 0, -28 * scale)
         ..quadraticBezierTo(18 * scale, 0, 0, 10 * scale)
         ..close();
-        
+
       canvas.drawPath(petalPath, petalPaint);
-      
-      // Petal rim highlight
       canvas.drawPath(
         petalPath,
         Paint()
@@ -1203,7 +1167,7 @@ class _FruitFlowerPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.0 * scale,
       );
-      
+
       canvas.restore();
     }
     canvas.restore();
