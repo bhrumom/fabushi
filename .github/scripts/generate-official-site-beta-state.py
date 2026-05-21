@@ -224,7 +224,7 @@ if apk_asset and android_apk_public_href:
     )
     notes.append("Android beta APK 已同步到 R2，官网按钮会直接下载 R2 中的最新安装包。")
 elif apk_asset:
-    notes.append("本次 release 带有 Android APK，但没有拿到 R2 公网地址，官网会继续保留上一版 Android 入口。")
+    notes.append("本次 release 带有 Android APK，但没有拿到官网域名下载地址，官网会继续保留上一版 Android 入口。")
 
 if testflight_status:
     tf_status = testflight_status.get("status", "")

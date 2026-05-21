@@ -4,6 +4,22 @@ const CBETA_API_BASE = "https://api.cbetaonline.cn";
 const APP_API_BASE = "https://api.ombhrum.com/api";
 const OFFICIAL_SITE_HOST = "fabushi.ombhrum.com";
 const ROOT_DOMAIN_REDIRECT_HOSTS = new Set(["ombhrum.com"]);
+const ANDROID_R2_DOWNLOADS = new Map([
+  [
+    "/downloads/android/fabushi-android-beta.apk",
+    {
+      key: "downloads/android/fabushi-android-beta.apk",
+      filename: "fabushi-android-beta.apk",
+    },
+  ],
+  [
+    "/downloads/android/fabushi-android-stable.apk",
+    {
+      key: "downloads/android/fabushi-android-stable.apk",
+      filename: "fabushi-android-stable.apk",
+    },
+  ],
+]);
 
 export default {
   async fetch(request, env) {
@@ -12,8 +28,13 @@ export default {
       return redirectToOfficialSite(url);
     }
 
+    const androidDownload = ANDROID_R2_DOWNLOADS.get(url.pathname);
     const cbetaMatch = url.pathname.match(CBETA_PROXY_ROUTE);
     const appMatch = url.pathname.match(APP_PROXY_ROUTE);
+
+    if (androidDownload) {
+      return serveAndroidR2Download(request, env, androidDownload);
+    }
 
     if (cbetaMatch) {
       return proxyApiRequest(request, CBETA_API_BASE, cbetaMatch[1], ["GET", "HEAD", "OPTIONS"]);
@@ -32,6 +53,68 @@ function redirectToOfficialSite(url) {
   redirectUrl.protocol = "https:";
   redirectUrl.host = OFFICIAL_SITE_HOST;
   return Response.redirect(redirectUrl.toString(), 308);
+}
+
+async function serveAndroidR2Download(request, env, download) {
+  const allowedMethods = ["GET", "HEAD", "OPTIONS"];
+  if (!allowedMethods.includes(request.method)) {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: {
+        Allow: "GET, HEAD",
+      },
+    });
+  }
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        Allow: "GET, HEAD",
+      },
+    });
+  }
+
+  const bucket = env?.OFFICIAL_SITE_R2;
+  if (!bucket || typeof bucket.get !== "function" || typeof bucket.head !== "function") {
+    return new Response("Download storage is not configured.", {
+      status: 503,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  const object = request.method === "HEAD" ? await bucket.head(download.key) : await bucket.get(download.key);
+  if (!object) {
+    return new Response("Android package not found.", {
+      status: 404,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  const headers = new Headers();
+  object.writeHttpMetadata?.(headers);
+  headers.set("Content-Type", headers.get("Content-Type") || "application/vnd.android.package-archive");
+  headers.set(
+    "Content-Disposition",
+    `attachment; filename="${download.filename}"; filename*=UTF-8''${encodeURIComponent(download.filename)}`,
+  );
+  headers.set("Cache-Control", "no-store");
+  headers.set("Content-Length", String(object.size));
+  headers.set("X-Fabushi-R2-Download", "official-site");
+
+  const etag = object.httpEtag || (object.etag ? `"${object.etag}"` : "");
+  if (etag) {
+    headers.set("ETag", etag);
+  }
+
+  return new Response(request.method === "HEAD" ? null : object.body, {
+    status: 200,
+    headers,
+  });
 }
 
 async function proxyApiRequest(request, upstreamBase, upstreamPath, allowedMethods) {
