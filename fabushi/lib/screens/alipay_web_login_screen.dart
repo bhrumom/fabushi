@@ -39,6 +39,7 @@ class _AlipayWebLoginScreenState extends State<AlipayWebLoginScreen> {
           onNavigationRequest: _handleNavigationRequest,
           onWebResourceError: (error) {
             if (!mounted || _isIgnoredWebViewError(error)) return;
+            if (error.isForMainFrame == false) return;
             setState(() => _errorMessage = error.description);
           },
         ),
@@ -89,7 +90,9 @@ class _AlipayWebLoginScreenState extends State<AlipayWebLoginScreen> {
   bool _isIgnoredWebViewError(WebResourceError error) {
     final description = error.description.toLowerCase();
     return description.contains('net::err_unknown_url_scheme') ||
-        description.contains('net::err_aborted');
+        description.contains('net::err_aborted') ||
+        description.contains('net::err_blocked_by_orb') ||
+        description.contains('net::err_blocked_by_response');
   }
 
   Future<void> _openExternalAlipay(Uri uri) async {
