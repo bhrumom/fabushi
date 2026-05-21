@@ -80,5 +80,4 @@ jobs:
             --name fabushi-official-site \
             --assets apps/web/out \
             --compatibility-date 2026-05-06 \
-            --domain fabushi.ombhrum.com \
-            --route ombhrum.com/*
+            --domain fabushi.ombhrum.com
