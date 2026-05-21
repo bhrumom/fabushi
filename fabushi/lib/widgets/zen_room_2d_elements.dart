@@ -47,11 +47,12 @@ class IncensePainter extends CustomPainter {
         stickBase,
         stickTip,
         Paint()
-          ..shader = ui.Gradient.linear(stickBase, stickTip, const [
-            Color(0xFF5A2E16),
-            Color(0xFFE7B45F),
-            Color(0xFF2B1509),
-          ])
+          ..shader = ui.Gradient.linear(
+            stickBase,
+            stickTip,
+            const [Color(0xFF5A2E16), Color(0xFFE7B45F), Color(0xFF2B1509)],
+            const [0.0, 0.5, 1.0],
+          )
           ..strokeWidth = 4.0
           ..strokeCap = StrokeCap.round,
       );
@@ -61,11 +62,12 @@ class IncensePainter extends CustomPainter {
           stickTip,
           6,
           Paint()
-            ..shader = ui.Gradient.radial(stickTip, 8, const [
-              Color(0xFFFFF1A3),
-              Color(0xFFFF6B1A),
-              Color(0x00FF6B1A),
-            ]),
+            ..shader = ui.Gradient.radial(
+              stickTip,
+              8,
+              const [Color(0xFFFFF1A3), Color(0xFFFF6B1A), Color(0x00FF6B1A)],
+              const [0.0, 0.5, 1.0],
+            ),
         );
         canvas.drawCircle(
           stickTip,
@@ -155,6 +157,7 @@ class IncensePainter extends CustomPainter {
           Offset(topCenter.dx - width * 0.5, topCenter.dy),
           Offset(topCenter.dx + width * 0.5, topCenter.dy + bodyHeight),
           const [Color(0xFF4A2111), Color(0xFF9A5A24), Color(0xFF2A1208)],
+          const [0.0, 0.5, 1.0],
         ),
     );
     canvas.drawPath(
@@ -177,6 +180,7 @@ class IncensePainter extends CustomPainter {
           rimRect.topLeft,
           rimRect.bottomRight,
           const [Color(0xFFD4AF37), Color(0xFF6F3514), Color(0xFFFFD36A)],
+          const [0.0, 0.5, 1.0],
         ),
     );
     canvas.drawOval(
@@ -225,6 +229,7 @@ class IncenseSmokeOverlay extends StatelessWidget {
       painter: IncenseSmokeOverlayPainter(
         incenseProgress: incenseProgress,
         smokeRise: smokeRise,
+        isBurning: isBurning,
       ),
       child: const SizedBox.expand(),
     );
@@ -234,10 +239,12 @@ class IncenseSmokeOverlay extends StatelessWidget {
 class IncenseSmokeOverlayPainter extends CustomPainter {
   final double incenseProgress;
   final double smokeRise;
+  final bool isBurning;
 
   const IncenseSmokeOverlayPainter({
     required this.incenseProgress,
     required this.smokeRise,
+    required this.isBurning,
   });
 
   @override
@@ -248,37 +255,64 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
     final remaining = (1.0 - incenseProgress).clamp(0.18, 1.0).toDouble();
     final incenseAreaHeight = (size.height - smokeRise).clamp(1.0, size.height);
     final scale = math.min(size.width / 150.0, incenseAreaHeight / 184.0);
-    final bowlTop = smokeRise + incenseAreaHeight - 52.0 * scale;
-    final stickHeight = 78.0 * scale * remaining;
-    final tipY = bowlTop - 4.0 * scale - stickHeight;
+    final bowlTop = smokeRise + incenseAreaHeight - 62.0 * scale;
+    final stickHeight = 90.0 * scale * remaining;
+    final tipY = bowlTop - 3.0 * scale - stickHeight;
     final centerX = size.width / 2;
 
-    for (final seed in const [-11.0, 0.0, 11.0]) {
+    if (isBurning) {
+      for (final seed in const [-22.0, 0.0, 22.0]) {
+        final scaledSeed = seed * scale;
+        final tip = Offset(centerX + scaledSeed, tipY);
+        _drawEmber(canvas, tip, scale);
+      }
+    }
+
+    for (final seed in const [-22.0, 0.0, 22.0]) {
       final scaledSeed = seed * scale;
       final tip = Offset(centerX + scaledSeed, tipY);
       _drawSmokeColumn(canvas, tip, time, scaledSeed);
     }
   }
 
+  void _drawEmber(Canvas canvas, Offset tip, double scale) {
+    canvas.drawCircle(
+      tip,
+      8.0 * scale,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          tip,
+          10.0 * scale,
+          const [Color(0xBBFFD54F), Color(0x66FF5722), Color(0x00FF0000)],
+          const [0.0, 0.5, 1.0],
+        ),
+    );
+    canvas.drawCircle(
+      tip,
+      2.5 * scale,
+      Paint()..color = const Color(0xFFFFFFFF),
+    );
+  }
+
   void _drawSmokeColumn(Canvas canvas, Offset tip, double time, double seed) {
-    for (var i = 0; i < 8; i++) {
-      final t = (time * 0.055 + i / 8 + seed * 0.011) % 1.0;
-      final drift = math.sin(t * math.pi * 2.0 + seed) * (10 + t * 28);
-      final sideDrift = math.cos(time * 0.45 + i + seed) * (2 + t * 8);
-      final end = Offset(
-        tip.dx + drift + sideDrift,
-        tip.dy - smokeRise * (0.20 + t * 0.78),
-      );
+    for (var i = 0; i < 6; i++) {
+      final t = (time * 0.08 + i / 6 + seed * 0.02) % 1.0;
+
+      final drift =
+          math.sin(t * math.pi * 2.0 + time * 0.4 + seed) * (2 + t * 8);
+      final end = Offset(tip.dx + drift, tip.dy - smokeRise * t);
+
       final controlOne = Offset(
-        tip.dx + math.sin(time * 0.35 + i) * 18,
-        tip.dy - smokeRise * (0.12 + t * 0.14),
+        tip.dx + math.sin(time * 0.3 + i) * (1 + t * 2),
+        tip.dy - smokeRise * (t * 0.3),
       );
       final controlTwo = Offset(
-        tip.dx + drift * 0.55 + math.cos(i + seed) * 12,
-        tip.dy - smokeRise * (0.36 + t * 0.36),
+        tip.dx + drift * 0.5 + math.cos(time * 0.4 + seed) * (1 + t * 4),
+        tip.dy - smokeRise * (t * 0.7),
       );
-      final opacity = ((1 - t) * 0.23 + 0.04).clamp(0.0, 0.24).toDouble();
-      final stroke = (2.8 - t * 1.15).clamp(1.1, 2.8).toDouble();
+
+      final opacity = (math.pow(1 - t, 1.5) * 0.55).clamp(0.0, 0.55).toDouble();
+      final stroke = (1.5 + t * 1.0).clamp(1.2, 2.5).toDouble();
 
       final path = Path()
         ..moveTo(tip.dx, tip.dy)
@@ -294,28 +328,18 @@ class IncenseSmokeOverlayPainter extends CustomPainter {
       canvas.drawPath(
         path,
         Paint()
-          ..color = Color.fromRGBO(244, 238, 222, opacity)
+          ..color = Color.fromRGBO(230, 235, 240, opacity)
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
           ..strokeWidth = stroke
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2.5 + t * 5.5),
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2.0 + t * 4.0),
       );
-
-      if (i.isEven) {
-        canvas.drawCircle(
-          end,
-          5.5 + t * 10.0,
-          Paint()
-            ..color = Color.fromRGBO(236, 231, 218, opacity * 0.72)
-            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 7 + t * 8),
-        );
-      }
     }
   }
 
   @override
   bool shouldRepaint(covariant IncenseSmokeOverlayPainter oldDelegate) {
-    return true;
+    return true; // Must repaint every frame for smoke animation
   }
 }
 
@@ -356,40 +380,32 @@ class IncenseOfferingPainter extends CustomPainter {
 
     final scale = math.min(size.width / 150.0, size.height / 184.0);
     final centerX = size.width / 2;
-    
-    // Position censer elements nicely
+
     final bowlTop = size.height - 62 * scale;
     final bowlBottom = size.height - 24 * scale;
     final rimCenter = Offset(centerX, bowlTop);
-    
+
     final remaining = (1.0 - incenseProgress).clamp(0.18, 1.0).toDouble();
-    // Incense sticks are long, slender, and beautiful
     final stickHeight = 90.0 * scale * remaining;
 
-    // 1. Draw Bowl Shadow
     _drawBowlShadow(canvas, centerX, bowlBottom, scale);
-
-    // 2. Draw 3D Feet
     _drawFeet(canvas, centerX, bowlBottom, scale);
-
-    // 3. Draw Side Handles (Ears)
     _drawHandles(canvas, rimCenter, scale);
-
-    // 4. Draw Bowl Body and Rim
     _drawBowl(canvas, rimCenter, bowlBottom, scale);
 
-    // 5. Draw Incense Sticks and Embers
-    for (final dx in const [-11.0, 0.0, 11.0]) {
+    for (final dx in const [-22.0, 0.0, 22.0]) {
       final base = Offset(centerX + dx * scale, bowlTop - 3 * scale);
       final tip = base.translate(0, -stickHeight);
       _drawStick(canvas, base, tip, scale);
-      if (isBurning) {
-        _drawEmber(canvas, tip, scale);
-      }
     }
   }
 
-  void _drawBowlShadow(Canvas canvas, double centerX, double bottom, double scale) {
+  void _drawBowlShadow(
+    Canvas canvas,
+    double centerX,
+    double bottom,
+    double scale,
+  ) {
     canvas.drawOval(
       Rect.fromCenter(
         center: Offset(centerX, bottom + 12 * scale),
@@ -403,20 +419,25 @@ class IncenseOfferingPainter extends CustomPainter {
   }
 
   void _drawHandles(Canvas canvas, Offset rimCenter, double scale) {
-    // Elegant dual loop handles (ears) curving gracefully from sides
     final leftEar = Path()
       ..moveTo(rimCenter.dx - 48 * scale, rimCenter.dy + 8 * scale)
       ..cubicTo(
-        rimCenter.dx - 62 * scale, rimCenter.dy - 12 * scale,
-        rimCenter.dx - 54 * scale, rimCenter.dy - 22 * scale,
-        rimCenter.dx - 42 * scale, rimCenter.dy - 6 * scale,
+        rimCenter.dx - 62 * scale,
+        rimCenter.dy - 12 * scale,
+        rimCenter.dx - 54 * scale,
+        rimCenter.dy - 22 * scale,
+        rimCenter.dx - 42 * scale,
+        rimCenter.dy - 6 * scale,
       );
     final rightEar = Path()
       ..moveTo(rimCenter.dx + 48 * scale, rimCenter.dy + 8 * scale)
       ..cubicTo(
-        rimCenter.dx + 62 * scale, rimCenter.dy - 12 * scale,
-        rimCenter.dx + 54 * scale, rimCenter.dy - 22 * scale,
-        rimCenter.dx + 42 * scale, rimCenter.dy - 6 * scale,
+        rimCenter.dx + 62 * scale,
+        rimCenter.dy - 12 * scale,
+        rimCenter.dx + 54 * scale,
+        rimCenter.dy - 22 * scale,
+        rimCenter.dx + 42 * scale,
+        rimCenter.dy - 6 * scale,
       );
 
     final earPaint = Paint()
@@ -427,110 +448,150 @@ class IncenseOfferingPainter extends CustomPainter {
         Offset(rimCenter.dx - 60 * scale, rimCenter.dy - 15 * scale),
         Offset(rimCenter.dx + 60 * scale, rimCenter.dy + 10 * scale),
         const [Color(0xFFD4AF37), Color(0xFF8B5A2B), Color(0xFF3E2010)],
+        const [0.0, 0.5, 1.0],
       );
 
     canvas.drawPath(leftEar, earPaint);
     canvas.drawPath(rightEar, earPaint);
-    
+
     final earInnerPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0 * scale
       ..strokeCap = StrokeCap.round
       ..color = const Color(0xFFFFD76B);
-      
+
     canvas.drawPath(leftEar, earInnerPaint);
     canvas.drawPath(rightEar, earInnerPaint);
   }
 
-  void _drawFeet(Canvas canvas, double centerX, double bowlBottom, double scale) {
-    // Draw three 3D tripod feet with shadow/metallic styling
+  void _drawFeet(
+    Canvas canvas,
+    double centerX,
+    double bowlBottom,
+    double scale,
+  ) {
     final footStroke = Paint()
-      ..color = const Color(0xFFD4AF37).withOpacity(0.5)
+      ..color = const Color(0xFFD4AF37).withValues(alpha: 0.5)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0 * scale;
 
-    // Left foot
     final leftFoot = Path()
       ..moveTo(centerX - 36 * scale, bowlBottom - 4 * scale)
-      ..quadraticBezierTo(centerX - 38 * scale, bowlBottom + 12 * scale, centerX - 32 * scale, bowlBottom + 16 * scale)
-      ..quadraticBezierTo(centerX - 24 * scale, bowlBottom + 12 * scale, centerX - 24 * scale, bowlBottom - 4 * scale)
+      ..quadraticBezierTo(
+        centerX - 38 * scale,
+        bowlBottom + 12 * scale,
+        centerX - 32 * scale,
+        bowlBottom + 16 * scale,
+      )
+      ..quadraticBezierTo(
+        centerX - 24 * scale,
+        bowlBottom + 12 * scale,
+        centerX - 24 * scale,
+        bowlBottom - 4 * scale,
+      )
       ..close();
-      
+
     final leftFootPaint = Paint()
       ..shader = ui.Gradient.linear(
         Offset(centerX - 38 * scale, bowlBottom),
         Offset(centerX - 24 * scale, bowlBottom + 16 * scale),
         const [Color(0xFF3E2010), Color(0xFF8B5A2B), Color(0xFF3E2010)],
+        const [0.0, 0.5, 1.0],
       );
     canvas.drawPath(leftFoot, leftFootPaint);
     canvas.drawPath(leftFoot, footStroke);
 
-    // Right foot
     final rightFoot = Path()
       ..moveTo(centerX + 24 * scale, bowlBottom - 4 * scale)
-      ..quadraticBezierTo(centerX + 24 * scale, bowlBottom + 12 * scale, centerX + 32 * scale, bowlBottom + 16 * scale)
-      ..quadraticBezierTo(centerX + 38 * scale, bowlBottom + 12 * scale, centerX + 36 * scale, bowlBottom - 4 * scale)
+      ..quadraticBezierTo(
+        centerX + 24 * scale,
+        bowlBottom + 12 * scale,
+        centerX + 32 * scale,
+        bowlBottom + 16 * scale,
+      )
+      ..quadraticBezierTo(
+        centerX + 38 * scale,
+        bowlBottom + 12 * scale,
+        centerX + 36 * scale,
+        bowlBottom - 4 * scale,
+      )
       ..close();
-      
+
     final rightFootPaint = Paint()
       ..shader = ui.Gradient.linear(
         Offset(centerX + 24 * scale, bowlBottom),
         Offset(centerX + 38 * scale, bowlBottom + 16 * scale),
         const [Color(0xFF3E2010), Color(0xFF8B5A2B), Color(0xFF3E2010)],
+        const [0.0, 0.5, 1.0],
       );
     canvas.drawPath(rightFoot, rightFootPaint);
     canvas.drawPath(rightFoot, footStroke);
 
-    // Center foot (rendered in front with a bright brass shine)
     final centerFoot = Path()
       ..moveTo(centerX - 8 * scale, bowlBottom - 2 * scale)
-      ..quadraticBezierTo(centerX - 10 * scale, bowlBottom + 15 * scale, centerX, bowlBottom + 18 * scale)
-      ..quadraticBezierTo(centerX + 10 * scale, bowlBottom + 15 * scale, centerX + 8 * scale, bowlBottom - 2 * scale)
+      ..quadraticBezierTo(
+        centerX - 10 * scale,
+        bowlBottom + 15 * scale,
+        centerX,
+        bowlBottom + 18 * scale,
+      )
+      ..quadraticBezierTo(
+        centerX + 10 * scale,
+        bowlBottom + 15 * scale,
+        centerX + 8 * scale,
+        bowlBottom - 2 * scale,
+      )
       ..close();
-      
+
     final centerFootPaint = Paint()
       ..shader = ui.Gradient.linear(
         Offset(centerX - 10 * scale, bowlBottom),
         Offset(centerX + 10 * scale, bowlBottom + 18 * scale),
-        const [
-          Color(0xFF5C2F15),
-          Color(0xFFD4AF37),
-          Color(0xFF3E2010),
-        ],
+        const [Color(0xFF5C2F15), Color(0xFFD4AF37), Color(0xFF3E2010)],
+        const [0.0, 0.5, 1.0],
       );
-      
+
     canvas.drawPath(centerFoot, centerFootPaint);
     canvas.drawPath(centerFoot, footStroke);
   }
 
-  void _drawBowl(Canvas canvas, Offset rimCenter, double bowlBottom, double scale) {
-    // 3.1 Draw Bulbous Belly Body
+  void _drawBowl(
+    Canvas canvas,
+    Offset rimCenter,
+    double bowlBottom,
+    double scale,
+  ) {
     final body = Path()
       ..moveTo(rimCenter.dx - 45 * scale, rimCenter.dy)
       ..cubicTo(
-        rimCenter.dx - 54 * scale, rimCenter.dy + 12 * scale,
-        rimCenter.dx - 48 * scale, bowlBottom - 6 * scale,
-        rimCenter.dx - 22 * scale, bowlBottom,
+        rimCenter.dx - 54 * scale,
+        rimCenter.dy + 12 * scale,
+        rimCenter.dx - 48 * scale,
+        bowlBottom - 6 * scale,
+        rimCenter.dx - 22 * scale,
+        bowlBottom,
       )
       ..lineTo(rimCenter.dx + 22 * scale, bowlBottom)
       ..cubicTo(
-        rimCenter.dx + 48 * scale, bowlBottom - 6 * scale,
-        rimCenter.dx + 54 * scale, rimCenter.dy + 12 * scale,
-        rimCenter.dx + 45 * scale, rimCenter.dy,
+        rimCenter.dx + 48 * scale,
+        bowlBottom - 6 * scale,
+        rimCenter.dx + 54 * scale,
+        rimCenter.dy + 12 * scale,
+        rimCenter.dx + 45 * scale,
+        rimCenter.dy,
       )
       ..close();
 
-    // Metallic gradient belly paint
     final bellyPaint = Paint()
       ..shader = ui.Gradient.radial(
         Offset(rimCenter.dx - 12 * scale, rimCenter.dy + 18 * scale),
         60 * scale,
         const [
-          Color(0xFFFFF0B8), // Bright highlight
-          Color(0xFFD4AF37), // Pure gold-bronze
-          Color(0xFF8B5A2B), // Copper brown
-          Color(0xFF3E2010), // Shadow brown
-          Color(0xFF1B0C06), // Deep dark border
+          Color(0xFFFFF0B8),
+          Color(0xFFD4AF37),
+          Color(0xFF8B5A2B),
+          Color(0xFF3E2010),
+          Color(0xFF1B0C06),
         ],
         const [0.0, 0.22, 0.55, 0.88, 1.0],
       );
@@ -538,12 +599,11 @@ class IncenseOfferingPainter extends CustomPainter {
     canvas.drawPath(body, bellyPaint);
 
     final bellyStroke = Paint()
-      ..color = const Color(0xFFD4AF37).withOpacity(0.85)
+      ..color = const Color(0xFFD4AF37).withValues(alpha: 0.85)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.6 * scale;
     canvas.drawPath(body, bellyStroke);
 
-    // Decorative gold band around the neck
     final decRect = Rect.fromCenter(
       center: rimCenter.translate(0, 3 * scale),
       width: 86 * scale,
@@ -556,17 +616,16 @@ class IncenseOfferingPainter extends CustomPainter {
           decRect.topLeft,
           decRect.bottomRight,
           const [Color(0xFF8B5A2B), Color(0xFFFFD76B), Color(0xFF3E2010)],
+          const [0.0, 0.5, 1.0],
         ),
     );
 
-    // 3.2 Draw Thick Rim (safely, proportionally scales to prevent negative height)
     final rimRect = Rect.fromCenter(
       center: rimCenter,
       width: 98 * scale,
       height: 16 * scale,
     );
-    
-    // Outer Rim
+
     canvas.drawOval(
       rimRect,
       Paint()
@@ -574,10 +633,10 @@ class IncenseOfferingPainter extends CustomPainter {
           rimRect.topLeft,
           rimRect.bottomRight,
           const [Color(0xFFFFD76B), Color(0xFF8B5A2B), Color(0xFFFFE08A)],
+          const [0.0, 0.5, 1.0],
         ),
     );
 
-    // Golden inner rim border
     canvas.drawOval(
       rimRect,
       Paint()
@@ -586,18 +645,13 @@ class IncenseOfferingPainter extends CustomPainter {
         ..strokeWidth = 1.0 * scale,
     );
 
-    // Inner Rim opening (dark hole inside censer)
     final innerRimRect = Rect.fromCenter(
       center: rimCenter,
       width: rimRect.width * 0.90,
       height: rimRect.height * 0.85,
     );
-    canvas.drawOval(
-      innerRimRect,
-      Paint()..color = const Color(0xFF200F07),
-    );
+    canvas.drawOval(innerRimRect, Paint()..color = const Color(0xFF200F07));
 
-    // Burning ash layers (proportional scaling is 100% safe from negative height crashes)
     final ashRect = Rect.fromCenter(
       center: rimCenter.translate(0, 0.5 * scale),
       width: innerRimRect.width * 0.92,
@@ -609,11 +663,7 @@ class IncenseOfferingPainter extends CustomPainter {
         ..shader = ui.Gradient.radial(
           rimCenter,
           ashRect.width / 2,
-          const [
-            Color(0xFF8A8279), // Light grey ash
-            Color(0xFF4E463E), // Charcoal
-            Color(0xFF251A12), // Outer ring
-          ],
+          const [Color(0xFF8A8279), Color(0xFF4E463E), Color(0xFF251A12)],
           const [0.0, 0.65, 1.0],
         ),
     );
@@ -632,31 +682,14 @@ class IncenseOfferingPainter extends CustomPainter {
       base,
       tip,
       Paint()
-        ..shader = ui.Gradient.linear(base, tip, const [
-          Color(0xFF4A1F0D),
-          Color(0xFFC67735),
-          Color(0xFFECC36C),
-        ])
+        ..shader = ui.Gradient.linear(
+          base,
+          tip,
+          const [Color(0xFF4A1F0D), Color(0xFFC67735), Color(0xFFECC36C)],
+          const [0.0, 0.5, 1.0],
+        )
         ..strokeWidth = 3.0 * scale
         ..strokeCap = StrokeCap.round,
-    );
-  }
-
-  void _drawEmber(Canvas canvas, Offset tip, double scale) {
-    canvas.drawCircle(
-      tip,
-      6.2 * scale,
-      Paint()
-        ..shader = ui.Gradient.radial(tip, 8.5 * scale, const [
-          Color(0xFFFFF1A3),
-          Color(0xFFFF5D00),
-          Color(0x00FF5D00),
-        ]),
-    );
-    canvas.drawCircle(
-      tip,
-      2.0 * scale,
-      Paint()..color = const Color(0xFFFFFFFF),
     );
   }
 
@@ -688,7 +721,17 @@ class SutraBookButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Formats text vertically (Traditional Chinese binding style)
-    final verticalTitle = title.split('').join('\n');
+    // If name is long, split into multiple columns (Right-to-Left)
+    final columns = <String>[];
+    if (title.length > 6) {
+      final half = (title.length / 2).ceil();
+      columns.add(title.substring(half).split('').join('\n'));
+      columns.add(title.substring(0, half).split('').join('\n'));
+    } else {
+      columns.add(title.split('').join('\n'));
+    }
+
+    final labelWidth = title.length > 6 ? 42.0 : 25.0;
 
     return GestureDetector(
       onTap: onTap,
@@ -706,7 +749,7 @@ class SutraBookButton extends StatelessWidget {
               decoration: BoxDecoration(
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.55),
+                    color: Colors.black.withValues(alpha: 0.55),
                     blurRadius: 10,
                     offset: const Offset(4, 6),
                   ),
@@ -715,46 +758,60 @@ class SutraBookButton extends StatelessWidget {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // 1. Core book background and traditional stitching
                   Positioned.fill(
-                    child: CustomPaint(
-                      painter: _ThreadBoundBookPainter(),
-                    ),
+                    child: CustomPaint(painter: _ThreadBoundBookPainter()),
                   ),
-
-                  // 2. Vertical Ivory Label (书签)
                   Positioned(
                     left: 14,
                     top: 14,
                     bottom: 14,
-                    width: 25,
+                    width: labelWidth,
                     child: Container(
                       decoration: BoxDecoration(
                         color: const Color(0xFFFDFBF7),
                         borderRadius: BorderRadius.circular(2),
                         border: Border.all(
-                          color: const Color(0xFF2C1E1A).withOpacity(0.4),
+                          color: const Color(0xFF2C1E1A).withValues(alpha: 0.4),
                           width: 0.8,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.12),
+                            color: Colors.black.withValues(alpha: 0.15),
                             blurRadius: 2,
                             offset: const Offset(1, 1),
                           ),
                         ],
                       ),
                       alignment: Alignment.center,
-                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
-                      child: Text(
-                        verticalTitle,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFF2C1E1A),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          height: 1.15,
-                          fontFamily: 'serif',
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 6,
+                        horizontal: 2,
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: columns
+                              .map(
+                                (col) => Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 2.0,
+                                  ),
+                                  child: Text(
+                                    col,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Color(0xFF2C1E1A),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                      height: 1.15,
+                                      fontFamily: 'serif',
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
                         ),
                       ),
                     ),
@@ -775,21 +832,15 @@ class _ThreadBoundBookPainter extends CustomPainter {
     final rect = Offset.zero & size;
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(4));
 
-    // 1. Base Indigo/Navy Paper Gradient
     final coverPaint = Paint()
       ..shader = ui.Gradient.linear(
         rect.topLeft,
         rect.bottomRight,
-        const [
-          Color(0xFF1C2C54), // Traditional deep indigo
-          Color(0xFF0F1A35), // Indigo shadow
-          Color(0xFF080E1E), // Deep dark spine edge
-        ],
+        const [Color(0xFF1C2C54), Color(0xFF0F1A35), Color(0xFF080E1E)],
         const [0.0, 0.70, 1.0],
       );
     canvas.drawRRect(rrect, coverPaint);
 
-    // 2. Gold border highlights
     final borderPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2
@@ -797,49 +848,59 @@ class _ThreadBoundBookPainter extends CustomPainter {
         rect.topLeft,
         rect.bottomRight,
         const [Color(0xFFFFD76B), Color(0xFF8B5A2B), Color(0xFFFFD76B)],
+        const [0.0, 0.5, 1.0],
       );
     canvas.drawRRect(rrect.deflate(2.0), borderPaint);
 
-    // 3. Traditional Stitched Threads on the right edge (Spine is on the right)
     final threadPaint = Paint()
       ..color = const Color(0xFFECC36C)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
     final double spineX = size.width - 8.0;
-    
-    // Vertical binding line
-    canvas.drawLine(Offset(spineX, 0), Offset(spineX, size.height), threadPaint);
+    canvas.drawLine(
+      Offset(spineX, 0),
+      Offset(spineX, size.height),
+      threadPaint,
+    );
 
-    // Stitch points and horizontal binding loops
     final double stitchOffset = 16.0;
     final int stitches = 6;
     final double step = (size.height - stitchOffset * 2) / (stitches - 1);
-    
+
     for (int i = 0; i < stitches; i++) {
       final double y = stitchOffset + i * step;
-      // Stitched loop going over the right spine edge
       canvas.drawLine(Offset(spineX, y), Offset(size.width, y), threadPaint);
-      
-      // Small needle hole dot
-      canvas.drawCircle(Offset(spineX, y), 1.2, Paint()..color = const Color(0xFF3E2010));
-      canvas.drawCircle(Offset(spineX, y), 0.7, Paint()..color = const Color(0xFFECC36C));
+      canvas.drawCircle(
+        Offset(spineX, y),
+        1.2,
+        Paint()..color = const Color(0xFF3E2010),
+      );
+      canvas.drawCircle(
+        Offset(spineX, y),
+        0.7,
+        Paint()..color = const Color(0xFFECC36C),
+      );
     }
-    
-    // Top & bottom diagonal spine corner stitches
-    canvas.drawLine(Offset(spineX, stitchOffset), Offset(size.width - 2, 0), threadPaint);
-    canvas.drawLine(Offset(spineX, size.height - stitchOffset), Offset(size.width - 2, size.height), threadPaint);
 
-    // 4. Gold Corner Guards
+    canvas.drawLine(
+      Offset(spineX, stitchOffset),
+      Offset(size.width - 2, 0),
+      threadPaint,
+    );
+    canvas.drawLine(
+      Offset(spineX, size.height - stitchOffset),
+      Offset(size.width - 2, size.height),
+      threadPaint,
+    );
+
     final cornerPaint = Paint()
       ..style = PaintingStyle.fill
-      ..shader = ui.Gradient.radial(
-        const Offset(0, 0),
-        12,
-        const [Color(0xFFFFD76B), Color(0xFF8B5A2B)],
-      );
+      ..shader = ui.Gradient.radial(const Offset(0, 0), 12, const [
+        Color(0xFFFFD76B),
+        Color(0xFF8B5A2B),
+      ]);
 
-    // Left corners (outer edges since spine is on the right)
     final topLeftPath = Path()
       ..moveTo(0, 0)
       ..lineTo(10, 0)
@@ -857,4 +918,489 @@ class _ThreadBoundBookPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class ButterLampOffering extends StatefulWidget {
+  final bool isBurning;
+
+  const ButterLampOffering({super.key, required this.isBurning});
+
+  @override
+  State<ButterLampOffering> createState() => _ButterLampOfferingState();
+}
+
+class _ButterLampOfferingState extends State<ButterLampOffering>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _flameController;
+
+  @override
+  void initState() {
+    super.initState();
+    _flameController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _flameController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _flameController,
+      builder: (context, _) {
+        return CustomPaint(
+          painter: _ButterLampPainter(
+            flameIntensity: _flameController.value,
+            isBurning: widget.isBurning,
+          ),
+          child: const SizedBox.expand(),
+        );
+      },
+    );
+  }
+}
+
+class _ButterLampPainter extends CustomPainter {
+  final double flameIntensity;
+  final bool isBurning;
+
+  const _ButterLampPainter({
+    required this.flameIntensity,
+    required this.isBurning,
+  });
+
+  @override
+  void paint(Canvas canvas, ui.Size size) {
+    if (size.isEmpty || !size.width.isFinite || !size.height.isFinite) return;
+
+    final scale = math.min(size.width / 100.0, size.height / 140.0);
+    final centerX = size.width / 2;
+    final bottomY = size.height - 10 * scale;
+
+    final pedestalPath = Path()
+      ..moveTo(centerX - 24 * scale, bottomY)
+      ..lineTo(centerX + 24 * scale, bottomY)
+      ..quadraticBezierTo(
+        centerX + 18 * scale,
+        bottomY - 15 * scale,
+        centerX + 12 * scale,
+        bottomY - 30 * scale,
+      )
+      ..lineTo(centerX - 12 * scale, bottomY - 30 * scale)
+      ..quadraticBezierTo(
+        centerX - 18 * scale,
+        bottomY - 15 * scale,
+        centerX - 24 * scale,
+        bottomY,
+      )
+      ..close();
+
+    final goldGradient = ui.Gradient.linear(
+      Offset(centerX - 24 * scale, bottomY - 15 * scale),
+      Offset(centerX + 24 * scale, bottomY - 15 * scale),
+      const [
+        Color(0xFF8B5A2B),
+        Color(0xFFFFD76B),
+        Color(0xFFFFF0B8),
+        Color(0xFFD4AF37),
+        Color(0xFF8B5A2B),
+      ],
+      const [0.0, 0.25, 0.5, 0.75, 1.0],
+    );
+
+    canvas.drawPath(pedestalPath, Paint()..shader = goldGradient);
+
+    final bowlY = bottomY - 30 * scale;
+    final bowlPath = Path()
+      ..moveTo(centerX - 12 * scale, bowlY)
+      ..quadraticBezierTo(
+        centerX - 35 * scale,
+        bowlY - 15 * scale,
+        centerX - 30 * scale,
+        bowlY - 35 * scale,
+      )
+      ..lineTo(centerX + 30 * scale, bowlY - 35 * scale)
+      ..quadraticBezierTo(
+        centerX + 35 * scale,
+        bowlY - 15 * scale,
+        centerX + 12 * scale,
+        bowlY,
+      )
+      ..close();
+
+    canvas.drawPath(bowlPath, Paint()..shader = goldGradient);
+
+    final rimCenter = Offset(centerX, bowlY - 35 * scale);
+    canvas.drawOval(
+      Rect.fromCenter(center: rimCenter, width: 62 * scale, height: 18 * scale),
+      Paint()..shader = goldGradient,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: rimCenter.translate(0, 1 * scale),
+        width: 56 * scale,
+        height: 14 * scale,
+      ),
+      Paint()..color = const Color(0xFFFDE89F),
+    );
+
+    if (isBurning) {
+      final wickTop = rimCenter.translate(0, -6 * scale);
+      canvas.drawLine(
+        rimCenter,
+        wickTop,
+        Paint()
+          ..color = const Color(0xFF1A1A1A)
+          ..strokeWidth = 2 * scale,
+      );
+
+      final time = DateTime.now().millisecondsSinceEpoch * 0.001;
+      final noiseX =
+          math.sin(time * 5.0) * 0.5 +
+          math.sin(time * 3.1) * 0.3 +
+          math.sin(time * 7.3) * 0.2;
+      final noiseY =
+          math.sin(time * 4.0) * 0.5 +
+          math.sin(time * 2.7) * 0.3 +
+          math.sin(time * 8.1) * 0.2;
+
+      final flutterX = noiseX * 2.5 * scale;
+      final stretchY = noiseY * 3.0 * scale;
+
+      final flameCenter = wickTop.translate(0, -2 * scale);
+      final flameTip = flameCenter.translate(
+        flutterX,
+        -22 * scale - stretchY - flameIntensity * 2 * scale,
+      );
+
+      canvas.drawCircle(
+        flameCenter.translate(0, -10 * scale),
+        28 * scale + flameIntensity * 4 * scale,
+        Paint()
+          ..shader = ui.Gradient.radial(
+            flameCenter.translate(0, -8 * scale),
+            32 * scale,
+            const [Color(0x55FF9900), Color(0x00FF9900)],
+          )
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+      );
+
+      final outerFlame = Path()
+        ..moveTo(flameTip.dx, flameTip.dy)
+        ..quadraticBezierTo(
+          flameCenter.dx + 12 * scale,
+          flameCenter.dy - 10 * scale,
+          flameCenter.dx + 7 * scale,
+          flameCenter.dy + 2 * scale,
+        )
+        ..quadraticBezierTo(
+          flameCenter.dx,
+          flameCenter.dy + 6 * scale,
+          flameCenter.dx - 7 * scale,
+          flameCenter.dy + 2 * scale,
+        )
+        ..quadraticBezierTo(
+          flameCenter.dx - 12 * scale,
+          flameCenter.dy - 10 * scale,
+          flameTip.dx,
+          flameTip.dy,
+        )
+        ..close();
+
+      canvas.drawPath(
+        outerFlame,
+        Paint()
+          ..shader = ui.Gradient.radial(
+            flameCenter.translate(0, -4 * scale),
+            18 * scale,
+            const [Color(0x000000FF), Color(0xFFFF9900), Color(0xFFFF3300)],
+            const [0.0, 0.6, 1.0],
+          ),
+      );
+
+      final innerTip = flameCenter.translate(
+        flutterX * 0.5,
+        -14 * scale - stretchY * 0.5,
+      );
+      final innerFlame = Path()
+        ..moveTo(innerTip.dx, innerTip.dy)
+        ..quadraticBezierTo(
+          flameCenter.dx + 6 * scale,
+          flameCenter.dy - 6 * scale,
+          flameCenter.dx + 4 * scale,
+          flameCenter.dy,
+        )
+        ..quadraticBezierTo(
+          flameCenter.dx,
+          flameCenter.dy + 3 * scale,
+          flameCenter.dx - 4 * scale,
+          flameCenter.dy,
+        )
+        ..quadraticBezierTo(
+          flameCenter.dx - 6 * scale,
+          flameCenter.dy - 6 * scale,
+          innerTip.dx,
+          innerTip.dy,
+        )
+        ..close();
+
+      canvas.drawPath(
+        innerFlame,
+        Paint()
+          ..shader = ui.Gradient.radial(
+            flameCenter,
+            10 * scale,
+            const [Color(0xFFFFFFFF), Color(0xFFFFEEAA), Color(0x00FFEEAA)],
+            const [0.0, 0.4, 1.0],
+          ),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ButterLampPainter oldDelegate) {
+    return oldDelegate.flameIntensity != flameIntensity ||
+        oldDelegate.isBurning != isBurning;
+  }
+}
+
+class FruitFlowerOffering extends StatelessWidget {
+  const FruitFlowerOffering({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _FruitFlowerPainter(),
+      child: const SizedBox.expand(),
+    );
+  }
+}
+
+class _FruitFlowerPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, ui.Size size) {
+    if (size.isEmpty || !size.width.isFinite || !size.height.isFinite) return;
+
+    final scale = math.min(size.width / 120.0, size.height / 120.0);
+    final centerX = size.width / 2;
+    final bottomY = size.height - 10 * scale;
+
+    final bowlY = bottomY - 30 * scale;
+    final goldGradient = ui.Gradient.linear(
+      Offset(centerX - 40 * scale, bowlY),
+      Offset(centerX + 40 * scale, bowlY),
+      const [
+        Color(0xFF8B5A2B),
+        Color(0xFFFFD76B),
+        Color(0xFFFFF0B8),
+        Color(0xFFD4AF37),
+        Color(0xFF8B5A2B),
+      ],
+      const [0.0, 0.25, 0.5, 0.75, 1.0],
+    );
+
+    final pedestalPath = Path()
+      ..moveTo(centerX - 20 * scale, bottomY)
+      ..lineTo(centerX + 20 * scale, bottomY)
+      ..lineTo(centerX + 12 * scale, bowlY)
+      ..lineTo(centerX - 12 * scale, bowlY)
+      ..close();
+    canvas.drawPath(pedestalPath, Paint()..shader = goldGradient);
+
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: Offset(centerX, bowlY - 15 * scale),
+        width: 90 * scale,
+        height: 60 * scale,
+      ),
+      0,
+      math.pi,
+      true,
+      Paint()..shader = goldGradient,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(centerX, bowlY - 15 * scale),
+        width: 90 * scale,
+        height: 16 * scale,
+      ),
+      Paint()..shader = goldGradient,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(centerX, bowlY - 15 * scale),
+        width: 84 * scale,
+        height: 12 * scale,
+      ),
+      Paint()..color = const Color(0xFF3E2010),
+    );
+
+    final fruitCenterY = bowlY - 22 * scale;
+
+    _drawFruit(
+      canvas,
+      Offset(centerX - 20 * scale, fruitCenterY + 4 * scale),
+      16 * scale,
+      const Color(0xFFE53935),
+    );
+    _drawFruit(
+      canvas,
+      Offset(centerX + 20 * scale, fruitCenterY + 4 * scale),
+      16 * scale,
+      const Color(0xFFF4511E),
+    );
+    _drawFruit(
+      canvas,
+      Offset(centerX, fruitCenterY - 8 * scale),
+      18 * scale,
+      const Color(0xFFFFB300),
+    );
+
+    _drawLotus(
+      canvas,
+      Offset(centerX - 35 * scale, fruitCenterY + 5 * scale),
+      scale * 0.6,
+      -0.3,
+    );
+    _drawLotus(
+      canvas,
+      Offset(centerX + 35 * scale, fruitCenterY + 5 * scale),
+      scale * 0.6,
+      0.3,
+    );
+  }
+
+  void _drawFruit(
+    Canvas canvas,
+    Offset center,
+    double radius,
+    Color baseColor,
+  ) {
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: center.translate(0, radius * 0.7),
+        width: radius * 1.8,
+        height: radius * 0.6,
+      ),
+      Paint()
+        ..color = const Color(0x66000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+
+    final hsl = HSLColor.fromColor(baseColor);
+    final darkColor = hsl
+        .withLightness((hsl.lightness - 0.2).clamp(0.0, 1.0))
+        .toColor();
+    final shadowColor = hsl
+        .withLightness((hsl.lightness - 0.4).clamp(0.0, 1.0))
+        .toColor();
+
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          center.translate(-radius * 0.3, -radius * 0.3),
+          radius * 1.2,
+          [
+            const Color(0xFFFFFFFF).withValues(alpha: 0.9),
+            baseColor,
+            darkColor,
+            shadowColor,
+          ],
+          const [0.0, 0.2, 0.7, 1.0],
+        ),
+    );
+
+    final dimpleCenter = center.translate(0, -radius * 0.8);
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: dimpleCenter,
+        width: radius * 0.5,
+        height: radius * 0.2,
+      ),
+      Paint()
+        ..shader = ui.Gradient.radial(dimpleCenter, radius * 0.3, [
+          const Color(0xFF2A1508),
+          const Color(0x002A1508),
+        ]),
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(dimpleCenter.dx, dimpleCenter.dy)
+        ..quadraticBezierTo(
+          dimpleCenter.dx + radius * 0.2,
+          dimpleCenter.dy - radius * 0.3,
+          dimpleCenter.dx + radius * 0.4,
+          dimpleCenter.dy - radius * 0.5,
+        ),
+      Paint()
+        ..color = const Color(0xFF3E2010)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = radius * 0.15
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  void _drawLotus(Canvas canvas, Offset center, double scale, double angle) {
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(angle);
+
+    canvas.drawCircle(
+      Offset.zero,
+      20 * scale,
+      Paint()
+        ..color = const Color(0x44FF4081)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+    );
+
+    final petalAngles = [-0.6, 0.6, -0.3, 0.3, 0.0];
+
+    for (int i = 0; i < petalAngles.length; i++) {
+      canvas.save();
+      canvas.rotate(petalAngles[i]);
+
+      final isFront = i >= 2;
+      final color1 = isFront
+          ? const Color(0xFFFCE4EC)
+          : const Color(0xFFF8BBD0);
+      final color2 = isFront
+          ? const Color(0xFFE91E63)
+          : const Color(0xFFC2185B);
+
+      final petalPaint = Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(0, -28 * scale),
+          Offset(0, 5 * scale),
+          [color1, color2],
+        );
+
+      final petalPath = Path()
+        ..moveTo(0, 10 * scale)
+        ..quadraticBezierTo(-18 * scale, 0, 0, -28 * scale)
+        ..quadraticBezierTo(18 * scale, 0, 0, 10 * scale)
+        ..close();
+
+      canvas.drawPath(petalPath, petalPaint);
+      canvas.drawPath(
+        petalPath,
+        Paint()
+          ..color = const Color(0x55FFFFFF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0 * scale,
+      );
+
+      canvas.restore();
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _FruitFlowerPainter oldDelegate) => false;
 }
