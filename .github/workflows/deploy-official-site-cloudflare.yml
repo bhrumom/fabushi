@@ -70,6 +70,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID || secrets.CF_ZONE_ID || vars.CLOUDFLARE_ZONE_ID || vars.CF_ZONE_ID }}
+          OFFICIAL_SITE_R2_BUCKET: ${{ vars.OFFICIAL_SITE_R2_BUCKET || 'bushi' }}
         run: |
           set -euo pipefail
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
@@ -77,10 +78,21 @@ jobs:
             exit 1
           fi
 
-          npx --yes wrangler@latest deploy official-site-worker.js \
-            --name fabushi-official-site \
-            --assets apps/web/out \
-            --compatibility-date 2026-05-06 \
+          official_site_r2_bucket="${OFFICIAL_SITE_R2_BUCKET:-bushi}"
+          cat > wrangler.official-site.toml <<EOF
+          name = "fabushi-official-site"
+          main = "official-site-worker.js"
+          compatibility_date = "2026-05-06"
+
+          [assets]
+          directory = "apps/web/out"
+
+          [[r2_buckets]]
+          binding = "OFFICIAL_SITE_R2"
+          bucket_name = "${official_site_r2_bucket}"
+          EOF
+
+          npx --yes wrangler@latest deploy --config wrangler.official-site.toml \
             --domain fabushi.ombhrum.com
 
           api_base="https://api.cloudflare.com/client/v4"

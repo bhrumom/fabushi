@@ -80,7 +80,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
           OFFICIAL_SITE_R2_BUCKET: ${{ vars.OFFICIAL_SITE_R2_BUCKET || 'bushi' }}
           OFFICIAL_SITE_ANDROID_R2_OBJECT_KEY: ${{ vars.OFFICIAL_SITE_ANDROID_R2_OBJECT_KEY || 'downloads/android/fabushi-android-beta.apk' }}
-          OFFICIAL_SITE_R2_PUBLIC_BASE_URL: ${{ vars.OFFICIAL_SITE_R2_PUBLIC_BASE_URL || '' }}
+          OFFICIAL_SITE_ORIGIN: ${{ vars.OFFICIAL_SITE_ORIGIN || 'https://fabushi.ombhrum.com' }}
         run: |
           set -euo pipefail
           apk_dir="$RUNNER_TEMP/android-r2"
@@ -117,7 +117,7 @@ jobs:
 
           bucket="${OFFICIAL_SITE_R2_BUCKET:-bushi}"
           object_key="${OFFICIAL_SITE_ANDROID_R2_OBJECT_KEY:-downloads/android/fabushi-android-beta.apk}"
-          public_base="${OFFICIAL_SITE_R2_PUBLIC_BASE_URL:-}"
+          official_site_origin="${OFFICIAL_SITE_ORIGIN:-https://fabushi.ombhrum.com}"
 
           npx --yes wrangler@latest r2 object put "$bucket/$object_key" \
             --file "$apk_path" \
@@ -126,17 +126,7 @@ jobs:
             --force \
             --remote
 
-          if [ -z "$public_base" ]; then
-            dev_url_output="$(npx --yes wrangler@latest r2 bucket dev-url get "$bucket" 2>&1 || true)"
-            public_base="$(printf '%s\n' "$dev_url_output" | sed -nE "s/.*'(https:\/\/[^']+)'.*/\1/p" | tail -n 1)"
-          fi
-
-          if [ -z "$public_base" ]; then
-            echo "Could not resolve an R2 public URL for bucket $bucket. Set OFFICIAL_SITE_R2_PUBLIC_BASE_URL." >&2
-            exit 1
-          fi
-
-          android_r2_href="${public_base%/}/${object_key}"
+          android_r2_href="${official_site_origin%/}/${object_key}"
           echo "android_r2_href=$android_r2_href" >> "$GITHUB_OUTPUT"
           {
             echo "## Android APK synced to R2"
@@ -144,7 +134,7 @@ jobs:
             echo "- Release tag: $RELEASE_TAG"
             echo "- Bucket: $bucket"
             echo "- Object key: $object_key"
-            echo "- Public href: $android_r2_href"
+            echo "- Official Worker href: $android_r2_href"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Generate beta state asset for the official site
@@ -407,7 +397,7 @@ jobs:
             fi
             echo "- Available beta channels from this release were synced selectively."
             if [ -n "${{ steps.sync_android_r2.outputs.android_r2_href }}" ]; then
-              echo "- Android APK was copied to R2 and the official site state now points to that R2 object."
+              echo "- Android APK was copied to R2 and the official site state now points to the Worker-served domain URL."
             fi
             echo "- If a release only contains one platform, the official site keeps the previous entry for the other platform."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -458,6 +448,6 @@ jobs:
                 '',
                 `- Release tag: ${process.env.RELEASE_TAG || 'unknown'}`,
                 '- Check whether the selected release contains an APK asset and TESTFLIGHT_UPLOAD_STATUS.txt when iOS beta should be updated.',
-                '- Check whether IOS_TESTFLIGHT_PUBLIC_URL or OFFICIAL_SITE_R2_PUBLIC_BASE_URL variables are malformed when the sync script fails during metadata generation.',
+                '- Check whether IOS_TESTFLIGHT_PUBLIC_URL or OFFICIAL_SITE_ORIGIN variables are malformed when the sync script fails during metadata generation.',
               ],
             });
