@@ -291,12 +291,20 @@ export default async function HomePage() {
               </span>
             </div>
             <h1 id="home-title">
-              <LocalizedText zh="全球法布施" en="Global Dharma Sharing" />
+              <LocalizedText
+                zh={
+                  <>
+                    <span className="hero-title-line">全球</span>
+                    <span className="hero-title-line">法布施</span>
+                  </>
+                }
+                en="Global Dharma Sharing"
+              />
             </h1>
             <p className="hero-subtitle">
               <LocalizedText
-                zh="把禅修、听诵、日常功课与全球法布施放进同一个 App，先看清界面，再决定下载。"
-                en="Bring meditation, listening, daily practice, and global giving into one app, then decide to download after seeing the interface clearly."
+                zh="用一个 App 连接经文听诵、禅修记录、法流学习与全球法布施。"
+                en="One app for sutra listening, meditation records, Dharma learning, and global giving."
               />
             </p>
             <div className="hero-actions">

@@ -346,6 +346,10 @@ h3,
   font-weight: 900;
 }
 
+.hero-title-line {
+  display: block;
+}
+
 .hero-subtitle,
 .lede {
   margin: 0;
