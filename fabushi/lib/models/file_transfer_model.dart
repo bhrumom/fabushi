@@ -1,29 +1,25 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:async';
-import 'package:http/http.dart' as http;
 
 import '../screens/asset_screen.dart';
-import '../core/config/app_config.dart';
 import '../services/shared_asset_manager.dart';
 import '../services/download_manager.dart' show DownloadStatus;
 import '../services/real_global_send_service.dart';
 import '../services/platform_global_send_service.dart';
 import '../services/ip_location_service.dart';
 import '../services/leaderboard_service.dart';
+import '../services/cbeta_send_text_service.dart';
 // Android 和 iOS 统一使用 audio_service MediaSession
 import '../services/wifi_field_broadcast_service.dart';
 import '../services/hotspot_manager_service.dart';
 import '../services/keep_alive_service.dart';
 import '../widgets/download_progress_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:universal_html/html.dart' as html;
 import '../core/startup/deferred_loader.dart';
 import '../services/local_loopback_service.dart';
 
@@ -65,6 +61,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   final SharedAssetManager _sharedAssetManager = SharedAssetManager();
   final IPLocationService _ipLocationService = IPLocationService();
+  final CbetaSendTextService _cbetaSendTextService = CbetaSendTextService();
 
   // 场能广播服务
   WiFiFieldBroadcastService? _fieldBroadcastService;
@@ -310,40 +307,47 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<int> prepareDefaultNonR2AssetsForSending() async {
-    final manifestString = await rootBundle.loadString(
-      'assets/data/asset-manifest.json',
-    );
-    final List<dynamic> files = json.decode(manifestString);
+    updateLog('📚 正在从 CBETA API 下载首页默认经文...');
 
-    final assetPaths =
-        files
-            .whereType<Map<String, dynamic>>()
-            .where((fileInfo) {
-              final key = (fileInfo['key'] ?? '').toString();
-              final source = (fileInfo['source'] ?? '').toString();
+    try {
+      final result = await _cbetaSendTextService.fetchDefaultSendTexts();
+      _selectedFiles = result.items.map((text) {
+        final content = [
+          '来源: CBETA',
+          '经名: ${text.title}',
+          '编号: ${text.work} 第 ${text.juan} 卷',
+          if (text.byline.isNotEmpty) '译者/作者: ${text.byline}',
+          if (text.category.isNotEmpty) '分类: ${text.category}',
+          if (text.sourceUrl.isNotEmpty) 'CBETA API: ${text.sourceUrl}',
+          '',
+          text.content,
+        ].join('\n');
+        final bytes = Uint8List.fromList(utf8.encode(content));
+        return PlatformFile(
+          name: text.fileName.isNotEmpty ? text.fileName : '${text.work}.txt',
+          size: bytes.length,
+          bytes: bytes,
+        );
+      }).toList();
 
-              return source != 'r2' &&
-                  key.isNotEmpty &&
-                  key.toLowerCase().endsWith('.txt') &&
-                  !key.contains('/.DS_Store') &&
-                  !key.startsWith('.');
-            })
-            .map((fileInfo) => (fileInfo['key'] ?? '').toString())
-            .toList()
-          ..sort();
-
-    _selectedFiles = assetPaths.map((assetPath) {
-      final fileName = assetPath.split('/').last;
-      final bytes = Uint8List.fromList(
-        utf8.encode('全球法布施素材\n$fileName\n$assetPath'),
+      _isLooping = true;
+      final titles = result.items.map((item) => '《${item.title}》').join('、');
+      final warning = result.errors.isEmpty
+          ? ''
+          : '；部分经文下载失败: ${jsonEncode(result.errors)}';
+      updateLog(
+        '📚 已从 CBETA 下载 ${_selectedFiles.length} 部经文，准备发送 $titles$warning',
       );
-      return PlatformFile(name: fileName, size: bytes.length, bytes: bytes);
-    }).toList();
-
-    _isLooping = true;
-    debugPrint('📚 已准备默认非 R2 经文素材: ${_selectedFiles.length} 个，循环发送已开启');
-    notifyListeners();
-    return _selectedFiles.length;
+      debugPrint('📚 已从 CBETA 下载 ${_selectedFiles.length} 部经文，循环发送已开启');
+      notifyListeners();
+      return _selectedFiles.length;
+    } catch (error) {
+      _selectedFiles = [];
+      updateLog('❌ CBETA 经文下载失败: $error');
+      debugPrint('❌ CBETA 经文下载失败: $error');
+      notifyListeners();
+      return 0;
+    }
   }
 
   Future<void> _downloadSelectedAssets(

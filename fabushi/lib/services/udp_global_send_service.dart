@@ -7,6 +7,16 @@ import 'geoip_data_service.dart';
 import 'country_coordinates_service.dart';
 import '../core/constants/country_servers.dart' as country_names;
 
+class _UdpSendResult {
+  final bool success;
+  final int bytesSent;
+  final String? error;
+
+  const _UdpSendResult.success(this.bytesSent) : success = true, error = null;
+
+  const _UdpSendResult.failure(this.error) : success = false, bytesSent = 0;
+}
+
 /// UDP 全球发送服务
 /// 使用 GeoLite2 IP 数据向全球每个国家发送 UDP 数据包
 /// 仅用于非 Web 平台（iOS/Android/macOS）
@@ -45,6 +55,7 @@ class UDPGlobalSendService {
 
   // 每个数据包的最大大小（UDP 推荐不超过 1472 字节以避免分片）
   static const int _maxPacketSize = 1400;
+  static const int _maxSendRetries = 3;
 
   UDPGlobalSendService({
     required this.onProgress,
@@ -207,9 +218,10 @@ class UDPGlobalSendService {
     List<String> countryCodes,
   ) async {
     int successCount = 0;
+    final scriptureTitle = _displayScriptureName(fileName);
 
     onLog(
-      '📤 准备发送文件: $fileName, ${fileBytes.length} 字节到 ${countryCodes.length} 个国家',
+      '📤 准备发送《$scriptureTitle》: $fileName, ${fileBytes.length} 字节到 ${countryCodes.length} 个国家',
     );
 
     for (int i = 0; i < countryCodes.length; i++) {
@@ -238,17 +250,25 @@ class UDPGlobalSendService {
       bool countrySuccess = false;
       int ipIndex = 0;
       int sendCount = 0;
+      int retryCount = 0;
+      String? lastSuccessIp;
+      final errors = <String>[];
 
       while (!countrySuccess ||
           DateTime.now().difference(sendStartTime) < minSendDuration) {
         if (!_isRunning) break;
+        if (ipIndex >= 20) break;
 
         // 循环使用该国家的所有 IP
         final ip = ips[ipIndex % ips.length];
         ipIndex++;
 
-        try {
-          final success = await _sendUDPPacketWithBytes(
+        onLog('📤 正在发送到 $countryName ($countryCode)：《$scriptureTitle》 -> $ip');
+
+        for (int attempt = 1; attempt <= _maxSendRetries; attempt++) {
+          if (!_isRunning) break;
+
+          final result = await _sendUDPPacketWithBytes(
             socket,
             fileName,
             fileBytes,
@@ -257,32 +277,46 @@ class UDPGlobalSendService {
             countryCode,
             countryName,
           );
-          if (success) {
+          if (result.success) {
             countrySuccess = true;
             sendCount++;
+            lastSuccessIp = ip;
+            break;
           }
-        } catch (e) {
-          // UDP 发送失败，继续尝试下一个 IP
+
+          final detail =
+              '$ip 第 $attempt/$_maxSendRetries 次: ${result.error ?? "未知错误"}';
+          errors.add(detail);
+          onLog(
+            '⚠️ UDP 发送到 $countryName ($countryCode) 失败：《$scriptureTitle》 -> $detail',
+          );
+
+          if (attempt < _maxSendRetries) {
+            retryCount++;
+            await Future.delayed(Duration(milliseconds: 150 * attempt));
+          }
         }
 
         // 短暂延迟，避免发送过快
         await Future.delayed(const Duration(milliseconds: 100));
-
-        // 最多发送 20 次，防止无限循环
-        if (ipIndex >= 20) break;
       }
 
       if (countrySuccess) {
         successCount++;
         _sentCount++; // 实时更新国家计数
         onProgress(_sentCount); // 实时通知进度更新
-        onLog('✅ UDP 发送到 $countryName ($countryCode) 成功 ($sendCount 次)');
+        onLog(
+          '✅ UDP 发送到 $countryName ($countryCode) 成功：《$scriptureTitle》 -> ${lastSuccessIp ?? "未知 IP"}，发送 $sendCount 次，重试 $retryCount 次',
+        );
 
         if (onCountrySent != null) {
           onCountrySent!(fileSize * sendCount);
         }
       } else {
-        onLog('❌ UDP 发送到 $countryName ($countryCode) 失败');
+        final errorText = errors.isEmpty ? '没有可用的发送结果' : errors.join(' | ');
+        onLog(
+          '❌ UDP 发送到 $countryName ($countryCode) 失败：《$scriptureTitle》，已重试 $retryCount 次，错误: $errorText',
+        );
       }
     }
 
@@ -509,7 +543,7 @@ class UDPGlobalSendService {
     }
   }
 
-  Future<bool> _sendUDPPacketWithBytes(
+  Future<_UdpSendResult> _sendUDPPacketWithBytes(
     RawDatagramSocket socket,
     String fileName,
     Uint8List fileBytes,
@@ -540,8 +574,9 @@ class UDPGlobalSendService {
 
       // 如果发送返回 0，可能是网络不可达，尝试下一个 IP
       if (headerSent <= 0) {
-        debugPrint('⚠️ UDP 头部发送失败 (0字节)，IP 可能不可达: $targetIP');
-        return false;
+        final error = 'UDP 头部发送 0 字节，IP 可能不可达: $targetIP:$_udpPort';
+        debugPrint('⚠️ $error');
+        return _UdpSendResult.failure(error);
       }
 
       // 分片发送文件数据
@@ -557,6 +592,11 @@ class UDPGlobalSendService {
         final packet = _buildDataPacket(packetIndex, chunk, countryCode);
 
         final sent = socket.send(packet, address, _udpPort);
+        if (sent <= 0) {
+          return _UdpSendResult.failure(
+            'UDP 数据包 $packetIndex 发送 0 字节: $targetIP:$_udpPort',
+          );
+        }
         totalBytesSent += sent;
 
         offset = end;
@@ -571,10 +611,10 @@ class UDPGlobalSendService {
       debugPrint(
         '✅ UDP 发送完成: $countryName - $packetIndex 个包, $totalBytesSent 字节',
       );
-      return true;
+      return _UdpSendResult.success(totalBytesSent);
     } catch (e) {
       debugPrint('❌ UDP 发送到 $targetIP 失败: $e');
-      return false;
+      return _UdpSendResult.failure('$targetIP:$_udpPort $e');
     }
   }
 
@@ -609,6 +649,16 @@ class UDPGlobalSendService {
       sum = (sum + byte) & 0xFFFFFFFF;
     }
     return sum.toRadixString(16);
+  }
+
+  String _displayScriptureName(String fileName) {
+    final withoutExtension = fileName.replaceFirst(RegExp(r'\.[^.]+$'), '');
+    final withoutCbetaPrefix = withoutExtension.replaceFirst(
+      RegExp(r'^[A-Z][A-Z0-9]?\d{4}[A-Z]?_\d+_'),
+      '',
+    );
+    final normalized = withoutCbetaPrefix.replaceAll('_', ' ').trim();
+    return normalized.isEmpty ? withoutExtension : normalized;
   }
 
   void _triggerBeamAnimation(String countryCode, String countryName) {

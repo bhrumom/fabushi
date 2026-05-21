@@ -21,10 +21,11 @@ class IPLocation {
   });
 
   factory IPLocation.fromJson(Map<String, dynamic> json) {
+    final countryCode = (json['countryCode'] ?? '').toString();
     return IPLocation(
       ip: json['query'] ?? json['ip'] ?? '',
-      country: json['country'] ?? '',
-      countryCode: json['countryCode'] ?? '',
+      country: _normalizeCountryName(json['country'], countryCode),
+      countryCode: countryCode,
       region: json['regionName'] ?? json['region'] ?? '',
       city: json['city'] ?? '',
       latitude: _parseDouble(json['lat']),
@@ -40,6 +41,14 @@ class IPLocation {
       return double.tryParse(value) ?? 0.0;
     }
     return 0.0;
+  }
+
+  static String _normalizeCountryName(dynamic value, String countryCode) {
+    final country = (value ?? '').toString();
+    if (countryCode.toUpperCase() == 'CN' || country.toLowerCase() == 'china') {
+      return '中国';
+    }
+    return country;
   }
 }
 
@@ -106,7 +115,7 @@ class IPLocationService {
         if (locParts.length == 2) {
           return IPLocation(
             ip: data['ip'] ?? '',
-            country: data['country'] ?? '',
+            country: data['country'] == 'CN' ? '中国' : (data['country'] ?? ''),
             countryCode: data['country'] ?? '',
             region: data['region'] ?? '',
             city: data['city'] ?? '',
