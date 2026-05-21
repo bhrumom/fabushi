@@ -1,8 +1,9 @@
 import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'keep_alive_service.dart';
 
 /// WorkManager 保活服务
 ///
@@ -200,6 +201,7 @@ class SendingStateSnapshot {
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
+    DartPluginRegistrant.ensureInitialized();
     debugPrint('📋 WorkManager 任务执行: $task');
 
     try {

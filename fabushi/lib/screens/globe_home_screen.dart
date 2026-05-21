@@ -45,6 +45,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     WidgetsBinding.instance.addObserver(this);
     _loadGlobe();
     _fetchInitialCount();
+    _onlineCounterService.startCountPolling('global_sending');
   }
 
   Future<void> _fetchInitialCount() async {
@@ -830,7 +831,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   void _startSending(FileTransferModel model) async {
     // Android 平台：首次使用时显示自启动设置引导
     if (Platform.isAndroid && mounted) {
-      await AutoStartGuideDialog.showIfNeeded(context);
+      try {
+        await AutoStartGuideDialog.showIfNeeded(context);
+      } catch (e) {
+        debugPrint('Auto-start guide failed, continuing send: $e');
+      }
     }
 
     final assetCount = await model.prepareDefaultNonR2AssetsForSending();

@@ -100,6 +100,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
     // 获取在线人数
     _fetchInitialCount();
+    _onlineCounterService.startCountPolling('zen_room');
 
     // 监听成就事件
     _achievementSubscription = _achievementSystem.achievementStream.listen((

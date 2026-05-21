@@ -18,9 +18,12 @@ class OnlineCounterService {
   String? _sessionId;
   String? _currentActivity;
   Timer? _heartbeatTimer;
+  Timer? _countPollingTimer;
   WebSocketChannel? _channel;
   bool _isConnected = false;
   bool _shouldReconnect = false;
+  bool _isCountFetchInFlight = false;
+  String? _pollingActivity;
 
   // 在线人数流控制器
   final _onlineCountController = StreamController<int>.broadcast();
@@ -254,6 +257,8 @@ class OnlineCounterService {
 
   /// 获取指定活动类型的在线人数（不加入活动）
   Future<void> fetchCountForActivity(String activityType) async {
+    if (_isCountFetchInFlight) return;
+    _isCountFetchInFlight = true;
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/api/online/count?activityType=$activityType'),
@@ -265,7 +270,32 @@ class OnlineCounterService {
       }
     } catch (e) {
       print('获取在线人数错误: $e');
+    } finally {
+      _isCountFetchInFlight = false;
     }
+  }
+
+  /// 启动在线人数轮询
+  void startCountPolling(
+    String activityType, {
+    Duration interval = const Duration(seconds: 5),
+  }) {
+    _pollingActivity = activityType;
+    _countPollingTimer?.cancel();
+
+    fetchCountForActivity(activityType);
+    _countPollingTimer = Timer.periodic(interval, (_) {
+      final activity = _pollingActivity;
+      if (activity != null) {
+        fetchCountForActivity(activity);
+      }
+    });
+  }
+
+  void stopCountPolling() {
+    _countPollingTimer?.cancel();
+    _countPollingTimer = null;
+    _pollingActivity = null;
   }
 
   /// 启动心跳定时器
@@ -369,6 +399,7 @@ class OnlineCounterService {
   /// 清理资源
   void dispose() {
     _shouldReconnect = false;
+    stopCountPolling();
     _stopHeartbeat();
     _channel?.sink.close();
     _channel = null;
