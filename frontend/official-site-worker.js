@@ -5,6 +5,8 @@ const CBETA_API_BASE = "https://api.cbetaonline.cn";
 const APP_API_BASE = "https://api.ombhrum.com/api";
 const DEFAULT_RELEASE_REPO = "bhrumom/fabushi";
 const GITHUB_API_BASE = "https://api.github.com";
+const OFFICIAL_SITE_HOST = "fabushi.ombhrum.com";
+const ROOT_DOMAIN_REDIRECT_HOSTS = new Set(["ombhrum.com"]);
 const DEFAULT_MIRROR_BASES = [
   {
     label: "国内镜像 1",
@@ -23,6 +25,10 @@ const DEFAULT_MIRROR_BASES = [
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (ROOT_DOMAIN_REDIRECT_HOSTS.has(url.hostname.toLowerCase())) {
+      return redirectToOfficialSite(url);
+    }
+
     const match = url.pathname.match(ANDROID_DOWNLOAD_ROUTE);
     const cbetaMatch = url.pathname.match(CBETA_PROXY_ROUTE);
     const appMatch = url.pathname.match(APP_PROXY_ROUTE);
@@ -42,6 +48,13 @@ export default {
     return env.ASSETS.fetch(request);
   },
 };
+
+function redirectToOfficialSite(url) {
+  const redirectUrl = new URL(url.toString());
+  redirectUrl.protocol = "https:";
+  redirectUrl.host = OFFICIAL_SITE_HOST;
+  return Response.redirect(redirectUrl.toString(), 308);
+}
 
 async function proxyApiRequest(request, upstreamBase, upstreamPath, allowedMethods) {
   if (!allowedMethods.includes(request.method)) {
