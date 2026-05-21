@@ -257,6 +257,12 @@ class OnlineCounterService {
 
   /// 获取指定活动类型的在线人数（不加入活动）
   Future<void> fetchCountForActivity(String activityType) async {
+    if (_isConnected &&
+        _channel != null &&
+        _currentActivity == activityType) {
+      return;
+    }
+
     if (_isCountFetchInFlight) return;
     _isCountFetchInFlight = true;
     try {
