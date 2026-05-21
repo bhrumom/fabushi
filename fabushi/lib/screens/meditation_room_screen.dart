@@ -69,7 +69,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
     _incenseController = AnimationController(
       vsync: this,
-      duration: const Duration(hours: 2), // 极长时间，不再限制
+      duration: const Duration(minutes: 15), // 15分钟烧完一炷香，循环
     );
 
     _pulseController = AnimationController(
@@ -154,7 +154,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         _welcomeController.forward();
       }
       if (_sessionManager.isInSession && !_incenseController.isAnimating) {
-        _incenseController.forward();
+        _incenseController.repeat();
       }
       return;
     }
@@ -218,7 +218,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     // 开始香的燃烧动画
     if (_isPageVisible) {
       _incenseController.reset();
-      _incenseController.forward();
+      _incenseController.repeat();
     }
 
     // 加入在线活动
@@ -837,38 +837,88 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           final title = practice?.title ?? '选择功课';
           final opensSelection =
               practice == null || practice.filePath.startsWith('manual:');
-          final incenseWidth = (size.width * 0.22)
-              .clamp(128.0, 168.0)
-              .toDouble();
+          
+          // Refined delicate scaling to prevent blocking the Buddha
+          final baseScale = (size.width / 400.0).clamp(0.8, 1.2);
+          
+          final incenseWidth = 100.0 * baseScale;
           final incenseHeight = incenseWidth * 1.24;
-          const smokeRise = 142.0;
-          final offeringTop = (size.height * 0.60)
-              .clamp(0.0, size.height - incenseHeight - 180)
-              .toDouble();
+          const smokeRise = 100.0;
 
-          // Premium traditional book sizing (slightly larger & taller aspect ratio)
-          final bookWidth = (size.width * 0.16).clamp(72.0, 96.0).toDouble();
+          // Delicate Sutra book
+          final bookWidth = 64.0 * baseScale;
           final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
           
-          // Horizontally centered incense censer
-          final incenseLeft = (size.width - incenseWidth) / 2;
+          final centerX = size.width / 2;
+          final incenseLeft = centerX - incenseWidth / 2;
+          final bookLeft = centerX - bookWidth / 2;
 
-          // Position the sutra book to the right of the censer, resting harmoniously on the virtual altar table
-          final bookLeft = (size.width / 2 + incenseWidth / 2 + 16)
-              .clamp(0.0, size.width - bookWidth - 16)
-              .toDouble();
+          // Anchor to the bottom of the screen, just above the bottom menu bar
+          final bottomBarHeight = 160.0 * baseScale;
+          final altarBaseY = size.height - bottomBarHeight + 20;
 
-          // Align the book's bottom with the censer's base tabletop (censer feet touch point)
-          final scale = incenseWidth / 150.0;
-          final bookTop = (offeringTop + incenseHeight - bookHeight - 12 * scale)
-              .clamp(0.0, size.height - bookHeight - 16)
-              .toDouble();
+          // Stack components vertically: Book -> Gap -> Incense -> Altar Base
+          final incenseTop = altarBaseY - incenseHeight;
+          final bookTop = incenseTop - bookHeight - 16 * baseScale;
+
+          // Side offerings (Fruit & Lamps)
+          final lampWidth = 64.0 * baseScale;
+          final fruitWidth = 80.0 * baseScale;
+
+          // Position them symmetrically on the sides of the incense
+          final leftItemLeft = centerX - incenseWidth / 2 - fruitWidth - 12 * baseScale;
+          final rightItemLeft = centerX + incenseWidth / 2 + 12 * baseScale;
+          
+          // Align their bottoms precisely with altarBaseY
+          final sideItemTopOffset = altarBaseY - fruitWidth;
+          final lampTopOffset = altarBaseY - lampWidth * 1.4;
 
           return Stack(
             children: [
+              // Far Left: Fruit & Flower
+              Positioned(
+                left: leftItemLeft,
+                top: sideItemTopOffset,
+                width: fruitWidth,
+                height: fruitWidth,
+                child: const RepaintBoundary(
+                  child: FruitFlowerOffering(),
+                ),
+              ),
+
+              // Far Right: Butter Lamp
+              Positioned(
+                left: rightItemLeft,
+                top: lampTopOffset,
+                width: lampWidth,
+                height: lampWidth * 1.4,
+                child: RepaintBoundary(
+                  child: ButterLampOffering(
+                    isBurning: _sessionManager.isInSession,
+                  ),
+                ),
+              ),
+
+              // Center Top: Sutra Book
+              Positioned(
+                left: bookLeft,
+                top: bookTop,
+                child: RepaintBoundary(
+                  child: SutraBookButton(
+                    title: title,
+                    width: bookWidth,
+                    height: bookHeight,
+                    onTap: opensSelection
+                        ? _showPracticeSelection
+                        : _openSutraReader,
+                  ),
+                ),
+              ),
+
+              // Center Bottom: Incense Burner
               Positioned(
                 left: incenseLeft,
-                top: offeringTop,
+                top: incenseTop,
                 width: incenseWidth,
                 height: incenseHeight,
                 child: IgnorePointer(
@@ -885,23 +935,11 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   ),
                 ),
               ),
-              Positioned(
-                left: bookLeft,
-                top: bookTop,
-                child: RepaintBoundary(
-                  child: SutraBookButton(
-                    title: title,
-                    width: bookWidth,
-                    height: bookHeight,
-                    onTap: opensSelection
-                        ? _showPracticeSelection
-                        : _openSutraReader,
-                  ),
-                ),
-              ),
+              
+              // Smoke Overlay for Incense
               Positioned(
                 left: incenseLeft,
-                top: offeringTop - smokeRise,
+                top: incenseTop - smokeRise,
                 width: incenseWidth,
                 height: incenseHeight + smokeRise,
                 child: IgnorePointer(
