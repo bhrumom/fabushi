@@ -45,8 +45,8 @@ function fallbackSummary(channel: DisplayChannel): LocalizedCopy[] {
         en: "This section highlights the latest Android beta you can install.",
       },
       {
-        zh: "下载较慢时，可以优先尝试镜像入口。",
-        en: "If the download is slow, try the mirror links first.",
+        zh: "官网按钮会直接下载 R2 中的最新安装包。",
+        en: "The official button downloads the latest APK from R2.",
       },
     ];
   }
@@ -134,13 +134,6 @@ export function getUserFacingSummary(channel: DisplayChannel): LocalizedCopy[] {
 }
 
 export function getUserFacingNote(channel: DisplayChannel): LocalizedCopy | null {
-  if (channel.platform === "Android" && channel.mirrorLinks.length > 0) {
-    return {
-      zh: "下载较慢时，可优先尝试镜像入口。",
-      en: "If the download is slow, try the mirror links first.",
-    };
-  }
-
   if (channel.platform === "iOS" && channel.audience === "beta") {
     return channel.primaryHref.includes("testflight.apple.com")
       ? {

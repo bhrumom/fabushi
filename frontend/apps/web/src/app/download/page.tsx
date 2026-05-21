@@ -22,7 +22,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const downloadUrl = siteUrl("/download");
 const downloadTitle = `法布施大乘 App 下载 | Android、iOS、版本与安装说明 | ${brand.name}`;
 const downloadDescription =
-  "法布施大乘 App 下载页，集中提供 Android、iOS 下载入口、版本说明、安装步骤、镜像与常见下载问题。";
+  "法布施大乘 App 下载页，集中提供 Android、iOS 下载入口、版本说明、安装步骤与常见下载问题。";
 
 const downloadFaqs = [
   {
@@ -34,8 +34,8 @@ const downloadFaqs = [
   {
     questionZh: "Android 下载慢或安装失败怎么办？",
     questionEn: "What should I do if Android download is slow or installation fails?",
-    answerZh: "先尝试当前卡片里的镜像链接，再确认自己下载的是对应平台和版本；如果仍然失败，把设备型号、系统版本和错误截图发到支持邮箱。",
-    answerEn: "Try the mirror links on the current card first, then confirm that you downloaded the matching platform and version. If it still fails, send the device model, OS version, and an error screenshot to support.",
+    answerZh: "先重新点击当前卡片里的主下载入口，并确认自己下载的是对应平台和版本；如果仍然失败，把设备型号、系统版本和错误截图发到支持邮箱。",
+    answerEn: "Use the main download button on the current card again, then confirm that you downloaded the matching platform and version. If it still fails, send the device model, OS version, and an error screenshot to support.",
   },
   {
     questionZh: "iOS 为什么会打开 TestFlight？",
@@ -55,8 +55,8 @@ const installSteps = [
   {
     titleZh: "进入对应下载入口并完成安装",
     titleEn: "Open the matching download path and install",
-    descriptionZh: "Android 可以优先使用主下载入口，较慢时再切到镜像；iOS 测试版会通过 TestFlight 打开。",
-    descriptionEn: "Use the main Android link first and switch to a mirror only if needed. iOS beta opens through TestFlight.",
+    descriptionZh: "Android 使用主下载入口直接获取 R2 中的最新安装包；iOS 测试版会通过 TestFlight 打开。",
+    descriptionEn: "Use the main Android button to get the latest APK from R2. iOS beta opens through TestFlight.",
   },
   {
     titleZh: "安装失败时先看 FAQ，再联系支持",
@@ -72,8 +72,8 @@ const DOWNLOAD_NOTES = [
     en: "Check the platform, version, and publish date before downloading so you get the right build.",
   },
   {
-    zh: "Android 下载较慢时，可以优先尝试镜像入口。",
-    en: "If Android downloads are slow, try the mirror links first.",
+    zh: "Android 安装包由 R2 提供，更新后会直接替换为最新 APK。",
+    en: "Android downloads are served from R2, and each update replaces the APK at the same link.",
   },
   {
     zh: "iOS 测试版通过 TestFlight 分发，入口开放后会直接跳转。",
@@ -202,15 +202,6 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
           </a>
         ) : null}
       </div>
-      {channel.mirrorLinks.length > 0 && (
-        <div className="mirror-links" aria-label={`${channel.title} mirror links`}>
-          {channel.mirrorLinks.map((item) => (
-            <a key={item.href} href={siteHref(item.href)}>
-              {item.label}
-            </a>
-          ))}
-        </div>
-      )}
       {noteCopy ? (
         <p className="release-note">
           <LocalizedText zh={noteCopy.zh} en={noteCopy.en} />
@@ -333,8 +324,8 @@ export default async function DownloadPage() {
           </h1>
           <p className="lede">
             <LocalizedText
-              zh="这一页集中放置 Android、iOS、版本说明、镜像和安装步骤，让下载路径更短。"
-              en="This page keeps Android, iOS, release notes, mirrors, and install steps in one place so the download path stays short."
+              zh="这一页集中放置 Android、iOS、版本说明和安装步骤，让下载路径更短。"
+              en="This page keeps Android, iOS, release notes, and install steps in one place so the download path stays short."
             />
           </p>
         </div>

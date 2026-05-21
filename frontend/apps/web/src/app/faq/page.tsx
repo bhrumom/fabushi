@@ -20,8 +20,8 @@ const faqItems = [
   {
     questionZh: "Android 下载慢或安装失败怎么办？",
     questionEn: "What should I do if Android download is slow or installation fails?",
-    answerZh: "先尝试当前版本卡片里的镜像链接，再确认下载的是对应平台和版本；如果仍然失败，把设备型号、系统版本和错误截图发给支持邮箱。",
-    answerEn: "Try the mirror link on the current release card first, then confirm that you downloaded the matching platform and version. If it still fails, send the device model, OS version, and an error screenshot to support.",
+    answerZh: "先重新点击当前版本卡片里的主下载入口，再确认下载的是对应平台和版本；如果仍然失败，把设备型号、系统版本和错误截图发给支持邮箱。",
+    answerEn: "Use the main download button on the current release card again, then confirm that you downloaded the matching platform and version. If it still fails, send the device model, OS version, and an error screenshot to support.",
   },
   {
     questionZh: "iOS 为什么会跳到 TestFlight？",
@@ -32,8 +32,8 @@ const faqItems = [
   {
     questionZh: "下载前我最少要确认哪些信息？",
     questionEn: "What should I confirm before downloading?",
-    answerZh: "至少先确认设备平台、版本偏好、发布时间，以及是否需要镜像或 TestFlight。这样能明显减少下错包或装不上去的概率。",
-    answerEn: "At minimum, confirm the device platform, version preference, publish date, and whether you need a mirror or TestFlight. That reduces the chance of downloading the wrong build or hitting an avoidable install failure.",
+    answerZh: "至少先确认设备平台、版本偏好、发布时间，以及是否需要 TestFlight。这样能明显减少下错包或装不上去的概率。",
+    answerEn: "At minimum, confirm the device platform, version preference, publish date, and whether you need TestFlight. That reduces the chance of downloading the wrong build or hitting an avoidable install failure.",
   },
   {
     questionZh: "联系支持前最好准备什么？",
@@ -56,7 +56,7 @@ export const metadata: Metadata = {
     "iOS 下载",
     "TestFlight",
     "安装失败",
-    "镜像下载",
+    "R2 下载",
     "版本说明",
     "Fabushi",
   ],

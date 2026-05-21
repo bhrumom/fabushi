@@ -8,16 +8,7 @@ from datetime import datetime, timezone
 release_repo = os.environ["RELEASE_REPO"]
 release_tag = os.environ["RELEASE_TAG"]
 ios_testflight_public_url = os.environ.get("IOS_TESTFLIGHT_PUBLIC_URL", "").strip()
-mirror_lines = [
-    line.strip()
-    for line in os.environ.get("OFFICIAL_SITE_GITHUB_MIRROR_BASES", "").splitlines()
-    if line.strip()
-]
-if not mirror_lines:
-    mirror_lines = [
-        "国内镜像 1|https://mirror.ghproxy.com/https://github.com/",
-        "国内镜像 2|https://ghfast.top/https://github.com/",
-    ]
+android_apk_public_href = os.environ.get("ANDROID_APK_PUBLIC_HREF", "").strip()
 
 TECHNICAL_RELEASE_LINE_PATTERN = re.compile(
     r"(^pr\s*#\d+)|"
@@ -42,7 +33,7 @@ RELEASE_SUMMARY_RULES = [
         "减少更新后仍显示旧内容的情况。",
     ),
     (
-        re.compile(r"android|apk|mirror", re.IGNORECASE),
+        re.compile(r"android|apk|r2", re.IGNORECASE),
         "改进 Android 测试版下载与安装稳定性。",
     ),
     (
@@ -198,20 +189,6 @@ apk_assets = [asset for asset in assets if asset.get("name", "").endswith(".apk"
 apk_asset = next((asset for asset in apk_assets if "arm64" in asset.get("name", "")), apk_assets[0]) if apk_assets else None
 
 
-def build_mirror_links(primary_href):
-    prefix = "https://github.com/"
-    if not primary_href.startswith(prefix):
-        return []
-    path = primary_href[len(prefix):]
-    result = []
-    for line in mirror_lines:
-        label, separator, mirror_prefix = line.partition("|")
-        if not separator or not label.strip() or not mirror_prefix.strip():
-            continue
-        result.append({"label": label.strip(), "href": f"{mirror_prefix.strip()}{path}"})
-    return result
-
-
 testflight_status = {}
 testflight_asset = next((asset for asset in assets if asset.get("name") == "TESTFLIGHT_UPLOAD_STATUS.txt"), None)
 if testflight_asset:
@@ -228,26 +205,26 @@ release_url = release.get("html_url") or f"https://github.com/{release_repo}/rel
 channels = []
 notes = []
 
-if apk_asset:
+if apk_asset and android_apk_public_href:
     channels.append(
         {
             "platform": "Android",
             "audience": "beta",
             "status": "Beta 自动同步",
             "title": "Android Beta",
-            "description": "官网直接读取最新发布版本的 APK 安装包，安装包发布后这里会自动更新。",
+            "description": "官网按钮会直接下载已经同步到 R2 的最新 Android APK 安装包。",
             "primaryLabel": "下载 Android Beta",
-            "primaryHref": apk_asset["browser_download_url"],
+            "primaryHref": android_apk_public_href,
             "version": release_tag,
             "publishedAt": release.get("published_at"),
             "updateSummary": summary,
-            "mirrorLinks": build_mirror_links(apk_asset["browser_download_url"]),
-            "note": "国内访问较慢时，可以优先尝试镜像下载入口。",
-            "releasePageHref": release_url,
+            "mirrorLinks": [],
+            "note": "每次发布新的 Android APK 后，R2 中的安装包会被覆盖为最新版本。",
         }
     )
-    notes.append("Android beta 下载链接来自本次发布中的 APK 资产。")
-    notes.append("镜像链接面向国内网络环境准备，如镜像暂时不可用请使用原始下载地址。")
+    notes.append("Android beta APK 已同步到 R2，官网按钮会直接下载 R2 中的最新安装包。")
+elif apk_asset:
+    notes.append("本次 release 带有 Android APK，但没有拿到 R2 公网地址，官网会继续保留上一版 Android 入口。")
 
 if testflight_status:
     tf_status = testflight_status.get("status", "")

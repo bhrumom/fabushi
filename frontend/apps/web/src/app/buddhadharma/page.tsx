@@ -166,8 +166,8 @@ const learningPaths = [
     labelEn: "Download",
     titleZh: "把经文听诵、禅修与修行记录放进日常。",
     titleEn: "Bring sutra listening, meditation, and practice tracking into daily life.",
-    descriptionZh: "如果你已经准备开始使用产品，可以直接查看 Android、iOS 和镜像入口。",
-    descriptionEn: "If you are ready to use the product, go straight to the Android, iOS, and mirror download paths.",
+    descriptionZh: "如果你已经准备开始使用产品，可以直接查看 Android 和 iOS 下载入口。",
+    descriptionEn: "If you are ready to use the product, go straight to the Android and iOS download paths.",
   },
 ] as const;
 
