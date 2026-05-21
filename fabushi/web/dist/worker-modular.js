@@ -392,8 +392,8 @@ async function generateAlipayLoginUrl(env, platform) {
       redirectUri = encodeURIComponent(`${workerUrl}/api/auth/alipay/macos-callback`);
       console.log("macOS\u5E94\u7528\u4E13\u7528\u56DE\u8C03\u5730\u5740:", redirectUri);
     } else if (isMobileApp) {
-      redirectUri = encodeURIComponent(`${workerUrl}/api/auth/alipay/mobile-callback`);
-      console.log("\u79FB\u52A8\u7AEF\u5E94\u7528\u4E13\u7528\u56DE\u8C03\u5730\u5740:", redirectUri);
+      redirectUri = encodeURIComponent(`${workerUrl}/api/auth/alipay/callback`);
+      console.log("\u79FB\u52A8\u7AEF\u5E94\u7528\u4F7F\u7528\u6807\u51C6OAuth\u56DE\u8C03\u5730\u5740:", redirectUri);
     } else {
       redirectUri = encodeURIComponent(`${workerUrl}/api/auth/alipay/callback`);
       console.log("Web\u5E94\u7528\u6807\u51C6\u56DE\u8C03\u5730\u5740:", redirectUri);
