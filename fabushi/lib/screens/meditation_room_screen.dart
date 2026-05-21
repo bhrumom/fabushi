@@ -841,12 +841,12 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           // Refined delicate scaling to prevent blocking the Buddha
           final baseScale = (size.width / 400.0).clamp(0.8, 1.2);
 
-          final incenseWidth = 100.0 * baseScale;
+          final incenseWidth = 120.0 * baseScale;
           final incenseHeight = incenseWidth * 1.24;
           const smokeRise = 100.0;
 
           // Delicate Sutra book
-          final bookWidth = 64.0 * baseScale;
+          final bookWidth = 72.0 * baseScale;
           final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
 
           final centerX = size.width / 2;
@@ -862,8 +862,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           final bookTop = incenseTop - bookHeight - 16 * baseScale;
 
           // Side offerings (Fruit & Lamps)
-          final lampWidth = 64.0 * baseScale;
-          final fruitWidth = 80.0 * baseScale;
+          final lampWidth = 76.0 * baseScale;
+          final fruitWidth = 96.0 * baseScale;
 
           // Position them symmetrically on the sides of the incense
           final leftItemLeft =
