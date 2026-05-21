@@ -155,7 +155,22 @@ jobs:
               --arg index "https://${root_domain}/index.html" \
               --arg download "https://${root_domain}/download" \
               --arg download_slash "https://${root_domain}/download/" \
-              '{files: [$root, $index, $download, $download_slash]}'
+              --arg releases_api "https://${root_domain}/api/releases.json" \
+              '{files: [$root, $index, $download, $download_slash, $releases_api]}'
           )"
-          purge_response="$(cloudflare_request POST "${api_base}/zones/${zone_id}/purge_cache" "${purge_body}")"
-          assert_cloudflare_success "${purge_response}" "purge root redirect cache"
+          if purge_response="$(
+            curl -sS -X POST "${api_base}/zones/${zone_id}/purge_cache" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "${purge_body}"
+          )"; then
+            purge_success="$(jq -r '.success // false' <<< "${purge_response}" 2>/dev/null || echo false)"
+            if [ "${purge_success}" = "true" ]; then
+              echo "Purged Cloudflare cache for official site entry points."
+            else
+              echo "::warning::Cloudflare cache purge failed after deploy; continuing because Worker and assets were deployed." >&2
+              jq '.' <<< "${purge_response}" >&2 || true
+            fi
+          else
+            echo "::warning::Cloudflare cache purge request failed after deploy; continuing because Worker and assets were deployed." >&2
+          fi
