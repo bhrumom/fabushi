@@ -69,7 +69,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
     _incenseController = AnimationController(
       vsync: this,
-      duration: const Duration(minutes: 15), // 15分钟烧完一炷香，循环
+      duration: const Duration(hours: 2), // 极长时间，不再限制
     );
 
     _pulseController = AnimationController(
@@ -154,7 +154,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         _welcomeController.forward();
       }
       if (_sessionManager.isInSession && !_incenseController.isAnimating) {
-        _incenseController.repeat();
+        _incenseController.forward();
       }
       return;
     }
@@ -218,7 +218,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     // 开始香的燃烧动画
     if (_isPageVisible) {
       _incenseController.reset();
-      _incenseController.repeat();
+      _incenseController.forward();
     }
 
     // 加入在线活动
@@ -837,10 +837,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           final title = practice?.title ?? '选择功课';
           final opensSelection =
               practice == null || practice.filePath.startsWith('manual:');
-          
+
           // Refined delicate scaling to prevent blocking the Buddha
           final baseScale = (size.width / 400.0).clamp(0.8, 1.2);
-          
+
           final incenseWidth = 100.0 * baseScale;
           final incenseHeight = incenseWidth * 1.24;
           const smokeRise = 100.0;
@@ -848,7 +848,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           // Delicate Sutra book
           final bookWidth = 64.0 * baseScale;
           final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
-          
+
           final centerX = size.width / 2;
           final incenseLeft = centerX - incenseWidth / 2;
           final bookLeft = centerX - bookWidth / 2;
@@ -866,9 +866,11 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           final fruitWidth = 80.0 * baseScale;
 
           // Position them symmetrically on the sides of the incense
-          final leftItemLeft = centerX - incenseWidth / 2 - fruitWidth - 12 * baseScale;
-          final rightItemLeft = centerX + incenseWidth / 2 + 12 * baseScale;
-          
+          final leftItemLeft =
+              centerX - incenseWidth / 2 - fruitWidth - 12 * baseScale;
+          final rightItemLeft =
+              centerX + incenseWidth / 2 + 12 * baseScale;
+
           // Align their bottoms precisely with altarBaseY
           final sideItemTopOffset = altarBaseY - fruitWidth;
           final lampTopOffset = altarBaseY - lampWidth * 1.4;
@@ -935,7 +937,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   ),
                 ),
               ),
-              
+
               // Smoke Overlay for Incense
               Positioned(
                 left: incenseLeft,
