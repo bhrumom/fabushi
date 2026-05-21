@@ -7,7 +7,7 @@
       "title": "Android Beta",
       "description": "官网按钮会直接下载已经同步到 R2 的最新 Android APK 安装包。",
       "primaryLabel": "下载 Android Beta",
-      "primaryHref": "https://pub-1687c02b123649f2813adcb31f346698.r2.dev/downloads/android/fabushi-android-beta.apk",
+      "primaryHref": "https://fabushi.ombhrum.com/downloads/android/fabushi-android-beta.apk",
       "version": "v1.0.0-354-mobile.60549067903a",
       "publishedAt": "2026-05-21T02:10:48Z",
       "updateSummary": [
