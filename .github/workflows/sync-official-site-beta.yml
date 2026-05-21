@@ -123,7 +123,8 @@ jobs:
             --file "$apk_path" \
             --content-type application/vnd.android.package-archive \
             --cache-control no-store \
-            --force
+            --force \
+            --remote
 
           if [ -z "$public_base" ]; then
             dev_url_output="$(npx --yes wrangler@latest r2 bucket dev-url get "$bucket" 2>&1 || true)"
