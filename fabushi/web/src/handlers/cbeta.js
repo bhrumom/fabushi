@@ -1,7 +1,7 @@
 import { CORS_HEADERS } from '../config/constants.js';
 import { jsonResponse } from '../utils/response.js';
 
-const CBETA_API_ROOT = 'https://api.cbetaonline.cn';
+const DEFAULT_CBETA_PUBLIC_API_ROOT = 'https://fabushi.ombhrum.com/api/cbeta';
 const DEFAULT_SEND_WORKS = [
   'T0365',
   'T0251',
@@ -23,8 +23,13 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function buildCbetaUrl(path, params = {}) {
-  const url = new URL(path.replace(/^\/+/, ''), `${CBETA_API_ROOT}/`);
+function getCbetaApiRoot(env) {
+  const configured = env?.CBETA_PUBLIC_API_ROOT;
+  return `${configured || DEFAULT_CBETA_PUBLIC_API_ROOT}`.trim().replace(/\/+$/g, '');
+}
+
+function buildCbetaUrl(env, path, params = {}) {
+  const url = new URL(path.replace(/^\/+/, ''), `${getCbetaApiRoot(env)}/`);
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && `${value}` !== '') {
       url.searchParams.set(key, `${value}`);
@@ -38,10 +43,10 @@ function summarizeBody(body) {
   return body.length > 600 ? `${body.slice(0, 600)}...` : body;
 }
 
-async function fetchJsonWithRetry(path, params = {}, options = {}) {
+async function fetchJsonWithRetry(env, path, params = {}, options = {}) {
   const retries = options.retries ?? DEFAULT_RETRY_COUNT;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const url = buildCbetaUrl(path, params);
+  const url = buildCbetaUrl(env, path, params);
   const attempts = [];
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -185,7 +190,7 @@ function parseLimit(value, fallback) {
   return Math.min(Math.max(parsed, 1), 24);
 }
 
-function toCbetaItem(work, juan, payload, attempts) {
+function toCbetaItem(env, work, juan, payload, attempts) {
   const html = Array.isArray(payload?.results) ? payload.results[0] : '';
   const workInfo = payload?.work_info || {};
   const title = workInfo.title || extractTitleFromHtml(html) || work;
@@ -205,8 +210,8 @@ function toCbetaItem(work, juan, payload, attempts) {
     content,
     contentLength: content.length,
     source: 'CBETA',
-    sourceApi: CBETA_API_ROOT,
-    sourceUrl: buildCbetaUrl('juans', {
+    sourceApi: getCbetaApiRoot(env),
+    sourceUrl: buildCbetaUrl(env, 'juans', {
       work: workInfo.work || work,
       juan,
       work_info: 1,
@@ -226,7 +231,7 @@ function normalizeError(work, juan, error) {
   };
 }
 
-export async function handleGetCbetaSendTexts(request) {
+export async function handleGetCbetaSendTexts(request, env) {
   const url = new URL(request.url);
   const works = parseWorksParam(url.searchParams.get('works'));
   const limit = parseLimit(url.searchParams.get('limit'), DEFAULT_SEND_WORKS.length);
@@ -237,13 +242,13 @@ export async function handleGetCbetaSendTexts(request) {
 
   for (const work of selectedWorks) {
     try {
-      const { data, attempts } = await fetchJsonWithRetry('juans', {
+      const { data, attempts } = await fetchJsonWithRetry(env, 'juans', {
         work,
         juan,
         work_info: 1,
         toc: 1,
       });
-      items.push(toCbetaItem(work, juan, data, attempts));
+      items.push(toCbetaItem(env, work, juan, data, attempts));
     } catch (error) {
       errors.push(normalizeError(work, juan, error));
     }
@@ -252,7 +257,7 @@ export async function handleGetCbetaSendTexts(request) {
   const payload = {
     success: items.length > 0,
     source: 'CBETA',
-    api: CBETA_API_ROOT,
+    api: getCbetaApiRoot(env),
     requested: selectedWorks.length,
     count: items.length,
     items,
@@ -262,10 +267,10 @@ export async function handleGetCbetaSendTexts(request) {
   return jsonResponse(payload, items.length > 0 ? 200 : 502);
 }
 
-export async function handleProxyCbetaRequest(request) {
+export async function handleProxyCbetaRequest(request, env) {
   const sourceUrl = new URL(request.url);
   const cbetaPath = sourceUrl.pathname.replace(/^\/api\/cbeta\/?/, '');
-  const targetUrl = buildCbetaUrl(cbetaPath || '/', Object.fromEntries(sourceUrl.searchParams));
+  const targetUrl = buildCbetaUrl(env, cbetaPath || '/', Object.fromEntries(sourceUrl.searchParams));
   const response = await fetch(targetUrl.toString(), {
     method: request.method,
     headers: {
@@ -276,6 +281,7 @@ export async function handleProxyCbetaRequest(request) {
   const headers = new Headers(CORS_HEADERS);
   const contentType = response.headers.get('Content-Type');
   if (contentType) headers.set('Content-Type', contentType);
+  headers.set('X-Fabushi-Cbeta-Proxy', 'app-backend');
 
   return new Response(response.body, {
     status: response.status,
