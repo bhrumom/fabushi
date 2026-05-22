@@ -4,22 +4,12 @@ import { FaliuContentSearchEnhancer } from "../../components/faliu-content-searc
 import { FaliuMeritBenefitEnhancer } from "../../components/faliu-merit-benefit-enhancer";
 import { FaliuShell } from "../../components/faliu-shell";
 import { FaliuSynonymEnhancer } from "../../components/faliu-synonym-enhancer";
-import { FALIU_FEATURED_WORKS } from "../../lib/faliu-config";
-import {
-  buildCbetaContentId,
-  fetchAllWorks,
-  fetchBatchStats,
-  fetchWorkInfo,
-  type CbetaWorkInfo,
-  type ContentStats,
-  type CbetaWorkIndexItem,
-} from "../../lib/faliu-api";
 import { siteUrl } from "../../lib/site-url";
 
 const pageUrl = siteUrl("/faliu");
 const pageTitle = `法流 | CBETA 佛典流式浏览 | ${brand.name}`;
 const pageDescription =
-  "法流页使用 CBETA API 提供佛典题名、卷次与正文浏览，并接入法布施 App 后端的互动统计与评论数据。";
+  "法流页使用 Fabushi 自托管的 CBETA API 提供佛典题名、卷次与正文浏览，并接入法布施 App 后端的互动统计与评论数据。";
 
 export const metadata: Metadata = {
   title: pageTitle,
@@ -50,42 +40,7 @@ export const metadata: Metadata = {
   },
 };
 
-async function loadInitialFaliuData() {
-  try {
-    const allWorks = await fetchAllWorks();
-    const featuredSet = new Set(FALIU_FEATURED_WORKS);
-    const featuredWorks = allWorks
-      .filter((item) => featuredSet.has(item.work))
-      .sort((left, right) => FALIU_FEATURED_WORKS.indexOf(left.work) - FALIU_FEATURED_WORKS.indexOf(right.work))
-      .slice(0, 12);
-    const fallbackWorks = featuredWorks.length > 0 ? featuredWorks : allWorks.slice(0, 12);
-    const infoEntries = await Promise.all(
-      fallbackWorks.map(async (item) => {
-        const info = await fetchWorkInfo(item.work).catch(() => null);
-        return [item.work, info] as const;
-      }),
-    );
-    const initialWorkInfo: Record<string, CbetaWorkInfo | null> = Object.fromEntries(infoEntries);
-    const initialStats: Record<string, ContentStats> = await fetchBatchStats(
-      fallbackWorks.map((item) => buildCbetaContentId(item.work, item.juans[0] ?? "1")),
-    ).catch(() => ({}));
-
-    return {
-      initialWorks: fallbackWorks,
-      initialWorkInfo,
-      initialStats,
-    };
-  } catch {
-    return {
-      initialWorks: [] as CbetaWorkIndexItem[],
-      initialWorkInfo: {},
-      initialStats: {},
-    };
-  }
-}
-
-export default async function FaliuPage() {
-  const initialData = await loadInitialFaliuData();
+export default function FaliuPage() {
   const structuredData = {
     "@context": "https://schema.org",
     "@graph": [
@@ -118,7 +73,7 @@ export default async function FaliuPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
 
-      <FaliuShell {...initialData} />
+      <FaliuShell />
       <FaliuSynonymEnhancer />
       <FaliuContentSearchEnhancer />
       <FaliuMeritBenefitEnhancer />
