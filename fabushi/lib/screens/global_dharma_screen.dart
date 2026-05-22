@@ -101,9 +101,21 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
             ),
             tooltip: '搜索经文',
           ),
-          Selector<FileTransferModel, bool>(
-            selector: (_, m) => m.isTransferring,
-            builder: (_, isTransferring, __) => isTransferring
+          Consumer<FileTransferModel>(
+            builder: (context, model, child) => model.isPreparingSend
+                ? IconButton(
+                    icon: const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    ),
+                    onPressed: null,
+                    tooltip: '正在下载经文',
+                  )
+                : model.isTransferring
                 ? IconButton(
                     icon: const Icon(Icons.stop),
                     onPressed: _stopGlobalDharma,
@@ -128,7 +140,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
               m.globalDataSentMB,
               m.isLooping,
             ],
-            builder: (_, data, __) => _buildStatsCard(
+            builder: (context, data, child) => _buildStatsCard(
               data[0] as int,
               data[1] as int,
               data[2] as int,
@@ -140,7 +152,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
           // 当前日志
           Selector<FileTransferModel, String>(
             selector: (_, m) => m.currentLog,
-            builder: (_, log, __) => log.isNotEmpty
+            builder: (context, log, child) => log.isNotEmpty
                 ? Container(
                     padding: const EdgeInsets.all(16),
                     color: Colors.grey[100],
@@ -162,17 +174,62 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 : const SizedBox.shrink(),
           ),
 
+          Selector<FileTransferModel, String>(
+            selector: (_, m) => m.currentSendingScripture,
+            builder: (context, scripture, child) => scripture.isNotEmpty
+                ? Container(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.menu_book, color: Color(0xFF667eea)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '当前经文：《$scripture》',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+
           // 国家列表
           Expanded(child: _buildCountryList()),
         ],
       ),
-      floatingActionButton: Selector<FileTransferModel, bool>(
-        selector: (_, m) => m.isTransferring,
-        builder: (_, isTransferring, __) => FloatingActionButton.extended(
-          onPressed: isTransferring ? _stopGlobalDharma : _startGlobalDharma,
-          icon: Icon(isTransferring ? Icons.stop : Icons.play_arrow),
-          label: Text(isTransferring ? '停止发送' : '开始法布施'),
-          backgroundColor: isTransferring
+      floatingActionButton: Consumer<FileTransferModel>(
+        builder: (context, model, child) => FloatingActionButton.extended(
+          onPressed: model.isPreparingSend
+              ? null
+              : model.isTransferring
+              ? _stopGlobalDharma
+              : _startGlobalDharma,
+          icon: model.isPreparingSend
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Icon(model.isTransferring ? Icons.stop : Icons.play_arrow),
+          label: Text(
+            model.isPreparingSend
+                ? '下载经文中'
+                : model.isTransferring
+                ? '停止发送'
+                : '开始法布施',
+          ),
+          backgroundColor: model.isTransferring
               ? Colors.red
               : const Color(0xFF667eea),
           foregroundColor: Colors.white,
@@ -259,7 +316,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
 
   Widget _buildCountryList() {
     return Consumer<FileTransferModel>(
-      builder: (_, model, __) {
+      builder: (context, model, child) {
         final statuses = model.countryStatuses;
         return Column(
           children: [

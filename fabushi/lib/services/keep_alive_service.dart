@@ -237,7 +237,7 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
     mediaItem.add(
       MediaItem(
         id: 'keep_alive_dharani',
-        title: '大乘',
+        title: _mediaTitle(),
         artist: _audioName,
         album: '后台保活中',
         duration: Duration.zero,
@@ -381,12 +381,16 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
     mediaItem.add(
       MediaItem(
         id: 'keep_alive_dharani',
-        title: '大乘',
+        title: _mediaTitle(),
         artist: subtitle,
-        album: _audioName,
+        album: '大乘',
         duration: _audioPlayer.duration ?? Duration.zero,
       ),
     );
+  }
+
+  String _mediaTitle() {
+    return _audioName.isEmpty ? '大乘' : '正在发送《$_audioName》';
   }
 
   /// 更新发送进度
@@ -394,6 +398,7 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
     required int sentCount,
     required int totalCount,
     required String currentCountry,
+    String? audioName,
     int? loopCount,
     bool isLoopbackActive = false,
     int loopbackCount = 0,
@@ -401,6 +406,9 @@ class KeepAliveAudioHandler extends BaseAudioHandler with SeekHandler {
     _sentCount = sentCount;
     _totalCount = totalCount;
     _currentCountry = currentCountry;
+    if (audioName != null && audioName.isNotEmpty) {
+      _audioName = audioName;
+    }
     if (loopCount != null) {
       _loopCount = loopCount;
     }
@@ -838,8 +846,10 @@ class KeepAliveService {
     // 降级模式：显示备用通知
     if (_isDegradedMode) {
       await _showFallbackNotification(
-        title: '大乘',
-        body: '${audioName ?? "准备中"} · 发送到 $totalCountries 个国家',
+        title: audioName == null || audioName.isEmpty
+            ? '大乘'
+            : '正在发送《$audioName》',
+        body: '发送到 $totalCountries 个国家',
       );
       debugPrint('📢 已显示备用通知（降级模式）');
     }
@@ -860,6 +870,7 @@ class KeepAliveService {
     required int sentCount,
     required int totalCount,
     required String currentCountry,
+    String? audioName,
     int? loopCount,
     bool isLoopbackActive = false,
     int loopbackCount = 0,
@@ -868,6 +879,7 @@ class KeepAliveService {
       sentCount: sentCount,
       totalCount: totalCount,
       currentCountry: currentCountry,
+      audioName: audioName,
       loopCount: loopCount,
       isLoopbackActive: isLoopbackActive,
       loopbackCount: loopbackCount,
@@ -883,7 +895,12 @@ class KeepAliveService {
         subtitle += ' | 🟢 杨升: $loopbackCount次';
       }
 
-      _showFallbackNotification(title: '大乘', body: subtitle);
+      _showFallbackNotification(
+        title: audioName == null || audioName.isEmpty
+            ? '大乘'
+            : '正在发送《$audioName》',
+        body: subtitle,
+      );
     }
   }
 
