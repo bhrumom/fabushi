@@ -60,6 +60,7 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           NEXT_PUBLIC_SITE_ORIGIN: ${{ vars.OFFICIAL_SITE_ORIGIN || 'https://fabushi.ombhrum.com' }}
+          NEXT_PUBLIC_CBETA_API_ROOT: ${{ vars.CBETA_API_ROOT || 'https://fabushi.ombhrum.com/api/cbeta' }}
           NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_REPO: ${{ vars.OFFICIAL_SITE_RELEASE_REPO || github.repository }}
           NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL: ${{ vars.IOS_TESTFLIGHT_PUBLIC_URL || '' }}
         run: pnpm build:web
@@ -71,6 +72,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID || secrets.CF_ZONE_ID || vars.CLOUDFLARE_ZONE_ID || vars.CF_ZONE_ID }}
           OFFICIAL_SITE_R2_BUCKET: ${{ vars.OFFICIAL_SITE_R2_BUCKET || 'bushi' }}
+          CBETA_MIRROR_R2_BUCKET: ${{ vars.CBETA_MIRROR_R2_BUCKET || 'cbeta-api-mirror' }}
+          CBETA_UPSTREAM_BASE: ${{ vars.CBETA_UPSTREAM_BASE || 'https://api.cbetaonline.cn' }}
         run: |
           set -euo pipefail
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
@@ -79,10 +82,14 @@ jobs:
           fi
 
           official_site_r2_bucket="${OFFICIAL_SITE_R2_BUCKET:-bushi}"
-          cat > wrangler.official-site.toml <<EOF
+          cbeta_mirror_r2_bucket="${CBETA_MIRROR_R2_BUCKET:-cbeta-api-mirror}"
+          cat > wrangler.official-site.toml <<EOF2
           name = "fabushi-official-site"
           main = "official-site-worker.js"
-          compatibility_date = "2026-05-06"
+          compatibility_date = "2026-05-22"
+
+          [vars]
+          CBETA_UPSTREAM_BASE = "${CBETA_UPSTREAM_BASE}"
 
           [assets]
           directory = "apps/web/out"
@@ -90,7 +97,11 @@ jobs:
           [[r2_buckets]]
           binding = "OFFICIAL_SITE_R2"
           bucket_name = "${official_site_r2_bucket}"
-          EOF
+
+          [[r2_buckets]]
+          binding = "CBETA_MIRROR"
+          bucket_name = "${cbeta_mirror_r2_bucket}"
+          EOF2
 
           npx --yes wrangler@latest deploy --config wrangler.official-site.toml \
             --domain fabushi.ombhrum.com
