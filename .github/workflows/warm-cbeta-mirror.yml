@@ -1,0 +1,106 @@
+name: Warm CBETA mirror
+
+on:
+  workflow_dispatch:
+    inputs:
+      work_limit:
+        description: Number of works to prewarm; 0 means all works
+        required: false
+        default: "0"
+      juan_limit:
+        description: Max juans per work to prewarm; 0 means all juans
+        required: false
+        default: "0"
+  schedule:
+    - cron: "20 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-cbeta-mirror
+  cancel-in-progress: false
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Prewarm CBETA mirror through official site worker
+        env:
+          FABUSHI_CBETA_API_ROOT: ${{ vars.CBETA_API_ROOT || 'https://fabushi.ombhrum.com/api/cbeta' }}
+          WORK_LIMIT: ${{ github.event.inputs.work_limit || '0' }}
+          JUAN_LIMIT: ${{ github.event.inputs.juan_limit || '0' }}
+        run: |
+          node <<'EOF2'
+          const root = (process.env.FABUSHI_CBETA_API_ROOT || 'https://fabushi.ombhrum.com/api/cbeta').replace(/\/+$/g, '');
+          const workLimit = Number.parseInt(process.env.WORK_LIMIT || '0', 10) || 0;
+          const juanLimit = Number.parseInt(process.env.JUAN_LIMIT || '0', 10) || 0;
+          const concurrency = 6;
+          const retries = 3;
+
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          async function request(path, attempt = 1) {
+            const url = `${root}/${path.replace(/^\/+/, '')}`;
+            const response = await fetch(url, {
+              headers: {
+                Accept: 'application/json',
+                Referer: 'https://fabushi.ombhrum.com/',
+              },
+            });
+
+            if (!response.ok) {
+              const body = await response.text().catch(() => '');
+              if (attempt < retries) {
+                await sleep(400 * attempt);
+                return request(path, attempt + 1);
+              }
+              throw new Error(`${response.status} ${response.statusText} ${url} ${body.slice(0, 300)}`);
+            }
+
+            return response.json();
+          }
+
+          async function runQueue(items, worker) {
+            const queue = [...items];
+            const runners = Array.from({ length: Math.min(concurrency, queue.length || 1) }, async () => {
+              while (queue.length > 0) {
+                const item = queue.shift();
+                if (!item) {
+                  return;
+                }
+                await worker(item);
+              }
+            });
+            await Promise.all(runners);
+          }
+
+          const allWorks = await request('download/all-works.json');
+          const works = Array.isArray(allWorks) ? allWorks : [];
+          const selectedWorks = workLimit > 0 ? works.slice(0, workLimit) : works;
+
+          console.log(`Loaded ${works.length} works, prewarming ${selectedWorks.length}.`);
+
+          await runQueue(selectedWorks, async (item) => {
+            const work = item?.work;
+            const juans = Array.isArray(item?.juans) ? item.juans : [];
+            if (!work) {
+              return;
+            }
+
+            await request(`works?work=${encodeURIComponent(work)}`);
+            const selectedJuans = juanLimit > 0 ? juans.slice(0, juanLimit) : juans;
+            await runQueue(selectedJuans, async (juan) => {
+              await request(
+                `juans?work=${encodeURIComponent(work)}&juan=${encodeURIComponent(String(juan))}&work_info=1&toc=1`,
+              );
+            });
+            console.log(`Prewarmed ${work} (${selectedJuans.length} juans).`);
+          });
+          EOF2
