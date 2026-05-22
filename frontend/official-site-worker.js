@@ -3,6 +3,8 @@ const APP_PROXY_ROUTE = /^\/api\/app\/(.+)$/;
 const CBETA_API_BASE = "https://api.cbetaonline.cn";
 const APP_API_BASE = "https://api.ombhrum.com/api";
 const OFFICIAL_SITE_HOST = "fabushi.ombhrum.com";
+const RELEASES_API_PATH = "/api/releases.json";
+const RELEASES_API_R2_KEY = "api/releases.json";
 const ROOT_DOMAIN_REDIRECT_HOSTS = new Set(["ombhrum.com"]);
 const ANDROID_R2_DOWNLOADS = new Map([
   [
@@ -32,6 +34,10 @@ export default {
     const cbetaMatch = url.pathname.match(CBETA_PROXY_ROUTE);
     const appMatch = url.pathname.match(APP_PROXY_ROUTE);
 
+    if (url.pathname === RELEASES_API_PATH) {
+      return serveReleaseStateApi(request, env);
+    }
+
     if (androidDownload) {
       return serveAndroidR2Download(request, env, androidDownload);
     }
@@ -55,6 +61,76 @@ function redirectToOfficialSite(url) {
   return Response.redirect(redirectUrl.toString(), 308);
 }
 
+function getOfficialSiteBucket(env) {
+  const bucket = env?.OFFICIAL_SITE_R2;
+  if (!bucket || typeof bucket.get !== "function" || typeof bucket.head !== "function") {
+    return null;
+  }
+  return bucket;
+}
+
+async function serveReleaseStateApi(request, env) {
+  const allowedMethods = ["GET", "HEAD", "OPTIONS"];
+  if (!allowedMethods.includes(request.method)) {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: {
+        Allow: "GET, HEAD",
+      },
+    });
+  }
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        Allow: "GET, HEAD",
+      },
+    });
+  }
+
+  const bucket = getOfficialSiteBucket(env);
+  if (!bucket) {
+    return new Response(JSON.stringify({ betaChannels: [], stableChannels: [], screenshots: {}, releases: [], notes: [] }), {
+      status: 503,
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json; charset=utf-8",
+        "X-Fabushi-Release-State": "r2-not-configured",
+      },
+    });
+  }
+
+  const object = request.method === "HEAD" ? await bucket.head(RELEASES_API_R2_KEY) : await bucket.get(RELEASES_API_R2_KEY);
+  if (!object) {
+    return new Response(JSON.stringify({ betaChannels: [], stableChannels: [], screenshots: {}, releases: [], notes: [] }), {
+      status: 404,
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json; charset=utf-8",
+        "X-Fabushi-Release-State": "r2-missing",
+      },
+    });
+  }
+
+  const headers = new Headers();
+  object.writeHttpMetadata?.(headers);
+  headers.set("Content-Type", "application/json; charset=utf-8");
+  headers.set("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
+  headers.set("X-Fabushi-Release-State", "r2");
+  headers.set("Content-Length", String(object.size));
+
+  const etag = object.httpEtag || (object.etag ? `"${object.etag}"` : "");
+  if (etag) {
+    headers.set("ETag", etag);
+  }
+
+  return new Response(request.method === "HEAD" ? null : object.body, {
+    status: 200,
+    headers,
+  });
+}
+
 async function serveAndroidR2Download(request, env, download) {
   const allowedMethods = ["GET", "HEAD", "OPTIONS"];
   if (!allowedMethods.includes(request.method)) {
@@ -75,8 +151,8 @@ async function serveAndroidR2Download(request, env, download) {
     });
   }
 
-  const bucket = env?.OFFICIAL_SITE_R2;
-  if (!bucket || typeof bucket.get !== "function" || typeof bucket.head !== "function") {
+  const bucket = getOfficialSiteBucket(env);
+  if (!bucket) {
     return new Response("Download storage is not configured.", {
       status: 503,
       headers: {
