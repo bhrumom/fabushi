@@ -1,8 +1,14 @@
 import json
+import os
 from pathlib import Path
 
-source_path = Path("OFFICIAL_SITE_RELEASE_STATE.json")
-target_path = Path("frontend/apps/web/public/api/releases.json")
+source_path = Path(os.environ.get("OFFICIAL_SITE_RELEASE_STATE_PATH", "OFFICIAL_SITE_RELEASE_STATE.json"))
+existing_path = Path(
+    os.environ.get("OFFICIAL_SITE_RELEASES_EXISTING_PATH", "frontend/apps/web/public/api/releases.json")
+)
+output_path = Path(
+    os.environ.get("OFFICIAL_SITE_RELEASES_OUTPUT_PATH", "frontend/apps/web/public/api/releases.json")
+)
 
 state = json.loads(source_path.read_text(encoding="utf-8"))
 channels = state.get("channels", [])
@@ -10,9 +16,9 @@ incoming_beta = [channel for channel in channels if channel.get("audience") == "
 incoming_stable = [channel for channel in channels if channel.get("audience") == "stable"]
 
 existing = {}
-if target_path.exists():
+if existing_path.exists():
     try:
-        existing = json.loads(target_path.read_text(encoding="utf-8"))
+        existing = json.loads(existing_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         existing = {}
 
@@ -51,4 +57,5 @@ api_state = {
     "notes": state.get("notes") or (existing.get("notes") if isinstance(existing, dict) else []) or [],
 }
 
-target_path.write_text(json.dumps(api_state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+output_path.parent.mkdir(parents=True, exist_ok=True)
+output_path.write_text(json.dumps(api_state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
