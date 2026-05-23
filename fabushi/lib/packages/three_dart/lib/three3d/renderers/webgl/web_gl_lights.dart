@@ -30,16 +30,25 @@ class UniformsCache {
           "distance": 0,
           "coneCos": 0,
           "penumbraCos": 0,
-          "decay": 0
+          "decay": 0,
         };
         break;
 
       case 'PointLight':
-        uniforms = {"position": Vector3.init(), "color": Color(1, 1, 1), "distance": 0, "decay": 0};
+        uniforms = {
+          "position": Vector3.init(),
+          "color": Color(1, 1, 1),
+          "distance": 0,
+          "decay": 0,
+        };
         break;
 
       case 'HemisphereLight':
-        uniforms = {"direction": Vector3.init(), "skyColor": Color(0, 0, 0), "groundColor": Color(0, 0, 0)};
+        uniforms = {
+          "direction": Vector3.init(),
+          "skyColor": Color(0, 0, 0),
+          "groundColor": Color(0, 0, 0),
+        };
         break;
 
       case 'RectAreaLight':
@@ -47,7 +56,7 @@ class UniformsCache {
           "color": Color(0, 0, 0),
           "position": Vector3.init(),
           "halfWidth": Vector3.init(),
-          "halfHeight": Vector3.init()
+          "halfHeight": Vector3.init(),
         };
         break;
     }
@@ -70,11 +79,21 @@ class ShadowUniformsCache {
 
     switch (light.type) {
       case 'DirectionalLight':
-        uniforms = {"shadowBias": 0, "shadowNormalBias": 0, "shadowRadius": 1, "shadowMapSize": Vector2(null, null)};
+        uniforms = {
+          "shadowBias": 0,
+          "shadowNormalBias": 0,
+          "shadowRadius": 1,
+          "shadowMapSize": Vector2(null, null),
+        };
         break;
 
       case 'SpotLight':
-        uniforms = {"shadowBias": 0, "shadowNormalBias": 0, "shadowRadius": 1, "shadowMapSize": Vector2(null, null)};
+        uniforms = {
+          "shadowBias": 0,
+          "shadowNormalBias": 0,
+          "shadowRadius": 1,
+          "shadowMapSize": Vector2(null, null),
+        };
         break;
 
       case 'PointLight':
@@ -84,12 +103,11 @@ class ShadowUniformsCache {
           "shadowRadius": 1,
           "shadowMapSize": Vector2(null, null),
           "shadowCameraNear": 1,
-          "shadowCameraFar": 1000
+          "shadowCameraFar": 1000,
         };
         break;
 
       // TODO (abelnation): set RectAreaLight shadow uniforms
-
     }
 
     lights[light.id] = uniforms;
@@ -128,7 +146,7 @@ class WebGLLights {
         "hemiLength": -1,
         "numDirectionalShadows": -1,
         "numPointShadows": -1,
-        "numSpotShadows": -1
+        "numSpotShadows": -1,
       },
       "ambient": List<double>.from([0.0, 0.0, 0.0]),
       "probe": [],
@@ -147,7 +165,7 @@ class WebGLLights {
       "pointShadow": [],
       "pointShadowMap": [],
       "pointShadowMatrix": [],
-      "hemi": []
+      "hemi": [],
     });
 
     for (int i = 0; i < 9; i++) {
@@ -190,7 +208,9 @@ class WebGLLights {
       var intensity = light.intensity;
       var distance = light.distance;
 
-      var shadowMap = (light.shadow != null && light.shadow!.map != null) ? light.shadow!.map!.texture : null;
+      var shadowMap = (light.shadow != null && light.shadow!.map != null)
+          ? light.shadow!.map!.texture
+          : null;
 
       if (light.type == "AmbientLight") {
         r += color.r * intensity * scaleFactor;
@@ -203,7 +223,9 @@ class WebGLLights {
       } else if (light.type == "DirectionalLight") {
         var uniforms = cache.get(light);
 
-        uniforms["color"].copy(light.color).multiplyScalar(light.intensity * scaleFactor);
+        uniforms["color"]
+            .copy(light.color)
+            .multiplyScalar(light.intensity * scaleFactor);
 
         if (light.castShadow) {
           var shadow = light.shadow!;
@@ -216,13 +238,21 @@ class WebGLLights {
           shadowUniforms["shadowMapSize"] = shadow.mapSize;
 
           // state.directionalShadow[ directionalLength ] = shadowUniforms;
-          listSetter(state.directionalShadow, directionalLength, shadowUniforms);
+          listSetter(
+            state.directionalShadow,
+            directionalLength,
+            shadowUniforms,
+          );
 
           // state["directionalShadowMap"][ directionalLength ] = shadowMap;
           listSetter(state.directionalShadowMap, directionalLength, shadowMap);
 
           // state["directionalShadowMatrix"][ directionalLength ] = light.shadow!.matrix;
-          listSetter(state.directionalShadowMatrix, directionalLength, light.shadow!.matrix);
+          listSetter(
+            state.directionalShadowMatrix,
+            directionalLength,
+            light.shadow!.matrix,
+          );
 
           numDirectionalShadows++;
         }
@@ -240,7 +270,9 @@ class WebGLLights {
         uniforms["distance"] = distance;
 
         uniforms["coneCos"] = Math.cos(light.angle!);
-        uniforms["penumbraCos"] = Math.cos(light.angle! * (1 - light.penumbra!));
+        uniforms["penumbraCos"] = Math.cos(
+          light.angle! * (1 - light.penumbra!),
+        );
         uniforms["decay"] = light.decay;
 
         if (light.castShadow) {
@@ -289,7 +321,9 @@ class WebGLLights {
       } else if (light.type == "PointLight") {
         var uniforms = cache.get(light);
 
-        uniforms["color"].copy(light.color).multiplyScalar(light.intensity * scaleFactor);
+        uniforms["color"]
+            .copy(light.color)
+            .multiplyScalar(light.intensity * scaleFactor);
 
         // TODO distance 默认0 ？？
         uniforms["distance"] = light.distance ?? 0;
@@ -314,7 +348,11 @@ class WebGLLights {
           listSetter(state.pointShadowMap, pointLength, shadowMap);
 
           // state.pointShadowMatrix[ pointLength ] = light.shadow!.matrix;
-          listSetter(state.pointShadowMatrix, pointLength, light.shadow!.matrix);
+          listSetter(
+            state.pointShadowMatrix,
+            pointLength,
+            light.shadow!.matrix,
+          );
 
           numPointShadows++;
         }
@@ -326,8 +364,12 @@ class WebGLLights {
       } else if (light.type == "HemisphereLight") {
         var uniforms = cache.get(light);
 
-        uniforms["skyColor"].copy(light.color).multiplyScalar(intensity * scaleFactor);
-        uniforms["groundColor"].copy(light.groundColor).multiplyScalar(intensity * scaleFactor);
+        uniforms["skyColor"]
+            .copy(light.color)
+            .multiplyScalar(intensity * scaleFactor);
+        uniforms["groundColor"]
+            .copy(light.groundColor)
+            .multiplyScalar(intensity * scaleFactor);
 
         // state.hemi[ hemiLength ] = uniforms;
         listSetter(state.hemi, hemiLength, uniforms);
@@ -354,7 +396,9 @@ class WebGLLights {
           state.rectAreaLTC1 = uniformsLib["LTC_HALF_1"];
           state.rectAreaLTC2 = uniformsLib["LTC_HALF_2"];
         } else {
-          print('three.WebGLRenderer: Unable to use RectAreaLight. Missing WebGL extensions.');
+          print(
+            'three.WebGLRenderer: Unable to use RectAreaLight. Missing WebGL extensions.',
+          );
         }
       }
     }

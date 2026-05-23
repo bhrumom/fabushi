@@ -18,7 +18,8 @@ class Texture with EventDispatcher {
   bool isDepthTexture = false;
   bool isCompressedTexture = false;
   bool isOpenGLTexture = false;
-  bool isRenderTargetTexture = false; // indicates whether a texture belongs to a render target or not
+  bool isRenderTargetTexture =
+      false; // indicates whether a texture belongs to a render target or not
   bool needsPMREMUpdate =
       false; // indicates whether this texture should be processed by PMREMGenerator or not (only relevant for render target textures)
 
@@ -66,17 +67,18 @@ class Texture with EventDispatcher {
 
   List mipmaps = [];
 
-  Texture(
-      [image,
-      int? mapping,
-      int? wrapS,
-      int? wrapT,
-      int? magFilter,
-      int? minFilter,
-      int? format,
-      int? type,
-      int? anisotropy,
-      int? encoding]) {
+  Texture([
+    image,
+    int? mapping,
+    int? wrapS,
+    int? wrapT,
+    int? magFilter,
+    int? minFilter,
+    int? format,
+    int? type,
+    int? anisotropy,
+    int? encoding,
+  ]) {
     source = Source(image);
     this.mapping = mapping ?? Texture.defaultMapping;
 
@@ -105,7 +107,15 @@ class Texture with EventDispatcher {
   }
 
   updateMatrix() {
-    matrix.setUvTransform(offset.x, offset.y, repeat.x, repeat.y, rotation, center.x, center.y);
+    matrix.setUvTransform(
+      offset.x,
+      offset.y,
+      repeat.x,
+      repeat.y,
+      rotation,
+      center.x,
+      center.y,
+    );
   }
 
   Texture clone() {
@@ -158,7 +168,11 @@ class Texture with EventDispatcher {
     }
 
     Map<String, dynamic> output = {
-      "metadata": {"version": 4.5, "type": 'Texture', "generator": 'Texture.toJSON'},
+      "metadata": {
+        "version": 4.5,
+        "type": 'Texture',
+        "generator": 'Texture.toJSON',
+      },
       "uuid": uuid,
       "name": name,
       "image": source.toJSON(meta).uuid,
@@ -176,7 +190,7 @@ class Texture with EventDispatcher {
       "anisotropy": anisotropy,
       "flipY": flipY,
       "premultiplyAlpha": premultiplyAlpha,
-      "unpackAlignment": unpackAlignment
+      "unpackAlignment": unpackAlignment,
     };
 
     if (userData.isNotEmpty) output["userData"] = userData;

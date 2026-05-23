@@ -28,13 +28,20 @@ class TTFFont extends Font {
     return shapes;
   }
 
-  List<ShapePath> createPaths(String text, double size, Map<String, dynamic> data) {
+  List<ShapePath> createPaths(
+    String text,
+    double size,
+    Map<String, dynamic> data,
+  ) {
     // var chars = Array.from ? Array.from( text ) : String( text ).split( '' ); // workaround for IE11, see #13988
     List<String> chars = text.split("");
 
     double scale = size / data["resolution"];
     double lineHeight =
-        (data["boundingBox"]["yMax"] - data["boundingBox"]["yMin"] + data["underlineThickness"]) * scale;
+        (data["boundingBox"]["yMax"] -
+            data["boundingBox"]["yMin"] +
+            data["underlineThickness"]) *
+        scale;
 
     List<ShapePath> paths = [];
 
@@ -57,11 +64,19 @@ class TTFFont extends Font {
     return paths;
   }
 
-  Map<String, dynamic> createPath(char, double scale, double offsetX, double offsetY, data) {
+  Map<String, dynamic> createPath(
+    char,
+    double scale,
+    double offsetX,
+    double offsetY,
+    data,
+  ) {
     var glyph = data["glyphs"][char] ?? data["glyphs"]['?'];
 
     if (glyph == null) {
-      print("three.Font: character $char does not exists in font family ${data.familyName}");
+      print(
+        "three.Font: character $char does not exists in font family ${data.familyName}",
+      );
       // return null;
       glyph = data["glyphs"]["a"];
     }

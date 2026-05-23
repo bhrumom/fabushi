@@ -11,7 +11,8 @@ class Scene extends Object3D {
     autoUpdate = true;
   }
 
-  Scene.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) : super.fromJSON(json, rootJSON) {
+  Scene.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON)
+    : super.fromJSON(json, rootJSON) {
     type = 'Scene';
     autoUpdate = true;
   }

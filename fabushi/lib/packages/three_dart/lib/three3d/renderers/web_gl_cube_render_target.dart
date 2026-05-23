@@ -22,15 +22,28 @@ class WebGLCubeRenderTarget extends WebGLRenderTarget {
     var images = [image, image, image, image, image, image];
 
     options = options ?? WebGLRenderTargetOptions({});
-    texture = CubeTexture(images, options.mapping, options.wrapS, options.wrapT, options.magFilter, options.minFilter,
-        options.format, options.type, options.anisotropy, options.encoding);
+    texture = CubeTexture(
+      images,
+      options.mapping,
+      options.wrapS,
+      options.wrapT,
+      options.magFilter,
+      options.minFilter,
+      options.format,
+      options.type,
+      options.anisotropy,
+      options.encoding,
+    );
     texture.isRenderTargetTexture = true;
 
     texture.generateMipmaps = options.generateMipmaps ?? false;
     texture.minFilter = options.minFilter ?? LinearFilter;
   }
 
-  WebGLCubeRenderTarget fromEquirectangularTexture(WebGLRenderer renderer, Texture texture) {
+  WebGLCubeRenderTarget fromEquirectangularTexture(
+    WebGLRenderer renderer,
+    Texture texture,
+  ) {
     this.texture.type = texture.type;
     this.texture.encoding = texture.encoding;
 
@@ -39,9 +52,7 @@ class WebGLCubeRenderTarget extends WebGLRenderTarget {
     this.texture.magFilter = texture.magFilter;
 
     var shader = {
-      "uniforms": {
-        "tEquirect": {},
-      },
+      "uniforms": {"tEquirect": {}},
       "vertexShader": """
 
         varying vec3 vWorldDirection;
@@ -78,7 +89,7 @@ class WebGLCubeRenderTarget extends WebGLRenderTarget {
           gl_FragColor = texture2D( tEquirect, sampleUV );
 
         }
-      """
+      """,
     };
 
     var geometry = BoxGeometry(5, 5, 5);
@@ -89,7 +100,7 @@ class WebGLCubeRenderTarget extends WebGLRenderTarget {
       "vertexShader": shader["vertexShader"],
       "fragmentShader": shader["fragmentShader"],
       "side": BackSide,
-      "blending": NoBlending
+      "blending": NoBlending,
     });
 
     material.uniforms["tEquirect"]["value"] = texture;
@@ -114,7 +125,12 @@ class WebGLCubeRenderTarget extends WebGLRenderTarget {
     return this;
   }
 
-  void clear(WebGLRenderer renderer, [bool color = true, bool depth = true, bool stencil = true]) {
+  void clear(
+    WebGLRenderer renderer, [
+    bool color = true,
+    bool depth = true,
+    bool stencil = true,
+  ]) {
     final currentRenderTarget = renderer.getRenderTarget();
     for (int i = 0; i < 6; i++) {
       renderer.setRenderTarget(this, i);

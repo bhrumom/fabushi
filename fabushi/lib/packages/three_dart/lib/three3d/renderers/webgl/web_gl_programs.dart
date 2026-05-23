@@ -23,7 +23,7 @@ class WebGLPrograms {
     "LineDashedMaterial": 'dashed',
     "PointsMaterial": 'points',
     "ShadowMaterial": 'shadow',
-    "SpriteMaterial": 'sprite'
+    "SpriteMaterial": 'sprite',
   };
 
   WebGLRenderer renderer;
@@ -43,8 +43,15 @@ class WebGLPrograms {
   late bool vertexTextures;
   late String precision;
 
-  WebGLPrograms(this.renderer, this.cubemaps, this.cubeuvmaps, this.extensions, this.capabilities, this.bindingStates,
-      this.clipping) {
+  WebGLPrograms(
+    this.renderer,
+    this.cubemaps,
+    this.cubeuvmaps,
+    this.extensions,
+    this.capabilities,
+    this.bindingStates,
+    this.clipping,
+  ) {
     isWebGL2 = capabilities.isWebGL2;
 
     logarithmicDepthBuffer = capabilities.logarithmicDepthBuffer;
@@ -53,10 +60,18 @@ class WebGLPrograms {
     precision = capabilities.precision;
   }
 
-  WebGLParameters getParameters(Material material, LightState lights, shadows, scene, object) {
+  WebGLParameters getParameters(
+    Material material,
+    LightState lights,
+    shadows,
+    scene,
+    object,
+  ) {
     var fog = scene.fog;
     var geometry = object.geometry;
-    var environment = material is MeshStandardMaterial ? scene.environment : null;
+    var environment = material is MeshStandardMaterial
+        ? scene.environment
+        : null;
 
     Texture? envMap;
     if (material is MeshStandardMaterial) {
@@ -65,7 +80,10 @@ class WebGLPrograms {
       envMap = cubemaps.get(material.envMap ?? environment);
     }
 
-    var cubeUVHeight = (envMap != null) && (envMap.mapping == CubeUVReflectionMapping) ? envMap.image.height : null;
+    var cubeUVHeight =
+        (envMap != null) && (envMap.mapping == CubeUVReflectionMapping)
+        ? envMap.image.height
+        : null;
 
     var shaderID = shaderIDs[material.shaderID];
 
@@ -76,13 +94,19 @@ class WebGLPrograms {
       precision = capabilities.getMaxPrecision(material.precision);
 
       if (precision != material.precision) {
-        print('three.WebGLProgram.getParameters: ${material.precision} not supported, using $precision instead.');
+        print(
+          'three.WebGLProgram.getParameters: ${material.precision} not supported, using $precision instead.',
+        );
       }
     }
 
     var morphAttribute =
-        geometry.morphAttributes["position"] ?? geometry.morphAttributes["normal"] ?? geometry.morphAttributes["color"];
-    var morphTargetsCount = (morphAttribute != null) ? morphAttribute.length : 0;
+        geometry.morphAttributes["position"] ??
+        geometry.morphAttributes["normal"] ??
+        geometry.morphAttributes["color"];
+    var morphTargetsCount = (morphAttribute != null)
+        ? morphAttribute.length
+        : 0;
 
     var morphTextureStride = 0;
 
@@ -130,11 +154,14 @@ class WebGLPrograms {
     parameters.glslVersion = material.glslVersion;
     parameters.precision = precision;
     parameters.instancing = object is InstancedMesh;
-    parameters.instancingColor = object is InstancedMesh && object.instanceColor != null;
+    parameters.instancingColor =
+        object is InstancedMesh && object.instanceColor != null;
     parameters.supportsVertexTextures = vertexTextures;
     parameters.outputEncoding = (currentRenderTarget == null)
         ? renderer.outputEncoding
-        : (currentRenderTarget.isXRRenderTarget == true ? currentRenderTarget.texture.encoding : LinearEncoding);
+        : (currentRenderTarget.isXRRenderTarget == true
+              ? currentRenderTarget.texture.encoding
+              : LinearEncoding);
     parameters.map = material.map != null;
     parameters.matcap = material.matcap != null;
     parameters.envMap = envMap != null;
@@ -145,21 +172,28 @@ class WebGLPrograms {
     parameters.emissiveMap = material.emissiveMap != null;
     parameters.bumpMap = material.bumpMap != null;
     parameters.normalMap = material.normalMap != null;
-    parameters.objectSpaceNormalMap = material.normalMapType == ObjectSpaceNormalMap;
-    parameters.tangentSpaceNormalMap = material.normalMapType == TangentSpaceNormalMap;
+    parameters.objectSpaceNormalMap =
+        material.normalMapType == ObjectSpaceNormalMap;
+    parameters.tangentSpaceNormalMap =
+        material.normalMapType == TangentSpaceNormalMap;
     parameters.decodeVideoTexture =
-        material.map != null && (material.map is VideoTexture) && (material.map!.encoding == sRGBEncoding);
+        material.map != null &&
+        (material.map is VideoTexture) &&
+        (material.map!.encoding == sRGBEncoding);
     parameters.clearcoat = useClearcoat;
     parameters.clearcoatMap = useClearcoat && material.clearcoatMap != null;
-    parameters.clearcoatRoughnessMap = useClearcoat && material.clearcoatRoughnessMap != null;
-    parameters.clearcoatNormalMap = useClearcoat && material.clearcoatNormalMap != null;
+    parameters.clearcoatRoughnessMap =
+        useClearcoat && material.clearcoatRoughnessMap != null;
+    parameters.clearcoatNormalMap =
+        useClearcoat && material.clearcoatNormalMap != null;
     parameters.displacementMap = material.displacementMap != null;
     parameters.roughnessMap = material.roughnessMap != null;
     parameters.metalnessMap = material.metalnessMap != null;
     parameters.specularMap = material.specularMap != null;
     parameters.specularIntensityMap = material.specularIntensityMap != null;
     parameters.specularColorMap = material.specularColorMap != null;
-    parameters.opaque = material.transparent == false && material.blending == NormalBlending;
+    parameters.opaque =
+        material.transparent == false && material.blending == NormalBlending;
     parameters.alphaMap = material.alphaMap != null;
     parameters.alphaTest = useAlphaTest;
     parameters.gradientMap = material.gradientMap != null;
@@ -171,13 +205,17 @@ class WebGLPrograms {
     parameters.thicknessMap = material.thicknessMap != null;
     parameters.combine = material.combine;
     parameters.vertexTangents =
-        (material.normalMap != null && geometry != null && geometry.attributes["tangent"] != null);
+        (material.normalMap != null &&
+        geometry != null &&
+        geometry.attributes["tangent"] != null);
     parameters.vertexColors = material.vertexColors;
-    parameters.vertexAlphas = material.vertexColors == true &&
+    parameters.vertexAlphas =
+        material.vertexColors == true &&
         geometry != null &&
         geometry.attributes["color"] != null &&
         geometry.attributes["color"].itemSize == 4;
-    parameters.vertexUvs = material.map != null ||
+    parameters.vertexUvs =
+        material.map != null ||
         material.bumpMap != null ||
         material.normalMap != null ||
         material.specularMap != null ||
@@ -195,7 +233,8 @@ class WebGLPrograms {
         material.specularColorMap != null ||
         material.sheenColorMap != null ||
         material.sheenRoughnessMap != null;
-    parameters.uvsVertexOnly = !(material.map != null ||
+    parameters.uvsVertexOnly =
+        !(material.map != null ||
             material.bumpMap != null ||
             material.normalMap != null ||
             material.specularMap != null ||
@@ -217,9 +256,12 @@ class WebGLPrograms {
     parameters.sizeAttenuation = material.sizeAttenuation;
     parameters.logarithmicDepthBuffer = logarithmicDepthBuffer;
     parameters.skinning = object is SkinnedMesh;
-    parameters.morphTargets = geometry != null && geometry.morphAttributes["position"] != null;
-    parameters.morphNormals = geometry != null && geometry.morphAttributes["normal"] != null;
-    parameters.morphColors = geometry != null && geometry.morphAttributes["color"] != null;
+    parameters.morphTargets =
+        geometry != null && geometry.morphAttributes["position"] != null;
+    parameters.morphNormals =
+        geometry != null && geometry.morphAttributes["normal"] != null;
+    parameters.morphColors =
+        geometry != null && geometry.morphAttributes["color"] != null;
     parameters.morphTargetsCount = morphTargetsCount;
     parameters.morphTextureStride = morphTextureStride;
     parameters.numDirLights = lights.directional.length;
@@ -233,9 +275,12 @@ class WebGLPrograms {
     parameters.numClippingPlanes = clipping.numPlanes;
     parameters.numClipIntersection = clipping.numIntersection;
     parameters.dithering = material.dithering;
-    parameters.shadowMapEnabled = renderer.shadowMap.enabled && shadows.length > 0;
+    parameters.shadowMapEnabled =
+        renderer.shadowMap.enabled && shadows.length > 0;
     parameters.shadowMapType = renderer.shadowMap.type;
-    parameters.toneMapping = material.toneMapped ? renderer.toneMapping : NoToneMapping;
+    parameters.toneMapping = material.toneMapped
+        ? renderer.toneMapping
+        : NoToneMapping;
     parameters.physicallyCorrectLights = renderer.physicallyCorrectLights;
     parameters.premultipliedAlpha = material.premultipliedAlpha;
     parameters.doubleSided = material.side == DoubleSide;
@@ -243,14 +288,27 @@ class WebGLPrograms {
     parameters.useDepthPacking = material.depthPacking != null;
     parameters.depthPacking = material.depthPacking ?? 0;
     parameters.index0AttributeName = material.index0AttributeName;
-    parameters.extensionDerivatives = material.extensions != null && material.extensions!["derivatives"] != null;
-    parameters.extensionFragDepth = material.extensions != null && material.extensions!["fragDepth"] != null;
-    parameters.extensionDrawBuffers = material.extensions != null && material.extensions!["drawBuffers"] != null;
+    parameters.extensionDerivatives =
+        material.extensions != null &&
+        material.extensions!["derivatives"] != null;
+    parameters.extensionFragDepth =
+        material.extensions != null &&
+        material.extensions!["fragDepth"] != null;
+    parameters.extensionDrawBuffers =
+        material.extensions != null &&
+        material.extensions!["drawBuffers"] != null;
     parameters.extensionShaderTextureLOD =
-        material.extensions != null && material.extensions!["shaderTextureLOD"] != null;
-    parameters.rendererExtensionFragDepth = isWebGL2 ? isWebGL2 : extensions.has('EXT_frag_depth');
-    parameters.rendererExtensionDrawBuffers = isWebGL2 ? isWebGL2 : extensions.has('WEBGL_draw_buffers');
-    parameters.rendererExtensionShaderTextureLod = isWebGL2 ? isWebGL2 : extensions.has('EXT_shader_texture_lod');
+        material.extensions != null &&
+        material.extensions!["shaderTextureLOD"] != null;
+    parameters.rendererExtensionFragDepth = isWebGL2
+        ? isWebGL2
+        : extensions.has('EXT_frag_depth');
+    parameters.rendererExtensionDrawBuffers = isWebGL2
+        ? isWebGL2
+        : extensions.has('WEBGL_draw_buffers');
+    parameters.rendererExtensionShaderTextureLod = isWebGL2
+        ? isWebGL2
+        : extensions.has('EXT_shader_texture_lod');
     parameters.customProgramCacheKey = material.customProgramCacheKey() ?? "";
 
     return parameters;

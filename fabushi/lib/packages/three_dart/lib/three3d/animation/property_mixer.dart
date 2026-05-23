@@ -171,7 +171,9 @@ class PropertyMixer {
   saveOriginalState() {
     var binding = this.binding;
 
-    var buffer = this.buffer, stride = valueSize, originalValueOffset = stride * _origIndex;
+    var buffer = this.buffer,
+        stride = valueSize,
+        originalValueOffset = stride * _origIndex;
 
     binding.getValue(buffer, originalValueOffset);
 
@@ -227,17 +229,40 @@ class PropertyMixer {
   }
 
   _slerp(buffer, dstOffset, srcOffset, t, stride) {
-    Quaternion.slerpFlat(buffer, dstOffset, buffer, dstOffset, buffer, srcOffset, t);
+    Quaternion.slerpFlat(
+      buffer,
+      dstOffset,
+      buffer,
+      dstOffset,
+      buffer,
+      srcOffset,
+      t,
+    );
   }
 
   _slerpAdditive(buffer, dstOffset, srcOffset, t, stride) {
     var workOffset = _workIndex * stride;
 
     // Store result in intermediate buffer offset
-    Quaternion.multiplyQuaternionsFlat(buffer, workOffset, buffer, dstOffset, buffer, srcOffset);
+    Quaternion.multiplyQuaternionsFlat(
+      buffer,
+      workOffset,
+      buffer,
+      dstOffset,
+      buffer,
+      srcOffset,
+    );
 
     // Slerp to the intermediate result
-    Quaternion.slerpFlat(buffer, dstOffset, buffer, dstOffset, buffer, workOffset, t);
+    Quaternion.slerpFlat(
+      buffer,
+      dstOffset,
+      buffer,
+      dstOffset,
+      buffer,
+      workOffset,
+      t,
+    );
   }
 
   _lerp(buffer, dstOffset, srcOffset, t, stride) {

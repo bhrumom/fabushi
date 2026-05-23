@@ -6,7 +6,14 @@ import 'package:three_dart/three3d/math/vector3.dart';
 
 class Euler {
   static const String defaultOrder = 'XYZ';
-  static const List<String> rotationOrders = ['XYZ', 'YZX', 'ZXY', 'XZY', 'YXZ', 'ZYX'];
+  static const List<String> rotationOrders = [
+    'XYZ',
+    'YZX',
+    'ZXY',
+    'XZY',
+    'YXZ',
+    'ZYX',
+  ];
 
   String type = "Euler";
 
@@ -166,7 +173,9 @@ class Euler {
         break;
 
       default:
-        print('three.Euler: .setFromRotationMatrix() encountered an unknown order: $order');
+        print(
+          'three.Euler: .setFromRotationMatrix() encountered an unknown order: $order',
+        );
     }
 
     _order = order;
@@ -195,7 +204,10 @@ class Euler {
   }
 
   bool equals(Euler euler) {
-    return (euler._x == _x) && (euler._y == _y) && (euler._z == _z) && (euler._order == _order);
+    return (euler._x == _x) &&
+        (euler._y == _y) &&
+        (euler._z == _z) &&
+        (euler._order == _order);
   }
 
   Euler fromArray(List<double> array) {
@@ -226,7 +238,9 @@ class Euler {
   }
 
   Vector3 toVector3([Vector3? optionalResult]) {
-    print(" three.Euler: .toVector3() has been removed. Use Vector3.setFromEuler() instead ");
+    print(
+      " three.Euler: .toVector3() has been removed. Use Vector3.setFromEuler() instead ",
+    );
     if (optionalResult != null) {
       return optionalResult.set(_x, _y, _z);
     } else {

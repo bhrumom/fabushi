@@ -22,7 +22,13 @@ class WebGLMaterials {
     }
   }
 
-  refreshMaterialUniforms(uniforms, Material material, pixelRatio, height, transmissionRenderTarget) {
+  refreshMaterialUniforms(
+    uniforms,
+    Material material,
+    pixelRatio,
+    height,
+    transmissionRenderTarget,
+  ) {
     if (material is MeshBasicMaterial) {
       refreshUniformsCommon(uniforms, material);
     } else if (material is MeshLambertMaterial) {
@@ -64,7 +70,6 @@ class WebGLMaterials {
       uniforms["opacity"]["value"] = material.opacity;
     } else if (material is ShaderMaterial) {
       material.uniformsNeedUpdate = false; // #15581
-
     }
   }
 
@@ -74,7 +79,9 @@ class WebGLMaterials {
     uniforms["diffuse"]["value"].copy(material.color);
 
     if (material.emissive != null) {
-      uniforms["emissive"]["value"].copy(material.emissive).multiplyScalar(material.emissiveIntensity);
+      uniforms["emissive"]["value"]
+          .copy(material.emissive)
+          .multiplyScalar(material.emissiveIntensity);
     }
 
     if (material.map != null) {
@@ -121,7 +128,10 @@ class WebGLMaterials {
       uniforms["envMap"]["value"] = envMap;
 
       uniforms["flipEnvMap"]["value"] =
-          (envMap.type == "CubeTexture" && envMap.isRenderTargetTexture == false) ? -1 : 1;
+          (envMap.type == "CubeTexture" &&
+              envMap.isRenderTargetTexture == false)
+          ? -1
+          : 1;
 
       uniforms["reflectivity"]["value"] = material.reflectivity;
       uniforms["ior"]["value"] = material.ior;
@@ -132,9 +142,12 @@ class WebGLMaterials {
       uniforms["lightMap"]["value"] = material.lightMap;
 
       // artist-friendly light intensity scaling factor
-      var scaleFactor = (renderer.physicallyCorrectLights != true) ? Math.pi : 1;
+      var scaleFactor = (renderer.physicallyCorrectLights != true)
+          ? Math.pi
+          : 1;
 
-      uniforms["lightMapIntensity"]["value"] = material.lightMapIntensity! * scaleFactor;
+      uniforms["lightMapIntensity"]["value"] =
+          material.lightMapIntensity! * scaleFactor;
     }
 
     if (material.aoMap != null) {
@@ -325,7 +338,10 @@ class WebGLMaterials {
 
   refreshUniformsPhong(uniforms, material) {
     uniforms["specular"]["value"].copy(material.specular);
-    uniforms["shininess"]["value"] = Math.max<num>(material.shininess, 1e-4); // to prevent pow( 0.0, 0.0 )
+    uniforms["shininess"]["value"] = Math.max<num>(
+      material.shininess,
+      1e-4,
+    ); // to prevent pow( 0.0, 0.0 )
   }
 
   refreshUniformsToon(uniforms, material) {
@@ -380,11 +396,14 @@ class WebGLMaterials {
       }
 
       if (material.clearcoatRoughnessMap != null) {
-        uniforms["clearcoatRoughnessMap"]["value"] = material.clearcoatRoughnessMap;
+        uniforms["clearcoatRoughnessMap"]["value"] =
+            material.clearcoatRoughnessMap;
       }
 
       if (material.clearcoatNormalMap != null) {
-        uniforms["clearcoatNormalScale"]["value"].copy(material.clearcoatNormalScale);
+        uniforms["clearcoatNormalScale"]["value"].copy(
+          material.clearcoatNormalScale,
+        );
         uniforms["clearcoatNormalMap"]["value"] = material.clearcoatNormalMap;
 
         if (material.side == BackSide) {
@@ -395,8 +414,12 @@ class WebGLMaterials {
 
     if (material.transmission > 0) {
       uniforms["transmission"]["value"] = material.transmission;
-      uniforms["transmissionSamplerMap"]["value"] = transmissionRenderTarget.texture;
-      uniforms["transmissionSamplerSize"]["value"].set(transmissionRenderTarget.width, transmissionRenderTarget.height);
+      uniforms["transmissionSamplerMap"]["value"] =
+          transmissionRenderTarget.texture;
+      uniforms["transmissionSamplerSize"]["value"].set(
+        transmissionRenderTarget.width,
+        transmissionRenderTarget.height,
+      );
 
       if (material.transmissionMap != null) {
         uniforms["transmissionMap"]["value"] = material.transmissionMap;

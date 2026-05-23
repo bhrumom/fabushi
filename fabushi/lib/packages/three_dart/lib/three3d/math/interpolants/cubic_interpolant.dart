@@ -14,13 +14,16 @@ class CubicInterpolant extends Interpolant {
   late num _offsetNext;
 
   CubicInterpolant(parameterPositions, sampleValues, sampleSize, resultBuffer)
-      : super(parameterPositions, sampleValues, sampleSize, resultBuffer) {
+    : super(parameterPositions, sampleValues, sampleSize, resultBuffer) {
     _weightPrev = -0;
     _offsetPrev = -0;
     _weightNext = -0;
     _offsetNext = -0;
 
-    defaultSettings = {"endingStart": ZeroCurvatureEnding, "endingEnd": ZeroCurvatureEnding};
+    defaultSettings = {
+      "endingStart": ZeroCurvatureEnding,
+      "endingEnd": ZeroCurvatureEnding,
+    };
   }
 
   @override
@@ -113,7 +116,11 @@ class CubicInterpolant extends Interpolant {
     // combine data linearly
 
     for (var i = 0; i != stride; ++i) {
-      result[i] = sP * values[oP + i] + s0 * values[o0 + i] + s1 * values[o1 + i] + sN * values[oN + i];
+      result[i] =
+          sP * values[oP + i] +
+          s0 * values[o0 + i] +
+          s1 * values[o1 + i] +
+          sN * values[oN + i];
     }
 
     return result;

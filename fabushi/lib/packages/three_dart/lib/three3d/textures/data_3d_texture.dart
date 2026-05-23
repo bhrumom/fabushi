@@ -6,9 +6,18 @@ import 'package:three_dart/three3d/constants.dart';
 class Data3DTexture extends Texture {
   bool isDataTexture3D = true;
 
-  Data3DTexture([NativeArray? data, int width = 1, int height = 1, int depth = 1])
-      : super(null, null, null, null, null, null, null, null, null, null) {
-    image = ImageElement(data: data, width: width, height: height, depth: depth);
+  Data3DTexture([
+    NativeArray? data,
+    int width = 1,
+    int height = 1,
+    int depth = 1,
+  ]) : super(null, null, null, null, null, null, null, null, null, null) {
+    image = ImageElement(
+      data: data,
+      width: width,
+      height: height,
+      depth: depth,
+    );
 
     magFilter = LinearFilter;
     minFilter = LinearFilter;
@@ -27,5 +36,4 @@ class Data3DTexture extends Texture {
   // 	texture.anisotropy = 16;
   //
   // See #14839
-
 }

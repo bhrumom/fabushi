@@ -74,6 +74,21 @@ jobs:
             !/fabushi/native_libs/llama.cpp
             !/fabushi/native_libs/llama.cpp/**
 
+      - name: Fetch Android three_dart Buddha GLB
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          git lfs pull --include="fabushi/web/assets/models/佛像模型.glb" --exclude=""
+          python3 - <<'PY'
+          from pathlib import Path
+
+          glb = Path("fabushi/web/assets/models/佛像模型.glb")
+          data = glb.read_bytes()
+          if data[:4] != b"glTF" or len(data) < 10 * 1024 * 1024:
+              raise SystemExit(f"{glb} is not the expected bundled GLB ({len(data)} bytes)")
+          PY
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:

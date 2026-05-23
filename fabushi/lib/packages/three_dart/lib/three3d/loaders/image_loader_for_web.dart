@@ -4,7 +4,11 @@ import 'dart:html' as html;
 
 class ImageLoaderLoader {
   // flipY 在web环境下 忽略
-  static Future<html.ImageElement> loadImage(url, flipY, {Function? imageDecoder}) {
+  static Future<html.ImageElement> loadImage(
+    url,
+    flipY, {
+    Function? imageDecoder,
+  }) {
     var completer = Completer<html.ImageElement>();
     var imageDom = html.ImageElement();
     imageDom.crossOrigin = "";

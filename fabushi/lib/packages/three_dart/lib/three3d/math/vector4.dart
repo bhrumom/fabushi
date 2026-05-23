@@ -165,7 +165,9 @@ class Vector4 {
 
   Vector4 sub(Vector4 v, Vector4? w) {
     if (w != null) {
-      print('three.Vector4: .sub() now only accepts one argument. Use .subVectors( a, b ) instead.');
+      print(
+        'three.Vector4: .sub() now only accepts one argument. Use .subVectors( a, b ) instead.',
+      );
       return subVectors(v, w);
     }
 
@@ -268,7 +270,8 @@ class Vector4 {
     // assumes the upper 3x3 of m is a pure rotation matrix (i.e, unscaled)
 
     double angle, x, y, z; // variables for result
-    double epsilon = 0.01, // margin to allow for rounding errors
+    double epsilon =
+            0.01, // margin to allow for rounding errors
         epsilon2 = 0.1; // margin to distinguish between 0 and 180 degrees
 
     final te = m.elements;
@@ -282,7 +285,9 @@ class Vector4 {
     double m32 = te[6];
     double m33 = te[10];
 
-    if ((Math.abs(m12 - m21) < epsilon) && (Math.abs(m13 - m31) < epsilon) && (Math.abs(m23 - m32) < epsilon)) {
+    if ((Math.abs(m12 - m21) < epsilon) &&
+        (Math.abs(m13 - m31) < epsilon) &&
+        (Math.abs(m23 - m32) < epsilon)) {
       // singularity found
       // first check for identity matrix which must have +1 for all terms
       // in leading diagonal and zero in other terms
@@ -296,7 +301,6 @@ class Vector4 {
         set(1, 0, 0, 0);
 
         return this; // zero angle, arbitrary axis
-
       }
 
       // otherwise this singularity is angle = 180
@@ -351,13 +355,15 @@ class Vector4 {
       set(x, y, z, angle);
 
       return this; // return 180 deg rotation
-
     }
 
     // as we have reached here there are no singularities so we can handle normally
 
     var s = Math.sqrt(
-        (m32 - m23) * (m32 - m23) + (m13 - m31) * (m13 - m31) + (m21 - m12) * (m21 - m12)); // used to normalize
+      (m32 - m23) * (m32 - m23) +
+          (m13 - m31) * (m13 - m31) +
+          (m21 - m12) * (m21 - m12),
+    ); // used to normalize
 
     if (Math.abs(s) < 0.001) s = 1;
 
@@ -413,7 +419,9 @@ class Vector4 {
   Vector4 clampLength(num min, num max) {
     var length = this.length();
 
-    return divideScalar(length).multiplyScalar(Math.max(min, Math.min(max, length)));
+    return divideScalar(
+      length,
+    ).multiplyScalar(Math.max(min, Math.min(max, length)));
   }
 
   Vector4 floor() {

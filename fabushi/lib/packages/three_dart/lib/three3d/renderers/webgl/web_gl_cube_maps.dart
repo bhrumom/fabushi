@@ -23,7 +23,8 @@ class WebGLCubeMaps {
     if (texture != null && texture.isRenderTargetTexture == false) {
       var mapping = texture.mapping;
 
-      if (mapping == EquirectangularReflectionMapping || mapping == EquirectangularRefractionMapping) {
+      if (mapping == EquirectangularReflectionMapping ||
+          mapping == EquirectangularRefractionMapping) {
         if (cubemaps.has(texture)) {
           var cubemap = cubemaps.get(texture).texture;
           return mapTextureMapping(cubemap, texture.mapping);
@@ -31,7 +32,11 @@ class WebGLCubeMaps {
           var image = texture.image;
 
           if (image != null && image.height > 0) {
-            var renderTarget = WebGLCubeRenderTarget(image.height ~/ 2, null, null);
+            var renderTarget = WebGLCubeRenderTarget(
+              image.height ~/ 2,
+              null,
+              null,
+            );
             renderTarget.fromEquirectangularTexture(renderer, texture);
             cubemaps.add(key: texture, value: renderTarget);
 

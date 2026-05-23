@@ -2,7 +2,9 @@ import 'package:three_dart/three3d/constants.dart';
 import 'package:three_dart/three3d/math/index.dart';
 
 double sRGBToLinear(double c) {
-  return (c < 0.04045) ? c * 0.0773993808 : Math.pow(c * 0.9478672986 + 0.0521327014, 2.4).toDouble();
+  return (c < 0.04045)
+      ? c * 0.0773993808
+      : Math.pow(c * 0.9478672986 + 0.0521327014, 2.4).toDouble();
 }
 
 double linearToSRGB(double c) {
@@ -28,11 +30,15 @@ class ColorManagement {
   }
 
   static convert(color, sourceColorSpace, targetColorSpace) {
-    if (legacyMode || sourceColorSpace == targetColorSpace || !sourceColorSpace || !targetColorSpace) {
+    if (legacyMode ||
+        sourceColorSpace == targetColorSpace ||
+        !sourceColorSpace ||
+        !targetColorSpace) {
       return color;
     }
 
-    if (fn[sourceColorSpace] != null && fn[sourceColorSpace]![targetColorSpace] != null) {
+    if (fn[sourceColorSpace] != null &&
+        fn[sourceColorSpace]![targetColorSpace] != null) {
       var fun = fn[sourceColorSpace]![targetColorSpace]!;
 
       color.r = fun(color.r);

@@ -10,7 +10,10 @@ class SpriteMaterial extends Material {
     setValues(parameters);
   }
 
-  SpriteMaterial.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) : super.fromJSON(json, rootJSON);
+  SpriteMaterial.fromJSON(
+    Map<String, dynamic> json,
+    Map<String, dynamic> rootJSON,
+  ) : super.fromJSON(json, rootJSON);
 
   @override
   SpriteMaterial copy(Material source) {

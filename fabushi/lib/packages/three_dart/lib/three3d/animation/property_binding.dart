@@ -15,18 +15,24 @@ var _wordCharOrDot = '[^${_reservedCharsRe.replaceAll('\\.', '')}]';
 
 // Parent directories, delimited by '/' or ':'. Currently unused, but must
 // be matched to parse the rest of the track name.
-var _directoryRe = RegExp(r"((?:WC+[\/:])*)").pattern.replaceAll('WC', _wordChar);
+var _directoryRe = RegExp(
+  r"((?:WC+[\/:])*)",
+).pattern.replaceAll('WC', _wordChar);
 
 // Target node. May contain word characters (a-zA-Z0-9_) and '.' or '-'.
 var _nodeRe = RegExp(r"(WCOD+)?").pattern.replaceAll('WCOD', _wordCharOrDot);
 
 // Object on target node, and accessor. May not contain reserved
 // characters. Accessor may contain any character except closing bracket.
-var _objectRe = RegExp(r"(?:\.(WC+)(?:\[(.+)\])?)?").pattern.replaceAll('WC', _wordChar);
+var _objectRe = RegExp(
+  r"(?:\.(WC+)(?:\[(.+)\])?)?",
+).pattern.replaceAll('WC', _wordChar);
 
 // Property and accessor. May not contain reserved characters. Accessor may
 // contain any non-bracket characters.
-var _propertyRe = RegExp(r"\.(WC+)(?:\[(.+)\])?").pattern.replaceAll('WC', _wordChar);
+var _propertyRe = RegExp(
+  r"\.(WC+)(?:\[(.+)\])?",
+).pattern.replaceAll('WC', _wordChar);
 
 String _ts = "^$_directoryRe$_nodeRe$_objectRe$_propertyRe\$";
 var _trackRe = RegExp(_ts);
@@ -47,7 +53,8 @@ class Composite {
   getValue(array, offset) {
     bind(); // bind all binding
 
-    var firstValidIndex = _targetGroup.nCachedObjects_, binding = _bindings[firstValidIndex];
+    var firstValidIndex = _targetGroup.nCachedObjects_,
+        binding = _bindings[firstValidIndex];
 
     // and only call .getValue on the first
     if (binding != null) binding.getValue(array, offset);
@@ -56,7 +63,11 @@ class Composite {
   setValue(array, offset) {
     var bindings = _bindings;
 
-    for (var i = _targetGroup.nCachedObjects_, n = bindings.length; i != n; ++i) {
+    for (
+      var i = _targetGroup.nCachedObjects_, n = bindings.length;
+      i != n;
+      ++i
+    ) {
       bindings[i].setValue(array, offset);
     }
   }
@@ -64,7 +75,11 @@ class Composite {
   bind() {
     var bindings = _bindings;
 
-    for (var i = _targetGroup.nCachedObjects_, n = bindings.length; i != n; ++i) {
+    for (
+      var i = _targetGroup.nCachedObjects_, n = bindings.length;
+      i != n;
+      ++i
+    ) {
       bindings[i].bind();
     }
   }
@@ -72,7 +87,11 @@ class Composite {
   unbind() {
     var bindings = _bindings;
 
-    for (var i = _targetGroup.nCachedObjects_, n = bindings.length; i != n; ++i) {
+    for (
+      var i = _targetGroup.nCachedObjects_, n = bindings.length;
+      i != n;
+      ++i
+    ) {
       bindings[i].unbind();
     }
   }
@@ -92,14 +111,29 @@ class PropertyBinding {
   late Function setValue;
   late dynamic propertyIndex;
 
-  var bindingTypeObject = {"Direct": 0, "EntireArray": 1, "ArrayElement": 2, "HasFromToArray": 3};
+  var bindingTypeObject = {
+    "Direct": 0,
+    "EntireArray": 1,
+    "ArrayElement": 2,
+    "HasFromToArray": 3,
+  };
 
-  var versioningObject = {"None": 0, "NeedsUpdate": 1, "MatrixWorldNeedsUpdate": 2};
+  var versioningObject = {
+    "None": 0,
+    "NeedsUpdate": 1,
+    "MatrixWorldNeedsUpdate": 2,
+  };
 
-  PropertyBinding(this.rootNode, this.path, [Map<String, String?>? parsedPath]) {
+  PropertyBinding(
+    this.rootNode,
+    this.path, [
+    Map<String, String?>? parsedPath,
+  ]) {
     this.parsedPath = parsedPath ?? PropertyBinding.parseTrackName(path);
 
-    node = PropertyBinding.findNode(rootNode, this.parsedPath["nodeName"]) ?? rootNode;
+    node =
+        PropertyBinding.findNode(rootNode, this.parsedPath["nodeName"]) ??
+        rootNode;
 
     getValue = getValueUnbound;
     setValue = setValueUnbound;
@@ -146,7 +180,7 @@ class PropertyBinding {
       "objectName": matches.group(3),
       "objectIndex": matches.group(4),
       "propertyName": matches.group(5), // required
-      "propertyIndex": matches.group(6)
+      "propertyIndex": matches.group(6),
     };
 
     String? nodeName = results["nodeName"];
@@ -385,7 +419,10 @@ class PropertyBinding {
   }
 
   setValueFromArraySetNeedsUpdate(buffer, offset) {
-    resolvedProperty.fromArray(List<double>.from(buffer.map((e) => e.toDouble())), offset);
+    resolvedProperty.fromArray(
+      List<double>.from(buffer.map((e) => e.toDouble())),
+      offset,
+    );
     targetObject.needsUpdate = true;
   }
 
@@ -420,7 +457,9 @@ class PropertyBinding {
     var propertyIndex = parsedPath["propertyIndex"];
 
     if (targetObject == null) {
-      targetObject = PropertyBinding.findNode(rootNode, parsedPath["nodeName"]) || rootNode;
+      targetObject =
+          PropertyBinding.findNode(rootNode, parsedPath["nodeName"]) ||
+          rootNode;
 
       node = targetObject;
     }
@@ -431,7 +470,9 @@ class PropertyBinding {
 
     // ensure there is a value node
     if (targetObject == null) {
-      print('three.PropertyBinding: Trying to update node for track: $path but it wasn\'t found.');
+      print(
+        'three.PropertyBinding: Trying to update node for track: $path but it wasn\'t found.',
+      );
       return;
     }
 
@@ -442,13 +483,16 @@ class PropertyBinding {
       switch (objectName) {
         case 'materials':
           if (!targetObject.material) {
-            print('three.PropertyBinding: Can not bind to material as node does not have a material. ${this}');
+            print(
+              'three.PropertyBinding: Can not bind to material as node does not have a material. ${this}',
+            );
             return;
           }
 
           if (!targetObject.material.materials) {
             print(
-                'three.PropertyBinding: Can not bind to material.materials as node.material does not have a materials array. ${this}');
+              'three.PropertyBinding: Can not bind to material.materials as node.material does not have a materials array. ${this}',
+            );
             return;
           }
 
@@ -458,7 +502,9 @@ class PropertyBinding {
 
         case 'bones':
           if (!targetObject.skeleton) {
-            print('three.PropertyBinding: Can not bind to bones as node does not have a skeleton. ${this}');
+            print(
+              'three.PropertyBinding: Can not bind to bones as node does not have a skeleton. ${this}',
+            );
             return;
           }
 
@@ -479,7 +525,9 @@ class PropertyBinding {
 
         default:
           if (targetObject.getProperty(objectName) == null) {
-            print('three.PropertyBinding: Can not bind to objectName of node null. ${this}');
+            print(
+              'three.PropertyBinding: Can not bind to objectName of node null. ${this}',
+            );
             return;
           }
 
@@ -490,7 +538,8 @@ class PropertyBinding {
       if (objectIndex != null) {
         if (targetObject[objectIndex] == null) {
           print(
-              'three.PropertyBinding: Trying to bind to objectIndex of objectName, but is null.${this} $targetObject');
+            'three.PropertyBinding: Trying to bind to objectIndex of objectName, but is null.${this} $targetObject',
+          );
           return;
         }
 
@@ -505,7 +554,8 @@ class PropertyBinding {
       var nodeName = parsedPath["nodeName"];
 
       print(
-          'three.PropertyBinding: Trying to update property for track: $nodeName $propertyName  but it wasn\'t found. $targetObject');
+        'three.PropertyBinding: Trying to update property for track: $nodeName $propertyName  but it wasn\'t found. $targetObject',
+      );
       return;
     }
 
@@ -535,14 +585,16 @@ class PropertyBinding {
         // support resolving morphTarget names into indices.
         if (!targetObject.geometry) {
           print(
-              'three.PropertyBinding: Can not bind to morphTargetInfluences because node does not have a geometry. ${this}');
+            'three.PropertyBinding: Can not bind to morphTargetInfluences because node does not have a geometry. ${this}',
+          );
           return;
         }
 
         if (targetObject.geometry is BufferGeometry) {
           if (!targetObject.geometry.morphAttributes) {
             print(
-                'three.PropertyBinding: Can not bind to morphTargetInfluences because node does not have a geometry.morphAttributes. ${this}');
+              'three.PropertyBinding: Can not bind to morphTargetInfluences because node does not have a geometry.morphAttributes. ${this}',
+            );
             return;
           }
 
@@ -551,7 +603,8 @@ class PropertyBinding {
           }
         } else {
           print(
-              'three.PropertyBinding: Can not bind to morphTargetInfluences on three.Geometry. Use three.BufferGeometry instead. ${this}');
+            'three.PropertyBinding: Can not bind to morphTargetInfluences on three.Geometry. Use three.BufferGeometry instead. ${this}',
+          );
           return;
         }
       }
@@ -560,7 +613,9 @@ class PropertyBinding {
 
       resolvedProperty = nodeProperty;
       this.propertyIndex = propertyIndex;
-    } else if (nodeProperty is Color || nodeProperty is Vector3 || nodeProperty is Quaternion) {
+    } else if (nodeProperty is Color ||
+        nodeProperty is Vector3 ||
+        nodeProperty is Quaternion) {
       // must use copy for Object3D.Euler/Quaternion
 
       bindingType = bindingTypeObject["HasFromToArray"];

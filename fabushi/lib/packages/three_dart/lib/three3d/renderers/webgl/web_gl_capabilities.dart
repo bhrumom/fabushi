@@ -35,7 +35,9 @@ class WebGLCapabilities {
 
     maxPrecision = getMaxPrecision(precision);
     if (maxPrecision != precision) {
-      print('three.WebGLRenderer: $precision not supported, using $maxPrecision instead.');
+      print(
+        'three.WebGLRenderer: $precision not supported, using $maxPrecision instead.',
+      );
       precision = maxPrecision;
     }
 

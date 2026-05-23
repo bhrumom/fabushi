@@ -4,8 +4,12 @@ import 'package:three_dart/three3d/core/buffer_attribute.dart';
 class InstancedBufferAttribute extends BufferAttribute {
   late int meshPerAttribute;
 
-  InstancedBufferAttribute(NativeArray array, int itemSize, [bool normalized = false, this.meshPerAttribute = 1])
-      : super(array, itemSize, normalized) {
+  InstancedBufferAttribute(
+    NativeArray array,
+    int itemSize, [
+    bool normalized = false,
+    this.meshPerAttribute = 1,
+  ]) : super(array, itemSize, normalized) {
     type = "InstancedBufferAttribute";
     // if ( normalized is num ) {
     //   meshPerAttribute = normalized;

@@ -116,8 +116,17 @@ class TubeGeometry extends BufferGeometry {
     generateBufferData();
 
     setIndex(indices);
-    setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3, false));
-    setAttribute('normal', Float32BufferAttribute(Float32Array.from(normals), 3, false));
-    setAttribute('uv', Float32BufferAttribute(Float32Array.from(uvs), 2, false));
+    setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3, false),
+    );
+    setAttribute(
+      'normal',
+      Float32BufferAttribute(Float32Array.from(normals), 3, false),
+    );
+    setAttribute(
+      'uv',
+      Float32BufferAttribute(Float32Array.from(uvs), 2, false),
+    );
   }
 }

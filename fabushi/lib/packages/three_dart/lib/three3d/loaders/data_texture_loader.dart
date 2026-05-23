@@ -21,61 +21,65 @@ class DataTextureLoader extends Loader {
     loader.setRequestHeader(requestHeader);
     loader.setPath(path);
     loader.setWithCredentials(scope.withCredentials);
-    loader.load(url, (buffer) {
-      var texData = scope.parse(buffer);
+    loader.load(
+      url,
+      (buffer) {
+        var texData = scope.parse(buffer);
 
-      if (texData == null) return;
+        if (texData == null) return;
 
-      if (texData["image"] != null) {
-        texture.image = texData["image"];
-      } else if (texData["data"] != null) {
-        texture.image.width = texData["width"].toInt();
-        texture.image.height = texData["height"].toInt();
-        texture.image.data = texData["data"];
-      }
+        if (texData["image"] != null) {
+          texture.image = texData["image"];
+        } else if (texData["data"] != null) {
+          texture.image.width = texData["width"].toInt();
+          texture.image.height = texData["height"].toInt();
+          texture.image.data = texData["data"];
+        }
 
-      texture.wrapS = texData["wrapS"] ?? ClampToEdgeWrapping;
-      texture.wrapT = texData["wrapT"] ?? ClampToEdgeWrapping;
+        texture.wrapS = texData["wrapS"] ?? ClampToEdgeWrapping;
+        texture.wrapT = texData["wrapT"] ?? ClampToEdgeWrapping;
 
-      texture.magFilter = texData["magFilter"] ?? LinearFilter;
-      texture.minFilter = texData["minFilter"] ?? LinearFilter;
+        texture.magFilter = texData["magFilter"] ?? LinearFilter;
+        texture.minFilter = texData["minFilter"] ?? LinearFilter;
 
-      texture.anisotropy = texData["anisotropy"] ?? 1;
+        texture.anisotropy = texData["anisotropy"] ?? 1;
 
-      if (texData["encoding"] != null) {
-        texture.encoding = texData["encoding"];
-      }
+        if (texData["encoding"] != null) {
+          texture.encoding = texData["encoding"];
+        }
 
-      if (texData["flipY"] != null) {
-        texture.flipY = texData["flipY"];
-      }
+        if (texData["flipY"] != null) {
+          texture.flipY = texData["flipY"];
+        }
 
-      if (texData["format"] != null) {
-        texture.format = texData["format"];
-      }
+        if (texData["format"] != null) {
+          texture.format = texData["format"];
+        }
 
-      if (texData["type"] != null) {
-        texture.type = texData["type"];
-      }
+        if (texData["type"] != null) {
+          texture.type = texData["type"];
+        }
 
-      if (texData["mipmaps"] != null) {
-        texture.mipmaps = texData["mipmaps"];
-        texture.minFilter = LinearMipmapLinearFilter; // presumably...
+        if (texData["mipmaps"] != null) {
+          texture.mipmaps = texData["mipmaps"];
+          texture.minFilter = LinearMipmapLinearFilter; // presumably...
+        }
 
-      }
+        if (texData["mipmapCount"] == 1) {
+          texture.minFilter = LinearFilter;
+        }
 
-      if (texData["mipmapCount"] == 1) {
-        texture.minFilter = LinearFilter;
-      }
+        if (texData["generateMipmaps"] != null) {
+          texture.generateMipmaps = texData["generateMipmaps"];
+        }
 
-      if (texData["generateMipmaps"] != null) {
-        texture.generateMipmaps = texData["generateMipmaps"];
-      }
+        texture.needsUpdate = true;
 
-      texture.needsUpdate = true;
-
-      onLoad(texture, texData);
-    }, onProgress, onError);
+        onLoad(texture, texData);
+      },
+      onProgress,
+      onError,
+    );
 
     return texture;
   }

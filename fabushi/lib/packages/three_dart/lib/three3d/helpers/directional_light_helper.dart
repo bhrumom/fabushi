@@ -26,9 +26,28 @@ class DirectionalLightHelper extends Object3D {
 
     double s = size.toDouble();
 
-    List<double> posData = [-s, s, 0.0, s, s, 0.0, s, -s, 0.0, -s, -s, 0.0, -s, s, 0.0];
+    List<double> posData = [
+      -s,
+      s,
+      0.0,
+      s,
+      s,
+      0.0,
+      s,
+      -s,
+      0.0,
+      -s,
+      -s,
+      0.0,
+      -s,
+      s,
+      0.0,
+    ];
 
-    geometry.setAttribute('position', Float32BufferAttribute(Float32Array.from(posData), 3, false));
+    geometry.setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(posData), 3, false),
+    );
 
     var material = LineBasicMaterial({"fog": false, "toneMapped": false});
 
@@ -37,7 +56,10 @@ class DirectionalLightHelper extends Object3D {
 
     geometry = BufferGeometry();
     List<double> d2 = [0, 0, 0, 0, 0, 1];
-    geometry.setAttribute('position', Float32BufferAttribute(Float32Array.from(d2), 3, false));
+    geometry.setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(d2), 3, false),
+    );
 
     targetLine = Line(geometry, material);
     add(targetLine);

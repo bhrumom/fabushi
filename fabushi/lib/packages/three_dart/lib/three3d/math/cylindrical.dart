@@ -11,7 +11,9 @@ class Cylindrical {
   late num y;
 
   Cylindrical([num? radius, num? theta, num? y]) {
-    this.radius = (radius != null) ? radius : 1.0; // distance from the origin to a point in the x-z plane
+    this.radius = (radius != null)
+        ? radius
+        : 1.0; // distance from the origin to a point in the x-z plane
     this.theta = (theta != null)
         ? theta
         : 0; // counterclockwise angle in the x-z plane measured in radians from the positive z-axis

@@ -50,7 +50,11 @@ NativeArray getTypedArray(String type, List buffer) {
   }
 }
 
-BufferAttribute getTypedAttribute(NativeArray array, int itemSize, [bool normalized = false]) {
+BufferAttribute getTypedAttribute(
+  NativeArray array,
+  int itemSize, [
+  bool normalized = false,
+]) {
   if (array is Uint32Array) {
     return Uint32BufferAttribute(array, itemSize, normalized);
   } else if (array is Uint16Array) {

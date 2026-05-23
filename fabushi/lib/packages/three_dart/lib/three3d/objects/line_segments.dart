@@ -30,9 +30,14 @@ class LineSegments extends Line {
           lineDistances[i + 1] = lineDistances[i] + _lsstart.distanceTo(_lsend);
         }
 
-        geometry.setAttribute('lineDistance', Float32BufferAttribute(lineDistances, 1, false));
+        geometry.setAttribute(
+          'lineDistance',
+          Float32BufferAttribute(lineDistances, 1, false),
+        );
       } else {
-        print('three.LineSegments.computeLineDistances(): Computation only possible with non-indexed BufferGeometry.');
+        print(
+          'three.LineSegments.computeLineDistances(): Computation only possible with non-indexed BufferGeometry.',
+        );
       }
     }
     // else if (geometry.isGeometry) {

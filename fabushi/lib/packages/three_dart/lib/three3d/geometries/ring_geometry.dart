@@ -51,7 +51,11 @@ class RingGeometry extends BufferGeometry {
         vertex.x = radius * Math.cos(segment);
         vertex.y = radius * Math.sin(segment);
 
-        vertices.addAll([vertex.x.toDouble(), vertex.y.toDouble(), vertex.z.toDouble()]);
+        vertices.addAll([
+          vertex.x.toDouble(),
+          vertex.y.toDouble(),
+          vertex.z.toDouble(),
+        ]);
 
         // normal
 
@@ -93,13 +97,25 @@ class RingGeometry extends BufferGeometry {
     // build geometry
 
     setIndex(indices);
-    setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3));
-    setAttribute('normal', Float32BufferAttribute(Float32Array.from(normals), 3));
+    setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3),
+    );
+    setAttribute(
+      'normal',
+      Float32BufferAttribute(Float32Array.from(normals), 3),
+    );
     setAttribute('uv', Float32BufferAttribute(Float32Array.from(uvs), 2));
   }
 
   static fromJSON(data) {
     return RingGeometry(
-        data.innerRadius, data.outerRadius, data.thetaSegments, data.phiSegments, data.thetaStart, data.thetaLength);
+      data.innerRadius,
+      data.outerRadius,
+      data.thetaSegments,
+      data.phiSegments,
+      data.thetaStart,
+      data.thetaLength,
+    );
   }
 }

@@ -29,7 +29,12 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
   WebGLUniforms? cachedUniforms;
   Map<String, dynamic>? cachedAttributes;
 
-  WebGLProgram(this.renderer, this.cacheKey, this.parameters, this.bindingStates) {
+  WebGLProgram(
+    this.renderer,
+    this.cacheKey,
+    this.parameters,
+    this.bindingStates,
+  ) {
     name = parameters.shaderName;
     id = programIdCount++;
 
@@ -50,24 +55,36 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
     final envMapBlendingDefine = generateEnvMapBlendingDefine(parameters);
     final cubeUVSize = generateCubeUVSize(parameters);
 
-    final customExtensions = parameters.isWebGL2 ? '' : generateExtensions(parameters);
+    final customExtensions = parameters.isWebGL2
+        ? ''
+        : generateExtensions(parameters);
 
     String customDefines = generateDefines(defines);
 
     String prefixVertex, prefixFragment;
 
-    String defaultVersionString = (!kIsWeb && (Platform.isMacOS || Platform.isWindows)) ? "#version 410\n" : "";
+    String defaultVersionString =
+        (!kIsWeb && (Platform.isMacOS || Platform.isWindows))
+        ? "#version 410\n"
+        : "";
 
-    var versionString = parameters.glslVersion != null ? '#version ${parameters.glslVersion}\n' : defaultVersionString;
+    var versionString = parameters.glslVersion != null
+        ? '#version ${parameters.glslVersion}\n'
+        : defaultVersionString;
 
     if (parameters.isRawShaderMaterial) {
-      prefixVertex = [customDefines].where((s) => filterEmptyLine(s)).join('\n');
+      prefixVertex = [
+        customDefines,
+      ].where((s) => filterEmptyLine(s)).join('\n');
 
       if (prefixVertex.isNotEmpty) {
         prefixVertex = "$prefixVertex\n";
       }
 
-      prefixFragment = [customExtensions, customDefines].where((s) => filterEmptyLine(s)).join('\n');
+      prefixFragment = [
+        customExtensions,
+        customDefines,
+      ].where((s) => filterEmptyLine(s)).join('\n');
 
       if (prefixFragment.isNotEmpty) {
         prefixFragment = "$prefixFragment\n";
@@ -90,14 +107,24 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
         parameters.emissiveMap ? '#define USE_EMISSIVEMAP' : '',
         parameters.bumpMap ? '#define USE_BUMPMAP' : '',
         parameters.normalMap ? '#define USE_NORMALMAP' : '',
-        (parameters.normalMap && parameters.objectSpaceNormalMap) ? '#define OBJECTSPACE_NORMALMAP' : '',
-        (parameters.normalMap && parameters.tangentSpaceNormalMap) ? '#define TANGENTSPACE_NORMALMAP' : '',
+        (parameters.normalMap && parameters.objectSpaceNormalMap)
+            ? '#define OBJECTSPACE_NORMALMAP'
+            : '',
+        (parameters.normalMap && parameters.tangentSpaceNormalMap)
+            ? '#define TANGENTSPACE_NORMALMAP'
+            : '',
         parameters.clearcoatMap ? '#define USE_CLEARCOATMAP' : '',
-        parameters.clearcoatRoughnessMap ? '#define USE_CLEARCOAT_ROUGHNESSMAP' : '',
+        parameters.clearcoatRoughnessMap
+            ? '#define USE_CLEARCOAT_ROUGHNESSMAP'
+            : '',
         parameters.clearcoatNormalMap ? '#define USE_CLEARCOAT_NORMALMAP' : '',
-        parameters.displacementMap && parameters.supportsVertexTextures ? '#define USE_DISPLACEMENTMAP' : '',
+        parameters.displacementMap && parameters.supportsVertexTextures
+            ? '#define USE_DISPLACEMENTMAP'
+            : '',
         parameters.specularMap ? '#define USE_SPECULARMAP' : '',
-        parameters.specularIntensityMap ? '#define USE_SPECULARINTENSITYMAP' : '',
+        parameters.specularIntensityMap
+            ? '#define USE_SPECULARINTENSITYMAP'
+            : '',
         parameters.specularColorMap ? '#define USE_SPECULARCOLORMAP' : '',
         parameters.roughnessMap ? '#define USE_ROUGHNESSMAP' : '',
         parameters.metalnessMap ? '#define USE_METALNESSMAP' : '',
@@ -115,13 +142,21 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
         parameters.flatShading ? '#define FLAT_SHADED' : '',
         parameters.skinning ? '#define USE_SKINNING' : '',
         parameters.morphTargets ? '#define USE_MORPHTARGETS' : '',
-        (parameters.morphTargets && parameters.isWebGL2) ? '#define MORPHTARGETS_TEXTURE' : '',
+        (parameters.morphTargets && parameters.isWebGL2)
+            ? '#define MORPHTARGETS_TEXTURE'
+            : '',
         (parameters.morphTargets && parameters.isWebGL2)
             ? '#define MORPHTARGETS_COUNT ${parameters.morphTargetsCount}'
             : '',
-        parameters.morphNormals && parameters.flatShading == false ? '#define USE_MORPHNORMALS' : '',
-        (parameters.morphColors && parameters.isWebGL2) ? '#define USE_MORPHCOLORS' : '',
-        (parameters.morphTargetsCount > 0 && parameters.isWebGL2) ? '#define MORPHTARGETS_TEXTURE' : '',
+        parameters.morphNormals && parameters.flatShading == false
+            ? '#define USE_MORPHNORMALS'
+            : '',
+        (parameters.morphColors && parameters.isWebGL2)
+            ? '#define USE_MORPHCOLORS'
+            : '',
+        (parameters.morphTargetsCount > 0 && parameters.isWebGL2)
+            ? '#define MORPHTARGETS_TEXTURE'
+            : '',
         (parameters.morphTargetsCount > 0 && parameters.isWebGL2)
             ? '#define MORPHTARGETS_TEXTURE_STRIDE ${parameters.morphTextureStride}'
             : '',
@@ -134,7 +169,8 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
         parameters.shadowMapEnabled ? '#define $shadowMapTypeDefine' : '',
         parameters.sizeAttenuation ? '#define USE_SIZEATTENUATION' : '',
         parameters.logarithmicDepthBuffer ? '#define USE_LOGDEPTHBUF' : '',
-        (parameters.logarithmicDepthBuffer && parameters.rendererExtensionFragDepth)
+        (parameters.logarithmicDepthBuffer &&
+                parameters.rendererExtensionFragDepth)
             ? '#define USE_LOGDEPTHBUF_EXT'
             : '',
         'uniform mat4 modelMatrix;',
@@ -182,7 +218,7 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
         '	attribute vec4 skinIndex;',
         '	attribute vec4 skinWeight;',
         '#endif',
-        '\n'
+        '\n',
       ].where((s) => filterEmptyLine(s)).join('\n');
 
       prefixFragment = [
@@ -202,22 +238,36 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
         parameters.envMap ? '#define $envMapTypeDefine' : '',
         parameters.envMap ? '#define $envMapModeDefine' : '',
         parameters.envMap ? '#define $envMapBlendingDefine' : '',
-        cubeUVSize != null ? '#define CUBEUV_TEXEL_WIDTH ${cubeUVSize["texelWidth"]}' : '',
-        cubeUVSize != null ? '#define CUBEUV_TEXEL_HEIGHT ${cubeUVSize["texelHeight"]}' : '',
-        cubeUVSize != null ? '#define CUBEUV_MAX_MIP ${cubeUVSize["maxMip"].toString()}.0' : '',
+        cubeUVSize != null
+            ? '#define CUBEUV_TEXEL_WIDTH ${cubeUVSize["texelWidth"]}'
+            : '',
+        cubeUVSize != null
+            ? '#define CUBEUV_TEXEL_HEIGHT ${cubeUVSize["texelHeight"]}'
+            : '',
+        cubeUVSize != null
+            ? '#define CUBEUV_MAX_MIP ${cubeUVSize["maxMip"].toString()}.0'
+            : '',
 
         parameters.lightMap ? '#define USE_LIGHTMAP' : '',
         parameters.aoMap ? '#define USE_AOMAP' : '',
         parameters.emissiveMap ? '#define USE_EMISSIVEMAP' : '',
         parameters.bumpMap ? '#define USE_BUMPMAP' : '',
         parameters.normalMap ? '#define USE_NORMALMAP' : '',
-        (parameters.normalMap && parameters.objectSpaceNormalMap) ? '#define OBJECTSPACE_NORMALMAP' : '',
-        (parameters.normalMap && parameters.tangentSpaceNormalMap) ? '#define TANGENTSPACE_NORMALMAP' : '',
+        (parameters.normalMap && parameters.objectSpaceNormalMap)
+            ? '#define OBJECTSPACE_NORMALMAP'
+            : '',
+        (parameters.normalMap && parameters.tangentSpaceNormalMap)
+            ? '#define TANGENTSPACE_NORMALMAP'
+            : '',
         parameters.clearcoatMap ? '#define USE_CLEARCOATMAP' : '',
-        parameters.clearcoatRoughnessMap ? '#define USE_CLEARCOAT_ROUGHNESSMAP' : '',
+        parameters.clearcoatRoughnessMap
+            ? '#define USE_CLEARCOAT_ROUGHNESSMAP'
+            : '',
         parameters.clearcoatNormalMap ? '#define USE_CLEARCOAT_NORMALMAP' : '',
         parameters.specularMap ? '#define USE_SPECULARMAP' : '',
-        parameters.specularIntensityMap ? '#define USE_SPECULARINTENSITYMAP' : '',
+        parameters.specularIntensityMap
+            ? '#define USE_SPECULARINTENSITYMAP'
+            : '',
         parameters.specularColorMap ? '#define USE_SPECULARCOLORMAP' : '',
         parameters.roughnessMap ? '#define USE_ROUGHNESSMAP' : '',
         parameters.metalnessMap ? '#define USE_METALNESSMAP' : '',
@@ -231,7 +281,9 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
         parameters.thicknessMap ? '#define USE_THICKNESSMAP' : '',
         parameters.decodeVideoTexture ? '#define DECODE_VIDEO_TEXTURE' : '',
         parameters.vertexTangents ? '#define USE_TANGENT' : '',
-        parameters.vertexColors || parameters.instancingColor ? '#define USE_COLOR' : '',
+        parameters.vertexColors || parameters.instancingColor
+            ? '#define USE_COLOR'
+            : '',
         parameters.vertexAlphas ? '#define USE_COLOR_ALPHA' : '',
         parameters.vertexUvs ? '#define USE_UV' : '',
         parameters.uvsVertexOnly ? '#define UVS_VERTEX_ONLY' : '',
@@ -247,10 +299,13 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
 
         parameters.premultipliedAlpha ? '#define PREMULTIPLIED_ALPHA' : '',
 
-        parameters.physicallyCorrectLights ? '#define PHYSICALLY_CORRECT_LIGHTS' : '',
+        parameters.physicallyCorrectLights
+            ? '#define PHYSICALLY_CORRECT_LIGHTS'
+            : '',
 
         parameters.logarithmicDepthBuffer ? '#define USE_LOGDEPTHBUF' : '',
-        (parameters.logarithmicDepthBuffer && parameters.rendererExtensionFragDepth)
+        (parameters.logarithmicDepthBuffer &&
+                parameters.rendererExtensionFragDepth)
             ? '#define USE_LOGDEPTHBUF_EXT'
             : '',
 
@@ -262,19 +317,25 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
         (parameters.toneMapping != NoToneMapping)
             ? shaderChunk['tonemapping_pars_fragment']
             : '', // this code is required here because it is used by the toneMapping() defined below
-        (parameters.toneMapping != NoToneMapping) ? getToneMappingFunction('toneMapping', parameters.toneMapping) : '',
+        (parameters.toneMapping != NoToneMapping)
+            ? getToneMappingFunction('toneMapping', parameters.toneMapping)
+            : '',
 
         parameters.dithering ? '#define DITHERING' : '',
         parameters.opaque ? '#define OPAQUE' : '',
 
-        shaderChunk[
-            'encodings_pars_fragment'], // this code is required here because it is used by the various encoding/decoding defined below
+        shaderChunk['encodings_pars_fragment'], // this code is required here because it is used by the various encoding/decoding defined below
 
-        getTexelEncodingFunction('linearToOutputTexel', parameters.outputEncoding),
+        getTexelEncodingFunction(
+          'linearToOutputTexel',
+          parameters.outputEncoding,
+        ),
 
-        parameters.useDepthPacking ? '#define DEPTH_PACKING ${parameters.depthPacking}' : '',
+        parameters.useDepthPacking
+            ? '#define DEPTH_PACKING ${parameters.depthPacking}'
+            : '',
 
-        '\n'
+        '\n',
       ].where((s) => filterEmptyLine(s)).join('\n');
     }
 
@@ -291,30 +352,15 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
 
     if (parameters.isWebGL2 && parameters.isRawShaderMaterial != true) {
       // GLSL 3.0 conversion for built-in materials and ShaderMaterial
-      versionString = (!kIsWeb && (Platform.isMacOS || Platform.isWindows)) ? "#version 410\n" : "#version 300 es\n";
+      versionString = (!kIsWeb && (Platform.isMacOS || Platform.isWindows))
+          ? "#version 410\n"
+          : "#version 300 es\n";
 
-      prefixVertex = '${[
-        'precision mediump sampler2DArray;',
-        '#define attribute in',
-        '#define varying out',
-        '#define texture2D texture'
-      ].join('\n')}\n$prefixVertex';
+      prefixVertex =
+          '${['precision mediump sampler2DArray;', '#define attribute in', '#define varying out', '#define texture2D texture'].join('\n')}\n$prefixVertex';
 
-      prefixFragment = '${[
-        '#define varying in',
-        (parameters.glslVersion == GLSL3) ? '' : 'layout(location = 0) out highp vec4 pc_fragColor;',
-        (parameters.glslVersion == GLSL3) ? '' : '#define gl_FragColor pc_fragColor',
-        '#define gl_FragDepthEXT gl_FragDepth',
-        '#define texture2D texture',
-        '#define textureCube texture',
-        '#define texture2DProj textureProj',
-        '#define texture2DLodEXT textureLod',
-        '#define texture2DProjLodEXT textureProjLod',
-        '#define textureCubeLodEXT textureLod',
-        '#define texture2DGradEXT textureGrad',
-        '#define texture2DProjGradEXT textureProjGrad',
-        '#define textureCubeGradEXT textureGrad'
-      ].join('\n')}\n$prefixFragment';
+      prefixFragment =
+          '${['#define varying in', (parameters.glslVersion == GLSL3) ? '' : 'layout(location = 0) out highp vec4 pc_fragColor;', (parameters.glslVersion == GLSL3) ? '' : '#define gl_FragColor pc_fragColor', '#define gl_FragDepthEXT gl_FragDepth', '#define texture2D texture', '#define textureCube texture', '#define texture2DProj textureProj', '#define texture2DLodEXT textureLod', '#define texture2DProjLodEXT textureProjLod', '#define textureCubeLodEXT textureLod', '#define texture2DGradEXT textureGrad', '#define texture2DProjGradEXT textureProjGrad', '#define textureCubeGradEXT textureGrad'].join('\n')}\n$prefixFragment';
     }
 
     String vertexGlsl = versionString + prefixVertex + vertexShader;
@@ -362,13 +408,19 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
         runnable = false;
 
         final vertexErrors = getShaderErrors(gl, glVertexShader, 'vertex');
-        final fragmentErrors = getShaderErrors(gl, glFragmentShader, 'fragment');
+        final fragmentErrors = getShaderErrors(
+          gl,
+          glFragmentShader,
+          'fragment',
+        );
 
         print(
-            'three.WebGLProgram: shader error: ${gl.getError()} gl.VALIDATE_STATUS ${gl.getProgramParameter(program, gl.VALIDATE_STATUS)} gl.getProgramInfoLog $programLog  $vertexErrors $fragmentErrors ');
+          'three.WebGLProgram: shader error: ${gl.getError()} gl.VALIDATE_STATUS ${gl.getProgramParameter(program, gl.VALIDATE_STATUS)} gl.getProgramInfoLog $programLog  $vertexErrors $fragmentErrors ',
+        );
       } else if (programLog != '' && programLog != null) {
         print(
-            'three.WebGLProgram: gl.getProgramInfoLog() programLog: $programLog vertexLog: $vertexLog fragmentLog: $fragmentLog ');
+          'three.WebGLProgram: gl.getProgramInfoLog() programLog: $programLog vertexLog: $vertexLog fragmentLog: $fragmentLog ',
+        );
       } else if (vertexLog == '' || fragmentLog == '') {
         haveDiagnostics = false;
       }
@@ -378,7 +430,7 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
           "runnable": runnable,
           "programLog": programLog,
           "vertexShader": {"log": vertexLog, "prefix": prefixVertex},
-          "fragmentShader": {"log": fragmentLog, "prefix": prefixFragment}
+          "fragmentShader": {"log": fragmentLog, "prefix": prefixFragment},
         };
       }
     }
@@ -418,5 +470,4 @@ class WebGLProgram extends DefaultProgram with WebGLProgramExtra {
   }
 
   //
-
 }

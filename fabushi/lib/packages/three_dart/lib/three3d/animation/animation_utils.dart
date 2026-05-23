@@ -14,7 +14,6 @@ class AnimationUtils {
       // 	// in ios9 array.subarray(from, null) will return empty array
       // 	// but array.subarray(from) or array.subarray(from, len) is correct
       // 	return new array.constructor( array.subarray( from, to != null ? to : array.length ) );
-
     }
 
     return array.slice(from, to);
@@ -103,7 +102,6 @@ class AnimationUtils {
         if (value != null) {
           times.push(key.time);
           values.push.apply(values, value); // push all elements
-
         }
 
         key = jsonKeys[i++];
@@ -166,7 +164,10 @@ class AnimationUtils {
       if (times.isEmpty) continue;
 
       track.times = AnimationUtils.convertArray(times, track.times.constructor);
-      track.values = AnimationUtils.convertArray(values, track.values.constructor);
+      track.values = AnimationUtils.convertArray(
+        values,
+        track.values.constructor,
+      );
 
       tracks.add(track);
     }
@@ -194,7 +195,12 @@ class AnimationUtils {
     return clip;
   }
 
-  makeClipAdditive(AnimationClip targetClip, {int referenceFrame = 0, AnimationClip? referenceClip, int fps = 30}) {
+  makeClipAdditive(
+    AnimationClip targetClip, {
+    int referenceFrame = 0,
+    AnimationClip? referenceClip,
+    int fps = 30,
+  }) {
     referenceClip ??= targetClip;
 
     if (fps <= 0) fps = 30;
@@ -213,8 +219,11 @@ class AnimationUtils {
       }
 
       // Find the track in the target clip whose name and type matches the reference track
-      var targetTrack = targetClip.tracks.cast<KeyframeTrack?>().firstWhere((track) {
-        return track?.name == referenceTrack.name && track?.valueTypeName == referenceTrackType;
+      var targetTrack = targetClip.tracks.cast<KeyframeTrack?>().firstWhere((
+        track,
+      ) {
+        return track?.name == referenceTrack.name &&
+            track?.valueTypeName == referenceTrackType;
       }, orElse: () => null);
 
       if (targetTrack == null) continue;
@@ -243,24 +252,41 @@ class AnimationUtils {
         // Reference frame is earlier than the first keyframe, so just use the first keyframe
         var startIndex = referenceOffset;
         var endIndex = referenceValueSize - referenceOffset;
-        referenceValue = AnimationUtils.arraySlice(referenceTrack.values, startIndex, endIndex);
+        referenceValue = AnimationUtils.arraySlice(
+          referenceTrack.values,
+          startIndex,
+          endIndex,
+        );
       } else if (referenceTime >= referenceTrack.times[lastIndex]) {
         // Reference frame is after the last keyframe, so just use the last keyframe
-        int startIndex = (lastIndex * referenceValueSize + referenceOffset).toInt();
-        int endIndex = (startIndex + referenceValueSize - referenceOffset).toInt();
-        referenceValue = AnimationUtils.arraySlice(referenceTrack.values, startIndex, endIndex);
+        int startIndex = (lastIndex * referenceValueSize + referenceOffset)
+            .toInt();
+        int endIndex = (startIndex + referenceValueSize - referenceOffset)
+            .toInt();
+        referenceValue = AnimationUtils.arraySlice(
+          referenceTrack.values,
+          startIndex,
+          endIndex,
+        );
       } else {
         // Interpolate to the reference value
         var interpolant = referenceTrack.createInterpolant!();
         var startIndex = referenceOffset;
         var endIndex = referenceValueSize - referenceOffset;
         interpolant.evaluate(referenceTime);
-        referenceValue = AnimationUtils.arraySlice(interpolant.resultBuffer, startIndex, endIndex);
+        referenceValue = AnimationUtils.arraySlice(
+          interpolant.resultBuffer,
+          startIndex,
+          endIndex,
+        );
       }
 
       // Conjugate the quaternion
       if (referenceTrackType == 'quaternion') {
-        var referenceQuat = Quaternion().fromArray(referenceValue).normalize().conjugate();
+        var referenceQuat = Quaternion()
+            .fromArray(referenceValue)
+            .normalize()
+            .conjugate();
         referenceQuat.toArray(referenceValue);
       }
 
@@ -273,7 +299,13 @@ class AnimationUtils {
         if (referenceTrackType == 'quaternion') {
           // Multiply the conjugate for quaternion track types
           Quaternion.multiplyQuaternionsFlat(
-              targetTrack.values, valueStart, referenceValue, 0, targetTrack.values, valueStart);
+            targetTrack.values,
+            valueStart,
+            referenceValue,
+            0,
+            targetTrack.values,
+            valueStart,
+          );
         } else {
           var valueEnd = targetValueSize - targetOffset * 2;
 

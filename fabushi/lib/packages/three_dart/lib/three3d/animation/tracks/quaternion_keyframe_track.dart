@@ -7,7 +7,8 @@ import '../../math/interpolant.dart';
 /// A Track of quaternion keyframe values.
 
 class QuaternionKeyframeTrack extends KeyframeTrack {
-  QuaternionKeyframeTrack(name, times, values, [interpolation]) : super(name, times, values, interpolation) {
+  QuaternionKeyframeTrack(name, times, values, [interpolation])
+    : super(name, times, values, interpolation) {
     valueTypeName = 'quaternion';
     defaultInterpolation = InterpolateLinear;
   }
@@ -22,5 +23,4 @@ class QuaternionKeyframeTrack extends KeyframeTrack {
     return null;
   }
   // not yet implemented
-
 }

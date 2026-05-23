@@ -4,8 +4,29 @@ import 'package:three_dart/three3d/constants.dart';
 class CubeTexture extends Texture {
   bool isCubeTexture = true;
 
-  CubeTexture([images, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy, encoding])
-      : super(images, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy, encoding) {
+  CubeTexture([
+    images,
+    mapping,
+    wrapS,
+    wrapT,
+    magFilter,
+    minFilter,
+    format,
+    type,
+    anisotropy,
+    encoding,
+  ]) : super(
+         images,
+         mapping,
+         wrapS,
+         wrapT,
+         magFilter,
+         minFilter,
+         format,
+         type,
+         anisotropy,
+         encoding,
+       ) {
     images = images ?? [];
     mapping = mapping ?? CubeReflectionMapping;
 

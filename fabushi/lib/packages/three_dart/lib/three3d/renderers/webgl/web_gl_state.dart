@@ -22,7 +22,11 @@ class WebGLState {
   late Map<int, int> equationToGL;
   late Map<int, int> factorToGL;
 
-  Map<String, dynamic> get buffers => {"color": colorBuffer, "depth": depthBuffer, "stencil": stencilBuffer};
+  Map<String, dynamic> get buffers => {
+    "color": colorBuffer,
+    "depth": depthBuffer,
+    "stencil": stencilBuffer,
+  };
 
   //
 
@@ -82,8 +86,16 @@ class WebGLState {
     stencilBuffer.disable = disable;
 
     maxTextures = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
-    emptyTextures[gl.TEXTURE_2D] = createTexture(gl.TEXTURE_2D, gl.TEXTURE_2D, 1);
-    emptyTextures[gl.TEXTURE_CUBE_MAP] = createTexture(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_CUBE_MAP_POSITIVE_X, 6);
+    emptyTextures[gl.TEXTURE_2D] = createTexture(
+      gl.TEXTURE_2D,
+      gl.TEXTURE_2D,
+      1,
+    );
+    emptyTextures[gl.TEXTURE_CUBE_MAP] = createTexture(
+      gl.TEXTURE_CUBE_MAP,
+      gl.TEXTURE_CUBE_MAP_POSITIVE_X,
+      6,
+    );
 
     // init
 
@@ -103,7 +115,7 @@ class WebGLState {
     equationToGL = {
       AddEquation: gl.FUNC_ADD,
       SubtractEquation: gl.FUNC_SUBTRACT,
-      ReverseSubtractEquation: gl.FUNC_REVERSE_SUBTRACT
+      ReverseSubtractEquation: gl.FUNC_REVERSE_SUBTRACT,
     };
 
     equationToGL[MinEquation] = gl.MIN;
@@ -120,7 +132,7 @@ class WebGLState {
       OneMinusSrcColorFactor: gl.ONE_MINUS_SRC_COLOR,
       OneMinusSrcAlphaFactor: gl.ONE_MINUS_SRC_ALPHA,
       OneMinusDstColorFactor: gl.ONE_MINUS_DST_COLOR,
-      OneMinusDstAlphaFactor: gl.ONE_MINUS_DST_ALPHA
+      OneMinusDstAlphaFactor: gl.ONE_MINUS_DST_ALPHA,
     };
 
     scissorParam = gl.getParameter(gl.SCISSOR_BOX);
@@ -144,7 +156,17 @@ class WebGLState {
     gl.texParameteri(type, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
     for (var i = 0; i < count; i++) {
-      gl.texImage2D(target + i, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+      gl.texImage2D(
+        target + i,
+        0,
+        gl.RGBA,
+        1,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        data,
+      );
     }
 
     return texture;
@@ -216,7 +238,8 @@ class WebGLState {
       if (renderTarget.isWebGLMultipleRenderTargets) {
         var textures = renderTarget.texture;
 
-        if (drawBuffers.length != textures.length || drawBuffers[0] != gl.COLOR_ATTACHMENT0) {
+        if (drawBuffers.length != textures.length ||
+            drawBuffers[0] != gl.COLOR_ATTACHMENT0) {
           for (var i = 0, il = textures.length; i < il; i++) {
             drawBuffers[i] = gl.COLOR_ATTACHMENT0 + i;
           }
@@ -256,7 +279,9 @@ class WebGLState {
       if (capabilities.isWebGL2) {
         gl.drawBuffers(List<int>.from(drawBuffers));
       } else {
-        extensions.get('WEBGL_draw_buffers').drawBuffersWEBGL(List<int>.from(drawBuffers));
+        extensions
+            .get('WEBGL_draw_buffers')
+            .drawBuffersWEBGL(List<int>.from(drawBuffers));
       }
     }
   }
@@ -271,14 +296,16 @@ class WebGLState {
     return false;
   }
 
-  setBlending(int blending,
-      [int? blendEquation,
-      int? blendSrc,
-      int? blendDst,
-      int? blendEquationAlpha,
-      int? blendSrcAlpha,
-      int? blendDstAlpha,
-      bool? premultipliedAlpha]) {
+  setBlending(
+    int blending, [
+    int? blendEquation,
+    int? blendSrc,
+    int? blendDst,
+    int? blendEquationAlpha,
+    int? blendSrcAlpha,
+    int? blendDstAlpha,
+    bool? premultipliedAlpha,
+  ]) {
     if (blending == NoBlending) {
       if (currentBlendingEnabled) {
         disable(gl.BLEND);
@@ -294,8 +321,10 @@ class WebGLState {
     }
 
     if (blending != CustomBlending) {
-      if (blending != currentBlending || premultipliedAlpha != currentPremultipledAlpha) {
-        if (currentBlendEquation != AddEquation || currentBlendEquationAlpha != AddEquation) {
+      if (blending != currentBlending ||
+          premultipliedAlpha != currentPremultipledAlpha) {
+        if (currentBlendEquation != AddEquation ||
+            currentBlendEquationAlpha != AddEquation) {
           gl.blendEquation(gl.FUNC_ADD);
 
           currentBlendEquation = AddEquation;
@@ -305,7 +334,12 @@ class WebGLState {
         if (premultipliedAlpha != null && premultipliedAlpha) {
           switch (blending) {
             case NormalBlending:
-              gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+              gl.blendFuncSeparate(
+                gl.ONE,
+                gl.ONE_MINUS_SRC_ALPHA,
+                gl.ONE,
+                gl.ONE_MINUS_SRC_ALPHA,
+              );
               break;
 
             case AdditiveBlending:
@@ -313,11 +347,21 @@ class WebGLState {
               break;
 
             case SubtractiveBlending:
-              gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_COLOR, gl.ZERO, gl.ONE);
+              gl.blendFuncSeparate(
+                gl.ZERO,
+                gl.ONE_MINUS_SRC_COLOR,
+                gl.ZERO,
+                gl.ONE,
+              );
               break;
 
             case MultiplyBlending:
-              gl.blendFuncSeparate(gl.ZERO, gl.SRC_COLOR, gl.ZERO, gl.SRC_ALPHA);
+              gl.blendFuncSeparate(
+                gl.ZERO,
+                gl.SRC_COLOR,
+                gl.ZERO,
+                gl.SRC_ALPHA,
+              );
               break;
 
             default:
@@ -327,7 +371,12 @@ class WebGLState {
         } else {
           switch (blending) {
             case NormalBlending:
-              gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+              gl.blendFuncSeparate(
+                gl.SRC_ALPHA,
+                gl.ONE_MINUS_SRC_ALPHA,
+                gl.ONE,
+                gl.ONE_MINUS_SRC_ALPHA,
+              );
               break;
 
             case AdditiveBlending:
@@ -335,7 +384,12 @@ class WebGLState {
               break;
 
             case SubtractiveBlending:
-              gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_COLOR, gl.ZERO, gl.ONE);
+              gl.blendFuncSeparate(
+                gl.ZERO,
+                gl.ONE_MINUS_SRC_COLOR,
+                gl.ZERO,
+                gl.ONE,
+              );
               break;
 
             case MultiplyBlending:
@@ -366,8 +420,12 @@ class WebGLState {
     blendSrcAlpha = blendSrcAlpha ?? blendSrc;
     blendDstAlpha = blendDstAlpha ?? blendDst;
 
-    if (blendEquation != currentBlendEquation || blendEquationAlpha != currentBlendEquationAlpha) {
-      gl.blendEquationSeparate(equationToGL[blendEquation]!, equationToGL[blendEquationAlpha]!);
+    if (blendEquation != currentBlendEquation ||
+        blendEquationAlpha != currentBlendEquationAlpha) {
+      gl.blendEquationSeparate(
+        equationToGL[blendEquation]!,
+        equationToGL[blendEquationAlpha]!,
+      );
 
       currentBlendEquation = blendEquation;
       currentBlendEquationAlpha = blendEquationAlpha;
@@ -378,7 +436,11 @@ class WebGLState {
         blendSrcAlpha != currentBlendSrcAlpha ||
         blendDstAlpha != currentBlendDstAlpha) {
       gl.blendFuncSeparate(
-          factorToGL[blendSrc], factorToGL[blendDst], factorToGL[blendSrcAlpha], factorToGL[blendDstAlpha]);
+        factorToGL[blendSrc],
+        factorToGL[blendDst],
+        factorToGL[blendSrcAlpha],
+        factorToGL[blendDstAlpha],
+      );
 
       currentBlendSrc = blendSrc;
       currentBlendDst = blendDst;
@@ -400,8 +462,16 @@ class WebGLState {
 
     (material.blending == NormalBlending && material.transparent == false)
         ? setBlending(NoBlending, null, null, null, null, null, null, false)
-        : setBlending(material.blending, material.blendEquation, material.blendSrc, material.blendDst,
-            material.blendEquationAlpha, material.blendSrcAlpha, material.blendDstAlpha, material.premultipliedAlpha);
+        : setBlending(
+            material.blending,
+            material.blendEquation,
+            material.blendSrc,
+            material.blendDst,
+            material.blendEquationAlpha,
+            material.blendSrcAlpha,
+            material.blendDstAlpha,
+            material.premultipliedAlpha,
+          );
 
     depthBuffer.setFunc(material.depthFunc);
     depthBuffer.setTest(material.depthTest);
@@ -412,13 +482,27 @@ class WebGLState {
     stencilBuffer.setTest(stencilWrite);
     if (stencilWrite) {
       stencilBuffer.setMask(material.stencilWriteMask);
-      stencilBuffer.setFunc(material.stencilFunc, material.stencilRef, material.stencilFuncMask);
-      stencilBuffer.setOp(material.stencilFail, material.stencilZFail, material.stencilZPass);
+      stencilBuffer.setFunc(
+        material.stencilFunc,
+        material.stencilRef,
+        material.stencilFuncMask,
+      );
+      stencilBuffer.setOp(
+        material.stencilFail,
+        material.stencilZFail,
+        material.stencilZPass,
+      );
     }
 
-    setPolygonOffset(material.polygonOffset, material.polygonOffsetFactor, material.polygonOffsetUnits);
+    setPolygonOffset(
+      material.polygonOffset,
+      material.polygonOffsetFactor,
+      material.polygonOffsetUnits,
+    );
 
-    material.alphaToCoverage == true ? enable(gl.SAMPLE_ALPHA_TO_COVERAGE) : disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+    material.alphaToCoverage == true
+        ? enable(gl.SAMPLE_ALPHA_TO_COVERAGE)
+        : disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
   }
 
   //
@@ -467,7 +551,8 @@ class WebGLState {
     if (polygonOffset) {
       enable(gl.POLYGON_OFFSET_FILL);
 
-      if (currentPolygonOffsetFactor != factor || currentPolygonOffsetUnits != units) {
+      if (currentPolygonOffsetFactor != factor ||
+          currentPolygonOffsetUnits != units) {
         gl.polygonOffset(factor, units);
 
         currentPolygonOffsetFactor = factor;
@@ -540,14 +625,50 @@ class WebGLState {
     }
   }
 
-  compressedTexImage2D(target, level, internalformat, width, height, border, pixels) {
-    gl.compressedTexImage2D(target, level, internalformat, width, height, border, pixels);
+  compressedTexImage2D(
+    target,
+    level,
+    internalformat,
+    width,
+    height,
+    border,
+    pixels,
+  ) {
+    gl.compressedTexImage2D(
+      target,
+      level,
+      internalformat,
+      width,
+      height,
+      border,
+      pixels,
+    );
   }
 
-  texSubImage2D(int target, int level, int x, int y, width, height, int glFormat, int glType, NativeArray data) {
+  texSubImage2D(
+    int target,
+    int level,
+    int x,
+    int y,
+    width,
+    height,
+    int glFormat,
+    int glType,
+    NativeArray data,
+  ) {
     // try {
 
-    gl.texSubImage2D(target, level, x, y, width.toInt(), height.toInt(), glFormat, glType, data);
+    gl.texSubImage2D(
+      target,
+      level,
+      x,
+      y,
+      width.toInt(),
+      height.toInt(),
+      glFormat,
+      glType,
+      data,
+    );
 
     // } catch ( error ) {
 
@@ -560,7 +681,17 @@ class WebGLState {
     if (kIsWeb) {
       texSubImage2DNoSize(gl.TEXTURE_2D, 0, 0, 0, glFormat, glType, image.data);
     } else {
-      texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, image.width, image.height, glFormat, glType, image.data);
+      texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        0,
+        image.width,
+        image.height,
+        glFormat,
+        glType,
+        image.data,
+      );
     }
   }
 
@@ -576,10 +707,34 @@ class WebGLState {
     // }
   }
 
-  void texSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels) {
+  void texSubImage3D(
+    target,
+    level,
+    xoffset,
+    yoffset,
+    zoffset,
+    width,
+    height,
+    depth,
+    format,
+    type,
+    pixels,
+  ) {
     // try {
 
-    gl.texSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels);
+    gl.texSubImage3D(
+      target,
+      level,
+      xoffset,
+      yoffset,
+      zoffset,
+      width,
+      height,
+      depth,
+      format,
+      type,
+      pixels,
+    );
 
     // } catch ( error ) {
 
@@ -588,10 +743,28 @@ class WebGLState {
     // }
   }
 
-  void compressedTexSubImage2D(target, level, xoffset, yoffset, width, height, format, pixels) {
+  void compressedTexSubImage2D(
+    target,
+    level,
+    xoffset,
+    yoffset,
+    width,
+    height,
+    format,
+    pixels,
+  ) {
     // try {
 
-    gl.compressedTexSubImage2D(target, level, xoffset, yoffset, width, height, format, pixels);
+    gl.compressedTexSubImage2D(
+      target,
+      level,
+      xoffset,
+      yoffset,
+      width,
+      height,
+      format,
+      pixels,
+    );
 
     // } catch ( error ) {
 
@@ -600,7 +773,13 @@ class WebGLState {
     // }
   }
 
-  void texStorage2D(int type, int levels, int glInternalFormat, int width, int height) {
+  void texStorage2D(
+    int type,
+    int levels,
+    int glInternalFormat,
+    int width,
+    int height,
+  ) {
     // try {
 
     gl.texStorage2D(type, levels, glInternalFormat, width, height);
@@ -615,7 +794,14 @@ class WebGLState {
   void texStorage3D(target, levels, internalformat, width, height, depth) {
     // try {
 
-    gl.texStorage3D(target, levels, internalformat, width.toInt(), height.toInt(), depth);
+    gl.texStorage3D(
+      target,
+      levels,
+      internalformat,
+      width.toInt(),
+      height.toInt(),
+      depth,
+    );
 
     // } catch ( error ) {
 
@@ -624,40 +810,114 @@ class WebGLState {
     // }
   }
 
-  void texImage2DIf(int target, int level, int internalformat, int format, int type, image) {
+  void texImage2DIf(
+    int target,
+    int level,
+    int internalformat,
+    int format,
+    int type,
+    image,
+  ) {
     if (kIsWeb) {
       texImage2DNoSize(target, level, internalformat, format, type, image.data);
     } else {
-      texImage2D(target, level, internalformat, image.width, image.height, 0, format, type, image.data);
+      texImage2D(
+        target,
+        level,
+        internalformat,
+        image.width,
+        image.height,
+        0,
+        format,
+        type,
+        image.data,
+      );
     }
   }
 
   void texImage2D(
-      int target, int level, int internalformat, int width, int height, border, int format, int type, data) {
-    gl.texImage2D(target, level, internalformat, width, height, border, format, type, data);
+    int target,
+    int level,
+    int internalformat,
+    int width,
+    int height,
+    border,
+    int format,
+    int type,
+    data,
+  ) {
+    gl.texImage2D(
+      target,
+      level,
+      internalformat,
+      width,
+      height,
+      border,
+      format,
+      type,
+      data,
+    );
   }
 
-  void texImage2DNoSize(int target, int level, int internalformat, int format, int type, data) {
+  void texImage2DNoSize(
+    int target,
+    int level,
+    int internalformat,
+    int format,
+    int type,
+    data,
+  ) {
     gl.texImage2D_NOSIZE(target, level, internalformat, format, type, data);
   }
 
-  void texImage3D(int target, int level, int internalformat, int width, int height, int depth, int border, int format,
-      int type, offset) {
-    gl.texImage3D(target, level, internalformat, width, height, depth, border, format, type, offset);
+  void texImage3D(
+    int target,
+    int level,
+    int internalformat,
+    int width,
+    int height,
+    int depth,
+    int border,
+    int format,
+    int type,
+    offset,
+  ) {
+    gl.texImage3D(
+      target,
+      level,
+      internalformat,
+      width,
+      height,
+      depth,
+      border,
+      format,
+      type,
+      offset,
+    );
   }
 
   //
 
   void scissor(Vector4 scissor) {
     if (currentScissor.equals(scissor) == false) {
-      gl.scissor(scissor.x.toInt(), scissor.y.toInt(), scissor.z.toInt(), scissor.w.toInt());
+      gl.scissor(
+        scissor.x.toInt(),
+        scissor.y.toInt(),
+        scissor.z.toInt(),
+        scissor.w.toInt(),
+      );
       currentScissor.copy(scissor);
     }
   }
 
   void viewport(Vector4 viewport) {
     if (currentViewport.equals(viewport) == false) {
-      gl.viewport(viewport.x.toInt(), viewport.y.toInt(), viewport.z.toInt(), viewport.w.toInt());
+      gl.viewport(
+        viewport.x.toInt(),
+        viewport.y.toInt(),
+        viewport.z.toInt(),
+        viewport.w.toInt(),
+      );
       currentViewport.copy(viewport);
     }
   }
@@ -699,7 +959,10 @@ class WebGLState {
     gl.activeTexture(gl.TEXTURE0);
 
     if (isWebGL2 == true) {
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null); // Equivalent to gl.FRAMEBUFFER
+      gl.bindFramebuffer(
+        gl.DRAW_FRAMEBUFFER,
+        null,
+      ); // Equivalent to gl.FRAMEBUFFER
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
     } else {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -935,7 +1198,9 @@ class StencilBuffer {
   }
 
   setFunc(int stencilFunc, int stencilRef, int stencilMask) {
-    if (currentStencilFunc != stencilFunc || currentStencilRef != stencilRef || currentStencilFuncMask != stencilMask) {
+    if (currentStencilFunc != stencilFunc ||
+        currentStencilRef != stencilRef ||
+        currentStencilFuncMask != stencilMask) {
       gl.stencilFunc(stencilFunc, stencilRef, stencilMask);
 
       currentStencilFunc = stencilFunc;

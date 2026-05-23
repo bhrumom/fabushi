@@ -94,13 +94,21 @@ class TorusKnotGeometry extends BufferGeometry {
         vertex.y = p1.y + (cx * N.y + cy * B.y);
         vertex.z = p1.z + (cx * N.z + cy * B.z);
 
-        vertices.addAll([vertex.x.toDouble(), vertex.y.toDouble(), vertex.z.toDouble()]);
+        vertices.addAll([
+          vertex.x.toDouble(),
+          vertex.y.toDouble(),
+          vertex.z.toDouble(),
+        ]);
 
         // normal (P1 is always the center/origin of the extrusion, thus we can use it to calculate the normal)
 
         normal.subVectors(vertex, p1).normalize();
 
-        normals.addAll([normal.x.toDouble(), normal.y.toDouble(), normal.z.toDouble()]);
+        normals.addAll([
+          normal.x.toDouble(),
+          normal.y.toDouble(),
+          normal.z.toDouble(),
+        ]);
 
         // uv
 
@@ -130,9 +138,18 @@ class TorusKnotGeometry extends BufferGeometry {
     // build geometry
 
     setIndex(indices);
-    setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3, false));
-    setAttribute('normal', Float32BufferAttribute(Float32Array.from(normals), 3, false));
-    setAttribute('uv', Float32BufferAttribute(Float32Array.from(uvs), 2, false));
+    setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3, false),
+    );
+    setAttribute(
+      'normal',
+      Float32BufferAttribute(Float32Array.from(normals), 3, false),
+    );
+    setAttribute(
+      'uv',
+      Float32BufferAttribute(Float32Array.from(uvs), 2, false),
+    );
 
     // this function calculates the current position on the torus curve
   }

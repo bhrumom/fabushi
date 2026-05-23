@@ -7,7 +7,8 @@ class BooleanKeyframeTrack extends KeyframeTrack {
   // representation of a single value and a custom interpolant that
   // computes "firstValue ^ isOdd( index )".
 
-  BooleanKeyframeTrack(name, times, values, interpolation) : super(name, times, values, null) {
+  BooleanKeyframeTrack(name, times, values, interpolation)
+    : super(name, times, values, null) {
     valueTypeName = 'bool';
     defaultInterpolation = InterpolateDiscrete;
     valueBufferType = "Array";

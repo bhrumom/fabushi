@@ -3,7 +3,13 @@ class WebGLInfo {
 
   Map<String, int> memory = {"geometries": 0, "textures": 0};
 
-  Map<String, num> render = {"frame": 0.0, "calls": 0.0, "triangles": 0.0, "points": 0.0, "lines": 0.0};
+  Map<String, num> render = {
+    "frame": 0.0,
+    "calls": 0.0,
+    "triangles": 0.0,
+    "points": 0.0,
+    "lines": 0.0,
+  };
 
   var programs;
   bool autoReset = true;
@@ -14,7 +20,8 @@ class WebGLInfo {
     render["calls"] = render["calls"]! + 1;
 
     if (mode == gl.TRIANGLES) {
-      render["triangles"] = render["triangles"]! + instanceCount * (count / 3.0);
+      render["triangles"] =
+          render["triangles"]! + instanceCount * (count / 3.0);
     } else if (mode == gl.LINES) {
       render["lines"] = render["lines"]! + instanceCount * (count / 2);
     } else if (mode == gl.LINE_STRIP) {

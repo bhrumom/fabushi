@@ -8,8 +8,14 @@ import 'package:three_dart/three3d/objects/line_segments.dart';
 class PolarGridHelper extends LineSegments {
   PolarGridHelper.create(geomertey, material) : super(geomertey, material);
 
-  factory PolarGridHelper(
-      [radius = 10, radials = 16, circles = 8, divisions = 64, color1 = 0x444444, color2 = 0x888888]) {
+  factory PolarGridHelper([
+    radius = 10,
+    radials = 16,
+    circles = 8,
+    divisions = 64,
+    color1 = 0x444444,
+    color2 = 0x888888,
+  ]) {
     color1 = Color(color1);
     color2 = Color(color2);
 
@@ -64,10 +70,19 @@ class PolarGridHelper extends LineSegments {
     }
 
     var geometry = BufferGeometry();
-    geometry.setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3));
-    geometry.setAttribute('color', Float32BufferAttribute(Float32Array.from(colors), 3));
+    geometry.setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3),
+    );
+    geometry.setAttribute(
+      'color',
+      Float32BufferAttribute(Float32Array.from(colors), 3),
+    );
 
-    var material = LineBasicMaterial({"vertexColors": true, "toneMapped": false});
+    var material = LineBasicMaterial({
+      "vertexColors": true,
+      "toneMapped": false,
+    });
 
     var pgh = PolarGridHelper.create(geometry, material);
 

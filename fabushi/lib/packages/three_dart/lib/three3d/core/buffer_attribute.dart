@@ -3,7 +3,8 @@ import 'package:three_dart/three3d/constants.dart';
 import 'package:three_dart/three3d/core/base_buffer_attribute.dart';
 import 'package:three_dart/three3d/math/index.dart';
 
-abstract class BufferAttribute<TData extends NativeArray> extends BaseBufferAttribute<TData> {
+abstract class BufferAttribute<TData extends NativeArray>
+    extends BaseBufferAttribute<TData> {
   final _vector = Vector3.init();
   final _vector2 = Vector2(null, null);
 
@@ -267,13 +268,25 @@ abstract class BufferAttribute<TData extends NativeArray> extends BaseBufferAttr
     // } else
     if (type == "Float32BufferAttribute") {
       final typed = array as Float32Array;
-      return Float32BufferAttribute(Float32Array(typed.length), itemSize, false).copy(this);
+      return Float32BufferAttribute(
+        Float32Array(typed.length),
+        itemSize,
+        false,
+      ).copy(this);
     } else if (type == "Uint8BufferAttribute") {
       final typed = array as Uint8Array;
-      return Uint8BufferAttribute(Uint8Array(typed.length), itemSize, false).copy(this);
+      return Uint8BufferAttribute(
+        Uint8Array(typed.length),
+        itemSize,
+        false,
+      ).copy(this);
     } else if (type == "Uint16BufferAttribute") {
       final typed = array as Uint16Array;
-      return Uint16BufferAttribute(Uint16Array(typed.length), itemSize, false).copy(this);
+      return Uint16BufferAttribute(
+        Uint16Array(typed.length),
+        itemSize,
+        false,
+      ).copy(this);
     } else {
       throw ("BufferAttribute type: $type clone need support ....  ");
     }
@@ -282,9 +295,10 @@ abstract class BufferAttribute<TData extends NativeArray> extends BaseBufferAttr
   Map<String, dynamic> toJSON([data]) {
     Map<String, dynamic> result = {
       "itemSize": itemSize,
-      "type": array.runtimeType.toString(), // TODO remove runtimeType for on web release mode type minification
+      "type": array.runtimeType
+          .toString(), // TODO remove runtimeType for on web release mode type minification
       "array": array.sublist(0),
-      "normalized": normalized
+      "normalized": normalized,
     };
 
     if (name != null) result["name"] = name;
@@ -298,26 +312,38 @@ abstract class BufferAttribute<TData extends NativeArray> extends BaseBufferAttr
 }
 
 class Int8BufferAttribute extends BufferAttribute<Int8Array> {
-  Int8BufferAttribute(Int8Array array, int itemSize, [bool normalized = false]) : super(array, itemSize, normalized) {
+  Int8BufferAttribute(Int8Array array, int itemSize, [bool normalized = false])
+    : super(array, itemSize, normalized) {
     type = "Int8BufferAttribute";
   }
 }
 
 class Uint8BufferAttribute extends BufferAttribute<Uint8Array> {
-  Uint8BufferAttribute(Uint8Array array, int itemSize, [bool normalized = false]) : super(array, itemSize, normalized) {
+  Uint8BufferAttribute(
+    Uint8Array array,
+    int itemSize, [
+    bool normalized = false,
+  ]) : super(array, itemSize, normalized) {
     type = "Uint8BufferAttribute";
   }
 }
 
 class Uint8ClampedBufferAttribute extends BufferAttribute<Uint8Array> {
-  Uint8ClampedBufferAttribute(Uint8Array array, int itemSize, [bool normalized = false])
-      : super(array, itemSize, normalized) {
+  Uint8ClampedBufferAttribute(
+    Uint8Array array,
+    int itemSize, [
+    bool normalized = false,
+  ]) : super(array, itemSize, normalized) {
     type = "Uint8ClampedBufferAttribute";
   }
 }
 
 class Int16BufferAttribute extends BufferAttribute<Int16Array> {
-  Int16BufferAttribute(Int16Array array, int itemSize, [bool normalized = false]) : super(array, itemSize, normalized) {
+  Int16BufferAttribute(
+    Int16Array array,
+    int itemSize, [
+    bool normalized = false,
+  ]) : super(array, itemSize, normalized) {
     type = "Int16BufferAttribute";
   }
 }
@@ -326,41 +352,58 @@ class Int16BufferAttribute extends BufferAttribute<Int16Array> {
 // Int16BufferAttribute.prototype.constructor = Int16BufferAttribute;
 
 class Uint16BufferAttribute extends BufferAttribute<Uint16Array> {
-  Uint16BufferAttribute(Uint16Array array, int itemSize, [bool normalized = false])
-      : super(array, itemSize, normalized) {
+  Uint16BufferAttribute(
+    Uint16Array array,
+    int itemSize, [
+    bool normalized = false,
+  ]) : super(array, itemSize, normalized) {
     type = "Uint16BufferAttribute";
   }
 }
 
 class Int32BufferAttribute extends BufferAttribute<Int32Array> {
-  Int32BufferAttribute(Int32Array array, int itemSize, [bool normalized = false]) : super(array, itemSize, normalized) {
+  Int32BufferAttribute(
+    Int32Array array,
+    int itemSize, [
+    bool normalized = false,
+  ]) : super(array, itemSize, normalized) {
     type = "Int32BufferAttribute";
   }
 }
 
 class Uint32BufferAttribute extends BufferAttribute<Uint32Array> {
-  Uint32BufferAttribute(Uint32Array array, int itemSize, [bool normalized = false])
-      : super(array, itemSize, normalized) {
+  Uint32BufferAttribute(
+    Uint32Array array,
+    int itemSize, [
+    bool normalized = false,
+  ]) : super(array, itemSize, normalized) {
     type = "Uint32BufferAttribute";
   }
 }
 
 class Float16BufferAttribute extends BufferAttribute {
-  Float16BufferAttribute(array, int itemSize, [bool normalized = false]) : super(array, itemSize, normalized) {
+  Float16BufferAttribute(array, int itemSize, [bool normalized = false])
+    : super(array, itemSize, normalized) {
     type = "Float16BufferAttribute";
   }
 }
 
 class Float32BufferAttribute extends BufferAttribute<Float32Array> {
-  Float32BufferAttribute(Float32Array array, int itemSize, [bool normalized = false])
-      : super(array, itemSize, normalized) {
+  Float32BufferAttribute(
+    Float32Array array,
+    int itemSize, [
+    bool normalized = false,
+  ]) : super(array, itemSize, normalized) {
     type = "Float32BufferAttribute";
   }
 }
 
 class Float64BufferAttribute extends BufferAttribute<Float64Array> {
-  Float64BufferAttribute(Float64Array array, int itemSize, [bool normalized = false])
-      : super(array, itemSize, normalized) {
+  Float64BufferAttribute(
+    Float64Array array,
+    int itemSize, [
+    bool normalized = false,
+  ]) : super(array, itemSize, normalized) {
     type = "Float64BufferAttribute";
   }
 }

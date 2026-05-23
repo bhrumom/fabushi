@@ -2,17 +2,8 @@ import 'package:three_dart/three3d/geometries/polyhedron_geometry.dart';
 import 'package:three_dart/three3d/math/index.dart';
 
 class IcosahedronGeometry extends PolyhedronGeometry {
-  IcosahedronGeometry.create(
-    vertices,
-    indices, [
-    radius = 1,
-    detail = 0,
-  ]) : super(
-          vertices,
-          indices,
-          radius,
-          detail,
-        ) {
+  IcosahedronGeometry.create(vertices, indices, [radius = 1, detail = 0])
+    : super(vertices, indices, radius, detail) {
     type = "IcosahedronGeometry";
   }
 
@@ -55,7 +46,7 @@ class IcosahedronGeometry extends PolyhedronGeometry {
       -1,
       -t,
       0,
-      1
+      1,
     ];
 
     List<num> indices = [
@@ -118,10 +109,15 @@ class IcosahedronGeometry extends PolyhedronGeometry {
       7,
       9,
       8,
-      1
+      1,
     ];
 
-    IcosahedronGeometry ibg = IcosahedronGeometry.create(vertices, indices, radius, detail);
+    IcosahedronGeometry ibg = IcosahedronGeometry.create(
+      vertices,
+      indices,
+      radius,
+      detail,
+    );
 
     ibg.parameters = {"radius": radius, "detail": detail};
 

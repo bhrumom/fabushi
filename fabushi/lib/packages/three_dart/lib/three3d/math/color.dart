@@ -151,7 +151,7 @@ const Map<String, int> _colorKeywords = {
   'white': 0xFFFFFF,
   'whitesmoke': 0xF5F5F5,
   'yellow': 0xFFFF00,
-  'yellowgreen': 0x9ACD32
+  'yellowgreen': 0x9ACD32,
 };
 
 class HslData {
@@ -282,7 +282,12 @@ class Color {
     return this;
   }
 
-  Color setRGB([double? r, double? g, double? b, String colorSpace = LinearSRGBColorSpace]) {
+  Color setRGB([
+    double? r,
+    double? g,
+    double? b,
+    String colorSpace = LinearSRGBColorSpace,
+  ]) {
     this.r = r ?? 1.0;
     this.g = g ?? 1.0;
     this.b = b ?? 1.0;
@@ -292,7 +297,12 @@ class Color {
     return this;
   }
 
-  Color setHSL(double h, double s, double l, [String colorSpace = LinearSRGBColorSpace]) {
+  Color setHSL(
+    double h,
+    double s,
+    double l, [
+    String colorSpace = LinearSRGBColorSpace,
+  ]) {
     // h,s,l ranges are in 0.0 - 1.0
     h = MathUtils.euclideanModulo(h, 1).toDouble();
     s = MathUtils.clamp(s, 0, 1);
@@ -358,7 +368,9 @@ class Color {
         switch (name) {
           case 'rgb':
           case 'rgba':
-            var colorReg1 = RegExp(r"^(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*(\d*\.?\d+)\s*)?$");
+            var colorReg1 = RegExp(
+              r"^(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*(\d*\.?\d+)\s*)?$",
+            );
             if (colorReg1.hasMatch(components)) {
               var match1 = colorReg1.firstMatch(components)!;
 
@@ -377,7 +389,9 @@ class Color {
 
               return this;
             } else {
-              var colorReg2 = RegExp(r"^(\d+)\%\s*,\s*(\d+)\%\s*,\s*(\d+)\%\s*(?:,\s*(\d*\.?\d+)\s*)?$");
+              var colorReg2 = RegExp(
+                r"^(\d+)\%\s*,\s*(\d+)\%\s*,\s*(\d+)\%\s*(?:,\s*(\d*\.?\d+)\s*)?$",
+              );
               if (colorReg2.hasMatch(components)) {
                 var match2 = colorReg2.firstMatch(components)!;
 
@@ -403,7 +417,9 @@ class Color {
 
           case 'hsl':
           case 'hsla':
-            var colorReg3 = RegExp(r"^(\d*\.?\d+)\s*,\s*(\d+)\%\s*,\s*(\d+)\%\s*(?:,\s*(\d*\.?\d+)\s*)?$");
+            var colorReg3 = RegExp(
+              r"^(\d*\.?\d+)\s*,\s*(\d+)\%\s*,\s*(\d+)\%\s*(?:,\s*(\d*\.?\d+)\s*)?$",
+            );
             if (colorReg3.hasMatch(components)) {
               var match3 = colorReg3.firstMatch(components)!;
 
@@ -538,7 +554,9 @@ class Color {
   int getHex([String colorSpace = SRGBColorSpace]) {
     ColorManagement.fromWorkingColorSpace(toComponents(this, _rgb), colorSpace);
 
-    return (r * 255).toInt() << 16 ^ (g * 255).toInt() << 8 ^ (b * 255).toInt() << 0;
+    return (r * 255).toInt() << 16 ^
+        (g * 255).toInt() << 8 ^
+        (b * 255).toInt() << 0;
   }
 
   String getHexString([String colorSpace = SRGBColorSpace]) {
@@ -565,7 +583,9 @@ class Color {
     } else {
       double delta = max - min;
 
-      saturation = lightness <= 0.5 ? delta / (max + min) : delta / (2 - max - min);
+      saturation = lightness <= 0.5
+          ? delta / (max + min)
+          : delta / (2 - max - min);
 
       if (max == r) {
         hue = (g - b) / delta + (g < b ? 6 : 0);

@@ -19,19 +19,24 @@ class MaterialLoader extends Loader {
     loader.setPath(scope.path);
     loader.setRequestHeader(scope.requestHeader);
     loader.setWithCredentials(scope.withCredentials);
-    loader.load(url, (text) {
-      try {
-        onLoad(scope.parse(convert.jsonDecode(text)));
-      } catch (e) {
-        if (onError != null) {
-          onError(e);
-        } else {
-          print(e);
-        }
+    loader.load(
+      url,
+      (text) {
+        try {
+          onLoad(scope.parse(convert.jsonDecode(text)));
+        } catch (e) {
+          if (onError != null) {
+            onError(e);
+          } else {
+            print(e);
+          }
 
-        scope.manager.itemError(url);
-      }
-    }, onProgress, onError);
+          scope.manager.itemError(url);
+        }
+      },
+      onProgress,
+      onError,
+    );
   }
 
   @override
@@ -201,19 +206,35 @@ class MaterialLoader extends Loader {
             break;
 
           case 'c':
-            material.uniforms[name].value = Color(0, 0, 0).setHex(uniform.value);
+            material.uniforms[name].value = Color(
+              0,
+              0,
+              0,
+            ).setHex(uniform.value);
             break;
 
           case 'v2':
-            material.uniforms[name].value = Vector2(0, 0).fromArray(uniform.value);
+            material.uniforms[name].value = Vector2(
+              0,
+              0,
+            ).fromArray(uniform.value);
             break;
 
           case 'v3':
-            material.uniforms[name].value = Vector3(0, 0, 0).fromArray(uniform.value);
+            material.uniforms[name].value = Vector3(
+              0,
+              0,
+              0,
+            ).fromArray(uniform.value);
             break;
 
           case 'v4':
-            material.uniforms[name].value = Vector4(0, 0, 0, 0).fromArray(uniform.value);
+            material.uniforms[name].value = Vector4(
+              0,
+              0,
+              0,
+              0,
+            ).fromArray(uniform.value);
             break;
 
           case 'm3':
@@ -353,13 +374,18 @@ class MaterialLoader extends Loader {
       material.clearcoatMap = getTexture(json["clearcoatMap"]);
     }
     if (json["clearcoatRoughnessMap"] != null) {
-      material.clearcoatRoughnessMap = getTexture(json["clearcoatRoughnessMap"]);
+      material.clearcoatRoughnessMap = getTexture(
+        json["clearcoatRoughnessMap"],
+      );
     }
     if (json["clearcoatNormalMap"] != null) {
       material.clearcoatNormalMap = getTexture(json["clearcoatNormalMap"]);
     }
     if (json["clearcoatNormalScale"] != null) {
-      material.clearcoatNormalScale = Vector2(0, 0).fromArray(json["clearcoatNormalScale"]);
+      material.clearcoatNormalScale = Vector2(
+        0,
+        0,
+      ).fromArray(json["clearcoatNormalScale"]);
     }
 
     if (json["transmissionMap"] != null) {

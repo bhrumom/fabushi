@@ -44,7 +44,10 @@ class LightShadow {
     viewports = [Vector4(0, 0, 1, 1)];
   }
 
-  LightShadow.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON);
+  LightShadow.fromJSON(
+    Map<String, dynamic> json,
+    Map<String, dynamic> rootJSON,
+  );
 
   num getViewportCount() {
     return viewportCount;
@@ -67,10 +70,30 @@ class LightShadow {
     shadowCamera.lookAt(_lookTarget);
     shadowCamera.updateMatrixWorld(false);
 
-    _projScreenMatrix.multiplyMatrices(shadowCamera.projectionMatrix, shadowCamera.matrixWorldInverse);
+    _projScreenMatrix.multiplyMatrices(
+      shadowCamera.projectionMatrix,
+      shadowCamera.matrixWorldInverse,
+    );
     _frustum.setFromProjectionMatrix(_projScreenMatrix);
 
-    shadowMatrix.set(0.5, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 1.0);
+    shadowMatrix.set(
+      0.5,
+      0.0,
+      0.0,
+      0.5,
+      0.0,
+      0.5,
+      0.0,
+      0.5,
+      0.0,
+      0.0,
+      0.5,
+      0.5,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+    );
 
     shadowMatrix.multiply(shadowCamera.projectionMatrix);
     shadowMatrix.multiply(shadowCamera.matrixWorldInverse);

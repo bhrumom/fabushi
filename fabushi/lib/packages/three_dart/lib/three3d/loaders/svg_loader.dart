@@ -22,9 +22,14 @@ class SVGLoader extends Loader {
   loadAsync(url, [onProgress]) async {
     var completer = Completer();
 
-    load(url, (result) {
-      completer.complete(result);
-    }, onProgress, () {});
+    load(
+      url,
+      (result) {
+        completer.complete(result);
+      },
+      onProgress,
+      () {},
+    );
 
     return completer.future;
   }
@@ -37,37 +42,52 @@ class SVGLoader extends Loader {
     loader.setPath(scope.path);
     loader.setRequestHeader(scope.requestHeader);
     loader.setWithCredentials(scope.withCredentials);
-    loader.load(url, (text) {
-      // try {
-      onLoad(scope.parse(text));
+    loader.load(
+      url,
+      (text) {
+        // try {
+        onLoad(scope.parse(text));
 
-      // } catch ( e ) {
+        // } catch ( e ) {
 
-      // 	if ( onError != null ) {
+        // 	if ( onError != null ) {
 
-      // 		onError( e );
+        // 		onError( e );
 
-      // 	} else {
-      //     print("SVGLoader load error.... ");
-      // 		print( e );
+        // 	} else {
+        //     print("SVGLoader load error.... ");
+        // 		print( e );
 
-      // 	}
+        // 	}
 
-      // 	scope.manager.itemError( url );
+        // 	scope.manager.itemError( url );
 
-      // }
-    }, onProgress, onError);
+        // }
+      },
+      onProgress,
+      onError,
+    );
   }
 
   // Function parse =========== start
   @override
   parse(json, [String? path, Function? onLoad, Function? onError]) {
-    var parse = SVGLoaderParser(json, defaultUnit: defaultUnit, defaultDPI: defaultDPI);
+    var parse = SVGLoaderParser(
+      json,
+      defaultUnit: defaultUnit,
+      defaultDPI: defaultDPI,
+    );
     return parse.parse(json);
   }
   // Function parse ================ end
 
-  static Map<String, dynamic> getStrokeStyle(width, color, lineJoin, lineCap, miterLimit) {
+  static Map<String, dynamic> getStrokeStyle(
+    width,
+    color,
+    lineJoin,
+    lineCap,
+    miterLimit,
+  ) {
     // Param width: Stroke width
     // Param color: As returned by three.Color.getStyle()
     // Param lineJoin: One of "round", "bevel", "miter" or "miter-limit"
@@ -86,7 +106,7 @@ class SVGLoader extends Loader {
       "strokeWidth": width,
       "strokeLineJoin": lineJoin,
       "strokeLineCap": lineCap,
-      "strokeMiterLimit": miterLimit
+      "strokeMiterLimit": miterLimit,
     };
   }
 
@@ -103,21 +123,57 @@ class SVGLoader extends Loader {
     List<double> normals = [];
     List<double> uvs = [];
 
-    if (SVGLoader.pointsToStrokeWithBuffers(points, style, arcDivisions, minDistance, vertices, normals, uvs, 0) == 0) {
+    if (SVGLoader.pointsToStrokeWithBuffers(
+          points,
+          style,
+          arcDivisions,
+          minDistance,
+          vertices,
+          normals,
+          uvs,
+          0,
+        ) ==
+        0) {
       return null;
     }
 
     var geometry = BufferGeometry();
-    geometry.setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3, false));
-    geometry.setAttribute('normal', Float32BufferAttribute(Float32Array.from(normals), 3, false));
-    geometry.setAttribute('uv', Float32BufferAttribute(Float32Array.from(uvs), 2, false));
+    geometry.setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3, false),
+    );
+    geometry.setAttribute(
+      'normal',
+      Float32BufferAttribute(Float32Array.from(normals), 3, false),
+    );
+    geometry.setAttribute(
+      'uv',
+      Float32BufferAttribute(Float32Array.from(uvs), 2, false),
+    );
 
     return geometry;
   }
 
-  static pointsToStrokeWithBuffers(points, style, arcDivisions, minDistance, vertices, normals, uvs, vertexOffset) {
-    var svgLPTS =
-        SVGLoaderPointsToStroke(points, style, arcDivisions, minDistance, vertices, normals, uvs, vertexOffset);
+  static pointsToStrokeWithBuffers(
+    points,
+    style,
+    arcDivisions,
+    minDistance,
+    vertices,
+    normals,
+    uvs,
+    vertexOffset,
+  ) {
+    var svgLPTS = SVGLoaderPointsToStroke(
+      points,
+      style,
+      arcDivisions,
+      minDistance,
+      vertices,
+      normals,
+      uvs,
+      vertexOffset,
+    );
     return svgLPTS.convert();
   }
 
@@ -134,10 +190,13 @@ class SVGLoader extends Loader {
       "LEFT": 3,
       "RIGHT": 4,
       "BEHIND": 5,
-      "BEYOND": 6
+      "BEYOND": 6,
     };
 
-    Map<String, dynamic> classifyResult = {"loc": intersectionLocationType["ORIGIN"], "t": 0};
+    Map<String, dynamic> classifyResult = {
+      "loc": intersectionLocationType["ORIGIN"],
+      "t": 0,
+    };
 
     classifyPoint(p, edgeStart, edgeEnd) {
       var ax = edgeEnd.x - edgeStart.x;
@@ -205,7 +264,11 @@ class SVGLoader extends Loader {
       var t1 = nom1 / denom;
       var t2 = nom2 / denom;
 
-      if (((denom == 0) && (nom1 != 0)) || (t1 <= 0) || (t1 >= 1) || (t2 < 0) || (t2 > 1)) {
+      if (((denom == 0) && (nom1 != 0)) ||
+          (t1 <= 0) ||
+          (t1 >= 1) ||
+          (t2 < 0) ||
+          (t2 > 1)) {
         //1. lines are parallel or edges don't intersect
 
         return null;
@@ -219,9 +282,14 @@ class SVGLoader extends Loader {
           if (classifyResult["loc"] == intersectionLocationType["ORIGIN"]) {
             var point = (i == 0 ? b0 : b1);
             return {"x": point.x, "y": point.y, "t": classifyResult["t"]};
-          } else if (classifyResult["loc"] == intersectionLocationType["BETWEEN"]) {
-            var x = num.parse((x1 + classifyResult["t"]! * (x2 - x1)).toStringAsPrecision(10));
-            var y = num.parse((y1 + classifyResult["t"]! * (y2 - y1)).toStringAsPrecision(10));
+          } else if (classifyResult["loc"] ==
+              intersectionLocationType["BETWEEN"]) {
+            var x = num.parse(
+              (x1 + classifyResult["t"]! * (x2 - x1)).toStringAsPrecision(10),
+            );
+            var y = num.parse(
+              (y1 + classifyResult["t"]! * (y2 - y1)).toStringAsPrecision(10),
+            );
             return {"x": x, "y": y, "t": classifyResult["t"]};
           }
         }
@@ -257,11 +325,19 @@ class SVGLoader extends Loader {
           var path2EdgeStart = path2[index2 - 1];
           var path2EdgeEnd = path2[index2];
 
-          var intersection = findEdgeIntersection(path1EdgeStart, path1EdgeEnd, path2EdgeStart, path2EdgeEnd);
+          var intersection = findEdgeIntersection(
+            path1EdgeStart,
+            path1EdgeEnd,
+            path2EdgeStart,
+            path2EdgeEnd,
+          );
 
           if (intersection != null &&
               intersectionsRaw.indexWhere(
-                      (i) => i["t"] <= intersection["t"] + Math.epsilon && i["t"] >= intersection["t"] - Math.epsilon) <
+                    (i) =>
+                        i["t"] <= intersection["t"] + Math.epsilon &&
+                        i["t"] >= intersection["t"] - Math.epsilon,
+                  ) <
                   0) {
             intersectionsRaw.add(intersection);
             intersections.add(Vector2(intersection["x"], intersection["y"]));
@@ -286,7 +362,11 @@ class SVGLoader extends Loader {
           var intersections = getIntersections(scanline, path["points"]);
 
           for (var p in intersections) {
-            allIntersections.add({"identifier": path["identifier"], "isCW": path["isCW"], "point": p});
+            allIntersections.add({
+              "identifier": path["identifier"],
+              "isCW": path["isCW"],
+              "point": p,
+            });
           }
         }
       });
@@ -306,9 +386,16 @@ class SVGLoader extends Loader {
       var centerBoundingBox = Vector2();
       simplePath["boundingBox"].getCenter(centerBoundingBox);
 
-      var scanline = [Vector2(scanlineMinX, centerBoundingBox.y), Vector2(scanlineMaxX, centerBoundingBox.y)];
+      var scanline = [
+        Vector2(scanlineMinX, centerBoundingBox.y),
+        Vector2(scanlineMaxX, centerBoundingBox.y),
+      ];
 
-      var scanlineIntersections = getScanlineIntersections(scanline, simplePath["boundingBox"], allPaths);
+      var scanlineIntersections = getScanlineIntersections(
+        scanline,
+        simplePath["boundingBox"],
+        allPaths,
+      );
 
       scanlineIntersections.sort((i1, i2) {
         return i1["point"].x >= i2["point"].x ? 1 : -1;
@@ -331,8 +418,10 @@ class SVGLoader extends Loader {
       var stack = [];
       var i = 0;
 
-      while (i < otherIntersections.length && otherIntersections[i]["point"].x < firstXOfPath) {
-        if (stack.isNotEmpty && stack[stack.length - 1] == otherIntersections[i]["identifier"]) {
+      while (i < otherIntersections.length &&
+          otherIntersections[i]["point"].x < firstXOfPath) {
+        if (stack.isNotEmpty &&
+            stack[stack.length - 1] == otherIntersections[i]["identifier"]) {
           stack.removeLast();
         } else {
           stack.add(otherIntersections[i]["identifier"]);
@@ -347,7 +436,11 @@ class SVGLoader extends Loader {
         var isHole = stack.length % 2 == 0 ? true : false;
         var isHoleFor = stack[stack.length - 2];
 
-        return {"identifier": simplePath["identifier"], "isHole": isHole, "for": isHoleFor};
+        return {
+          "identifier": simplePath["identifier"],
+          "isHole": isHole,
+          "for": isHoleFor,
+        };
       } else if (fillRule == 'nonzero') {
         // check if path is a hole by counting the amount of paths with alternating rotations it has to cross.
         var isHole = true;
@@ -366,7 +459,11 @@ class SVGLoader extends Loader {
           }
         }
 
-        return {"identifier": simplePath["identifier"], "isHole": isHole, "for": isHoleFor};
+        return {
+          "identifier": simplePath["identifier"],
+          "isHole": isHole,
+          "for": isHoleFor,
+        };
       } else {
         print('fill-rule: $fillRule is currently not implemented.');
       }
@@ -427,7 +524,7 @@ class SVGLoader extends Loader {
         "points": points,
         "isCW": ShapeUtils.isClockWise(points),
         "identifier": identifier++,
-        "boundingBox": Box2(Vector2(minX, minY), Vector2(maxX, maxY))
+        "boundingBox": Box2(Vector2(minX, minY), Vector2(maxX, maxY)),
       };
     }).toList();
 
@@ -437,7 +534,15 @@ class SVGLoader extends Loader {
 
     // check if path is solid or a hole
     var isAHole = simplePaths
-        .map((p) => isHoleTo(p, simplePaths, scanlineMinX, scanlineMaxX, shapePath.userData["style"]["fillRule"]))
+        .map(
+          (p) => isHoleTo(
+            p,
+            simplePaths,
+            scanlineMinX,
+            scanlineMaxX,
+            shapePath.userData["style"]["fillRule"],
+          ),
+        )
         .toList();
 
     var shapesToReturn = [];
@@ -447,7 +552,9 @@ class SVGLoader extends Loader {
       if (!amIAHole["isHole"]) {
         var shape = Shape(null);
         shape.curves = p["curves"];
-        var holes = isAHole.where((h) => h!["isHole"] && h["for"] == p["identifier"]).toList();
+        var holes = isAHole
+            .where((h) => h!["isHole"] && h["for"] == p["identifier"])
+            .toList();
         for (var h in holes) {
           var hole = simplePaths[h!["identifier"]];
           var path = Path(null);

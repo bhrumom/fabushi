@@ -48,7 +48,7 @@ class PlaneHelper extends Line {
       1,
       0,
       0,
-      0
+      0,
     ];
 
     var geometry = BufferGeometry();
@@ -67,7 +67,26 @@ class PlaneHelper extends Line {
 
     planeHelper.size = size;
 
-    List<double> positions2 = [1, 1, 1, -1, 1, 1, -1, -1, 1, 1, 1, 1, -1, -1, 1, 1, -1, 1];
+    List<double> positions2 = [
+      1,
+      1,
+      1,
+      -1,
+      1,
+      1,
+      -1,
+      -1,
+      1,
+      1,
+      1,
+      1,
+      -1,
+      -1,
+      1,
+      1,
+      -1,
+      1,
+    ];
 
     var geometry2 = BufferGeometry();
     geometry2.setAttribute(
@@ -79,15 +98,13 @@ class PlaneHelper extends Line {
     planeHelper.add(
       Mesh(
         geometry2,
-        MeshBasicMaterial(
-          {
-            "color": color,
-            "opacity": 0.2,
-            "transparent": true,
-            "depthWrite": false,
-            "toneMapped": false,
-          },
-        ),
+        MeshBasicMaterial({
+          "color": color,
+          "opacity": 0.2,
+          "transparent": true,
+          "depthWrite": false,
+          "toneMapped": false,
+        }),
       ),
     );
 
@@ -102,8 +119,9 @@ class PlaneHelper extends Line {
 
     this.scale.set(0.5 * size, 0.5 * size, scale);
 
-    children[0].material.side =
-        (scale < 0) ? BackSide : FrontSide; // renderer flips side when determinant < 0; flipping not wanted here
+    children[0].material.side = (scale < 0)
+        ? BackSide
+        : FrontSide; // renderer flips side when determinant < 0; flipping not wanted here
 
     lookAt(plane!.normal);
 

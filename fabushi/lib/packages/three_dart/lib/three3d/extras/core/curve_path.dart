@@ -148,10 +148,10 @@ class CurvePath extends Curve {
       var resolution = (curve.isEllipseCurve)
           ? divisions * 2
           : ((curve is LineCurve || curve is LineCurve3))
-              ? 1
-              : (curve.isSplineCurve)
-                  ? divisions * curve.points.length
-                  : divisions;
+          ? 1
+          : (curve.isSplineCurve)
+          ? divisions * curve.points.length
+          : divisions;
 
       var pts = curve.getPoints(resolution);
 
@@ -167,7 +167,9 @@ class CurvePath extends Curve {
       }
     }
 
-    if (autoClose && points.length > 1 && !points[points.length - 1].equals(points[0])) {
+    if (autoClose &&
+        points.length > 1 &&
+        !points[points.length - 1].equals(points[0])) {
       points.add(points[0]);
     }
 

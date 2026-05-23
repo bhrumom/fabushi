@@ -93,7 +93,6 @@ class ShapeGeometry extends BufferGeometry {
         vertices.addAll([vertex.x.toDouble(), vertex.y.toDouble(), 0.0]);
         normals.addAll([0.0, 0.0, 1.0]);
         uvs.addAll([vertex.x.toDouble(), vertex.y.toDouble()]); // world uvs
-
       }
 
       // incides
@@ -135,9 +134,18 @@ class ShapeGeometry extends BufferGeometry {
     // build geometry
 
     setIndex(indices);
-    setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3, false));
-    setAttribute('normal', Float32BufferAttribute(Float32Array.from(normals), 3, false));
-    setAttribute('uv', Float32BufferAttribute(Float32Array.from(uvs), 2, false));
+    setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3, false),
+    );
+    setAttribute(
+      'normal',
+      Float32BufferAttribute(Float32Array.from(normals), 3, false),
+    );
+    setAttribute(
+      'uv',
+      Float32BufferAttribute(Float32Array.from(uvs), 2, false),
+    );
 
     // helper functions
   }

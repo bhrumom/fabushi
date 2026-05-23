@@ -49,7 +49,7 @@ class KeyframeTrack {
       json = {
         'name': track.name,
         'times': AnimationUtils.convertArray(track.times, "List<num>"),
-        'values': AnimationUtils.convertArray(track.values, "List<num>")
+        'values': AnimationUtils.convertArray(track.values, "List<num>"),
       };
 
       var interpolation = track.getInterpolation();
@@ -97,7 +97,8 @@ class KeyframeTrack {
     }
 
     if (factoryMethod == null) {
-      var message = 'unsupported interpolation for $valueTypeName keyframe track named $name';
+      var message =
+          'unsupported interpolation for $valueTypeName keyframe track named $name';
 
       if (createInterpolant == null) {
         // fall back to default, unless the default itself is messed up
@@ -105,7 +106,6 @@ class KeyframeTrack {
           setInterpolation(defaultInterpolation);
         } else {
           throw (message); // fatal, in this case
-
         }
       }
 
@@ -196,7 +196,11 @@ class KeyframeTrack {
 
       var stride = getValueSize();
       this.times = AnimationUtils.arraySlice(times, from, to);
-      values = AnimationUtils.arraySlice(values, (from * stride).toInt(), (to * stride).toInt());
+      values = AnimationUtils.arraySlice(
+        values,
+        (from * stride).toInt(),
+        (to * stride).toInt(),
+      );
     }
 
     return this;
@@ -225,7 +229,9 @@ class KeyframeTrack {
       var currTime = times[i];
 
       if (prevTime != null && prevTime > currTime) {
-        print('three.KeyframeTrack: Out of order keys.${this} i: $i currTime: $currTime prevTime: $prevTime');
+        print(
+          'three.KeyframeTrack: Out of order keys.${this} i: $i currTime: $currTime prevTime: $prevTime',
+        );
         valid = false;
         break;
       }
@@ -259,7 +265,9 @@ class KeyframeTrack {
         if (!smoothInterpolation) {
           // remove unnecessary keyframes same as their neighbors
 
-          var offset = i * stride, offsetP = offset - stride, offsetN = offset + stride;
+          var offset = i * stride,
+              offsetP = offset - stride,
+              offsetN = offset + stride;
 
           for (var j = 0; j != stride; ++j) {
             var value = values[offset + j];
@@ -296,7 +304,13 @@ class KeyframeTrack {
     if (lastIndex > 0) {
       times[writeIndex] = times[lastIndex];
 
-      for (var readOffset = lastIndex * stride, writeOffset = writeIndex * stride, j = 0; j != stride; ++j) {
+      for (
+        var readOffset = lastIndex * stride,
+            writeOffset = writeIndex * stride,
+            j = 0;
+        j != stride;
+        ++j
+      ) {
         values[writeOffset + j] = values[readOffset + j];
       }
 
@@ -305,7 +319,11 @@ class KeyframeTrack {
 
     if (writeIndex != times.length) {
       this.times = AnimationUtils.arraySlice(times, 0, writeIndex);
-      this.values = AnimationUtils.arraySlice(values, 0, (writeIndex * stride).toInt());
+      this.values = AnimationUtils.arraySlice(
+        values,
+        0,
+        (writeIndex * stride).toInt(),
+      );
     } else {
       this.times = times;
       this.values = values;

@@ -21,7 +21,7 @@ class BoxGeometry extends BufferGeometry {
       "depth": depth,
       "widthSegments": widthSegments,
       "heightSegments": heightSegments,
-      "depthSegments": depthSegments
+      "depthSegments": depthSegments,
     };
 
     // segments
@@ -94,7 +94,11 @@ class BoxGeometry extends BufferGeometry {
 
           // now apply vector to vertex buffer
 
-          vertices.addAll([vector.x.toDouble(), vector.y.toDouble(), vector.z.toDouble()]);
+          vertices.addAll([
+            vector.x.toDouble(),
+            vector.y.toDouble(),
+            vector.z.toDouble(),
+          ]);
 
           // set values to correct vector component
 
@@ -108,7 +112,11 @@ class BoxGeometry extends BufferGeometry {
 
           // now apply vector to normal buffer
 
-          normals.addAll([vector.x.toDouble(), vector.y.toDouble(), vector.z.toDouble()]);
+          normals.addAll([
+            vector.x.toDouble(),
+            vector.y.toDouble(),
+            vector.z.toDouble(),
+          ]);
 
           // uvs
 
@@ -160,19 +168,76 @@ class BoxGeometry extends BufferGeometry {
 
     // build each side of the box geometry
 
-    buildPlane('z', 'y', 'x', -1, -1, depth, height, width, dSeg, hSeg, 0); // px
-    buildPlane('z', 'y', 'x', 1, -1, depth, height, -width, dSeg, hSeg, 1); // nx
+    buildPlane(
+      'z',
+      'y',
+      'x',
+      -1,
+      -1,
+      depth,
+      height,
+      width,
+      dSeg,
+      hSeg,
+      0,
+    ); // px
+    buildPlane(
+      'z',
+      'y',
+      'x',
+      1,
+      -1,
+      depth,
+      height,
+      -width,
+      dSeg,
+      hSeg,
+      1,
+    ); // nx
     buildPlane('x', 'z', 'y', 1, 1, width, depth, height, wSeg, dSeg, 2); // py
-    buildPlane('x', 'z', 'y', 1, -1, width, depth, -height, wSeg, dSeg, 3); // ny
+    buildPlane(
+      'x',
+      'z',
+      'y',
+      1,
+      -1,
+      width,
+      depth,
+      -height,
+      wSeg,
+      dSeg,
+      3,
+    ); // ny
     buildPlane('x', 'y', 'z', 1, -1, width, height, depth, wSeg, hSeg, 4); // pz
-    buildPlane('x', 'y', 'z', -1, -1, width, height, -depth, wSeg, hSeg, 5); // nz
+    buildPlane(
+      'x',
+      'y',
+      'z',
+      -1,
+      -1,
+      width,
+      height,
+      -depth,
+      wSeg,
+      hSeg,
+      5,
+    ); // nz
 
     // build geometry
 
     setIndex(indices);
-    setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3, false));
-    setAttribute('normal', Float32BufferAttribute(Float32Array.from(normals), 3, false));
-    setAttribute('uv', Float32BufferAttribute(Float32Array.from(uvs), 2, false));
+    setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3, false),
+    );
+    setAttribute(
+      'normal',
+      Float32BufferAttribute(Float32Array.from(normals), 3, false),
+    );
+    setAttribute(
+      'uv',
+      Float32BufferAttribute(Float32Array.from(uvs), 2, false),
+    );
   }
 
   static fromJSON(data) {

@@ -48,7 +48,11 @@ class InterleavedBuffer {
     return this;
   }
 
-  InterleavedBuffer copyAt(int index1, InterleavedBuffer attribute, int index2) {
+  InterleavedBuffer copyAt(
+    int index1,
+    InterleavedBuffer attribute,
+    int index2,
+  ) {
     index1 *= stride;
     index2 *= attribute.stride;
 
@@ -123,7 +127,7 @@ class InterleavedBuffer {
       // "type": this.array.constructor.name,
       "buffer": array,
       "type": "List",
-      "stride": stride
+      "stride": stride,
     };
   }
 }

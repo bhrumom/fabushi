@@ -102,7 +102,11 @@ class LatheGeometry extends BufferGeometry {
         vertex.y = points[j].y;
         vertex.z = points[j].x * cos;
 
-        vertices.addAll([vertex.x.toDouble(), vertex.y.toDouble(), vertex.z.toDouble()]);
+        vertices.addAll([
+          vertex.x.toDouble(),
+          vertex.y.toDouble(),
+          vertex.z.toDouble(),
+        ]);
 
         // uv
 
@@ -142,8 +146,17 @@ class LatheGeometry extends BufferGeometry {
     // build geometry
 
     setIndex(indices);
-    setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3, false));
-    setAttribute('uv', Float32BufferAttribute(Float32Array.from(uvs), 2, false));
-    setAttribute('normal', Float32BufferAttribute(Float32Array.from(normals), 3, false));
+    setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3, false),
+    );
+    setAttribute(
+      'uv',
+      Float32BufferAttribute(Float32Array.from(uvs), 2, false),
+    );
+    setAttribute(
+      'normal',
+      Float32BufferAttribute(Float32Array.from(normals), 3, false),
+    );
   }
 }

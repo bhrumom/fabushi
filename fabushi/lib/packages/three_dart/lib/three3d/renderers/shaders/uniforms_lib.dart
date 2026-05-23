@@ -10,11 +10,9 @@ Map<String, dynamic> uniformsLib = {
     "uvTransform": {"value": Matrix3()},
     "uv2Transform": {"value": Matrix3()},
     "alphaMap": {},
-    "alphaTest": {"value": 0.0}
+    "alphaTest": {"value": 0.0},
   },
-  "specularmap": {
-    "specularMap": {},
-  },
+  "specularmap": {"specularMap": {}},
   "envmap": {
     "envMap": {},
     "flipEnvMap": {"value": -1},
@@ -24,25 +22,25 @@ Map<String, dynamic> uniformsLib = {
   },
   "aomap": {
     "aoMap": {},
-    "aoMapIntensity": {"value": 1}
+    "aoMapIntensity": {"value": 1},
   },
   "lightmap": {
     "lightMap": {},
-    "lightMapIntensity": {"value": 1}
+    "lightMapIntensity": {"value": 1},
   },
   "emissivemap": {"emissiveMap": {}},
   "bumpmap": {
     "bumpMap": {},
-    "bumpScale": {"value": 1}
+    "bumpScale": {"value": 1},
   },
   "normalmap": {
     "normalMap": {},
-    "normalScale": {"value": Vector2(1, 1)}
+    "normalScale": {"value": Vector2(1, 1)},
   },
   "displacementmap": {
     "displacementMap": {},
     "displacementScale": {"value": 1},
-    "displacementBias": {"value": 0}
+    "displacementBias": {"value": 0},
   },
   "roughnessmap": {"roughnessMap": {}},
   "metalnessmap": {"metalnessMap": {}},
@@ -51,7 +49,7 @@ Map<String, dynamic> uniformsLib = {
     "fogDensity": {"value": 0.00025},
     "fogNear": {"value": 1},
     "fogFar": {"value": 2000},
-    "fogColor": {"value": Color(0, 0, 0)}
+    "fogColor": {"value": Color(0, 0, 0)},
   },
   "lights": {
     "ambientLightColor": {"value": []},
@@ -60,12 +58,17 @@ Map<String, dynamic> uniformsLib = {
 
     "directionalLights": {
       "value": [],
-      "properties": {"direction": {}, "color": {}}
+      "properties": {"direction": {}, "color": {}},
     },
 
     "directionalLightShadows": {
       "value": [],
-      "properties": {"shadowBias": {}, "shadowNormalBias": {}, "shadowRadius": {}, "shadowMapSize": {}}
+      "properties": {
+        "shadowBias": {},
+        "shadowNormalBias": {},
+        "shadowRadius": {},
+        "shadowMapSize": {},
+      },
     },
 
     "directionalShadowMap": {"value": []},
@@ -80,13 +83,18 @@ Map<String, dynamic> uniformsLib = {
         "distance": {},
         "coneCos": {},
         "penumbraCos": {},
-        "decay": {}
-      }
+        "decay": {},
+      },
     },
 
     "spotLightShadows": {
       "value": [],
-      "properties": {"shadowBias": {}, "shadowNormalBias": {}, "shadowRadius": {}, "shadowMapSize": {}}
+      "properties": {
+        "shadowBias": {},
+        "shadowNormalBias": {},
+        "shadowRadius": {},
+        "shadowMapSize": {},
+      },
     },
 
     "spotShadowMap": {"value": []},
@@ -94,7 +102,7 @@ Map<String, dynamic> uniformsLib = {
 
     "pointLights": {
       "value": [],
-      "properties": {"color": {}, "position": {}, "decay": {}, "distance": {}}
+      "properties": {"color": {}, "position": {}, "decay": {}, "distance": {}},
     },
 
     "pointLightShadows": {
@@ -105,8 +113,8 @@ Map<String, dynamic> uniformsLib = {
         "shadowRadius": {},
         "shadowMapSize": {},
         "shadowCameraNear": {},
-        "shadowCameraFar": {}
-      }
+        "shadowCameraFar": {},
+      },
     },
 
     "pointShadowMap": {"value": []},
@@ -114,17 +122,17 @@ Map<String, dynamic> uniformsLib = {
 
     "hemisphereLights": {
       "value": [],
-      "properties": {"direction": {}, "skyColor": {}, "groundColor": {}}
+      "properties": {"direction": {}, "skyColor": {}, "groundColor": {}},
     },
 
     // TODO (abelnation): RectAreaLight BRDF data needs to be moved from example to main src
     "rectAreaLights": {
       "value": [],
-      "properties": {"color": {}, "position": {}, "width": {}, "height": {}}
+      "properties": {"color": {}, "position": {}, "width": {}, "height": {}},
     },
 
     "ltc_1": {},
-    "ltc_2": {}
+    "ltc_2": {},
   },
   "points": {
     "diffuse": {"value": Color.fromHex(0xffffff)},
@@ -134,7 +142,7 @@ Map<String, dynamic> uniformsLib = {
     "map": {},
     "alphaMap": {},
     "alphaTest": {"value": 0.0},
-    "uvTransform": {"value": Matrix3()}
+    "uvTransform": {"value": Matrix3()},
   },
   "sprite": {
     "diffuse": {"value": Color.fromHex(0xffffff)},
@@ -144,6 +152,6 @@ Map<String, dynamic> uniformsLib = {
     "map": {},
     "alphaMap": {},
     "alphaTest": {"value": 0.0},
-    "uvTransform": {"value": Matrix3()}
-  }
+    "uvTransform": {"value": Matrix3()},
+  },
 };

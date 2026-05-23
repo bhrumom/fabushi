@@ -9,7 +9,7 @@ var _points = [
   /*@__PURE__*/ Vector3.init(),
   /*@__PURE__*/ Vector3.init(),
   /*@__PURE__*/ Vector3.init(),
-  /*@__PURE__*/ Vector3.init()
+  /*@__PURE__*/ Vector3.init(),
 ];
 
 var _vectorBox3 = Vector3.init();
@@ -208,10 +208,14 @@ class Box3 {
     var geometry = object.geometry;
 
     if (geometry != null) {
-      if (precise && geometry.attributes.isNotEmpty && geometry.attributes['position'] != null) {
+      if (precise &&
+          geometry.attributes.isNotEmpty &&
+          geometry.attributes['position'] != null) {
         var position = geometry.attributes['position'];
         for (var i = 0, l = position.count; i < l; i++) {
-          _vectorBox3.fromBufferAttribute(position, i).applyMatrix4(object.matrixWorld);
+          _vectorBox3
+              .fromBufferAttribute(position, i)
+              .applyMatrix4(object.matrixWorld);
           expandByPoint(_vectorBox3);
         }
       } else {
@@ -260,7 +264,10 @@ class Box3 {
     // has a size dimension of 0.
 
     return target.set(
-        (point.x - min.x) / (max.x - min.x), (point.y - min.y) / (max.y - min.y), (point.z - min.z) / (max.z - min.z));
+      (point.x - min.x) / (max.x - min.x),
+      (point.y - min.y) / (max.y - min.y),
+      (point.z - min.z) / (max.z - min.z),
+    );
   }
 
   bool intersectsBox(Box3 box) {
@@ -280,7 +287,8 @@ class Box3 {
     clampPoint(sphere.center, _vectorBox3);
 
     // If that point is inside the sphere, the AABB and sphere intersect.
-    return _vectorBox3.distanceToSquared(sphere.center) <= (sphere.radius * sphere.radius);
+    return _vectorBox3.distanceToSquared(sphere.center) <=
+        (sphere.radius * sphere.radius);
   }
 
   bool intersectsPlane(Plane plane) {
@@ -365,7 +373,7 @@ class Box3 {
       0,
       -_f2.y,
       _f2.x,
-      0
+      0,
     ];
     if (!satForAxes(axes, _v0, _box3v1, _v2, _extents)) {
       return false;
@@ -450,11 +458,20 @@ class Box3 {
     return box.min.equals(min) && box.max.equals(max);
   }
 
-  bool satForAxes<T extends num>(List<T> axes, Vector3 v0, Vector3 v1, Vector3 v2, Vector3 extents) {
+  bool satForAxes<T extends num>(
+    List<T> axes,
+    Vector3 v0,
+    Vector3 v1,
+    Vector3 v2,
+    Vector3 extents,
+  ) {
     for (var i = 0, j = axes.length - 3; i <= j; i += 3) {
       _testAxis.fromArray(axes, i);
       // project the aabb onto the seperating axis
-      var r = extents.x * Math.abs(_testAxis.x) + extents.y * Math.abs(_testAxis.y) + extents.z * Math.abs(_testAxis.z);
+      var r =
+          extents.x * Math.abs(_testAxis.x) +
+          extents.y * Math.abs(_testAxis.y) +
+          extents.z * Math.abs(_testAxis.z);
       // project all 3 vertices of the triangle onto the seperating axis
       var p0 = v0.dot(_testAxis);
       var p1 = v1.dot(_testAxis);

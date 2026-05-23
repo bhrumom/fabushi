@@ -103,7 +103,9 @@ class ExtrudeGeometry extends BufferGeometry {
       /* Vertices */
 
       // 去除引用
-      List contour = vertices.sublist(0); // vertices has all points but contour has only points of circumference
+      List contour = vertices.sublist(
+        0,
+      ); // vertices has all points but contour has only points of circumference
 
       for (var h = 0, hl = holes.length; h < hl; h++) {
         List ahole = holes[h];
@@ -161,7 +163,9 @@ class ExtrudeGeometry extends BufferGeometry {
 
           // scaling factor for v_prev to intersection point
 
-          var sf = ((ptNextShiftX - ptPrevShiftX) * vNextY - (ptNextShiftY - ptPrevShiftY) * vNextX) /
+          var sf =
+              ((ptNextShiftX - ptPrevShiftX) * vNextY -
+                  (ptNextShiftY - ptPrevShiftY) * vNextX) /
               (vPrevX * vNextY - vPrevY * vNextX);
 
           // vector from inPt to intersection point
@@ -216,7 +220,11 @@ class ExtrudeGeometry extends BufferGeometry {
 
       var contourMovements = [];
 
-      for (var i = 0, il = contour.length, j = il - 1, k = i + 1; i < il; i++, j++, k++) {
+      for (
+        var i = 0, il = contour.length, j = il - 1, k = i + 1;
+        i < il;
+        i++, j++, k++
+      ) {
         if (j == il) j = 0;
         if (k == il) k = 0;
 
@@ -234,7 +242,11 @@ class ExtrudeGeometry extends BufferGeometry {
 
         oneHoleMovements = List<Vector2>.filled(ahole.length, Vector2(0, 0));
 
-        for (var i = 0, il = ahole.length, j = il - 1, k = i + 1; i < il; i++, j++, k++) {
+        for (
+          var i = 0, il = ahole.length, j = il - 1, k = i + 1;
+          i < il;
+          i++, j++, k++
+        ) {
           if (j == il) j = 0;
           if (k == il) k = 0;
 
@@ -288,7 +300,9 @@ class ExtrudeGeometry extends BufferGeometry {
       // Back facing vertices
 
       for (var i = 0; i < vlen; i++) {
-        var vert = bevelEnabled ? scalePt2(vertices[i], verticesMovements[i], bs) : vertices[i];
+        var vert = bevelEnabled
+            ? scalePt2(vertices[i], verticesMovements[i], bs)
+            : vertices[i];
 
         if (!extrudeByPath) {
           v(vert.x, vert.y, 0);
@@ -309,7 +323,9 @@ class ExtrudeGeometry extends BufferGeometry {
 
       for (var s = 1; s <= steps; s++) {
         for (var i = 0; i < vlen; i++) {
-          var vert = bevelEnabled ? scalePt2(vertices[i], verticesMovements[i], bs) : vertices[i];
+          var vert = bevelEnabled
+              ? scalePt2(vertices[i], verticesMovements[i], bs)
+              : vertices[i];
 
           if (!extrudeByPath) {
             v(vert.x, vert.y, depth / steps * s);
@@ -352,7 +368,11 @@ class ExtrudeGeometry extends BufferGeometry {
             if (!extrudeByPath) {
               v(vert.x, vert.y, depth + z);
             } else {
-              v(vert.x, vert.y + extrudePts[steps - 1].y, extrudePts[steps - 1].x + z);
+              v(
+                vert.x,
+                vert.y + extrudePts[steps - 1].y,
+                extrudePts[steps - 1].x + z,
+              );
             }
           }
         }
@@ -380,7 +400,13 @@ class ExtrudeGeometry extends BufferGeometry {
         var uvs;
 
         if (uvgen == "WorldUVGenerator") {
-          uvs = WorldUVGenerator.generateTopUV(scope, verticesArray, nextIndex - 3, nextIndex - 2, nextIndex - 1);
+          uvs = WorldUVGenerator.generateTopUV(
+            scope,
+            verticesArray,
+            nextIndex - 3,
+            nextIndex - 2,
+            nextIndex - 1,
+          );
         } else {
           throw ("ExtrudeBufferGeometry uvgen: $uvgen is not support yet ");
         }
@@ -427,11 +453,19 @@ class ExtrudeGeometry extends BufferGeometry {
 
           for (var i = 0; i < flen; i++) {
             var face = faces[i];
-            f3(face[0] + vlen * steps, face[1] + vlen * steps, face[2] + vlen * steps);
+            f3(
+              face[0] + vlen * steps,
+              face[1] + vlen * steps,
+              face[2] + vlen * steps,
+            );
           }
         }
 
-        scope.addGroup(start.toInt(), (verticesArray.length / 3 - start).toInt(), 0);
+        scope.addGroup(
+          start.toInt(),
+          (verticesArray.length / 3 - start).toInt(),
+          0,
+        );
       }
 
       f4(a, b, c, d) {
@@ -449,7 +483,13 @@ class ExtrudeGeometry extends BufferGeometry {
 
         if (uvgen == "WorldUVGenerator") {
           uvs = WorldUVGenerator.generateSideWallUV(
-              scope, verticesArray, nextIndex - 6, nextIndex - 3, nextIndex - 2, nextIndex - 1);
+            scope,
+            verticesArray,
+            nextIndex - 6,
+            nextIndex - 3,
+            nextIndex - 2,
+            nextIndex - 1,
+          );
         } else {
           throw ("ExtrudeBufferGeometry uvgen: $uvgen is not support yet ");
         }
@@ -530,15 +570,24 @@ class ExtrudeGeometry extends BufferGeometry {
 
     // build geometry
 
-    setAttribute('position', Float32BufferAttribute(Float32Array.from(verticesArray), 3, false));
-    setAttribute('uv', Float32BufferAttribute(Float32Array.from(uvArray), 2, false));
+    setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(verticesArray), 3, false),
+    );
+    setAttribute(
+      'uv',
+      Float32BufferAttribute(Float32Array.from(uvArray), 2, false),
+    );
 
     computeVertexNormals();
 
     // functions
   }
 
-  ExtrudeGeometry.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) : super.fromJSON(json, rootJSON);
+  ExtrudeGeometry.fromJSON(
+    Map<String, dynamic> json,
+    Map<String, dynamic> rootJSON,
+  ) : super.fromJSON(json, rootJSON);
 
   @override
   toJSON({Object3dMeta? meta}) {
@@ -563,7 +612,14 @@ class WorldUVGenerator {
     return [Vector2(aX, aY), Vector2(bX, bY), Vector2(cX, cY)];
   }
 
-  static generateSideWallUV(geometry, List<double> vertices, num indexA, num indexB, num indexC, num indexD) {
+  static generateSideWallUV(
+    geometry,
+    List<double> vertices,
+    num indexA,
+    num indexB,
+    num indexC,
+    num indexD,
+  ) {
     double aX = vertices[indexA.toInt() * 3];
     double aY = vertices[indexA.toInt() * 3 + 1];
     double aZ = vertices[indexA.toInt() * 3 + 2];
@@ -578,9 +634,19 @@ class WorldUVGenerator {
     double dZ = vertices[indexD.toInt() * 3 + 2];
 
     if (Math.abs(aY - bY) < Math.abs(aX - bX)) {
-      return [Vector2(aX, 1 - aZ), Vector2(bX, 1 - bZ), Vector2(cX, 1 - cZ), Vector2(dX, 1 - dZ)];
+      return [
+        Vector2(aX, 1 - aZ),
+        Vector2(bX, 1 - bZ),
+        Vector2(cX, 1 - cZ),
+        Vector2(dX, 1 - dZ),
+      ];
     } else {
-      return [Vector2(aY, 1 - aZ), Vector2(bY, 1 - bZ), Vector2(cY, 1 - cZ), Vector2(dY, 1 - dZ)];
+      return [
+        Vector2(aY, 1 - aZ),
+        Vector2(bY, 1 - bZ),
+        Vector2(cY, 1 - cZ),
+        Vector2(dY, 1 - dZ),
+      ];
     }
   }
 }

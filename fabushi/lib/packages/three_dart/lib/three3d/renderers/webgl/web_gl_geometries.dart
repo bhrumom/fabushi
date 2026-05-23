@@ -81,7 +81,11 @@ class WebGLGeometries {
       var array = morphAttributes[name]!;
 
       for (var i = 0, l = array.length; i < l; i++) {
-        attributes.update(array[i], gl.ARRAY_BUFFER, name: "$name - morphAttributes i: $i");
+        attributes.update(
+          array[i],
+          gl.ARRAY_BUFFER,
+          name: "$name - morphAttributes i: $i",
+        );
       }
     }
   }

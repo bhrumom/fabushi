@@ -39,7 +39,8 @@ class Light extends Object3D {
     this.intensity = intensity ?? 1.0;
   }
 
-  Light.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) : super.fromJSON(json, rootJSON) {
+  Light.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON)
+    : super.fromJSON(json, rootJSON) {
     if (json["color"] != null) {
       color = Color(0, 0, 0).setHex(json["color"]);
     }

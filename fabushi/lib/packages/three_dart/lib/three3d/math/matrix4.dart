@@ -18,7 +18,24 @@ class Matrix4 {
   late Float32Array elements;
 
   Matrix4() {
-    elements = Float32Array.from([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
+    elements = Float32Array.from([
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+    ]);
   }
 
   Matrix4 set(
@@ -62,7 +79,24 @@ class Matrix4 {
   }
 
   Matrix4 identity() {
-    set(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+    set(
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+    );
 
     return this;
   }
@@ -108,7 +142,24 @@ class Matrix4 {
   Matrix4 setFromMatrix3(Matrix3 m) {
     var me = m.elements;
 
-    set(me[0], me[3], me[6], 0, me[1], me[4], me[7], 0, me[2], me[5], me[8], 0, 0, 0, 0, 1);
+    set(
+      me[0],
+      me[3],
+      me[6],
+      0,
+      me[1],
+      me[4],
+      me[7],
+      0,
+      me[2],
+      me[5],
+      me[8],
+      0,
+      0,
+      0,
+      0,
+      1,
+    );
 
     return this;
   }
@@ -122,7 +173,24 @@ class Matrix4 {
   }
 
   Matrix4 makeBasis(Vector3 xAxis, Vector3 yAxis, Vector3 zAxis) {
-    set(xAxis.x, yAxis.x, zAxis.x, 0, xAxis.y, yAxis.y, zAxis.y, 0, xAxis.z, yAxis.z, zAxis.z, 0, 0, 0, 0, 1);
+    set(
+      xAxis.x,
+      yAxis.x,
+      zAxis.x,
+      0,
+      xAxis.y,
+      yAxis.y,
+      zAxis.y,
+      0,
+      xAxis.z,
+      yAxis.z,
+      zAxis.z,
+      0,
+      0,
+      0,
+      0,
+      1,
+    );
 
     return this;
   }
@@ -317,7 +385,9 @@ class Matrix4 {
 
   Matrix4 multiply(Matrix4 m, {Matrix4? n}) {
     if (n != null) {
-      print('three.Matrix4: .multiply() now only accepts one argument. Use .multiplyMatrices( a, b ) instead.');
+      print(
+        'three.Matrix4: .multiply() now only accepts one argument. Use .multiplyMatrices( a, b ) instead.',
+      );
       return multiplyMatrices(m, n);
     }
 
@@ -400,17 +470,41 @@ class Matrix4 {
     //TODO: make this more efficient
     //( based on http://www.euclideanspace.com/maths/algebra/matrix/functions/inverse/fourD/index.htm )
 
-    double v1 = n41 *
-        (n14 * n23 * n32 - n13 * n24 * n32 - n14 * n22 * n33 + n12 * n24 * n33 + n13 * n22 * n34 - n12 * n23 * n34);
+    double v1 =
+        n41 *
+        (n14 * n23 * n32 -
+            n13 * n24 * n32 -
+            n14 * n22 * n33 +
+            n12 * n24 * n33 +
+            n13 * n22 * n34 -
+            n12 * n23 * n34);
 
-    double v2 = n42 *
-        (n11 * n23 * n34 - n11 * n24 * n33 + n14 * n21 * n33 - n13 * n21 * n34 + n13 * n24 * n31 - n14 * n23 * n31);
+    double v2 =
+        n42 *
+        (n11 * n23 * n34 -
+            n11 * n24 * n33 +
+            n14 * n21 * n33 -
+            n13 * n21 * n34 +
+            n13 * n24 * n31 -
+            n14 * n23 * n31);
 
-    double v3 = n43 *
-        (n11 * n24 * n32 - n11 * n22 * n34 - n14 * n21 * n32 + n12 * n21 * n34 + n14 * n22 * n31 - n12 * n24 * n31);
+    double v3 =
+        n43 *
+        (n11 * n24 * n32 -
+            n11 * n22 * n34 -
+            n14 * n21 * n32 +
+            n12 * n21 * n34 +
+            n14 * n22 * n31 -
+            n12 * n24 * n31);
 
-    double v4 = n44 *
-        (-n13 * n22 * n31 - n11 * n23 * n32 + n11 * n22 * n33 + n13 * n21 * n32 - n12 * n21 * n33 + n12 * n23 * n31);
+    double v4 =
+        n44 *
+        (-n13 * n22 * n31 -
+            n11 * n23 * n32 +
+            n11 * n22 * n33 +
+            n13 * n21 * n32 -
+            n12 * n21 * n33 +
+            n12 * n23 * n31);
 
     final result = (v1 + v2 + v3 + v4);
 
@@ -489,10 +583,34 @@ class Matrix4 {
         n24 = te[13],
         n34 = te[14],
         n44 = te[15],
-        t11 = n23 * n34 * n42 - n24 * n33 * n42 + n24 * n32 * n43 - n22 * n34 * n43 - n23 * n32 * n44 + n22 * n33 * n44,
-        t12 = n14 * n33 * n42 - n13 * n34 * n42 - n14 * n32 * n43 + n12 * n34 * n43 + n13 * n32 * n44 - n12 * n33 * n44,
-        t13 = n13 * n24 * n42 - n14 * n23 * n42 + n14 * n22 * n43 - n12 * n24 * n43 - n13 * n22 * n44 + n12 * n23 * n44,
-        t14 = n14 * n23 * n32 - n13 * n24 * n32 - n14 * n22 * n33 + n12 * n24 * n33 + n13 * n22 * n34 - n12 * n23 * n34;
+        t11 =
+            n23 * n34 * n42 -
+            n24 * n33 * n42 +
+            n24 * n32 * n43 -
+            n22 * n34 * n43 -
+            n23 * n32 * n44 +
+            n22 * n33 * n44,
+        t12 =
+            n14 * n33 * n42 -
+            n13 * n34 * n42 -
+            n14 * n32 * n43 +
+            n12 * n34 * n43 +
+            n13 * n32 * n44 -
+            n12 * n33 * n44,
+        t13 =
+            n13 * n24 * n42 -
+            n14 * n23 * n42 +
+            n14 * n22 * n43 -
+            n12 * n24 * n43 -
+            n13 * n22 * n44 +
+            n12 * n23 * n44,
+        t14 =
+            n14 * n23 * n32 -
+            n13 * n24 * n32 -
+            n14 * n22 * n33 +
+            n12 * n24 * n33 +
+            n13 * n22 * n34 -
+            n12 * n23 * n34;
 
     final det = n11 * t11 + n21 * t12 + n31 * t13 + n41 * t14;
 
@@ -502,47 +620,107 @@ class Matrix4 {
 
     te[0] = t11 * detInv;
     te[1] =
-        (n24 * n33 * n41 - n23 * n34 * n41 - n24 * n31 * n43 + n21 * n34 * n43 + n23 * n31 * n44 - n21 * n33 * n44) *
-            detInv;
+        (n24 * n33 * n41 -
+            n23 * n34 * n41 -
+            n24 * n31 * n43 +
+            n21 * n34 * n43 +
+            n23 * n31 * n44 -
+            n21 * n33 * n44) *
+        detInv;
     te[2] =
-        (n22 * n34 * n41 - n24 * n32 * n41 + n24 * n31 * n42 - n21 * n34 * n42 - n22 * n31 * n44 + n21 * n32 * n44) *
-            detInv;
+        (n22 * n34 * n41 -
+            n24 * n32 * n41 +
+            n24 * n31 * n42 -
+            n21 * n34 * n42 -
+            n22 * n31 * n44 +
+            n21 * n32 * n44) *
+        detInv;
     te[3] =
-        (n23 * n32 * n41 - n22 * n33 * n41 - n23 * n31 * n42 + n21 * n33 * n42 + n22 * n31 * n43 - n21 * n32 * n43) *
-            detInv;
+        (n23 * n32 * n41 -
+            n22 * n33 * n41 -
+            n23 * n31 * n42 +
+            n21 * n33 * n42 +
+            n22 * n31 * n43 -
+            n21 * n32 * n43) *
+        detInv;
 
     te[4] = t12 * detInv;
     te[5] =
-        (n13 * n34 * n41 - n14 * n33 * n41 + n14 * n31 * n43 - n11 * n34 * n43 - n13 * n31 * n44 + n11 * n33 * n44) *
-            detInv;
+        (n13 * n34 * n41 -
+            n14 * n33 * n41 +
+            n14 * n31 * n43 -
+            n11 * n34 * n43 -
+            n13 * n31 * n44 +
+            n11 * n33 * n44) *
+        detInv;
     te[6] =
-        (n14 * n32 * n41 - n12 * n34 * n41 - n14 * n31 * n42 + n11 * n34 * n42 + n12 * n31 * n44 - n11 * n32 * n44) *
-            detInv;
+        (n14 * n32 * n41 -
+            n12 * n34 * n41 -
+            n14 * n31 * n42 +
+            n11 * n34 * n42 +
+            n12 * n31 * n44 -
+            n11 * n32 * n44) *
+        detInv;
     te[7] =
-        (n12 * n33 * n41 - n13 * n32 * n41 + n13 * n31 * n42 - n11 * n33 * n42 - n12 * n31 * n43 + n11 * n32 * n43) *
-            detInv;
+        (n12 * n33 * n41 -
+            n13 * n32 * n41 +
+            n13 * n31 * n42 -
+            n11 * n33 * n42 -
+            n12 * n31 * n43 +
+            n11 * n32 * n43) *
+        detInv;
 
     te[8] = t13 * detInv;
     te[9] =
-        (n14 * n23 * n41 - n13 * n24 * n41 - n14 * n21 * n43 + n11 * n24 * n43 + n13 * n21 * n44 - n11 * n23 * n44) *
-            detInv;
+        (n14 * n23 * n41 -
+            n13 * n24 * n41 -
+            n14 * n21 * n43 +
+            n11 * n24 * n43 +
+            n13 * n21 * n44 -
+            n11 * n23 * n44) *
+        detInv;
     te[10] =
-        (n12 * n24 * n41 - n14 * n22 * n41 + n14 * n21 * n42 - n11 * n24 * n42 - n12 * n21 * n44 + n11 * n22 * n44) *
-            detInv;
+        (n12 * n24 * n41 -
+            n14 * n22 * n41 +
+            n14 * n21 * n42 -
+            n11 * n24 * n42 -
+            n12 * n21 * n44 +
+            n11 * n22 * n44) *
+        detInv;
     te[11] =
-        (n13 * n22 * n41 - n12 * n23 * n41 - n13 * n21 * n42 + n11 * n23 * n42 + n12 * n21 * n43 - n11 * n22 * n43) *
-            detInv;
+        (n13 * n22 * n41 -
+            n12 * n23 * n41 -
+            n13 * n21 * n42 +
+            n11 * n23 * n42 +
+            n12 * n21 * n43 -
+            n11 * n22 * n43) *
+        detInv;
 
     te[12] = t14 * detInv;
     te[13] =
-        (n13 * n24 * n31 - n14 * n23 * n31 + n14 * n21 * n33 - n11 * n24 * n33 - n13 * n21 * n34 + n11 * n23 * n34) *
-            detInv;
+        (n13 * n24 * n31 -
+            n14 * n23 * n31 +
+            n14 * n21 * n33 -
+            n11 * n24 * n33 -
+            n13 * n21 * n34 +
+            n11 * n23 * n34) *
+        detInv;
     te[14] =
-        (n14 * n22 * n31 - n12 * n24 * n31 - n14 * n21 * n32 + n11 * n24 * n32 + n12 * n21 * n34 - n11 * n22 * n34) *
-            detInv;
+        (n14 * n22 * n31 -
+            n12 * n24 * n31 -
+            n14 * n21 * n32 +
+            n11 * n24 * n32 +
+            n12 * n21 * n34 -
+            n11 * n22 * n34) *
+        detInv;
     te[15] =
-        (n12 * n23 * n31 - n13 * n22 * n31 + n13 * n21 * n32 - n11 * n23 * n32 - n12 * n21 * n33 + n11 * n22 * n33) *
-            detInv;
+        (n12 * n23 * n31 -
+            n13 * n22 * n31 +
+            n13 * n21 * n32 -
+            n11 * n23 * n32 -
+            n12 * n21 * n33 +
+            n11 * n22 * n33) *
+        detInv;
 
     return this;
   }
@@ -616,8 +794,24 @@ class Matrix4 {
     var x = axis.x, y = axis.y, z = axis.z;
     var tx = t * x, ty = t * y;
 
-    set(tx * x + c, tx * y - s * z, tx * z + s * y, 0, tx * y + s * z, ty * y + c, ty * z - s * x, 0, tx * z - s * y,
-        ty * z + s * x, t * z * z + c, 0, 0, 0, 0, 1);
+    set(
+      tx * x + c,
+      tx * y - s * z,
+      tx * z + s * y,
+      0,
+      tx * y + s * z,
+      ty * y + c,
+      ty * z - s * x,
+      0,
+      tx * z - s * y,
+      ty * z + s * x,
+      t * z * z + c,
+      0,
+      0,
+      0,
+      0,
+      1,
+    );
 
     return this;
   }
@@ -714,7 +908,14 @@ class Matrix4 {
     return this;
   }
 
-  Matrix4 makePerspective(num left, num right, num top, num bottom, num near, num far) {
+  Matrix4 makePerspective(
+    num left,
+    num right,
+    num top,
+    num bottom,
+    num near,
+    num far,
+  ) {
     var te = elements;
     var x = 2 * near / (right - left);
     var y = 2 * near / (top - bottom);
@@ -744,7 +945,14 @@ class Matrix4 {
     return this;
   }
 
-  Matrix4 makeOrthographic(num left, num right, num top, num bottom, num near, num far) {
+  Matrix4 makeOrthographic(
+    num left,
+    num right,
+    num top,
+    num bottom,
+    num near,
+    num far,
+  ) {
     var te = elements;
     var w = 1.0 / (right - left);
     var h = 1.0 / (top - bottom);
@@ -824,7 +1032,9 @@ class Matrix4 {
   }
 
   Matrix4 getInverse(Matrix4 matrix) {
-    print('three.Matrix4: .getInverse() has been removed. Use matrixInv.copy( matrix ).invert(); instead.');
+    print(
+      'three.Matrix4: .getInverse() has been removed. Use matrixInv.copy( matrix ).invert(); instead.',
+    );
     return copy(matrix).invert();
   }
 }

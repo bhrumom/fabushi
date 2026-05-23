@@ -30,7 +30,8 @@ class StereoCamera {
   void update(camera) {
     var cache = _cache;
 
-    var needsUpdate = cache["focus"] != camera.focus ||
+    var needsUpdate =
+        cache["focus"] != camera.focus ||
         cache["fov"] != camera.fov ||
         cache["aspect"] != camera.aspect * aspect ||
         cache["near"] != camera.near ||
@@ -53,7 +54,9 @@ class StereoCamera {
       _projectionMatrix.copy(camera.projectionMatrix);
       var eyeSepHalf = cache["eyeSep"] / 2;
       var eyeSepOnProjection = eyeSepHalf * cache["near"] / cache["focus"];
-      var ymax = (cache["near"] * Math.tan(MathUtils.deg2rad * cache["fov"] * 0.5)) / cache["zoom"];
+      var ymax =
+          (cache["near"] * Math.tan(MathUtils.deg2rad * cache["fov"] * 0.5)) /
+          cache["zoom"];
       var xmin, xmax;
 
       // translate xOffset

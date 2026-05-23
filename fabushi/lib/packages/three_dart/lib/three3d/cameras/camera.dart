@@ -30,7 +30,8 @@ class Camera extends Object3D {
     type = "Camera";
   }
 
-  Camera.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) : super.fromJSON(json, rootJSON) {
+  Camera.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON)
+    : super.fromJSON(json, rootJSON) {
     type = "Camera";
   }
 

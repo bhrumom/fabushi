@@ -16,7 +16,11 @@ class WebGLAttributes {
     isWebGL2 = capabilities.isWebGL2;
   }
 
-  Map<String, dynamic> createBuffer(var attribute, int bufferType, {String? name}) {
+  Map<String, dynamic> createBuffer(
+    var attribute,
+    int bufferType, {
+    String? name,
+  }) {
     final array = attribute.array;
     var usage = attribute.usage;
 
@@ -37,13 +41,17 @@ class WebGLAttributes {
       type = gl.FLOAT;
       bytesPerElement = Float32List.bytesPerElement;
     } else if (attribute is Float64BufferAttribute) {
-      print('three.WebGLAttributes: Unsupported data buffer format: Float64Array.');
+      print(
+        'three.WebGLAttributes: Unsupported data buffer format: Float64Array.',
+      );
     } else if (attribute is Float16BufferAttribute) {
       if (isWebGL2) {
         bytesPerElement = 2;
         type = gl.HALF_FLOAT;
       } else {
-        print('three.WebGLAttributes: Usage of Float16BufferAttribute requires WebGL2.');
+        print(
+          'three.WebGLAttributes: Usage of Float16BufferAttribute requires WebGL2.',
+        );
       }
     } else if (attribute is Uint16BufferAttribute) {
       bytesPerElement = Uint16List.bytesPerElement;
@@ -72,7 +80,7 @@ class WebGLAttributes {
       "type": type,
       "bytesPerElement": bytesPerElement,
       "array": array,
-      "version": attribute.version
+      "version": attribute.version,
     };
   }
 
@@ -88,10 +96,14 @@ class WebGLAttributes {
     } else {
       print(" WebGLAttributes.dart gl.bufferSubData need debug confirm.... ");
       gl.bufferSubData(
-          bufferType, updateRange["offset"] * attribute.itemSize, array, updateRange["offset"], updateRange["count"]);
+        bufferType,
+        updateRange["offset"] * attribute.itemSize,
+        array,
+        updateRange["offset"],
+        updateRange["count"],
+      );
 
       updateRange["count"] = -1; // reset range
-
     }
   }
 
@@ -128,7 +140,10 @@ class WebGLAttributes {
       var cached = buffers.get(attribute);
 
       if (cached == null || cached["version"] < attribute.version) {
-        buffers.add(key: attribute, value: createBuffer(attribute, bufferType, name: name));
+        buffers.add(
+          key: attribute,
+          value: createBuffer(attribute, bufferType, name: name),
+        );
       }
 
       return;
@@ -141,7 +156,10 @@ class WebGLAttributes {
     final data = buffers.get(attribute);
 
     if (data == null) {
-      buffers.add(key: attribute, value: createBuffer(attribute, bufferType, name: name));
+      buffers.add(
+        key: attribute,
+        value: createBuffer(attribute, bufferType, name: name),
+      );
     } else if (data["version"] < attribute.version) {
       updateBuffer(data["buffer"], attribute, bufferType);
       data["version"] = attribute.version;
