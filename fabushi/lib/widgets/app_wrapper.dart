@@ -9,10 +9,12 @@ import '../screens/eula_screen.dart';
 import '../screens/main_navigation_screen.dart';
 import '../services/app_initializer.dart';
 import '../services/app_settings.dart';
+import '../services/app_update_service.dart';
 import '../services/asset_loader_service.dart';
 import '../services/error_report_service.dart';
 import '../services/eula_service.dart';
 import '../services/platform_service.dart';
+import '../widgets/app_update_dialog.dart';
 import '../widgets/model_selection_dialog.dart';
 import '../widgets/startup_splash_screen.dart';
 
@@ -29,6 +31,7 @@ class _AppWrapperState extends State<AppWrapper> {
   bool _isInitialized = false;
   bool _initStarted = false;
   bool _isSubmittingFeedback = false;
+  bool _versionCheckScheduled = false;
   String _startupPhase = '正在唤起禅境';
   String? _initError;
   bool _needsModelSetup = false;
@@ -134,8 +137,10 @@ class _AppWrapperState extends State<AppWrapper> {
         }
 
         if (needsModelSetup && mounted) {
-          _showModelSetupDialog();
+          await _showModelSetupDialog();
         }
+
+        _scheduleAppVersionCheck();
       }
     } catch (error, stackTrace) {
       debugPrint('Error during app initialization: $error');
@@ -188,6 +193,82 @@ class _AppWrapperState extends State<AppWrapper> {
         source: 'AppWrapper.startupSideEffect',
       );
     }
+  }
+
+  void _scheduleAppVersionCheck() {
+    if (_versionCheckScheduled) {
+      return;
+    }
+    _versionCheckScheduled = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 600), () async {
+        if (!mounted) {
+          return;
+        }
+        await _showAppUpdateDialogIfNeeded();
+      });
+    });
+  }
+
+  Future<void> _showAppUpdateDialogIfNeeded() async {
+    final decision = await AppUpdateService.instance.checkForUpdate();
+    if (!mounted || decision == null) {
+      return;
+    }
+
+    await AppUpdateService.instance.markPromptShown();
+    if (!mounted) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !decision.isForce,
+      builder: (dialogContext) {
+        return AppUpdateDialog(
+          decision: decision,
+          onLaterPressed: decision.isForce
+              ? null
+              : () => Navigator.of(dialogContext).pop(),
+          onSkipPressed: decision.canSkip
+              ? () async {
+                  await AppUpdateService.instance.markSkippedVersion(decision);
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                }
+              : null,
+          onUpdatePressed: () async {
+            final launched =
+                await AppUpdateService.instance.openUpdatePage(decision);
+            if (!mounted) {
+              return;
+            }
+
+            if (!launched) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('暂时无法打开更新入口，请稍后重试')),
+              );
+              return;
+            }
+
+            if (decision.isForce) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('已打开更新入口，更新完成后请重新打开应用'),
+                ),
+              );
+              return;
+            }
+
+            if (dialogContext.mounted) {
+              Navigator.of(dialogContext).pop();
+            }
+          },
+        );
+      },
+    );
   }
 
   Future<void> _showEulaScreen() async {
@@ -556,6 +637,7 @@ class _AppWrapperState extends State<AppWrapper> {
                               _startupPhase = '正在重新唤起禅境';
                               _initError = null;
                               _initReport = null;
+                              _versionCheckScheduled = false;
                             });
                           },
                           style: ElevatedButton.styleFrom(
