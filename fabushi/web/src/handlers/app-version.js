@@ -64,7 +64,18 @@ function normalizeReleaseNotes(value) {
     return items.length > 0 ? items : [...DEFAULT_RELEASE_NOTES];
   }
   if (typeof value === 'string') {
-    const items = value
+    const trimmed = value.trim();
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return normalizeReleaseNotes(parsed);
+        }
+      } catch (_) {
+        // fall through to plain text parsing
+      }
+    }
+    const items = trimmed
       .split(/\r?\n/)
       .map((item) => item.trim())
       .filter(Boolean);
