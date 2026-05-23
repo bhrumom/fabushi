@@ -136,13 +136,13 @@ function normalizeChannel(input: unknown): OfficialSiteChannel | null {
   }
 
   return {
-    platform: channel.platform,
-    audience: channel.audience,
-    status: channel.status,
-    title: channel.title,
-    description: channel.description,
-    primaryLabel: channel.primaryLabel,
-    primaryHref: channel.primaryHref,
+    platform: channel.platform as OfficialSiteChannel["platform"],
+    audience: channel.audience as OfficialSiteChannel["audience"],
+    status: channel.status as string,
+    title: channel.title as string,
+    description: channel.description as string,
+    primaryLabel: channel.primaryLabel as string,
+    primaryHref: channel.primaryHref as string,
     version: typeof channel.version === "string" && channel.version.length > 0 ? channel.version : undefined,
     publishedAt:
       typeof channel.publishedAt === "string" && channel.publishedAt.length > 0 ? channel.publishedAt : undefined,
