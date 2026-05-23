@@ -1,3 +1,5 @@
+import { CBETA_API_ROOT, CBETA_PROXY_ROOT } from "./cbeta-config";
+
 export interface CbetaWorkIndexItem {
   work: string;
   title: string;
@@ -59,9 +61,7 @@ export interface AppComment {
   mainPractice?: string | null;
 }
 
-const CBETA_API_ROOT = "https://api.cbetaonline.cn";
 const APP_API_ROOT = "https://api.ombhrum.com/api";
-const CBETA_PROXY_ROOT = "/api/cbeta";
 const APP_PROXY_ROOT = "/api/app";
 const SIMPLIFIED_TO_TRADITIONAL: Record<string, string> = {
   万: "萬",
