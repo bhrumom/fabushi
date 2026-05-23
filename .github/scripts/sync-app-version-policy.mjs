@@ -106,7 +106,16 @@ async function main() {
     throw new Error('Missing VERSION_POLICY_AUTOMATION_TOKEN');
   }
 
-  const channel = args.channel || process.env.VERSION_CHANNEL || 'stable';
+  const channels = (
+    args.channels ||
+    process.env.VERSION_POLICY_CHANNELS ||
+    args.channel ||
+    process.env.VERSION_CHANNEL ||
+    'stable'
+  )
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
   const platforms = (args.platforms || process.env.VERSION_POLICY_PLATFORMS || 'android,ios')
     .split(',')
     .map((item) => item.trim().toLowerCase())
@@ -155,35 +164,37 @@ async function main() {
       '',
   };
 
-  for (const platform of platforms) {
-    const payload = {
-      platform,
-      channel,
-      latestVersion: version,
-      latestBuildNumber: buildNumber,
-      downloadUrl: platformUrls[platform] || '',
-      forceUpdate,
-      allowSkip,
-      source,
-    };
+  for (const channel of channels) {
+    for (const platform of platforms) {
+      const payload = {
+        platform,
+        channel,
+        latestVersion: version,
+        latestBuildNumber: buildNumber,
+        downloadUrl: platformUrls[platform] || '',
+        forceUpdate,
+        allowSkip,
+        source,
+      };
 
-    if (title) payload.title = title;
-    if (message) payload.message = message;
-    if (publishedAt) payload.publishedAt = publishedAt;
-    if (releaseNotes?.length) payload.releaseNotes = releaseNotes;
-    if (minSupportedBuildNumber !== undefined) {
-      payload.minSupportedBuildNumber = minSupportedBuildNumber;
-    }
-    if (rolloutPercentage !== undefined) {
-      payload.rolloutPercentage = rolloutPercentage;
-    }
-    if (promptIntervalHours !== undefined) {
-      payload.promptIntervalHours = promptIntervalHours;
-    }
+      if (title) payload.title = title;
+      if (message) payload.message = message;
+      if (publishedAt) payload.publishedAt = publishedAt;
+      if (releaseNotes?.length) payload.releaseNotes = releaseNotes;
+      if (minSupportedBuildNumber !== undefined) {
+        payload.minSupportedBuildNumber = minSupportedBuildNumber;
+      }
+      if (rolloutPercentage !== undefined) {
+        payload.rolloutPercentage = rolloutPercentage;
+      }
+      if (promptIntervalHours !== undefined) {
+        payload.promptIntervalHours = promptIntervalHours;
+      }
 
-    const result = await upsertPolicy({ endpoint, token, payload });
-    console.log(`Synced ${platform}/${channel} -> ${version}+${buildNumber}`);
-    console.log(JSON.stringify(result, null, 2));
+      const result = await upsertPolicy({ endpoint, token, payload });
+      console.log(`Synced ${platform}/${channel} -> ${version}+${buildNumber}`);
+      console.log(JSON.stringify(result, null, 2));
+    }
   }
 }
 
