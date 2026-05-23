@@ -67,10 +67,15 @@ class AnimationMixer with EventDispatcher {
           continue;
         }
 
-        var path = prototypeAction != null ? prototypeAction.propertyBindings[i].binding.parsedPath : null;
+        var path = prototypeAction != null
+            ? prototypeAction.propertyBindings[i].binding.parsedPath
+            : null;
 
-        binding =
-            PropertyMixer(PropertyBinding.create(root, trackName, path), track.valueTypeName, track.getValueSize());
+        binding = PropertyMixer(
+          PropertyBinding.create(root, trackName, path),
+          track.valueTypeName,
+          track.getValueSize(),
+        );
 
         ++binding.referenceCount;
         _addInactiveBinding(binding, rootUuid, trackName);
@@ -211,7 +216,7 @@ class AnimationMixer with EventDispatcher {
     if (actionsForClip == null) {
       actionsForClip = <String, dynamic>{
         "knownActions": [action],
-        "actionByRoot": {}
+        "actionByRoot": {},
       };
 
       action.byClipCacheIndex = 0;
@@ -231,7 +236,9 @@ class AnimationMixer with EventDispatcher {
   }
 
   _removeInactiveAction(AnimationAction action) {
-    var actions = _actions, lastInactiveAction = actions[actions.length - 1], cacheIndex = action.cacheIndex;
+    var actions = _actions,
+        lastInactiveAction = actions[actions.length - 1],
+        cacheIndex = action.cacheIndex;
 
     lastInactiveAction.cacheIndex = cacheIndex;
     actions[cacheIndex] = lastInactiveAction;
@@ -386,14 +393,19 @@ class AnimationMixer with EventDispatcher {
   // Memory management of Interpolants for weight and time scale
 
   lendControlInterpolant() {
-    var interpolants = _controlInterpolants, lastActiveIndex = _nActiveControlInterpolants++;
+    var interpolants = _controlInterpolants,
+        lastActiveIndex = _nActiveControlInterpolants++;
 
     var interpolant = interpolants[lastActiveIndex];
 
     if (interpolant == null) {
       print(" AnimationMixer LinearInterpolant init todo   ");
-      interpolant =
-          LinearInterpolant(List<num>.filled(2, 0), List<num>.filled(2, 0), 1, _controlInterpolantsResultBuffer);
+      interpolant = LinearInterpolant(
+        List<num>.filled(2, 0),
+        List<num>.filled(2, 0),
+        1,
+        _controlInterpolantsResultBuffer,
+      );
 
       interpolant.__cacheIndex = lastActiveIndex;
       interpolants[lastActiveIndex] = interpolant;
@@ -422,7 +434,9 @@ class AnimationMixer with EventDispatcher {
     var root = optionalRoot ?? this.root;
     var rootUuid = root.uuid;
 
-    AnimationClip? clipObject = clip is String ? AnimationClip.findByName(root, clip) : clip;
+    AnimationClip? clipObject = clip is String
+        ? AnimationClip.findByName(root, clip)
+        : clip;
 
     var clipUuid = clipObject != null ? clipObject.uuid : clip;
 
@@ -456,7 +470,12 @@ class AnimationMixer with EventDispatcher {
     if (clipObject == null) return null;
 
     // allocate all resources required to run it
-    var newAction = AnimationAction(this, clipObject, localRoot: optionalRoot, blendMode: blendMode);
+    var newAction = AnimationAction(
+      this,
+      clipObject,
+      localRoot: optionalRoot,
+      blendMode: blendMode,
+    );
 
     _bindAction(newAction, prototypeAction);
 
@@ -471,7 +490,9 @@ class AnimationMixer with EventDispatcher {
     var root = optionalRoot ?? this.root;
     var rootUuid = root.uuid;
 
-    var clipObject = clip is String ? AnimationClip.findByName(root, clip) : clip,
+    var clipObject = clip is String
+            ? AnimationClip.findByName(root, clip)
+            : clip,
         clipUuid = clipObject ? clipObject.uuid : clip,
         actionsForClip = _actionsByClip[clipUuid];
 
@@ -526,11 +547,13 @@ class AnimationMixer with EventDispatcher {
   setTime(timeInSeconds) {
     time = 0; // Zero out time attribute for AnimationMixer object;
     for (var i = 0; i < _actions.length; i++) {
-      _actions[i].time = 0; // Zero out time attribute for all associated AnimationAction objects.
-
+      _actions[i].time =
+          0; // Zero out time attribute for all associated AnimationAction objects.
     }
 
-    return update(timeInSeconds); // Update used to set exact time. Returns "this" AnimationMixer object.
+    return update(
+      timeInSeconds,
+    ); // Update used to set exact time. Returns "this" AnimationMixer object.
   }
 
   // return this mixer's root target object
@@ -557,7 +580,8 @@ class AnimationMixer with EventDispatcher {
 
         deactivateAction(action);
 
-        var cacheIndex = action.cacheIndex, lastInactiveAction = actions[actions.length - 1];
+        var cacheIndex = action.cacheIndex,
+            lastInactiveAction = actions[actions.length - 1];
 
         action.cacheIndex = null;
         action.byClipCacheIndex = null;
@@ -580,7 +604,8 @@ class AnimationMixer with EventDispatcher {
 
     // for ( var clipUuid in actionsByClip ) {
     actionsByClip.forEach((clipUuid, value) {
-      var actionByRoot = actionsByClip[clipUuid].actionByRoot, action = actionByRoot[rootUuid];
+      var actionByRoot = actionsByClip[clipUuid].actionByRoot,
+          action = actionByRoot[rootUuid];
 
       if (action != null) {
         deactivateAction(action);
@@ -588,7 +613,8 @@ class AnimationMixer with EventDispatcher {
       }
     });
 
-    var bindingsByRoot = _bindingsByRootAndName, bindingByName = bindingsByRoot[rootUuid];
+    var bindingsByRoot = _bindingsByRootAndName,
+        bindingByName = bindingsByRoot[rootUuid];
 
     if (bindingByName != null) {
       for (var trackName in bindingByName) {

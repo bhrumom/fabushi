@@ -204,7 +204,8 @@ class InterleavedBufferAttribute extends BufferAttribute {
   Map<String, Object> toJSON([data]) {
     if (data == null) {
       print(
-          'three.InterleavedBufferAttribute.toJSON(): Serializing an interlaved buffer attribute will deinterleave buffer data!.');
+        'three.InterleavedBufferAttribute.toJSON(): Serializing an interlaved buffer attribute will deinterleave buffer data!.',
+      );
 
       var array = [];
 
@@ -222,7 +223,7 @@ class InterleavedBufferAttribute extends BufferAttribute {
         "itemSize": itemSize,
         "type": this.array.runtimeType.toString(), // TODO remove runtimeType
         "array": array,
-        "normalized": normalized
+        "normalized": normalized,
       };
     } else {
       // save as true interlaved attribtue
@@ -238,7 +239,7 @@ class InterleavedBufferAttribute extends BufferAttribute {
         "itemSize": itemSize,
         "data": this.data!.uuid,
         "offset": offset,
-        "normalized": normalized
+        "normalized": normalized,
       };
     }
   }

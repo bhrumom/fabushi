@@ -35,28 +35,35 @@ class ObjectLoader extends Loader {
     loader.setPath(this.path);
     loader.setRequestHeader(requestHeader);
     loader.setWithCredentials(withCredentials);
-    loader.load(url, (text) {
-      var json;
+    loader.load(
+      url,
+      (text) {
+        var json;
 
-      try {
-        json = convert.jsonDecode(text);
-      } catch (error) {
-        if (onError != null) onError(error);
+        try {
+          json = convert.jsonDecode(text);
+        } catch (error) {
+          if (onError != null) onError(error);
 
-        print('THREE:ObjectLoader: Can\'t parse $url $error');
+          print('THREE:ObjectLoader: Can\'t parse $url $error');
 
-        return;
-      }
+          return;
+        }
 
-      var metadata = json.metadata;
+        var metadata = json.metadata;
 
-      if (metadata == null || metadata.type == null || metadata.type.toLowerCase() == 'geometry') {
-        print('three.ObjectLoader: Can\'t load $url');
-        return;
-      }
+        if (metadata == null ||
+            metadata.type == null ||
+            metadata.type.toLowerCase() == 'geometry') {
+          print('three.ObjectLoader: Can\'t load $url');
+          return;
+        }
 
-      scope.parse(json, null, onLoad);
-    }, onProgress, onError);
+        scope.parse(json, null, onLoad);
+      },
+      onProgress,
+      onError,
+    );
   }
 
   @override
@@ -77,7 +84,9 @@ class ObjectLoader extends Loader {
 
     var metadata = json.metadata;
 
-    if (metadata == null || metadata.type == null || metadata.type.toLowerCase() == 'geometry') {
+    if (metadata == null ||
+        metadata.type == null ||
+        metadata.type.toLowerCase() == 'geometry') {
       throw ('three.ObjectLoader: Can\'t load $url');
     }
 
@@ -95,7 +104,13 @@ class ObjectLoader extends Loader {
     var textures = parseTextures(json.textures, images);
     var materials = parseMaterials(json.materials, textures);
 
-    var object = parseObject(json.object, geometries, materials, textures, animations);
+    var object = parseObject(
+      json.object,
+      geometries,
+      materials,
+      textures,
+      animations,
+    );
     var skeletons = parseSkeletons(json.skeletons, object);
 
     bindSkeletons(object, skeletons);
@@ -113,7 +128,13 @@ class ObjectLoader extends Loader {
     var textures = parseTextures(json["textures"], images);
     var materials = parseMaterials(json["materials"], textures);
 
-    var object = parseObject(json["object"], geometries, materials, textures, animations);
+    var object = parseObject(
+      json["object"],
+      geometries,
+      materials,
+      textures,
+      animations,
+    );
 
     return object;
   }
@@ -173,7 +194,9 @@ class ObjectLoader extends Loader {
             break;
 
           case 'Geometry':
-            print('three.ObjectLoader: The legacy Geometry type is no longer supported.');
+            print(
+              'three.ObjectLoader: The legacy Geometry type is no longer supported.',
+            );
 
             break;
 
@@ -280,12 +303,18 @@ class ObjectLoader extends Loader {
         var url = image;
 
         var path =
-            RegExp("^(//)|([a-z]+:(//)?)", caseSensitive: false).hasMatch(url) ? url : (scope.resourcePath ?? "") + url;
+            RegExp("^(//)|([a-z]+:(//)?)", caseSensitive: false).hasMatch(url)
+            ? url
+            : (scope.resourcePath ?? "") + url;
 
         return await loadImage(path);
       } else {
         if (image.data) {
-          return {"data": getTypedArray(image.type, image.data), "width": image.width, "height": image.height};
+          return {
+            "data": getTypedArray(image.type, image.data),
+            "width": image.width,
+            "height": image.height,
+          };
         } else {
           return null;
         }
@@ -326,7 +355,6 @@ class ObjectLoader extends Loader {
               // 	imageArray.push( new DataTexture( deserializedImage.data, deserializedImage.width, deserializedImage.height ) );
 
               // }
-
             }
           }
 
@@ -350,7 +378,9 @@ class ObjectLoader extends Loader {
     parseConstant(value, type) {
       if (value is num) return value;
 
-      print('three.ObjectLoader.parseTexture: Constant should be in numeric form. $value');
+      print(
+        'three.ObjectLoader.parseTexture: Constant should be in numeric form. $value',
+      );
 
       return type[value];
     }
@@ -388,7 +418,6 @@ class ObjectLoader extends Loader {
           if (image != null) {
             texture.needsUpdate = true;
           } // textures can have null image data
-
         }
 
         texture.source = source;
@@ -439,7 +468,13 @@ class ObjectLoader extends Loader {
     return textures;
   }
 
-  Object3D parseObject(Map<String, dynamic> data, geometries, materials, textures, animations) {
+  Object3D parseObject(
+    Map<String, dynamic> data,
+    geometries,
+    materials,
+    textures,
+    animations,
+  ) {
     dynamic object;
 
     getGeometry(name) {
@@ -504,7 +539,11 @@ class ObjectLoader extends Loader {
 
         if (data["fog"] != null) {
           if (data["fog"]["type"] == 'Fog') {
-            object.fog = Fog(data["fog"]["color"], data["fog"]["near"], data["fog"]["far"]);
+            object.fog = Fog(
+              data["fog"]["color"],
+              data["fog"]["near"],
+              data["fog"]["far"],
+            );
           } else if (data["fog"]["type"] == 'FogExp2') {
             object.fog = FogExp2(data["fog"]["color"], data["fog"]["density"]);
           }
@@ -513,7 +552,12 @@ class ObjectLoader extends Loader {
         break;
 
       case 'PerspectiveCamera':
-        object = PerspectiveCamera(data["fov"], data["aspect"], data["near"], data["far"]);
+        object = PerspectiveCamera(
+          data["fov"],
+          data["aspect"],
+          data["near"],
+          data["far"],
+        );
 
         if (data["focus"] != null) object.focus = data["focus"];
         if (data["zoom"] != null) object.zoom = data["zoom"];
@@ -526,8 +570,14 @@ class ObjectLoader extends Loader {
         break;
 
       case 'OrthographicCamera':
-        object =
-            OrthographicCamera(data["left"], data["right"], data["top"], data["bottom"], data["near"], data["far"]);
+        object = OrthographicCamera(
+          data["left"],
+          data["right"],
+          data["top"],
+          data["bottom"],
+          data["near"],
+          data["far"],
+        );
 
         if (data["zoom"] != null) object.zoom = data["zoom"];
         if (data["view"] != null) {
@@ -547,23 +597,43 @@ class ObjectLoader extends Loader {
         break;
 
       case 'PointLight':
-        object = PointLight(data["color"], data["intensity"], data["distance"], data["decay"]);
+        object = PointLight(
+          data["color"],
+          data["intensity"],
+          data["distance"],
+          data["decay"],
+        );
 
         break;
 
       case 'RectAreaLight':
-        object = RectAreaLight(data["color"], data["intensity"], data["width"], data["height"]);
+        object = RectAreaLight(
+          data["color"],
+          data["intensity"],
+          data["width"],
+          data["height"],
+        );
 
         break;
 
       case 'SpotLight':
         object = SpotLight(
-            data["color"], data["intensity"], data["distance"], data["angle"], data["penumbra"], data["decay"]);
+          data["color"],
+          data["intensity"],
+          data["distance"],
+          data["angle"],
+          data["penumbra"],
+          data["decay"],
+        );
 
         break;
 
       case 'HemisphereLight':
-        object = HemisphereLight(data["color"], data["groundColor"], data["intensity"]);
+        object = HemisphereLight(
+          data["color"],
+          data["groundColor"],
+          data["intensity"],
+        );
 
         break;
 
@@ -602,10 +672,17 @@ class ObjectLoader extends Loader {
         var instanceColor = data["instanceColor"];
 
         object = InstancedMesh(geometry, material, count);
-        object.instanceMatrix = InstancedBufferAttribute(Float32Array(instanceMatrix.array), 16, false);
+        object.instanceMatrix = InstancedBufferAttribute(
+          Float32Array(instanceMatrix.array),
+          16,
+          false,
+        );
         if (instanceColor != null) {
-          object.instanceColor =
-              InstancedBufferAttribute(Float32Array(instanceColor.array), instanceColor.itemSize, false);
+          object.instanceColor = InstancedBufferAttribute(
+            Float32Array(instanceColor.array),
+            instanceColor.itemSize,
+            false,
+          );
         }
 
         break;
@@ -617,23 +694,35 @@ class ObjectLoader extends Loader {
       // 	break;
 
       case 'Line':
-        object = Line(getGeometry(data["geometry"]), getMaterial(data["material"]));
+        object = Line(
+          getGeometry(data["geometry"]),
+          getMaterial(data["material"]),
+        );
 
         break;
 
       case 'LineLoop':
-        object = LineLoop(getGeometry(data["geometry"]), getMaterial(data["material"]));
+        object = LineLoop(
+          getGeometry(data["geometry"]),
+          getMaterial(data["material"]),
+        );
 
         break;
 
       case 'LineSegments':
-        object = LineSegments(getGeometry(data["geometry"]), getMaterial(data["material"]));
+        object = LineSegments(
+          getGeometry(data["geometry"]),
+          getMaterial(data["material"]),
+        );
 
         break;
 
       case 'PointCloud':
       case 'Points':
-        object = Points(getGeometry(data["geometry"]), getMaterial(data["material"]));
+        object = Points(
+          getGeometry(data["geometry"]),
+          getMaterial(data["material"]),
+        );
 
         break;
 
@@ -667,7 +756,11 @@ class ObjectLoader extends Loader {
         object.matrixAutoUpdate = data["matrixAutoUpdate"];
       }
       if (object.matrixAutoUpdate) {
-        object.matrix.decompose(object.position, object.quaternion, object.scale);
+        object.matrix.decompose(
+          object.position,
+          object.quaternion,
+          object.scale,
+        );
       }
     } else {
       if (data["position"] != null) object.position.fromArray(data["position"]);
@@ -697,7 +790,13 @@ class ObjectLoader extends Loader {
         object.shadow.mapSize.fromArray(data["shadow"]["mapSize"]);
       }
       if (data["shadow"]["camera"] != null) {
-        object.shadow.camera = parseObject(data["shadow"]["camera"], null, null, null, null);
+        object.shadow.camera = parseObject(
+          data["shadow"]["camera"],
+          null,
+          null,
+          null,
+          null,
+        );
       }
     }
 
@@ -713,7 +812,9 @@ class ObjectLoader extends Loader {
       var children = data["children"];
 
       for (var i = 0; i < children.length; i++) {
-        object.add(parseObject(children[i], geometries, materials, textures, animations));
+        object.add(
+          parseObject(children[i], geometries, materials, textures, animations),
+        );
       }
     }
 
@@ -753,7 +854,9 @@ class ObjectLoader extends Loader {
         var skeleton = skeletons[child.skeleton];
 
         if (skeleton == null) {
-          print('three.ObjectLoader: No skeleton found with UUID: ${child.skeleton}');
+          print(
+            'three.ObjectLoader: No skeleton found with UUID: ${child.skeleton}',
+          );
         } else {
           child.bind(skeleton, child.bindMatrix);
         }
@@ -764,7 +867,9 @@ class ObjectLoader extends Loader {
   /* DEPRECATED */
 
   setTexturePath(value) {
-    print('three.ObjectLoader: .setTexturePath() has been renamed to .setResourcePath().');
+    print(
+      'three.ObjectLoader: .setTexturePath() has been renamed to .setResourcePath().',
+    );
     return setResourcePath(value);
   }
 }
@@ -775,13 +880,13 @@ var textureMapping = {
   "CubeRefractionMapping": CubeRefractionMapping,
   "EquirectangularReflectionMapping": EquirectangularReflectionMapping,
   "EquirectangularRefractionMapping": EquirectangularRefractionMapping,
-  "CubeUVReflectionMapping": CubeUVReflectionMapping
+  "CubeUVReflectionMapping": CubeUVReflectionMapping,
 };
 
 var textureWrapping = {
   "RepeatWrapping": RepeatWrapping,
   "ClampToEdgeWrapping": ClampToEdgeWrapping,
-  "MirroredRepeatWrapping": MirroredRepeatWrapping
+  "MirroredRepeatWrapping": MirroredRepeatWrapping,
 };
 
 var textureFilter = {
@@ -790,5 +895,5 @@ var textureFilter = {
   "NearestMipmapLinearFilter": NearestMipmapLinearFilter,
   "LinearFilter": LinearFilter,
   "LinearMipmapNearestFilter": LinearMipmapNearestFilter,
-  "LinearMipmapLinearFilter": LinearMipmapLinearFilter
+  "LinearMipmapLinearFilter": LinearMipmapLinearFilter,
 };

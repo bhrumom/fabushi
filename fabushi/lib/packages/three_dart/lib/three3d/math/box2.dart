@@ -64,7 +64,9 @@ class Box2 {
   }
 
   Vector2 getCenter(Vector2 target) {
-    return isEmpty() ? target.set(0, 0) : target.addVectors(min, max).multiplyScalar(0.5);
+    return isEmpty()
+        ? target.set(0, 0)
+        : target.addVectors(min, max).multiplyScalar(0.5);
   }
 
   Vector2 getSize(Vector2 target) {
@@ -93,24 +95,40 @@ class Box2 {
   }
 
   bool containsPoint(Vector2 point) {
-    return point.x < min.x || point.x > max.x || point.y < min.y || point.y > max.y ? false : true;
+    return point.x < min.x ||
+            point.x > max.x ||
+            point.y < min.y ||
+            point.y > max.y
+        ? false
+        : true;
   }
 
   bool containsBox(Box2 box) {
-    return min.x <= box.min.x && box.max.x <= max.x && min.y <= box.min.y && box.max.y <= max.y;
+    return min.x <= box.min.x &&
+        box.max.x <= max.x &&
+        min.y <= box.min.y &&
+        box.max.y <= max.y;
   }
 
   Vector2 getParameter(Vector2 point, Vector2 target) {
     // This can potentially have a divide by zero if the box
     // has a size dimension of 0.
 
-    return target.set((point.x - min.x) / (max.x - min.x), (point.y - min.y) / (max.y - min.y));
+    return target.set(
+      (point.x - min.x) / (max.x - min.x),
+      (point.y - min.y) / (max.y - min.y),
+    );
   }
 
   bool intersectsBox(Box2 box) {
     // using 4 splitting planes to rule out intersections
 
-    return box.max.x < min.x || box.min.x > max.x || box.max.y < min.y || box.min.y > max.y ? false : true;
+    return box.max.x < min.x ||
+            box.min.x > max.x ||
+            box.max.y < min.y ||
+            box.min.y > max.y
+        ? false
+        : true;
   }
 
   Vector2 clampPoint(Vector2 point, Vector2 target) {

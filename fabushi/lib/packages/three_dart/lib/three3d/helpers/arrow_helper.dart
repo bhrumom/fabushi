@@ -27,7 +27,10 @@ class ArrowHelper extends Object3D {
 
     if (_lineGeometry == null) {
       _lineGeometry = BufferGeometry();
-      _lineGeometry.setAttribute('position', Float32BufferAttribute(Float32Array.from([0, 0, 0, 0, 1, 0]), 3, false));
+      _lineGeometry.setAttribute(
+        'position',
+        Float32BufferAttribute(Float32Array.from([0, 0, 0, 0, 1, 0]), 3, false),
+      );
 
       _coneGeometry = CylinderGeometry(0, 0.5, 1, 5, 1);
       _coneGeometry.translate(0, -0.5, 0);
@@ -35,11 +38,17 @@ class ArrowHelper extends Object3D {
 
     position.copy(origin);
 
-    line = Line(_lineGeometry, LineBasicMaterial({"color": color, "toneMapped": false}));
+    line = Line(
+      _lineGeometry,
+      LineBasicMaterial({"color": color, "toneMapped": false}),
+    );
     line.matrixAutoUpdate = false;
     add(line);
 
-    cone = Mesh(_coneGeometry, MeshBasicMaterial({"color": color, "toneMapped": false}));
+    cone = Mesh(
+      _coneGeometry,
+      MeshBasicMaterial({"color": color, "toneMapped": false}),
+    );
     cone.matrixAutoUpdate = false;
     add(cone);
 

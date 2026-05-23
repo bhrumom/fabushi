@@ -15,8 +15,12 @@ class WebGLCubeUVMaps {
     if (texture != null) {
       var mapping = texture.mapping;
 
-      bool isEquirectMap = (mapping == EquirectangularReflectionMapping || mapping == EquirectangularRefractionMapping);
-      bool isCubeMap = (mapping == CubeReflectionMapping || mapping == CubeRefractionMapping);
+      bool isEquirectMap =
+          (mapping == EquirectangularReflectionMapping ||
+          mapping == EquirectangularRefractionMapping);
+      bool isCubeMap =
+          (mapping == CubeReflectionMapping ||
+          mapping == CubeRefractionMapping);
 
       // equirect/cube map to cubeUV conversion
       if (isEquirectMap || isCubeMap) {
@@ -43,8 +47,9 @@ class WebGLCubeUVMaps {
                 (isCubeMap && image != null && isCubeTextureComplete(image))) {
               pmremGenerator ??= PMREMGenerator(renderer);
 
-              var renderTarget =
-                  isEquirectMap ? pmremGenerator!.fromEquirectangular(texture) : pmremGenerator!.fromCubemap(texture);
+              var renderTarget = isEquirectMap
+                  ? pmremGenerator!.fromEquirectangular(texture)
+                  : pmremGenerator!.fromCubemap(texture);
               cubeUVmaps.add(key: texture, value: renderTarget);
 
               texture.addEventListener('dispose', onTextureDispose);

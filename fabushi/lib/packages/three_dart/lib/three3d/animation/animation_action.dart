@@ -32,17 +32,16 @@ class AnimationAction {
   late bool zeroSlopeAtStart;
   late bool zeroSlopeAtEnd;
 
-  AnimationAction(
-    this.mixer,
-    this.clip, {
-    this.localRoot,
-    int? blendMode,
-  }) : blendMode = blendMode ?? clip.blendMode {
+  AnimationAction(this.mixer, this.clip, {this.localRoot, int? blendMode})
+    : blendMode = blendMode ?? clip.blendMode {
     var tracks = clip.tracks, nTracks = tracks.length;
 
     interpolants = List<Interpolant?>.filled(nTracks, null);
 
-    var interpolantSettings = {"endingStart": ZeroCurvatureEnding, "endingEnd": ZeroCurvatureEnding};
+    var interpolantSettings = {
+      "endingStart": ZeroCurvatureEnding,
+      "endingEnd": ZeroCurvatureEnding,
+    };
 
     for (var i = 0; i != nTracks; ++i) {
       var interpolant = tracks[i].createInterpolant!(null);
@@ -115,7 +114,11 @@ class AnimationAction {
   }
 
   isRunning() {
-    return enabled && !paused && timeScale != 0 && _startTime == null && mixer.isActiveAction(this);
+    return enabled &&
+        !paused &&
+        timeScale != 0 &&
+        _startTime == null &&
+        mixer.isActiveAction(this);
   }
 
   // return true when play has been called
@@ -239,7 +242,8 @@ class AnimationAction {
       _timeScaleInterpolant = interpolant;
     }
 
-    var times = interpolant.parameterPositions, values = interpolant.sampleValues;
+    var times = interpolant.parameterPositions,
+        values = interpolant.sampleValues;
 
     times[0] = now;
     times[1] = now + duration;
@@ -295,7 +299,6 @@ class AnimationAction {
       var timeRunning = (time - startTime) * timeDirection;
       if (timeRunning < 0 || timeDirection == 0) {
         return; // yet to come / don't decide when delta = 0
-
       }
 
       // start
@@ -444,7 +447,13 @@ class AnimationAction {
 
         this.time = time;
 
-        mixer.dispatchEvent(Event({"type": 'finished', "action": this, "direction": deltaTime < 0 ? -1 : 1}));
+        mixer.dispatchEvent(
+          Event({
+            "type": 'finished',
+            "action": this,
+            "direction": deltaTime < 0 ? -1 : 1,
+          }),
+        );
       }
     } else {
       // repetitive Repeat or PingPong
@@ -490,7 +499,13 @@ class AnimationAction {
 
           this.time = time;
 
-          mixer.dispatchEvent(Event({"type": 'finished', "action": this, "direction": deltaTime > 0 ? 1 : -1}));
+          mixer.dispatchEvent(
+            Event({
+              "type": 'finished',
+              "action": this,
+              "direction": deltaTime > 0 ? 1 : -1,
+            }),
+          );
         } else {
           // keep running
 
@@ -507,7 +522,9 @@ class AnimationAction {
 
           this.time = time;
 
-          mixer.dispatchEvent(Event({"type": 'loop', "action": this, "loopDelta": loopDelta}));
+          mixer.dispatchEvent(
+            Event({"type": 'loop', "action": this, "loopDelta": loopDelta}),
+          );
         }
       } else {
         this.time = time;
@@ -533,13 +550,17 @@ class AnimationAction {
       // assuming for LoopOnce atStart == atEnd == true
 
       if (atStart) {
-        settings["endingStart"] = zeroSlopeAtStart ? ZeroSlopeEnding : ZeroCurvatureEnding;
+        settings["endingStart"] = zeroSlopeAtStart
+            ? ZeroSlopeEnding
+            : ZeroCurvatureEnding;
       } else {
         settings["endingStart"] = WrapAroundEnding;
       }
 
       if (atEnd) {
-        settings["endingEnd"] = zeroSlopeAtEnd ? ZeroSlopeEnding : ZeroCurvatureEnding;
+        settings["endingEnd"] = zeroSlopeAtEnd
+            ? ZeroSlopeEnding
+            : ZeroCurvatureEnding;
       } else {
         settings["endingEnd"] = WrapAroundEnding;
       }
@@ -555,7 +576,8 @@ class AnimationAction {
       _weightInterpolant = interpolant;
     }
 
-    var times = interpolant.parameterPositions, values = interpolant.sampleValues;
+    var times = interpolant.parameterPositions,
+        values = interpolant.sampleValues;
 
     times[0] = now;
     values[0] = weightNow;

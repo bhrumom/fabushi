@@ -51,7 +51,9 @@ class Skeleton {
       // handle special case
 
       if (bones.length != boneInverses.length) {
-        print('three.Skeleton: Number of inverse bone matrices does not match amount of bones.');
+        print(
+          'three.Skeleton: Number of inverse bone matrices does not match amount of bones.',
+        );
 
         this.boneInverses = [];
 
@@ -126,7 +128,13 @@ class Skeleton {
   }
 
   Skeleton computeBoneTexture() {
-    boneTexture = DataTexture(boneMatrices, boneTextureSize, boneTextureSize, RGBAFormat, FloatType);
+    boneTexture = DataTexture(
+      boneMatrices,
+      boneTextureSize,
+      boneTextureSize,
+      RGBAFormat,
+      FloatType,
+    );
 
     boneTexture!.name = "DataTexture from Skeleton.computeBoneTexture";
     boneTexture!.needsUpdate = true;
@@ -181,9 +189,13 @@ class Skeleton {
 
   Map<String, dynamic> toJSON() {
     Map<String, dynamic> data = {
-      "metadata": {"version": 4.5, "type": 'Skeleton', "generator": 'Skeleton.toJSON'},
+      "metadata": {
+        "version": 4.5,
+        "type": 'Skeleton',
+        "generator": 'Skeleton.toJSON',
+      },
       "bones": [],
-      "boneInverses": []
+      "boneInverses": [],
     };
 
     data["uuid"] = uuid;

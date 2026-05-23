@@ -126,7 +126,13 @@ class MathUtils {
     return Math.pow(2, Math.floor(Math.log(value) / Math.ln2).toDouble());
   }
 
-  static void setQuaternionFromProperEuler(q, num a, num b, num c, String order) {
+  static void setQuaternionFromProperEuler(
+    q,
+    num a,
+    num b,
+    num c,
+    String order,
+  ) {
     // Intrinsic Proper Euler Angles - see https://en.wikipedia.org/wiki/Euler_angles
 
     // rotations are applied to the axes in the order specified by 'order'
@@ -174,7 +180,9 @@ class MathUtils {
         break;
 
       default:
-        print('three.MathUtils: .setQuaternionFromProperEuler() encountered an unknown order: $order');
+        print(
+          'three.MathUtils: .setQuaternionFromProperEuler() encountered an unknown order: $order',
+        );
     }
   }
 

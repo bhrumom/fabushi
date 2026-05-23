@@ -3,7 +3,8 @@ import 'package:three_dart/three3d/extras/core/ttf_font.dart';
 import 'package:three_dart/three3d/geometries/extrude_geometry.dart';
 
 class TextGeometry extends ExtrudeGeometry {
-  TextGeometry.create(List<Shape> shapes, Map<String, dynamic> options) : super(shapes, options) {
+  TextGeometry.create(List<Shape> shapes, Map<String, dynamic> options)
+    : super(shapes, options) {
     type = "TextGeometry";
   }
 

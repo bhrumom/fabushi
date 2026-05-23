@@ -14,10 +14,10 @@ class Quaternion {
   Function onChangeCallback = () {};
 
   Quaternion([num x = 0.0, num y = 0.0, num z = 0.0, num w = 1.0])
-      : _x = x,
-        _y = y,
-        _z = z,
-        _w = w;
+    : _x = x,
+      _y = y,
+      _z = z,
+      _w = w;
 
   Quaternion.fromJSON(List<num>? json) {
     if (json != null) {
@@ -32,13 +32,27 @@ class Quaternion {
     return [_x, _y, _z, _w];
   }
 
-  static Quaternion staticSlerp(Quaternion qa, Quaternion qb, Quaternion qm, num t) {
+  static Quaternion staticSlerp(
+    Quaternion qa,
+    Quaternion qb,
+    Quaternion qm,
+    num t,
+  ) {
     print(
-        'three.Quaternion: Static .slerp() has been deprecated. Use is now qm.slerpQuaternions( qa, qb, t ) instead.');
+      'three.Quaternion: Static .slerp() has been deprecated. Use is now qm.slerpQuaternions( qa, qb, t ) instead.',
+    );
     return qm.slerpQuaternions(qa, qb, t);
   }
 
-  static void slerpFlat(dst, num dstOffset, src0, num srcOffset0, src1, num srcOffset1, num t) {
+  static void slerpFlat(
+    dst,
+    num dstOffset,
+    src0,
+    num srcOffset0,
+    src1,
+    num srcOffset1,
+    num t,
+  ) {
     // fuzz-free, array-based Quaternion SLERP operation
 
     double x0 = src0[srcOffset0 + 0].toDouble(),
@@ -104,7 +118,14 @@ class Quaternion {
     dst[dstOffset + 3] = w0;
   }
 
-  static multiplyQuaternionsFlat(dst, num dstOffset, src0, num srcOffset0, src1, num srcOffset1) {
+  static multiplyQuaternionsFlat(
+    dst,
+    num dstOffset,
+    src0,
+    num srcOffset0,
+    src1,
+    num srcOffset1,
+  ) {
     var x0 = src0[srcOffset0];
     var y0 = src0[srcOffset0 + 1];
     var z0 = src0[srcOffset0 + 2];
@@ -239,7 +260,9 @@ class Quaternion {
         break;
 
       default:
-        print('three.Quaternion: .setFromEuler() encountered an unknown order: $order');
+        print(
+          'three.Quaternion: .setFromEuler() encountered an unknown order: $order',
+        );
     }
 
     if (update) {
@@ -420,7 +443,9 @@ class Quaternion {
 
   Quaternion multiply(Quaternion q, {Quaternion? p}) {
     if (p != null) {
-      print('three.Quaternion: .multiply() now only accepts one argument. Use .multiplyQuaternions( a, b ) instead.');
+      print(
+        'three.Quaternion: .multiply() now only accepts one argument. Use .multiplyQuaternions( a, b ) instead.',
+      );
       return multiplyQuaternions(q, p);
     }
 
@@ -494,7 +519,8 @@ class Quaternion {
 
     var sinHalfTheta = Math.sqrt(sqrSinHalfTheta);
     var halfTheta = Math.atan2(sinHalfTheta, cosHalfTheta);
-    var ratioA = Math.sin((1 - t) * halfTheta) / sinHalfTheta, ratioB = Math.sin(t * halfTheta) / sinHalfTheta;
+    var ratioA = Math.sin((1 - t) * halfTheta) / sinHalfTheta,
+        ratioB = Math.sin(t * halfTheta) / sinHalfTheta;
 
     _w = (w * ratioA + _w * ratioB);
     _x = (x * ratioA + _x * ratioB);
@@ -532,7 +558,10 @@ class Quaternion {
   }
 
   bool equals(Quaternion quaternion) {
-    return (quaternion._x == _x) && (quaternion._y == _y) && (quaternion._z == _z) && (quaternion._w == _w);
+    return (quaternion._x == _x) &&
+        (quaternion._y == _y) &&
+        (quaternion._z == _z) &&
+        (quaternion._w == _w);
   }
 
   Quaternion fromArray(List<num> array, [int offset = 0]) {

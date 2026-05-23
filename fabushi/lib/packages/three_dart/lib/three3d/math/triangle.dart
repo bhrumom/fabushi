@@ -50,7 +50,12 @@ class Triangle {
     }
   }
 
-  static Vector3 staticGetNormal(Vector3 a, Vector3 b, Vector3 c, Vector3 target) {
+  static Vector3 staticGetNormal(
+    Vector3 a,
+    Vector3 b,
+    Vector3 c,
+    Vector3 target,
+  ) {
     target.subVectors(c, b);
     _v0.subVectors(a, b);
     target.cross(_v0);
@@ -67,7 +72,13 @@ class Triangle {
 
   // static/instance method to calculate barycentric coordinates
   // based on: http://www.blackpawn.com/texts/pointinpoly/default.html
-  static Vector3 staticGetBarycoord(point, Vector3 a, Vector3 b, Vector3 c, Vector3 target) {
+  static Vector3 staticGetBarycoord(
+    point,
+    Vector3 a,
+    Vector3 b,
+    Vector3 c,
+    Vector3 target,
+  ) {
     _v0.subVectors(c, a);
     _v1.subVectors(b, a);
     _v2.subVectors(point, a);
@@ -101,7 +112,16 @@ class Triangle {
     return (_v3.x >= 0) && (_v3.y >= 0) && ((_v3.x + _v3.y) <= 1);
   }
 
-  static staticGetUV(point, Vector3 p1, Vector3 p2, Vector3 p3, uv1, uv2, uv3, target) {
+  static staticGetUV(
+    point,
+    Vector3 p1,
+    Vector3 p2,
+    Vector3 p3,
+    uv1,
+    uv2,
+    uv3,
+    target,
+  ) {
     staticGetBarycoord(point, p1, p2, p3, _v3);
 
     target.set(0.0, 0.0);
@@ -112,7 +132,12 @@ class Triangle {
     return target;
   }
 
-  static bool staticIsFrontFacing(Vector3 a, Vector3 b, Vector3 c, Vector3 direction) {
+  static bool staticIsFrontFacing(
+    Vector3 a,
+    Vector3 b,
+    Vector3 c,
+    Vector3 direction,
+  ) {
     _v0.subVectors(c, b);
     _v1.subVectors(a, b);
 
@@ -243,7 +268,6 @@ class Triangle {
       w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
       // edge region of BC; barycentric coords (0, 1-w, w)
       return target.copy(b).addScaledVector(_vbc, w); // edge region of BC
-
     }
 
     // face region

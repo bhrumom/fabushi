@@ -8,7 +8,13 @@ class ThreeHelper {
   // axis - the axis of rotation (normalized three.Vector3)
   // theta - radian value of rotation
   // pointIsWorld - boolean indicating the point is in world coordinates (default = false)
-  static rotateAboutPoint(obj, point, axis, theta, {bool pointIsWorld = false}) {
+  static rotateAboutPoint(
+    obj,
+    point,
+    axis,
+    theta, {
+    bool pointIsWorld = false,
+  }) {
     if (pointIsWorld) {
       obj.parent.localToWorld(obj.position); // compensate for world coordinate
     }
@@ -18,16 +24,27 @@ class ThreeHelper {
     obj.position.add(point); // re-add the offset
 
     if (pointIsWorld) {
-      obj.parent.worldToLocal(obj.position); // undo world coordinates compensation
+      obj.parent.worldToLocal(
+        obj.position,
+      ); // undo world coordinates compensation
     }
 
     obj.rotateOnAxis(axis, theta); // rotate the OBJECT
   }
 
-  static rotateWithPoint(obj, anchorPoint, {angleX = 0.0, angleY = 0.0, angleZ = 0.0}) {
+  static rotateWithPoint(
+    obj,
+    anchorPoint, {
+    angleX = 0.0,
+    angleY = 0.0,
+    angleZ = 0.0,
+  }) {
     /// step 1: calculate move direction and move distance:
-    var moveDir =
-        Vector3(anchorPoint.x - obj.position.x, anchorPoint.y - obj.position.y, anchorPoint.z - obj.position.z);
+    var moveDir = Vector3(
+      anchorPoint.x - obj.position.x,
+      anchorPoint.y - obj.position.y,
+      anchorPoint.z - obj.position.z,
+    );
     moveDir.normalize();
     var moveDist = obj.position.distanceTo(anchorPoint);
 

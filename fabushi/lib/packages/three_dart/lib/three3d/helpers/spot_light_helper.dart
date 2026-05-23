@@ -53,17 +53,27 @@ class SpotLightHelper extends Object3D {
       0,
       0,
       -1,
-      1
+      1,
     ];
 
     for (var i = 0, j = 1, l = 32; i < l; i++, j++) {
       var p1 = (i / l) * Math.pi * 2;
       var p2 = (j / l) * Math.pi * 2;
 
-      positions.addAll([Math.cos(p1), Math.sin(p1), 1, Math.cos(p2), Math.sin(p2), 1]);
+      positions.addAll([
+        Math.cos(p1),
+        Math.sin(p1),
+        1,
+        Math.cos(p2),
+        Math.sin(p2),
+        1,
+      ]);
     }
 
-    geometry.setAttribute('position', Float32BufferAttribute(Float32Array.from(positions), 3, false));
+    geometry.setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(positions), 3, false),
+    );
 
     var material = LineBasicMaterial({"fog": false, "toneMapped": false});
 

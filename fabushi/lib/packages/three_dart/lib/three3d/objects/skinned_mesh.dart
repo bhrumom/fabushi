@@ -73,10 +73,15 @@ class SkinnedMesh extends Mesh {
         vector.multiplyScalar(scale);
       } else {
         vector.set(1, 0, 0, 0); // do something reasonable
-
       }
 
-      skinWeight.setXYZW(i, vector.x.toDouble(), vector.y.toDouble(), vector.z.toDouble(), vector.w.toDouble());
+      skinWeight.setXYZW(
+        i,
+        vector.x.toDouble(),
+        vector.y.toDouble(),
+        vector.z.toDouble(),
+        vector.w.toDouble(),
+      );
     }
   }
 
@@ -110,9 +115,15 @@ class SkinnedMesh extends Mesh {
       if (weight != 0) {
         var boneIndex = _skinIndex.getComponent(i).toInt();
 
-        _matrix.multiplyMatrices(skeleton!.bones[boneIndex].matrixWorld, skeleton.boneInverses[boneIndex]);
+        _matrix.multiplyMatrices(
+          skeleton!.bones[boneIndex].matrixWorld,
+          skeleton.boneInverses[boneIndex],
+        );
 
-        target.addScaledVector(_vector.copy(_basePosition).applyMatrix4(_matrix), weight);
+        target.addScaledVector(
+          _vector.copy(_basePosition).applyMatrix4(_matrix),
+          weight,
+        );
       }
     }
 

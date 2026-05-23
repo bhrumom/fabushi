@@ -11,13 +11,23 @@ on:
   workflow_dispatch:
     inputs:
       cd_run_id:
-        description: Completed CD workflow run id to publish. Leave empty to use the current run context when applicable.
+        description: Completed CD workflow run id to publish. Leave empty to package the dispatched source SHA without CD artifacts.
         required: false
         type: string
       source_sha:
-        description: Source commit SHA to use for release naming when CD artifacts do not include SOURCE_SHA.
+        description: Source commit SHA to package. Leave empty to use the dispatched ref SHA.
         required: false
         type: string
+      force_android_packages:
+        description: Build Android release packages even if no Android/shared mobile inputs changed.
+        required: false
+        default: true
+        type: boolean
+      force_ios_packages:
+        description: Build iOS release packages even if no iOS/shared mobile inputs changed.
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: publish-cd-release-${{ github.event.workflow_run.id || inputs.cd_run_id || github.run_id }}
@@ -62,8 +72,7 @@ jobs:
           elif [ -n "${INPUT_CD_RUN_ID:-}" ]; then
             cd_run_id="$INPUT_CD_RUN_ID"
           else
-            echo "workflow_dispatch requires cd_run_id so the release job can download the completed CD artifacts." >&2
-            exit 1
+            cd_run_id="$GITHUB_RUN_ID"
           fi
           echo "cd_run_id=$cd_run_id" >> "$GITHUB_OUTPUT"
           echo "Resolved CD run id: $cd_run_id"
@@ -107,9 +116,10 @@ jobs:
           CD_RUN_ID: ${{ steps.cd-run.outputs.cd_run_id }}
           EVENT_SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
           INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+          DISPATCH_SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          source_sha="${INPUT_SOURCE_SHA:-${EVENT_SOURCE_SHA:-}}"
+          source_sha="${INPUT_SOURCE_SHA:-${EVENT_SOURCE_SHA:-${DISPATCH_SOURCE_SHA:-}}}"
           if [ -z "$source_sha" ] && compgen -G 'downloaded-cd-artifacts/fabushi-release-*/SOURCE_SHA' > /dev/null; then
             source_sha="$(cat downloaded-cd-artifacts/fabushi-release-*/SOURCE_SHA | head -n 1 | tr -d '[:space:]')"
           fi
@@ -146,6 +156,8 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           RELEASE_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
+          FORCE_ANDROID_PACKAGES: ${{ inputs.force_android_packages || 'false' }}
+          FORCE_IOS_PACKAGES: ${{ inputs.force_ios_packages || 'false' }}
         run: |
           set -euo pipefail
           changed_files="changed-files.txt"
@@ -201,11 +213,26 @@ jobs:
               fabushi/web/*|workers/*|worker/*|functions/*|api/*|server/*|migrations/*|drizzle/*|supabase/*|cloudflare/*|wrangler.toml|wrangler.*.toml|package.json|package-lock.json|pnpm-lock.yaml|yarn.lock)
                 ignore_mobile_package "Worker/API input does not require mobile install packages: $path"
                 ;;
+              .github/workflows/publish-cd-release.yml)
+                add_android "package release workflow changed; validate Android release package path: $path"
+                ;;
               .github/workflows/*|.github/scripts/*)
                 ignore_mobile_package "CI/CD guardrail input does not require mobile install packages: $path"
                 ;;
             esac
           done < "$changed_files"
+
+          case "${FORCE_ANDROID_PACKAGES:-false}" in
+            true|TRUE|True|1|yes|YES)
+              add_android "workflow_dispatch requested Android release package build"
+              ;;
+          esac
+
+          case "${FORCE_IOS_PACKAGES:-false}" in
+            true|TRUE|True|1|yes|YES)
+              add_ios "workflow_dispatch requested iOS release package build"
+              ;;
+          esac
 
           pr_json=""
           if command -v gh >/dev/null 2>&1 && [ -n "${RELEASE_REPO:-}" ]; then

@@ -65,8 +65,14 @@ class WebGLRenderList {
     transparent.length = 0;
   }
 
-  RenderItem getNextRenderItem(Object3D object, BufferGeometry? geometry, Material? material, int groupOrder, double z,
-      Map<String, dynamic>? group) {
+  RenderItem getNextRenderItem(
+    Object3D object,
+    BufferGeometry? geometry,
+    Material? material,
+    int groupOrder,
+    double z,
+    Map<String, dynamic>? group,
+  ) {
     var renderItem = renderItems[renderItemsIndex];
 
     if (renderItem == null) {
@@ -78,7 +84,7 @@ class WebGLRenderList {
         "groupOrder": groupOrder,
         "renderOrder": object.renderOrder,
         "z": z,
-        "group": group
+        "group": group,
       });
 
       renderItems[renderItemsIndex] = renderItem;
@@ -98,8 +104,22 @@ class WebGLRenderList {
     return renderItem;
   }
 
-  void push(Object3D object, BufferGeometry geometry, material, int groupOrder, double z, Map<String, dynamic>? group) {
-    var renderItem = getNextRenderItem(object, geometry, material, groupOrder, z, group);
+  void push(
+    Object3D object,
+    BufferGeometry geometry,
+    material,
+    int groupOrder,
+    double z,
+    Map<String, dynamic>? group,
+  ) {
+    var renderItem = getNextRenderItem(
+      object,
+      geometry,
+      material,
+      groupOrder,
+      z,
+      group,
+    );
 
     if (material.transmission > 0.0) {
       transmissive.add(renderItem);
@@ -112,9 +132,22 @@ class WebGLRenderList {
     }
   }
 
-  void unshift(Object3D object, BufferGeometry? geometry, Material material, int groupOrder, double z,
-      Map<String, dynamic>? group) {
-    var renderItem = getNextRenderItem(object, geometry, material, groupOrder, z, group);
+  void unshift(
+    Object3D object,
+    BufferGeometry? geometry,
+    Material material,
+    int groupOrder,
+    double z,
+    Map<String, dynamic>? group,
+  ) {
+    var renderItem = getNextRenderItem(
+      object,
+      geometry,
+      material,
+      groupOrder,
+      z,
+      group,
+    );
 
     if (material.transmission > 0.0) {
       transmissive.insert(0, renderItem);

@@ -2,7 +2,7 @@ import 'package:three_dart/three3d/math/interpolant.dart';
 
 class LinearInterpolant extends Interpolant {
   LinearInterpolant(parameterPositions, sampleValues, sampleSize, resultBuffer)
-      : super(parameterPositions, sampleValues, sampleSize, resultBuffer);
+    : super(parameterPositions, sampleValues, sampleSize, resultBuffer);
 
   @override
   interpolate(i1, t0, t, t1) {

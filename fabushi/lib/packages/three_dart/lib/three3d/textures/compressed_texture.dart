@@ -3,8 +3,30 @@ import 'package:three_dart/three3d/textures/image_element.dart';
 
 class CompressedTexture extends Texture {
   CompressedTexture(
-      mipmaps, width, height, format, type, mapping, wrapS, wrapT, magFilter, minFilter, anisotropy, encoding)
-      : super(null, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy, encoding) {
+    mipmaps,
+    width,
+    height,
+    format,
+    type,
+    mapping,
+    wrapS,
+    wrapT,
+    magFilter,
+    minFilter,
+    anisotropy,
+    encoding,
+  ) : super(
+        null,
+        mapping,
+        wrapS,
+        wrapT,
+        magFilter,
+        minFilter,
+        format,
+        type,
+        anisotropy,
+        encoding,
+      ) {
     // this.image = ImageDataInfo(null, width, height, null);
     isCompressedTexture = true;
     print(" CompressedTexture todo ============ ");

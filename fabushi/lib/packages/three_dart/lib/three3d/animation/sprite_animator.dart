@@ -6,14 +6,17 @@ class SpriteAnimator {
 
   // Add a new animation
   add(options) {
-    options.texture.repeat.set(1 / options.tilesHorizontal, 1 / options.tilesVertical);
+    options.texture.repeat.set(
+      1 / options.tilesHorizontal,
+      1 / options.tilesVertical,
+    );
 
     var animation = {
       "fps": 60,
       "duration": -1,
       "repeat": -1,
       "startFrame": 0,
-      "numberOfTiles": options.tilesHorizontal * options.tilesVertical
+      "numberOfTiles": options.tilesHorizontal * options.tilesVertical,
     };
 
     // Merge in user options
@@ -46,16 +49,22 @@ class SpriteAnimator {
       // next one
       if (animation.duration > 1 / animation.fps) {
         // Advance this animation to the next tile
-        animation.currentTile = (animation.currentTile + 1) % animation.numberOfTiles;
+        animation.currentTile =
+            (animation.currentTile + 1) % animation.numberOfTiles;
 
         // Calcualte the new column and row
         currentColumn = animation.currentTile % animation.tilesHorizontal;
-        currentRow = Math.floor(animation.currentTile / animation.tilesHorizontal);
+        currentRow = Math.floor(
+          animation.currentTile / animation.tilesHorizontal,
+        );
 
         // Calculate the texture offset. The y was found through trial
         // and error and I have no idea why it works
         animation.texture.offset.x = currentColumn / animation.tilesHorizontal;
-        animation.texture.offset.y = 1 - (1 / animation.tilesHorizontal) - (currentRow / animation.tilesVertical);
+        animation.texture.offset.y =
+            1 -
+            (1 / animation.tilesHorizontal) -
+            (currentRow / animation.tilesVertical);
 
         animation.duration = 0;
 

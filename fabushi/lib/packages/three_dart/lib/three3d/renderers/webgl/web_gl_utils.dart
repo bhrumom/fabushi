@@ -48,7 +48,8 @@ class WebGLUtils {
 
     if (p == RGBFormat) {
       console.warn(
-          'three.WebGLRenderer: three.RGBFormat has been removed. Use three.RGBAFormat instead. https://github.com/mrdoob/three.js/pull/23228');
+        'three.WebGLRenderer: three.RGBFormat has been removed. Use three.RGBAFormat instead. https://github.com/mrdoob/three.js/pull/23228',
+      );
       return gl.RGBA;
     }
 
@@ -163,7 +164,9 @@ class WebGLUtils {
 
       if (extension != null) {
         if (p == RGB_ETC2_Format) {
-          return (encoding == sRGBEncoding) ? extension.COMPRESSED_SRGB8_ETC2 : extension.COMPRESSED_RGB8_ETC2;
+          return (encoding == sRGBEncoding)
+              ? extension.COMPRESSED_SRGB8_ETC2
+              : extension.COMPRESSED_RGB8_ETC2;
         }
         if (p == RGBA_ETC2_EAC_Format) {
           return (encoding == sRGBEncoding)

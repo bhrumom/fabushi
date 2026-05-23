@@ -4,8 +4,12 @@ import 'package:three_dart/three3d/math/quaternion.dart';
 /// Spherical linear unit quaternion interpolant.
 
 class QuaternionLinearInterpolant extends Interpolant {
-  QuaternionLinearInterpolant(parameterPositions, sampleValues, sampleSize, resultBuffer)
-      : super(parameterPositions, sampleValues, sampleSize, resultBuffer);
+  QuaternionLinearInterpolant(
+    parameterPositions,
+    sampleValues,
+    sampleSize,
+    resultBuffer,
+  ) : super(parameterPositions, sampleValues, sampleSize, resultBuffer);
 
   @override
   interpolate(int i1, num t0, num t, num t1) {
@@ -21,7 +25,15 @@ class QuaternionLinearInterpolant extends Interpolant {
     var offset = i1 * stride;
 
     for (var end = offset + stride; offset < end; offset += 4) {
-      Quaternion.slerpFlat(result, 0, values, offset - stride, values, offset, alpha);
+      Quaternion.slerpFlat(
+        result,
+        0,
+        values,
+        offset - stride,
+        values,
+        offset,
+        alpha,
+      );
     }
 
     return result;

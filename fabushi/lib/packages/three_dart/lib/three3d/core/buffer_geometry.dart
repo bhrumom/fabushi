@@ -59,12 +59,18 @@ class BufferGeometry with EventDispatcher {
 
   BufferGeometry();
 
-  BufferGeometry.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) {
+  BufferGeometry.fromJSON(
+    Map<String, dynamic> json,
+    Map<String, dynamic> rootJSON,
+  ) {
     uuid = json["uuid"];
     type = json["type"];
   }
 
-  static BufferGeometry castJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) {
+  static BufferGeometry castJSON(
+    Map<String, dynamic> json,
+    Map<String, dynamic> rootJSON,
+  ) {
     String type = json["type"];
 
     if (type == "BufferGeometry") {
@@ -252,7 +258,11 @@ class BufferGeometry with EventDispatcher {
     boundingBox!.getCenter(_bufferGeometryoffset);
     _bufferGeometryoffset.negate();
 
-    translate(_bufferGeometryoffset.x, _bufferGeometryoffset.y, _bufferGeometryoffset.z);
+    translate(
+      _bufferGeometryoffset.x,
+      _bufferGeometryoffset.y,
+      _bufferGeometryoffset.z,
+    );
   }
 
   BufferGeometry setFromPoints(points) {
@@ -282,7 +292,8 @@ class BufferGeometry with EventDispatcher {
 
     if (position != null && position is GLBufferAttribute) {
       print(
-          'three.BufferGeometry.computeBoundingBox(): GLBufferAttribute requires a manual bounding box. Alternatively set "mesh.frustumCulled" to "false". ${this}');
+        'three.BufferGeometry.computeBoundingBox(): GLBufferAttribute requires a manual bounding box. Alternatively set "mesh.frustumCulled" to "false". ${this}',
+      );
 
       double inf = 9999999999.0;
 
@@ -302,10 +313,16 @@ class BufferGeometry with EventDispatcher {
           _bufferGeometrybox.setFromBufferAttribute(morphAttribute);
 
           if (morphTargetsRelative) {
-            _bufferGeometryvector.addVectors(boundingBox!.min, _bufferGeometrybox.min);
+            _bufferGeometryvector.addVectors(
+              boundingBox!.min,
+              _bufferGeometrybox.min,
+            );
             boundingBox!.expandByPoint(_bufferGeometryvector);
 
-            _bufferGeometryvector.addVectors(boundingBox!.max, _bufferGeometrybox.max);
+            _bufferGeometryvector.addVectors(
+              boundingBox!.max,
+              _bufferGeometrybox.max,
+            );
             boundingBox!.expandByPoint(_bufferGeometryvector);
           } else {
             boundingBox!.expandByPoint(_bufferGeometrybox.min);
@@ -352,14 +369,24 @@ class BufferGeometry with EventDispatcher {
           _bufferGeometryboxMorphTargets.setFromBufferAttribute(morphAttribute);
 
           if (morphTargetsRelative) {
-            _bufferGeometryvector.addVectors(_bufferGeometrybox.min, _bufferGeometryboxMorphTargets.min);
+            _bufferGeometryvector.addVectors(
+              _bufferGeometrybox.min,
+              _bufferGeometryboxMorphTargets.min,
+            );
             _bufferGeometrybox.expandByPoint(_bufferGeometryvector);
 
-            _bufferGeometryvector.addVectors(_bufferGeometrybox.max, _bufferGeometryboxMorphTargets.max);
+            _bufferGeometryvector.addVectors(
+              _bufferGeometrybox.max,
+              _bufferGeometryboxMorphTargets.max,
+            );
             _bufferGeometrybox.expandByPoint(_bufferGeometryvector);
           } else {
-            _bufferGeometrybox.expandByPoint(_bufferGeometryboxMorphTargets.min);
-            _bufferGeometrybox.expandByPoint(_bufferGeometryboxMorphTargets.max);
+            _bufferGeometrybox.expandByPoint(
+              _bufferGeometryboxMorphTargets.min,
+            );
+            _bufferGeometrybox.expandByPoint(
+              _bufferGeometryboxMorphTargets.max,
+            );
           }
         }
       }
@@ -404,7 +431,8 @@ class BufferGeometry with EventDispatcher {
 
       if (boundingSphere?.radius == null) {
         print(
-            'three.BufferGeometry.computeBoundingSphere(): Computed radius is NaN. The "position" attribute is likely to have NaN values. ${this}');
+          'three.BufferGeometry.computeBoundingSphere(): Computed radius is NaN. The "position" attribute is likely to have NaN values. ${this}',
+        );
       }
     }
   }
@@ -420,9 +448,13 @@ class BufferGeometry with EventDispatcher {
     // based on http://www.terathon.com/code/tangent.html
     // (per vertex tangents)
 
-    if (index == null || attributes["position"] == null || attributes["normal"] == null || attributes["uv"] == null) {
+    if (index == null ||
+        attributes["position"] == null ||
+        attributes["normal"] == null ||
+        attributes["uv"] == null) {
       console.error(
-          'three.BufferGeometry: .computeTangents() failed. Missing required attributes (index, position, normal or uv)');
+        'three.BufferGeometry: .computeTangents() failed. Missing required attributes (index, position, normal or uv)',
+      );
       return;
     }
 
@@ -434,7 +466,10 @@ class BufferGeometry with EventDispatcher {
     int nVertices = positions.length ~/ 3;
 
     if (attributes["tangent"] == null) {
-      setAttribute('tangent', Float32BufferAttribute(Float32Array(4 * nVertices), 4));
+      setAttribute(
+        'tangent',
+        Float32BufferAttribute(Float32Array(4 * nVertices), 4),
+      );
     }
 
     var tangents = attributes["tangent"].array;
@@ -476,8 +511,16 @@ class BufferGeometry with EventDispatcher {
 
       if (!r.isFinite) return;
 
-      sdir.copy(vB).multiplyScalar(uvC.y).addScaledVector(vC, -uvB.y).multiplyScalar(r);
-      tdir.copy(vC).multiplyScalar(uvB.x).addScaledVector(vB, -uvC.x).multiplyScalar(r);
+      sdir
+          .copy(vB)
+          .multiplyScalar(uvC.y)
+          .addScaledVector(vC, -uvB.y)
+          .multiplyScalar(r);
+      tdir
+          .copy(vC)
+          .multiplyScalar(uvB.x)
+          .addScaledVector(vB, -uvC.x)
+          .multiplyScalar(r);
 
       tan1[a].add(sdir);
       tan1[b].add(sdir);
@@ -492,7 +535,7 @@ class BufferGeometry with EventDispatcher {
 
     if (groups.isEmpty) {
       groups = [
-        {"start": 0, "count": indices.length}
+        {"start": 0, "count": indices.length},
       ];
     }
 
@@ -560,7 +603,11 @@ class BufferGeometry with EventDispatcher {
 
       if (normalAttribute == null) {
         final array = List<double>.filled(positionAttribute.count * 3, 0);
-        normalAttribute = Float32BufferAttribute(Float32Array.from(array), 3, false);
+        normalAttribute = Float32BufferAttribute(
+          Float32Array.from(array),
+          3,
+          false,
+        );
         setAttribute('normal', normalAttribute);
       } else {
         // reset existing normals to zero
@@ -636,8 +683,10 @@ class BufferGeometry with EventDispatcher {
     if (offset == null) {
       offset = 0;
 
-      print('three.BufferGeometry.merge(): Overwriting original geometry, starting at offset=0. '
-          'Use BufferGeometryUtils.mergeBufferGeometries() for lossless merge.');
+      print(
+        'three.BufferGeometry.merge(): Overwriting original geometry, starting at offset=0. '
+        'Use BufferGeometryUtils.mergeBufferGeometries() for lossless merge.',
+      );
     }
 
     var attributes = this.attributes;
@@ -651,7 +700,10 @@ class BufferGeometry with EventDispatcher {
         var attributeArray2 = attribute2.array;
 
         var attributeOffset = attribute2.itemSize * offset;
-        var length = Math.min<int>(attributeArray2.length, attributeArray1.length - attributeOffset);
+        var length = Math.min<int>(
+          attributeArray2.length,
+          attributeArray1.length - attributeOffset,
+        );
 
         for (var i = 0, j = attributeOffset; i < length; i++, j++) {
           attributeArray1[j] = attributeArray2[i];
@@ -670,7 +722,12 @@ class BufferGeometry with EventDispatcher {
 
       _bufferGeometryvector.normalize();
 
-      normals.setXYZ(i, _bufferGeometryvector.x, _bufferGeometryvector.y, _bufferGeometryvector.z);
+      normals.setXYZ(
+        i,
+        _bufferGeometryvector.x,
+        _bufferGeometryvector.y,
+        _bufferGeometryvector.z,
+      );
     }
   }
 
@@ -704,7 +761,9 @@ class BufferGeometry with EventDispatcher {
     //
 
     if (index == null) {
-      print('three.BufferGeometry.toNonIndexed(): Geometry is already non-indexed.');
+      print(
+        'three.BufferGeometry.toNonIndexed(): Geometry is already non-indexed.',
+      );
       return this;
     }
 
@@ -729,7 +788,8 @@ class BufferGeometry with EventDispatcher {
 
     for (var name in morphAttributes.keys) {
       List<BufferAttribute> morphArray = [];
-      List<BufferAttribute> morphAttribute = morphAttributes[name]!; // morphAttribute: array of Float32BufferAttributes
+      List<BufferAttribute> morphAttribute =
+          morphAttributes[name]!; // morphAttribute: array of Float32BufferAttributes
 
       for (var i = 0, il = morphAttribute.length; i < il; i++) {
         var attribute = morphAttribute[i];
@@ -750,7 +810,11 @@ class BufferGeometry with EventDispatcher {
 
     for (var i = 0, l = groups.length; i < l; i++) {
       var group = groups[i];
-      geometry2.addGroup(group["start"], group["count"], group["materialIndex"]);
+      geometry2.addGroup(
+        group["start"],
+        group["count"],
+        group["materialIndex"],
+      );
     }
 
     return geometry2;
@@ -758,7 +822,11 @@ class BufferGeometry with EventDispatcher {
 
   Map<String, dynamic> toJSON({Object3dMeta? meta}) {
     Map<String, dynamic> data = {
-      "metadata": {"version": 4.5, "type": 'BufferGeometry', "generator": 'BufferGeometry.toJSON'}
+      "metadata": {
+        "version": 4.5,
+        "type": 'BufferGeometry',
+        "generator": 'BufferGeometry.toJSON',
+      },
     };
 
     // standard BufferGeometry serialization
@@ -787,7 +855,7 @@ class BufferGeometry with EventDispatcher {
       // TODO
       data["data"]["index"] = {
         "type": index.array.runtimeType.toString(), // TODO remove runtimeType
-        "array": index.array.sublist(0)
+        "array": index.array.sublist(0),
       };
     }
 
@@ -842,7 +910,7 @@ class BufferGeometry with EventDispatcher {
     if (boundingSphere != null) {
       data["data"]["boundingSphere"] = {
         "center": boundingSphere.center.toArray(List.filled(3, 0)),
-        "radius": boundingSphere.radius
+        "radius": boundingSphere.radius,
       };
     }
 

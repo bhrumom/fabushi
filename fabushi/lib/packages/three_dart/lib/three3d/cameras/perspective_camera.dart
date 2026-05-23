@@ -6,7 +6,12 @@ import 'package:three_dart/three3d/math/index.dart';
 
 class PerspectiveCamera extends Camera {
   // near 设置太小 导致 画面异常 精度问题？ 浮点运算问题？？
-  PerspectiveCamera([num fov = 50, num aspect = 1, num near = 0.1, num far = 2000]) : super() {
+  PerspectiveCamera([
+    num fov = 50,
+    num aspect = 1,
+    num near = 0.1,
+    num far = 2000,
+  ]) : super() {
     type = "PerspectiveCamera";
     this.fov = fov;
     this.aspect = aspect;
@@ -16,8 +21,10 @@ class PerspectiveCamera extends Camera {
     updateProjectionMatrix();
   }
 
-  PerspectiveCamera.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON)
-      : super.fromJSON(json, rootJSON) {
+  PerspectiveCamera.fromJSON(
+    Map<String, dynamic> json,
+    Map<String, dynamic> rootJSON,
+  ) : super.fromJSON(json, rootJSON) {
     type = "PerspectiveCamera";
     fov = json["fov"];
     aspect = json["aspect"];
@@ -54,41 +61,41 @@ class PerspectiveCamera extends Camera {
     return PerspectiveCamera()..copy(this, recursive);
   }
 
-// 	/**
-// 	 * Sets the FOV by focal length in respect to the current .filmGauge.
-// 	 *
-// 	 * The default film gauge is 35, so that the focal length can be specified for
-// 	 * a 35mm (full frame) camera.
-// 	 *
-// 	 * Values for focal length and film gauge must have the same unit.
-// 	 */
-// 	setFocalLength: function ( focalLength ) {
+  // 	/**
+  // 	 * Sets the FOV by focal length in respect to the current .filmGauge.
+  // 	 *
+  // 	 * The default film gauge is 35, so that the focal length can be specified for
+  // 	 * a 35mm (full frame) camera.
+  // 	 *
+  // 	 * Values for focal length and film gauge must have the same unit.
+  // 	 */
+  // 	setFocalLength: function ( focalLength ) {
 
-// 		// see http://www.bobatkins.com/photography/technical/field_of_view.html
-// 		const vExtentSlope = 0.5 * this.getFilmHeight() / focalLength;
+  // 		// see http://www.bobatkins.com/photography/technical/field_of_view.html
+  // 		const vExtentSlope = 0.5 * this.getFilmHeight() / focalLength;
 
-// 		this.fov = MathUtils.RAD2DEG * 2 * Math.atan( vExtentSlope );
-// 		this.updateProjectionMatrix();
+  // 		this.fov = MathUtils.RAD2DEG * 2 * Math.atan( vExtentSlope );
+  // 		this.updateProjectionMatrix();
 
-// 	},
+  // 	},
 
-// 	/**
-// 	 * Calculates the focal length from the current .fov and .filmGauge.
-// 	 */
-// 	getFocalLength: function () {
+  // 	/**
+  // 	 * Calculates the focal length from the current .fov and .filmGauge.
+  // 	 */
+  // 	getFocalLength: function () {
 
-// 		const vExtentSlope = Math.tan( MathUtils.DEG2RAD * 0.5 * this.fov );
+  // 		const vExtentSlope = Math.tan( MathUtils.DEG2RAD * 0.5 * this.fov );
 
-// 		return 0.5 * this.getFilmHeight() / vExtentSlope;
+  // 		return 0.5 * this.getFilmHeight() / vExtentSlope;
 
-// 	},
+  // 	},
 
-// 	getEffectiveFOV: function () {
+  // 	getEffectiveFOV: function () {
 
-// 		return MathUtils.RAD2DEG * 2 * Math.atan(
-// 			Math.tan( MathUtils.DEG2RAD * 0.5 * this.fov ) / this.zoom );
+  // 		return MathUtils.RAD2DEG * 2 * Math.atan(
+  // 			Math.tan( MathUtils.DEG2RAD * 0.5 * this.fov ) / this.zoom );
 
-// 	},
+  // 	},
 
   num getFilmWidth() {
     // film not completely covered in portrait format (aspect < 1)
@@ -185,7 +192,14 @@ class PerspectiveCamera extends Camera {
     num skew = filmOffset;
     if (skew != 0) left += near * skew / getFilmWidth();
 
-    projectionMatrix.makePerspective(left, left + width, top, top - height, near, far);
+    projectionMatrix.makePerspective(
+      left,
+      left + width,
+      top,
+      top - height,
+      near,
+      far,
+    );
     projectionMatrixInverse.copy(projectionMatrix).invert();
   }
 
