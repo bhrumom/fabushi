@@ -45,6 +45,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     WidgetsBinding.instance.addObserver(this);
     _loadGlobe();
     _fetchInitialCount();
+    _onlineCounterService.startCountPolling('global_sending');
   }
 
   Future<void> _fetchInitialCount() async {
@@ -331,6 +332,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               if (!model.isTransferring || _currentSendingCountry.isEmpty) {
                 return const SizedBox.shrink();
               }
+              final scripture = model.currentSendingScripture;
               return Positioned(
                 top: 70,
                 left: 20,
@@ -357,12 +359,33 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Text(
-                          '正在发送到 $_currentSendingCountry',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
+                        Flexible(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                scripture.isEmpty
+                                    ? '正在发送经文'
+                                    : '正在发送《$scripture》',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                '目标: $_currentSendingCountry',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.78),
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -395,7 +418,44 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 // 发送进度显示（发送中时显示在顶部）
-                if (model.isTransferring) ...[
+                if (model.isPreparingSend) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amber.withOpacity(0.35)),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.amber,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            model.preparingSendMessage.isEmpty
+                                ? '正在准备发送...'
+                                : model.preparingSendMessage,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ] else if (model.isTransferring) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -407,6 +467,30 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     ),
                     child: Column(
                       children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.menu_book,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                model.currentSendingScripture.isEmpty
+                                    ? '正在发送经文'
+                                    : '正在发送：《${model.currentSendingScripture}》',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                         // 动态杨升激活次数显示
                         if (model.loopbackCount > 0) ...[
                           const SizedBox(height: 8),
@@ -649,7 +733,27 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   children: [
                     // 开始/停止按钮
                     Expanded(
-                      child: model.isTransferring
+                      child: model.isPreparingSend
+                          ? ElevatedButton.icon(
+                              onPressed: null,
+                              icon: const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                              label: const Text(
+                                '下载经文中',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
+                              ),
+                            )
+                          : model.isTransferring
                           ? ElevatedButton.icon(
                               onPressed: () => _stopSending(model),
                               icon: const Icon(Icons.stop, size: 18),
@@ -828,9 +932,16 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   void _startSending(FileTransferModel model) async {
+    if (model.isPreparingSend || model.isTransferring) return;
+    model.beginPreparingSend('正在准备发送...');
+
     // Android 平台：首次使用时显示自启动设置引导
     if (Platform.isAndroid && mounted) {
-      await AutoStartGuideDialog.showIfNeeded(context);
+      try {
+        await AutoStartGuideDialog.showIfNeeded(context);
+      } catch (e) {
+        debugPrint('Auto-start guide failed, continuing send: $e');
+      }
     }
 
     final assetCount = await model.prepareDefaultNonR2AssetsForSending();

@@ -4,29 +4,24 @@ import { siteHref } from "../lib/site-url";
 
 const NAV_ITEMS = [
   {
-    href: "/buddhadharma",
-    zh: "佛法入门",
-    en: "Dharma Basics",
-  },
-  {
-    href: "/buddhist-concepts",
-    zh: "佛学概念",
-    en: "Concepts",
-  },
-  {
-    href: "/practice-guide",
-    zh: "修行方法",
-    en: "Practice Guide",
-  },
-  {
-    href: "/sutra-guide",
-    zh: "佛经导读",
-    en: "Sutra Guide",
+    href: "/faliu",
+    zh: "法流",
+    en: "Faloo",
   },
   {
     href: "/faq",
-    zh: "常见问题",
-    en: "FAQ",
+    zh: "下载 FAQ",
+    en: "Download FAQ",
+  },
+  {
+    href: "/contact",
+    zh: "联系支持",
+    en: "Contact Support",
+  },
+  {
+    href: "/privacy",
+    zh: "隐私说明",
+    en: "Privacy",
   },
 ] as const;
 
@@ -52,7 +47,7 @@ export function SiteHeader() {
         <div className="site-nav-actions">
           <LanguageSwitch />
           <a className="nav-cta" href={siteHref("/download")}>
-            <LocalizedText zh="下载入口" en="Download" />
+            <LocalizedText zh="下载 App" en="Download App" />
           </a>
         </div>
       </div>

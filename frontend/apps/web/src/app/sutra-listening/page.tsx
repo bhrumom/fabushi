@@ -52,6 +52,27 @@ const practiceRhythm = [
   },
 ] as const;
 
+const howToSteps = [
+  {
+    nameZh: "先听一遍，让经典先熟起来",
+    nameEn: "Listen once so scripture becomes familiar first",
+    textZh: "如果今天很难完整坐下来读，可以先听一遍经文，让语气、节奏和关键句先进入耳根。先建立熟悉感，通常比一开始就逼自己读很多更稳。",
+    textEn: "If it is hard to sit down and read fully today, begin by listening once so the tone, rhythm, and key lines settle first. Building familiarity is usually steadier than forcing a long reading session immediately.",
+  },
+  {
+    nameZh: "再读一小段，只抓住一两句真正读进去的话",
+    nameEn: "Read a short section and hold onto one or two lines",
+    textZh: "听完以后，再回到原文或导读里读一小段，先抓住一两句自己真正能读进去的话。看不懂全部很常见，不代表你不适合从经典开始。",
+    textEn: "After listening, return to the text or a guide and read only a short section. Hold onto one or two lines that truly land. Partial understanding is common and does not mean scripture is the wrong doorway for you.",
+  },
+  {
+    nameZh: "最后留一句记录，把今天听到的内容接回生活",
+    nameEn: "Leave one note that brings today’s listening back into life",
+    textZh: "不需要写很重的笔记。只要记下今天哪一句最让你安静下来、最像在回答眼前的处境，佛经学习就更容易从纸面回到现实生活。",
+    textEn: "You do not need heavy notes. Just record which line calmed you or seemed to answer your present situation so sutra study can return from the page into ordinary living.",
+  },
+] as const;
+
 const conceptBlocks = [
   {
     titleZh: "熏习",
@@ -261,6 +282,35 @@ export default function SutraListeningPage() {
         })),
       },
       {
+        "@type": "HowTo",
+        name: "经文听诵接回阅读的三步安排",
+        description: "先用听诵建立熟悉感，再读一小段原文或导读，最后留一句记录，把经典慢慢接回生活。",
+        totalTime: "P1D",
+        supply: [
+          {
+            "@type": "HowToSupply",
+            name: "一小段经文听诵或原文",
+          },
+          {
+            "@type": "HowToSupply",
+            name: "一句简短记录",
+          },
+        ],
+        tool: [
+          {
+            "@type": "HowToTool",
+            name: "Fabushi 听诵与提醒功能",
+          },
+        ],
+        step: howToSteps.map((item, index) => ({
+          "@type": "HowToStep",
+          position: index + 1,
+          name: item.nameZh,
+          text: item.textZh,
+          url: `${pageUrl}#listening-rhythm`,
+        })),
+      },
+      {
         "@type": "FAQPage",
         mainEntity: faqItems.map((item) => ({
           "@type": "Question",
@@ -363,7 +413,7 @@ export default function SutraListeningPage() {
         </div>
       </section>
 
-      <section className="band">
+      <section className="band" id="listening-rhythm">
         <div className="section-heading tight">
           <p>
             <LocalizedText zh="三步节奏" en="Three-Step Rhythm" />

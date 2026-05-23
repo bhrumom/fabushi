@@ -1,0 +1,550 @@
+name: Deploy forum preview - Oracle
+
+on:
+  workflow_dispatch:
+    inputs:
+      forum_url:
+        description: Optional public preview URL to verify and save. Leave empty on the first rollout if the host still has no stable external URL.
+        required: false
+        type: string
+      deploy_dir:
+        description: Absolute directory on the Oracle server where the repo should be deployed
+        required: true
+        default: /opt/fabushi
+        type: string
+      forum_port:
+        description: Host port exposed by docker compose
+        required: true
+        default: "3000"
+        type: string
+      forum_data_dir:
+        description: Host path for durable sqlite data, relative paths are resolved from forum/
+        required: true
+        default: ./data
+        type: string
+      deployment_stage:
+        description: Runtime deployment stage expected from /api/health and /api/status
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - production
+      public_base_url:
+        description: Expected production public base URL. Leave empty for preview/noindex runtimes.
+        required: false
+        type: string
+      writes_enabled:
+        description: Enable writable preview mode. Requires FORUM_PREVIEW_WRITE_ACCESS_CODE secret.
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      exercise_write_flow:
+        description: Verify real thread-and-reply writes. Requires writable preview.
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      regenerate_deploy_env:
+        description: Replace forum/.env.deploy from workflow inputs before rolling out
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      update_github_live_target:
+        description: Save the verified target into repository variable FORUM_LIVE_TARGET after deployment
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: forum-oracle-preview-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-forum-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
+      ORACLE_SSH_USER: ${{ secrets.ORACLE_SSH_USER }}
+      ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+      ORACLE_SSH_PORT: ${{ secrets.ORACLE_SSH_PORT || '22' }}
+      FORUM_WRITE_ACCESS_CODE: ${{ secrets.FORUM_PREVIEW_WRITE_ACCESS_CODE }}
+      FORUM_LIVE_WRITE_ACCESS_CODE: ${{ secrets.FORUM_LIVE_WRITE_ACCESS_CODE }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      FORUM_URL: ${{ inputs.forum_url }}
+      DEPLOY_DIR: ${{ inputs.deploy_dir }}
+      FORUM_PORT: ${{ inputs.forum_port }}
+      FORUM_DATA_DIR: ${{ inputs.forum_data_dir }}
+      DEPLOYMENT_STAGE: ${{ inputs.deployment_stage }}
+      PUBLIC_BASE_URL: ${{ inputs.public_base_url }}
+      WRITES_ENABLED: ${{ inputs.writes_enabled }}
+      EXERCISE_WRITE_FLOW: ${{ inputs.exercise_write_flow }}
+      REGENERATE_DEPLOY_ENV: ${{ inputs.regenerate_deploy_env }}
+      UPDATE_GITHUB_LIVE_TARGET: ${{ inputs.update_github_live_target }}
+      REQUEST_TIMEOUT_MS: "15000"
+    steps:
+      - name: Validate deploy inputs and secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          missing=()
+          for name in ORACLE_SSH_HOST ORACLE_SSH_USER ORACLE_SSH_PRIVATE_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required GitHub secret(s): %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+          if [[ "$EXERCISE_WRITE_FLOW" == "true" && "$WRITES_ENABLED" != "true" ]]; then
+            echo "exercise_write_flow=true requires writes_enabled=true." >&2
+            exit 1
+          fi
+
+          if [[ "$DEPLOYMENT_STAGE" == "production" && "$WRITES_ENABLED" == "true" ]]; then
+            echo "Refusing to deploy a writable production forum runtime." >&2
+            exit 1
+          fi
+
+          if [[ "$WRITES_ENABLED" == "true" && -z "${FORUM_WRITE_ACCESS_CODE:-}" ]]; then
+            echo "writes_enabled=true requires the FORUM_PREVIEW_WRITE_ACCESS_CODE secret." >&2
+            exit 1
+          fi
+
+          if [[ "$DEPLOYMENT_STAGE" == "production" && -z "${PUBLIC_BASE_URL:-}" ]]; then
+            echo "deployment_stage=production requires public_base_url." >&2
+            exit 1
+          fi
+
+          if [[ "$UPDATE_GITHUB_LIVE_TARGET" == "true" && "$DEPLOYMENT_STAGE" == "preview" && "$REGENERATE_DEPLOY_ENV" == "true" && -z "${FORUM_URL:-}" ]]; then
+            echo "::warning::forum_url is empty. This run can still bootstrap the preview host and pass local smoke checks, but live-target sync will stay skipped until the real preview URL is known."
+          fi
+
+          if [[ "$UPDATE_GITHUB_LIVE_TARGET" == "true" && "$WRITES_ENABLED" == "true" && -z "${FORUM_LIVE_WRITE_ACCESS_CODE:-}" ]]; then
+            echo "::warning::FORUM_LIVE_WRITE_ACCESS_CODE is empty. Scheduled live checks will need this secret if the saved live target requires the preview write gate."
+          fi
+
+      - name: Prepare SSH client
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" > ~/.ssh/oracle_deploy_key
+          chmod 600 ~/.ssh/oracle_deploy_key
+
+          ssh-keyscan -p "$ORACLE_SSH_PORT" "$ORACLE_SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Roll out forum on Oracle host
+        id: rollout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          remote="${ORACLE_SSH_USER}@${ORACLE_SSH_HOST}"
+
+          quote_for_remote() {
+            printf '%q' "$1"
+          }
+
+          remote_env=(
+            "REPOSITORY=$(quote_for_remote "$GITHUB_REPOSITORY")"
+            "DEPLOY_DIR=$(quote_for_remote "$DEPLOY_DIR")"
+            "FORUM_URL=$(quote_for_remote "$FORUM_URL")"
+            "FORUM_PORT=$(quote_for_remote "$FORUM_PORT")"
+            "FORUM_DATA_DIR=$(quote_for_remote "$FORUM_DATA_DIR")"
+            "DEPLOYMENT_STAGE=$(quote_for_remote "$DEPLOYMENT_STAGE")"
+            "PUBLIC_BASE_URL=$(quote_for_remote "${PUBLIC_BASE_URL:-}")"
+            "WRITES_ENABLED=$(quote_for_remote "$WRITES_ENABLED")"
+            "EXERCISE_WRITE_FLOW=$(quote_for_remote "$EXERCISE_WRITE_FLOW")"
+            "REGENERATE_DEPLOY_ENV=$(quote_for_remote "$REGENERATE_DEPLOY_ENV")"
+            "REQUEST_TIMEOUT_MS=$(quote_for_remote "$REQUEST_TIMEOUT_MS")"
+            "FORUM_WRITE_ACCESS_CODE=$(quote_for_remote "${FORUM_WRITE_ACCESS_CODE:-}")"
+            "GHCR_USERNAME=$(quote_for_remote "${GHCR_USERNAME:-}")"
+            "GHCR_TOKEN=$(quote_for_remote "${GHCR_TOKEN:-}")"
+          )
+
+          ssh \
+            -i ~/.ssh/oracle_deploy_key \
+            -p "$ORACLE_SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$remote" \
+            "${remote_env[@]}" \
+            'bash -se' <<'REMOTE'
+          set -euo pipefail
+
+          for binary in git docker node; do
+            if ! command -v "$binary" >/dev/null 2>&1; then
+              echo "Missing required binary on Oracle host: $binary" >&2
+              exit 1
+            fi
+          done
+
+          if ! docker compose version >/dev/null 2>&1; then
+            echo "Docker Compose v2 is required on the Oracle host." >&2
+            exit 1
+          fi
+
+          if [[ -n "${GHCR_USERNAME:-}" && -n "${GHCR_TOKEN:-}" ]]; then
+            printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+          fi
+
+          if [[ ! -d "$DEPLOY_DIR/.git" ]]; then
+            mkdir -p "$(dirname "$DEPLOY_DIR")"
+            git clone "https://github.com/${REPOSITORY}.git" "$DEPLOY_DIR"
+          fi
+
+          cd "$DEPLOY_DIR"
+          git fetch --prune origin main
+          git checkout main
+          git reset --hard origin/main
+
+          cd forum
+          rm -f .forum-deploy-posture.json .forum-rollout-report.json .forum-live-target.json .forum-live-target.skip.txt
+
+          if [[ "$REGENERATE_DEPLOY_ENV" == "true" || ! -f .env.deploy ]]; then
+            preset="read-only-preview"
+            if [[ "$DEPLOYMENT_STAGE" == "production" ]]; then
+              preset="production"
+            elif [[ "$WRITES_ENABLED" == "true" ]]; then
+              preset="writable-preview"
+            fi
+
+            scaffold_args=(
+              --deploy-env-path .env.deploy
+              --preset "$preset"
+              --forum-port "$FORUM_PORT"
+              --forum-data-dir "$FORUM_DATA_DIR"
+              --deploy-check-url "$FORUM_URL"
+              --deployment-stage "$DEPLOYMENT_STAGE"
+              --public-base-url "${PUBLIC_BASE_URL:-}"
+              --writes-enabled "$WRITES_ENABLED"
+              --force true
+            )
+
+            if [[ "$WRITES_ENABLED" == "true" ]]; then
+              scaffold_args+=(--write-access-code "$FORUM_WRITE_ACCESS_CODE")
+            fi
+
+            node ./scripts/scaffold-deploy-env.mjs "${scaffold_args[@]}"
+          else
+            node ./scripts/validate-deploy-env.mjs --deploy-env-path .env.deploy
+          fi
+
+          node ./scripts/validate-deploy-env.mjs \
+            --deploy-env-path .env.deploy \
+            --format json > .forum-deploy-posture.json
+
+          docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull
+
+          node ./scripts/rollout-deploy-env.mjs \
+            --deploy-env-path .env.deploy \
+            --compose-file docker-compose.deploy.yml \
+            --compose-project-name fabushi-forum-preview \
+            --forum-url "$FORUM_URL" \
+            --exercise-write-flow "$EXERCISE_WRITE_FLOW" \
+            --request-timeout-ms "$REQUEST_TIMEOUT_MS" \
+            --report-path .forum-rollout-report.json \
+            --github-repo "$REPOSITORY"
+
+          resolved_live_target="$(
+            node -e '
+              const fs = require("node:fs");
+              const text = fs.readFileSync(".env.deploy", "utf8");
+              const deployEnv = {};
+              for (const rawLine of text.split(/\r?\n/)) {
+                const line = rawLine.trim();
+                if (!line || line.startsWith("#")) {
+                  continue;
+                }
+
+                const trimmed = rawLine.trimStart();
+                const separatorIndex = trimmed.indexOf("=");
+                if (separatorIndex <= 0) {
+                  continue;
+                }
+
+                const key = trimmed.slice(0, separatorIndex).trim();
+                let value = trimmed.slice(separatorIndex + 1).trim();
+                if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("\x27") && value.endsWith("\x27"))) {
+                  value = value.slice(1, -1);
+                } else {
+                  const commentIndex = value.search(/\s+#/);
+                  if (commentIndex >= 0) {
+                    value = value.slice(0, commentIndex).trimEnd();
+                  }
+                }
+                deployEnv[key] = value;
+              }
+
+              const normalizeUrl = (value) => (value ? value.replace(/\/$/, "") : "");
+              const explicitForumUrl = normalizeUrl(process.env.FORUM_URL || "");
+              const deployCheckUrl = normalizeUrl(deployEnv.FORUM_DEPLOY_CHECK_URL || "");
+              const deploymentStage = (deployEnv.FORUM_DEPLOYMENT_STAGE || "preview").trim();
+              const publicBaseUrl = normalizeUrl(deployEnv.FORUM_PUBLIC_BASE_URL || "");
+              const resolved = explicitForumUrl || deployCheckUrl || (deploymentStage === "production" ? publicBaseUrl : "");
+              process.stdout.write(resolved);
+            '
+          )"
+
+          if [[ -n "$resolved_live_target" ]]; then
+            rm -f .forum-live-target.skip.txt
+            node ./scripts/prepare-live-deployment-vars.mjs \
+              --deploy-env-path .env.deploy \
+              --forum-url "$FORUM_URL" \
+              --exercise-write-flow "$EXERCISE_WRITE_FLOW" \
+              --format json > .forum-live-target.json
+          else
+            rm -f .forum-live-target.json
+            printf '%s\n' "No external forum URL was available yet, so this run stopped after host rollout and local smoke verification." > .forum-live-target.skip.txt
+          fi
+          REMOTE
+
+      - name: Fetch Oracle deployment evidence
+        if: ${{ always() && steps.rollout.outcome != 'skipped' }}
+        id: evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          remote="${ORACLE_SSH_USER}@${ORACLE_SSH_HOST}"
+          rm -f /tmp/forum-deploy-posture.json /tmp/forum-rollout-report.json
+
+          try_fetch_remote_file() {
+            local remote_path="$1"
+            local local_path="$2"
+            local output_name="$3"
+
+            if ssh \
+              -i ~/.ssh/oracle_deploy_key \
+              -p "$ORACLE_SSH_PORT" \
+              -o StrictHostKeyChecking=yes \
+              "$remote" \
+              "test -f $(printf '%q' "$remote_path")"; then
+              ssh \
+                -i ~/.ssh/oracle_deploy_key \
+                -p "$ORACLE_SSH_PORT" \
+                -o StrictHostKeyChecking=yes \
+                "$remote" \
+                "cat $(printf '%q' "$remote_path")" > "$local_path"
+              printf '%s=true\n' "$output_name" >> "$GITHUB_OUTPUT"
+            else
+              printf '%s=false\n' "$output_name" >> "$GITHUB_OUTPUT"
+            fi
+          }
+
+          try_fetch_remote_file "$DEPLOY_DIR/forum/.forum-deploy-posture.json" /tmp/forum-deploy-posture.json posture_present
+          try_fetch_remote_file "$DEPLOY_DIR/forum/.forum-rollout-report.json" /tmp/forum-rollout-report.json report_present
+
+      - name: Fetch verified live target from Oracle host
+        if: ${{ always() && steps.rollout.outcome != 'skipped' }}
+        id: live-target
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          remote="${ORACLE_SSH_USER}@${ORACLE_SSH_HOST}"
+          remote_target_path="$(printf '%q' "$DEPLOY_DIR/forum/.forum-live-target.json")"
+          remote_skip_path="$(printf '%q' "$DEPLOY_DIR/forum/.forum-live-target.skip.txt")"
+          rm -f /tmp/forum-live-target.json /tmp/forum-live-target-skip.txt
+
+          if ssh \
+            -i ~/.ssh/oracle_deploy_key \
+            -p "$ORACLE_SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$remote" \
+            "test -f $remote_target_path"; then
+            ssh \
+              -i ~/.ssh/oracle_deploy_key \
+              -p "$ORACLE_SSH_PORT" \
+              -o StrictHostKeyChecking=yes \
+              "$remote" \
+              "cat $remote_target_path" > /tmp/forum-live-target.json
+
+            node -e '
+              const fs = require("node:fs");
+              const target = JSON.parse(fs.readFileSync("/tmp/forum-live-target.json", "utf8"));
+              if (!target.forumUrl || !target.deploymentStage) {
+                throw new Error("Verified live target is missing forumUrl or deploymentStage.");
+              }
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `skipped=false\n`);
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `forum_url=${target.forumUrl}\n`);
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n## Verified forum live target\n\n\`\`\`json\n${JSON.stringify(target, null, 2)}\n\`\`\`\n`);
+            '
+            exit 0
+          fi
+
+          if ssh \
+            -i ~/.ssh/oracle_deploy_key \
+            -p "$ORACLE_SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$remote" \
+            "test -f $remote_skip_path"; then
+            ssh \
+              -i ~/.ssh/oracle_deploy_key \
+              -p "$ORACLE_SSH_PORT" \
+              -o StrictHostKeyChecking=yes \
+              "$remote" \
+              "cat $remote_skip_path" > /tmp/forum-live-target-skip.txt
+
+            node -e '
+              const fs = require("node:fs");
+              const reason = fs.readFileSync("/tmp/forum-live-target-skip.txt", "utf8").trim();
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `skipped=true\n`);
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `skip_reason=${reason}\n`);
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n## Live target handoff skipped\n\n- ${reason}\n`);
+            '
+            exit 0
+          fi
+
+          node -e '
+            const fs = require("node:fs");
+            const reason = "Oracle rollout stopped before live-target handoff artifacts were written.";
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `skipped=true\n`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `skip_reason=${reason}\n`);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n## Live target handoff skipped\n\n- ${reason}\n`);
+          '
+
+      - name: Upload Oracle deployment evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: forum-oracle-deployment-evidence
+          path: |
+            /tmp/forum-deploy-posture.json
+            /tmp/forum-rollout-report.json
+            /tmp/forum-live-target.json
+            /tmp/forum-live-target-skip.txt
+          if-no-files-found: warn
+
+      - name: Save verified target to GitHub repository variable
+        if: env.UPDATE_GITHUB_LIVE_TARGET == 'true' && steps.live-target.outcome == 'success' && steps.live-target.outputs.skipped != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh variable set FORUM_LIVE_TARGET \
+            --body "$(cat /tmp/forum-live-target.json)" \
+            --repo "$GITHUB_REPOSITORY"
+
+      - name: Report deployment result
+        if: ${{ always() }}
+        env:
+          ROLLOUT_OUTCOME: ${{ steps.rollout.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rollout_outcome="${ROLLOUT_OUTCOME:-skipped}"
+
+          {
+            echo ""
+            echo "## Oracle forum deployment"
+            echo ""
+            echo "- Rollout step outcome: ${rollout_outcome}"
+            if [[ "$rollout_outcome" == "skipped" ]]; then
+              echo "- URL: (not attempted)"
+              echo "- Live target sync: not attempted"
+              echo "- Why: Oracle rollout did not complete, so host evidence and live-target handoff were not attempted."
+            elif [[ "${{ steps.live-target.outputs.skipped }}" == "true" ]]; then
+              echo "- URL: (not saved yet)"
+              echo "- Live target sync: skipped until a real external URL is available"
+              echo "- Why: ${{ steps.live-target.outputs.skip_reason }}"
+              echo "- Next step: rerun this workflow with forum_url set, or keep forum/.env.deploy updated with FORUM_DEPLOY_CHECK_URL / FORUM_PUBLIC_BASE_URL before rerunning live-target handoff."
+            else
+              echo "- URL: ${{ steps.live-target.outputs.forum_url }}"
+              echo "- Live target sync: ${UPDATE_GITHUB_LIVE_TARGET}"
+            fi
+            echo "- Server: ${ORACLE_SSH_USER}@${ORACLE_SSH_HOST}:${ORACLE_SSH_PORT}"
+            echo "- Deploy directory: ${DEPLOY_DIR}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          node -e '
+            const fs = require("node:fs");
+
+            const posturePath = "/tmp/forum-deploy-posture.json";
+            const reportPath = "/tmp/forum-rollout-report.json";
+            const rolloutOutcome = process.env.ROLLOUT_OUTCOME || "skipped";
+            const postureExists = fs.existsSync(posturePath);
+            const reportExists = fs.existsSync(reportPath);
+            const summary = [
+              "",
+              "## Oracle host evidence",
+              "",
+              `- rollout step outcome: ${rolloutOutcome}`,
+              `- deploy posture fetched: ${String(postureExists)}`,
+              `- rollout report fetched: ${String(reportExists)}`,
+            ];
+
+            if (postureExists) {
+              const posture = JSON.parse(fs.readFileSync(posturePath, "utf8"));
+              const warningLines = Array.isArray(posture.warnings) && posture.warnings.length > 0
+                ? posture.warnings.map((warning) => `- ${warning}`).join("\n")
+                : "- none";
+
+              summary.push(
+                `- deploy posture: ${posture.status} (${posture.deploymentStage})`,
+                `- smoke target: ${posture.defaultSmokeUrl ?? "(empty)"}`,
+                `- writes enabled: ${String(posture.writesEnabled)}`,
+                `- requires access code: ${String(posture.requiresAccessCode)}`,
+                "",
+                "### Deploy posture warnings",
+                "",
+                warningLines,
+                "",
+                "### Deploy posture JSON",
+                "",
+                "```json",
+                JSON.stringify(posture, null, 2),
+                "```",
+              );
+            }
+
+            if (reportExists) {
+              const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+              const writeFlowSummary = report.liveWriteVerification
+                ? `- live write verification: thread \`${report.liveWriteVerification.threadSlug}\`, reply author \`${report.liveWriteVerification.replyAuthor}\``
+                : "- live write verification: skipped";
+
+              summary.push(
+                `- rollout smoke ok: ${String(report.ok)}`,
+                `- rollout report forum URL: ${report.forumUrl ?? "(empty)"}`,
+                writeFlowSummary,
+                "",
+                "### Rollout report JSON",
+                "",
+                "```json",
+                JSON.stringify(report, null, 2),
+                "```",
+              );
+            } else if (rolloutOutcome !== "success") {
+              summary.push(
+                "- rollout report JSON is missing because the remote rollout did not reach the report-writing phase."
+              );
+            }
+
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary.join("\n")}\n`);
+          '

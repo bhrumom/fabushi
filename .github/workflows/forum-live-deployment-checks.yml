@@ -1,6 +1,8 @@
 name: Live deployment checks - Forum
 
 on:
+  schedule:
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       forum_url:
@@ -47,11 +49,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: forum-live-deployment-checks
+  cancel-in-progress: false
+
 jobs:
   forum-live-deployment:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
-      FORUM_WRITE_ACCESS_CODE: ${{ secrets.FORUM_LIVE_WRITE_ACCESS_CODE }}
+      FORUM_LIVE_GITHUB_REPO: ${{ github.repository }}
+      FORUM_LIVE_REQUEST_TIMEOUT_MS: "15000"
+      FORUM_LIVE_TARGET_PATH: /tmp/forum-live-target.json
+      FORUM_LIVE_WRITE_ACCESS_CODE: ${{ secrets.FORUM_LIVE_WRITE_ACCESS_CODE }}
     steps:
       - name: Checkout forum workspace only
         uses: actions/checkout@v4
@@ -66,12 +76,88 @@ jobs:
         with:
           node-version: 24
 
+      - name: Resolve and validate live forum target
+        env:
+          FORUM_LIVE_SOURCE: ${{ github.event_name }}
+          FORUM_LIVE_TARGET: ${{ vars.FORUM_LIVE_TARGET }}
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            export FORUM_LIVE_URL="${{ inputs.forum_url }}"
+            export FORUM_LIVE_DEPLOYMENT_STAGE="${{ inputs.deployment_stage }}"
+            export FORUM_LIVE_PUBLIC_BASE_URL="${{ inputs.public_base_url }}"
+            export FORUM_LIVE_WRITES_ENABLED="${{ inputs.writes_enabled }}"
+            export FORUM_LIVE_REQUIRES_ACCESS_CODE="${{ inputs.requires_access_code }}"
+            export FORUM_LIVE_EXERCISE_WRITE_FLOW="${{ inputs.exercise_write_flow }}"
+          else
+            export FORUM_LIVE_URL="${{ vars.FORUM_LIVE_URL }}"
+            export FORUM_LIVE_DEPLOYMENT_STAGE="${{ vars.FORUM_LIVE_DEPLOYMENT_STAGE }}"
+            export FORUM_LIVE_PUBLIC_BASE_URL="${{ vars.FORUM_LIVE_PUBLIC_BASE_URL }}"
+            export FORUM_LIVE_WRITES_ENABLED="${{ vars.FORUM_LIVE_WRITES_ENABLED }}"
+            export FORUM_LIVE_REQUIRES_ACCESS_CODE="${{ vars.FORUM_LIVE_REQUIRES_ACCESS_CODE }}"
+            export FORUM_LIVE_EXERCISE_WRITE_FLOW="${{ vars.FORUM_LIVE_EXERCISE_WRITE_FLOW }}"
+          fi
+
+          node forum/scripts/resolve-live-deployment-target.mjs
+
+      - name: Load resolved live forum target
+        id: resolve
+        shell: bash
+        run: |
+          if [[ ! -f "$FORUM_LIVE_TARGET_PATH" ]]; then
+            echo "Resolved live target file was not created." >&2
+            exit 1
+          fi
+
+          node -e '
+            const fs = require("node:fs");
+            const target = JSON.parse(fs.readFileSync(process.env.FORUM_LIVE_TARGET_PATH, "utf8"));
+            const lines = [
+              `skip=${target.skip ? "true" : "false"}`,
+              `reason=${target.reason ?? ""}`,
+              `forum_url=${target.forumUrl ?? ""}`,
+              `deployment_stage=${target.deploymentStage ?? ""}`,
+              `public_base_url=${target.publicBaseUrl ?? ""}`,
+              `writes_enabled=${target.writesEnabled === undefined ? "" : String(target.writesEnabled)}`,
+              `requires_access_code=${target.requiresAccessCode === undefined ? "" : String(target.requiresAccessCode)}`,
+              `exercise_write_flow=${target.exerciseWriteFlow === undefined ? "" : String(target.exerciseWriteFlow)}`,
+              `request_timeout_ms=${target.requestTimeoutMs ?? ""}`,
+            ];
+
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${lines.join("\n")}\n`);
+          '
+
+      - name: Skip scheduled check when live target is not configured
+        if: steps.resolve.outputs.skip == 'true'
+        run: echo "${{ steps.resolve.outputs.reason }}"
+
       - name: Smoke test live forum deployment contract
+        if: steps.resolve.outputs.skip != 'true'
         run: |
           node forum/scripts/check-deployment-contract.mjs \
-            --url "${{ inputs.forum_url }}" \
-            --deployment-stage "${{ inputs.deployment_stage }}" \
-            --public-base-url "${{ inputs.public_base_url }}" \
-            --writes-enabled "${{ inputs.writes_enabled }}" \
-            --requires-access-code "${{ inputs.requires_access_code }}" \
-            --exercise-write-flow "${{ inputs.exercise_write_flow }}"
+            --url "${{ steps.resolve.outputs.forum_url }}" \
+            --deployment-stage "${{ steps.resolve.outputs.deployment_stage }}" \
+            --public-base-url "${{ steps.resolve.outputs.public_base_url }}" \
+            --writes-enabled "${{ steps.resolve.outputs.writes_enabled }}" \
+            --requires-access-code "${{ steps.resolve.outputs.requires_access_code }}" \
+            --exercise-write-flow "${{ steps.resolve.outputs.exercise_write_flow }}" \
+            --request-timeout-ms "${{ steps.resolve.outputs.request_timeout_ms }}" \
+            --report-path /tmp/forum-live-deployment-report.json
+
+      - name: Append live smoke check report to job summary
+        if: always() && steps.resolve.outputs.skip != 'true'
+        shell: bash
+        run: |
+          {
+            echo ""
+            echo "## Live smoke check report"
+            echo ""
+
+            if [[ -f /tmp/forum-live-deployment-report.json ]]; then
+              echo '```json'
+              cat /tmp/forum-live-deployment-report.json
+              echo '```'
+            else
+              echo "Report file was not created. Inspect the smoke-check step logs for details."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

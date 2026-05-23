@@ -1,0 +1,536 @@
+#!/usr/bin/env node
+
+import { readFile, access } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { parseDotEnv } from "./parse-deploy-env.mjs";
+
+function parseArgs(argv) {
+  const parsed = {
+    "deploy-env-path": ".env.deploy",
+    "compose-file": "docker-compose.deploy.yml",
+    detach: "true",
+    "handoff-live-target": "auto",
+    "exercise-write-flow": "false",
+    "apply-github-live-target": "false",
+    "github-repo": "bhrumom/fabushi",
+    "scaffold-if-missing": "false",
+    "scaffold-preset": "read-only-preview",
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const part = argv[index];
+
+    if (!part.startsWith("--")) {
+      throw new Error(`Unexpected argument: ${part}`);
+    }
+
+    const key = part.slice(2);
+    const value = argv[index + 1];
+
+    if (value === undefined || value.startsWith("--")) {
+      throw new Error(`Missing value for --${key}`);
+    }
+
+    parsed[key] = value;
+    index += 1;
+  }
+
+  return parsed;
+}
+
+function parseBoolean(value, key) {
+  if (value === undefined || value === null || value === "") {
+    return false;
+  }
+
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  throw new Error(`Expected ${key} to be true or false, received: ${value}`);
+}
+
+function parseInteger(value, key) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Expected ${key} to be a positive integer, received: ${value}`);
+  }
+
+  return parsed;
+}
+
+function normalizeUrl(value) {
+  return value ? value.replace(/\/$/, "") : "";
+}
+
+function validateHandoffMode(value) {
+  if (value === "auto" || value === "true" || value === "false") {
+    return value;
+  }
+
+  throw new Error(`Expected --handoff-live-target to be auto, true, or false, received: ${value}`);
+}
+
+function resolveHandoffUrl({ explicitForumUrl, deployEnv }) {
+  const forumUrl = normalizeUrl(explicitForumUrl?.trim() || deployEnv.FORUM_DEPLOY_CHECK_URL?.trim() || "");
+  if (forumUrl) {
+    return forumUrl;
+  }
+
+  const deploymentStage = deployEnv.FORUM_DEPLOYMENT_STAGE?.trim() || "preview";
+  if (deploymentStage === "production") {
+    return normalizeUrl(deployEnv.FORUM_PUBLIC_BASE_URL?.trim() || "");
+  }
+
+  return "";
+}
+
+function renderCommandBlock(command, args) {
+  const continuation = ` ${String.fromCharCode(92)}`;
+  const lines = ["cd forum", `${command} --${continuation}`];
+
+  args.forEach((arg, index) => {
+    const suffix = index === args.length - 1 ? "" : continuation;
+    lines.push(`  ${arg}${suffix}`);
+  });
+
+  return lines.join("\n");
+}
+
+function buildSkippedHandoffCommand({ deployEnvPath, exerciseWriteFlow, applyGithubLiveTarget }) {
+  const args = [
+    "--forum-url https://forum-preview.example.com",
+    `--deploy-env-path ${deployEnvPath}`,
+  ];
+
+  if (exerciseWriteFlow) {
+    args.push("--exercise-write-flow true");
+  }
+
+  if (applyGithubLiveTarget) {
+    args.push("--apply-github-live-target true");
+  }
+
+  return renderCommandBlock("pnpm handoff:live-target", args);
+}
+
+function logSkippedHandoffGuidance({ deployEnvPath, deployEnv, exerciseWriteFlow, applyGithubLiveTarget }) {
+  const deploymentStage = deployEnv.FORUM_DEPLOYMENT_STAGE?.trim() || "preview";
+
+  console.log(
+    "Skipping handoff because neither --forum-url, FORUM_DEPLOY_CHECK_URL, nor a production FORUM_PUBLIC_BASE_URL is available yet. Re-run with the real preview or production URL once it exists.",
+  );
+  console.log("");
+  console.log(
+    "The local rollout already completed and passed the host-side smoke check. The remaining step is only to bind that verified runtime to a real external URL for hourly checks.",
+  );
+  console.log("");
+  console.log("Once the runtime is reachable at its real preview or production URL, run:");
+  console.log("");
+  console.log(buildSkippedHandoffCommand({ deployEnvPath, exerciseWriteFlow, applyGithubLiveTarget }));
+  console.log("");
+
+  if (deploymentStage === "production") {
+    console.log(
+      "If this is intended to become the final production origin, save that URL as FORUM_PUBLIC_BASE_URL in .env.deploy so future handoffs can stay fully deploy-env driven.",
+    );
+  } else {
+    console.log(
+      "If this preview host will keep the same external URL, save it as FORUM_DEPLOY_CHECK_URL in .env.deploy so future handoffs can omit --forum-url.",
+    );
+  }
+
+  console.log("Guide: forum/DEPLOY.md");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function runNodeScript(scriptName, scriptArgs) {
+  const scriptDir = dirname(fileURLToPath(import.meta.url));
+  const scriptPath = join(scriptDir, scriptName);
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [scriptPath, ...scriptArgs], {
+      stdio: "inherit",
+      env: process.env,
+    });
+
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      if (signal) {
+        reject(new Error(`${scriptName} exited via signal: ${signal}`));
+        return;
+      }
+
+      if (code !== 0) {
+        reject(new Error(`${scriptName} exited with code ${code}.`));
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
+function runDockerComposeUp({ deployEnvPath, composeFile, detach, composeProjectName }) {
+  const args = ["compose", "--env-file", deployEnvPath, "-f", composeFile, "up"];
+  if (detach) {
+    args.push("-d");
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn("docker", args, {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        ...(composeProjectName ? { COMPOSE_PROJECT_NAME: composeProjectName } : {}),
+      },
+    });
+
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      if (signal) {
+        reject(new Error(`docker compose up exited via signal: ${signal}`));
+        return;
+      }
+
+      if (code !== 0) {
+        reject(new Error(`docker compose up exited with code ${code}.`));
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
+function runCommand(command, commandArgs, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, commandArgs, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        ...(options.composeProjectName ? { COMPOSE_PROJECT_NAME: options.composeProjectName } : {}),
+      },
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+    });
+
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+    });
+
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      if (signal) {
+        reject(new Error(`${command} exited via signal: ${signal}`));
+        return;
+      }
+
+      if (code !== 0) {
+        const details = stderr.trim() || stdout.trim();
+        reject(new Error(`${command} ${commandArgs.join(" ")} exited with code ${code}.${details ? ` ${details}` : ""}`));
+        return;
+      }
+
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+async function deployEnvExists(deployEnvPath) {
+  try {
+    await access(deployEnvPath, fsConstants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildScaffoldArgs(args, deployEnvPath) {
+  const scaffoldArgs = ["--deploy-env-path", deployEnvPath, "--preset", args["scaffold-preset"]];
+  const passthroughKeys = [
+    "forum-image",
+    "forum-port",
+    "forum-data-dir",
+    "deploy-check-url",
+    "data-source",
+    "writes-enabled",
+    "write-access-code",
+    "deployment-stage",
+    "public-base-url",
+  ];
+
+  for (const key of passthroughKeys) {
+    const value = args[key];
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+
+    scaffoldArgs.push(`--${key}`, value);
+  }
+
+  return scaffoldArgs;
+}
+
+async function loadDeployEnv(deployEnvPath) {
+  const deployEnvContent = await readFile(deployEnvPath, "utf-8");
+  return parseDotEnv(deployEnvContent);
+}
+
+async function resolveComposeContainerId({ deployEnvPath, composeFile, composeProjectName, serviceName = "forum" }) {
+  const result = await runCommand(
+    "docker",
+    ["compose", "--env-file", deployEnvPath, "-f", composeFile, "ps", "-q", serviceName],
+    { composeProjectName },
+  );
+  return result.stdout.trim();
+}
+
+async function inspectContainerState(containerId) {
+  const result = await runCommand("docker", ["inspect", "--format", "{{json .State}}", containerId]);
+  return JSON.parse(result.stdout.trim());
+}
+
+async function waitForComposeHealth({ deployEnvPath, composeFile, composeProjectName, requestTimeoutMs }) {
+  const maxAttempts = 20;
+  const intervalMs = 2000;
+  let lastSummary = "container id not available yet";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const containerId = await resolveComposeContainerId({ deployEnvPath, composeFile, composeProjectName });
+      if (!containerId) {
+        lastSummary = "container id not available yet";
+      } else {
+        const state = await inspectContainerState(containerId);
+        const status = state?.Status || "unknown";
+        const health = state?.Health?.Status || "no-healthcheck";
+        const exitCode = state?.ExitCode;
+        lastSummary = `status=${status}, health=${health}, exitCode=${String(exitCode)}`;
+        console.log(`Compose health attempt ${attempt}/${maxAttempts}: ${lastSummary}.`);
+
+        if (status === "running" && health === "healthy") {
+          console.log(`Compose health stabilized after attempt ${attempt}.`);
+          return;
+        }
+      }
+    } catch (error) {
+      lastSummary = error instanceof Error ? error.message : String(error);
+      console.log(`Compose health attempt ${attempt}/${maxAttempts} failed: ${lastSummary}`);
+    }
+
+    await sleep(Math.min(intervalMs, requestTimeoutMs ?? intervalMs));
+  }
+
+  throw new Error(`Timed out waiting for docker compose health to become healthy: ${lastSummary}`);
+}
+
+async function waitForLocalHealth(deployEnv, requestTimeoutMs) {
+  const port = deployEnv.FORUM_PORT?.trim() || "3000";
+  const healthUrl = `http://127.0.0.1:${port}/api/health`;
+  const timeoutMs = requestTimeoutMs ?? 5000;
+  const requiredStableSuccesses = 2;
+
+  let consecutiveReadyResponses = 0;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
+    try {
+      const response = await fetch(healthUrl, {
+        redirect: "follow",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      const body = await response.text();
+      if (!response.ok) {
+        consecutiveReadyResponses = 0;
+        lastError = new Error(`Health probe returned ${response.status}: ${body}`);
+        console.log(`Local health attempt ${attempt}/12 failed: ${lastError.message}`);
+      } else {
+        let payload = null;
+        try {
+          payload = JSON.parse(body);
+        } catch (error) {
+          consecutiveReadyResponses = 0;
+          lastError = new Error(`Health probe returned non-JSON body: ${error}`);
+          console.log(`Local health attempt ${attempt}/12 failed: ${lastError.message}`);
+        }
+
+        if (payload) {
+          if (payload.ready !== true) {
+            consecutiveReadyResponses = 0;
+            lastError = new Error(`Health probe returned ready=${String(payload.ready)}: ${body}`);
+            console.log(`Local health attempt ${attempt}/12 failed: ${lastError.message}`);
+          } else {
+            consecutiveReadyResponses += 1;
+            console.log(
+              `Health probe responded ready at ${healthUrl} on attempt ${attempt} (${consecutiveReadyResponses}/${requiredStableSuccesses} stable successes).`,
+            );
+
+            if (consecutiveReadyResponses >= requiredStableSuccesses) {
+              console.log(`Health probe stabilized at ${healthUrl} after attempt ${attempt}.`);
+              return;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      consecutiveReadyResponses = 0;
+      lastError = error;
+      console.log(
+        `Local health attempt ${attempt}/12 failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    await sleep(2000);
+  }
+
+  throw new Error(
+    `Timed out waiting for local health probe ${healthUrl}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const deployEnvPath = args["deploy-env-path"];
+  const composeFile = args["compose-file"];
+  const detach = parseBoolean(args.detach, "detach");
+  const handoffMode = validateHandoffMode(args["handoff-live-target"]?.trim() || "auto");
+  const exerciseWriteFlow = parseBoolean(args["exercise-write-flow"], "exercise_write_flow");
+  const applyGithubLiveTarget = parseBoolean(args["apply-github-live-target"], "apply_github_live_target");
+  const githubRepo = args["github-repo"]?.trim() || "";
+  const composeProjectName = args["compose-project-name"]?.trim() || "";
+  const explicitForumUrl = normalizeUrl(args["forum-url"]?.trim() || "");
+  const requestTimeoutMs = parseInteger(args["request-timeout-ms"], "request_timeout_ms");
+  const scaffoldIfMissing = parseBoolean(args["scaffold-if-missing"], "scaffold_if_missing");
+
+  if (handoffMode === "false" && applyGithubLiveTarget) {
+    throw new Error("--apply-github-live-target true requires handoff-live-target to stay enabled.");
+  }
+
+  if (applyGithubLiveTarget && !githubRepo) {
+    throw new Error("--apply-github-live-target true requires --github-repo.");
+  }
+
+  if (!(await deployEnvExists(deployEnvPath))) {
+    if (!scaffoldIfMissing) {
+      throw new Error(
+        `Deploy env file ${deployEnvPath} does not exist. Re-run with --scaffold-if-missing true or create the file first.`,
+      );
+    }
+
+    console.log("== Scaffold deploy env ==");
+    await runNodeScript("scaffold-deploy-env.mjs", buildScaffoldArgs(args, deployEnvPath));
+    console.log("");
+  }
+
+  const deployEnv = await loadDeployEnv(deployEnvPath);
+  const handoffUrl = resolveHandoffUrl({
+    explicitForumUrl,
+    deployEnv,
+  });
+
+  const sharedArgs = ["--deploy-env-path", deployEnvPath];
+
+  console.log("== Deploy env preflight ==");
+  await runNodeScript("validate-deploy-env.mjs", sharedArgs);
+
+  console.log("\n== Deploy compose up ==");
+  await runDockerComposeUp({ deployEnvPath, composeFile, detach, composeProjectName });
+
+  console.log("\n== Wait for compose health ==");
+  await waitForComposeHealth({ deployEnvPath, composeFile, composeProjectName, requestTimeoutMs });
+
+  console.log("\n== Wait for local health probe ==");
+  await waitForLocalHealth(deployEnv, requestTimeoutMs);
+
+  console.log("\n== Post-health stabilization ==");
+  await sleep(1500);
+  console.log("Local runtime stayed ready across the stabilization window.");
+
+  console.log("\n== Deployed runtime smoke check ==");
+  const smokeArgs = [...sharedArgs, "--exercise-write-flow", String(exerciseWriteFlow)];
+  if (explicitForumUrl) {
+    smokeArgs.push("--forum-url", explicitForumUrl);
+  }
+  if (requestTimeoutMs) {
+    smokeArgs.push("--request-timeout-ms", String(requestTimeoutMs));
+  }
+  if (args["report-path"]) {
+    smokeArgs.push("--report-path", args["report-path"]);
+  }
+  await runNodeScript("smoke-deployment-from-env.mjs", smokeArgs);
+
+  if (handoffMode === "false") {
+    return;
+  }
+
+  if (!handoffUrl) {
+    if (handoffMode === "true") {
+      throw new Error(
+        "Handoff requires either --forum-url, FORUM_DEPLOY_CHECK_URL, or production FORUM_PUBLIC_BASE_URL in the deploy env file.",
+      );
+    }
+
+    console.log("\n== Hourly live target handoff ==");
+    logSkippedHandoffGuidance({
+      deployEnvPath,
+      deployEnv,
+      exerciseWriteFlow,
+      applyGithubLiveTarget: true,
+    });
+    return;
+  }
+
+  console.log("\n== Hourly live target handoff ==");
+  const handoffArgs = [...sharedArgs, "--exercise-write-flow", String(exerciseWriteFlow)];
+  if (explicitForumUrl) {
+    handoffArgs.push("--forum-url", explicitForumUrl);
+  }
+  if (requestTimeoutMs) {
+    handoffArgs.push("--request-timeout-ms", String(requestTimeoutMs));
+  }
+  if (args["report-path"]) {
+    handoffArgs.push("--report-path", args["report-path"]);
+  }
+  if (args.format) {
+    handoffArgs.push("--format", args.format);
+  }
+  if (applyGithubLiveTarget) {
+    handoffArgs.push("--apply-github-live-target", "true");
+  }
+  if (githubRepo) {
+    handoffArgs.push("--github-repo", githubRepo);
+  }
+
+  await runNodeScript("handoff-live-deployment-target.mjs", handoffArgs);
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.stack || error.message : String(error));
+  process.exitCode = 1;
+});

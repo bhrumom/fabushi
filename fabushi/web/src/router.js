@@ -2,7 +2,7 @@ import { handleRegister, handleLogin, handleGetUserInfo, handleUpdateProfile, ha
 import { handleSendSmsCode, handleSmsLogin } from './handlers/sms.js';
 import { handleGetComments, handlePostComment, handleDeleteComment, handleGetTaggedPosts, handleGetHotFeed, handleGetPostDetail, handleBatchGetCommentCounts } from './handlers/comments.js';
 import { handleSendVerificationCode, handleForgotPassword, handleResetPassword } from './handlers/verification.js';
-import { handleGetWechatLoginUrl, handleGetAlipayLoginUrl, handleAlipayLogin, handleAlipayRegister, handleBindEmail, handleMacOSAlipayCallback, handleMobileAlipayCallback, handleGetAlipayAuthString, handleAlipaySDKLogin } from './handlers/thirdparty.js';
+import { handleGetWechatLoginUrl, handleGetAlipayLoginUrl, handleAlipayLogin, handleAlipayCallback, handleAlipayRegister, handleBindEmail, handleMacOSAlipayCallback, handleMobileAlipayCallback, handleGetAlipayAuthString, handleAlipaySDKLogin } from './handlers/thirdparty.js';
 import { handleCreateAlipayOrder, handleQueryAlipayOrder, handleAlipayNotify } from './handlers/payment.js';
 import { handleVerifyAppleReceipt } from './handlers/apple-iap.js';
 import { handleCreateRedeemCode, handleUseRedeemCode, handleGetPurchaseHistory, handleGetRedeemHistory } from './handlers/redeem.js';
@@ -11,6 +11,7 @@ import { handleMigrateKvToD1 } from './handlers/migration.js';
 import { handleCheckAdminStatus, handleListRedeemCodes, handleDeleteRedeemCode, handleGetAdminPrice } from './handlers/admin.js';
 import { handleGetAssetsList, handleR2List, handleR2Proxy } from './handlers/assets.js';
 import { handleSearch, handleGetTextContent, handleGetCategories } from './handlers/search.js';
+import { handleGetCbetaSendTexts, handleProxyCbetaRequest } from './handlers/cbeta.js';
 import { handleGetLeaderboard, handleGetLeaderboardRecords, handleGetPracticeLeaderboard, handleUpdateTransferData } from './handlers/leaderboard.js';
 import { handleToggleLike, handleGetLikeCount, handleBatchGetLikeCounts, handleGetMyLikes, handleGetReceivedLikeCount } from './handlers/likes.js';
 import { handleToggleFavorite, handleGetMyFavorites, handleBatchCheckFavorites } from './handlers/favorites.js';
@@ -34,8 +35,8 @@ function jsonStringifyAscii(value) {
   });
 }
 
-function createLegacyMeditationToken(username) {
-  const payload = btoa(jsonStringifyAscii({ username }));
+function createLegacyMeditationToken(username, userId = null) {
+  const payload = btoa(jsonStringifyAscii({ username, userId }));
   return `legacy.${payload}.signature`;
 }
 
@@ -59,7 +60,8 @@ async function normalizeMeditationAuthRequest(request, env, pathname) {
     }
 
     const headers = new Headers(request.headers);
-    headers.set('Authorization', `Bearer ${createLegacyMeditationToken(username)}`);
+    const userId = tokenData?.userId ?? tokenData?.user_id ?? tokenData?.id ?? null;
+    headers.set('Authorization', `Bearer ${createLegacyMeditationToken(username, userId)}`);
     return {
       request: new Request(request, { headers }),
     };
@@ -133,6 +135,7 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/auth/wechat/login-url' && method === 'GET') return await handleGetWechatLoginUrl(request, env);
   if (pathname === '/api/auth/alipay/login-url' && method === 'GET') return await handleGetAlipayLoginUrl(request, env);
   if (pathname === '/api/auth/alipay/login' && method === 'POST') return await handleAlipayLogin(request, env);
+  if (pathname === '/api/auth/alipay/callback' && method === 'GET') return await handleAlipayCallback(request, env);
   if (pathname === '/api/auth/alipay/register' && method === 'POST') return await handleAlipayRegister(request, env);
   if (pathname === '/api/auth/alipay/macos-callback' && method === 'GET') return await handleMacOSAlipayCallback(request, env);
   if (pathname === '/api/auth/alipay/mobile-callback' && method === 'GET') return await handleMobileAlipayCallback(request, env);
@@ -165,6 +168,8 @@ export async function route(request, env, db, ctx) {
   if (pathname === '/api/search' && method === 'GET') return await handleSearch(request, env, db);
   if (pathname === '/api/search/content' && method === 'GET') return await handleGetTextContent(request, env, db);
   if (pathname === '/api/search/categories' && method === 'GET') return await handleGetCategories(request, env, db);
+  if (pathname === '/api/cbeta/send-texts' && method === 'GET') return await handleGetCbetaSendTexts(request, env);
+  if (pathname.startsWith('/api/cbeta/') && (method === 'GET' || method === 'HEAD')) return await handleProxyCbetaRequest(request, env);
 
   if (pathname === '/api/leaderboard' && method === 'GET') return await handleGetLeaderboard(request, env, db);
   if (pathname === '/api/leaderboard/practice' && method === 'GET') return await handleGetPracticeLeaderboard(request, env, db);

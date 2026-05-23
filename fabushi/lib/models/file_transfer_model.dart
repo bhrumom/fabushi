@@ -1,29 +1,25 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:async';
-import 'package:http/http.dart' as http;
 
 import '../screens/asset_screen.dart';
-import '../core/config/app_config.dart';
 import '../services/shared_asset_manager.dart';
 import '../services/download_manager.dart' show DownloadStatus;
 import '../services/real_global_send_service.dart';
 import '../services/platform_global_send_service.dart';
 import '../services/ip_location_service.dart';
 import '../services/leaderboard_service.dart';
+import '../services/cbeta_send_text_service.dart';
 // Android 和 iOS 统一使用 audio_service MediaSession
 import '../services/wifi_field_broadcast_service.dart';
 import '../services/hotspot_manager_service.dart';
 import '../services/keep_alive_service.dart';
 import '../widgets/download_progress_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:universal_html/html.dart' as html;
 import '../core/startup/deferred_loader.dart';
 import '../services/local_loopback_service.dart';
 
@@ -51,6 +47,8 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   // 传输状态
   bool _isTransferring = false;
+  bool _isPreparingSend = false;
+  String _preparingSendMessage = '';
   TransferStatus _status = TransferStatus.idle;
 
   // 统计数据
@@ -62,9 +60,11 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   PlatformGlobalSendService? _platformGlobalSendService;
   List<CountrySendStatus> _countryStatuses = [];
   String _currentLog = '';
+  String _currentSendingScripture = '';
 
   final SharedAssetManager _sharedAssetManager = SharedAssetManager();
   final IPLocationService _ipLocationService = IPLocationService();
+  final CbetaSendTextService _cbetaSendTextService = CbetaSendTextService();
 
   // 场能广播服务
   WiFiFieldBroadcastService? _fieldBroadcastService;
@@ -149,12 +149,15 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   List<PlatformFile> get selectedFiles => _selectedFiles;
   List<String> get countryList => _countryList;
   bool get isTransferring => _isTransferring;
+  bool get isPreparingSend => _isPreparingSend;
+  String get preparingSendMessage => _preparingSendMessage;
   TransferStatus get status => _status;
   bool get hasFiles => _selectedFiles.isNotEmpty;
   int get globalSentCount => _globalSentCount;
   double get globalDataSentMB => _globalDataSentMB;
   List<CountrySendStatus> get countryStatuses => _countryStatuses;
   String get currentLog => _currentLog;
+  String get currentSendingScripture => _currentSendingScripture;
 
   /// 性能优化：批量通知更新（防抖）
   void _scheduleNotify() {
@@ -262,6 +265,19 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  void beginPreparingSend(String message) {
+    if (_isDisposed) return;
+    _isPreparingSend = true;
+    _preparingSendMessage = message;
+    _currentLog = message;
+    notifyListeners();
+  }
+
+  void _finishPreparingSend() {
+    _isPreparingSend = false;
+    _preparingSendMessage = '';
+  }
+
   Future<void> selectFiles() async {
     try {
       // 内存优化：不使用 withData: true，避免大文件加载到内存
@@ -310,40 +326,53 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<int> prepareDefaultNonR2AssetsForSending() async {
-    final manifestString = await rootBundle.loadString(
-      'assets/data/asset-manifest.json',
-    );
-    final List<dynamic> files = json.decode(manifestString);
+    beginPreparingSend('📚 正在下载默认经文，下载完成后会自动开始发送...');
 
-    final assetPaths =
-        files
-            .whereType<Map<String, dynamic>>()
-            .where((fileInfo) {
-              final key = (fileInfo['key'] ?? '').toString();
-              final source = (fileInfo['source'] ?? '').toString();
+    try {
+      final result = await _cbetaSendTextService.fetchDefaultSendTexts();
+      _selectedFiles = result.items.map((text) {
+        final content = [
+          '来源: CBETA',
+          '经名: ${text.title}',
+          '编号: ${text.work} 第 ${text.juan} 卷',
+          if (text.byline.isNotEmpty) '译者/作者: ${text.byline}',
+          if (text.category.isNotEmpty) '分类: ${text.category}',
+          if (text.sourceUrl.isNotEmpty) 'CBETA API: ${text.sourceUrl}',
+          '',
+          text.content,
+        ].join('\n');
+        final bytes = Uint8List.fromList(utf8.encode(content));
+        return PlatformFile(
+          name: text.fileName.isNotEmpty ? text.fileName : '${text.work}.txt',
+          size: bytes.length,
+          bytes: bytes,
+        );
+      }).toList();
 
-              return source != 'r2' &&
-                  key.isNotEmpty &&
-                  key.toLowerCase().endsWith('.txt') &&
-                  !key.contains('/.DS_Store') &&
-                  !key.startsWith('.');
-            })
-            .map((fileInfo) => (fileInfo['key'] ?? '').toString())
-            .toList()
-          ..sort();
-
-    _selectedFiles = assetPaths.map((assetPath) {
-      final fileName = assetPath.split('/').last;
-      final bytes = Uint8List.fromList(
-        utf8.encode('全球法布施素材\n$fileName\n$assetPath'),
+      _isLooping = true;
+      _currentSendingScripture = result.items.isNotEmpty
+          ? result.items.first.title
+          : '';
+      final titles = result.items.map((item) => '《${item.title}》').join('、');
+      final warning = result.errors.isEmpty
+          ? ''
+          : '；部分经文下载失败: ${jsonEncode(result.errors)}';
+      _preparingSendMessage = '📚 已下载 ${_selectedFiles.length} 部经文，正在启动发送...';
+      updateLog(
+        '📚 已从 CBETA 下载 ${_selectedFiles.length} 部经文，准备发送 $titles$warning',
       );
-      return PlatformFile(name: fileName, size: bytes.length, bytes: bytes);
-    }).toList();
-
-    _isLooping = true;
-    debugPrint('📚 已准备默认非 R2 经文素材: ${_selectedFiles.length} 个，循环发送已开启');
-    notifyListeners();
-    return _selectedFiles.length;
+      debugPrint('📚 已从 CBETA 下载 ${_selectedFiles.length} 部经文，循环发送已开启');
+      notifyListeners();
+      return _selectedFiles.length;
+    } catch (error) {
+      _selectedFiles = [];
+      _currentSendingScripture = '';
+      _finishPreparingSend();
+      updateLog('❌ CBETA 经文下载失败: $error');
+      debugPrint('❌ CBETA 经文下载失败: $error');
+      notifyListeners();
+      return 0;
+    }
   }
 
   Future<void> _downloadSelectedAssets(
@@ -615,9 +644,19 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> startGlobalTransfer({bool isLoopContinuation = false}) async {
     // 如果不是循环继续，检查是否已在传输中
     if (!isLoopContinuation && _isTransferring) return;
-    if (_selectedFiles.isEmpty) return;
+    if (_selectedFiles.isEmpty) {
+      _finishPreparingSend();
+      _scheduleNotify();
+      return;
+    }
 
     _isTransferring = true;
+    _finishPreparingSend();
+    if (_currentSendingScripture.isEmpty && _selectedFiles.isNotEmpty) {
+      _currentSendingScripture = _displayScriptureName(
+        _selectedFiles.first.name,
+      );
+    }
     _status = TransferStatus.transferring;
 
     // 初始化或增加循环计数
@@ -672,10 +711,13 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       await _stopBackgroundService();
       _isTransferring = false;
       _status = TransferStatus.completed;
+      _currentSendingScripture = '';
     } catch (e) {
       debugPrint('❌ 传输失败: $e');
       _status = TransferStatus.error;
       _isTransferring = false;
+      _finishPreparingSend();
+      _currentSendingScripture = '';
       _stopFieldEnergyBroadcast();
       await _stopBackgroundService();
       _schedulePersist(_persistTransferState);
@@ -769,6 +811,9 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
               sentCount: _globalSentCount,
               totalCount: _totalCountriesCount,
               currentCountry: currentCountry,
+              audioName: _currentSendingScripture.isNotEmpty
+                  ? _currentSendingScripture
+                  : null,
               loopCount: _loopCount,
               isLoopbackActive: true,
               loopbackCount: _loopbackCount,
@@ -807,10 +852,12 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void stopTransfer() {
-    if (!_isTransferring) return;
+    if (!_isTransferring && !_isPreparingSend) return;
 
     _isTransferring = false;
+    _finishPreparingSend();
     _status = TransferStatus.idle;
+    _currentSendingScripture = '';
 
     _platformGlobalSendService?.stopSending();
 
@@ -835,7 +882,9 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   void _onTransferCompleted() {
     _isTransferring = false;
+    _finishPreparingSend();
     _status = TransferStatus.completed;
+    _currentSendingScripture = '';
     _schedulePersist(_persistTransferState);
     _scheduleNotify();
   }
@@ -844,7 +893,9 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _startBackgroundService() async {
     try {
       final fileName = _selectedFiles.isNotEmpty
-          ? _selectedFiles.first.name
+          ? (_currentSendingScripture.isNotEmpty
+                ? _currentSendingScripture
+                : _displayScriptureName(_selectedFiles.first.name))
           : '未知文件';
 
       // 1. 启动 KeepAliveService (audio_service)
@@ -881,6 +932,9 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       sentCount: sent,
       totalCount: total,
       currentCountry: country,
+      audioName: _currentSendingScripture.isNotEmpty
+          ? _currentSendingScripture
+          : null,
       loopCount: _loopCount,
       isLoopbackActive: _localLoopbackService?.isRunning ?? false,
       loopbackCount: _loopbackCount,
@@ -1165,11 +1219,32 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   void updateLog(String log) {
     _currentLog = log;
+    _updateCurrentSendingScriptureFromLog(log);
     // 关键修复：日志更新不需要频繁持久化，只在重要日志时持久化
     if (log.contains('成功') || log.contains('失败') || log.contains('完成')) {
       _schedulePersist(_persistTransferState);
     }
     _scheduleNotify();
+  }
+
+  void _updateCurrentSendingScriptureFromLog(String log) {
+    final match = RegExp(
+      r'(?:正在发送到|准备发送|UDP 发送到|发送到)[^《]*《([^》]+)》',
+    ).firstMatch(log);
+    final scripture = match?.group(1)?.trim();
+    if (scripture != null && scripture.isNotEmpty) {
+      _currentSendingScripture = scripture;
+    }
+  }
+
+  String _displayScriptureName(String fileName) {
+    final withoutExtension = fileName.replaceFirst(RegExp(r'\.[^.]+$'), '');
+    final withoutCbetaPrefix = withoutExtension.replaceFirst(
+      RegExp(r'^[A-Z][A-Z0-9]?\d{4}[A-Z]?_\d+_'),
+      '',
+    );
+    final normalized = withoutCbetaPrefix.replaceAll('_', ' ').trim();
+    return normalized.isEmpty ? withoutExtension : normalized;
   }
 
   int getSuccessCount() {

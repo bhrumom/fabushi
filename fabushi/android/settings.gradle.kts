@@ -41,7 +41,10 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
+        val flutterGlLocalMavenRepo = File(rootDir, "../lib/packages/flutter_gl/android/libs/maven")
 
+        // Keep the vendored threeegl coordinate visible from settings because app builds prefer settings repositories.
+        maven { url = flutterGlLocalMavenRepo.toURI() }
         maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
         maven { url = uri("https://jitpack.io") }
 

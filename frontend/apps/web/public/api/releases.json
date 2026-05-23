@@ -5,31 +5,17 @@
       "audience": "beta",
       "status": "Beta 自动同步",
       "title": "Android Beta",
-      "description": "官网直接读取最新发布版本的 APK 安装包，安装包发布后这里会自动更新。",
+      "description": "官网按钮会直接下载已经同步到 R2 的最新 Android APK 安装包。",
       "primaryLabel": "下载 Android Beta",
-      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/v1.0.0-229-mobile.d723b0a32d1d/fabushi-android-arm64-d723b0a32d1d.apk",
-      "version": "v1.0.0-229-mobile.d723b0a32d1d",
-      "publishedAt": "2026-05-16T21:22:02Z",
+      "primaryHref": "https://fabushi.ombhrum.com/downloads/android/fabushi-android-beta.apk",
+      "version": "v1.0.0-371-mobile.5945b8eb8f8d",
+      "publishedAt": "2026-05-22T01:41:48Z",
       "updateSummary": [
-        "PR #470: Android 佛像优先使用 Three，失败后回退 flutter_scene",
-        "Android 端佛像展示优先走 Three WebView 兼容渲染",
-        "Three 链路失败时，自动回退到 `flutter_scene` 备用渲染",
-        "补齐 Android Three 页面初始化、脚本报错、Promise 异常、资源异常、候选地址为空、加载超时等错误回传",
-        "在 Flutter 侧区分并汇总 `Android Three` 和 `flutter_scene` 两条链路的错误，失败页可直接看到具体原因",
-        "Android 佛像加载路径变更为 Three 优先"
+        "改进下载体验与版本信息展示。",
+        "优化整体稳定性与页面呈现。"
       ],
-      "mirrorLinks": [
-        {
-          "label": "国内镜像 1",
-          "href": "https://mirror.ghproxy.com/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-229-mobile.d723b0a32d1d/fabushi-android-arm64-d723b0a32d1d.apk"
-        },
-        {
-          "label": "国内镜像 2",
-          "href": "https://ghfast.top/https://github.com/bhrumom/fabushi/releases/download/v1.0.0-229-mobile.d723b0a32d1d/fabushi-android-arm64-d723b0a32d1d.apk"
-        }
-      ],
-      "note": "国内访问较慢时，可以优先尝试镜像下载入口。",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-229-mobile.d723b0a32d1d"
+      "mirrorLinks": [],
+      "note": "每次发布新的 Android APK 后，R2 中的安装包会被覆盖为最新版本。"
     },
     {
       "platform": "iOS",
@@ -39,98 +25,70 @@
       "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
       "primaryLabel": "加入 iOS TestFlight",
       "primaryHref": "https://testflight.apple.com/join/98KFgV2z",
-      "version": "229",
-      "publishedAt": "2026-05-16T21:21:26Z",
+      "version": "371",
+      "publishedAt": "2026-05-22T01:40:07Z",
       "updateSummary": [
-        "PR #470: Android 佛像优先使用 Three，失败后回退 flutter_scene",
-        "Android 端佛像展示优先走 Three WebView 兼容渲染",
-        "Three 链路失败时，自动回退到 `flutter_scene` 备用渲染",
-        "补齐 Android Three 页面初始化、脚本报错、Promise 异常、资源异常、候选地址为空、加载超时等错误回传",
-        "在 Flutter 侧区分并汇总 `Android Three` 和 `flutter_scene` 两条链路的错误，失败页可直接看到具体原因",
-        "Android 佛像加载路径变更为 Three 优先"
+        "改进下载体验与版本信息展示。",
+        "优化整体稳定性与页面呈现。"
       ],
       "mirrorLinks": [],
       "note": "",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-229-mobile.d723b0a32d1d"
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-371-mobile.5945b8eb8f8d"
     }
   ],
   "stableChannels": [],
   "screenshots": {},
   "releases": [
     {
-      "tag": "v1.0.0-229-mobile.d723b0a32d1d",
-      "title": "Fabushi mobile 1.0.0+229 (d723b0a32d1d)",
-      "publishedAt": "2026-05-16T21:22:02Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-229-mobile.d723b0a32d1d",
+      "tag": "v1.0.0-371-mobile.5945b8eb8f8d",
+      "title": "Fabushi mobile 1.0.0+371 (5945b8eb8f8d)",
+      "publishedAt": "2026-05-22T01:41:48Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-371-mobile.5945b8eb8f8d",
       "summary": [
-        "PR #470: Android 佛像优先使用 Three，失败后回退 flutter_scene",
-        "Android 端佛像展示优先走 Three WebView 兼容渲染",
-        "Three 链路失败时，自动回退到 `flutter_scene` 备用渲染",
-        "补齐 Android Three 页面初始化、脚本报错、Promise 异常、资源异常、候选地址为空、加载超时等错误回传",
-        "在 Flutter 侧区分并汇总 `Android Three` 和 `flutter_scene` 两条链路的错误，失败页可直接看到具体原因",
-        "Android 佛像加载路径变更为 Three 优先"
+        "改进下载体验与版本信息展示。",
+        "优化整体稳定性与页面呈现。"
       ]
     },
     {
-      "tag": "v1.0.0-208-mobile.56c0652a910d",
-      "title": "Fabushi mobile 1.0.0+208 (56c0652a910d)",
-      "publishedAt": "2026-05-16T13:53:58Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-208-mobile.56c0652a910d",
+      "tag": "v1.0.0-370-mobile.46a5ef323d57",
+      "title": "Fabushi mobile 1.0.0+370 (46a5ef323d57)",
+      "publishedAt": "2026-05-21T22:22:56Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-370-mobile.46a5ef323d57",
       "summary": [
-        "PR #445: [codex] fix android buddha model fallback",
-        "Android 禅室不再先下载/解包远端 293MB `buddha_model.model`，直接走内置 WebView + GLB 兼容渲染，避免 `.model` 在 Android 上的下载和内存峰值。",
-        "新增打包进 App 的 fallback HTML/Three.js bundle，并优先加载官网 GLB，失败时再尝试 APK 内置 GLB。",
-        "失败页现在展示原生 `.model` 与兼容 GLB 的具体失败阶段；资源校验也会带上 HTTP URL 和首字节签名，方便判断是否拿到了 GLB、HTML 错误页或错误 R2 对象。",
-        "`flutter test --no-pub test/unit/core/app_config_buddha_model_test.dart test/unit/services/asset_loader_service_test.dart`",
-        "`flutter analyze --no-pub lib/screens/buddha_model_screen_native.dart lib/services/asset_loader_service.dart lib/core/config/app_config.dart test/unit/core/app_config_buddha_model_test.dart`"
+        "改进 Android 测试版下载与安装稳定性。"
       ]
     },
     {
-      "tag": "v1.0.0-190-mobile.9c1e747f7d76",
-      "title": "Fabushi mobile 1.0.0+190 (9c1e747f7d76)",
-      "publishedAt": "2026-05-16T07:45:09Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-190-mobile.9c1e747f7d76",
+      "tag": "v1.0.0-369-mobile.03d877bccb36",
+      "title": "Fabushi mobile 1.0.0+369 (03d877bccb36)",
+      "publishedAt": "2026-05-21T21:31:28Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-369-mobile.03d877bccb36",
       "summary": [
-        "PR #425: fix(android): harden CI release builds against flaky Maven mirrors",
-        "失败点：`Build Android install packages`",
-        "首个确定性错误：`Could not GET https://maven.aliyun.com/repository/public/androidx/test/rules/maven-metadata.xml` -> `502 Bad Gateway`",
-        "失败任务：`:integration_test:mapReleaseSourceSetPaths`",
-        "当前 app 配置的 NDK 还是 `27.0.12077973`",
-        "但 `integration_test` 已明确要求 `28.2.13676358`"
+        "show scripture title, country, IP, retry count, and full UDP/CBETA error details; normalize IP country China to 中国",
+        "改进 Android 测试版下载与安装稳定性。"
       ]
     },
     {
-      "tag": "v1.0.0-173-mobile.8b1008e548ed",
-      "title": "Fabushi mobile 1.0.0+173 (8b1008e548ed)",
-      "publishedAt": "2026-05-16T00:46:01Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-173-mobile.8b1008e548ed",
+      "tag": "v1.0.0-368-mobile.c2bb30c0cb32",
+      "title": "Fabushi mobile 1.0.0+368 (c2bb30c0cb32)",
+      "publishedAt": "2026-05-21T21:13:30Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-368-mobile.c2bb30c0cb32",
       "summary": [
-        "PR #394: feat(web): surface dharma learning paths on homepage",
-        "首页对佛法内容集群的内部链接传递还不够强，学习型页面更多只能靠导航、页脚或站内深链被发现。",
-        "首页自己的主题信号仍偏产品下载站，无法把“学佛从哪里开始 / 佛法入门 / 禅修入门 / 佛经导读”这条学习路径清楚地展示给用户和搜索引擎。",
-        "为首页新增 `metadata`，把 title、description、keywords、canonical、open graph、twitter 明确对齐到佛法学习路径与产品实践入口。",
-        "在首页新增 `学佛路径` 区块，用更接近初学者真实问题的方式承接四条内容路径：",
-        "在首页结构化数据中新增 `ItemList`，把四条学习路径作为首页可理解的内容列表输出。"
+        "改进 Android 测试版下载与安装稳定性。"
       ]
     },
     {
-      "tag": "v1.0.0-171-mobile.f4d465e91e15",
-      "title": "Fabushi mobile 1.0.0+171 (f4d465e91e15)",
-      "publishedAt": "2026-05-15T23:54:18Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-171-mobile.f4d465e91e15",
+      "tag": "v1.0.0-366-mobile.8b6d17145e9d",
+      "title": "Fabushi mobile 1.0.0+366 (8b6d17145e9d)",
+      "publishedAt": "2026-05-21T19:44:17Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-366-mobile.8b6d17145e9d",
       "summary": [
-        "PR #391: fix(web): refresh official site after package publish and fall back to latest apk",
-        "`Sync official site beta download state` 即使生成了最新状态，也可能因为仓库规则无法直推 `main`，导致 `/api/releases.json` 继续停在旧快照。",
-        "`Deploy official site to Cloudflare Worker` 之前只监听 beta sync 成功完成；一旦 beta sync 被仓库规则挡住，官网就不会因为新的 GitHub Release 自动重建。",
-        "让 `Deploy official site to Cloudflare Worker` 同时监听 `Publish CD packages to GitHub Release` 和 `Sync official site beta download state` 成功完成。",
-        "保持官网构建固定基于 `main`，但不再把自动刷新绑定在 beta sync 单一路径上。",
-        "给 `frontend/official-site-worker.js` 增加兜底：Android beta 下载优先读取 GitHub latest release 的 APK 资产；只有拿不到 latest release 时，才回退到静态 `/api/releases.json`。"
+        "改进 Android 测试版下载与安装稳定性。"
       ]
     }
   ],
   "notes": [
-    "Android beta 下载链接来自本次发布中的 APK 资产。",
-    "镜像链接面向国内网络环境准备，如镜像暂时不可用请使用原始下载地址。",
+    "Android beta APK 已同步到 R2，官网按钮会直接下载 R2 中的最新安装包。",
     "iOS TestFlight 入口会在上传状态成功后同步到官网。",
     "官网展示的 iOS TestFlight 入口来自本次发布携带的上传状态与公开加入链接；如需确认 App Store Connect 后台最终处理态，仍需额外核验。",
     "如果本次 GitHub Release 只带了一个平台，官网会继续保留另一个平台上一版可用信息。"

@@ -6,9 +6,9 @@ import { siteUrl } from "../lib/site-url";
 import "./globals.css";
 
 const homeUrl = siteUrl("/");
-const siteTitle = `${brand.name} | Dharma Sharing, Meditation, and Global Practice`;
+const siteTitle = `${brand.name} | 全球法布施 App 下载官网`;
 const siteDescription =
-  "Fabushi offers sutra listening, meditation, dharma videos, practice tracking, and Android / iOS beta downloads.";
+  "Fabushi 官网只服务 App 下载与安装转化，提供 iOS 与 Android 下载入口、版本说明、安装支持、下载 FAQ 与基础隐私信息。";
 
 export const metadata: Metadata = {
   title: siteTitle,
@@ -16,11 +16,14 @@ export const metadata: Metadata = {
   keywords: [
     "Fabushi",
     "法布施",
-    "meditation",
-    "sutra",
-    "practice tracker",
-    "Android Beta",
-    "iOS TestFlight",
+    "全球法布施",
+    "App 下载",
+    "iOS 下载",
+    "Android 下载",
+    "TestFlight",
+    "APK 下载",
+    "下载 FAQ",
+    "安装支持",
   ],
   applicationName: `${brand.name} Fabushi`,
   authors: [{ name: "Fabushi" }],
@@ -30,14 +33,14 @@ export const metadata: Metadata = {
   alternates: {
     canonical: homeUrl,
   },
-  category: "religion and spirituality",
+  category: "utilities",
   manifest: siteUrl("/manifest.webmanifest"),
   openGraph: {
     title: siteTitle,
     description: siteDescription,
     url: homeUrl,
     siteName: "Fabushi",
-    locale: "en_US",
+    locale: "zh_CN",
     type: "website",
   },
   twitter: {

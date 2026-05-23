@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import '../models/auth_model.dart';
+import '../models/meditation_practice_model.dart';
 import '../models/sutra_model.dart';
 import '../services/practice_stats_service.dart';
 import '../services/meditation_session_manager.dart';
@@ -16,6 +18,7 @@ import '../widgets/online_counter_widget.dart';
 import '../widgets/practice_selection_sheet.dart';
 import '../widgets/practice_leaderboard_sheet.dart';
 import '../widgets/reflection_dialog.dart';
+import '../widgets/zen_room_2d_elements.dart';
 
 /// 禅室修行界面 - 零摩擦版本
 ///
@@ -25,7 +28,7 @@ import '../widgets/reflection_dialog.dart';
 /// - 灵活时长：随时可停，无最低要求
 /// - 即时反馈：成就系统实时激励
 class MeditationRoomScreen extends StatefulWidget {
-  const MeditationRoomScreen({Key? key}) : super(key: key);
+  const MeditationRoomScreen({super.key});
 
   @override
   State<MeditationRoomScreen> createState() => MeditationRoomScreenState();
@@ -97,6 +100,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
     // 获取在线人数
     _fetchInitialCount();
+    _onlineCounterService.startCountPolling('zen_room');
 
     // 监听成就事件
     _achievementSubscription = _achievementSystem.achievementStream.listen((
@@ -375,7 +379,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       final saved = await service.syncRecord(
         sutra: result.sutra ?? '默认功课',
         sutraSource: 'auto',
-        chantCount: result.chantCount > 0 ? result.chantCount : 1,
+        chantCount: result.chantCount,
         duration: result.duration.inMinutes,
         startTime: result.startTime,
         endTime: result.endTime,
@@ -444,7 +448,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: Colors.white.withOpacity(0.7))),
+          Text(
+            label,
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+          ),
           Text(
             value,
             style: const TextStyle(
@@ -522,7 +529,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                         height: 40,
                         decoration: BoxDecoration(
                           color: isSelected
-                              ? const Color(0xFFD4AF37).withOpacity(0.2)
+                              ? const Color(0xFFD4AF37).withValues(alpha: 0.2)
                               : const Color(0xFF2A2A2A),
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -631,9 +638,11 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
+                  color: Colors.green.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  border: Border.all(
+                    color: Colors.green.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: const Row(
                   children: [
@@ -766,20 +775,23 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   autoRotate: _isCircumambulating,
                   isBurning: _sessionManager.isInSession,
                   incenseProgress: _incenseController.value,
-                  showBook: true,
-                  bookTitle: practice?.title ?? '选择功课',
-                  onBookTap:
-                      practice == null ||
-                          practice.filePath.startsWith('manual:')
-                      ? _showPracticeSelection
-                      : _openSutraReader,
+                  showBook: kIsWeb,
+                  bookTitle: kIsWeb ? practice?.title ?? '选择功课' : null,
+                  onBookTap: kIsWeb
+                      ? practice == null ||
+                                practice.filePath.startsWith('manual:')
+                            ? _showPracticeSelection
+                            : _openSutraReader
+                      : null,
                 ),
               ),
             ),
 
+            if (!kIsWeb) _buildNativeZenOfferings(practice),
+
             // 沉浸式遮罩
             if (_sessionManager.isInSession)
-              Container(color: Colors.black.withOpacity(0.15)),
+              Container(color: Colors.black.withValues(alpha: 0.15)),
 
             // UI 覆盖层
             Positioned.fill(
@@ -818,6 +830,140 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     );
   }
 
+  Widget _buildNativeZenOfferings(MeditationPractice? practice) {
+    return Positioned.fill(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final size = Size(constraints.maxWidth, constraints.maxHeight);
+          final title = practice?.title ?? '选择功课';
+          final opensSelection =
+              practice == null || practice.filePath.startsWith('manual:');
+
+          // Refined delicate scaling to prevent blocking the Buddha
+          final baseScale = (size.width / 400.0).clamp(0.8, 1.2);
+
+          final incenseWidth = 120.0 * baseScale;
+          final incenseHeight = incenseWidth * 1.24;
+          const smokeRise = 100.0;
+
+          // Delicate Sutra book
+          final bookWidth = 72.0 * baseScale;
+          final bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
+
+          final centerX = size.width / 2;
+          final incenseLeft = centerX - incenseWidth / 2;
+          final bookLeft = centerX - bookWidth / 2;
+
+          // Anchor to the bottom of the screen, just above the bottom menu bar
+          final bottomBarHeight = 160.0 * baseScale;
+          final altarBaseY = size.height - bottomBarHeight + 20;
+
+          // Stack components vertically: Book -> Gap -> Incense -> Altar Base
+          final incenseTop = altarBaseY - incenseHeight;
+          final bookTop = incenseTop - bookHeight - 16 * baseScale;
+
+          // Side offerings (Fruit & Lamps)
+          final lampWidth = 76.0 * baseScale;
+          final fruitWidth = 96.0 * baseScale;
+
+          // Position them symmetrically on the sides of the incense
+          final leftItemLeft =
+              centerX - incenseWidth / 2 - fruitWidth - 12 * baseScale;
+          final rightItemLeft = centerX + incenseWidth / 2 + 12 * baseScale;
+
+          // Align their bottoms precisely with altarBaseY
+          final sideItemTopOffset = altarBaseY - fruitWidth;
+          final lampTopOffset = altarBaseY - lampWidth * 1.4;
+
+          return Stack(
+            children: [
+              // Far Left: Fruit & Flower
+              Positioned(
+                left: leftItemLeft,
+                top: sideItemTopOffset,
+                width: fruitWidth,
+                height: fruitWidth,
+                child: const RepaintBoundary(child: FruitFlowerOffering()),
+              ),
+
+              // Far Right: Butter Lamp
+              Positioned(
+                left: rightItemLeft,
+                top: lampTopOffset,
+                width: lampWidth,
+                height: lampWidth * 1.4,
+                child: RepaintBoundary(
+                  child: ButterLampOffering(
+                    isBurning: _sessionManager.isInSession,
+                  ),
+                ),
+              ),
+
+              // Center Top: Sutra Book
+              Positioned(
+                left: bookLeft,
+                top: bookTop,
+                child: RepaintBoundary(
+                  child: SutraBookButton(
+                    title: title,
+                    width: bookWidth,
+                    height: bookHeight,
+                    onTap: opensSelection
+                        ? _showPracticeSelection
+                        : _openSutraReader,
+                  ),
+                ),
+              ),
+
+              // Center Bottom: Incense Burner
+              Positioned(
+                left: incenseLeft,
+                top: incenseTop,
+                width: incenseWidth,
+                height: incenseHeight,
+                child: IgnorePointer(
+                  child: RepaintBoundary(
+                    child: AnimatedBuilder(
+                      animation: _incenseController,
+                      builder: (context, _) {
+                        return IncenseOffering(
+                          incenseProgress: _incenseController.value,
+                          isBurning: _sessionManager.isInSession,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+
+              // Smoke Overlay for Incense
+              Positioned(
+                left: incenseLeft,
+                top: incenseTop - smokeRise,
+                width: incenseWidth,
+                height: incenseHeight + smokeRise,
+                child: IgnorePointer(
+                  child: RepaintBoundary(
+                    child: AnimatedBuilder(
+                      animation: _incenseController,
+                      builder: (context, _) {
+                        return IncenseSmokeOverlay(
+                          incenseProgress: _incenseController.value,
+                          isBurning: _sessionManager.isInSession,
+                          smokeRise: smokeRise,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildTopBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -828,16 +974,16 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.36),
+              color: Colors.black.withValues(alpha: 0.36),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: const Color(0xFFD4AF37).withOpacity(0.22),
+                color: const Color(0xFFD4AF37).withValues(alpha: 0.22),
               ),
             ),
             child: CompactOnlineCounterWidget(
               countStream: _onlineCounterService.onlineCountStream,
               initialCount: _onlineCounterService.currentCount,
-              icon: Icons.self_improvement,
+              icon: Icons.people_alt_rounded,
               color: const Color(0xFFD4AF37),
             ),
           ),
@@ -861,7 +1007,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.4),
+                  color: Colors.black.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
                     color: isActive
@@ -878,7 +1024,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                           BoxShadow(
                             color: const Color(
                               0xFFD4AF37,
-                            ).withOpacity(0.2 * _pulseController.value),
+                            ).withValues(alpha: 0.2 * _pulseController.value),
                             blurRadius: 8,
                           ),
                         ]
@@ -930,7 +1076,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
           width: 42,
           height: 42,
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.36),
+            color: Colors.black.withValues(alpha: 0.36),
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white24, width: 0.5),
           ),
@@ -966,10 +1112,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(30),
                 border: Border.all(
-                  color: const Color(0xFFD4AF37).withOpacity(0.3),
+                  color: const Color(0xFFD4AF37).withValues(alpha: 0.3),
                 ),
               ),
               child: Column(
@@ -1047,7 +1193,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                               (_sessionManager.isInSession
                                       ? Colors.red
                                       : const Color(0xFFD4AF37))
-                                  .withOpacity(0.3),
+                                  .withValues(alpha: 0.3),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -1106,8 +1252,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         height: 56,
         decoration: BoxDecoration(
           color: isActive
-              ? const Color(0xFFD4AF37).withOpacity(0.2)
-              : Colors.black.withOpacity(0.4),
+              ? const Color(0xFFD4AF37).withValues(alpha: 0.2)
+              : Colors.black.withValues(alpha: 0.4),
           shape: BoxShape.circle,
           border: Border.all(
             color: isActive ? const Color(0xFFD4AF37) : Colors.white24,
@@ -1125,7 +1271,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
   Widget _buildLoadingOverlay() {
     return Container(
-      color: Colors.black.withOpacity(0.7),
+      color: Colors.black.withValues(alpha: 0.7),
       child: const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,

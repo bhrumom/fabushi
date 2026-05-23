@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
   algo TEXT,
   email_verified INTEGER DEFAULT 0,
   alipay_user_id TEXT UNIQUE,
+  alipay_open_id TEXT,
   alipay_nickname TEXT,
   alipay_avatar TEXT,
   alipay_bound_at TEXT,
@@ -56,6 +57,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_alipay_user_id ON users(alipay_user_id);
+CREATE INDEX IF NOT EXISTS idx_users_alipay_open_id ON users(alipay_open_id);
 CREATE INDEX IF NOT EXISTS idx_users_wechat_openid ON users(wechat_openid);
 CREATE INDEX IF NOT EXISTS idx_users_phone_number ON users(phone_number);
 CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid);
@@ -392,6 +394,20 @@ CREATE INDEX IF NOT EXISTS idx_user_follows_follower ON user_follows(follower_us
 CREATE INDEX IF NOT EXISTS idx_user_follows_following ON user_follows(following_username);
 CREATE INDEX IF NOT EXISTS idx_user_follows_follower_user_id ON user_follows(follower_user_id);
 CREATE INDEX IF NOT EXISTS idx_user_follows_following_user_id ON user_follows(following_user_id);
+
+CREATE TABLE IF NOT EXISTS user_practice_privacy (
+  username TEXT PRIMARY KEY,
+  user_id INTEGER UNIQUE,
+  is_private INTEGER DEFAULT 0 NOT NULL,
+  show_practice_name INTEGER DEFAULT 1 NOT NULL,
+  show_duration INTEGER DEFAULT 1 NOT NULL,
+  show_chant_count INTEGER DEFAULT 1 NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_practice_privacy_user_id ON user_practice_privacy(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_practice_privacy_private ON user_practice_privacy(is_private);
 
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -22,6 +22,7 @@ const staticRoutes = [
   "/meditation",
   "/practice-guide",
   "/daily-practice",
+  "/nianfo-guide",
   "/sutra-guide",
   "/sutra-listening",
   "/beginner-sutra-recommendations",
@@ -41,15 +42,38 @@ const weeklyRoutes = new Set([
   "/meditation",
   "/practice-guide",
   "/daily-practice",
+  "/nianfo-guide",
   "/sutra-guide",
   "/sutra-listening",
   "/beginner-sutra-recommendations",
 ]);
 
+const routeLastModified: Partial<Record<(typeof staticRoutes)[number], string>> = {
+  "/": "2026-05-18",
+  "/download": "2026-05-18",
+  "/faq": "2026-05-17",
+  "/privacy": "2026-05-08",
+  "/insights": "2026-05-17",
+  "/buddhadharma": "2026-05-15",
+  "/start-learning-buddhism": "2026-05-17",
+  "/buddhist-concepts": "2026-05-17",
+  "/what-is-karma": "2026-05-16",
+  "/what-is-bodhicitta": "2026-05-16",
+  "/what-are-the-six-paramitas": "2026-05-17",
+  "/what-is-emptiness": "2026-05-16",
+  "/meditation": "2026-05-15",
+  "/practice-guide": "2026-05-16",
+  "/daily-practice": "2026-05-16",
+  "/nianfo-guide": "2026-05-17",
+  "/sutra-guide": "2026-05-17",
+  "/sutra-listening": "2026-05-16",
+  "/beginner-sutra-recommendations": "2026-05-16",
+};
+
 export default function sitemap(): MetadataRoute.Sitemap {
   const pages: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
     url: siteUrl(route),
-    lastModified: route === "/privacy" ? "2026-05-08" : new Date(),
+    ...(routeLastModified[route] ? { lastModified: routeLastModified[route] } : {}),
     changeFrequency: weeklyRoutes.has(route) ? "weekly" : "monthly",
     priority:
       route === "/"
@@ -65,7 +89,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   const articlePages: MetadataRoute.Sitemap = getAllArticles().map((article) => ({
     url: siteUrl(`/insights/${article.slug}`),
-    lastModified: new Date(article.publishedAt),
+    lastModified: new Date(article.updatedAt ?? article.publishedAt),
     changeFrequency: "monthly",
     priority: article.featured ? 0.8 : 0.65,
   }));

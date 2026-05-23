@@ -132,7 +132,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     });
     await _loadFlutterSceneModel(
       asFallback: false,
-      reasonLabel: 'flutter_scene 渲染准备中...',
+      reasonLabel: '正在安奉佛像...',
     );
   }
 
@@ -179,7 +179,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
           _flutterSceneError = null;
           _loadingProgress = 1.0;
           if (asFallback) {
-            _loadingLabel = '已切换 flutter_scene 备用展示';
+            _loadingLabel = '佛像已安奉';
           }
         });
         return;
@@ -221,11 +221,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         irradianceImage: goldEnvImage,
       );
       scene.environment.environmentMap = envMap;
-      scene.environment.intensity = 2.0;
-      scene.environment.exposure = 1.12;
+      scene.environment.intensity = 2.85;
+      scene.environment.exposure = 1.32;
     } catch (_) {
-      scene.environment.intensity = 1.75;
-      scene.environment.exposure = 1.05;
+      scene.environment.intensity = 2.35;
+      scene.environment.exposure = 1.22;
     }
   }
 

@@ -3,18 +3,40 @@ name: Deploy compose checks - Forum
 on:
   pull_request:
     paths:
-      - "forum/docker-compose.deploy.yml"
+      - ".github/workflows/forum-deploy-compose-checks.yml"
+      - ".github/workflows/forum-live-deployment-checks.yml"
       - "forum/.env.deploy.example"
       - "forum/DEPLOY.md"
-      - ".github/workflows/forum-deploy-compose-checks.yml"
+      - "forum/docker-compose.deploy.yml"
+      - "forum/package.json"
+      - "forum/scripts/check-deployment-contract.mjs"
+      - "forum/scripts/handoff-live-deployment-target.mjs"
+      - "forum/scripts/parse-deploy-env.mjs"
+      - "forum/scripts/prepare-live-deployment-vars.mjs"
+      - "forum/scripts/resolve-live-deployment-target.mjs"
+      - "forum/scripts/rollout-deploy-env.mjs"
+      - "forum/scripts/scaffold-deploy-env.mjs"
+      - "forum/scripts/smoke-deployment-from-env.mjs"
+      - "forum/scripts/validate-deploy-env.mjs"
   push:
     branches:
       - main
     paths:
-      - "forum/docker-compose.deploy.yml"
+      - ".github/workflows/forum-deploy-compose-checks.yml"
+      - ".github/workflows/forum-live-deployment-checks.yml"
       - "forum/.env.deploy.example"
       - "forum/DEPLOY.md"
-      - ".github/workflows/forum-deploy-compose-checks.yml"
+      - "forum/docker-compose.deploy.yml"
+      - "forum/package.json"
+      - "forum/scripts/check-deployment-contract.mjs"
+      - "forum/scripts/handoff-live-deployment-target.mjs"
+      - "forum/scripts/parse-deploy-env.mjs"
+      - "forum/scripts/prepare-live-deployment-vars.mjs"
+      - "forum/scripts/resolve-live-deployment-target.mjs"
+      - "forum/scripts/rollout-deploy-env.mjs"
+      - "forum/scripts/scaffold-deploy-env.mjs"
+      - "forum/scripts/smoke-deployment-from-env.mjs"
+      - "forum/scripts/validate-deploy-env.mjs"
 
 permissions:
   contents: read
@@ -31,6 +53,214 @@ jobs:
             forum
           fetch-depth: 1
 
+      - name: Validate read-only preview deploy env baseline
+        run: |
+          node forum/scripts/validate-deploy-env.mjs \
+            --deploy-env-path forum/.env.deploy.example
+
+      - name: Scaffold read-only preview deploy env sample
+        run: |
+          node forum/scripts/scaffold-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-preview-scaffold.env \
+            --forum-port 3001 \
+            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data
+
+          grep "FORUM_DEPLOYMENT_STAGE=preview" /tmp/forum-deploy-preview-scaffold.env
+          grep "FORUM_ENABLE_WRITES=false" /tmp/forum-deploy-preview-scaffold.env
+          grep '^FORUM_DEPLOY_CHECK_URL=$' /tmp/forum-deploy-preview-scaffold.env
+
+      - name: Reject writable preview scaffold without access code
+        shell: bash
+        run: |
+          if node forum/scripts/scaffold-deploy-env.mjs \
+            --preset writable-preview \
+            --deploy-env-path /tmp/forum-should-not-exist.env; then
+            echo "Expected writable preview scaffold to fail without --write-access-code." >&2
+            exit 1
+          fi
+
+      - name: Scaffold writable preview deploy env sample
+        run: |
+          node forum/scripts/scaffold-deploy-env.mjs \
+            --preset writable-preview \
+            --deploy-env-path /tmp/forum-deploy-writable-preview.env \
+            --forum-image fabushi-forum \
+            --forum-port 3001 \
+            --forum-data-dir "/tmp/fabushi forum deploy compose data" \
+            --deploy-check-url http://127.0.0.1:3001 \
+            --write-access-code forum-preview-2026
+
+          grep 'FORUM_DATA_DIR="/tmp/fabushi forum deploy compose data"' /tmp/forum-deploy-writable-preview.env
+          grep "FORUM_ENABLE_WRITES=true" /tmp/forum-deploy-writable-preview.env
+          grep "FORUM_WRITE_ACCESS_CODE=forum-preview-2026" /tmp/forum-deploy-writable-preview.env
+          grep "FORUM_DEPLOY_CHECK_URL=http://127.0.0.1:3001" /tmp/forum-deploy-writable-preview.env
+
+      - name: Prepare quoted writable preview deploy env sample
+        run: |
+          cat <<'ENVEOF' >/tmp/forum-deploy-writable-preview-quoted.env
+          FORUM_IMAGE="fabushi-forum"
+          FORUM_PORT="3001"
+          FORUM_DATA_DIR="/tmp/fabushi-forum-deploy-compose-data" # quoted path should still parse cleanly
+          FORUM_DEPLOY_CHECK_URL="https://forum-preview.fabushi.test/" # handoff helpers should normalize this
+          FORUM_DEPLOYMENT_STAGE="preview"
+          FORUM_PUBLIC_BASE_URL="" # preview should stay noindex
+          FORUM_DATA_SOURCE='sqlite'
+          FORUM_ENABLE_WRITES=true # leave this unquoted so the parser still reads the boolean string
+          FORUM_WRITE_ACCESS_CODE="forum-preview-2026" # quoted shared gate should stay aligned with docker compose parsing
+          ENVEOF
+
+      - name: Validate quoted writable preview deploy env posture
+        run: |
+          node forum/scripts/validate-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-writable-preview-quoted.env
+
+      - name: Prepare bundled live target sample
+        run: |
+          node forum/scripts/prepare-live-deployment-vars.mjs \
+            --forum-url https://forum-preview.fabushi.test \
+            --deploy-env-path /tmp/forum-deploy-writable-preview.env \
+            --exercise-write-flow true \
+            --format json >/tmp/forum-live-target.json
+
+      - name: Prepare bundled live target sample from deploy env check URL
+        run: |
+          node forum/scripts/prepare-live-deployment-vars.mjs \
+            --deploy-env-path /tmp/forum-deploy-writable-preview-quoted.env \
+            --exercise-write-flow true \
+            --format github-cli-bundled \
+            --github-repo bhrumom/fabushi >/tmp/forum-live-target-quoted-cli.txt
+
+          grep --fixed-strings "gh variable set FORUM_LIVE_TARGET --body '{\"forumUrl\":\"https://forum-preview.fabushi.test\",\"deploymentStage\":\"preview\",\"publicBaseUrl\":\"\",\"writesEnabled\":true,\"requiresAccessCode\":true,\"exerciseWriteFlow\":true}' --repo 'bhrumom/fabushi'" /tmp/forum-live-target-quoted-cli.txt
+          grep --fixed-strings "gh secret set FORUM_LIVE_WRITE_ACCESS_CODE --body 'forum-preview-2026' --repo 'bhrumom/fabushi'" /tmp/forum-live-target-quoted-cli.txt
+
+      - name: Validate bundled live target sample
+        run: |
+          rm -f /tmp/forum-live-target-resolved.json /tmp/forum-live-target-ready-summary.md
+
+          export FORUM_LIVE_TARGET="$(cat /tmp/forum-live-target.json)"
+          export FORUM_LIVE_WRITE_ACCESS_CODE=forum-preview-2026
+          export FORUM_LIVE_TARGET_PATH=/tmp/forum-live-target-resolved.json
+          export GITHUB_STEP_SUMMARY=/tmp/forum-live-target-ready-summary.md
+
+          node forum/scripts/resolve-live-deployment-target.mjs
+          cat /tmp/forum-live-target-resolved.json
+          cat /tmp/forum-live-target-ready-summary.md
+
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-live-target-resolved.json", "utf8")); const expected = JSON.parse(fs.readFileSync("/tmp/forum-live-target.json", "utf8")); if (!(data.skip === false && data.forumUrl === "https://forum-preview.fabushi.test" && data.deploymentStage === "preview" && data.writesEnabled === true && data.requiresAccessCode === true && data.exerciseWriteFlow === true && JSON.stringify(data.bundledTarget) === JSON.stringify(expected) && Array.isArray(data.repositoryConfigTargets) && data.repositoryConfigTargets.includes("FORUM_LIVE_TARGET") && Array.isArray(data.optionalSecretTargets) && data.optionalSecretTargets.includes("FORUM_LIVE_WRITE_ACCESS_CODE"))) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
+          grep --fixed-strings "### Save for hourly checks" /tmp/forum-live-target-ready-summary.md
+          grep --fixed-strings "FORUM_LIVE_TARGET" /tmp/forum-live-target-ready-summary.md
+          grep --fixed-strings '"forumUrl": "https://forum-preview.fabushi.test"' /tmp/forum-live-target-ready-summary.md
+          grep --fixed-strings '"deploymentStage": "preview"' /tmp/forum-live-target-ready-summary.md
+          grep --fixed-strings '"requiresAccessCode": true' /tmp/forum-live-target-ready-summary.md
+          grep --fixed-strings 'Keep the repository secret `FORUM_LIVE_WRITE_ACCESS_CODE` aligned with the preview write gate too.' /tmp/forum-live-target-ready-summary.md
+
+      - name: Validate split live target fallback sample
+        run: |
+          rm -f /tmp/forum-live-target-split.json /tmp/forum-live-target-split-summary.md
+
+          export FORUM_LIVE_URL=https://forum.fabushi.test
+          export FORUM_LIVE_DEPLOYMENT_STAGE=production
+          export FORUM_LIVE_PUBLIC_BASE_URL=https://forum.fabushi.test
+          export FORUM_LIVE_WRITES_ENABLED=false
+          export FORUM_LIVE_REQUIRES_ACCESS_CODE=false
+          export FORUM_LIVE_EXERCISE_WRITE_FLOW=false
+          export FORUM_LIVE_TARGET_PATH=/tmp/forum-live-target-split.json
+          export GITHUB_STEP_SUMMARY=/tmp/forum-live-target-split-summary.md
+
+          node forum/scripts/resolve-live-deployment-target.mjs
+          cat /tmp/forum-live-target-split.json
+          cat /tmp/forum-live-target-split-summary.md
+
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-live-target-split.json", "utf8")); const expected = { forumUrl: "https://forum.fabushi.test", deploymentStage: "production", publicBaseUrl: "https://forum.fabushi.test", writesEnabled: false, requiresAccessCode: false, exerciseWriteFlow: false }; if (!(data.skip === false && data.forumUrl === expected.forumUrl && data.deploymentStage === expected.deploymentStage && data.publicBaseUrl === expected.publicBaseUrl && data.writesEnabled === expected.writesEnabled && data.requiresAccessCode === expected.requiresAccessCode && data.exerciseWriteFlow === expected.exerciseWriteFlow && JSON.stringify(data.bundledTarget) === JSON.stringify(expected) && Array.isArray(data.repositoryConfigTargets) && data.repositoryConfigTargets.includes("FORUM_LIVE_TARGET") && Array.isArray(data.optionalSecretTargets) && data.optionalSecretTargets.length === 0)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
+          grep --fixed-strings "### Save for hourly checks" /tmp/forum-live-target-split-summary.md
+          grep --fixed-strings "FORUM_LIVE_TARGET" /tmp/forum-live-target-split-summary.md
+          grep --fixed-strings '"deploymentStage": "production"' /tmp/forum-live-target-split-summary.md
+          grep --fixed-strings '"requiresAccessCode": false' /tmp/forum-live-target-split-summary.md
+          grep --fixed-strings 'No `FORUM_LIVE_WRITE_ACCESS_CODE` secret update is required for this posture.' /tmp/forum-live-target-split-summary.md
+
+      - name: Validate skipped live target guidance
+        run: |
+          rm -f /tmp/forum-live-target-skip.json /tmp/forum-live-target-skip-summary.md
+
+          FORUM_LIVE_SOURCE=schedule \
+          FORUM_LIVE_TARGET_PATH=/tmp/forum-live-target-skip.json \
+          GITHUB_STEP_SUMMARY=/tmp/forum-live-target-skip-summary.md \
+          node forum/scripts/resolve-live-deployment-target.mjs
+
+          cat /tmp/forum-live-target-skip.json
+          cat /tmp/forum-live-target-skip-summary.md
+
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-live-target-skip.json", "utf8")); if (!(data.skip === true && typeof data.recommendedRolloutCommand === "string" && data.recommendedRolloutCommand.includes("pnpm rollout:deploy-env") && data.recommendedRolloutCommand.includes("--scaffold-if-missing true") && typeof data.recommendedHandoffCommand === "string" && data.recommendedHandoffCommand.includes("pnpm handoff:live-target") && typeof data.recommendedPreviewHandoffCommand === "string" && data.recommendedPreviewHandoffCommand.includes("pnpm handoff:live-target") && data.recommendedPreviewHandoffCommand.includes("--apply-github-live-target true") && !data.recommendedPreviewHandoffCommand.includes("--forum-url") && typeof data.recommendedProductionRolloutCommand === "string" && data.recommendedProductionRolloutCommand.includes("pnpm rollout:deploy-env") && data.recommendedProductionRolloutCommand.includes("--apply-github-live-target true") && !data.recommendedProductionRolloutCommand.includes("--forum-url") && typeof data.recommendedProductionHandoffCommand === "string" && data.recommendedProductionHandoffCommand.includes("pnpm handoff:live-target") && data.recommendedProductionHandoffCommand.includes("--apply-github-live-target true") && !data.recommendedProductionHandoffCommand.includes("--forum-url") && Array.isArray(data.repositoryConfigTargets) && data.repositoryConfigTargets.includes("FORUM_LIVE_TARGET") && Array.isArray(data.optionalSecretTargets) && data.optionalSecretTargets.includes("FORUM_LIVE_WRITE_ACCESS_CODE"))) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
+          grep --fixed-strings "pnpm rollout:deploy-env --" /tmp/forum-live-target-skip-summary.md
+          grep --fixed-strings -- "--scaffold-if-missing true" /tmp/forum-live-target-skip-summary.md
+          grep --fixed-strings "pnpm handoff:live-target --" /tmp/forum-live-target-skip-summary.md
+          grep --fixed-strings -- "--apply-github-live-target true" /tmp/forum-live-target-skip-summary.md
+          grep --fixed-strings 'FORUM_DEPLOY_CHECK_URL' /tmp/forum-live-target-skip-summary.md
+          grep --fixed-strings "FORUM_PUBLIC_BASE_URL" /tmp/forum-live-target-skip-summary.md
+          grep --fixed-strings "Guide: forum/DEPLOY.md" /tmp/forum-live-target-skip-summary.md
+
+      - name: Validate bundled live target GitHub CLI output
+        run: |
+          node forum/scripts/prepare-live-deployment-vars.mjs \
+            --forum-url https://forum-preview.fabushi.test \
+            --deploy-env-path /tmp/forum-deploy-writable-preview.env \
+            --exercise-write-flow true \
+            --format github-cli-bundled \
+            --github-repo bhrumom/fabushi >/tmp/forum-live-target-cli.txt
+
+          grep "gh variable set FORUM_LIVE_TARGET" /tmp/forum-live-target-cli.txt
+          grep "gh secret set FORUM_LIVE_WRITE_ACCESS_CODE" /tmp/forum-live-target-cli.txt
+          grep --fixed-strings -- "--repo 'bhrumom/fabushi'" /tmp/forum-live-target-cli.txt
+
+      - name: Reject production scaffold without public base URL
+        shell: bash
+        run: |
+          if node forum/scripts/scaffold-deploy-env.mjs \
+            --preset production \
+            --deploy-env-path /tmp/forum-production-should-not-exist.env; then
+            echo "Expected production scaffold to fail without --public-base-url." >&2
+            exit 1
+          fi
+
+      - name: Scaffold production deploy env sample
+        run: |
+          node forum/scripts/scaffold-deploy-env.mjs \
+            --preset production \
+            --deploy-env-path /tmp/forum-deploy-production.env \
+            --forum-image fabushi-forum \
+            --forum-port 3001 \
+            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data \
+            --public-base-url https://forum.fabushi.test
+
+          grep "FORUM_DEPLOYMENT_STAGE=production" /tmp/forum-deploy-production.env
+          grep "FORUM_PUBLIC_BASE_URL=https://forum.fabushi.test" /tmp/forum-deploy-production.env
+          grep "FORUM_ENABLE_WRITES=false" /tmp/forum-deploy-production.env
+          grep "FORUM_DEPLOY_CHECK_URL=https://forum.fabushi.test" /tmp/forum-deploy-production.env
+
+      - name: Prepare production deploy env sample without deploy check URL
+        run: |
+          cp /tmp/forum-deploy-production.env /tmp/forum-deploy-production-no-check-url.env
+          sed -i 's#^FORUM_DEPLOY_CHECK_URL=.*#FORUM_DEPLOY_CHECK_URL=#' /tmp/forum-deploy-production-no-check-url.env
+          grep '^FORUM_DEPLOY_CHECK_URL=$' /tmp/forum-deploy-production-no-check-url.env
+
+      - name: Validate production handoff inference from public base URL
+        run: |
+          node forum/scripts/validate-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-production-no-check-url.env >/tmp/forum-deploy-production-no-check-url-summary.txt
+
+          grep --fixed-strings "handoff_forum_url: https://forum.fabushi.test" /tmp/forum-deploy-production-no-check-url-summary.txt
+          grep --fixed-strings "FORUM_DEPLOY_CHECK_URL is empty, but production handoff helpers can reuse FORUM_PUBLIC_BASE_URL=https://forum.fabushi.test." /tmp/forum-deploy-production-no-check-url-summary.txt
+
+      - name: Prepare production live target sample from public base URL
+        run: |
+          node forum/scripts/prepare-live-deployment-vars.mjs \
+            --deploy-env-path /tmp/forum-deploy-production-no-check-url.env \
+            --format json >/tmp/forum-production-live-target.json
+
+          grep --fixed-strings '"forumUrl": "https://forum.fabushi.test"' /tmp/forum-production-live-target.json
+          grep --fixed-strings '"deploymentStage": "production"' /tmp/forum-production-live-target.json
+          grep --fixed-strings '"publicBaseUrl": "https://forum.fabushi.test"' /tmp/forum-production-live-target.json
+
       - name: Build forum container image
         run: docker build -t fabushi-forum ./forum
 
@@ -39,16 +269,165 @@ jobs:
           rm -rf /tmp/fabushi-forum-deploy-compose-data
           mkdir -p /tmp/fabushi-forum-deploy-compose-data
 
-      - name: Start forum deploy compose with local image override
+      - name: Roll out forum deploy compose read-only preview runtime through combined helper
+        shell: bash
+        run: |
+          set -o pipefail
+          dump_rollout_preview_diagnostics() {
+            local exit_code="$?"
+            echo "::group::Read-only preview rollout diagnostics"
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-rollout-preview-bootstrap.env -f forum/docker-compose.deploy.yml ps || true
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-rollout-preview-bootstrap.env -f forum/docker-compose.deploy.yml logs --no-color || true
+            echo "::endgroup::"
+            return "${exit_code}"
+          }
+          trap 'dump_rollout_preview_diagnostics' ERR
+
+          rm -f /tmp/forum-rollout-preview-bootstrap.env /tmp/forum-rollout-preview-report.json
+
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          node forum/scripts/rollout-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-rollout-preview-bootstrap.env \
+            --compose-file forum/docker-compose.deploy.yml \
+            --compose-project-name fabushi-forum-deploy-check \
+            --scaffold-if-missing true \
+            --forum-image fabushi-forum \
+            --forum-port 3001 \
+            --forum-data-dir /tmp/fabushi-forum-deploy-compose-data \
+            --report-path /tmp/forum-rollout-preview-report.json \
+            2>&1 | tee /tmp/forum-rollout-preview.txt
+
+          grep "== Scaffold deploy env ==" /tmp/forum-rollout-preview.txt
+          grep "FORUM_DEPLOYMENT_STAGE=preview" /tmp/forum-rollout-preview-bootstrap.env
+          grep "FORUM_ENABLE_WRITES=false" /tmp/forum-rollout-preview-bootstrap.env
+          grep '^FORUM_DEPLOY_CHECK_URL=$' /tmp/forum-rollout-preview-bootstrap.env
+          test -f /tmp/forum-rollout-preview-report.json
+          cat /tmp/forum-rollout-preview-report.json
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-rollout-preview-report.json", "utf8")); if (!(data.ok === true && data.forumUrl === "http://127.0.0.1:3001" && data.deploymentStage === "preview" && data.indexingEnabled === false && data.writesEnabled === false && data.requiresAccessCode === false && data.exerciseWriteFlow === false)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
+
+      - name: Stop forum deploy compose read-only preview runtime
         run: |
           COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
           FORUM_IMAGE=fabushi-forum \
           FORUM_PORT=3001 \
           FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data \
+          docker compose -f forum/docker-compose.deploy.yml down -v
+
+      - name: Reset deploy compose sqlite workspace before writable preview
+        run: |
+          rm -rf /tmp/fabushi-forum-deploy-compose-data
+          mkdir -p /tmp/fabushi-forum-deploy-compose-data
+
+      - name: Roll out forum deploy compose writable preview runtime through combined helper
+        shell: bash
+        run: |
+          set -o pipefail
+          dump_rollout_writable_preview_diagnostics() {
+            local exit_code="$?"
+            echo "::group::Writable preview rollout diagnostics"
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-deploy-writable-preview.env -f forum/docker-compose.deploy.yml ps || true
+            COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+            FORUM_IMAGE=fabushi-forum \
+            docker compose --env-file /tmp/forum-deploy-writable-preview.env -f forum/docker-compose.deploy.yml logs --no-color || true
+            echo "::endgroup::"
+            return "${exit_code}"
+          }
+          trap 'dump_rollout_writable_preview_diagnostics' ERR
+
+          rm -f /tmp/forum-live-target-report.json
+          mkdir -p /tmp/forum-mock-gh-bin
+          cat <<'GHEOF' >/tmp/forum-mock-gh-bin/gh
+          #!/usr/bin/env bash
+          printf '%s\n' "$*" >> /tmp/forum-gh-invocations.txt
+          GHEOF
+          chmod +x /tmp/forum-mock-gh-bin/gh
+          : >/tmp/forum-gh-invocations.txt
+
+          PATH="/tmp/forum-mock-gh-bin:$PATH" \
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          node forum/scripts/rollout-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-writable-preview.env \
+            --compose-file forum/docker-compose.deploy.yml \
+            --compose-project-name fabushi-forum-deploy-check \
+            --exercise-write-flow true \
+            --apply-github-live-target true \
+            --report-path /tmp/forum-live-target-report.json \
+            2>&1 | tee /tmp/forum-live-target-handoff.txt
+
+          cat /tmp/forum-gh-invocations.txt
+          grep "gh variable set FORUM_LIVE_TARGET" /tmp/forum-live-target-handoff.txt
+          grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-live-target-handoff.txt
+          test -f /tmp/forum-live-target-report.json
+          cat /tmp/forum-live-target-report.json
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-live-target-report.json", "utf8")); if (!(data.ok === true && data.forumUrl === "http://127.0.0.1:3001" && data.deploymentStage === "preview" && data.indexingEnabled === false && data.writesEnabled === true && data.requiresAccessCode === true && data.exerciseWriteFlow === true && data.liveWriteVerification && data.liveWriteVerification.threadSlug)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
+          grep "variable set FORUM_LIVE_TARGET --body" /tmp/forum-gh-invocations.txt
+          grep "secret set FORUM_LIVE_WRITE_ACCESS_CODE --body" /tmp/forum-gh-invocations.txt
+          grep -- "--repo bhrumom/fabushi" /tmp/forum-gh-invocations.txt
+
+      - name: Handoff writable preview live target directly from deploy env check URL
+        run: |
+          rm -f /tmp/forum-preview-direct-handoff-gh-invocations.txt /tmp/forum-preview-direct-handoff-report.json
+          mkdir -p /tmp/forum-mock-gh-bin-preview-direct
+          cat <<'GHEOF' >/tmp/forum-mock-gh-bin-preview-direct/gh
+          #!/usr/bin/env bash
+          printf '%s\n' "$*" >> /tmp/forum-preview-direct-handoff-gh-invocations.txt
+          GHEOF
+          chmod +x /tmp/forum-mock-gh-bin-preview-direct/gh
+          : >/tmp/forum-preview-direct-handoff-gh-invocations.txt
+
+          PATH="/tmp/forum-mock-gh-bin-preview-direct:$PATH" \
+          node forum/scripts/handoff-live-deployment-target.mjs \
+            --deploy-env-path /tmp/forum-deploy-writable-preview.env \
+            --exercise-write-flow true \
+            --apply-github-live-target true \
+            --report-path /tmp/forum-preview-direct-handoff-report.json \
+            2>&1 | tee /tmp/forum-preview-direct-handoff.txt
+
+          grep --fixed-strings "gh variable set FORUM_LIVE_TARGET --body '{\"forumUrl\":\"http://127.0.0.1:3001\",\"deploymentStage\":\"preview\",\"publicBaseUrl\":\"\",\"writesEnabled\":true,\"requiresAccessCode\":true,\"exerciseWriteFlow\":true}' --repo 'bhrumom/fabushi'" /tmp/forum-preview-direct-handoff.txt
+          grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-preview-direct-handoff.txt
+          test -f /tmp/forum-preview-direct-handoff-report.json
+          cat /tmp/forum-preview-direct-handoff-report.json
+          node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync("/tmp/forum-preview-direct-handoff-report.json", "utf8")); if (!(data.ok === true && data.forumUrl === "http://127.0.0.1:3001" && data.deploymentStage === "preview" && data.indexingEnabled === false && data.writesEnabled === true && data.requiresAccessCode === true && data.exerciseWriteFlow === true && data.liveWriteVerification && data.liveWriteVerification.threadSlug)) { console.error(JSON.stringify(data, null, 2)); process.exit(1); }'
+          grep --fixed-strings "variable set FORUM_LIVE_TARGET --body {\"forumUrl\":\"http://127.0.0.1:3001\",\"deploymentStage\":\"preview\",\"publicBaseUrl\":\"\",\"writesEnabled\":true,\"requiresAccessCode\":true,\"exerciseWriteFlow\":true} --repo bhrumom/fabushi" /tmp/forum-preview-direct-handoff-gh-invocations.txt
+          grep --fixed-strings "secret set FORUM_LIVE_WRITE_ACCESS_CODE --body forum-preview-2026 --repo bhrumom/fabushi" /tmp/forum-preview-direct-handoff-gh-invocations.txt
+
+      - name: Stop forum deploy compose writable preview runtime
+        run: |
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          FORUM_PORT=3001 \
+          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data \
+          FORUM_ENABLE_WRITES=true \
+          FORUM_WRITE_ACCESS_CODE=forum-preview-2026 \
+          docker compose -f forum/docker-compose.deploy.yml down -v
+
+      - name: Reset deploy compose sqlite workspace before production runtime
+        run: |
+          rm -rf /tmp/fabushi-forum-deploy-compose-data
+          mkdir -p /tmp/fabushi-forum-deploy-compose-data
+
+      - name: Start forum deploy compose in sqlite production indexing mode
+        run: |
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          FORUM_PORT=3001 \
+          FORUM_DATA_DIR=/tmp/fabushi-forum-deploy-compose-data \
+          FORUM_DEPLOYMENT_STAGE=production \
+          FORUM_PUBLIC_BASE_URL=https://forum.fabushi.test \
           docker compose -f forum/docker-compose.deploy.yml up -d
 
-      - name: Wait for forum deploy compose health endpoint
+      - name: Wait for forum deploy compose production health endpoint
         run: |
+          rm -f /tmp/forum-deploy-health.json
+
           for attempt in 1 2 3 4 5 6; do
             if curl --fail --show-error --silent http://127.0.0.1:3001/api/health >/tmp/forum-deploy-health.json; then
               break
@@ -59,52 +438,59 @@ jobs:
 
           cat /tmp/forum-deploy-health.json
 
-      - name: Smoke test forum deploy compose preview runtime
+      - name: Smoke test forum deploy compose production contract from deploy env
         run: |
-          health_response="$(cat /tmp/forum-deploy-health.json)"
-          FORUM_HEALTH_RESPONSE="$health_response" python3 - <<'PY2'
-          import json
-          import os
+          node forum/scripts/smoke-deployment-from-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-production.env \
+            --forum-url http://127.0.0.1:3001
 
-          payload = json.loads(os.environ["FORUM_HEALTH_RESPONSE"])
-          assert payload["service"] == "forum", payload
-          assert payload["ready"] is True, payload
-          assert payload["dataSource"] == "sqlite", payload
-          assert payload["persistenceMode"] == "sqlite-file", payload
-          assert payload["deploymentStage"] == "preview", payload
-          assert payload["indexingEnabled"] is False, payload
-          assert payload["publicBaseUrlConfigured"] is False, payload
-          assert payload["writesEnabled"] is False, payload
-          assert payload["requiresAccessCode"] is False, payload
-          PY2
+      - name: Handoff production live target from public base URL
+        run: |
+          rm -f /tmp/forum-production-gh-invocations.txt
+          mkdir -p /tmp/forum-mock-gh-bin-production
+          cat <<'GHEOF' >/tmp/forum-mock-gh-bin-production/gh
+          #!/usr/bin/env bash
+          printf '%s\n' "$*" >> /tmp/forum-production-gh-invocations.txt
+          GHEOF
+          chmod +x /tmp/forum-mock-gh-bin-production/gh
+          : >/tmp/forum-production-gh-invocations.txt
 
-          status_response="$(curl --fail --show-error --silent http://127.0.0.1:3001/api/status)"
-          echo "$status_response"
-          FORUM_STATUS_RESPONSE="$status_response" python3 - <<'PY2'
-          import json
-          import os
+          PATH="/tmp/forum-mock-gh-bin-production:$PATH" \
+          node forum/scripts/handoff-live-deployment-target.mjs \
+            --deploy-env-path /tmp/forum-deploy-production-no-check-url.env \
+            --apply-github-live-target true \
+            2>&1 | tee /tmp/forum-production-live-target-handoff.txt
 
-          payload = json.loads(os.environ["FORUM_STATUS_RESPONSE"])
-          assert payload["service"] == "forum", payload
-          assert payload["dataSource"] == "sqlite", payload
-          assert payload["persistenceMode"] == "sqlite-file", payload
-          assert payload["deploymentStage"] == "preview", payload
-          assert payload["indexingEnabled"] is False, payload
-          assert payload["writesEnabled"] is False, payload
-          assert payload["requiresAccessCode"] is False, payload
-          assert payload["counts"]["threads"] >= 4, payload
-          assert payload["counts"]["moderationEvents"] >= 4, payload
-          PY2
+          grep --fixed-strings "gh variable set FORUM_LIVE_TARGET --body '{\"forumUrl\":\"https://forum.fabushi.test\",\"deploymentStage\":\"production\",\"publicBaseUrl\":\"https://forum.fabushi.test\",\"writesEnabled\":false,\"requiresAccessCode\":false,\"exerciseWriteFlow\":false}' --repo 'bhrumom/fabushi'" /tmp/forum-production-live-target-handoff.txt
+          grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-production-live-target-handoff.txt
+          grep --fixed-strings "variable set FORUM_LIVE_TARGET --body {\"forumUrl\":\"https://forum.fabushi.test\",\"deploymentStage\":\"production\",\"publicBaseUrl\":\"https://forum.fabushi.test\",\"writesEnabled\":false,\"requiresAccessCode\":false,\"exerciseWriteFlow\":false} --repo bhrumom/fabushi" /tmp/forum-production-gh-invocations.txt
 
-          robots_response="$(curl --fail --show-error --silent http://127.0.0.1:3001/robots.txt)"
-          echo "$robots_response"
-          FORUM_ROBOTS_RESPONSE="$robots_response" python3 - <<'PY2'
-          import os
+      - name: Roll out production runtime and auto-handoff from public base URL
+        run: |
+          rm -f /tmp/forum-production-rollout-gh-invocations.txt
+          mkdir -p /tmp/forum-mock-gh-bin-production-rollout
+          cat <<'GHEOF' >/tmp/forum-mock-gh-bin-production-rollout/gh
+          #!/usr/bin/env bash
+          printf '%s\n' "$*" >> /tmp/forum-production-rollout-gh-invocations.txt
+          GHEOF
+          chmod +x /tmp/forum-mock-gh-bin-production-rollout/gh
+          : >/tmp/forum-production-rollout-gh-invocations.txt
 
-          payload = os.environ["FORUM_ROBOTS_RESPONSE"]
-          assert "User-Agent: *" in payload, payload
-          assert "Disallow: /" in payload, payload
-          PY2
+          PATH="/tmp/forum-mock-gh-bin-production-rollout:$PATH" \
+          COMPOSE_PROJECT_NAME=fabushi-forum-deploy-check \
+          FORUM_IMAGE=fabushi-forum \
+          node forum/scripts/rollout-deploy-env.mjs \
+            --deploy-env-path /tmp/forum-deploy-production-no-check-url.env \
+            --compose-file forum/docker-compose.deploy.yml \
+            --compose-project-name fabushi-forum-deploy-check \
+            --handoff-live-target true \
+            --apply-github-live-target true \
+            2>&1 | tee /tmp/forum-production-rollout-handoff.txt
+
+          grep --fixed-strings "== Hourly live target handoff ==" /tmp/forum-production-rollout-handoff.txt
+          grep --fixed-strings "gh variable set FORUM_LIVE_TARGET --body '{\"forumUrl\":\"https://forum.fabushi.test\",\"deploymentStage\":\"production\",\"publicBaseUrl\":\"https://forum.fabushi.test\",\"writesEnabled\":false,\"requiresAccessCode\":false,\"exerciseWriteFlow\":false}' --repo 'bhrumom/fabushi'" /tmp/forum-production-rollout-handoff.txt
+          grep "Applied FORUM_LIVE_TARGET to GitHub repo bhrumom/fabushi." /tmp/forum-production-rollout-handoff.txt
+          grep --fixed-strings "variable set FORUM_LIVE_TARGET --body {\"forumUrl\":\"https://forum.fabushi.test\",\"deploymentStage\":\"production\",\"publicBaseUrl\":\"https://forum.fabushi.test\",\"writesEnabled\":false,\"requiresAccessCode\":false,\"exerciseWriteFlow\":false} --repo bhrumom/fabushi" /tmp/forum-production-rollout-gh-invocations.txt
 
       - name: Stop forum deploy compose
         if: always()

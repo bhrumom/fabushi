@@ -52,6 +52,8 @@ class AssetLoaderService {
 
   static String get cdnBaseUrl => defaultCdnBaseUrl;
 
+  static const int _buddhaModelDownloadRetryAttempts = 20;
+
   static const List<int> _flutterSceneModelFileIdentifier = [
     0x49,
     0x50,
@@ -131,22 +133,39 @@ class AssetLoaderService {
     // 确保已注册到 MemoryManager
     initialize();
 
-    try {
-      return await _loadAsset(
-        AppConfig.buddhaModelAssetPath,
-        onProgress: onProgress,
-        minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
-      );
-    } catch (e) {
-      debugPrint('⚠️ [AssetLoader] 佛像模型首次加载失败，清理旧缓存后重试 R2: $e');
-      await evictBuddhaModelCache();
-      return _loadAsset(
-        AppConfig.buddhaModelAssetPath,
-        onProgress: onProgress,
-        forceRefresh: true,
-        minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
-      );
+    Object? lastError;
+    StackTrace? lastStackTrace;
+
+    for (
+      var attempt = 1;
+      attempt <= _buddhaModelDownloadRetryAttempts;
+      attempt++
+    ) {
+      try {
+        return await _loadAsset(
+          AppConfig.buddhaModelAssetPath,
+          onProgress: onProgress,
+          minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
+        );
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+
+        if (attempt >= _buddhaModelDownloadRetryAttempts) {
+          break;
+        }
+
+        final retryDelaySeconds = attempt < 5 ? attempt : 5;
+        debugPrint(
+          '[AssetLoader] Buddha model load failed on attempt '
+          '$attempt/$_buddhaModelDownloadRetryAttempts; preserving partial '
+          'download and retrying in ${retryDelaySeconds}s: $error',
+        );
+        await Future<void>.delayed(Duration(seconds: retryDelaySeconds));
+      }
     }
+
+    Error.throwWithStackTrace(lastError!, lastStackTrace!);
   }
 
   static Future<void> evictBuddhaModelCache() async {
@@ -285,7 +304,15 @@ class AssetLoaderService {
         'Web platform does not support local storage directory',
       );
     }
-    final appDir = await getApplicationSupportDirectory();
+    Directory appDir;
+    try {
+      appDir = await getApplicationSupportDirectory();
+    } catch (error) {
+      debugPrint(
+        '[AssetLoader] path_provider unavailable, using system temp cache: $error',
+      );
+      appDir = Directory('${Directory.systemTemp.path}/fabushi_support');
+    }
     final modelDir = Directory('${appDir.path}/assets_cache/models');
     if (!await modelDir.exists()) {
       await modelDir.create(recursive: true);
