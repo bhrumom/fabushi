@@ -26,7 +26,7 @@ class ApiClient {
 
   Future<Map<String, dynamic>> get(String endpoint) {
     return _sendRequest(() {
-      final url = Uri.parse('${AppConfig.apiUrl}$endpoint');
+      final url = AppConfig.buildBackendUri(endpoint);
       return _client
           .get(url, headers: _headers)
           .timeout(AppConfig.requestTimeout);
@@ -38,7 +38,7 @@ class ApiClient {
     Map<String, dynamic> body,
   ) {
     return _sendRequest(() {
-      final url = Uri.parse('${AppConfig.apiUrl}$endpoint');
+      final url = AppConfig.buildBackendUri(endpoint);
       return _client
           .post(url, headers: _headers, body: jsonEncode(body))
           .timeout(AppConfig.requestTimeout);
