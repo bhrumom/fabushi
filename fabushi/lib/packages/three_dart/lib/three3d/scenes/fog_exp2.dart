@@ -25,10 +25,6 @@ class FogExp2 extends FogBase {
 
   @override
   toJSON() {
-    return {
-      "type": 'FogExp2',
-      "color": color.getHex(),
-      "density": density,
-    };
+    return {"type": 'FogExp2', "color": color.getHex(), "density": density};
   }
 }

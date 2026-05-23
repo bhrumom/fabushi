@@ -112,15 +112,18 @@ class WebGLProgramExtra {
               parameters.shaderID == 'physical')
           ? '#extension GL_OES_standard_derivatives : enable'
           : '',
-      (parameters.extensionFragDepth || parameters.logarithmicDepthBuffer) && parameters.rendererExtensionFragDepth
+      (parameters.extensionFragDepth || parameters.logarithmicDepthBuffer) &&
+              parameters.rendererExtensionFragDepth
           ? '#extension GL_EXT_frag_depth : enable'
           : '',
-      (parameters.extensionDrawBuffers && parameters.rendererExtensionDrawBuffers)
+      (parameters.extensionDrawBuffers &&
+              parameters.rendererExtensionDrawBuffers)
           ? '#extension GL_EXT_draw_buffers : require'
           : '',
-      (parameters.extensionShaderTextureLOD || parameters.envMap) && parameters.rendererExtensionShaderTextureLod
+      (parameters.extensionShaderTextureLOD || parameters.envMap) &&
+              parameters.rendererExtensionShaderTextureLod
           ? '#extension GL_EXT_shader_texture_lod : enable'
-          : ''
+          : '',
     ];
 
     return chunks.where((s) => filterEmptyLine(s)).join('\n');
@@ -166,7 +169,7 @@ class WebGLProgramExtra {
       attributes[name] = {
         "type": info.type,
         "location": gl.getAttribLocation(program, name),
-        "locationSize": locationSize
+        "locationSize": locationSize,
       };
     }
 
@@ -178,22 +181,52 @@ class WebGLProgramExtra {
   }
 
   String replaceLightNums(String string, WebGLParameters parameters) {
-    string = string.replaceAll("NUM_DIR_LIGHTS", parameters.numDirLights.toString());
-    string = string.replaceAll("NUM_SPOT_LIGHTS", parameters.numSpotLights.toString());
-    string = string.replaceAll("NUM_RECT_AREA_LIGHTS", parameters.numRectAreaLights.toString());
-    string = string.replaceAll("NUM_POINT_LIGHTS", parameters.numPointLights.toString());
-    string = string.replaceAll("NUM_HEMI_LIGHTS", parameters.numHemiLights.toString());
-    string = string.replaceAll("NUM_DIR_LIGHT_SHADOWS", parameters.numDirLightShadows.toString());
-    string = string.replaceAll("NUM_SPOT_LIGHT_SHADOWS", parameters.numSpotLightShadows.toString());
-    string = string.replaceAll("NUM_POINT_LIGHT_SHADOWS", parameters.numPointLightShadows.toString());
+    string = string.replaceAll(
+      "NUM_DIR_LIGHTS",
+      parameters.numDirLights.toString(),
+    );
+    string = string.replaceAll(
+      "NUM_SPOT_LIGHTS",
+      parameters.numSpotLights.toString(),
+    );
+    string = string.replaceAll(
+      "NUM_RECT_AREA_LIGHTS",
+      parameters.numRectAreaLights.toString(),
+    );
+    string = string.replaceAll(
+      "NUM_POINT_LIGHTS",
+      parameters.numPointLights.toString(),
+    );
+    string = string.replaceAll(
+      "NUM_HEMI_LIGHTS",
+      parameters.numHemiLights.toString(),
+    );
+    string = string.replaceAll(
+      "NUM_DIR_LIGHT_SHADOWS",
+      parameters.numDirLightShadows.toString(),
+    );
+    string = string.replaceAll(
+      "NUM_SPOT_LIGHT_SHADOWS",
+      parameters.numSpotLightShadows.toString(),
+    );
+    string = string.replaceAll(
+      "NUM_POINT_LIGHT_SHADOWS",
+      parameters.numPointLightShadows.toString(),
+    );
 
     return string;
   }
 
   String replaceClippingPlaneNums(String string, WebGLParameters parameters) {
-    string = string.replaceAll("NUM_CLIPPING_PLANES", parameters.numClippingPlanes.toString());
     string = string.replaceAll(
-        "UNION_CLIPPING_PLANES", (parameters.numClippingPlanes - parameters.numClipIntersection).toString());
+      "NUM_CLIPPING_PLANES",
+      parameters.numClippingPlanes.toString(),
+    );
+    string = string.replaceAll(
+      "UNION_CLIPPING_PLANES",
+      (parameters.numClippingPlanes - parameters.numClipIntersection)
+          .toString(),
+    );
 
     return string;
   }
@@ -242,12 +275,14 @@ class WebGLProgramExtra {
     return resolveIncludes(string);
   }
 
-// Unroll Loops
+  // Unroll Loops
 
-  var deprecatedUnrollLoopPattern =
-      RegExp(r"#pragma unroll_loop[\s]+?for \( int i \= (\d+)\; i < (\d+)\; i \+\+ \) \{([\s\S]+?)(?=\})\}"); //g;
+  var deprecatedUnrollLoopPattern = RegExp(
+    r"#pragma unroll_loop[\s]+?for \( int i \= (\d+)\; i < (\d+)\; i \+\+ \) \{([\s\S]+?)(?=\})\}",
+  ); //g;
   var unrollLoopPattern = RegExp(
-      r"#pragma unroll_loop_start\s+for\s*\(\s*int\s+i\s*=\s*(\d+)\s*;\s*i\s*<\s*(\d+)\s*;\s*i\s*\+\+\s*\)\s*{([\s\S]+?)}\s+#pragma unroll_loop_end");
+    r"#pragma unroll_loop_start\s+for\s*\(\s*int\s+i\s*=\s*(\d+)\s*;\s*i\s*<\s*(\d+)\s*;\s*i\s*\+\+\s*\)\s*{([\s\S]+?)}\s+#pragma unroll_loop_end",
+  );
 
   unrollLoops(String string) {
     string = unrollLoopPatternReplace(string);
@@ -275,7 +310,10 @@ class WebGLProgramExtra {
 
       for (var i = start; i < end; i++) {
         var snippet2 = snippet.replaceAll(RegExp(r"\[\s*i\s*\]"), "[$i]");
-        snippet2 = snippet2.replaceAll(RegExp(r"UNROLLED_LOOP_INDEX"), i.toString());
+        snippet2 = snippet2.replaceAll(
+          RegExp(r"UNROLLED_LOOP_INDEX"),
+          i.toString(),
+        );
         // string += snippet
         //   .replace( /\[\s*i\s*\]/g, '[ ' + i + ' ]' )
         //   .replace( /UNROLLED_LOOP_INDEX/g, i );
@@ -304,7 +342,8 @@ class WebGLProgramExtra {
 
   deprecatedLoopReplacer(match, start, end, snippet) {
     print(
-        'WebGLProgram: #pragma unroll_loop shader syntax is deprecated. Please use #pragma unroll_loop_start syntax instead.');
+      'WebGLProgram: #pragma unroll_loop shader syntax is deprecated. Please use #pragma unroll_loop_start syntax instead.',
+    );
     return loopReplacer(match, start, end, snippet);
   }
 
@@ -325,10 +364,11 @@ class WebGLProgramExtra {
     return string;
   }
 
-//
+  //
 
   generatePrecision(parameters) {
-    var precisionstring = 'precision ${parameters.precision} float;\nprecision ${parameters.precision} int;';
+    var precisionstring =
+        'precision ${parameters.precision} float;\nprecision ${parameters.precision} int;';
 
     if (parameters.precision == 'highp') {
       precisionstring += '\n#define HIGH_PRECISION';
@@ -421,6 +461,10 @@ class WebGLProgramExtra {
 
     var texelWidth = 1.0 / (3 * Math.max(Math.pow(2, maxMip), 7 * 16));
 
-    return {"texelWidth": texelWidth, "texelHeight": texelHeight, "maxMip": maxMip};
+    return {
+      "texelWidth": texelWidth,
+      "texelHeight": texelHeight,
+      "maxMip": maxMip,
+    };
   }
 }

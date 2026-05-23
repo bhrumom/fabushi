@@ -106,8 +106,14 @@ class CameraHelper extends LineSegments {
     addLine('cf1', 'cf2', colorCross);
     addLine('cf3', 'cf4', colorCross);
 
-    geometry.setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3, false));
-    geometry.setAttribute('color', Float32BufferAttribute(Float32Array.from(colors), 3, false));
+    geometry.setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3, false),
+    );
+    geometry.setAttribute(
+      'color',
+      Float32BufferAttribute(Float32Array.from(colors), 3, false),
+    );
 
     CameraHelper cameraHelper = CameraHelper.create(geometry, material);
     cameraHelper.camera = camera;

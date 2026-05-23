@@ -13,7 +13,12 @@ class WebGLIndexedBufferRenderer extends BaseWebGLBufferRenderer {
   WebGLInfo info;
   WebGLCapabilities capabilities;
 
-  WebGLIndexedBufferRenderer(this.gl, this.extensions, this.info, this.capabilities) {
+  WebGLIndexedBufferRenderer(
+    this.gl,
+    this.extensions,
+    this.info,
+    this.capabilities,
+  ) {
     isWebGL2 = capabilities.isWebGL2;
   }
 
@@ -62,7 +67,13 @@ class WebGLIndexedBufferRenderer extends BaseWebGLBufferRenderer {
 
     // extension[ methodName ]( mode, count, type, start * bytesPerElement, primcount );
 
-    gl.drawElementsInstanced(mode, count, type, start * bytesPerElement, primcount);
+    gl.drawElementsInstanced(
+      mode,
+      count,
+      type,
+      start * bytesPerElement,
+      primcount,
+    );
 
     info.update(count, mode, primcount);
   }

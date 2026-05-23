@@ -122,7 +122,8 @@ class AnimationObjectGroup {
 
         // move existing object to the ACTIVE region
 
-        var firstActiveIndex = --nCachedObjects, lastCachedObject = objects[firstActiveIndex];
+        var firstActiveIndex = --nCachedObjects,
+            lastCachedObject = objects[firstActiveIndex];
 
         indicesByUUID[lastCachedObject.uuid] = index;
         objects[index] = lastCachedObject;
@@ -133,7 +134,8 @@ class AnimationObjectGroup {
         // accounting is done, now do the same for all bindings
 
         for (var j = 0, m = nBindings; j != m; ++j) {
-          var bindingsForPath = bindings[j], lastCached = bindingsForPath[firstActiveIndex];
+          var bindingsForPath = bindings[j],
+              lastCached = bindingsForPath[firstActiveIndex];
 
           var binding = bindingsForPath[index];
 
@@ -144,17 +146,21 @@ class AnimationObjectGroup {
           bindingsForPath[firstActiveIndex] = binding;
         }
       } else if (objects[index] != knownObject) {
-        print('three.AnimationObjectGroup: Different objects with the same UUID '
-            'detected. Clean the caches or recreate your infrastructure when reloading scenes.');
+        print(
+          'three.AnimationObjectGroup: Different objects with the same UUID '
+          'detected. Clean the caches or recreate your infrastructure when reloading scenes.',
+        );
       } // else the object is already where we want it to be
-
     } // for arguments
 
     nCachedObjects_ = nCachedObjects;
   }
 
   remove(List<Mesh> items) {
-    var objects = _objects, indicesByUUID = _indicesByUUID, bindings = _bindings, nBindings = bindings.length;
+    var objects = _objects,
+        indicesByUUID = _indicesByUUID,
+        bindings = _bindings,
+        nBindings = bindings.length;
 
     var nCachedObjects = nCachedObjects_;
 
@@ -164,7 +170,8 @@ class AnimationObjectGroup {
       if (index != null && index >= nCachedObjects) {
         // move existing object into the CACHED region
 
-        var lastCachedIndex = nCachedObjects++, firstActiveObject = objects[lastCachedIndex];
+        var lastCachedIndex = nCachedObjects++,
+            firstActiveObject = objects[lastCachedIndex];
 
         indicesByUUID[firstActiveObject.uuid] = index;
         objects[index] = firstActiveObject;
@@ -190,7 +197,10 @@ class AnimationObjectGroup {
 
   // remove & forget
   uncache(List<Mesh> items) {
-    var objects = _objects, indicesByUUID = _indicesByUUID, bindings = _bindings, nBindings = bindings.length;
+    var objects = _objects,
+        indicesByUUID = _indicesByUUID,
+        bindings = _bindings,
+        nBindings = bindings.length;
 
     var nCachedObjects = nCachedObjects_, nObjects = objects.length;
 
@@ -250,9 +260,7 @@ class AnimationObjectGroup {
             pop(bindingsForPath);
           }
         } // cached or active
-
       } // if object is known
-
     } // for arguments
 
     nCachedObjects_ = nCachedObjects;

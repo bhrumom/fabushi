@@ -181,10 +181,10 @@ packages:
     dependency: transitive
     description:
       name: characters
-      sha256: faf38497bda5ead2a8c7615f4f7939df04333478bf32e4173fcb06d428b5716b
+      sha256: f71061c654a3380576a52b451dd5532377954cf9dbd272a78fc8479606670803
       url: "https://pub.dev"
     source: hosted
-    version: "1.4.1"
+    version: "1.4.0"
   charcode:
     dependency: transitive
     description:
@@ -546,6 +546,21 @@ packages:
       relative: true
     source: path
     version: "1.1.0"
+  flutter_gl:
+    dependency: "direct main"
+    description:
+      path: "lib/packages/flutter_gl"
+      relative: true
+    source: path
+    version: "0.0.21"
+  flutter_gl_platform_interface:
+    dependency: transitive
+    description:
+      name: flutter_gl_platform_interface
+      sha256: "03062491fac26d0fda80703e4a01894ecc4fec4f7e5cec131ef021fbf46b2fda"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.4"
   flutter_gpu:
     dependency: transitive
     description: flutter
@@ -1164,18 +1179,18 @@ packages:
     dependency: transitive
     description:
       name: matcher
-      sha256: dc0b7dc7651697ea4ff3e69ef44b0407ea32c487a39fff6a4004fa585e901861
+      sha256: dc58c723c3c24bf8d3e2d3ad3f2f9d7bd9cf43ec6feaa64181775e60190153f2
       url: "https://pub.dev"
     source: hosted
-    version: "0.12.19"
+    version: "0.12.17"
   material_color_utilities:
     dependency: transitive
     description:
       name: material_color_utilities
-      sha256: "9c337007e82b1889149c82ed242ed1cb24a66044e30979c44912381e9be4c48b"
+      sha256: f7142bb1154231d7ea5f96bc7bde4bda2a0945d2806bb11670e30b850d56bdec
       url: "https://pub.dev"
     source: hosted
-    version: "0.13.0"
+    version: "0.11.1"
   meta:
     dependency: transitive
     description:
@@ -1240,6 +1255,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.5.0"
+  opentype_dart:
+    dependency: transitive
+    description:
+      name: opentype_dart
+      sha256: "4bd96aeed494289a87e92bde20afe60f59648dcef253c0a7159b65ffa23899dc"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.1"
   package_config:
     dependency: transitive
     description:
@@ -1857,10 +1880,25 @@ packages:
     dependency: transitive
     description:
       name: test_api
-      sha256: "8161c84903fd860b26bfdefb7963b3f0b68fee7adea0f59ef805ecca346f0c7a"
+      sha256: ab2726c1a94d3176a45960b6234466ec367179b87dd74f1611adb1f3b5fb9d55
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.10"
+    version: "0.7.7"
+  three_dart:
+    dependency: "direct main"
+    description:
+      path: "lib/packages/three_dart"
+      relative: true
+    source: path
+    version: "0.0.16"
+  three_dart_jsm:
+    dependency: "direct main"
+    description:
+      name: three_dart_jsm
+      sha256: "26a71aff4aa842ac8178d2ba8e64b997c434ce9f604fa4fa3ee49f343d2c84b4"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.10"
   timezone:
     dependency: transitive
     description:
@@ -1893,6 +1931,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.0"
+  typr_dart:
+    dependency: transitive
+    description:
+      name: typr_dart
+      sha256: e8aa717c1445ceccd77bd6ba471683c8e17a9b14797ac09db3bd52d6fbd2fe7b
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.2"
   unicode:
     dependency: transitive
     description:

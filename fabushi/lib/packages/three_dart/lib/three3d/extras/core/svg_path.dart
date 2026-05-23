@@ -16,7 +16,15 @@ class SvgPath {
     double nx = 0;
     double ny = 0;
     double firstX = 0, firstY = 0;
-    double x1 = 0, x2 = 0, y1 = 0, y2 = 0, rx = 0, ry = 0, xar = 0, laf = 0, sf = 0;
+    double x1 = 0,
+        x2 = 0,
+        y1 = 0,
+        y2 = 0,
+        rx = 0,
+        ry = 0,
+        xar = 0,
+        laf = 0,
+        sf = 0;
 
     var len = svgPathStr.length;
 
@@ -233,7 +241,9 @@ class SvgPath {
           // step 2, using x2 as cx'
 
           var norm = Math.sqrt(
-              (rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1) / (rx * rx * y1 * y1 + ry * ry * x1 * x1));
+            (rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1) /
+                (rx * rx * y1 * y1 + ry * ry * x1 * x1),
+          );
 
           if (laf == sf) norm = -norm;
 

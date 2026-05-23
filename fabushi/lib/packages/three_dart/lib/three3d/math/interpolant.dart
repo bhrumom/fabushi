@@ -29,7 +29,12 @@ class Interpolant {
 
   dynamic defaultSettings = {};
 
-  Interpolant(this.parameterPositions, this.sampleValues, this.valueSize, this.resultBuffer);
+  Interpolant(
+    this.parameterPositions,
+    this.sampleValues,
+    this.valueSize,
+    this.resultBuffer,
+  );
 
   evaluate(double t) {
     var pp = parameterPositions;
@@ -59,7 +64,7 @@ class Interpolant {
           //- 				if ( t >= t1 || t1 == null ) {
           forward_scan:
           if (t1 == null || t >= t1) {
-            for (var giveUpAt = i1 + 2;;) {
+            for (var giveUpAt = i1 + 2; ;) {
               if (t1 == null) {
                 if (t < t0!) break forward_scan;
 
@@ -107,7 +112,7 @@ class Interpolant {
 
             // linear reverse scan
 
-            for (var giveUpAt = i1 - 2;;) {
+            for (var giveUpAt = i1 - 2; ;) {
               if (t0 == null) {
                 // before start
 
@@ -196,7 +201,10 @@ class Interpolant {
   copySampleValue_(num index) {
     // copies a sample value to the result buffer
 
-    var result = resultBuffer, values = sampleValues, stride = valueSize, offset = index * stride;
+    var result = resultBuffer,
+        values = sampleValues,
+        stride = valueSize,
+        offset = index * stride;
 
     for (var i = 0; i != stride; ++i) {
       result[i] = values[offset + i];

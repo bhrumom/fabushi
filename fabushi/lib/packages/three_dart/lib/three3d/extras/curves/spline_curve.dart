@@ -33,8 +33,10 @@ class SplineCurve extends Curve {
 
     var p0 = points[intPoint == 0 ? intPoint : intPoint - 1];
     var p1 = points[intPoint];
-    var p2 = points[intPoint > points.length - 2 ? points.length - 1 : intPoint + 1];
-    var p3 = points[intPoint > points.length - 3 ? points.length - 1 : intPoint + 2];
+    var p2 =
+        points[intPoint > points.length - 2 ? points.length - 1 : intPoint + 1];
+    var p3 =
+        points[intPoint > points.length - 3 ? points.length - 1 : intPoint + 2];
 
     point.set(
       catmullRom(weight, p0.x, p1.x, p2.x, p3.x),

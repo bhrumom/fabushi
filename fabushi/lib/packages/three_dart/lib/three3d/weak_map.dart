@@ -43,11 +43,10 @@ class WeakMap<K, V> {
   Expando _expando;
   final List<K> _keys = [];
 
-  WeakMap()
-      : _map = {},
-        _expando = Expando();
+  WeakMap() : _map = {}, _expando = Expando();
 
-  static bool _allowedInExpando(Object? value) => value is! String && value is! num && value is! bool && value != null;
+  static bool _allowedInExpando(Object? value) =>
+      value is! String && value is! num && value is! bool && value != null;
 
   void operator []=(K key, V value) => add(key: key, value: value);
 
@@ -77,7 +76,7 @@ class WeakMap<K, V> {
 
   V? get(K key) => _map.containsKey(key)
       ? //
-      _map[key]
+        _map[key]
       : (_allowedInExpando(key) ? _expando[key!] as V : null);
 
   void remove(K key) {

@@ -5,8 +5,12 @@ import 'package:three_dart/three3d/math/interpolant.dart';
 /// the parameter.
 
 class DiscreteInterpolant extends Interpolant {
-  DiscreteInterpolant(parameterPositions, sampleValues, sampleSize, resultBuffer)
-      : super(parameterPositions, sampleValues, sampleSize, resultBuffer);
+  DiscreteInterpolant(
+    parameterPositions,
+    sampleValues,
+    sampleSize,
+    resultBuffer,
+  ) : super(parameterPositions, sampleValues, sampleSize, resultBuffer);
 
   @override
   interpolate(i1, t0, t, t1) {

@@ -5,11 +5,18 @@ class WebGLMultisampleRenderTarget extends WebGLRenderTarget {
   @override
   int samples = 4;
 
-  WebGLMultisampleRenderTarget(int width, int height, [WebGLRenderTargetOptions? options])
-      : super(width, height, options) {
+  WebGLMultisampleRenderTarget(
+    int width,
+    int height, [
+    WebGLRenderTargetOptions? options,
+  ]) : super(width, height, options) {
     isWebGLMultisampleRenderTarget = true;
-    ignoreDepthForMultisampleCopy = this.options.ignoreDepth != undefined ? this.options.ignoreDepth : true;
-    useRenderToTexture = (this.options.useRenderToTexture != undefined) ? this.options.useRenderToTexture : false;
+    ignoreDepthForMultisampleCopy = this.options.ignoreDepth != undefined
+        ? this.options.ignoreDepth
+        : true;
+    useRenderToTexture = (this.options.useRenderToTexture != undefined)
+        ? this.options.useRenderToTexture
+        : false;
     useRenderbuffer = useRenderToTexture == false;
   }
 

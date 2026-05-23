@@ -12,14 +12,45 @@ class BoxHelper extends LineSegments {
   BoxHelper.create(geometry, material) : super(geometry, material);
 
   factory BoxHelper(object, {color = 0xffff00}) {
-    var indices = Uint16Array.from([0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7]);
+    var indices = Uint16Array.from([
+      0,
+      1,
+      1,
+      2,
+      2,
+      3,
+      3,
+      0,
+      4,
+      5,
+      5,
+      6,
+      6,
+      7,
+      7,
+      4,
+      0,
+      4,
+      1,
+      5,
+      2,
+      6,
+      3,
+      7,
+    ]);
     var positions = Float32Array(8 * 3);
 
     var geometry = BufferGeometry();
     geometry.setIndex(Uint16BufferAttribute(indices, 1, false));
-    geometry.setAttribute('position', Float32BufferAttribute(positions, 3, false));
+    geometry.setAttribute(
+      'position',
+      Float32BufferAttribute(positions, 3, false),
+    );
 
-    var helper = BoxHelper.create(geometry, LineBasicMaterial({"color": color, "toneMapped": false}));
+    var helper = BoxHelper.create(
+      geometry,
+      LineBasicMaterial({"color": color, "toneMapped": false}),
+    );
 
     helper.object = object;
     helper.type = 'BoxHelper';
@@ -106,5 +137,4 @@ class BoxHelper extends LineSegments {
   // 	return this;
 
   // }
-
 }

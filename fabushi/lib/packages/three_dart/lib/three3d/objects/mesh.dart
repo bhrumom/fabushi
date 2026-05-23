@@ -37,7 +37,8 @@ class Mesh extends Object3D {
     updateMorphTargets();
   }
 
-  Mesh.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) : super.fromJSON(json, rootJSON) {
+  Mesh.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON)
+    : super.fromJSON(json, rootJSON) {
     type = "Mesh";
   }
 
@@ -48,7 +49,9 @@ class Mesh extends Object3D {
     if (material is Material) {
       materials.add((material as Material).clone());
     } else if (material is Iterable) {
-      materials.addAll((material as Iterable).map((e) => (e as Material).clone()));
+      materials.addAll(
+        (material as Iterable).map((e) => (e as Material).clone()),
+      );
     }
 
     return Mesh(geometry!.clone(), materials).copy(this, recursive);
@@ -62,7 +65,9 @@ class Mesh extends Object3D {
         morphTargetInfluences = source.morphTargetInfluences!.sublist(0);
       }
       if (source.morphTargetDictionary != null) {
-        morphTargetDictionary = json.decode(json.encode(source.morphTargetDictionary));
+        morphTargetDictionary = json.decode(
+          json.encode(source.morphTargetDictionary),
+        );
       }
       material = source.material;
       geometry = source.geometry;
@@ -150,15 +155,30 @@ class Mesh extends Object3D {
           var groupMaterial = material[group["materialIndex"]];
 
           var start = Math.max<int>(group["start"], drawRange["start"]!);
-          var end = Math.min<int>((group["start"] + group["count"]), (drawRange["start"]! + drawRange["count"]!));
+          var end = Math.min<int>(
+            (group["start"] + group["count"]),
+            (drawRange["start"]! + drawRange["count"]!),
+          );
 
           for (var j = start, jl = end; j < jl; j += 3) {
             int a = index.getX(j)!.toInt();
             int b = index.getX(j + 1)!.toInt();
             int c = index.getX(j + 2)!.toInt();
 
-            intersection = checkBufferGeometryIntersection(this, groupMaterial, raycaster, _meshray, position,
-                morphPosition, morphTargetsRelative, uv, uv2, a, b, c);
+            intersection = checkBufferGeometryIntersection(
+              this,
+              groupMaterial,
+              raycaster,
+              _meshray,
+              position,
+              morphPosition,
+              morphTargetsRelative,
+              uv,
+              uv2,
+              a,
+              b,
+              c,
+            );
 
             if (intersection != null) {
               intersection.faceIndex = Math.floor(j / 3);
@@ -170,7 +190,10 @@ class Mesh extends Object3D {
         }
       } else {
         var start = Math.max(0, drawRange["start"]!);
-        var end = Math.min(index.count, (drawRange["start"]! + drawRange["count"]!));
+        var end = Math.min(
+          index.count,
+          (drawRange["start"]! + drawRange["count"]!),
+        );
 
         for (var i = start, il = end; i < il; i += 3) {
           int a = index.getX(i)!.toInt();
@@ -178,7 +201,19 @@ class Mesh extends Object3D {
           int c = index.getX(i + 2)!.toInt();
 
           intersection = checkBufferGeometryIntersection(
-              this, material, raycaster, _meshray, position, morphPosition, morphTargetsRelative, uv, uv2, a, b, c);
+            this,
+            material,
+            raycaster,
+            _meshray,
+            position,
+            morphPosition,
+            morphTargetsRelative,
+            uv,
+            uv2,
+            a,
+            b,
+            c,
+          );
 
           if (intersection != null) {
             intersection.faceIndex = Math.floor(i / 3);
@@ -196,15 +231,30 @@ class Mesh extends Object3D {
           var groupMaterial = material[group["materialIndex"]];
 
           var start = Math.max<int>(group["start"], drawRange["start"]!);
-          var end = Math.min<int>((group["start"] + group["count"]), (drawRange["start"]! + drawRange["count"]!));
+          var end = Math.min<int>(
+            (group["start"] + group["count"]),
+            (drawRange["start"]! + drawRange["count"]!),
+          );
 
           for (var j = start, jl = end; j < jl; j += 3) {
             var a = j;
             var b = j + 1;
             var c = j + 2;
 
-            intersection = checkBufferGeometryIntersection(this, groupMaterial, raycaster, _meshray, position,
-                morphPosition, morphTargetsRelative, uv, uv2, a, b, c);
+            intersection = checkBufferGeometryIntersection(
+              this,
+              groupMaterial,
+              raycaster,
+              _meshray,
+              position,
+              morphPosition,
+              morphTargetsRelative,
+              uv,
+              uv2,
+              a,
+              b,
+              c,
+            );
 
             if (intersection != null) {
               intersection.faceIndex = Math.floor(j / 3);
@@ -216,7 +266,10 @@ class Mesh extends Object3D {
         }
       } else {
         var start = Math.max(0, drawRange["start"]!);
-        var end = Math.min<int>(position.count, (drawRange["start"]! + drawRange["count"]!));
+        var end = Math.min<int>(
+          position.count,
+          (drawRange["start"]! + drawRange["count"]!),
+        );
 
         for (var i = start, il = end; i < il; i += 3) {
           var a = i;
@@ -224,10 +277,24 @@ class Mesh extends Object3D {
           var c = i + 2;
 
           intersection = checkBufferGeometryIntersection(
-              this, material, raycaster, _meshray, position, morphPosition, morphTargetsRelative, uv, uv2, a, b, c);
+            this,
+            material,
+            raycaster,
+            _meshray,
+            position,
+            morphPosition,
+            morphTargetsRelative,
+            uv,
+            uv2,
+            a,
+            b,
+            c,
+          );
 
           if (intersection != null) {
-            intersection.faceIndex = Math.floor(i / 3); // triangle number in non-indexed buffer semantics
+            intersection.faceIndex = Math.floor(
+              i / 3,
+            ); // triangle number in non-indexed buffer semantics
             intersects.add(intersection);
           }
         }
@@ -236,14 +303,28 @@ class Mesh extends Object3D {
   }
 }
 
-Intersection? checkIntersection(Object3D object, Material material, Raycaster raycaster, Ray ray, Vector3 pA,
-    Vector3 pB, Vector3 pC, Vector3 point) {
+Intersection? checkIntersection(
+  Object3D object,
+  Material material,
+  Raycaster raycaster,
+  Ray ray,
+  Vector3 pA,
+  Vector3 pB,
+  Vector3 pC,
+  Vector3 point,
+) {
   Vector3? intersect;
 
   if (material.side == BackSide) {
     intersect = ray.intersectTriangle(pC, pB, pA, true, point);
   } else {
-    intersect = ray.intersectTriangle(pA, pB, pC, material.side != DoubleSide, point);
+    intersect = ray.intersectTriangle(
+      pA,
+      pB,
+      pC,
+      material.side != DoubleSide,
+      point,
+    );
   }
 
   if (intersect == null) return null;
@@ -255,11 +336,27 @@ Intersection? checkIntersection(Object3D object, Material material, Raycaster ra
 
   if (distance < raycaster.near || distance > raycaster.far) return null;
 
-  return Intersection({"distance": distance, "point": _intersectionPointWorld.clone(), "object": object});
+  return Intersection({
+    "distance": distance,
+    "point": _intersectionPointWorld.clone(),
+    "object": object,
+  });
 }
 
-Intersection? checkBufferGeometryIntersection(Object3D object, Material material, Raycaster raycaster, Ray ray,
-    BufferAttribute position, morphPosition, morphTargetsRelative, uv, uv2, int a, int b, int c) {
+Intersection? checkBufferGeometryIntersection(
+  Object3D object,
+  Material material,
+  Raycaster raycaster,
+  Ray ray,
+  BufferAttribute position,
+  morphPosition,
+  morphTargetsRelative,
+  uv,
+  uv2,
+  int a,
+  int b,
+  int c,
+) {
   _vA.fromBufferAttribute(position, a);
   _vB.fromBufferAttribute(position, b);
   _vC.fromBufferAttribute(position, c);
@@ -303,7 +400,16 @@ Intersection? checkBufferGeometryIntersection(Object3D object, Material material
     object.boneTransform(c, _vC);
   }
 
-  var intersection = checkIntersection(object, material, raycaster, ray, _vA, _vB, _vC, _intersectionPoint);
+  var intersection = checkIntersection(
+    object,
+    material,
+    raycaster,
+    ray,
+    _vA,
+    _vB,
+    _vC,
+    _intersectionPoint,
+  );
 
   if (intersection != null) {
     if (uv != null) {
@@ -311,7 +417,16 @@ Intersection? checkBufferGeometryIntersection(Object3D object, Material material
       _uvB.fromBufferAttribute(uv, b);
       _uvC.fromBufferAttribute(uv, c);
 
-      intersection.uv = Triangle.staticGetUV(_intersectionPoint, _vA, _vB, _vC, _uvA, _uvB, _uvC, Vector2(null, null));
+      intersection.uv = Triangle.staticGetUV(
+        _intersectionPoint,
+        _vA,
+        _vB,
+        _vC,
+        _uvA,
+        _uvB,
+        _uvC,
+        Vector2(null, null),
+      );
     }
 
     if (uv2 != null) {
@@ -319,10 +434,25 @@ Intersection? checkBufferGeometryIntersection(Object3D object, Material material
       _uvB.fromBufferAttribute(uv2, b);
       _uvC.fromBufferAttribute(uv2, c);
 
-      intersection.uv2 = Triangle.staticGetUV(_intersectionPoint, _vA, _vB, _vC, _uvA, _uvB, _uvC, Vector2(null, null));
+      intersection.uv2 = Triangle.staticGetUV(
+        _intersectionPoint,
+        _vA,
+        _vB,
+        _vC,
+        _uvA,
+        _uvB,
+        _uvC,
+        Vector2(null, null),
+      );
     }
 
-    var face = Face.fromJSON({"a": a, "b": b, "c": c, "normal": Vector3.init(), "materialIndex": 0});
+    var face = Face.fromJSON({
+      "a": a,
+      "b": b,
+      "c": c,
+      "normal": Vector3.init(),
+      "materialIndex": 0,
+    });
 
     Triangle.staticGetNormal(_vA, _vB, _vC, face.normal);
 

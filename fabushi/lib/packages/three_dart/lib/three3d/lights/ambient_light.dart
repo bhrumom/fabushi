@@ -9,7 +9,10 @@ class AmbientLight extends Light {
     type = 'AmbientLight';
   }
 
-  AmbientLight.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) : super.fromJSON(json, rootJSON) {
+  AmbientLight.fromJSON(
+    Map<String, dynamic> json,
+    Map<String, dynamic> rootJSON,
+  ) : super.fromJSON(json, rootJSON) {
     type = 'AmbientLight';
   }
 }

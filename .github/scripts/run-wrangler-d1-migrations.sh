@@ -24,7 +24,8 @@ import sys
 
 text = Path(sys.argv[1]).read_text(encoding='utf-8', errors='ignore')
 patterns = (
-    r'Upstream service unavailable \[code: 7009\]',
+    r'Upstream service unavailable.*code: 7009',
+    r'consider throttling your request speed.*code: 971',
     r'\bECONNRESET\b',
     r'\bETIMEDOUT\b',
     r'network socket disconnected',

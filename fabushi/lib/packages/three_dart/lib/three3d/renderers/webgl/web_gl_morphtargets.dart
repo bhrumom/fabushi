@@ -20,7 +20,9 @@ int absNumericalSort(a, b) {
 
 denormalize(morph, BufferAttribute attribute) {
   var denominator = 1;
-  NativeArray array = attribute is InterleavedBufferAttribute ? attribute.data!.array : attribute.array;
+  NativeArray array = attribute is InterleavedBufferAttribute
+      ? attribute.data!.array
+      : attribute.array;
 
   if (array is Int8Array) {
     denominator = 127;
@@ -29,7 +31,10 @@ denormalize(morph, BufferAttribute attribute) {
   } else if (array is Int32Array) {
     denominator = 2147483647;
   } else {
-    console.error('three.WebGLMorphtargets: Unsupported morph attribute data type: ', array);
+    console.error(
+      'three.WebGLMorphtargets: Unsupported morph attribute data type: ',
+      array,
+    );
   }
 
   morph.divideScalar(denominator);
@@ -53,17 +58,25 @@ class WebGLMorphtargets {
     }
   }
 
-  void update(Object3D object, BufferGeometry geometry, Material material, WebGLProgram program) {
+  void update(
+    Object3D object,
+    BufferGeometry geometry,
+    Material material,
+    WebGLProgram program,
+  ) {
     List<num>? objectInfluences = object.morphTargetInfluences;
 
     if (capabilities.isWebGL2 == true) {
       // instead of using attributes, the WebGL 2 code path encodes morph targets
       // into an array of data textures. Each layer represents a single morph target.
 
-      var morphAttribute = geometry.morphAttributes["position"] ??
+      var morphAttribute =
+          geometry.morphAttributes["position"] ??
           geometry.morphAttributes["normal"] ??
           geometry.morphAttributes["color"];
-      var morphTargetsCount = (morphAttribute != null) ? morphAttribute.length : 0;
+      var morphTargetsCount = (morphAttribute != null)
+          ? morphAttribute.length
+          : 0;
 
       Map? entry = morphTextures.get(geometry);
 
@@ -83,7 +96,8 @@ class WebGLMorphtargets {
         if (hasMorphNormals) vertexDataCount = 2;
         if (hasMorphColors) vertexDataCount = 3;
 
-        int width = (geometry.attributes["position"].count * vertexDataCount).toInt();
+        int width = (geometry.attributes["position"].count * vertexDataCount)
+            .toInt();
         int height = 1;
 
         if (width > capabilities.maxTextureSize) {
@@ -91,9 +105,16 @@ class WebGLMorphtargets {
           width = capabilities.maxTextureSize.toInt();
         }
 
-        var buffer = Float32Array((width * height * 4 * morphTargetsCount).toInt());
+        var buffer = Float32Array(
+          (width * height * 4 * morphTargetsCount).toInt(),
+        );
 
-        var texture = DataArrayTexture(buffer, width, height, morphTargetsCount);
+        var texture = DataArrayTexture(
+          buffer,
+          width,
+          height,
+          morphTargetsCount,
+        );
         texture.type = FloatType;
         texture.needsUpdate = true;
 
@@ -147,12 +168,17 @@ class WebGLMorphtargets {
               buffer[offset + stride + 8] = morph.x.toDouble();
               buffer[offset + stride + 9] = morph.y.toDouble();
               buffer[offset + stride + 10] = morph.z.toDouble();
-              buffer[offset + stride + 11] = ((morphColor.itemSize == 4) ? morph.w : 1).toDouble();
+              buffer[offset + stride + 11] =
+                  ((morphColor.itemSize == 4) ? morph.w : 1).toDouble();
             }
           }
         }
 
-        entry = {"count": morphTargetsCount, "texture": texture, "size": Vector2(width.toDouble(), height.toDouble())};
+        entry = {
+          "count": morphTargetsCount,
+          "texture": texture,
+          "size": Vector2(width.toDouble(), height.toDouble()),
+        };
 
         morphTextures.set(geometry, entry);
 
@@ -175,13 +201,32 @@ class WebGLMorphtargets {
         morphInfluencesSum += objectInfluences[i];
       }
 
-      var morphBaseInfluence = geometry.morphTargetsRelative ? 1 : 1 - morphInfluencesSum;
+      var morphBaseInfluence = geometry.morphTargetsRelative
+          ? 1
+          : 1 - morphInfluencesSum;
 
-      program.getUniforms().setValue(gl, 'morphTargetBaseInfluence', morphBaseInfluence);
-      program.getUniforms().setValue(gl, 'morphTargetInfluences', objectInfluences);
+      program.getUniforms().setValue(
+        gl,
+        'morphTargetBaseInfluence',
+        morphBaseInfluence,
+      );
+      program.getUniforms().setValue(
+        gl,
+        'morphTargetInfluences',
+        objectInfluences,
+      );
 
-      program.getUniforms().setValue(gl, 'morphTargetsTexture', entry["texture"], textures);
-      program.getUniforms().setValue(gl, 'morphTargetsTextureSize', entry["size"]);
+      program.getUniforms().setValue(
+        gl,
+        'morphTargetsTexture',
+        entry["texture"],
+        textures,
+      );
+      program.getUniforms().setValue(
+        gl,
+        'morphTargetsTextureSize',
+        entry["size"],
+      );
     } else {
       // When object doesn't have morph target influences defined, we treat it as a 0-length array
       // This is important to make sure we set up morphTargetBaseInfluence / morphTargetInfluences
@@ -236,22 +281,26 @@ class WebGLMorphtargets {
         var value = influence[1];
 
         if (index != Math.maxSafeInteger && value != 0) {
-          if (morphTargets != null && geometry.getAttribute('morphTarget$i') != morphTargets[index]) {
+          if (morphTargets != null &&
+              geometry.getAttribute('morphTarget$i') != morphTargets[index]) {
             geometry.setAttribute('morphTarget$i', morphTargets[index]);
           }
 
-          if (morphNormals != null && geometry.getAttribute('morphNormal$i') != morphNormals[index]) {
+          if (morphNormals != null &&
+              geometry.getAttribute('morphNormal$i') != morphNormals[index]) {
             geometry.setAttribute('morphNormal$i', morphNormals[index]);
           }
 
           morphInfluences[i] = value.toDouble();
           morphInfluencesSum += value;
         } else {
-          if (morphTargets != null && geometry.hasAttribute('morphTarget$i') == true) {
+          if (morphTargets != null &&
+              geometry.hasAttribute('morphTarget$i') == true) {
             geometry.deleteAttribute('morphTarget$i');
           }
 
-          if (morphNormals != null && geometry.hasAttribute('morphNormal$i') == true) {
+          if (morphNormals != null &&
+              geometry.hasAttribute('morphNormal$i') == true) {
             geometry.deleteAttribute('morphNormal$i');
           }
 
@@ -262,10 +311,20 @@ class WebGLMorphtargets {
       // GLSL shader uses formula baseinfluence * base + sum(target * influence)
       // This allows us to switch between absolute morphs and relative morphs without changing shader code
       // When baseinfluence = 1 - sum(influence), the above is equivalent to sum((target - base) * influence)
-      var morphBaseInfluence = geometry.morphTargetsRelative ? 1 : 1 - morphInfluencesSum;
+      var morphBaseInfluence = geometry.morphTargetsRelative
+          ? 1
+          : 1 - morphInfluencesSum;
 
-      program.getUniforms().setValue(gl, 'morphTargetBaseInfluence', morphBaseInfluence);
-      program.getUniforms().setValue(gl, 'morphTargetInfluences', morphInfluences);
+      program.getUniforms().setValue(
+        gl,
+        'morphTargetBaseInfluence',
+        morphBaseInfluence,
+      );
+      program.getUniforms().setValue(
+        gl,
+        'morphTargetInfluences',
+        morphInfluences,
+      );
     }
   }
 }

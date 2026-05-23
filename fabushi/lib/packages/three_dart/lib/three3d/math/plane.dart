@@ -51,7 +51,10 @@ class Plane {
   }
 
   Plane setFromCoplanarPoints(Vector3 a, Vector3 b, Vector3 c) {
-    var normal = _vector1.subVectors(c, b).cross(_vector2.subVectors(a, b)).normalize();
+    var normal = _vector1
+        .subVectors(c, b)
+        .cross(_vector2.subVectors(a, b))
+        .normalize();
 
     // Q: should an error be thrown if normal is zero (e.g. degenerate plane)?
 
@@ -97,7 +100,10 @@ class Plane {
   }
 
   Vector3 projectPoint(Vector3 point, Vector3 target) {
-    return target.copy(normal).multiplyScalar(-distanceToPoint(point)).add(point);
+    return target
+        .copy(normal)
+        .multiplyScalar(-distanceToPoint(point))
+        .add(point);
   }
 
   Vector3? intersectLine(Line3 line, Vector3 target) {
@@ -146,7 +152,8 @@ class Plane {
   }
 
   Plane applyMatrix4(Matrix4 matrix, [Matrix3? optionalNormalMatrix]) {
-    var normalMatrix = optionalNormalMatrix ?? _normalMatrix.getNormalMatrix(matrix);
+    var normalMatrix =
+        optionalNormalMatrix ?? _normalMatrix.getNormalMatrix(matrix);
 
     var referencePoint = coplanarPoint(_vector1).applyMatrix4(matrix);
 

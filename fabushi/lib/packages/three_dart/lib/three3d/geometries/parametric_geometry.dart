@@ -64,7 +64,11 @@ class ParametricGeometry extends BufferGeometry {
         // cross product of tangent vectors returns surface normal
 
         normal.crossVectors(pu, pv).normalize();
-        normals.addAll([normal.x.toDouble(), normal.y.toDouble(), normal.z.toDouble()]);
+        normals.addAll([
+          normal.x.toDouble(),
+          normal.y.toDouble(),
+          normal.z.toDouble(),
+        ]);
 
         // uv
 
@@ -91,8 +95,14 @@ class ParametricGeometry extends BufferGeometry {
     // build geometry
 
     setIndex(indices);
-    setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3));
-    setAttribute('normal', Float32BufferAttribute(Float32Array.from(normals), 3));
+    setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3),
+    );
+    setAttribute(
+      'normal',
+      Float32BufferAttribute(Float32Array.from(normals), 3),
+    );
     setAttribute('uv', Float32BufferAttribute(Float32Array.from(uvs), 2));
   }
 }
