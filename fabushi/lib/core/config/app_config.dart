@@ -105,8 +105,9 @@ class AppConfig {
 
   // 应用信息
   static const String appName = '大乘';
+  // 保持与 pubspec.yaml 中的 version 同步，供 Web 回退和服务端比对使用。
   static const String appVersion = '1.0.0';
-  static const int appBuildNumber = 1;
+  static const int appBuildNumber = 16;
 
   // 功能开关
   static const bool enableFirebaseAuth = true;
@@ -165,6 +166,8 @@ class AppConfig {
       buildBackendUrl('/api/auth/reset-password');
   static String get userInfoUrl => buildBackendUrl('/api/auth/user-info');
   static String get bindEmailUrl => buildBackendUrl('/api/auth/bind-email');
+  static String get appVersionPolicyUrl =>
+      buildBackendUrl('/api/app/version-policy');
 
   static String get alipayCreateOrderUrl =>
       buildBackendUrl('/api/alipay/create-order');
