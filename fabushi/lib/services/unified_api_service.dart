@@ -220,16 +220,7 @@ class UnifiedApiService {
 
   // 构建URI
   Uri _buildUri(String endpoint, Map<String, String>? queryParams) {
-    final baseUrl = AppConfig.currentBackendUrl;
-    final fullUrl = endpoint.startsWith('http')
-        ? endpoint
-        : '$baseUrl$endpoint';
-
-    if (queryParams != null && queryParams.isNotEmpty) {
-      return Uri.parse(fullUrl).replace(queryParameters: queryParams);
-    }
-
-    return Uri.parse(fullUrl);
+    return AppConfig.buildBackendUri(endpoint, queryParameters: queryParams);
   }
 
   // 构建请求头
