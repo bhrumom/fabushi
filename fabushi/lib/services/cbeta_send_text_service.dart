@@ -75,13 +75,10 @@ class CbetaSendTextService {
   static const Duration _timeout = Duration(seconds: 15);
 
   Future<CbetaSendTextResult> fetchDefaultSendTexts({int limit = 12}) async {
-    final baseUrl = AppConfig.currentBackendUrl.replaceFirst(
-      RegExp(r'/+$'),
-      '',
+    final uri = AppConfig.buildBackendUri(
+      AppConfig.cbetaSendTextsEndpoint,
+      queryParameters: {'limit': limit.toString()},
     );
-    final uri = Uri.parse(
-      '$baseUrl/api/cbeta/send-texts',
-    ).replace(queryParameters: {'limit': limit.toString()});
     final attempts = <Map<String, dynamic>>[];
 
     for (int attempt = 1; attempt <= _maxRetries; attempt++) {

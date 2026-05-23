@@ -64,6 +64,45 @@ class AppConfig {
 
   static String get apiUrl => currentBackendUrl;
 
+  /// 大厂式 API 网关入口：客户端只允许构造自家后端的相对路径。
+  ///
+  /// 第三方 API、上游 API、缓存、重试、fallback 都应在后端处理；
+  /// App 端不得直接传入 https://... 或 http://... 这类绝对 URL。
+  static Uri buildBackendUri(
+    String endpoint, {
+    Map<String, String>? queryParameters,
+  }) {
+    final normalizedEndpoint = endpoint.trim();
+    if (normalizedEndpoint.isEmpty || !normalizedEndpoint.startsWith('/')) {
+      throw ArgumentError(
+        'API endpoint must be a first-party relative path starting with /: $endpoint',
+      );
+    }
+    if (normalizedEndpoint.startsWith('//') ||
+        normalizedEndpoint.contains('://')) {
+      throw ArgumentError(
+        'API endpoint must not be an absolute or protocol-relative URL: $endpoint',
+      );
+    }
+
+    final baseUrl = currentBackendUrl.replaceFirst(RegExp(r'/+$'), '');
+    final uri = Uri.parse('$baseUrl$normalizedEndpoint');
+    if (queryParameters == null || queryParameters.isEmpty) {
+      return uri;
+    }
+    return uri.replace(queryParameters: queryParameters);
+  }
+
+  static String buildBackendUrl(
+    String endpoint, {
+    Map<String, String>? queryParameters,
+  }) {
+    return buildBackendUri(
+      endpoint,
+      queryParameters: queryParameters,
+    ).toString();
+  }
+
   // 应用信息
   static const String appName = '大乘';
   static const String appVersion = '1.0.0';
@@ -110,60 +149,62 @@ class AppConfig {
   static const String testModeStorageKey = 'test_mode';
 
   // API端点
-  static String get loginUrl => '$currentBackendUrl/api/auth/login';
-  static String get registerUrl => '$currentBackendUrl/api/auth/register';
-  static String get verifyUrl => '$currentBackendUrl/api/auth/verify';
-  static String get logoutUrl => '$currentBackendUrl/api/auth/logout';
-  static String get deleteAccountUrl => '$currentBackendUrl/api/auth/delete';
+  static const String cbetaSendTextsEndpoint = '/api/cbeta/send-texts';
+
+  static String get loginUrl => buildBackendUrl('/api/auth/login');
+  static String get registerUrl => buildBackendUrl('/api/auth/register');
+  static String get verifyUrl => buildBackendUrl('/api/auth/verify');
+  static String get logoutUrl => buildBackendUrl('/api/auth/logout');
+  static String get deleteAccountUrl => buildBackendUrl('/api/auth/delete');
   static String get sendVerificationCodeUrl =>
-      '$currentBackendUrl/api/auth/send-verification-code';
-  static String get verifyCodeUrl => '$currentBackendUrl/api/auth/verify-code';
+      buildBackendUrl('/api/auth/send-verification-code');
+  static String get verifyCodeUrl => buildBackendUrl('/api/auth/verify-code');
   static String get forgotPasswordUrl =>
-      '$currentBackendUrl/api/auth/forgot-password';
+      buildBackendUrl('/api/auth/forgot-password');
   static String get resetPasswordUrl =>
-      '$currentBackendUrl/api/auth/reset-password';
-  static String get userInfoUrl => '$currentBackendUrl/api/auth/user-info';
-  static String get bindEmailUrl => '$currentBackendUrl/api/auth/bind-email';
+      buildBackendUrl('/api/auth/reset-password');
+  static String get userInfoUrl => buildBackendUrl('/api/auth/user-info');
+  static String get bindEmailUrl => buildBackendUrl('/api/auth/bind-email');
 
   static String get alipayCreateOrderUrl =>
-      '$currentBackendUrl/api/alipay/create-order';
+      buildBackendUrl('/api/alipay/create-order');
   static String get alipayQueryOrderUrl =>
-      '$currentBackendUrl/api/alipay/query-order';
+      buildBackendUrl('/api/alipay/query-order');
   static String get alipayMembershipStatusUrl =>
-      '$currentBackendUrl/api/alipay/check-membership';
+      buildBackendUrl('/api/alipay/check-membership');
 
   static String get stripeMembershipStatusUrl =>
-      '$currentBackendUrl/api/stripe/membership-status';
+      buildBackendUrl('/api/stripe/membership-status');
   static String get stripeCreateSubscriptionUrl =>
-      '$currentBackendUrl/api/stripe/create-subscription';
+      buildBackendUrl('/api/stripe/create-subscription');
   static String get stripeSessionStatusUrl =>
-      '$currentBackendUrl/api/stripe/session-status';
+      buildBackendUrl('/api/stripe/session-status');
 
   static String get appleVerifyReceiptUrl =>
-      '$currentBackendUrl/api/apple/verify-receipt';
+      buildBackendUrl('/api/apple/verify-receipt');
 
   static String get adminCheckStatusUrl =>
-      '$currentBackendUrl/api/admin/check-status';
+      buildBackendUrl('/api/admin/check-status');
   static String get adminCreateRedeemCodeUrl =>
-      '$currentBackendUrl/api/admin/create-redeem-code';
+      buildBackendUrl('/api/admin/create-redeem-code');
   static String get adminRedeemCodesUrl =>
-      '$currentBackendUrl/api/admin/redeem-codes';
+      buildBackendUrl('/api/admin/redeem-codes');
   static String get adminUseRedeemCodeUrl =>
-      '$currentBackendUrl/api/admin/use-redeem-code';
+      buildBackendUrl('/api/admin/use-redeem-code');
   static String get adminPurchaseHistoryUrl =>
-      '$currentBackendUrl/api/admin/purchase-history';
+      buildBackendUrl('/api/admin/purchase-history');
   static String get adminRedeemHistoryUrl =>
-      '$currentBackendUrl/api/admin/redeem-history';
+      buildBackendUrl('/api/admin/redeem-history');
 
-  static String get leaderboardUrl => '$currentBackendUrl/api/leaderboard';
+  static String get leaderboardUrl => buildBackendUrl('/api/leaderboard');
   static String get updateTransferDataUrl =>
-      '$currentBackendUrl/api/leaderboard/update';
+      buildBackendUrl('/api/leaderboard/update');
 
-  static String get healthCheckUrl => '$currentBackendUrl/health';
+  static String get healthCheckUrl => buildBackendUrl('/health');
 
   // iOS 后台保活静音音频
   static String get silenceAudioUrl =>
-      '$currentBackendUrl/static/audio/silence.mp3';
+      buildBackendUrl('/static/audio/silence.mp3');
 
   // 3D 佛像模型配置
   // 如果 R2 上需要切换到新的对象键，优先改这里，便于强制绕开旧缓存。
