@@ -8,8 +8,8 @@
       "description": "官网按钮会直接下载已经同步到 R2 的最新 Android APK 安装包。",
       "primaryLabel": "下载 Android Beta",
       "primaryHref": "https://fabushi.ombhrum.com/downloads/android/fabushi-android-beta.apk",
-      "version": "v1.0.0-371-mobile.5945b8eb8f8d",
-      "publishedAt": "2026-05-22T01:41:48Z",
+      "version": "v1.0.0-377-mobile.3dd4e4dc806f",
+      "publishedAt": "2026-05-23T05:11:23Z",
       "updateSummary": [
         "改进下载体验与版本信息展示。",
         "优化整体稳定性与页面呈现。"
@@ -25,20 +25,30 @@
       "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
       "primaryLabel": "加入 iOS TestFlight",
       "primaryHref": "https://testflight.apple.com/join/98KFgV2z",
-      "version": "371",
-      "publishedAt": "2026-05-22T01:40:07Z",
+      "version": "377",
+      "publishedAt": "2026-05-23T05:10:23Z",
       "updateSummary": [
         "改进下载体验与版本信息展示。",
         "优化整体稳定性与页面呈现。"
       ],
       "mirrorLinks": [],
       "note": "",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-371-mobile.5945b8eb8f8d"
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-377-mobile.3dd4e4dc806f"
     }
   ],
   "stableChannels": [],
   "screenshots": {},
   "releases": [
+    {
+      "tag": "v1.0.0-377-mobile.3dd4e4dc806f",
+      "title": "Fabushi mobile 1.0.0+377 (3dd4e4dc806f)",
+      "publishedAt": "2026-05-23T05:11:23Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-377-mobile.3dd4e4dc806f",
+      "summary": [
+        "改进下载体验与版本信息展示。",
+        "优化整体稳定性与页面呈现。"
+      ]
+    },
     {
       "tag": "v1.0.0-371-mobile.5945b8eb8f8d",
       "title": "Fabushi mobile 1.0.0+371 (5945b8eb8f8d)",
@@ -73,15 +83,6 @@
       "title": "Fabushi mobile 1.0.0+368 (c2bb30c0cb32)",
       "publishedAt": "2026-05-21T21:13:30Z",
       "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-368-mobile.c2bb30c0cb32",
-      "summary": [
-        "改进 Android 测试版下载与安装稳定性。"
-      ]
-    },
-    {
-      "tag": "v1.0.0-366-mobile.8b6d17145e9d",
-      "title": "Fabushi mobile 1.0.0+366 (8b6d17145e9d)",
-      "publishedAt": "2026-05-21T19:44:17Z",
-      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-366-mobile.8b6d17145e9d",
       "summary": [
         "改进 Android 测试版下载与安装稳定性。"
       ]
