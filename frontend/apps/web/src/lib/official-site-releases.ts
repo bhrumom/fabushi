@@ -1,14 +1,13 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
+const officialSiteOrigin = process.env.NEXT_PUBLIC_SITE_ORIGIN?.trim() || "https://fabushi.ombhrum.com";
 const officialSiteReleaseRepo = process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_REPO?.trim() || "bhrumom/fabushi";
+const configuredOfficialSiteReleasesJsonUrl = process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASES_JSON_URL?.trim() || "";
 const iosTestFlightPublicUrl = process.env.NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL?.trim() || "";
 const androidApkPublicHref =
   process.env.NEXT_PUBLIC_ANDROID_APK_PUBLIC_HREF?.trim() ||
   process.env.NEXT_PUBLIC_OFFICIAL_SITE_ANDROID_R2_HREF?.trim() ||
   "";
 const RELEASES_API_URL = `https://api.github.com/repos/${officialSiteReleaseRepo}/releases?per_page=8`;
-const PERSISTED_RELEASES_PATH = join(process.cwd(), "public", "api", "releases.json");
+const OFFICIAL_SITE_RELEASES_JSON_PATH = "/api/releases.json";
 
 const TECHNICAL_RELEASE_LINE_PATTERN =
   /(^pr\s*#\d+)|\b(ci|workflow|checkout|token|sha|commit|submodule|api|github|dispatch|globals\.css|page\.tsx|framer-motion|bentocard)\b|^\[(x| )\]/i;
@@ -148,14 +147,28 @@ const DEFAULT_STABLE_CHANNELS: OfficialSiteChannel[] = [
   },
 ];
 
-async function fetchJson<T>(url: string): Promise<T | null> {
+function resolveOfficialSiteReleasesJsonUrl() {
+  if (configuredOfficialSiteReleasesJsonUrl) {
+    return configuredOfficialSiteReleasesJsonUrl;
+  }
+
+  if (typeof window !== "undefined") {
+    return OFFICIAL_SITE_RELEASES_JSON_PATH;
+  }
+
+  return `${officialSiteOrigin.replace(/\/$/, "")}${OFFICIAL_SITE_RELEASES_JSON_PATH}`;
+}
+
+async function fetchJson<T>(url: string, options?: { accept?: string; revalidate?: number }): Promise<T | null> {
   try {
     const response = await fetch(url, {
-      headers: {
-        Accept: "application/vnd.github+json",
-      },
+      headers: options?.accept
+        ? {
+            Accept: options.accept,
+          }
+        : undefined,
       next: {
-        revalidate: 600,
+        revalidate: options?.revalidate ?? 600,
       },
     });
 
@@ -498,12 +511,15 @@ function normalizeReleaseCollectionRecord(data: Record<string, unknown>): Offici
 }
 
 async function loadPersistedReleaseCollection(): Promise<OfficialSiteReleaseCollection | null> {
-  try {
-    const content = await readFile(PERSISTED_RELEASES_PATH, "utf-8");
-    return normalizeReleaseCollectionRecord(JSON.parse(content) as Record<string, unknown>);
-  } catch {
+  const content = await fetchJson<Record<string, unknown>>(resolveOfficialSiteReleasesJsonUrl(), {
+    revalidate: 300,
+  });
+
+  if (!content) {
     return null;
   }
+
+  return normalizeReleaseCollectionRecord(content);
 }
 
 async function loadStateAsset(
@@ -614,27 +630,27 @@ async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialS
 }
 
 export async function getReleaseCollectionClient(): Promise<OfficialSiteReleaseCollection> {
-  try {
-    const res = await fetch("/api/releases.json", {
-      next: {
-        revalidate: 300,
-      },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = (await res.json()) as Record<string, unknown>;
-    const collection = normalizeReleaseCollectionRecord(data);
-    return {
-      ...collection,
-      betaChannels: applyConfiguredIosTestFlightChannels(collection.betaChannels),
-    };
-  } catch {
+  const data = await fetchJson<Record<string, unknown>>(resolveOfficialSiteReleasesJsonUrl(), {
+    revalidate: 300,
+  });
+
+  if (!data) {
     return { betaChannels: [], stableChannels: [], screenshots: {}, releases: [], notes: [] };
   }
+
+  const collection = normalizeReleaseCollectionRecord(data);
+  return {
+    ...collection,
+    betaChannels: applyConfiguredIosTestFlightChannels(collection.betaChannels),
+  };
 }
 
 export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteReleaseCollection> {
   const persistedCollection = await loadPersistedReleaseCollection();
-  const releases = (await fetchJson<GitHubRelease[]>(RELEASES_API_URL)) ?? [];
+  const releases =
+    (await fetchJson<GitHubRelease[]>(RELEASES_API_URL, {
+      accept: "application/vnd.github+json",
+    })) ?? [];
   const publishedReleases = releases.filter((release) => !release.draft);
   const fallbackReleaseEntries = buildReleaseEntries(publishedReleases);
 
