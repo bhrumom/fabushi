@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { CBETA_API_ROOT, CBETA_PROXY_ROOT } from "../lib/cbeta-config";
 import { normalizeCbetaQuery } from "../lib/faliu-api";
 
-const CBETA_API_ROOT = "https://api.cbetaonline.cn";
-const CBETA_PROXY_ROOT = "/api/cbeta";
 const MAX_SUGGESTIONS_PER_GROUP = 8;
 const MIN_QUERY_LENGTH = 2;
 
