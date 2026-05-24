@@ -268,9 +268,9 @@ class _MembershipScreenState extends State<MembershipScreen>
             );
           }
         }
-      } else if (paymentMethod == 'alipay') {
+      } else if (paymentMethod == 'alipay' || paymentMethod == 'alipay_web') {
         // 根据平台类型选择支付宝支付方式
-        if (kIsWeb || _isDesktopPlatform()) {
+        if (paymentMethod == 'alipay_web' || kIsWeb || _isDesktopPlatform()) {
           // Web和桌面端使用电脑网站支付
           result = await _membershipService.createAlipayWebOrder(
             authModel.authToken!,
@@ -341,8 +341,8 @@ class _MembershipScreenState extends State<MembershipScreen>
                 Icons.account_balance_wallet,
                 color: Colors.green,
               ),
-              title: const Text('支付宝'),
-              onTap: () => Navigator.of(context).pop('alipay'),
+              title: const Text('支付宝网页支付'),
+              onTap: () => Navigator.of(context).pop('alipay_web'),
             ),
           ],
         ),
