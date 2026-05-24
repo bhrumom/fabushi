@@ -20,10 +20,9 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
   actions: read
   issues: write
-  pull-requests: write
 
 jobs:
   sync-beta-state:
@@ -177,189 +176,72 @@ jobs:
           rm -f "$upload_log"
           exit 1
 
-      - name: Copy generated file to a safe location before checkout
-        shell: bash
-        run: |
-          mkdir -p $RUNNER_TEMP/sync-beta-state
-          cp OFFICIAL_SITE_RELEASE_STATE.json $RUNNER_TEMP/sync-beta-state/
-
-      - name: Push beta state to official site repo
-        id: push_state
-        if: steps.upload_state.outcome == 'success'
-        uses: actions/checkout@v5
-        with:
-          ref: main
-          token: ${{ secrets.OFFICIAL_SITE_RELEASE_PAT || github.token }}
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /.github/scripts/**
-            /frontend/apps/web/public/api/**
-
-      - name: Copy state to public API and commit
-        id: commit_state
-        if: steps.push_state.outcome == 'success'
+      - name: Download current official site releases JSON
         shell: bash
         env:
-          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
-          GH_TOKEN: ${{ github.token }}
+          OFFICIAL_SITE_ORIGIN: ${{ vars.OFFICIAL_SITE_ORIGIN || 'https://fabushi.ombhrum.com' }}
         run: |
           set -euo pipefail
-          if [ -f $RUNNER_TEMP/sync-beta-state/OFFICIAL_SITE_RELEASE_STATE.json ]; then
-            cp $RUNNER_TEMP/sync-beta-state/OFFICIAL_SITE_RELEASE_STATE.json OFFICIAL_SITE_RELEASE_STATE.json
-            echo "Restored generated file from RUNNER_TEMP"
+          work_dir="$RUNNER_TEMP/sync-beta-state"
+          mkdir -p "$work_dir"
+          current_json="$work_dir/current-releases.json"
+          if curl -fsSLo "$current_json" "${OFFICIAL_SITE_ORIGIN%/}/api/releases.json"; then
+            echo "Fetched current official site releases JSON from ${OFFICIAL_SITE_ORIGIN%/}/api/releases.json"
           else
-            gh release download "$RELEASE_TAG" --pattern OFFICIAL_SITE_RELEASE_STATE.json --repo ${{ github.repository }} --dir .
+            echo "{}" > "$current_json"
+            echo "::notice::Current official site releases JSON is not available yet; starting from an empty state."
           fi
 
-          if [ ! -f OFFICIAL_SITE_RELEASE_STATE.json ]; then
-            echo "::error::OFFICIAL_SITE_RELEASE_STATE.json could not be restored or downloaded."
-            exit 1
-          fi
-
-          mkdir -p frontend/apps/web/public/api
-          python3 .github/scripts/merge-official-site-beta-state.py
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add frontend/apps/web/public/api/releases.json
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            echo "push_blocked_by_repo_rules=false" >> "$GITHUB_OUTPUT"
-            echo "sync_pr_branch=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git commit -m "chore: sync beta release state for $RELEASE_TAG"
-
-          push_log="$(mktemp)"
-          if git push origin main 2>"$push_log"; then
-            echo "push_blocked_by_repo_rules=false" >> "$GITHUB_OUTPUT"
-            echo "sync_pr_branch=" >> "$GITHUB_OUTPUT"
-            rm -f "$push_log"
-            exit 0
-          fi
-
-          if grep -q 'GH013: Repository rule violations found' "$push_log" && grep -q 'Changes must be made through the merge queue' "$push_log"; then
-            cat "$push_log"
-            sync_branch="automation/sync-official-site-beta-state"
-
-            if git ls-remote --exit-code --heads origin "$sync_branch" >/dev/null 2>&1; then
-              git fetch --depth=1 origin "refs/heads/$sync_branch:refs/remotes/origin/$sync_branch"
-              remote_state="$(mktemp)"
-              if git show "origin/$sync_branch:frontend/apps/web/public/api/releases.json" > "$remote_state" 2>/dev/null && cmp -s frontend/apps/web/public/api/releases.json "$remote_state"; then
-                echo "push_blocked_by_repo_rules=true" >> "$GITHUB_OUTPUT"
-                echo "sync_pr_branch=$sync_branch" >> "$GITHUB_OUTPUT"
-                echo "::notice::Direct push to main was blocked, and $sync_branch already carries the same beta-state update. Reusing the existing fallback PR path."
-                rm -f "$remote_state" "$push_log"
-                exit 0
-              fi
-              rm -f "$remote_state"
-            fi
-
-            git checkout -B "$sync_branch"
-            fallback_push_log="$(mktemp)"
-            if git push origin "HEAD:$sync_branch" --force 2>"$fallback_push_log"; then
-              echo "push_blocked_by_repo_rules=true" >> "$GITHUB_OUTPUT"
-              echo "sync_pr_branch=$sync_branch" >> "$GITHUB_OUTPUT"
-              echo "::notice::Direct push to main was blocked by repository rules, so the workflow pushed the beta state update to $sync_branch for PR fallback."
-              rm -f "$fallback_push_log" "$push_log"
-              exit 0
-            fi
-
-            if grep -q 'queued for merging cannot be updated' "$fallback_push_log"; then
-              cat "$fallback_push_log"
-              fallback_branch="automation/sync-official-site-beta-state-${RELEASE_TAG//\//-}"
-              fallback_branch="${fallback_branch//:/-}"
-              git checkout -B "$fallback_branch"
-              git push origin "HEAD:$fallback_branch" --force
-              echo "push_blocked_by_repo_rules=true" >> "$GITHUB_OUTPUT"
-              echo "sync_pr_branch=$fallback_branch" >> "$GITHUB_OUTPUT"
-              echo "::notice::$sync_branch is locked by an existing merge queue entry, so the workflow pushed the beta state update to $fallback_branch for a new fallback PR."
-              rm -f "$fallback_push_log" "$push_log"
-              exit 0
-            fi
-
-            cat "$fallback_push_log" >&2
-            rm -f "$fallback_push_log" "$push_log"
-            exit 1
-          fi
-
-          cat "$push_log" >&2
-          rm -f "$push_log"
-          exit 1
-
-      - name: Create or update beta state sync PR
-        id: sync_pr
-        if: steps.commit_state.outputs.push_blocked_by_repo_rules == 'true' && steps.commit_state.outputs.sync_pr_branch != ''
-        uses: actions/github-script@v8
+      - name: Merge generated beta state into official site releases JSON
+        shell: bash
         env:
-          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
-          SYNC_PR_BRANCH: ${{ steps.commit_state.outputs.sync_pr_branch }}
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const head = `${owner}:${process.env.SYNC_PR_BRANCH}`;
-            const manualPrUrl = `https://github.com/${owner}/${repo}/pull/new/${process.env.SYNC_PR_BRANCH}`;
-            const title = `chore: sync beta release state for ${process.env.RELEASE_TAG}`;
-            const body = [
-              '## Summary',
-              '- update `frontend/apps/web/public/api/releases.json` with the latest generated beta state',
-              '- use a PR fallback because repository rules blocked the workflow from pushing straight to `main`',
-              '',
-              '## Why',
-              '- `Sync official site beta download state` generated a fresh `OFFICIAL_SITE_RELEASE_STATE.json`',
-              '- direct push to `main` was blocked by repository rules that require the merge queue',
-              '- opening a PR keeps the website state reviewable and lets the sync still converge',
-              '',
-              '## Validation',
-              '- generated by `.github/workflows/sync-official-site-beta.yml`',
-              `- release tag: ${process.env.RELEASE_TAG}`,
-              '- compare and normal PR checks should validate the resulting `releases.json` change',
-            ].join('\n');
+          OFFICIAL_SITE_RELEASE_STATE_PATH: OFFICIAL_SITE_RELEASE_STATE.json
+          OFFICIAL_SITE_RELEASES_EXISTING_PATH: ${{ runner.temp }}/sync-beta-state/current-releases.json
+          OFFICIAL_SITE_RELEASES_OUTPUT_PATH: ${{ runner.temp }}/sync-beta-state/releases.json
+        run: python3 .github/scripts/merge-official-site-beta-state.py
 
-            core.setOutput('pr_write_blocked', 'false');
-            core.setOutput('manual_pr_url', '');
+      - name: Upload merged official site releases JSON to R2
+        id: sync_releases_json_r2
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+          OFFICIAL_SITE_R2_BUCKET: ${{ vars.OFFICIAL_SITE_R2_BUCKET || 'bushi' }}
+          OFFICIAL_SITE_RELEASES_R2_OBJECT_KEY: ${{ vars.OFFICIAL_SITE_RELEASES_R2_OBJECT_KEY || 'api/releases.json' }}
+          OFFICIAL_SITE_ORIGIN: ${{ vars.OFFICIAL_SITE_ORIGIN || 'https://fabushi.ombhrum.com' }}
+        run: |
+          set -euo pipefail
+          merged_json="$RUNNER_TEMP/sync-beta-state/releases.json"
+          if [ ! -f "$merged_json" ]; then
+            echo "Merged releases JSON was not generated." >&2
+            exit 1
+          fi
 
-            try {
-              const { data: pulls } = await github.rest.pulls.list({
-                owner,
-                repo,
-                state: 'open',
-                head,
-                base: 'main',
-              });
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "Cloudflare credentials are required to sync the official site releases JSON to R2." >&2
+            exit 1
+          fi
 
-              if (pulls.length > 0) {
-                await github.rest.pulls.update({
-                  owner,
-                  repo,
-                  pull_number: pulls[0].number,
-                  title,
-                  body,
-                });
-                core.notice(`Updated beta sync fallback PR #${pulls[0].number}.`);
-                return;
-              }
+          bucket="${OFFICIAL_SITE_R2_BUCKET:-bushi}"
+          object_key="${OFFICIAL_SITE_RELEASES_R2_OBJECT_KEY:-api/releases.json}"
+          official_site_origin="${OFFICIAL_SITE_ORIGIN:-https://fabushi.ombhrum.com}"
 
-              const { data: pull } = await github.rest.pulls.create({
-                owner,
-                repo,
-                head: process.env.SYNC_PR_BRANCH,
-                base: 'main',
-                title,
-                body,
-                maintainer_can_modify: true,
-              });
-              core.notice(`Created beta sync fallback PR #${pull.number}.`);
-            } catch (error) {
-              const message = error?.message || String(error);
-              if (error?.status === 403 && /GitHub Actions is not permitted to create or approve pull requests/i.test(message)) {
-                core.setOutput('pr_write_blocked', 'true');
-                core.setOutput('manual_pr_url', manualPrUrl);
-                core.notice(`GitHub Actions cannot create pull requests in this repository. The beta state update was pushed to ${process.env.SYNC_PR_BRANCH}; open ${manualPrUrl} to continue the reviewable fallback.`);
-                return;
-              }
-              throw error;
-            }
+          npx --yes wrangler@latest r2 object put "$bucket/$object_key" \
+            --file "$merged_json" \
+            --content-type application/json \
+            --cache-control no-store \
+            --force \
+            --remote
+
+          releases_json_href="${official_site_origin%/}/${object_key}"
+          echo "releases_json_href=$releases_json_href" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Official site releases JSON synced to R2"
+            echo ""
+            echo "- Bucket: $bucket"
+            echo "- Object key: $object_key"
+            echo "- Official Worker href: $releases_json_href"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write summary
         shell: bash
@@ -367,10 +249,8 @@ jobs:
           RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
           RELEASE_STATE_UPLOADED: ${{ steps.upload_state.outputs.uploaded }}
           IMMUTABLE_RELEASE: ${{ steps.upload_state.outputs.immutable_release }}
-          PUSH_BLOCKED_BY_REPO_RULES: ${{ steps.commit_state.outputs.push_blocked_by_repo_rules }}
-          SYNC_PR_BRANCH: ${{ steps.commit_state.outputs.sync_pr_branch }}
-          SYNC_PR_WRITE_BLOCKED: ${{ steps.sync_pr.outputs.pr_write_blocked || 'false' }}
-          SYNC_PR_MANUAL_URL: ${{ steps.sync_pr.outputs.manual_pr_url || '' }}
+          ANDROID_R2_HREF: ${{ steps.sync_android_r2.outputs.android_r2_href }}
+          RELEASES_JSON_R2_HREF: ${{ steps.sync_releases_json_r2.outputs.releases_json_href }}
         run: |
           {
             echo "## Official site beta state synced"
@@ -384,21 +264,13 @@ jobs:
             else
               echo "- Asset: OFFICIAL_SITE_RELEASE_STATE.json was generated locally"
             fi
-            if [ "$PUSH_BLOCKED_BY_REPO_RULES" = "true" ]; then
-              echo "- Repository rules blocked the direct push to main, so /api/releases.json was not committed automatically"
-              echo "- PR fallback branch pushed: $SYNC_PR_BRANCH"
-              if [ "$SYNC_PR_WRITE_BLOCKED" = "true" ]; then
-                echo "- GitHub Actions is not permitted to create pull requests in this repository"
-                echo "- Open this URL to continue manually: $SYNC_PR_MANUAL_URL"
-              else
-                echo "- The workflow created or updated the fallback PR automatically"
-              fi
-              echo "- The official site will keep falling back to release metadata and TESTFLIGHT_UPLOAD_STATUS.txt until that PR merges"
+            if [ -n "$ANDROID_R2_HREF" ]; then
+              echo "- Android APK was copied to R2: $ANDROID_R2_HREF"
             fi
-            echo "- Available beta channels from this release were synced selectively."
-            if [ -n "${{ steps.sync_android_r2.outputs.android_r2_href }}" ]; then
-              echo "- Android APK was copied to R2 and the official site state now points to the Worker-served domain URL."
+            if [ -n "$RELEASES_JSON_R2_HREF" ]; then
+              echo "- Official site releases JSON was merged and copied to R2: $RELEASES_JSON_R2_HREF"
             fi
+            echo "- No Git commit or sync PR is needed for /api/releases.json anymore."
             echo "- If a release only contains one platform, the official site keeps the previous entry for the other platform."
           } >> "$GITHUB_STEP_SUMMARY"
 

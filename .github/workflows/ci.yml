@@ -546,8 +546,11 @@ jobs:
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            /.github/workflows/**
+            /.github/scripts/**
             /fabushi/web/**
             !/fabushi/web/assets/built_in/**
+            /frontend/**
 
       - name: Download Flutter web build
         uses: actions/download-artifact@v5
