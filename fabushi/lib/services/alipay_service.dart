@@ -138,6 +138,14 @@ class AlipayService {
         return {'success': false, 'message': '支付宝APP支付不支持Web平台'};
       }
 
+      final isInstalled = await isAlipayInstalled();
+      if (!isInstalled) {
+        return {
+          'success': false,
+          'message': '未安装支付宝APP，请先安装支付宝或改用网页支付',
+        };
+      }
+
       // 验证支付参数
       if (!validatePayParameters(orderString)) {
         return {'success': false, 'message': '支付参数验证失败'};
