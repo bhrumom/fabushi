@@ -31,6 +31,51 @@ function readPubspecVersion(pubspecPath) {
   };
 }
 
+function parseReleaseVersion(value) {
+  if (!value) return null;
+
+  const normalizedValue = String(value).trim();
+  if (!normalizedValue) return null;
+
+  const tagMatch = normalizedValue.match(/v?(\d+\.\d+\.\d+)-(\d+)-mobile(?:[.-].*)?$/i);
+  if (tagMatch) {
+    return {
+      version: tagMatch[1],
+      buildNumber: Number.parseInt(tagMatch[2], 10),
+    };
+  }
+
+  const titleMatch = normalizedValue.match(/(\d+\.\d+\.\d+)\+(\d+)/);
+  if (titleMatch) {
+    return {
+      version: titleMatch[1],
+      buildNumber: Number.parseInt(titleMatch[2], 10),
+    };
+  }
+
+  return null;
+}
+
+function resolveVersionMetadata({ pubspecPath, args }) {
+  const releaseCandidates = [
+    args.releaseTag,
+    process.env.GITHUB_RELEASE_TAG,
+    args.title,
+    process.env.VERSION_TITLE,
+    process.env.GITHUB_RELEASE_TITLE,
+    process.env.GITHUB_RELEASE_BODY,
+  ];
+
+  for (const candidate of releaseCandidates) {
+    const parsed = parseReleaseVersion(candidate);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return readPubspecVersion(pubspecPath);
+}
+
 function normalizeBoolean(value, fallbackValue) {
   if (value === undefined || value === null || value === '') {
     return fallbackValue;
@@ -89,7 +134,7 @@ async function main() {
   const args = parseArgs(process.argv);
   const repoRoot = process.cwd();
   const pubspecPath = path.join(repoRoot, 'fabushi', 'pubspec.yaml');
-  const { version, buildNumber } = readPubspecVersion(pubspecPath);
+  const { version, buildNumber } = resolveVersionMetadata({ pubspecPath, args });
 
   const endpoint =
     args.endpoint ||
