@@ -427,6 +427,18 @@ jobs:
           CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL || vars.CF_EMAIL || vars.CLOUDFLARE_EMAIL }}
         run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB production
 
+      - name: Sync production VERSION_POLICY_AUTOMATION_TOKEN secret
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL || vars.CLOUDFLARE_EMAIL || vars.CF_EMAIL }}
+          VERSION_POLICY_AUTOMATION_TOKEN: ${{ secrets.VERSION_POLICY_AUTOMATION_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${VERSION_POLICY_AUTOMATION_TOKEN:-}" ]
+          printf '%s' "$VERSION_POLICY_AUTOMATION_TOKEN" | npx --yes wrangler@latest secret put VERSION_POLICY_AUTOMATION_TOKEN --env production
+
       - name: Deploy production Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || secrets.CLOUDFLARE_API_KEY || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN || vars.CLOUDFLARE_API_KEY }}
