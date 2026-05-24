@@ -3,11 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart' hide IconAlignment;
-import 'package:sign_in_with_apple/sign_in_with_apple.dart'
-    as apple_pkg
-    show IconAlignment;
 import 'dart:async';
 import 'dart:io' show Platform;
 import '../models/auth_model.dart';
@@ -15,34 +11,7 @@ import '../services/platform_service.dart';
 import '../services/alipay_service.dart';
 import '../services/alipay_auth_service.dart';
 import '../core/design_system/app_theme.dart';
-
-/// 自定义 InAppBrowser，用于拦截支付宝登录后的 URL Scheme 重定向
-class AlipayInAppBrowser extends InAppBrowser {
-  final void Function(String url) onDeepLinkCaptured;
-
-  AlipayInAppBrowser({required this.onDeepLinkCaptured});
-
-  @override
-  Future<NavigationActionPolicy?> shouldOverrideUrlLoading(
-    NavigationAction navigationAction,
-  ) async {
-    final url = navigationAction.request.url?.toString() ?? '';
-    debugPrint('InAppBrowser 导航请求: $url');
-
-    // 拦截自定义 URL Scheme 重定向
-    if (url.startsWith('com.ombhrum.fabushi://') ||
-        url.startsWith('globaldharma://') ||
-        url.startsWith('fabushi://') ||
-        url.startsWith('alipays://')) {
-      debugPrint('拦截到 App Scheme 重定向，关闭浏览器并处理回调');
-      onDeepLinkCaptured(url);
-      close();
-      return NavigationActionPolicy.CANCEL;
-    }
-
-    return NavigationActionPolicy.ALLOW;
-  }
-}
+import 'alipay_web_login_screen.dart';
 
 /// 统一登录页面 - 支持手机号验证码登录和账号密码登录
 class DouyinLoginScreen extends StatefulWidget {
@@ -69,15 +38,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
   // 支付宝回调相关
   StreamSubscription? _urlSubscription;
   final PlatformService _platformService = PlatformServiceFactory.create();
-  InAppBrowser? _alipayBrowser;
-
-  // 检测是否为桌面平台
-  bool get _isDesktop {
-    return !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.macOS ||
-            defaultTargetPlatform == TargetPlatform.windows ||
-            defaultTargetPlatform == TargetPlatform.linux);
-  }
+  bool _isAlipayWebLoginOpen = false;
 
   @override
   void initState() {
@@ -336,29 +297,23 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
       final loginUrl = result['loginUrl'] as String;
 
       if (_isMobile) {
-        debugPrint('使用伪装桌面端 User-Agent 打开 Alipay WebView');
-        _alipayBrowser = AlipayInAppBrowser(
-          onDeepLinkCaptured: (url) {
-            debugPrint('InAppBrowser 捕获到 deep link: $url');
-            _handleDeepLinkAlipayCallback(url);
-          },
-        );
-        await _alipayBrowser!.openUrlRequest(
-          urlRequest: URLRequest(url: WebUri(loginUrl)),
-          settings: InAppBrowserClassSettings(
-            browserSettings: InAppBrowserSettings(
-              hideUrlBar: false,
-              hideToolbarTop: false,
-            ),
-            webViewSettings: InAppWebViewSettings(
-              // 伪装成 macOS 桌面端浏览器，强制支付宝显示网页登录（账号密码/扫码），避免它强制尝试唤起支付宝 App
-              userAgent:
-                  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-              javaScriptEnabled: true,
-              useShouldOverrideUrlLoading: true,
-            ),
+        debugPrint('使用内置 WebView 打开支付宝网页授权');
+        _isAlipayWebLoginOpen = true;
+        final callbackUrl = await Navigator.of(context).push<String>(
+          MaterialPageRoute(
+            builder: (_) => AlipayWebLoginScreen(loginUrl: loginUrl),
+            fullscreenDialog: true,
           ),
         );
+        _isAlipayWebLoginOpen = false;
+
+        if (!mounted) return;
+        if (callbackUrl != null && callbackUrl.isNotEmpty) {
+          debugPrint('内置 WebView 捕获到 deep link: $callbackUrl');
+          await _handleDeepLinkAlipayCallback(callbackUrl);
+        } else {
+          setState(() => _isLoading = false);
+        }
       } else {
         final uri = Uri.parse(loginUrl);
         if (await canLaunchUrl(uri)) {
@@ -414,17 +369,11 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
   Future<void> _handleDeepLinkAlipayCallback(String url) async {
     debugPrint('收到深度链接支付宝回调: $url');
 
-    // 如果是移动端打开了内嵌网页登录，收到回调后尝试关闭内嵌网页
-    if (_isMobile) {
-      try {
-        _alipayBrowser?.close();
-      } catch (e) {
-        debugPrint('关闭 InAppBrowser 失败: $e');
-      }
-      try {
-        closeInAppWebView(); // 保留作为后备
-      } catch (e) {
-        debugPrint('关闭内嵌浏览器失败: $e');
+    if (_isMobile && _isAlipayWebLoginOpen && mounted) {
+      _isAlipayWebLoginOpen = false;
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
       }
     }
 

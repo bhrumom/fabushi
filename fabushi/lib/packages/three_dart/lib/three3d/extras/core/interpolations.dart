@@ -1,4 +1,3 @@
-
 /// Bezier Curves formulas obtained from
 /// http://en.wikipedia.org/wiki/Bézier_curve
 

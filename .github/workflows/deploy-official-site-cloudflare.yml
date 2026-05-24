@@ -69,6 +69,8 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID || secrets.CF_ZONE_ID || vars.CLOUDFLARE_ZONE_ID || vars.CF_ZONE_ID }}
+          OFFICIAL_SITE_R2_BUCKET: ${{ vars.OFFICIAL_SITE_R2_BUCKET || 'bushi' }}
         run: |
           set -euo pipefail
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
@@ -76,8 +78,111 @@ jobs:
             exit 1
           fi
 
-          npx --yes wrangler@latest deploy official-site-worker.js \
-            --name fabushi-official-site \
-            --assets apps/web/out \
-            --compatibility-date 2026-05-06 \
+          official_site_r2_bucket="${OFFICIAL_SITE_R2_BUCKET:-bushi}"
+          cat > wrangler.official-site.toml <<EOF
+          name = "fabushi-official-site"
+          main = "official-site-worker.js"
+          compatibility_date = "2026-05-06"
+
+          [assets]
+          directory = "apps/web/out"
+
+          [[r2_buckets]]
+          binding = "OFFICIAL_SITE_R2"
+          bucket_name = "${official_site_r2_bucket}"
+          EOF
+
+          npx --yes wrangler@latest deploy --config wrangler.official-site.toml \
             --domain fabushi.ombhrum.com
+
+          api_base="https://api.cloudflare.com/client/v4"
+          root_domain="ombhrum.com"
+          root_route_pattern="${root_domain}/*"
+          root_route_worker="fabushi-official-site"
+          zone_id="${CLOUDFLARE_ZONE_ID:-}"
+
+          cloudflare_request() {
+            local method="$1"
+            local url="$2"
+            local body="${3:-}"
+
+            if [ -n "${body}" ]; then
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "${body}"
+            else
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json"
+            fi
+          }
+
+          assert_cloudflare_success() {
+            local response="$1"
+            local context="$2"
+
+            if [ "$(jq -r '.success // false' <<< "${response}")" != "true" ]; then
+              echo "Cloudflare API request failed: ${context}" >&2
+              jq '.' <<< "${response}" >&2
+              exit 1
+            fi
+          }
+
+          if [ -z "${zone_id}" ]; then
+            zone_response="$(cloudflare_request GET "${api_base}/zones?name=${root_domain}&status=active")"
+            assert_cloudflare_success "${zone_response}" "resolve zone ${root_domain}"
+            zone_id="$(jq -r '.result[0].id // empty' <<< "${zone_response}")"
+          fi
+
+          if [ -z "${zone_id}" ]; then
+            echo "Could not resolve Cloudflare zone id for ${root_domain}." >&2
+            exit 1
+          fi
+
+          routes_response="$(cloudflare_request GET "${api_base}/zones/${zone_id}/workers/routes")"
+          assert_cloudflare_success "${routes_response}" "list worker routes"
+          route_json="$(jq -c --arg pattern "${root_route_pattern}" '.result[]? | select(.pattern == $pattern)' <<< "${routes_response}" | head -n 1)"
+
+          if [ -z "${route_json}" ]; then
+            route_body="$(jq -n --arg pattern "${root_route_pattern}" --arg script "${root_route_worker}" '{pattern: $pattern, script: $script}')"
+            route_response="$(cloudflare_request POST "${api_base}/zones/${zone_id}/workers/routes" "${route_body}")"
+            assert_cloudflare_success "${route_response}" "create route ${root_route_pattern}"
+          else
+            route_id="$(jq -r '.id' <<< "${route_json}")"
+            current_worker="$(jq -r '.script // empty' <<< "${route_json}")"
+
+            if [ "${current_worker}" != "${root_route_worker}" ]; then
+              route_body="$(jq -n --arg pattern "${root_route_pattern}" --arg script "${root_route_worker}" '{pattern: $pattern, script: $script}')"
+              route_response="$(cloudflare_request PUT "${api_base}/zones/${zone_id}/workers/routes/${route_id}" "${route_body}")"
+              assert_cloudflare_success "${route_response}" "update route ${root_route_pattern}"
+            else
+              echo "${root_route_pattern} already points to ${root_route_worker}."
+            fi
+          fi
+
+          purge_body="$(
+            jq -n \
+              --arg root "https://${root_domain}/" \
+              --arg index "https://${root_domain}/index.html" \
+              --arg download "https://${root_domain}/download" \
+              --arg download_slash "https://${root_domain}/download/" \
+              --arg releases_api "https://${root_domain}/api/releases.json" \
+              '{files: [$root, $index, $download, $download_slash, $releases_api]}'
+          )"
+          if purge_response="$(
+            curl -sS -X POST "${api_base}/zones/${zone_id}/purge_cache" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "${purge_body}"
+          )"; then
+            purge_success="$(jq -r '.success // false' <<< "${purge_response}" 2>/dev/null || echo false)"
+            if [ "${purge_success}" = "true" ]; then
+              echo "Purged Cloudflare cache for official site entry points."
+            else
+              echo "::warning::Cloudflare cache purge failed after deploy; continuing because Worker and assets were deployed." >&2
+              jq '.' <<< "${purge_response}" >&2 || true
+            fi
+          else
+            echo "::warning::Cloudflare cache purge request failed after deploy; continuing because Worker and assets were deployed." >&2
+          fi

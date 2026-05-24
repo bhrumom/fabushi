@@ -1,0 +1,116 @@
+name: Sync App Version Policy
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        required: false
+        default: stable
+      channels:
+        description: Optional comma-separated release channels
+        required: false
+      platforms:
+        description: Comma-separated platforms
+        required: false
+        default: android,ios
+      title:
+        description: Update dialog title
+        required: false
+      message:
+        description: Update dialog message
+        required: false
+      release_tag:
+        description: Optional GitHub release tag used to parse app version and build number
+        required: false
+      release_notes:
+        description: Multi-line release notes
+        required: false
+      published_at:
+        description: Optional ISO published-at timestamp
+        required: false
+      force_update:
+        description: Force update users on this rollout
+        required: false
+        default: 'false'
+      min_supported_build:
+        description: Optional minimum supported build number
+        required: false
+      rollout_percentage:
+        description: Optional rollout percentage
+        required: false
+      prompt_interval_hours:
+        description: Optional prompt interval hours
+        required: false
+      allow_skip:
+        description: Optional allow-skip flag
+        required: false
+        default: 'true'
+  release:
+    types:
+      - published
+
+jobs:
+  sync:
+    name: Sync release metadata into D1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.target_commitish || github.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/scripts/sync-app-version-policy.mjs
+            /fabushi/pubspec.yaml
+
+      - name: Set release metadata env
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            {
+              echo 'GITHUB_RELEASE_TITLE<<EOF'
+              echo "${{ github.event.release.name || github.event.release.tag_name }}"
+              echo 'EOF'
+              echo 'GITHUB_RELEASE_TAG=${{ github.event.release.tag_name }}'
+              echo 'GITHUB_RELEASE_BODY<<EOF'
+              echo "${{ github.event.release.body }}"
+              echo 'EOF'
+              echo "VERSION_PUBLISHED_AT=${{ github.event.release.published_at }}"
+            } >> "$GITHUB_ENV"
+          else
+            {
+              echo 'GITHUB_RELEASE_TITLE<<EOF'
+              echo "${{ inputs.title }}"
+              echo 'EOF'
+              echo 'GITHUB_RELEASE_TAG=${{ inputs.release_tag }}'
+              echo 'GITHUB_RELEASE_BODY<<EOF'
+              echo "${{ inputs.release_notes }}"
+              echo 'EOF'
+              echo "VERSION_PUBLISHED_AT=${{ inputs.published_at }}"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Sync app version policy
+        env:
+          VERSION_POLICY_ENDPOINT: ${{ vars.VERSION_POLICY_ENDPOINT }}
+          VERSION_POLICY_AUTOMATION_TOKEN: ${{ secrets.VERSION_POLICY_AUTOMATION_TOKEN }}
+          VERSION_POLICY_CHANNELS: ${{ github.event_name == 'release' && 'beta,stable' || inputs.channels || inputs.channel || 'stable' }}
+          VERSION_POLICY_PLATFORMS: ${{ inputs.platforms || 'android,ios' }}
+          VERSION_TITLE: ${{ inputs.title }}
+          VERSION_MESSAGE: ${{ inputs.message }}
+          VERSION_FORCE_UPDATE: ${{ inputs.force_update || 'false' }}
+          VERSION_MIN_SUPPORTED_BUILD: ${{ inputs.min_supported_build }}
+          VERSION_ROLLOUT_PERCENTAGE: ${{ inputs.rollout_percentage }}
+          VERSION_PROMPT_INTERVAL_HOURS: ${{ inputs.prompt_interval_hours }}
+          VERSION_ALLOW_SKIP: ${{ inputs.allow_skip || 'true' }}
+          APP_DOWNLOAD_URL_ANDROID: ${{ vars.APP_DOWNLOAD_URL_ANDROID }}
+          APP_DOWNLOAD_URL_IOS: ${{ vars.APP_DOWNLOAD_URL_IOS }}
+          APP_DOWNLOAD_URL_WEB: ${{ vars.APP_DOWNLOAD_URL_WEB }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+          VERSION_SYNC_SOURCE: github-actions
+        run: node .github/scripts/sync-app-version-policy.mjs

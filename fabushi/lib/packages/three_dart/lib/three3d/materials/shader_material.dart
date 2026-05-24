@@ -27,7 +27,7 @@ class ShaderMaterial extends Material {
       "derivatives": false, // set to use derivatives
       "fragDepth": false, // set to use fragment depth values
       "drawBuffers": false, // set to use draw buffers
-      "shaderTextureLOD": false // set to use shader texture LOD
+      "shaderTextureLOD": false, // set to use shader texture LOD
     };
 
     // When rendered geometry doesn't include these attributes but the material does,
@@ -35,7 +35,7 @@ class ShaderMaterial extends Material {
     defaultAttributeValues = {
       'color': [1, 1, 1],
       'uv': [0, 0],
-      'uv2': [0, 0]
+      'uv2': [0, 0],
     };
 
     index0AttributeName = null;
@@ -45,7 +45,9 @@ class ShaderMaterial extends Material {
 
     if (parameters != null) {
       if (parameters["attributes"] != null) {
-        print('three.ShaderMaterial: attributes should now be defined in three.BufferGeometry instead.');
+        print(
+          'three.ShaderMaterial: attributes should now be defined in three.BufferGeometry instead.',
+        );
       }
 
       setValues(parameters);
@@ -174,5 +176,4 @@ class ShaderMaterial extends Material {
   //   return data;
 
   // }
-
 }

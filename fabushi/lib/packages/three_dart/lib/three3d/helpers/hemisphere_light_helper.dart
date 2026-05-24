@@ -23,7 +23,11 @@ class HemisphereLightHelper extends Object3D {
     var geometry = OctahedronGeometry(size);
     geometry.rotateY(Math.pi * 0.5);
 
-    material = MeshBasicMaterial({"wireframe": true, "fog": false, "toneMapped": false});
+    material = MeshBasicMaterial({
+      "wireframe": true,
+      "fog": false,
+      "toneMapped": false,
+    });
     if (color == null) material.vertexColors = true;
 
     var position = geometry.getAttribute('position');
@@ -62,6 +66,10 @@ class HemisphereLightHelper extends Object3D {
       colors.needsUpdate = true;
     }
 
-    mesh.lookAt(_vectorHemisphereLightHelper.setFromMatrixPosition(light.matrixWorld).negate());
+    mesh.lookAt(
+      _vectorHemisphereLightHelper
+          .setFromMatrixPosition(light.matrixWorld)
+          .negate(),
+    );
   }
 }

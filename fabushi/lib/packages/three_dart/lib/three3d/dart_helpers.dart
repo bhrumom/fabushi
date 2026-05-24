@@ -15,11 +15,16 @@ listSetter(List list, int idx, dynamic value) {
 /// JS Patterns
 dynamic or(value, defaultValue) => falsey(value)
     ? defaultValue is Function
-        ? defaultValue()
-        : defaultValue
+          ? defaultValue()
+          : defaultValue
     : value;
 
-bool falsey(value) => value == null || value == false || value == '' || value == 0 || value == double.nan;
+bool falsey(value) =>
+    value == null ||
+    value == false ||
+    value == '' ||
+    value == 0 ||
+    value == double.nan;
 
 bool truthy(value) => !falsey(value);
 
@@ -63,21 +68,29 @@ int unshift(List list, item) {
 
 List<T> slice<T>(List<T> list, int begin, [int? end]) => list
     .getRange(
-        begin,
-        end == null
-            ? list.length
-            : end < 0
-                ? list.length + end
-                : end)
+      begin,
+      end == null
+          ? list.length
+          : end < 0
+          ? list.length + end
+          : end,
+    )
     .toList();
 
-bool every(List list, dynamic Function(dynamic e) fn) => list.every((x) => truthy(fn(x)));
+bool every(List list, dynamic Function(dynamic e) fn) =>
+    list.every((x) => truthy(fn(x)));
 
-bool some(List list, dynamic Function(dynamic e) fn) => list.any((x) => truthy(fn(x)));
+bool some(List list, dynamic Function(dynamic e) fn) =>
+    list.any((x) => truthy(fn(x)));
 
-List filter(List list, dynamic Function(dynamic e) fn) => list.where((x) => truthy(fn(x))).toList();
+List filter(List list, dynamic Function(dynamic e) fn) =>
+    list.where((x) => truthy(fn(x))).toList();
 
-dynamic reduce(List list, dynamic Function(dynamic prev, dynamic curr, int index, List list) fn, [initialValue]) {
+dynamic reduce(
+  List list,
+  dynamic Function(dynamic prev, dynamic curr, int index, List list) fn, [
+  initialValue,
+]) {
   var index = 0;
   var value;
   var isValueSet = false;
@@ -99,7 +112,11 @@ dynamic reduce(List list, dynamic Function(dynamic prev, dynamic curr, int index
   return value;
 }
 
-dynamic reduceRight(List list, dynamic Function(dynamic prev, dynamic curr, int index, List list) fn, [initialValue]) {
+dynamic reduceRight(
+  List list,
+  dynamic Function(dynamic prev, dynamic curr, int index, List list) fn, [
+  initialValue,
+]) {
   var length = list.length;
   var index = length - 1;
   var value;
@@ -146,8 +163,8 @@ String substr(String str, int start, [int? length]) {
   var end = length == null
       ? str.length
       : start + length > str.length
-          ? str.length
-          : start + length;
+      ? str.length
+      : start + length;
   return str.substring(start, end);
 }
 
@@ -155,8 +172,11 @@ String trimLeft(String str) => str.replaceAll(RegExp(r'^\s+'), '');
 
 String trimRight(String str) => str.replaceAll(RegExp(r'\s+$'), '');
 
-String escapeHtml(String html) =>
-    html.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+String escapeHtml(String html) => html
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
 
 /// RegEx
 List<String?>? exec(RegExp regex, String str) {

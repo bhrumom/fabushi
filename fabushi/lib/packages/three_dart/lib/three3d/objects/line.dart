@@ -17,7 +17,8 @@ class Line extends Object3D {
     updateMorphTargets();
   }
 
-  Line.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) : super.fromJSON(json, rootJSON) {
+  Line.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON)
+    : super.fromJSON(json, rootJSON) {
     type = "Line";
   }
 
@@ -58,7 +59,10 @@ class Line extends Object3D {
           lineDistances[i] += _start.distanceTo(_end);
         }
 
-        geometry.setAttribute('lineDistance', Float32BufferAttribute(lineDistances, 1, false));
+        geometry.setAttribute(
+          'lineDistance',
+          Float32BufferAttribute(lineDistances, 1, false),
+        );
       }
       // else {
       //   print(
@@ -121,26 +125,35 @@ class Line extends Object3D {
         vStart.fromBufferAttribute(positionAttribute, a.toInt());
         vEnd.fromBufferAttribute(positionAttribute, b.toInt());
 
-        var distSq = _ray.distanceSqToSegment(vStart, vEnd, interRay, interSegment);
+        var distSq = _ray.distanceSqToSegment(
+          vStart,
+          vEnd,
+          interRay,
+          interSegment,
+        );
 
         if (distSq > localThresholdSq) continue;
 
-        interRay.applyMatrix4(this.matrixWorld); //Move back to world space for distance calculation
+        interRay.applyMatrix4(
+          this.matrixWorld,
+        ); //Move back to world space for distance calculation
 
         var distance = raycaster.ray.origin.distanceTo(interRay);
 
         if (distance < raycaster.near || distance > raycaster.far) continue;
 
-        intersects.add(Intersection({
-          "distance": distance,
-          // What do we want? intersection point on the ray or on the segment??
-          // point: raycaster.ray.at( distance ),
-          "point": interSegment.clone().applyMatrix4(this.matrixWorld),
-          "index": i,
-          "face": null,
-          "faceIndex": null,
-          "object": this
-        }));
+        intersects.add(
+          Intersection({
+            "distance": distance,
+            // What do we want? intersection point on the ray or on the segment??
+            // point: raycaster.ray.at( distance ),
+            "point": interSegment.clone().applyMatrix4(this.matrixWorld),
+            "index": i,
+            "face": null,
+            "faceIndex": null,
+            "object": this,
+          }),
+        );
       }
     } else {
       final start = Math.max<int>(0, drawRange["start"]!);
@@ -153,26 +166,35 @@ class Line extends Object3D {
         vStart.fromBufferAttribute(positionAttribute, i);
         vEnd.fromBufferAttribute(positionAttribute, i + 1);
 
-        var distSq = _ray.distanceSqToSegment(vStart, vEnd, interRay, interSegment);
+        var distSq = _ray.distanceSqToSegment(
+          vStart,
+          vEnd,
+          interRay,
+          interSegment,
+        );
 
         if (distSq > localThresholdSq) continue;
 
-        interRay.applyMatrix4(this.matrixWorld); //Move back to world space for distance calculation
+        interRay.applyMatrix4(
+          this.matrixWorld,
+        ); //Move back to world space for distance calculation
 
         var distance = raycaster.ray.origin.distanceTo(interRay);
 
         if (distance < raycaster.near || distance > raycaster.far) continue;
 
-        intersects.add(Intersection({
-          "distance": distance,
-          // What do we want? intersection point on the ray or on the segment??
-          // point: raycaster.ray.at( distance ),
-          "point": interSegment.clone().applyMatrix4(this.matrixWorld),
-          "index": i,
-          "face": null,
-          "faceIndex": null,
-          "object": this
-        }));
+        intersects.add(
+          Intersection({
+            "distance": distance,
+            // What do we want? intersection point on the ray or on the segment??
+            // point: raycaster.ray.at( distance ),
+            "point": interSegment.clone().applyMatrix4(this.matrixWorld),
+            "index": i,
+            "face": null,
+            "faceIndex": null,
+            "object": this,
+          }),
+        );
       }
     }
   }

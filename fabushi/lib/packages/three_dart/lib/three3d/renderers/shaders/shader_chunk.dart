@@ -136,5 +136,5 @@ Map<String, String> shaderChunk = {
   "shadow_frag": shadowFrag,
   "shadow_vert": shadowVert,
   "sprite_frag": spriteFrag,
-  "sprite_vert": spriteVert
+  "sprite_vert": spriteVert,
 };

@@ -135,7 +135,9 @@ class Curve {
   getLengths(divisions) {
     divisions ??= arcLengthDivisions;
 
-    if (cacheArcLengths != null && (cacheArcLengths!.length == divisions + 1) && !needsUpdate) {
+    if (cacheArcLengths != null &&
+        (cacheArcLengths!.length == divisions + 1) &&
+        !needsUpdate) {
       return cacheArcLengths;
     }
 
@@ -185,8 +187,9 @@ class Curve {
     var low = 0, high = il - 1, comparison;
 
     while (low <= high) {
-      i = Math.floor(low + (high - low) / 2)
-          .toInt(); // less likely to overflow, though probably not issue here, JS doesn't really have integers, all numbers are floats
+      i = Math.floor(
+        low + (high - low) / 2,
+      ).toInt(); // less likely to overflow, though probably not issue here, JS doesn't really have integers, all numbers are floats
 
       comparison = arcLengths[i] - targetArcLength;
 
@@ -199,7 +202,6 @@ class Curve {
         break;
 
         // DONE
-
       }
     }
 
@@ -245,7 +247,9 @@ class Curve {
     var pt1 = getPoint(t1, null);
     var pt2 = getPoint(t2, null);
 
-    var tangent = optionalTarget ?? ((pt1 is Vector2) ? Vector2(null, null) : Vector3.init());
+    var tangent =
+        optionalTarget ??
+        ((pt1 is Vector2) ? Vector2(null, null) : Vector3.init());
 
     tangent.copy(pt2).sub(pt1).normalize();
 
@@ -319,7 +323,9 @@ class Curve {
       if (vec.length() > Math.epsilon) {
         vec.normalize();
 
-        var theta = Math.acos(MathUtils.clamp(tangents[i - 1].dot(tangents[i]), -1, 1)); // clamp for floating pt errors
+        var theta = Math.acos(
+          MathUtils.clamp(tangents[i - 1].dot(tangents[i]), -1, 1),
+        ); // clamp for floating pt errors
 
         normals[i].applyMatrix4(mat.makeRotationAxis(vec, theta));
       }
@@ -330,10 +336,13 @@ class Curve {
     // if the curve is closed, postprocess the vectors so the first and last normal vectors are the same
 
     if (closed == true) {
-      var theta = Math.acos(MathUtils.clamp(normals[0].dot(normals[segments]), -1, 1));
+      var theta = Math.acos(
+        MathUtils.clamp(normals[0].dot(normals[segments]), -1, 1),
+      );
       theta /= segments;
 
-      if (tangents[0].dot(vec.crossVectors(normals[0], normals[segments])) > 0) {
+      if (tangents[0].dot(vec.crossVectors(normals[0], normals[segments])) >
+          0) {
         theta = -theta;
       }
 
@@ -360,7 +369,11 @@ class Curve {
 
   toJSON() {
     Map<String, dynamic> data = {
-      "metadata": {"version": 4.5, "type": 'Curve', "generator": 'Curve.toJSON'}
+      "metadata": {
+        "version": 4.5,
+        "type": 'Curve',
+        "generator": 'Curve.toJSON',
+      },
     };
 
     data["arcLengthDivisions"] = arcLengthDivisions;

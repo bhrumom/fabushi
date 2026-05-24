@@ -47,7 +47,11 @@ class FileLoader extends Loader {
     // Check if request is duplicate
 
     if (loading[url] != null) {
-      loading[url].add({"onLoad": onLoad, "onProgress": onProgress, "onError": onError});
+      loading[url].add({
+        "onLoad": onLoad,
+        "onProgress": onProgress,
+        "onError": onError,
+      });
 
       return;
     }
@@ -141,7 +145,11 @@ class FileLoader extends Loader {
 
     loading[url] = [];
 
-    loading[url].add({"onLoad": onLoad, "onProgress": onProgress, "onError": onError});
+    loading[url].add({
+      "onLoad": onLoad,
+      "onProgress": onProgress,
+      "onError": onError,
+    });
 
     var callbacks = loading[url];
 

@@ -1,7 +1,6 @@
+import { CBETA_API_ROOT, CBETA_PROXY_ROOT } from "./cbeta-config";
 import { normalizeCbetaQuery, type CbetaWorkInfo } from "./faliu-api";
 
-const CBETA_API_ROOT = "https://api.cbetaonline.cn";
-const CBETA_PROXY_ROOT = "/api/cbeta";
 const CONTENT_SEARCH_ENDPOINTS = ["search/fulltext", "search/content", "search/all_in_one"] as const;
 
 export interface CbetaContentSearchResult extends CbetaWorkInfo {

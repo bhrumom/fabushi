@@ -31,6 +31,7 @@ dependencies:
   shared_preferences: ^2.2.2
   path_provider: ^2.0.15
   package_info_plus: ^8.3.1
+  sqflite: ^2.4.2
 
   # 文件处理
   file_picker: ^10.3.3
@@ -53,6 +54,10 @@ dependencies:
   # 3D渲染
   flutter_earth_globe:
     path: lib/packages/flutter_earth_globe
+  flutter_gl:
+    path: lib/packages/flutter_gl
+  three_dart: ^0.0.16
+  three_dart_jsm: ^0.0.10
 
   # Firebase
   firebase_core: ^4.2.0
@@ -138,6 +143,10 @@ dependencies:
     path: lib/packages/flutter_scene
 
 dependency_overrides:
+  flutter_gl:
+    path: lib/packages/flutter_gl
+  three_dart:
+    path: lib/packages/three_dart
   archive: ^4.0.7
   http: ^1.2.0
   image: ^4.5.4
@@ -170,7 +179,8 @@ flutter:
     - assets/earth_texture.jpg
     - assets/ip_data/
     - assets/sherpa_models/streaming-paraformer-zh-en/
-    # Android/iOS 优先使用 R2 上的 .model，本地无有效缓存时再从云端下载。
+    - web/assets/models/佛像模型.glb
+    # iOS 使用 R2 上的 .model；Android 使用 three_dart 渲染打包 GLB，失败时再读远端 GLB
   
   fonts:
     # 使用子集化后的字体（从80MB压缩至~4.5MB）

@@ -133,7 +133,9 @@ class Object3D with EventDispatcher {
       List<BufferGeometry>? geometries = rootJSON["geometries"];
 
       if (geometries != null) {
-        geometry = geometries.firstWhere((element) => element.uuid == json["geometry"]);
+        geometry = geometries.firstWhere(
+          (element) => element.uuid == json["geometry"],
+        );
       }
     }
 
@@ -141,7 +143,9 @@ class Object3D with EventDispatcher {
       List<Material>? materials = rootJSON["materials"];
 
       if (materials != null) {
-        Material material = materials.firstWhere((element) => element.uuid == json["material"]);
+        Material material = materials.firstWhere(
+          (element) => element.uuid == json["material"],
+        );
         material = material;
       }
     }
@@ -163,7 +167,10 @@ class Object3D with EventDispatcher {
     quaternion.onChange(onQuaternionChange);
   }
 
-  static EventDispatcher castJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) {
+  static EventDispatcher castJSON(
+    Map<String, dynamic> json,
+    Map<String, dynamic> rootJSON,
+  ) {
     String? type = json["type"];
 
     if (type == null) {
@@ -351,7 +358,9 @@ class Object3D with EventDispatcher {
 
   Object3D add(Object3D object) {
     if (object == this) {
-      print('three.Object3D.add: object can\'t be added as a child of itself. $object');
+      print(
+        'three.Object3D.add: object can\'t be added as a child of itself. $object',
+      );
       return this;
     }
 
@@ -596,7 +605,11 @@ class Object3D with EventDispatcher {
       // initialize meta obj
       meta = Object3dMeta();
 
-      output["metadata"] = {"version": 4.5, "type": 'Object', "generator": 'Object3D.toJSON'};
+      output["metadata"] = {
+        "version": 4.5,
+        "type": 'Object',
+        "generator": 'Object3D.toJSON',
+      };
     }
 
     // standard Object3D serialization
@@ -817,7 +830,14 @@ class Object3D with EventDispatcher {
     return this;
   }
 
-  void onAfterRender({WebGLRenderer? renderer, scene, Camera? camera, geometry, material, group}) {
+  void onAfterRender({
+    WebGLRenderer? renderer,
+    scene,
+    Camera? camera,
+    geometry,
+    material,
+    group,
+  }) {
     // print(" Object3D.onAfterRender ${type} ${id} ");
   }
 

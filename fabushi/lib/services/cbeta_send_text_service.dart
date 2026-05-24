@@ -155,7 +155,8 @@ class CbetaSendTextService {
         final nextCursor = (decoded['nextCursor'] ?? decoded['cursor'] ?? '')
             .toString()
             .trim();
-        final hasMore = decoded['hasMore'] == true ||
+        final hasMore =
+            decoded['hasMore'] == true ||
             decoded['has_next'] == true ||
             (nextCursor.isNotEmpty && nextCursor != (cursor ?? '').trim()) ||
             (items.length == limit && limit > 0);

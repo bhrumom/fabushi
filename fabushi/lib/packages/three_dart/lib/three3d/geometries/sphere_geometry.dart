@@ -63,16 +63,30 @@ class SphereGeometry extends BufferGeometry {
 
         // vertex
 
-        vertex.x = -radius * Math.cos(phiStart + u * phiLength) * Math.sin(thetaStart + v * thetaLength);
+        vertex.x =
+            -radius *
+            Math.cos(phiStart + u * phiLength) *
+            Math.sin(thetaStart + v * thetaLength);
         vertex.y = radius * Math.cos(thetaStart + v * thetaLength);
-        vertex.z = radius * Math.sin(phiStart + u * phiLength) * Math.sin(thetaStart + v * thetaLength);
+        vertex.z =
+            radius *
+            Math.sin(phiStart + u * phiLength) *
+            Math.sin(thetaStart + v * thetaLength);
 
-        vertices.addAll([vertex.x.toDouble(), vertex.y.toDouble(), vertex.z.toDouble()]);
+        vertices.addAll([
+          vertex.x.toDouble(),
+          vertex.y.toDouble(),
+          vertex.z.toDouble(),
+        ]);
 
         // normal
 
         normal.copy(vertex).normalize();
-        normals.addAll([normal.x.toDouble(), normal.y.toDouble(), normal.z.toDouble()]);
+        normals.addAll([
+          normal.x.toDouble(),
+          normal.y.toDouble(),
+          normal.z.toDouble(),
+        ]);
 
         // uv
 
@@ -103,13 +117,29 @@ class SphereGeometry extends BufferGeometry {
     // build geometry
 
     setIndex(indices);
-    setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3, false));
-    setAttribute('normal', Float32BufferAttribute(Float32Array.from(normals), 3, false));
-    setAttribute('uv', Float32BufferAttribute(Float32Array.from(uvs), 2, false));
+    setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3, false),
+    );
+    setAttribute(
+      'normal',
+      Float32BufferAttribute(Float32Array.from(normals), 3, false),
+    );
+    setAttribute(
+      'uv',
+      Float32BufferAttribute(Float32Array.from(uvs), 2, false),
+    );
   }
 
   static fromJSON(data) {
-    return SphereGeometry(data["radius"], data["widthSegments"], data["heightSegments"], data["phiStart"],
-        data["phiLength"], data["thetaStart"], data["thetaLength"]);
+    return SphereGeometry(
+      data["radius"],
+      data["widthSegments"],
+      data["heightSegments"],
+      data["phiStart"],
+      data["phiLength"],
+      data["thetaStart"],
+      data["thetaLength"],
+    );
   }
 }

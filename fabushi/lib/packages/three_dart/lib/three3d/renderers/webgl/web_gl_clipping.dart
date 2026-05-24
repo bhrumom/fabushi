@@ -23,7 +23,8 @@ class WebGLClipping {
   WebGLClipping(this.properties);
 
   init(List<Plane> planes, bool enableLocalClipping, Camera camera) {
-    var enabled = planes.isNotEmpty ||
+    var enabled =
+        planes.isNotEmpty ||
         enableLocalClipping ||
         // enable state of previous frame - the clipping code has to
         // run another frame in order to reset the state:
@@ -55,7 +56,10 @@ class WebGLClipping {
 
     var materialProperties = properties.get(material);
 
-    if (!localClippingEnabled || planes == null || planes.isEmpty || renderingShadows && !clipShadows) {
+    if (!localClippingEnabled ||
+        planes == null ||
+        planes.isEmpty ||
+        renderingShadows && !clipShadows) {
       // there's no local clipping
 
       if (renderingShadows) {
@@ -103,7 +107,8 @@ class WebGLClipping {
       dstArray = uniform["value"];
 
       if (skipTransform != true || dstArray == null) {
-        var flatSize = dstOffset + nPlanes * 4, viewMatrix = camera.matrixWorldInverse;
+        var flatSize = dstOffset + nPlanes * 4,
+            viewMatrix = camera.matrixWorldInverse;
 
         viewNormalMatrix.getNormalMatrix(viewMatrix);
 

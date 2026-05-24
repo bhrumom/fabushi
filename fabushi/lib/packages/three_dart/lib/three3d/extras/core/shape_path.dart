@@ -87,13 +87,13 @@ class ShapePath {
           if (inPt.y == edgeLowPt.y) {
             if (inPt.x == edgeLowPt.x) return true; // inPt is on contour ?
             // continue;				// no intersection or edgeLowPt => doesn't count !!!
-
           } else {
-            var perpEdge = edgeDy * (inPt.x - edgeLowPt.x) - edgeDx * (inPt.y - edgeLowPt.y);
+            var perpEdge =
+                edgeDy * (inPt.x - edgeLowPt.x) -
+                edgeDx * (inPt.y - edgeLowPt.y);
             if (perpEdge == 0) return true; // inPt is on contour ?
             if (perpEdge < 0) continue;
             inside = !inside; // true intersection left of inPt
-
           }
         } else {
           // parallel or collinear
@@ -104,7 +104,6 @@ class ShapePath {
             return true;
           } // inPt: Point on contour !
           // continue;
-
         }
       }
 
@@ -165,12 +164,10 @@ class ShapePath {
         listSetter(newShapeHoles, mainIdx, []);
 
         //console.log('cw', i);
-
       } else {
         newShapeHoles[mainIdx].add({"h": tmpPath, "p": tmpPoints[0]});
 
         //console.log('ccw', i);
-
       }
     }
 

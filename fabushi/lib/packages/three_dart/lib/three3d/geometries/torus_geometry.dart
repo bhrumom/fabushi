@@ -48,7 +48,11 @@ class TorusGeometry extends BufferGeometry {
         vertex.y = (radius + tube * Math.cos(v)) * Math.sin(u);
         vertex.z = tube * Math.sin(v);
 
-        vertices.addAll([vertex.x.toDouble(), vertex.y.toDouble(), vertex.z.toDouble()]);
+        vertices.addAll([
+          vertex.x.toDouble(),
+          vertex.y.toDouble(),
+          vertex.z.toDouble(),
+        ]);
 
         // normal
 
@@ -56,7 +60,11 @@ class TorusGeometry extends BufferGeometry {
         center.y = radius * Math.sin(u);
         normal.subVectors(vertex, center).normalize();
 
-        normals.addAll([normal.x.toDouble(), normal.y.toDouble(), normal.z.toDouble()]);
+        normals.addAll([
+          normal.x.toDouble(),
+          normal.y.toDouble(),
+          normal.z.toDouble(),
+        ]);
 
         // uv
 
@@ -86,12 +94,24 @@ class TorusGeometry extends BufferGeometry {
     // build geometry
 
     setIndex(indices);
-    setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3));
-    setAttribute('normal', Float32BufferAttribute(Float32Array.from(normals), 3));
+    setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3),
+    );
+    setAttribute(
+      'normal',
+      Float32BufferAttribute(Float32Array.from(normals), 3),
+    );
     setAttribute('uv', Float32BufferAttribute(Float32Array.from(uvs), 2));
   }
 
   static fromJSON(data) {
-    return TorusGeometry(data.radius, data.tube, data.radialSegments, data.tubularSegments, data.arc);
+    return TorusGeometry(
+      data.radius,
+      data.tube,
+      data.radialSegments,
+      data.tubularSegments,
+      data.arc,
+    );
   }
 }

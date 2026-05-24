@@ -11,15 +11,15 @@ class ConeGeometry extends CylinderGeometry {
     thetaStart = 0,
     thetaLength = Math.pi * 2,
   ]) : super(
-          0,
-          radius,
-          height,
-          radialSegments,
-          heightSegments,
-          openEnded,
-          thetaStart,
-          thetaLength,
-        ) {
+         0,
+         radius,
+         height,
+         radialSegments,
+         heightSegments,
+         openEnded,
+         thetaStart,
+         thetaLength,
+       ) {
     type = 'ConeGeometry';
     parameters = {
       "radius": radius,
@@ -28,7 +28,7 @@ class ConeGeometry extends CylinderGeometry {
       "heightSegments": heightSegments,
       "openEnded": openEnded,
       "thetaStart": thetaStart,
-      "thetaLength": thetaLength
+      "thetaLength": thetaLength,
     };
   }
 }

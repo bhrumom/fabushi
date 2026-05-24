@@ -13,7 +13,8 @@ class QuadraticBezierCurve extends Curve {
     this.v2 = v2 ?? Vector2(null, null);
   }
 
-  QuadraticBezierCurve.fromJSON(Map<String, dynamic> json) : super.fromJSON(json) {
+  QuadraticBezierCurve.fromJSON(Map<String, dynamic> json)
+    : super.fromJSON(json) {
     type = 'QuadraticBezierCurve';
     isQuadraticBezierCurve = true;
 
@@ -28,7 +29,10 @@ class QuadraticBezierCurve extends Curve {
 
     var v0 = this.v0, v1 = this.v1, v2 = this.v2;
 
-    point.set(quadraticBezier(t, v0.x, v1.x, v2.x), quadraticBezier(t, v0.y, v1.y, v2.y));
+    point.set(
+      quadraticBezier(t, v0.x, v1.x, v2.x),
+      quadraticBezier(t, v0.y, v1.y, v2.y),
+    );
 
     return point;
   }

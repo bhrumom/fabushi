@@ -142,6 +142,16 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <!-- Android 11+ package visibility for Alipay SDK install checks and app schemes. -->
+        <package android:name="com.eg.android.AlipayGphone"/>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="alipays"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="alipay"/>
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

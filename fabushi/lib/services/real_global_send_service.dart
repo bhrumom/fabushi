@@ -146,7 +146,8 @@ class RealGlobalSendService {
   }
 
   Future<int> _sendFileToAllCountries(PlatformFile file) async {
-    onLog('📤 发送文件到全球: ${file.name}');
+    final scriptureTitle = _displayScriptureName(file.name);
+    onLog('📤 准备发送《$scriptureTitle》: ${file.name}');
 
     final countryCodes = globalCountryServers.keys.toList();
     int successCount = 0;
@@ -159,7 +160,9 @@ class RealGlobalSendService {
       final countryName = _getCountryName(countryCode);
       final servers = globalCountryServers[countryCode]!;
 
-      onLog('🌍 发送到 $countryName ($countryCode) - 使用 ${servers.length} 个服务器');
+      onLog(
+        '📤 正在发送到 $countryName ($countryCode)：《$scriptureTitle》 - 使用 ${servers.length} 个服务器',
+      );
 
       // 性能优化：在触发轨迹动画前让出主线程
       await Future.delayed(Duration.zero);
@@ -220,7 +223,13 @@ class RealGlobalSendService {
       bool countrySuccess = false;
       for (final serverUrl in servers) {
         try {
-          await _sendToServer(file, serverUrl, countryCode, countryName);
+          await _sendToServer(
+            file,
+            serverUrl,
+            countryCode,
+            countryName,
+            scriptureTitle,
+          );
           successCount++;
           countrySuccess = true;
 
@@ -246,7 +255,7 @@ class RealGlobalSendService {
         onProgress(_sentCount); // 实时通知进度更新
       } else {
         failCount++;
-        onLog('❌ $countryName ($countryCode) 所有服务器发送失败');
+        onLog('❌ 发送到 $countryName ($countryCode) 失败：《$scriptureTitle》');
       }
 
       _currentCountryIndex++;
@@ -260,7 +269,7 @@ class RealGlobalSendService {
       }
     }
 
-    onLog('✅ 文件 ${file.name} 发送完成 - 成功: $successCount, 失败: $failCount');
+    onLog('✅ 文件《$scriptureTitle》发送完成 - 成功: $successCount, 失败: $failCount');
     return successCount; // 返回成功发送的国家数
   }
 
@@ -274,6 +283,7 @@ class RealGlobalSendService {
     String serverUrl,
     String countryCode,
     String countryName,
+    String scriptureTitle,
   ) async {
     try {
       // 关键修复：在网络请求前让出主线程控制权
@@ -299,10 +309,22 @@ class RealGlobalSendService {
         await _sendSmallFile(requestData, serverUrl, countryCode, countryName);
       }
 
-      onLog('✅ 成功发送到 $countryName ($countryCode) - $serverUrl');
+      onLog(
+        '✅ 发送到 $countryName ($countryCode) 成功：《$scriptureTitle》 - $serverUrl',
+      );
     } catch (e) {
       throw Exception('发送失败: $e');
     }
+  }
+
+  String _displayScriptureName(String fileName) {
+    final withoutExtension = fileName.replaceFirst(RegExp(r'\.[^.]+$'), '');
+    final withoutCbetaPrefix = withoutExtension.replaceFirst(
+      RegExp(r'^[A-Z][A-Z0-9]?\d{4}[A-Z]?_\d+_'),
+      '',
+    );
+    final normalized = withoutCbetaPrefix.replaceAll('_', ' ').trim();
+    return normalized.isEmpty ? withoutExtension : normalized;
   }
 
   /// 流式发送大文件（分块读取，分块上传）

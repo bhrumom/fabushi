@@ -6,18 +6,23 @@ import 'package:provider/provider.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import '../models/auth_model.dart';
 import '../models/meditation_practice_model.dart';
+import '../models/practice_book_model.dart';
 import '../models/sutra_model.dart';
 import '../services/practice_stats_service.dart';
 import '../services/meditation_session_manager.dart';
 import '../services/achievement_system.dart';
+import '../services/practice_book_service.dart';
+import '../services/zen_recitation_counter_service.dart';
 import 'buddha_model_screen.dart';
 import 'sutra_reader_screen.dart';
+import '../features/video_feed/presentation/view/widgets/video_feed_view_full_text_reader.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/achievement_popup.dart';
 import '../widgets/online_counter_widget.dart';
 import '../widgets/practice_selection_sheet.dart';
 import '../widgets/practice_leaderboard_sheet.dart';
 import '../widgets/reflection_dialog.dart';
+import '../widgets/practice_book_sheet.dart';
 import '../widgets/zen_room_2d_elements.dart';
 
 /// 禅室修行界面 - 零摩擦版本
@@ -45,11 +50,14 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   final _sessionManager = MeditationSessionManager();
   final _achievementSystem = AchievementSystem();
   final _onlineCounterService = OnlineCounterService();
+  final _practiceBookService = PracticeBookService.instance;
+  final _recitationCounter = ZenRecitationCounterService();
 
   // ========== 状态变量 ==========
   bool _isCircumambulating = false;
   bool _isInitialized = false;
   bool _isPageVisible = false; // 追踪页面是否可见
+  PracticeBook? _activePracticeBook;
 
   // ========== 动画控制器 ==========
   late AnimationController _incenseController;
@@ -83,6 +91,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     );
 
     _incenseController.addListener(_onIncenseProgressChanged);
+    _recitationCounter.addListener(_onRecitationCounterChanged);
 
     // 初始化
     _initialize();
@@ -94,12 +103,15 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       _sessionManager.loadPreferences(),
       _achievementSystem.loadData(),
     ]);
+    await _loadActivePracticeBook();
+    await _recitationCounter.prepare(_activePracticeBook);
 
     // 初始化音量监听（用于念诵计数）
     _initVolumeListener();
 
     // 获取在线人数
     _fetchInitialCount();
+    _onlineCounterService.startCountPolling('zen_room');
 
     // 监听成就事件
     _achievementSubscription = _achievementSystem.achievementStream.listen((
@@ -115,9 +127,37 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     // 启动时不主动弹出功课输入，等用户点击开始修行或功课按钮再提示。
   }
 
+  void _onRecitationCounterChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadActivePracticeBook() async {
+    final practice = _sessionManager.lockedPractice;
+    if (practice == null) {
+      _activePracticeBook = null;
+      return;
+    }
+    _activePracticeBook = await _practiceBookService.getActiveBook(
+      practice.title,
+    );
+  }
+
   /// 打开经文阅读界面
   void _openSutraReader() {
     final practice = _sessionManager.lockedPractice;
+    final book = _activePracticeBook;
+    if (book != null && book.plainText.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => VideoFeedViewFullTextReader(
+            bookTitle: book.title,
+            fullText: book.plainText,
+          ),
+        ),
+      );
+      return;
+    }
     if (practice != null && !practice.filePath.startsWith('manual:')) {
       openSutraReader(
         context,
@@ -139,9 +179,11 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     if (!visible && _sessionManager.isInSession) {
       // 离开禅室页面时暂停计时（但不结束）
       _sessionManager.pauseSession();
+      _recitationCounter.stop();
     } else if (visible && _sessionManager.isInSession) {
       // 重新进入禅室页面时恢复计时
       _sessionManager.resumeSession();
+      _startOfflineRecitationCounter();
     }
   }
 
@@ -187,8 +229,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
         );
         showPracticeSelectionSheet(
           context,
-          onSelected: () {
+          onSelected: () async {
             // 功课选择完成后刷新界面
+            await _loadActivePracticeBook();
+            await _recitationCounter.prepare(_activePracticeBook);
             if (mounted) setState(() {});
           },
         );
@@ -208,9 +252,11 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     if (!mounted || !_isPageVisible) return;
 
     // 使用锁定的功课开始
+    await _loadActivePracticeBook();
     await _sessionManager.instantStart(
       sutra: _sessionManager.lockedPractice?.title,
     );
+    await _startOfflineRecitationCounter();
 
     // 触发开始成就
     await _achievementSystem.onSessionStart();
@@ -225,6 +271,15 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     _onlineCounterService.joinActivity('zen_room');
 
     if (mounted) setState(() {});
+  }
+
+  Future<void> _startOfflineRecitationCounter() async {
+    if (!_sessionManager.isInSession) return;
+    await _recitationCounter.start(
+      book: _activePracticeBook,
+      onCount: () => _sessionManager.incrementChant(),
+      onUndoCount: () => _sessionManager.decrementChant(),
+    );
   }
 
   bool _ensureCloudRecordingReady() {
@@ -293,6 +348,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _achievementSubscription?.cancel();
+    _recitationCounter.removeListener(_onRecitationCounterChanged);
+    _recitationCounter.stop();
     _incenseController.removeListener(_onIncenseProgressChanged);
     _incenseController.dispose();
     _pulseController.dispose();
@@ -304,6 +361,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
   /// 结束修行并同步数据
   Future<void> _endMeditation() async {
+    await _recitationCounter.stop();
     final result = await _sessionManager.endSession();
     _incenseController.stop();
     _incenseController.reset();
@@ -680,6 +738,16 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                   style: TextStyle(color: Colors.black),
                 ),
               ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _showPracticeBookSheet();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD4AF37),
+              ),
+              child: const Text('功课本', style: TextStyle(color: Colors.black)),
+            ),
           ],
         ),
       );
@@ -688,11 +756,33 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
       showPracticeSelectionSheet(
         context,
         required: true, // 不可取消
-        onSelected: () {
+        onSelected: () async {
+          await _loadActivePracticeBook();
+          await _recitationCounter.prepare(_activePracticeBook);
           if (mounted) setState(() {});
         },
       );
     }
+  }
+
+  Future<void> _showPracticeBookSheet() async {
+    final practice = _sessionManager.lockedPractice;
+    if (practice == null) {
+      _showPracticeSelection();
+      return;
+    }
+    await PracticeBookSheet.show(
+      context,
+      practiceTitle: practice.title,
+      onChanged: (book) {
+        _activePracticeBook = book;
+        unawaited(_recitationCounter.prepare(book));
+        if (mounted) setState(() {});
+      },
+    );
+    await _loadActivePracticeBook();
+    await _recitationCounter.prepare(_activePracticeBook);
+    if (mounted) setState(() {});
   }
 
   void _showManualInput() {
@@ -780,7 +870,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                       ? practice == null ||
                                 practice.filePath.startsWith('manual:')
                             ? _showPracticeSelection
-                            : _openSutraReader
+                            : _showPracticeBookSheet
                       : null,
                 ),
               ),
@@ -909,7 +999,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                     height: bookHeight,
                     onTap: opensSelection
                         ? _showPracticeSelection
-                        : _openSutraReader,
+                        : _showPracticeBookSheet,
                   ),
                 ),
               ),
@@ -1138,9 +1228,175 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               ),
             ),
           ),
+          const SizedBox(height: 14),
+          _buildRecitationStatus(),
         ],
       ),
     );
+  }
+
+  Widget _buildRecitationStatus() {
+    final status = _recitationCounter.status;
+    final progress = _recitationCounter.matchProgress.clamp(0.0, 1.0);
+    final showProgress =
+        status == ZenRecitationStatus.listening ||
+        status == ZenRecitationStatus.ready ||
+        status == ZenRecitationStatus.starting;
+    final recognizedText = _recitationCounter.recognizedText;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 320),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.32),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _recitationStatusIcon(status),
+                  color: _recitationStatusColor(status),
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _recitationCounter.statusMessage,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ),
+                Switch.adaptive(
+                  value: _recitationCounter.autoEnabled,
+                  activeThumbColor: const Color(0xFFD4AF37),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (value) async {
+                    _recitationCounter.setAutoEnabled(value);
+                    if (value && _sessionManager.isInSession) {
+                      await _startOfflineRecitationCounter();
+                    }
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ],
+            ),
+            if (showProgress) ...[
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: progress <= 0 ? null : progress,
+                minHeight: 4,
+                color: const Color(0xFFD4AF37),
+                backgroundColor: Colors.white12,
+              ),
+            ],
+            if (recognizedText.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  recognizedText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCounterAction(
+                    icon: Icons.add,
+                    label: '+1',
+                    onTap: _onTapCount,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildCounterAction(
+                    icon: Icons.undo,
+                    label: '撤销',
+                    enabled: _recitationCounter.canUndo,
+                    onTap: () {
+                      _recitationCounter.undoLastAutoCount();
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCounterAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool enabled = true,
+  }) {
+    return Tooltip(
+      message: label,
+      child: GestureDetector(
+        onTap: enabled ? onTap : null,
+        child: Opacity(
+          opacity: enabled ? 1 : 0.42,
+          child: Container(
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(19),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: Colors.white70, size: 17),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _recitationStatusIcon(ZenRecitationStatus status) {
+    return switch (status) {
+      ZenRecitationStatus.listening => Icons.graphic_eq,
+      ZenRecitationStatus.ready => Icons.offline_bolt,
+      ZenRecitationStatus.starting => Icons.mic,
+      ZenRecitationStatus.missingBook => Icons.menu_book_outlined,
+      ZenRecitationStatus.missingModel => Icons.download,
+      ZenRecitationStatus.disabled => Icons.mic_off,
+      ZenRecitationStatus.error => Icons.error_outline,
+      ZenRecitationStatus.stopped => Icons.pause_circle_outline,
+    };
+  }
+
+  Color _recitationStatusColor(ZenRecitationStatus status) {
+    return switch (status) {
+      ZenRecitationStatus.listening ||
+      ZenRecitationStatus.ready ||
+      ZenRecitationStatus.starting => const Color(0xFFD4AF37),
+      ZenRecitationStatus.error => Colors.redAccent,
+      ZenRecitationStatus.missingBook ||
+      ZenRecitationStatus.missingModel => Colors.orangeAccent,
+      ZenRecitationStatus.disabled ||
+      ZenRecitationStatus.stopped => Colors.white54,
+    };
   }
 
   Widget _buildBottomControls() {

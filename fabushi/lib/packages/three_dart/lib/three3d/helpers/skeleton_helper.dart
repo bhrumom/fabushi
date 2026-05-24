@@ -38,16 +38,35 @@ class SkeletonHelper extends LineSegments {
       if (bone.parent != null && bone.parent!.type == "Bone") {
         vertices.addAll([0, 0, 0]);
         vertices.addAll([0, 0, 0]);
-        colors.addAll([color1.r.toDouble(), color1.g.toDouble(), color1.b.toDouble()]);
-        colors.addAll([color2.r.toDouble(), color2.g.toDouble(), color2.b.toDouble()]);
+        colors.addAll([
+          color1.r.toDouble(),
+          color1.g.toDouble(),
+          color1.b.toDouble(),
+        ]);
+        colors.addAll([
+          color2.r.toDouble(),
+          color2.g.toDouble(),
+          color2.b.toDouble(),
+        ]);
       }
     }
 
-    geometry.setAttribute('position', Float32BufferAttribute(Float32Array.from(vertices), 3, false));
-    geometry.setAttribute('color', Float32BufferAttribute(Float32Array.from(colors), 3, false));
+    geometry.setAttribute(
+      'position',
+      Float32BufferAttribute(Float32Array.from(vertices), 3, false),
+    );
+    geometry.setAttribute(
+      'color',
+      Float32BufferAttribute(Float32Array.from(colors), 3, false),
+    );
 
-    var material = LineBasicMaterial(
-        {"vertexColors": true, "depthTest": false, "depthWrite": false, "toneMapped": false, "transparent": true});
+    var material = LineBasicMaterial({
+      "vertexColors": true,
+      "depthTest": false,
+      "depthWrite": false,
+      "toneMapped": false,
+      "transparent": true,
+    });
 
     var keletonHelper = SkeletonHelper.create(geometry, material);
 

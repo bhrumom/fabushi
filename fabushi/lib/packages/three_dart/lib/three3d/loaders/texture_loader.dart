@@ -15,9 +15,14 @@ class TextureLoader extends Loader {
   Future<Texture> loadAsync(url, [Function? onProgress]) async {
     var completer = Completer<Texture>();
 
-    load(url, (texture) {
-      completer.complete(texture);
-    }, onProgress, () {});
+    load(
+      url,
+      (texture) {
+        completer.complete(texture);
+      },
+      onProgress,
+      () {},
+    );
 
     return completer.future;
   }
@@ -27,7 +32,18 @@ class TextureLoader extends Loader {
     Texture texture;
 
     // if(kIsWeb) {
-    texture = Texture(null, null, null, null, null, null, null, null, null, null);
+    texture = Texture(
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    );
     // } else {
     //   texture = DataTexture(null, null, null,null, null, null,null, null, null, null, null, null);
     // }
@@ -38,30 +54,44 @@ class TextureLoader extends Loader {
 
     var completer = Completer<Texture>();
     loader.flipY = flipY;
-    loader.load(url, (image) {
-      ImageElement imageElement;
+    loader.load(
+      url,
+      (image) {
+        ImageElement imageElement;
 
-      // Web better way ???
-      if (kIsWeb && image is! Image) {
-        imageElement = ImageElement(
-            url: url is Blob ? "" : url, data: image, width: image.width!.toDouble(), height: image.height!.toDouble());
-      } else {
-        var pixels = image.getBytes(order: ChannelOrder.rgba);
+        // Web better way ???
+        if (kIsWeb && image is! Image) {
+          imageElement = ImageElement(
+            url: url is Blob ? "" : url,
+            data: image,
+            width: image.width!.toDouble(),
+            height: image.height!.toDouble(),
+          );
+        } else {
+          var pixels = image.getBytes(order: ChannelOrder.rgba);
 
-        // print(" _pixels : ${_pixels.length} ");
-        // print(" ------------------------------------------- ");
-        imageElement = ImageElement(url: url, data: Uint8Array.from(pixels), width: image.width, height: image.height);
-      }
+          // print(" _pixels : ${_pixels.length} ");
+          // print(" ------------------------------------------- ");
+          imageElement = ImageElement(
+            url: url,
+            data: Uint8Array.from(pixels),
+            width: image.width,
+            height: image.height,
+          );
+        }
 
-      // print(" image.width: ${image.width} image.height: ${image.height} isJPEG: ${isJPEG} ");
+        // print(" image.width: ${image.width} image.height: ${image.height} isJPEG: ${isJPEG} ");
 
-      texture.image = imageElement;
-      texture.needsUpdate = true;
+        texture.image = imageElement;
+        texture.needsUpdate = true;
 
-      onLoad(texture);
+        onLoad(texture);
 
-      completer.complete(texture);
-    }, onProgress, onError);
+        completer.complete(texture);
+      },
+      onProgress,
+      onError,
+    );
 
     return completer.future;
   }

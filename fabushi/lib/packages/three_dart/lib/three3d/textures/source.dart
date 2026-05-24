@@ -74,7 +74,8 @@ serializeImage(image) {
         "data": image.data.sublist(0),
         "width": image.width,
         "height": image.height,
-        "type": image.data.runtimeType.toString(), // TODO remove runtimeType for web release mode
+        "type": image.data.runtimeType
+            .toString(), // TODO remove runtimeType for web release mode
       };
     } else {
       print('three.Texture: Unable to serialize Texture.');

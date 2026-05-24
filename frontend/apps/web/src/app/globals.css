@@ -163,8 +163,7 @@ h3,
 .site-nav-actions,
 .hero-actions,
 .inline-cta,
-.release-card-actions,
-.mirror-links {
+.release-card-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -344,6 +343,10 @@ h3,
   font-size: clamp(4.2rem, 11vw, 8.4rem);
   line-height: 0.9;
   font-weight: 900;
+}
+
+.hero-title-line {
+  display: block;
 }
 
 .hero-subtitle,
@@ -823,18 +826,13 @@ h3,
   text-align: center;
 }
 
-.release-card-meta,
-.mirror-links {
+.release-card-meta {
   color: var(--muted);
   font-size: 0.9rem;
 }
 
 .release-card-meta.compact {
   font-size: 0.82rem;
-}
-
-.mirror-links a {
-  color: var(--cyan);
 }
 
 .application-list {

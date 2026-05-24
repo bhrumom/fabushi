@@ -48,7 +48,8 @@ class LoaderUtils {
 
     // Host Relative URL
     final reg1 = RegExp("^https?://", caseSensitive: false);
-    if (reg1.hasMatch(path) && RegExp("^/", caseSensitive: false).hasMatch(url)) {
+    if (reg1.hasMatch(path) &&
+        RegExp("^/", caseSensitive: false).hasMatch(url)) {
       final reg2 = RegExp("(^https?://[^/]+).*", caseSensitive: false);
 
       final matches = reg2.allMatches(path);
@@ -59,7 +60,6 @@ class LoaderUtils {
 
       print("GLTFHelper.resolveURL todo debug  ");
       // path = path.replace( RegExp("(^https?:\/\/[^\/]+).*", caseSensitive: false), '$1' );
-
     }
 
     // Absolute URL http://,https://,//

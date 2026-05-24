@@ -264,6 +264,21 @@ jobs:
             /fabushi/web/**
             !/fabushi/web/assets/built_in/**
 
+      - name: Fetch Android three_dart Buddha GLB
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          git lfs pull --include="fabushi/web/assets/models/佛像模型.glb" --exclude=""
+          python3 - <<'PY'
+          from pathlib import Path
+
+          glb = Path("fabushi/web/assets/models/佛像模型.glb")
+          data = glb.read_bytes()
+          if data[:4] != b"glTF" or len(data) < 10 * 1024 * 1024:
+              raise SystemExit(f"{glb} is not the expected bundled GLB ({len(data)} bytes)")
+          PY
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -531,8 +546,11 @@ jobs:
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            /.github/workflows/**
+            /.github/scripts/**
             /fabushi/web/**
             !/fabushi/web/assets/built_in/**
+            /frontend/**
 
       - name: Download Flutter web build
         uses: actions/download-artifact@v5
@@ -627,6 +645,8 @@ jobs:
       - name: Checkout workflow files
         uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/workflows/**

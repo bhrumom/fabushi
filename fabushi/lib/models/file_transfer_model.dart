@@ -357,7 +357,9 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
         }
 
         final nextCursor = result.nextCursor?.trim();
-        if (nextCursor != null && nextCursor.isNotEmpty && nextCursor != cursor) {
+        if (nextCursor != null &&
+            nextCursor.isNotEmpty &&
+            nextCursor != cursor) {
           cursor = nextCursor;
         } else if (result.hasMore) {
           offset += result.items.length;
@@ -590,7 +592,9 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
             await Future.delayed(const Duration(milliseconds: 100));
 
-            final file = await _sharedAssetManager.getDownloadedAsset(assetPath);
+            final file = await _sharedAssetManager.getDownloadedAsset(
+              assetPath,
+            );
             debugPrint('💾 获取已下载文件: ${file?.name}, 大小: ${file?.size}');
 
             if (file != null) {
@@ -702,7 +706,8 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     String? fromLabel,
     String? toLabel,
     Duration? displayDuration,
-  })? _onTransferBeam;
+  })?
+  _onTransferBeam;
 
   void setTransferBeamCallback(
     Function(
@@ -713,7 +718,8 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       String? fromLabel,
       String? toLabel,
       Duration? displayDuration,
-    })? callback,
+    })?
+    callback,
   ) {
     _onTransferBeam = callback;
   }
@@ -734,7 +740,9 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     _isTransferring = true;
     _finishPreparingSend();
     if (_currentSendingScripture.isEmpty && _selectedFiles.isNotEmpty) {
-      _currentSendingScripture = _displayScriptureName(_selectedFiles.first.name);
+      _currentSendingScripture = _displayScriptureName(
+        _selectedFiles.first.name,
+      );
     }
     _status = TransferStatus.transferring;
 
@@ -861,7 +869,8 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
           _scheduleNotify();
 
           if (_isTransferring) {
-            final currentCountry = _countryStatuses.isNotEmpty &&
+            final currentCountry =
+                _countryStatuses.isNotEmpty &&
                     _globalSentCount > 0 &&
                     _globalSentCount <= _countryStatuses.length
                 ? _countryStatuses[_globalSentCount - 1].countryName

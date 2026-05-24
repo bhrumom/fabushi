@@ -32,9 +32,9 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
     }
 
     if (sentCount == 0 && model.currentLog.contains('未下载到可发送')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(model.currentLog)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(model.currentLog)));
     }
   }
 
@@ -73,16 +73,16 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                     tooltip: '正在下载经文',
                   )
                 : model.isTransferring
-                    ? IconButton(
-                        icon: const Icon(Icons.stop),
-                        onPressed: _stopGlobalDharma,
-                        tooltip: '停止发送',
-                      )
-                    : IconButton(
-                        icon: const Icon(Icons.play_arrow),
-                        onPressed: _startGlobalDharma,
-                        tooltip: '开始发送',
-                      ),
+                ? IconButton(
+                    icon: const Icon(Icons.stop),
+                    onPressed: _stopGlobalDharma,
+                    tooltip: '停止发送',
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.play_arrow),
+                    onPressed: _startGlobalDharma,
+                    tooltip: '开始发送',
+                  ),
           ),
         ],
       ),
@@ -161,8 +161,8 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
           onPressed: model.isPreparingSend
               ? null
               : model.isTransferring
-                  ? _stopGlobalDharma
-                  : _startGlobalDharma,
+              ? _stopGlobalDharma
+              : _startGlobalDharma,
           icon: model.isPreparingSend
               ? const SizedBox(
                   width: 18,
@@ -177,8 +177,8 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
             model.isPreparingSend
                 ? '逐部下载中'
                 : model.isTransferring
-                    ? '停止发送'
-                    : '开始法布施',
+                ? '停止发送'
+                : '开始法布施',
           ),
           backgroundColor: model.isTransferring
               ? Colors.red

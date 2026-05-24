@@ -143,8 +143,8 @@ const HOME_FAQS = [
   {
     questionZh: "我应该从首页直接下载，还是先去下载页？",
     questionEn: "Should I download from the homepage or open the download page first?",
-    answerZh: "如果你已经知道自己要安装，可以直接从首页进入下载；如果你还想看版本、镜像和更新说明，再继续进入独立下载页会更稳。",
-    answerEn: "If you already know you want to install, the homepage is enough to start. If you want version notes, mirrors, and release details first, the dedicated download page is the steadier next step.",
+    answerZh: "如果你已经知道自己要安装，可以直接从首页进入下载；如果你还想看版本、R2 下载状态和更新说明，再继续进入独立下载页会更稳。",
+    answerEn: "If you already know you want to install, the homepage is enough to start. If you want version notes, R2 download status, and release details first, the dedicated download page is the steadier next step.",
   },
   {
     questionZh: "官网为什么不再把首页做成资讯或内容门户？",
@@ -291,12 +291,20 @@ export default async function HomePage() {
               </span>
             </div>
             <h1 id="home-title">
-              <LocalizedText zh="全球法布施" en="Global Dharma Sharing" />
+              <LocalizedText
+                zh={
+                  <>
+                    <span className="hero-title-line">全球</span>
+                    <span className="hero-title-line">法布施</span>
+                  </>
+                }
+                en="Global Dharma Sharing"
+              />
             </h1>
             <p className="hero-subtitle">
               <LocalizedText
-                zh="把禅修、听诵、日常功课与全球法布施放进同一个 App，先看清界面，再决定下载。"
-                en="Bring meditation, listening, daily practice, and global giving into one app, then decide to download after seeing the interface clearly."
+                zh="用一个 App 连接经文听诵、禅修记录、法流学习与全球法布施。"
+                en="One app for sutra listening, meditation records, Dharma learning, and global giving."
               />
             </p>
             <div className="hero-actions">
@@ -486,7 +494,7 @@ export default async function HomePage() {
                 <LocalizedText zh="全部下载入口" en="All Downloads" />
               </span>
               <p>
-                <LocalizedText zh="进入独立下载页，查看正式版、测试版、镜像和更新日志。" en="Open the dedicated download page for stable, beta, mirror links, and release notes." />
+                <LocalizedText zh="进入独立下载页，查看正式版、测试版、R2 下载状态和更新日志。" en="Open the dedicated download page for stable, beta, R2 download status, and release notes." />
               </p>
             </div>
             <div className="platform-meta">

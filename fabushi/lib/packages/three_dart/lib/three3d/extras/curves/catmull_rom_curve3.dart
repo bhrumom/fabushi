@@ -95,7 +95,9 @@ class CatmullRomCurve3 extends Curve {
     var weight = p - intPoint;
 
     if (closed) {
-      intPoint += intPoint > 0 ? 0 : (Math.floor(Math.abs(intPoint) / l) + 1) * l;
+      intPoint += intPoint > 0
+          ? 0
+          : (Math.floor(Math.abs(intPoint) / l) + 1) * l;
     } else if (weight == 0 && intPoint == l - 1) {
       intPoint = l - 2;
       weight = 1;
@@ -213,5 +215,4 @@ class CatmullRomCurve3 extends Curve {
   //   return this;
 
   // }
-
 }

@@ -43,7 +43,7 @@ class PointLightShadow extends LightShadow {
       // positive Y
       Vector4(3, 0, 1, 1),
       // negative Y
-      Vector4(1, 0, 1, 1)
+      Vector4(1, 0, 1, 1),
     ];
 
     _cubeDirections = [
@@ -52,7 +52,7 @@ class PointLightShadow extends LightShadow {
       Vector3(0, 0, 1),
       Vector3(0, 0, -1),
       Vector3(0, 1, 0),
-      Vector3(0, -1, 0)
+      Vector3(0, -1, 0),
     ];
 
     _cubeUps = [
@@ -61,11 +61,14 @@ class PointLightShadow extends LightShadow {
       Vector3(0, 1, 0),
       Vector3(0, 1, 0),
       Vector3(0, 0, 1),
-      Vector3(0, 0, -1)
+      Vector3(0, 0, -1),
     ];
   }
 
-  PointLightShadow.fromJSON(Map<String, dynamic> json, Map<String, dynamic> rootJSON) : super.fromJSON(json, rootJSON) {
+  PointLightShadow.fromJSON(
+    Map<String, dynamic> json,
+    Map<String, dynamic> rootJSON,
+  ) : super.fromJSON(json, rootJSON) {
     camera = Object3D.castJSON(json["camera"], rootJSON) as Camera;
   }
 
@@ -90,9 +93,16 @@ class PointLightShadow extends LightShadow {
     camera.lookAt(_lookTarget);
     camera.updateMatrixWorld(false);
 
-    shadowMatrix.makeTranslation(-_lightPositionWorld.x, -_lightPositionWorld.y, -_lightPositionWorld.z);
+    shadowMatrix.makeTranslation(
+      -_lightPositionWorld.x,
+      -_lightPositionWorld.y,
+      -_lightPositionWorld.z,
+    );
 
-    _projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    _projScreenMatrix.multiplyMatrices(
+      camera.projectionMatrix,
+      camera.matrixWorldInverse,
+    );
     _frustum.setFromProjectionMatrix(_projScreenMatrix);
   }
 }

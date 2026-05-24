@@ -89,7 +89,9 @@ class Vector2 {
 
   Vector2 add(Vector2 v, {Vector2? w}) {
     if (w != null) {
-      print('three.Vector2: .add() now only accepts one argument. Use .addVectors( a, b ) instead.');
+      print(
+        'three.Vector2: .add() now only accepts one argument. Use .addVectors( a, b ) instead.',
+      );
       return addVectors(v, w);
     }
 
@@ -122,7 +124,9 @@ class Vector2 {
 
   Vector2 sub(Vector2 v, {Vector2? w}) {
     if (w != null) {
-      print('three.Vector2: .sub() now only accepts one argument. Use .subVectors( a, b ) instead.');
+      print(
+        'three.Vector2: .sub() now only accepts one argument. Use .subVectors( a, b ) instead.',
+      );
       return subVectors(v, w);
     }
 
@@ -215,7 +219,9 @@ class Vector2 {
   Vector2 clampLength(double min, double max) {
     var length = this.length();
 
-    return divideScalar(length).multiplyScalar(Math.max(min, Math.min(max, length)));
+    return divideScalar(
+      length,
+    ).multiplyScalar(Math.max(min, Math.min(max, length)));
   }
 
   Vector2 floor() {

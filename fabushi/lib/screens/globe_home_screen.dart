@@ -721,34 +721,34 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                               ),
                             )
                           : model.isTransferring
-                              ? ElevatedButton.icon(
-                                  onPressed: () => _stopSending(model),
-                                  icon: const Icon(Icons.stop, size: 18),
-                                  label: const Text(
-                                    '停止发送',
-                                    style: TextStyle(fontSize: 13),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                    ),
-                                    backgroundColor: Colors.red.shade600,
-                                  ),
-                                )
-                              : ElevatedButton.icon(
-                                  onPressed: () => _startSending(model),
-                                  icon: const Icon(Icons.send, size: 18),
-                                  label: const Text(
-                                    '开始发送',
-                                    style: TextStyle(fontSize: 13),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                    ),
-                                    backgroundColor: AppTheme.primaryColor,
-                                  ),
+                          ? ElevatedButton.icon(
+                              onPressed: () => _stopSending(model),
+                              icon: const Icon(Icons.stop, size: 18),
+                              label: const Text(
+                                '停止发送',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
                                 ),
+                                backgroundColor: Colors.red.shade600,
+                              ),
+                            )
+                          : ElevatedButton.icon(
+                              onPressed: () => _startSending(model),
+                              icon: const Icon(Icons.send, size: 18),
+                              label: const Text(
+                                '开始发送',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
+                                backgroundColor: AppTheme.primaryColor,
+                              ),
+                            ),
                     ),
                   ],
                 ),

@@ -5,10 +5,32 @@ import 'package:three_dart/three3d/math/index.dart';
 import 'package:three_dart/three3d/renderers/webgl/index.dart';
 import 'package:three_dart/three3d/textures/index.dart';
 
-var emptyTexture = Texture(null, null, null, null, null, null, null, null, null, null);
+var emptyTexture = Texture(
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+);
 var emptyArrayTexture = DataArrayTexture(null);
 var empty3dTexture = Data3DTexture();
-var emptyCubeTexture = CubeTexture(null, null, null, null, null, null, null, null, null, null);
+var emptyCubeTexture = CubeTexture(
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+);
 
 // --- Utilities ---
 
@@ -61,7 +83,6 @@ class SingleUniform with WebGLUniformsHelper {
   // }
 
   // this.path = activeInfo.name; // DEBUG
-
 }
 
 class PureArrayUniform with WebGLUniformsHelper {
@@ -182,7 +203,11 @@ void parseUniform(activeInfo, addr, WebGLUniform container) {
       // bare name or "pure" bottom-level array "[0]" suffix
 
       addUniform(
-          container, subscript == null ? SingleUniform(id, activeInfo, addr) : PureArrayUniform(id, activeInfo, addr));
+        container,
+        subscript == null
+            ? SingleUniform(id, activeInfo, addr)
+            : PureArrayUniform(id, activeInfo, addr),
+      );
 
       break;
     } else {
@@ -279,7 +304,6 @@ class WebGLUniformsHelper {
       //     });
       //   }
       // }
-
     }
 
     return r;
@@ -399,7 +423,10 @@ class WebGLUniformsHelper {
     var cache = this.cache;
 
     if (v is Vector4) {
-      if (cache[0] != v.x || cache[1] != v.y || cache[2] != v.z || cache[3] != v.w) {
+      if (cache[0] != v.x ||
+          cache[1] != v.y ||
+          cache[2] != v.z ||
+          cache[3] != v.w) {
         gl.uniform4f(addr, v.x, v.y, v.z, v.w);
 
         cache[0] = v.x;
@@ -408,7 +435,10 @@ class WebGLUniformsHelper {
         cache[3] = v.w;
       }
     } else if (v is Color) {
-      if (cache[0] != v.r || cache[1] != v.g || cache[2] != v.b || cache[3] != 1.0) {
+      if (cache[0] != v.r ||
+          cache[1] != v.g ||
+          cache[2] != v.b ||
+          cache[3] != 1.0) {
         gl.uniform4f(addr, v.r, v.g, v.b, 1.0);
 
         cache[0] = v.r.toDouble();
@@ -417,7 +447,10 @@ class WebGLUniformsHelper {
         cache[3] = 1.0;
       }
     } else if (v is List) {
-      if (cache[0] != v[0] || cache[1] != v[1] || cache[2] != v[2] || cache[3] != v[3]) {
+      if (cache[0] != v[0] ||
+          cache[1] != v[1] ||
+          cache[2] != v[2] ||
+          cache[3] != v[3]) {
         gl.uniform4f(addr, v[0], v[1], v[2], v[3]);
 
         cache[0] = v[0];

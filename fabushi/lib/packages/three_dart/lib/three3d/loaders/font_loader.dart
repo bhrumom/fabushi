@@ -30,22 +30,27 @@ class FontLoader extends Loader {
     loader.setPath(path);
     loader.setRequestHeader(requestHeader);
     loader.setWithCredentials(scope.withCredentials);
-    loader.load(url, (text) {
-      var jsonData;
+    loader.load(
+      url,
+      (text) {
+        var jsonData;
 
-      jsonData = convert.jsonDecode(text);
+        jsonData = convert.jsonDecode(text);
 
-      // try {
-      // 	json = JSON.parse( text );
-      // } catch ( e ) {
-      // 	print( 'three.FontLoader: typeface.js support is being deprecated. Use typeface.json instead.' );
-      // 	json = JSON.parse( text.substring( 65, text.length - 2 ) );
-      // }
+        // try {
+        // 	json = JSON.parse( text );
+        // } catch ( e ) {
+        // 	print( 'three.FontLoader: typeface.js support is being deprecated. Use typeface.json instead.' );
+        // 	json = JSON.parse( text.substring( 65, text.length - 2 ) );
+        // }
 
-      var font = scope.parse(jsonData);
+        var font = scope.parse(jsonData);
 
-      onLoad(font);
-    }, onProgress, onError);
+        onLoad(font);
+      },
+      onProgress,
+      onError,
+    );
   }
 
   @override

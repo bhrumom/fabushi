@@ -3,9 +3,14 @@ import 'package:three_dart/three3d/lights/light_probe.dart';
 import 'package:three_dart/three3d/math/index.dart';
 
 class HemisphereLightProbe extends LightProbe {
-  HemisphereLightProbe(Color skyColor, Color groundColor, num intensity) : super(null, intensity) {
+  HemisphereLightProbe(Color skyColor, Color groundColor, num intensity)
+    : super(null, intensity) {
     var color1 = Color(0, 0, 0).setRGB(skyColor.r, skyColor.g, skyColor.b);
-    var color2 = Color(0, 0, 0).setRGB(groundColor.r, groundColor.g, groundColor.b);
+    var color2 = Color(
+      0,
+      0,
+      0,
+    ).setRGB(groundColor.r, groundColor.g, groundColor.b);
 
     var sky = Vector3(color1.r, color1.g, color1.b);
     var ground = Vector3(color2.r, color2.g, color2.b);

@@ -234,7 +234,8 @@ class WebGLParameters {
 
     rendererExtensionFragDepth = json["rendererExtensionFragDepth"];
     rendererExtensionDrawBuffers = json["rendererExtensionDrawBuffers"];
-    rendererExtensionShaderTextureLod = json["rendererExtensionShaderTextureLod"];
+    rendererExtensionShaderTextureLod =
+        json["rendererExtensionShaderTextureLod"];
     customProgramCacheKey = json["customProgramCacheKey"] ?? "";
 
     uniforms = json["uniforms"];
@@ -352,7 +353,7 @@ class WebGLParameters {
       "morphTargetsCount": morphTargetsCount,
       "opaque": opaque,
       "cubeUVHeight": cubeUVHeight,
-      "morphTextureStride": morphTextureStride
+      "morphTextureStride": morphTextureStride,
     };
 
     return json;
