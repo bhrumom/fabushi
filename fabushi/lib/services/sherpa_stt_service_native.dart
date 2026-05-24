@@ -3,10 +3,10 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 
 // sherpa_onnx 仅在非 Web 平台使用
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+import 'offline_asr_model_service.dart';
 
 /// 语音识别服务
 ///
@@ -131,10 +131,11 @@ class SherpaSTTService {
 
       onProgress?.call('正在准备语音识别引擎...');
 
-      // 获取模型目录
-      _modelDir = await _prepareModel();
+      // 获取已安装的本地模型目录。模型包由 OfflineAsrModelService 下载和校验，
+      // 避免把大模型直接打进安装包，也避免 assets 缺文件时初始化崩溃。
+      _modelDir = await OfflineAsrModelService.instance.getInstalledModelDir();
       if (_modelDir == null) {
-        onError?.call('无法加载语音识别模型');
+        onError?.call('请先下载离线语音模型');
         return false;
       }
 
@@ -165,68 +166,6 @@ class SherpaSTTService {
       debugPrint('[SherpaSTT] Sherpa-ONNX 初始化失败: $e');
       onError?.call('Sherpa-ONNX 初始化失败: $e');
       return false;
-    }
-  }
-
-  /// 准备模型文件
-  Future<String?> _prepareModel() async {
-    try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final modelDir = Directory(
-        '${appDir.path}/sherpa-onnx-models/streaming-paraformer-zh-en',
-      );
-
-      // 检查模型是否已存在且完整
-      if (await modelDir.exists()) {
-        final encoderFile = File('${modelDir.path}/encoder.int8.onnx');
-        if (await encoderFile.exists()) {
-          final fileSize = await encoderFile.length();
-          if (fileSize > 1024 * 1024) {
-            debugPrint('[SherpaSTT] 使用已存在的模型: ${modelDir.path}');
-            return modelDir.path;
-          } else {
-            debugPrint('[SherpaSTT] 检测到损坏的模型缓存，正在删除...');
-            await modelDir.delete(recursive: true);
-          }
-        }
-      }
-
-      // 模型不存在，从 assets 复制
-      onProgress?.call('首次使用，正在解压内置语音模型...');
-      await modelDir.create(recursive: true);
-
-      return await _copyAssetsToLocal(modelDir.path);
-    } catch (e) {
-      debugPrint('[SherpaSTT] 准备模型失败: $e');
-      return null;
-    }
-  }
-
-  /// 从 Assets 复制模型到本地
-  Future<String?> _copyAssetsToLocal(String modelDir) async {
-    try {
-      const assetPrefix = 'assets/sherpa_models/streaming-paraformer-zh-en';
-      final files = ['encoder.int8.onnx', 'decoder.int8.onnx', 'tokens.txt'];
-
-      for (int i = 0; i < files.length; i++) {
-        final fileName = files[i];
-        debugPrint('[SherpaSTT] 复制 $fileName...');
-
-        final byteData = await rootBundle.load('$assetPrefix/$fileName');
-        final file = File('$modelDir/$fileName');
-        await file.writeAsBytes(
-          byteData.buffer.asUint8List(
-            byteData.offsetInBytes,
-            byteData.lengthInBytes,
-          ),
-        );
-      }
-
-      debugPrint('[SherpaSTT] 模型复制完成: $modelDir');
-      return modelDir;
-    } catch (e) {
-      debugPrint('[SherpaSTT] 复制模型失败: $e');
-      return null;
     }
   }
 

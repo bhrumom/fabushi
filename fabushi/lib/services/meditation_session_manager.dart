@@ -287,7 +287,15 @@ class MeditationSessionManager extends ChangeNotifier {
 
   /// 增加念诵计数
   void incrementChant({int count = 1}) {
-    _chantCount += count;
+    final next = _chantCount + count;
+    _chantCount = next < 0 ? 0 : next;
+    notifyListeners();
+  }
+
+  /// 撤销最近一次念诵计数
+  void decrementChant({int count = 1}) {
+    final next = _chantCount - count;
+    _chantCount = next < 0 ? 0 : next;
     notifyListeners();
   }
 
