@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/file_transfer_model.dart';
-import '../services/real_global_send_service.dart';
 import '../core/constants/country_servers.dart';
 import 'search_screen.dart';
 
-/// 大乘详细界面
-/// 显示国家列表和实时发送状态
 class GlobalDharmaScreen extends StatefulWidget {
   const GlobalDharmaScreen({Key? key}) : super(key: key);
 
@@ -20,69 +17,29 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final model = context.read<FileTransferModel>();
-      // 只在国家状态为空且未在传输时初始化
       if (model.countryStatuses.isEmpty && !model.isTransferring) {
         model.initializeCountryStatuses(GLOBAL_COUNTRY_SERVERS, COUNTRY_NAMES);
       }
     });
   }
 
-  void _parseLogAndUpdateStatus(String logMessage) {
-    final model = context.read<FileTransferModel>();
-
-    if (logMessage.contains('发送到') && logMessage.contains('成功')) {
-      final regex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*成功');
-      final match = regex.firstMatch(logMessage);
-      if (match != null) {
-        final countryName = match.group(1)?.trim();
-        model.updateCountryStatus(countryName, SendStatus.success);
-      }
-    } else if (logMessage.contains('发送到') && logMessage.contains('失败')) {
-      final regex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*失败');
-      final match = regex.firstMatch(logMessage);
-      if (match != null) {
-        final countryName = match.group(1)?.trim();
-        model.updateCountryStatus(countryName, SendStatus.failed);
-      }
-    } else if (logMessage.contains('正在发送到')) {
-      final regex = RegExp(r'正在发送到\s+([^()]+)\s+\([^()]+\)');
-      final match = regex.firstMatch(logMessage);
-      if (match != null) {
-        final countryName = match.group(1)?.trim();
-        model.updateCountryStatus(countryName, SendStatus.sending);
-      }
-    }
-  }
-
   Future<void> _startGlobalDharma() async {
     final model = context.read<FileTransferModel>();
+    final sentCount = await model.startDefaultScriptureSendSequence();
 
-    final assetCount = await model.prepareDefaultNonR2AssetsForSending();
-    if (assetCount == 0) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('未找到可发送的非 R2 经文素材')));
+    if (!mounted || model.isTransferring || model.isPreparingSend) {
       return;
     }
 
-    // 只在用户主动点击开始且当前未在传输时重置状态
-    if (!model.isTransferring) {
-      // 重新初始化国家状态
-      model.initializeCountryStatuses(GLOBAL_COUNTRY_SERVERS, COUNTRY_NAMES);
+    if (sentCount == 0 && model.currentLog.contains('未下载到可发送')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(model.currentLog)),
+      );
     }
-
-    await model.startGlobalTransfer();
   }
 
   void _stopGlobalDharma() {
-    final model = context.read<FileTransferModel>();
-    model.stopTransfer();
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
+    context.read<FileTransferModel>().stopTransfer();
   }
 
   @override
@@ -101,25 +58,36 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
             ),
             tooltip: '搜索经文',
           ),
-          Selector<FileTransferModel, bool>(
-            selector: (_, m) => m.isTransferring,
-            builder: (_, isTransferring, __) => isTransferring
+          Consumer<FileTransferModel>(
+            builder: (context, model, child) => model.isPreparingSend
                 ? IconButton(
-                    icon: const Icon(Icons.stop),
-                    onPressed: _stopGlobalDharma,
-                    tooltip: '停止发送',
+                    icon: const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    ),
+                    onPressed: null,
+                    tooltip: '正在下载经文',
                   )
-                : IconButton(
-                    icon: const Icon(Icons.play_arrow),
-                    onPressed: _startGlobalDharma,
-                    tooltip: '开始发送',
-                  ),
+                : model.isTransferring
+                    ? IconButton(
+                        icon: const Icon(Icons.stop),
+                        onPressed: _stopGlobalDharma,
+                        tooltip: '停止发送',
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.play_arrow),
+                        onPressed: _startGlobalDharma,
+                        tooltip: '开始发送',
+                      ),
           ),
         ],
       ),
       body: Column(
         children: [
-          // 统计信息卡片
           Selector<FileTransferModel, List<dynamic>>(
             selector: (_, m) => [
               m.selectedFiles.length,
@@ -128,7 +96,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
               m.globalDataSentMB,
               m.isLooping,
             ],
-            builder: (_, data, __) => _buildStatsCard(
+            builder: (context, data, child) => _buildStatsCard(
               data[0] as int,
               data[1] as int,
               data[2] as int,
@@ -136,11 +104,9 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
               data[4] as bool,
             ),
           ),
-
-          // 当前日志
           Selector<FileTransferModel, String>(
             selector: (_, m) => m.currentLog,
-            builder: (_, log, __) => log.isNotEmpty
+            builder: (context, log, child) => log.isNotEmpty
                 ? Container(
                     padding: const EdgeInsets.all(16),
                     color: Colors.grey[100],
@@ -161,18 +127,60 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                   )
                 : const SizedBox.shrink(),
           ),
-
-          // 国家列表
+          Selector<FileTransferModel, String>(
+            selector: (_, m) => m.currentSendingScripture,
+            builder: (context, scripture, child) => scripture.isNotEmpty
+                ? Container(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.menu_book, color: Color(0xFF667eea)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '当前经文：《$scripture》',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
           Expanded(child: _buildCountryList()),
         ],
       ),
-      floatingActionButton: Selector<FileTransferModel, bool>(
-        selector: (_, m) => m.isTransferring,
-        builder: (_, isTransferring, __) => FloatingActionButton.extended(
-          onPressed: isTransferring ? _stopGlobalDharma : _startGlobalDharma,
-          icon: Icon(isTransferring ? Icons.stop : Icons.play_arrow),
-          label: Text(isTransferring ? '停止发送' : '开始法布施'),
-          backgroundColor: isTransferring
+      floatingActionButton: Consumer<FileTransferModel>(
+        builder: (context, model, child) => FloatingActionButton.extended(
+          onPressed: model.isPreparingSend
+              ? null
+              : model.isTransferring
+                  ? _stopGlobalDharma
+                  : _startGlobalDharma,
+          icon: model.isPreparingSend
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Icon(model.isTransferring ? Icons.stop : Icons.play_arrow),
+          label: Text(
+            model.isPreparingSend
+                ? '逐部下载中'
+                : model.isTransferring
+                    ? '停止发送'
+                    : '开始法布施',
+          ),
+          backgroundColor: model.isTransferring
               ? Colors.red
               : const Color(0xFF667eea),
           foregroundColor: Colors.white,
@@ -200,7 +208,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const Icon(Icons.file_present, color: Colors.blue),
                 const SizedBox(width: 8),
                 Text(
-                  '默认素材: $filesCount 个',
+                  '当前缓存: $filesCount 部',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -225,7 +233,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const Icon(Icons.send, color: Colors.orange),
                 const SizedBox(width: 8),
                 Text(
-                  '已发送: $sentCount 个文件',
+                  '已发送: $sentCount 个国家',
                   style: const TextStyle(fontSize: 16),
                 ),
               ],
@@ -259,7 +267,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
 
   Widget _buildCountryList() {
     return Consumer<FileTransferModel>(
-      builder: (_, model, __) {
+      builder: (context, model, child) {
         final statuses = model.countryStatuses;
         return Column(
           children: [
