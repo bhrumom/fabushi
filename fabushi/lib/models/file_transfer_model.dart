@@ -1,101 +1,86 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:async';
-import 'package:http/http.dart' as http;
 
+import '../core/constants/country_servers.dart';
 import '../screens/asset_screen.dart';
-import '../core/config/app_config.dart';
 import '../services/shared_asset_manager.dart';
 import '../services/download_manager.dart' show DownloadStatus;
 import '../services/real_global_send_service.dart';
 import '../services/platform_global_send_service.dart';
 import '../services/ip_location_service.dart';
 import '../services/leaderboard_service.dart';
-// Android 和 iOS 统一使用 audio_service MediaSession
+import '../services/cbeta_send_text_service.dart';
 import '../services/wifi_field_broadcast_service.dart';
 import '../services/hotspot_manager_service.dart';
 import '../services/keep_alive_service.dart';
 import '../widgets/download_progress_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:universal_html/html.dart' as html;
 import '../core/startup/deferred_loader.dart';
 import '../services/local_loopback_service.dart';
-
 import '../services/workmanager_keep_alive.dart';
 
 enum TransferStatus { idle, transferring, completed, error }
 
-/// 优化的文件传输模型 - 极致性能版本
-///
-/// 实现 WidgetsBindingObserver 以监听应用生命周期变化，
-/// 在前后台切换时智能调整本地回环的运行模式。
 class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
-  // 传输模式状态
   bool _isGlobalSendEnabled = true;
   bool _isLooping = false;
-  bool _isFieldEnergyMode = false; // 无网场能模式
+  bool _isFieldEnergyMode = false;
   double _sendRateMB = 1.0;
-  int _loopCount = 0; // 循环发送计数
-  int _loopbackCount = 0; // 本地回环激活次数
-  int _fieldBroadcastCount = 0; // 场能广播次数
+  int _loopCount = 0;
+  int _loopbackCount = 0;
+  int _fieldBroadcastCount = 0;
 
-  // 文件相关
   List<PlatformFile> _selectedFiles = [];
   List<String> _countryList = ['ALL'];
 
-  // 传输状态
   bool _isTransferring = false;
+  bool _isPreparingSend = false;
+  String _preparingSendMessage = '';
   TransferStatus _status = TransferStatus.idle;
 
-  // 统计数据
   int _globalSentCount = 0;
   double _globalDataSentMB = 0.0;
 
-  // 服务
   RealGlobalSendService? _realGlobalSendService;
   PlatformGlobalSendService? _platformGlobalSendService;
   List<CountrySendStatus> _countryStatuses = [];
   String _currentLog = '';
+  String _currentSendingScripture = '';
 
   final SharedAssetManager _sharedAssetManager = SharedAssetManager();
   final IPLocationService _ipLocationService = IPLocationService();
+  final CbetaSendTextService _cbetaSendTextService = CbetaSendTextService();
+  final Map<String, Uint8List> _downloadedScriptureMemory = {};
 
-  // 场能广播服务
   WiFiFieldBroadcastService? _fieldBroadcastService;
   final HotspotManagerService _hotspotManager = HotspotManagerService();
-  String _hotspotMessage = ''; // 热点状态消息
+  String _hotspotMessage = '';
 
-  // 统一保活服务（基于 audio_service + MediaSession）
   final KeepAliveService _keepAliveService = KeepAliveService.instance;
-  bool _needsHotspotGuide = false; // 是否需要显示热点指导
+  bool _needsHotspotGuide = false;
 
-  // 本地回环服务
   LocalLoopbackService? _localLoopbackService;
 
   bool _isDisposed = false;
+  bool _stopRequested = false;
 
-  // 首页属性
   PlatformFile? get selectedFile =>
       _selectedFiles.isNotEmpty ? _selectedFiles.first : null;
   double _progress = 0.0;
   double get progress => _progress;
 
-  // 性能优化：批量更新定时器
   Timer? _batchUpdateTimer;
   bool _hasPendingUpdate = false;
 
-  // 性能优化：持久化队列
   final List<Future<void> Function()> _persistQueue = [];
   bool _isPersisting = false;
 
   FileTransferModel() {
-    // 延迟初始化，避免阻塞启动
     DeferredLoader().scheduleTask(
       'file_transfer_init',
       const Duration(milliseconds: 300),
@@ -105,9 +90,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _initializeModel() async {
     try {
-      // 注册生命周期观察者
       WidgetsBinding.instance.addObserver(this);
-
       await _loadPersistedState();
       if (_isTransferring) {
         _isTransferring = false;
@@ -120,16 +103,9 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// 应用生命周期变化回调
-  ///
-  /// 本地回环始终保持主线程模式运行，不进行前后台切换
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // 本地回环默认使用主线程模式，不再进行模式切换
-    // 主线程模式可以保持应用活跃，避免被系统杀死
-  }
+  void didChangeAppLifecycleState(AppLifecycleState state) {}
 
-  // Getters
   bool get isGlobalSendEnabled => _isGlobalSendEnabled;
   bool get isLooping => _isLooping;
   bool get isFieldEnergyMode => _isFieldEnergyMode;
@@ -138,25 +114,25 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   int get fieldBroadcastCount => _fieldBroadcastCount;
   String get hotspotMessage => _hotspotMessage;
   bool get needsHotspotGuide => _needsHotspotGuide;
-
-  /// 清除热点指导标记
-  void clearHotspotGuide() {
-    _needsHotspotGuide = false;
-    notifyListeners();
-  }
-
   double get sendRateMB => _sendRateMB;
   List<PlatformFile> get selectedFiles => _selectedFiles;
   List<String> get countryList => _countryList;
   bool get isTransferring => _isTransferring;
+  bool get isPreparingSend => _isPreparingSend;
+  String get preparingSendMessage => _preparingSendMessage;
   TransferStatus get status => _status;
   bool get hasFiles => _selectedFiles.isNotEmpty;
   int get globalSentCount => _globalSentCount;
   double get globalDataSentMB => _globalDataSentMB;
   List<CountrySendStatus> get countryStatuses => _countryStatuses;
   String get currentLog => _currentLog;
+  String get currentSendingScripture => _currentSendingScripture;
 
-  /// 性能优化：批量通知更新（防抖）
+  void clearHotspotGuide() {
+    _needsHotspotGuide = false;
+    notifyListeners();
+  }
+
   void _scheduleNotify() {
     if (_hasPendingUpdate) return;
     _hasPendingUpdate = true;
@@ -165,14 +141,12 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     _batchUpdateTimer = Timer(const Duration(milliseconds: 16), () async {
       if (!_isDisposed) {
         _hasPendingUpdate = false;
-        // 关键修复：让出主线程控制权，避免阻塞UI
         await Future.delayed(Duration.zero);
         notifyListeners();
       }
     });
   }
 
-  /// 性能优化：异步持久化队列
   void _schedulePersist(Future<void> Function() persistFunc) {
     _persistQueue.add(persistFunc);
     if (!_isPersisting) {
@@ -191,7 +165,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       } catch (e) {
         debugPrint('持久化失败: $e');
       }
-      // 关键修复：每次持久化操作后让出主线程控制权
       await Future.delayed(Duration.zero);
     }
 
@@ -226,7 +199,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  /// 设置无网场能模式
   Future<void> setFieldEnergyMode(bool enabled) async {
     _isFieldEnergyMode = enabled;
     _hotspotMessage = '';
@@ -235,18 +207,14 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     debugPrint('🌟 无网场能模式: ${enabled ? "开启" : "关闭"}');
 
     if (enabled && !kIsWeb) {
-      // 自动尝试开启热点
       final result = await _hotspotManager.enableHotspot();
       _hotspotMessage = result.message;
       debugPrint('📡 热点状态: ${result.message}');
-
-      // 如果需要用户手动操作，显示指导
       if (result.needsManualAction) {
         _needsHotspotGuide = true;
       }
       notifyListeners();
     } else if (!enabled) {
-      // 关闭热点（如果是我们开启的）
       await _hotspotManager.disableHotspot();
       _needsHotspotGuide = false;
     }
@@ -262,25 +230,217 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  void beginPreparingSend(String message) {
+    if (_isDisposed) return;
+    _isPreparingSend = true;
+    _preparingSendMessage = message;
+    _currentLog = message;
+    notifyListeners();
+  }
+
+  void _finishPreparingSend() {
+    _isPreparingSend = false;
+    _preparingSendMessage = '';
+  }
+
+  void _cacheScriptureFile(PlatformFile file) {
+    if (file.bytes != null) {
+      _downloadedScriptureMemory[file.name] = file.bytes!;
+    }
+  }
+
+  void _releaseCachedScriptures({bool clearSelection = true}) {
+    _downloadedScriptureMemory.clear();
+    if (clearSelection) {
+      _selectedFiles = [];
+    }
+  }
+
+  PlatformFile _buildPlatformFileFromText(CbetaSendText text) {
+    final content = [
+      '来源: CBETA',
+      '经名: ${text.title}',
+      '编号: ${text.work} 第 ${text.juan} 卷',
+      if (text.byline.isNotEmpty) '译者/作者: ${text.byline}',
+      if (text.category.isNotEmpty) '分类: ${text.category}',
+      if (text.sourceUrl.isNotEmpty) 'CBETA API: ${text.sourceUrl}',
+      '',
+      text.content,
+    ].join('\n');
+    final bytes = Uint8List.fromList(utf8.encode(content));
+    final file = PlatformFile(
+      name: text.fileName.isNotEmpty ? text.fileName : '${text.work}.txt',
+      size: bytes.length,
+      bytes: bytes,
+    );
+    _cacheScriptureFile(file);
+    return file;
+  }
+
+  Future<int> startDefaultScriptureSendSequence() async {
+    if (_isPreparingSend || _isTransferring) return 0;
+
+    _stopRequested = false;
+    _isLooping = false;
+    _status = TransferStatus.idle;
+    _globalSentCount = 0;
+    _globalDataSentMB = 0;
+    _releaseCachedScriptures();
+    beginPreparingSend('📚 正在逐部下载经文，下载一部发送一部...');
+
+    final seenScriptures = <String>{};
+    int sentScriptureCount = 0;
+    int offset = 0;
+    String? cursor;
+    bool foundAny = false;
+
+    try {
+      while (!_stopRequested) {
+        final result = await _cbetaSendTextService.fetchSendTextsPage(
+          limit: 1,
+          offset: offset,
+          cursor: cursor,
+        );
+
+        if (result.items.isEmpty) {
+          break;
+        }
+
+        foundAny = true;
+        bool pageHadNewItem = false;
+
+        for (final text in result.items) {
+          if (_stopRequested) break;
+
+          final scriptureKey =
+              '${text.work}_${text.juan}_${text.fileName}_${text.title}';
+          if (!seenScriptures.add(scriptureKey)) {
+            continue;
+          }
+          pageHadNewItem = true;
+
+          final file = _buildPlatformFileFromText(text);
+          _selectedFiles = [file];
+          _currentSendingScripture = text.title;
+          _preparingSendMessage = '📚 已下载《${text.title}》，准备发送到全部国家...';
+          _currentLog = '📚 已将《${text.title}》下载到内存，开始逐国发送';
+          initializeCountryStatuses(GLOBAL_COUNTRY_SERVERS, COUNTRY_NAMES);
+          notifyListeners();
+
+          await startGlobalTransfer(forceSingleRound: true);
+
+          if (_stopRequested) {
+            break;
+          }
+
+          if (_status == TransferStatus.error) {
+            _finishPreparingSend();
+            notifyListeners();
+            return sentScriptureCount;
+          }
+
+          sentScriptureCount++;
+          _releaseCachedScriptures();
+          _currentSendingScripture = '';
+          _currentLog = '✅ 已完成《${text.title}》全球发送，准备下一部经文...';
+          if (!_stopRequested) {
+            beginPreparingSend('📚 《${text.title}》已发送完成，继续下载下一部...');
+          }
+        }
+
+        if (_stopRequested) {
+          break;
+        }
+
+        if (!pageHadNewItem) {
+          break;
+        }
+
+        final nextCursor = result.nextCursor?.trim();
+        if (nextCursor != null && nextCursor.isNotEmpty && nextCursor != cursor) {
+          cursor = nextCursor;
+        } else if (result.hasMore) {
+          offset += result.items.length;
+        } else {
+          break;
+        }
+      }
+
+      if (!foundAny) {
+        _currentLog = '未下载到可发送的 CBETA 经文';
+        _finishPreparingSend();
+        notifyListeners();
+        return 0;
+      }
+
+      if (_stopRequested) {
+        _currentLog = '🛑 已停止逐部发送';
+      } else {
+        _currentLog = '✨ 已完成全部经文逐部下载与发送，共 $sentScriptureCount 部';
+        _status = TransferStatus.completed;
+      }
+      _finishPreparingSend();
+      notifyListeners();
+      return sentScriptureCount;
+    } catch (error) {
+      _selectedFiles = [];
+      _releaseCachedScriptures();
+      _currentSendingScripture = '';
+      _finishPreparingSend();
+      _status = TransferStatus.error;
+      updateLog('❌ CBETA 经文逐部下载失败: $error');
+      notifyListeners();
+      return sentScriptureCount;
+    }
+  }
+
+  Future<int> prepareDefaultNonR2AssetsForSending() async {
+    beginPreparingSend('📚 正在下载默认经文，下载完成后会自动开始发送...');
+
+    try {
+      final result = await _cbetaSendTextService.fetchDefaultSendTexts();
+      _selectedFiles = result.items.map(_buildPlatformFileFromText).toList();
+
+      _isLooping = true;
+      _currentSendingScripture = result.items.isNotEmpty
+          ? result.items.first.title
+          : '';
+      final titles = result.items.map((item) => '《${item.title}》').join('、');
+      final warning = result.errors.isEmpty
+          ? ''
+          : '；部分经文下载失败: ${jsonEncode(result.errors)}';
+      _preparingSendMessage = '📚 已下载 ${_selectedFiles.length} 部经文，正在启动发送...';
+      updateLog(
+        '📚 已从 CBETA 下载 ${_selectedFiles.length} 部经文，准备发送 $titles$warning',
+      );
+      debugPrint('📚 已从 CBETA 下载 ${_selectedFiles.length} 部经文，循环发送已开启');
+      notifyListeners();
+      return _selectedFiles.length;
+    } catch (error) {
+      _selectedFiles = [];
+      _releaseCachedScriptures();
+      _currentSendingScripture = '';
+      _finishPreparingSend();
+      updateLog('❌ CBETA 经文下载失败: $error');
+      debugPrint('❌ CBETA 经文下载失败: $error');
+      notifyListeners();
+      return 0;
+    }
+  }
+
   Future<void> selectFiles() async {
     try {
-      // 内存优化：不使用 withData: true，避免大文件加载到内存
-      // 而是使用 withReadStream: true（如果支持）或只获取路径
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
         type: FileType.any,
-        // 不设置 withData: true，这样大文件不会加载到内存
-        // 本地平台会返回 file.path，可以流式读取
-        // 只有 Web 平台需要 withData，但 Web 平台不支持大文件流式发送
-        withData: kIsWeb, // 只在 Web 平台加载数据
-        withReadStream: !kIsWeb, // 本地平台使用流式读取
+        withData: kIsWeb,
+        withReadStream: !kIsWeb,
       );
 
       if (result != null) {
         _selectedFiles.addAll(result.files);
         notifyListeners();
 
-        // 打印文件信息用于调试
         for (final file in result.files) {
           debugPrint(
             '已选择文件: ${file.name}, 大小: ${(file.size / 1024 / 1024).toStringAsFixed(1)}MB, 路径: ${file.path ?? "无"}',
@@ -307,43 +467,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
           .toList();
       _downloadSelectedAssets(context, assetPaths);
     }
-  }
-
-  Future<int> prepareDefaultNonR2AssetsForSending() async {
-    final manifestString = await rootBundle.loadString(
-      'assets/data/asset-manifest.json',
-    );
-    final List<dynamic> files = json.decode(manifestString);
-
-    final assetPaths =
-        files
-            .whereType<Map<String, dynamic>>()
-            .where((fileInfo) {
-              final key = (fileInfo['key'] ?? '').toString();
-              final source = (fileInfo['source'] ?? '').toString();
-
-              return source != 'r2' &&
-                  key.isNotEmpty &&
-                  key.toLowerCase().endsWith('.txt') &&
-                  !key.contains('/.DS_Store') &&
-                  !key.startsWith('.');
-            })
-            .map((fileInfo) => (fileInfo['key'] ?? '').toString())
-            .toList()
-          ..sort();
-
-    _selectedFiles = assetPaths.map((assetPath) {
-      final fileName = assetPath.split('/').last;
-      final bytes = Uint8List.fromList(
-        utf8.encode('全球法布施素材\n$fileName\n$assetPath'),
-      );
-      return PlatformFile(name: fileName, size: bytes.length, bytes: bytes);
-    }).toList();
-
-    _isLooping = true;
-    debugPrint('📚 已准备默认非 R2 经文素材: ${_selectedFiles.length} 个，循环发送已开启');
-    notifyListeners();
-    return _selectedFiles.length;
   }
 
   Future<void> _downloadSelectedAssets(
@@ -379,12 +502,10 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       ).showSnackBar(SnackBar(content: Text(message)));
 
       if (alreadyDownloadedAssets.isNotEmpty) {
-        // 获取复用失败（文件不存在）的素材列表
         final failedAssets = await _reuseDownloadedAssets(
           context,
           alreadyDownloadedAssets,
         );
-        // 把获取失败的素材加入需要下载的列表
         if (failedAssets.isNotEmpty) {
           needDownloadAssets.addAll(failedAssets);
           debugPrint('⚠️ ${failedAssets.length} 个素材需要重新下载');
@@ -399,7 +520,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('所有素材处理完成')));
+      ).showSnackBar(const SnackBar(content: Text('所有素材处理完成')));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('处理失败: $e'), backgroundColor: Colors.red),
@@ -407,7 +528,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// 复用已下载的素材，返回获取失败的素材列表（需要重新下载）
   Future<List<String>> _reuseDownloadedAssets(
     BuildContext context,
     List<String> assetPaths,
@@ -420,7 +540,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
           addFiles([file]);
           debugPrint('✅ 复用已下载素材: ${file.name}');
         } else {
-          // 文件不存在，移除无效的下载记录并标记为需要重新下载
           debugPrint('⚠️ 已下载素材文件不存在，需要重新下载: $assetPath');
           await _sharedAssetManager.removeAssetDownloadRecord(assetPath);
           failedAssets.add(assetPath);
@@ -440,10 +559,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     try {
       final taskId = await _sharedAssetManager.downloadAsset(assetPath);
       final fileName = assetPath.split('/').last;
-
-      // 使用 Completer 等待下载完成后再返回
       await _showDownloadProgressDialog(context, taskId, fileName, assetPath);
-
       debugPrint('✅ 素材下载完成并关闭对话框: $fileName');
     } catch (e) {
       debugPrint('下载素材失败: $e');
@@ -457,7 +573,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     String fileName,
     String assetPath,
   ) async {
-    // 使用 Completer 来等待下载完成
     final completer = Completer<void>();
 
     showDialog(
@@ -470,16 +585,12 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
           debugPrint('📥 下载完成回调开始执行 - 文件: $fileName');
 
           try {
-            // 先标记为已下载
             await _sharedAssetManager.markAssetDownloaded(assetPath);
             debugPrint('✅ 已标记为已下载: $assetPath');
 
-            // 等待一下确保文件完全写入
-            await Future.delayed(Duration(milliseconds: 100));
+            await Future.delayed(const Duration(milliseconds: 100));
 
-            final file = await _sharedAssetManager.getDownloadedAsset(
-              assetPath,
-            );
+            final file = await _sharedAssetManager.getDownloadedAsset(assetPath);
             debugPrint('💾 获取已下载文件: ${file?.name}, 大小: ${file?.size}');
 
             if (file != null) {
@@ -493,7 +604,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
             debugPrint('❌ 下载完成处理出错: $e');
           } finally {
             _sharedAssetManager.clearTaskMapping(assetPath);
-            // 完成 Completer，让调用者知道下载已完成
             if (!completer.isCompleted) {
               completer.complete();
             }
@@ -502,18 +612,15 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       ),
     );
 
-    // 启动下载任务
     _sharedAssetManager.startDownload(taskId);
 
-    // 同时监听下载任务的状态变化，防止非正常完成情况
     _sharedAssetManager.downloadManager.taskStream
         .where((task) => task.id == taskId)
         .listen((task) {
           if (task.status == DownloadStatus.completed ||
               task.status == DownloadStatus.failed) {
             if (!completer.isCompleted) {
-              // 给一点时间让 onComplete 先执行
-              Future.delayed(Duration(milliseconds: 200), () {
+              Future.delayed(const Duration(milliseconds: 200), () {
                 if (!completer.isCompleted) {
                   completer.complete();
                 }
@@ -522,7 +629,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
           }
         });
 
-    // 等待下载完成
     await completer.future;
   }
 
@@ -531,19 +637,21 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     debugPrint(
       '📁 添加文件: ${files.map((f) => f.name).join(', ')}，当前总数: ${_selectedFiles.length}',
     );
-    notifyListeners(); // 立即通知，不使用防抖
+    notifyListeners();
   }
 
   void removeFile(PlatformFile file) {
     _selectedFiles.remove(file);
+    _downloadedScriptureMemory.remove(file.name);
     debugPrint('🗑️ 移除文件: ${file.name}，当前总数: ${_selectedFiles.length}');
-    notifyListeners(); // 立即通知，不使用防抖
+    notifyListeners();
   }
 
   void clearFiles() {
     _selectedFiles.clear();
+    _downloadedScriptureMemory.clear();
     debugPrint('🧹 清空所有文件');
-    notifyListeners(); // 立即通知，不使用防抖
+    notifyListeners();
   }
 
   String getFileType(String fileName) {
@@ -594,8 +702,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     String? fromLabel,
     String? toLabel,
     Duration? displayDuration,
-  })?
-  _onTransferBeam;
+  })? _onTransferBeam;
 
   void setTransferBeamCallback(
     Function(
@@ -606,28 +713,37 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       String? fromLabel,
       String? toLabel,
       Duration? displayDuration,
-    })?
-    callback,
+    })? callback,
   ) {
     _onTransferBeam = callback;
   }
 
-  Future<void> startGlobalTransfer({bool isLoopContinuation = false}) async {
-    // 如果不是循环继续，检查是否已在传输中
+  Future<void> startGlobalTransfer({
+    bool isLoopContinuation = false,
+    bool forceSingleRound = false,
+  }) async {
     if (!isLoopContinuation && _isTransferring) return;
-    if (_selectedFiles.isEmpty) return;
+    if (_selectedFiles.isEmpty) {
+      _finishPreparingSend();
+      _scheduleNotify();
+      return;
+    }
+
+    final shouldLoop = !forceSingleRound && _isLooping;
 
     _isTransferring = true;
+    _finishPreparingSend();
+    if (_currentSendingScripture.isEmpty && _selectedFiles.isNotEmpty) {
+      _currentSendingScripture = _displayScriptureName(_selectedFiles.first.name);
+    }
     _status = TransferStatus.transferring;
 
-    // 初始化或增加循环计数
     if (!isLoopContinuation) {
-      _loopCount = _isLooping ? 1 : 0;
+      _loopCount = shouldLoop ? 1 : 0;
     } else {
       _loopCount++;
     }
 
-    // 重置发送计数（每轮重新开始）
     _globalSentCount = 0;
     _loopbackCount = 0;
 
@@ -636,46 +752,41 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       debugPrint(
-        '🚀 开始全球传输 - 文件数量: ${_selectedFiles.length}, 循环: $_isLooping, 轮次: $_loopCount, 场能模式: $_isFieldEnergyMode',
+        '🚀 开始全球传输 - 文件数量: ${_selectedFiles.length}, 循环: $shouldLoop, 轮次: $_loopCount, 场能模式: $_isFieldEnergyMode',
       );
 
-      // 启动后台服务（仅首次）
       if (!isLoopContinuation) {
         await _startBackgroundService();
-
-        // 如果开启了场能模式，同时启动场能广播
         if (_isFieldEnergyMode && !kIsWeb) {
           await _startFieldEnergyBroadcast();
         }
       }
 
-      // 启动本地回环（默认开启）
       await _startLocalLoopback();
 
       debugPrint('🔧 准备初始化平台全球发送服务...');
       await _initializePlatformGlobalSendService();
       debugPrint('🔧 平台服务初始化完成，准备开始发送...');
-      // 传递循环参数给底层服务，让底层服务处理循环逻辑
       await _platformGlobalSendService?.startSending(
         files: _selectedFiles,
-        isLoop: _isLooping,
+        isLoop: shouldLoop,
       );
       debugPrint('🔧 发送方法执行完毕，准备上传数据...');
       await _uploadPendingData();
 
-      debugPrint('✅ 传输完成，循环模式: $_isLooping, 轮次: $_loopCount');
+      debugPrint('✅ 传输完成，循环模式: $shouldLoop, 轮次: $_loopCount');
 
-      // 停止场能广播
       _stopFieldEnergyBroadcast();
-
-      // 发送完成，停止后台服务
       await _stopBackgroundService();
       _isTransferring = false;
       _status = TransferStatus.completed;
+      _currentSendingScripture = '';
     } catch (e) {
       debugPrint('❌ 传输失败: $e');
       _status = TransferStatus.error;
       _isTransferring = false;
+      _finishPreparingSend();
+      _currentSendingScripture = '';
       _stopFieldEnergyBroadcast();
       await _stopBackgroundService();
       _schedulePersist(_persistTransferState);
@@ -683,12 +794,10 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// 启动场能广播
   Future<void> _startFieldEnergyBroadcast() async {
-    if (kIsWeb) return; // Web 平台不支持
+    if (kIsWeb) return;
     if (_selectedFiles.isEmpty) return;
 
-    // 如果场能模式下没有开始全球传输，也需要启动本地回环
     if (!_isTransferring) {
       await _startLocalLoopback();
     }
@@ -706,7 +815,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
       await _fieldBroadcastService!.initialize();
 
-      // 获取第一个文件的数据进行广播
       final file = _selectedFiles.first;
       Uint8List? fileBytes = file.bytes;
 
@@ -727,67 +835,59 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// 停止场能广播
   void _stopFieldEnergyBroadcast() {
     _fieldBroadcastService?.stopBroadcast();
     _fieldBroadcastService?.dispose();
     _fieldBroadcastService = null;
 
-    // 如果没有在全球传输，则停止本地回环
     if (!_isTransferring) {
       _stopLocalLoopback();
     }
     debugPrint('🛑 场能广播已停止');
   }
 
-  /// 启动本地回环
   Future<void> _startLocalLoopback() async {
     if (kIsWeb) return;
     if (_selectedFiles.isEmpty) return;
-    if (_localLoopbackService != null && _localLoopbackService!.isRunning)
+    if (_localLoopbackService != null && _localLoopbackService!.isRunning) {
       return;
+    }
 
     try {
       _localLoopbackService = LocalLoopbackService(
         onLog: (msg) => debugPrint('[Loopback] $msg'),
         onHeartbeat: (loopCount) {
-          // loopCount is cumulative within the service isolate life
           _loopbackCount = loopCount;
           _scheduleNotify();
 
-          // 实时更新通知栏计数（即使应用不在前台）
           if (_isTransferring) {
-            final currentCountry =
-                _countryStatuses.isNotEmpty &&
+            final currentCountry = _countryStatuses.isNotEmpty &&
                     _globalSentCount > 0 &&
                     _globalSentCount <= _countryStatuses.length
                 ? _countryStatuses[_globalSentCount - 1].countryName
                 : '全球';
 
-            // 更新系统媒体控制中心（统一使用 audio_service）
             _keepAliveService.updateProgress(
               sentCount: _globalSentCount,
               totalCount: _totalCountriesCount,
               currentCountry: currentCountry,
+              audioName: _currentSendingScripture.isNotEmpty
+                  ? _currentSendingScripture
+                  : null,
               loopCount: _loopCount,
               isLoopbackActive: true,
               loopbackCount: _loopbackCount,
             );
           }
 
-          // This callback runs on main thread, keeping it active
-          // Log periodically to avoid flooding (every ~30 seconds = 15 heartbeats at 2s interval)
           if (loopCount % 15 == 0) {
             debugPrint('💓 Main Thread Pulse - 本地回环循环次数: $loopCount');
           }
-          // Update keep-alive service timestamp to signal activity
           WorkManagerKeepAlive.updateLastActiveTime();
         },
       );
 
       final file = _selectedFiles.first;
-
-      // 直接使用文件路径或内存数据进行流式回环
       await _localLoopbackService!.start(
         data: file.bytes,
         filePath: file.path,
@@ -798,7 +898,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// 停止本地回环
   void _stopLocalLoopback() {
     _localLoopbackService?.stop();
     _localLoopbackService?.dispose();
@@ -807,26 +906,23 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void stopTransfer() {
-    if (!_isTransferring) return;
+    _stopRequested = true;
+    if (!_isTransferring && !_isPreparingSend) return;
 
     _isTransferring = false;
+    _finishPreparingSend();
     _status = TransferStatus.idle;
+    _currentSendingScripture = '';
 
     _platformGlobalSendService?.stopSending();
-
-    // 停止场能广播
     _stopFieldEnergyBroadcast();
-
-    // 停止本地回环
     _stopLocalLoopback();
-
-    // 停止后台服务
     _stopBackgroundService();
 
-    // 重置循环计数
     _loopCount = 0;
     _loopbackCount = 0;
     _fieldBroadcastCount = 0;
+    _releaseCachedScriptures();
 
     _schedulePersist(_persistTransferState);
     debugPrint('🛑 传输已停止');
@@ -835,19 +931,21 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   void _onTransferCompleted() {
     _isTransferring = false;
+    _finishPreparingSend();
     _status = TransferStatus.completed;
+    _currentSendingScripture = '';
     _schedulePersist(_persistTransferState);
     _scheduleNotify();
   }
 
-  /// 综合使用 audio_service 和 flutter_foreground_task
   Future<void> _startBackgroundService() async {
     try {
       final fileName = _selectedFiles.isNotEmpty
-          ? _selectedFiles.first.name
+          ? (_currentSendingScripture.isNotEmpty
+                ? _currentSendingScripture
+                : _displayScriptureName(_selectedFiles.first.name))
           : '未知文件';
 
-      // 1. 启动 KeepAliveService (audio_service)
       await _keepAliveService.start(
         audioName: fileName,
         totalCountries: _countryStatuses.length,
@@ -859,13 +957,11 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// 切换音频静音状态
   void _onToggleAudioMute() async {
     debugPrint('🔇 收到静音切换请求');
     await _keepAliveService.toggleMute();
   }
 
-  /// 停止后台服务
   Future<void> _stopBackgroundService() async {
     try {
       await _keepAliveService.stop();
@@ -875,20 +971,20 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// 更新后台服务进度
   void _updateBackgroundServiceProgress(String country, int sent, int total) {
     _keepAliveService.updateProgress(
       sentCount: sent,
       totalCount: total,
       currentCountry: country,
+      audioName: _currentSendingScripture.isNotEmpty
+          ? _currentSendingScripture
+          : null,
       loopCount: _loopCount,
       isLoopbackActive: _localLoopbackService?.isRunning ?? false,
       loopbackCount: _loopbackCount,
     );
   }
 
-  /// 初始化平台自适应全球发送服务
-  /// Web 平台使用 HTTP，其他平台使用 UDP (GeoLite2 IP)
   Future<void> _initializePlatformGlobalSendService() async {
     double? userLat;
     double? userLng;
@@ -917,9 +1013,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
         _onTransferCompleted();
       },
       onLog: (message) {
-        // 打印所有日志用于调试
         debugPrint('📡 [GlobalSend] $message');
-        // 更新 UI 日志
         if (message.contains('成功') ||
             message.contains('失败') ||
             message.contains('HTTP') ||
@@ -940,7 +1034,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
         await _saveToLocal(bytes);
       },
       onLoopStart: (loopNum) {
-        // 更新轮次计数
         _loopCount = loopNum;
         debugPrint('🔄 轮次更新: $_loopCount');
         _scheduleNotify();
@@ -950,8 +1043,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     );
 
     await _platformGlobalSendService?.initialize();
-
-    // 打印当前使用的发送模式
     final mode = _platformGlobalSendService?.sendMode ?? 'Unknown';
     debugPrint('📋 平台全球发送服务初始化完成 - 模式: $mode');
   }
@@ -984,7 +1075,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
         _onTransferCompleted();
       },
       onLog: (message) {
-        // 性能优化：减少日志处理频率
         if (message.contains('成功') || message.contains('失败')) {
           updateLog(message);
           _parseLogAndUpdateCountryStatus(message);
@@ -1003,16 +1093,13 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _parseLogAndUpdateCountryStatus(String logMessage) {
-    // 匹配 UDP 格式: "✅ UDP 发送到 中国 (CN) 成功" 或 HTTP 格式
     if (logMessage.contains('成功')) {
-      // UDP 格式: 发送到 国家名 (代码) 成功
       final udpRegex = RegExp(r'发送到\s+([^\s(]+)\s+\(([A-Z]{2})\)\s+成功');
       final udpMatch = udpRegex.firstMatch(logMessage);
       if (udpMatch != null) {
         final countryName = udpMatch.group(1)?.trim();
         if (countryName != null) {
           updateCountryStatus(countryName, SendStatus.success);
-          // 直接更新通知栏进度
           _updateBackgroundServiceProgress(
             countryName,
             _globalSentCount,
@@ -1022,7 +1109,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
 
-      // HTTP 格式: 发送到 国家名 (代码) ... 成功
       final httpRegex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*成功');
       final httpMatch = httpRegex.firstMatch(logMessage);
       if (httpMatch != null) {
@@ -1057,7 +1143,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   void updateProgress(int count) {
     _globalSentCount = count;
 
-    // 获取当前正在发送的国家名称
     String currentCountry = '全球';
     if (_countryStatuses.isNotEmpty &&
         count > 0 &&
@@ -1065,7 +1150,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       currentCountry = _countryStatuses[count - 1].countryName;
     }
 
-    // 同步更新后台服务进度通知
     _updateBackgroundServiceProgress(
       currentCountry,
       count,
@@ -1075,13 +1159,11 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     _scheduleNotify();
   }
 
-  // 辅助获取总国家数
   int get _totalCountriesCount =>
       _countryStatuses.isNotEmpty ? _countryStatuses.length : 249;
 
   void updateDataSent(double dataMB) {
     _globalDataSentMB = dataMB;
-    // 关键修复：减少持久化频率，避免过度阻塞UI
     if (dataMB.toInt() % 10 == 0) {
       _schedulePersist(_persistTransferState);
     }
@@ -1155,7 +1237,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       _countryStatuses[index] = _countryStatuses[index].copyWith(
         status: status,
       );
-      // 关键修复：只在状态变为成功或失败时持久化，减少频率
       if (status == SendStatus.success || status == SendStatus.failed) {
         _schedulePersist(_persistCountryStatuses);
       }
@@ -1165,11 +1246,31 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   void updateLog(String log) {
     _currentLog = log;
-    // 关键修复：日志更新不需要频繁持久化，只在重要日志时持久化
+    _updateCurrentSendingScriptureFromLog(log);
     if (log.contains('成功') || log.contains('失败') || log.contains('完成')) {
       _schedulePersist(_persistTransferState);
     }
     _scheduleNotify();
+  }
+
+  void _updateCurrentSendingScriptureFromLog(String log) {
+    final match = RegExp(
+      r'(?:正在发送到|准备发送|UDP 发送到|发送到)[^《]*《([^》]+)》',
+    ).firstMatch(log);
+    final scripture = match?.group(1)?.trim();
+    if (scripture != null && scripture.isNotEmpty) {
+      _currentSendingScripture = scripture;
+    }
+  }
+
+  String _displayScriptureName(String fileName) {
+    final withoutExtension = fileName.replaceFirst(RegExp(r'\.[^.]+$'), '');
+    final withoutCbetaPrefix = withoutExtension.replaceFirst(
+      RegExp(r'^[A-Z][A-Z0-9]?\d{4}[A-Z]?_\d+_'),
+      '',
+    );
+    final normalized = withoutCbetaPrefix.replaceAll('_', ' ').trim();
+    return normalized.isEmpty ? withoutExtension : normalized;
   }
 
   int getSuccessCount() {
@@ -1260,10 +1361,8 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     _batchUpdateTimer?.cancel();
     _platformGlobalSendService?.stopSending();
     stopTransfer();
-
-    // 移除生命周期观察者
+    _releaseCachedScriptures();
     WidgetsBinding.instance.removeObserver(this);
-
     super.dispose();
   }
 }
