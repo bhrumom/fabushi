@@ -1,5 +1,8 @@
 name: Sync App Version Policy
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 on:
   workflow_dispatch:
     inputs:
@@ -50,7 +53,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.target_commitish || github.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/scripts/sync-app-version-policy.mjs
+            /fabushi/pubspec.yaml
 
       - name: Set release metadata env
         shell: bash
