@@ -1,59 +1,9 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
-const officialSiteReleaseRepo = process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_REPO?.trim() || "bhrumom/fabushi";
 const iosTestFlightPublicUrl = process.env.NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL?.trim() || "";
-const androidApkPublicHref =
-  process.env.NEXT_PUBLIC_ANDROID_APK_PUBLIC_HREF?.trim() ||
-  process.env.NEXT_PUBLIC_OFFICIAL_SITE_ANDROID_R2_HREF?.trim() ||
-  "";
-const RELEASES_API_URL = `https://api.github.com/repos/${officialSiteReleaseRepo}/releases?per_page=8`;
-const PERSISTED_RELEASES_PATH = join(process.cwd(), "public", "api", "releases.json");
-
-const TECHNICAL_RELEASE_LINE_PATTERN =
-  /(^pr\s*#\d+)|\b(ci|workflow|checkout|token|sha|commit|submodule|api|github|dispatch|globals\.css|page\.tsx|framer-motion|bentocard)\b|^\[(x| )\]/i;
-
-const RELEASE_SUMMARY_RULES = [
-  {
-    pattern: /ui\/ux|bento|design|layout|hero section|spotlight hover|scroll reveal|floating screenshots|dark theme/i,
-    text: "Improved the website interface and browsing experience.",
-  },
-  {
-    pattern: /cache|stale|refresh/i,
-    text: "Reduced cases where older content stayed visible after an update.",
-  },
-  {
-    pattern: /android|apk|r2/i,
-    text: "Improved Android download reliability and install guidance.",
-  },
-  {
-    pattern: /ios|testflight/i,
-    text: "Improved iOS testing access and release readiness.",
-  },
-  {
-    pattern: /sync|release publish|release state|latest release|immutable release|published/i,
-    text: "Made update delivery and version syncing more reliable.",
-  },
-  {
-    pattern: /screenshot|preview/i,
-    text: "Updated product previews and release details.",
-  },
-] as const;
-
-type GitHubReleaseAsset = {
-  name: string;
-  browser_download_url: string;
-};
-
-type GitHubRelease = {
-  tag_name: string;
-  name: string | null;
-  body: string | null;
-  html_url: string;
-  published_at: string | null;
-  assets: GitHubReleaseAsset[];
-  draft: boolean;
-};
+const configuredReleaseApiBaseUrl =
+  process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_API_BASE_URL?.trim() ||
+  process.env.NEXT_PUBLIC_FABUSHI_API_BASE_URL?.trim() ||
+  process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
+  "https://api.ombhrum.com";
 
 export interface OfficialSiteMirrorLink {
   label: string;
@@ -96,14 +46,6 @@ export interface OfficialSiteReleaseEntry {
   summary: string[];
 }
 
-interface OfficialSiteReleaseAssetState {
-  channels: OfficialSiteChannel[];
-  screenshots?: OfficialSiteScreenshots;
-  releases?: OfficialSiteReleaseEntry[];
-  notes?: string[];
-  generatedAt?: string;
-}
-
 export interface OfficialSiteReleaseCollection {
   betaChannels: OfficialSiteChannel[];
   stableChannels: OfficialSiteChannel[];
@@ -144,209 +86,35 @@ const DEFAULT_STABLE_CHANNELS: OfficialSiteChannel[] = [
       "验证完成后，这里会切换为可公开下载的正式版入口。",
     ],
     mirrorLinks: [],
-    note: "正式版上线后，这里会显示已经同步到 R2 的 APK 下载地址。",
+    note: "正式版上线后，这里会显示已经同步到 Cloudflare 的下载地址。",
   },
 ];
 
-async function fetchJson<T>(url: string): Promise<T | null> {
-  try {
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/vnd.github+json",
-      },
-      next: {
-        revalidate: 600,
-      },
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    return (await response.json()) as T;
-  } catch {
-    return null;
-  }
+function trimTrailingSlash(value: string) {
+  return value.endsWith("/") ? value.slice(0, -1) : value;
 }
 
-async function fetchText(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url, {
-      next: {
-        revalidate: 600,
-      },
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    return await response.text();
-  } catch {
-    return null;
-  }
-}
-
-function normalizeReleaseSummaryLine(line: string): string {
-  return line
-    .replace(/`/g, "")
-    .replace(/^pr\s*#\d+:\s*/i, "")
-    .replace(/^\[(x| )\]\s*/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function buildFallbackReleaseSummary(title: string): string[] {
-  const normalizedTitle = title.toLowerCase();
-
-  if (normalizedTitle.includes("ios") || normalizedTitle.includes("testflight")) {
-    return [
-      "Improved iOS testing access and release readiness.",
-      "Refined how the latest version details are presented.",
-    ];
-  }
-
-  if (normalizedTitle.includes("android") || normalizedTitle.includes("apk")) {
-    return [
-      "Improved Android download reliability and install guidance.",
-      "Refined how the latest version details are presented.",
-    ];
-  }
-
-  return [
-    "Improved the download experience and version details.",
-    "Refined overall stability and page presentation.",
-  ];
-}
-
-function mapReleaseLineToUserFacing(line: string): string | null {
-  const normalized = normalizeReleaseSummaryLine(line);
-  if (!normalized) {
-    return null;
-  }
-
-  for (const rule of RELEASE_SUMMARY_RULES) {
-    if (rule.pattern.test(normalized)) {
-      return rule.text;
-    }
-  }
-
-  if (TECHNICAL_RELEASE_LINE_PATTERN.test(normalized)) {
-    return null;
-  }
-
-  return normalized;
-}
-
-function sanitizeReleaseSummaries(lines: string[], fallback: string): string[] {
-  const seen = new Set<string>();
-  const summary: string[] = [];
-
-  for (const line of lines) {
-    const userFacingLine = mapReleaseLineToUserFacing(line);
-    if (!userFacingLine) {
-      continue;
-    }
-
-    const key = userFacingLine.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    summary.push(userFacingLine);
-  }
-
-  return summary.length > 0 ? summary.slice(0, 4) : buildFallbackReleaseSummary(fallback);
-}
-
-function extractUpdateSummary(body: string | null | undefined, fallback: string): string[] {
-  const content = body ?? "";
-  const sectionMatch = content.match(/## Included changes([\s\S]*?)(?:\n## |$)/);
-  const source = sectionMatch?.[1] ?? content;
-  const lines = source
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("- "))
-    .map((line) => line.replace(/^-\s*/, "").trim())
-    .filter(Boolean);
-
-  return sanitizeReleaseSummaries(lines, fallback);
-}
-
-function buildReleaseEntries(releases: GitHubRelease[]): OfficialSiteReleaseEntry[] {
-  return releases
-    .filter((release) => !release.draft)
-    .slice(0, 5)
-    .map((release) => ({
-      tag: release.tag_name,
-      title: release.name?.trim() || release.tag_name,
-      publishedAt: release.published_at ?? "",
-      htmlUrl: release.html_url,
-      summary: extractUpdateSummary(release.body, release.name ?? release.tag_name),
-    }))
-    .filter((entry) => entry.tag.length > 0);
+function buildReleaseApiUrl() {
+  return `${trimTrailingSlash(configuredReleaseApiBaseUrl)}/api/site/releases`;
 }
 
 function isTestFlightJoinUrl(href: string): boolean {
   return href.includes("testflight.apple.com");
 }
 
-function applyConfiguredIosTestFlightChannel(channel: OfficialSiteChannel): OfficialSiteChannel {
-  if (channel.platform !== "iOS" || channel.audience !== "beta" || !iosTestFlightPublicUrl) {
-    return channel;
+function uniqueLines(items: string[], limit = 4): string[] {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const item of items) {
+    const normalized = item.trim();
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    lines.push(normalized);
+    if (lines.length >= limit) break;
   }
-
-  if (isTestFlightJoinUrl(channel.primaryHref)) {
-    return channel;
-  }
-
-  const pointsToReleasePage =
-    !channel.primaryHref ||
-    channel.primaryHref.startsWith("https://github.com/") ||
-    channel.primaryHref.startsWith("/releases") ||
-    channel.primaryHref === channel.releasePageHref;
-
-  if (!pointsToReleasePage) {
-    return channel;
-  }
-
-  return {
-    ...channel,
-    status: channel.status.includes("TestFlight") ? channel.status : "TestFlight 已开放",
-    description: "iOS beta 已经配置为通过 Apple TestFlight 分发，点击即可打开公开加入页面。",
-    primaryLabel: "下载 iOS 测试版",
-    primaryHref: iosTestFlightPublicUrl,
-    note: "点击后会打开 Apple TestFlight 的公开加入页面。",
-  };
-}
-
-function applyConfiguredIosTestFlightChannels(channels: OfficialSiteChannel[]): OfficialSiteChannel[] {
-  return channels.map((channel) => applyConfiguredIosTestFlightChannel(channel));
-}
-
-function getChannelKey(channel: Pick<OfficialSiteChannel, "audience" | "platform">): string {
-  return `${channel.audience}:${channel.platform}`;
-}
-
-function mergeChannels(primary: OfficialSiteChannel[], fallback: OfficialSiteChannel[]): OfficialSiteChannel[] {
-  const merged = new Map<string, OfficialSiteChannel>();
-
-  for (const channel of fallback) {
-    merged.set(getChannelKey(channel), channel);
-  }
-
-  for (const channel of primary) {
-    merged.set(getChannelKey(channel), channel);
-  }
-
-  const orderedChannels = CHANNEL_ORDER.map((channel) => merged.get(getChannelKey(channel))).filter(
-    (channel): channel is OfficialSiteChannel => Boolean(channel),
-  );
-  const seenKeys = new Set(orderedChannels.map((channel) => getChannelKey(channel)));
-  const remainingChannels = Array.from(merged.values()).filter((channel) => !seenKeys.has(getChannelKey(channel)));
-
-  return [...orderedChannels, ...remainingChannels];
+  return lines;
 }
 
 function normalizeChannel(input: unknown): OfficialSiteChannel | null {
@@ -367,37 +135,36 @@ function normalizeChannel(input: unknown): OfficialSiteChannel | null {
     return null;
   }
 
-  const rawSummary = Array.isArray(channel.updateSummary)
-    ? channel.updateSummary.filter((item): item is string => typeof item === "string" && item.length > 0)
-    : [];
-
-  const normalizedChannel = {
+  return {
     platform: channel.platform as OfficialSiteChannel["platform"],
     audience: channel.audience as OfficialSiteChannel["audience"],
-    status: channel.status,
-    title: channel.title,
-    description: channel.description,
-    primaryLabel: channel.primaryLabel,
-    primaryHref: channel.primaryHref,
+    status: channel.status as string,
+    title: channel.title as string,
+    description: channel.description as string,
+    primaryLabel: channel.primaryLabel as string,
+    primaryHref: channel.primaryHref as string,
     version: typeof channel.version === "string" && channel.version.length > 0 ? channel.version : undefined,
     publishedAt:
       typeof channel.publishedAt === "string" && channel.publishedAt.length > 0 ? channel.publishedAt : undefined,
-    updateSummary: sanitizeReleaseSummaries(rawSummary, channel.title),
-    mirrorLinks: [],
+    updateSummary: uniqueLines(
+      Array.isArray(channel.updateSummary)
+        ? channel.updateSummary.filter((item): item is string => typeof item === "string")
+        : [],
+    ),
+    mirrorLinks: Array.isArray(channel.mirrorLinks)
+      ? channel.mirrorLinks
+          .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+          .map((item) => ({
+            label: typeof item.label === "string" ? item.label : "",
+            href: typeof item.href === "string" ? item.href : "",
+          }))
+          .filter((item) => item.href.length > 0)
+      : [],
     note: typeof channel.note === "string" && channel.note.length > 0 ? channel.note : undefined,
     releasePageHref:
       typeof channel.releasePageHref === "string" && channel.releasePageHref.length > 0
         ? channel.releasePageHref
         : undefined,
-  };
-
-  if (isDeprecatedAndroidDownloadHref(normalizedChannel)) {
-    return null;
-  }
-
-  return {
-    ...normalizedChannel,
-    mirrorLinks: [],
   };
 }
 
@@ -429,50 +196,13 @@ function normalizeReleaseEntries(input: unknown): OfficialSiteReleaseEntry[] {
       title: typeof item.title === "string" ? item.title : typeof item.tag === "string" ? item.tag : "",
       publishedAt: typeof item.publishedAt === "string" ? item.publishedAt : "",
       htmlUrl: typeof item.htmlUrl === "string" ? item.htmlUrl : "",
-      summary: sanitizeReleaseSummaries(
+      summary: uniqueLines(
         Array.isArray(item.summary)
-          ? item.summary.filter((s): s is string => typeof s === "string" && s.length > 0)
+          ? item.summary.filter((value): value is string => typeof value === "string")
           : [],
-        typeof item.title === "string" ? item.title : typeof item.tag === "string" ? item.tag : "Latest update",
       ),
     }))
     .filter((entry) => entry.tag.length > 0);
-}
-
-function isDeprecatedAndroidDownloadHref(channel: Pick<OfficialSiteChannel, "platform" | "primaryHref">): boolean {
-  if (channel.platform !== "Android") {
-    return false;
-  }
-
-  const href = channel.primaryHref.trim().toLowerCase();
-  return href.startsWith("https://github.com/") || href.startsWith("/downloads/android-");
-}
-
-function normalizeState(input: unknown): OfficialSiteReleaseAssetState | null {
-  if (!input || typeof input !== "object") {
-    return null;
-  }
-
-  const state = input as Record<string, unknown>;
-  if (!Array.isArray(state.channels)) {
-    return null;
-  }
-
-  const channels = state.channels.map(normalizeChannel).filter((item): item is OfficialSiteChannel => item !== null);
-  const notes = Array.isArray(state.notes)
-    ? state.notes.filter((item): item is string => typeof item === "string" && item.length > 0)
-    : [];
-  const screenshots = normalizeScreenshots(state.screenshots);
-  const releases = normalizeReleaseEntries(state.releases);
-
-  return {
-    channels,
-    screenshots,
-    releases,
-    notes,
-    generatedAt:
-      typeof state.generatedAt === "string" && state.generatedAt.length > 0 ? state.generatedAt : undefined,
-  };
 }
 
 function normalizeReleaseCollectionRecord(data: Record<string, unknown>): OfficialSiteReleaseCollection {
@@ -497,188 +227,115 @@ function normalizeReleaseCollectionRecord(data: Record<string, unknown>): Offici
   };
 }
 
-async function loadPersistedReleaseCollection(): Promise<OfficialSiteReleaseCollection | null> {
+function getChannelKey(channel: Pick<OfficialSiteChannel, "audience" | "platform">): string {
+  return `${channel.audience}:${channel.platform}`;
+}
+
+function mergeChannels(primary: OfficialSiteChannel[], fallback: OfficialSiteChannel[]): OfficialSiteChannel[] {
+  const merged = new Map<string, OfficialSiteChannel>();
+
+  for (const channel of fallback) {
+    merged.set(getChannelKey(channel), channel);
+  }
+
+  for (const channel of primary) {
+    merged.set(getChannelKey(channel), channel);
+  }
+
+  const orderedChannels = CHANNEL_ORDER.map((channel) => merged.get(getChannelKey(channel))).filter(
+    (channel): channel is OfficialSiteChannel => Boolean(channel),
+  );
+  const seenKeys = new Set(orderedChannels.map((channel) => getChannelKey(channel)));
+  const remainingChannels = Array.from(merged.values()).filter((channel) => !seenKeys.has(getChannelKey(channel)));
+
+  return [...orderedChannels, ...remainingChannels];
+}
+
+function applyConfiguredIosTestFlightChannel(channel: OfficialSiteChannel): OfficialSiteChannel {
+  if (channel.platform !== "iOS" || channel.audience !== "beta" || !iosTestFlightPublicUrl) {
+    return channel;
+  }
+
+  if (isTestFlightJoinUrl(channel.primaryHref)) {
+    return channel;
+  }
+
+  return {
+    ...channel,
+    status: channel.status.includes("TestFlight") ? channel.status : "TestFlight 已开放",
+    description: "iOS beta 已经配置为通过 Apple TestFlight 分发，点击即可打开公开加入页面。",
+    primaryLabel: "下载 iOS 测试版",
+    primaryHref: iosTestFlightPublicUrl,
+    note: "点击后会打开 Apple TestFlight 的公开加入页面。",
+  };
+}
+
+function applyConfiguredIosTestFlightChannels(channels: OfficialSiteChannel[]): OfficialSiteChannel[] {
+  return channels.map((channel) => applyConfiguredIosTestFlightChannel(channel));
+}
+
+async function fetchOfficialSiteReleaseCollectionFromCloudflare(isClient: boolean): Promise<OfficialSiteReleaseCollection | null> {
+  const url = buildReleaseApiUrl();
+
   try {
-    const content = await readFile(PERSISTED_RELEASES_PATH, "utf-8");
-    return normalizeReleaseCollectionRecord(JSON.parse(content) as Record<string, unknown>);
+    const response = await fetch(
+      url,
+      isClient
+        ? {
+            headers: {
+              Accept: "application/json",
+            },
+          }
+        : {
+            headers: {
+              Accept: "application/json",
+            },
+            next: {
+              revalidate: 300,
+            },
+          },
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+    return normalizeReleaseCollectionRecord(data);
   } catch {
     return null;
   }
 }
 
-async function loadStateAsset(
-  release: GitHubRelease,
-  assetName: "OFFICIAL_SITE_RELEASE_STATE.json" | "OFFICIAL_SITE_STABLE_RELEASE_STATE.json",
-): Promise<OfficialSiteReleaseAssetState | null> {
-  const asset = release.assets.find((item) => item.name === assetName);
-  if (!asset) {
-    return null;
-  }
-
-  const payload = await fetchJson<unknown>(asset.browser_download_url);
-  return normalizeState(payload);
-}
-
-async function loadTestFlightStatus(release: GitHubRelease): Promise<Record<string, string> | null> {
-  const asset = release.assets.find((item) => item.name === "TESTFLIGHT_UPLOAD_STATUS.txt");
-  if (!asset) {
-    return null;
-  }
-
-  const content = await fetchText(asset.browser_download_url);
-  if (!content) {
-    return null;
-  }
-
-  const status: Record<string, string> = {};
-  for (const line of content.split("\n")) {
-    const separatorIndex = line.indexOf("=");
-    if (separatorIndex <= 0) {
-      continue;
-    }
-
-    const key = line.slice(0, separatorIndex).trim();
-    const value = line.slice(separatorIndex + 1).trim();
-    if (key) {
-      status[key] = value;
-    }
-  }
-
-  return status;
-}
-
-async function buildFallbackBetaState(release: GitHubRelease): Promise<OfficialSiteReleaseAssetState> {
-  const summary = extractUpdateSummary(release.body, release.name ?? release.tag_name);
-  const channels: OfficialSiteChannel[] = [];
-  const apkAsset = release.assets.find((item) => item.name.endsWith(".apk"));
-
-  if (apkAsset && androidApkPublicHref) {
-    channels.push({
-      platform: "Android",
-      audience: "beta",
-      status: "Beta 自动同步",
-      title: "Android Beta",
-      description: "官网按钮会直接下载已经同步到 R2 的最新 Android APK 安装包。",
-      primaryLabel: "下载 Android Beta",
-      primaryHref: androidApkPublicHref,
-      version: release.tag_name,
-      publishedAt: release.published_at ?? undefined,
-      updateSummary: summary,
-      mirrorLinks: [],
-      note: "每次发布新的 Android APK 后，R2 中的安装包会被覆盖为最新版本。",
-    });
-  }
-
-  const testFlightStatus = await loadTestFlightStatus(release);
-  if (testFlightStatus) {
-    const uploaded = testFlightStatus.status === "uploaded";
-    const publicJoinHref = iosTestFlightPublicUrl || testFlightStatus.public_url || testFlightStatus.public_link;
-    const primaryHref = uploaded && publicJoinHref ? publicJoinHref : release.html_url;
-    channels.push({
-      platform: "iOS",
-      audience: "beta",
-      status: uploaded ? "TestFlight 已开放" : "等待 TestFlight 可加入",
-      title: "iOS TestFlight Beta",
-      description:
-        uploaded && publicJoinHref
-          ? "iOS beta 已经上传到 TestFlight，点击即可打开公开加入页面。"
-          : uploaded
-            ? "iOS beta 已经上传到 TestFlight。公开加入链接同步后可直接加入。"
-            : "iOS beta 会在 TestFlight 上传成功后自动补到官网入口。",
-      primaryLabel: uploaded ? "下载 iOS 测试版" : "等待 iOS 测试版开放",
-      primaryHref,
-      version: testFlightStatus.build_number || release.tag_name,
-      publishedAt: testFlightStatus.uploaded_at || release.published_at || undefined,
-      updateSummary: summary,
-      mirrorLinks: [],
-      note:
-        testFlightStatus.reason === "app_store_connect_credentials_not_configured"
-          ? "当前仓库还没有配置 App Store Connect 上传凭据。"
-          : uploaded && publicJoinHref
-            ? "点击后会打开 Apple TestFlight 的公开加入页面。"
-            : uploaded
-              ? "已经同步到发布记录，公开 TestFlight 加入链接配置后这里会自动切成直达入口。"
-              : "当前还没有可公开加入的 TestFlight 入口。",
-      releasePageHref: release.html_url,
-    });
-  }
-
+function buildFallbackCollection(): OfficialSiteReleaseCollection {
   return {
-    channels,
-    releases: buildReleaseEntries([release]),
+    betaChannels: [],
+    stableChannels: DEFAULT_STABLE_CHANNELS,
+    screenshots: {},
+    releases: [],
     notes: [
-      "Android Beta 会优先显示已同步到 R2 的最新 APK。",
-      "iOS TestFlight 可加入时会显示直接入口。",
+      "官网版本说明正在从 Cloudflare 版本策略同步。",
+      "如果当前没有显示版本列表，稍后刷新即可看到最新结果。",
     ],
   };
 }
 
+function finalizeCollection(collection: OfficialSiteReleaseCollection): OfficialSiteReleaseCollection {
+  return {
+    betaChannels: applyConfiguredIosTestFlightChannels(collection.betaChannels),
+    stableChannels: mergeChannels(collection.stableChannels, DEFAULT_STABLE_CHANNELS),
+    screenshots: collection.screenshots,
+    releases: collection.releases,
+    notes: collection.notes,
+  };
+}
+
 export async function getReleaseCollectionClient(): Promise<OfficialSiteReleaseCollection> {
-  try {
-    const res = await fetch("/api/releases.json", {
-      next: {
-        revalidate: 300,
-      },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = (await res.json()) as Record<string, unknown>;
-    const collection = normalizeReleaseCollectionRecord(data);
-    return {
-      ...collection,
-      betaChannels: applyConfiguredIosTestFlightChannels(collection.betaChannels),
-    };
-  } catch {
-    return { betaChannels: [], stableChannels: [], screenshots: {}, releases: [], notes: [] };
-  }
+  const collection = await fetchOfficialSiteReleaseCollectionFromCloudflare(true);
+  return finalizeCollection(collection ?? buildFallbackCollection());
 }
 
 export async function getOfficialSiteReleaseCollection(): Promise<OfficialSiteReleaseCollection> {
-  const persistedCollection = await loadPersistedReleaseCollection();
-  const releases = (await fetchJson<GitHubRelease[]>(RELEASES_API_URL)) ?? [];
-  const publishedReleases = releases.filter((release) => !release.draft);
-  const fallbackReleaseEntries = buildReleaseEntries(publishedReleases);
-
-  const betaRelease = publishedReleases[0] ?? null;
-  const syncedBetaState = betaRelease
-    ? await loadStateAsset(betaRelease, "OFFICIAL_SITE_RELEASE_STATE.json")
-    : null;
-  const betaState = betaRelease
-    ? syncedBetaState && syncedBetaState.channels.length > 0
-      ? syncedBetaState
-      : await buildFallbackBetaState(betaRelease)
-    : null;
-
-  const stableRelease =
-    publishedReleases.find((release) =>
-      release.assets.some((asset) => asset.name === "OFFICIAL_SITE_STABLE_RELEASE_STATE.json"),
-    ) ?? null;
-  const stableState = stableRelease
-    ? await loadStateAsset(stableRelease, "OFFICIAL_SITE_STABLE_RELEASE_STATE.json")
-    : null;
-
-  return {
-    betaChannels: applyConfiguredIosTestFlightChannels(
-      mergeChannels(betaState?.channels ?? [], persistedCollection?.betaChannels ?? []),
-    ),
-    stableChannels: mergeChannels(
-      stableState?.channels?.length ? stableState.channels : DEFAULT_STABLE_CHANNELS,
-      persistedCollection?.stableChannels ?? [],
-    ),
-    screenshots: betaState?.screenshots ?? persistedCollection?.screenshots ?? {},
-    releases:
-      betaState?.releases?.length
-        ? betaState.releases
-        : persistedCollection?.releases?.length
-          ? persistedCollection.releases
-          : fallbackReleaseEntries,
-    notes:
-      betaState?.notes?.length
-        ? betaState.notes
-        : persistedCollection?.notes?.length
-          ? persistedCollection.notes
-          : [
-              "当前 Beta 入口会先显示已经同步到 R2 或 TestFlight 的可用信息。",
-              "TestFlight 公共加入链接开放后会显示直接入口。",
-            ],
-  };
+  const collection = await fetchOfficialSiteReleaseCollectionFromCloudflare(false);
+  return finalizeCollection(collection ?? buildFallbackCollection());
 }

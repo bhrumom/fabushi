@@ -642,6 +642,8 @@ jobs:
       - name: Checkout workflow files
         uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/workflows/**
