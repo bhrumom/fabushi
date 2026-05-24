@@ -23,8 +23,14 @@ on:
       message:
         description: Update dialog message
         required: false
+      release_tag:
+        description: Optional GitHub release tag used to parse app version and build number
+        required: false
       release_notes:
         description: Multi-line release notes
+        required: false
+      published_at:
+        description: Optional ISO published-at timestamp
         required: false
       force_update:
         description: Force update users on this rollout
@@ -70,6 +76,7 @@ jobs:
               echo 'GITHUB_RELEASE_TITLE<<EOF'
               echo "${{ github.event.release.name || github.event.release.tag_name }}"
               echo 'EOF'
+              echo 'GITHUB_RELEASE_TAG=${{ github.event.release.tag_name }}'
               echo 'GITHUB_RELEASE_BODY<<EOF'
               echo "${{ github.event.release.body }}"
               echo 'EOF'
@@ -80,9 +87,11 @@ jobs:
               echo 'GITHUB_RELEASE_TITLE<<EOF'
               echo "${{ inputs.title }}"
               echo 'EOF'
+              echo 'GITHUB_RELEASE_TAG=${{ inputs.release_tag }}'
               echo 'GITHUB_RELEASE_BODY<<EOF'
               echo "${{ inputs.release_notes }}"
               echo 'EOF'
+              echo "VERSION_PUBLISHED_AT=${{ inputs.published_at }}"
             } >> "$GITHUB_ENV"
           fi
 
