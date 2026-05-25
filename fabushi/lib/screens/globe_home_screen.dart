@@ -897,7 +897,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   void _startSending(FileTransferModel model) async {
     if (model.isPreparingSend || model.isTransferring) return;
-    model.beginPreparingSend('正在逐部准备经文...');
 
     if (Platform.isAndroid && mounted) {
       try {
