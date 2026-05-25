@@ -1,0 +1,169 @@
+name: Android Real Device E2E
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      device_model:
+        description: Firebase Test Lab physical device model
+        required: false
+        default: Pixel2
+      device_version:
+        description: Android API level for the physical device
+        required: false
+        default: '30'
+      device_locale:
+        description: Device locale
+        required: false
+        default: zh_CN
+      device_orientation:
+        description: Device orientation
+        required: false
+        default: portrait
+  workflow_call:
+    inputs:
+      device_model:
+        type: string
+        required: false
+        default: Pixel2
+      device_version:
+        type: string
+        required: false
+        default: '30'
+      device_locale:
+        type: string
+        required: false
+        default: zh_CN
+      device_orientation:
+        type: string
+        required: false
+        default: portrait
+    secrets:
+      GCP_WORKLOAD_IDENTITY_PROVIDER:
+        required: true
+      GCP_SERVICE_ACCOUNT:
+        required: true
+      FIREBASE_PROJECT_ID:
+        required: true
+      FIREBASE_TEST_RESULTS_BUCKET:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: android-real-device-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.41.9'
+  REAL_DEVICE_TEST_TARGET: integration_test/home_send_real_device_test.dart
+
+jobs:
+  android-real-device-e2e:
+    name: Firebase Test Lab physical Android E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          lfs: true
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Write Android local.properties
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "flutter.sdk=$FLUTTER_ROOT"
+            echo "sdk.dir=$ANDROID_HOME"
+          } > android/local.properties
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Android app and instrumentation test APKs
+        shell: bash
+        env:
+          GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
+        run: |
+          set -euo pipefail
+          flutter build apk --debug --config-only
+          pushd android
+          ./gradlew app:assembleDebug app:assembleAndroidTest -Ptarget="$GITHUB_WORKSPACE/fabushi/${REAL_DEVICE_TEST_TARGET}"
+          popd
+          test -f build/app/outputs/apk/debug/app-debug.apk
+          test -f build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
+
+      - name: Run Firebase Test Lab on physical Android device
+        shell: bash
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_TEST_RESULTS_BUCKET: ${{ secrets.FIREBASE_TEST_RESULTS_BUCKET }}
+          DEVICE_MODEL: ${{ inputs.device_model || github.event.inputs.device_model || 'Pixel2' }}
+          DEVICE_VERSION: ${{ inputs.device_version || github.event.inputs.device_version || '30' }}
+          DEVICE_LOCALE: ${{ inputs.device_locale || github.event.inputs.device_locale || 'zh_CN' }}
+          DEVICE_ORIENTATION: ${{ inputs.device_orientation || github.event.inputs.device_orientation || 'portrait' }}
+        run: |
+          set -euo pipefail
+          results_dir="android-real-device-e2e/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          device="model=${DEVICE_MODEL},version=${DEVICE_VERSION},locale=${DEVICE_LOCALE},orientation=${DEVICE_ORIENTATION}"
+          extra_bucket=()
+          if [ -n "${FIREBASE_TEST_RESULTS_BUCKET:-}" ]; then
+            extra_bucket=(--results-bucket "$FIREBASE_TEST_RESULTS_BUCKET")
+          fi
+          gcloud firebase test android run \
+            --project "$FIREBASE_PROJECT_ID" \
+            --type instrumentation \
+            --app build/app/outputs/apk/debug/app-debug.apk \
+            --test build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk \
+            --device "$device" \
+            --timeout 5m \
+            --num-flaky-test-attempts 1 \
+            --results-dir "$results_dir" \
+            "${extra_bucket[@]}"
+
+      - name: Upload built test APKs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-real-device-e2e-apks
+          path: |
+            fabushi/build/app/outputs/apk/debug/app-debug.apk
+            fabushi/build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          if-no-files-found: warn
