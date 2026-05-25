@@ -222,6 +222,13 @@ jobs:
           kotlin.daemon.jvm.options=-Xmx3g
           EOF
 
+      - name: Build Android debug APK for Zen room E2E
+        env:
+          GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
+        run: |
+          flutter pub get
+          flutter build apk --debug --target-platform android-x64 --dart-define=ENV=production
+
       - name: Run Zen room Buddha .model E2E on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
