@@ -99,9 +99,42 @@ function normalizeInteger(value) {
 
 function maybeSplitLines(value) {
   if (!value) return undefined;
-  return String(value)
+
+  const text = String(value).trim();
+  if (!text) return undefined;
+
+  if (text.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => String(item || '').trim())
+          .filter(Boolean);
+      }
+    } catch (_) {
+      // fall through to plain text parsing
+    }
+  }
+
+  const includedChangesMatch = text.match(/## Included changes([\s\S]*?)(?:\n## |$)/i);
+  const source = includedChangesMatch?.[1] ?? text;
+  const lines = source
     .split(/\r?\n/)
     .map((item) => item.trim())
+    .filter(Boolean);
+
+  const bulletLines = lines
+    .filter((item) => /^[-*]\s+/.test(item))
+    .map((item) => item.replace(/^[-*]\s+/, '').trim())
+    .filter(Boolean);
+
+  if (bulletLines.length > 0) {
+    return bulletLines;
+  }
+
+  return lines
+    .filter((item) => !/^#{1,6}\s+/.test(item))
+    .map((item) => item.replace(/^[-*]\s+/, '').trim())
     .filter(Boolean);
 }
 
