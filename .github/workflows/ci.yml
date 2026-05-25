@@ -860,3 +860,20 @@ jobs:
                 '- Merge queue runs are supported through the `merge_group` trigger.',
               ],
             });
+
+  homepage-send-regression:
+    name: Homepage send flow regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout regression inputs
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/check_home_send_flow.py
+            /fabushi/lib/screens/globe_home_screen.dart
+            /fabushi/lib/models/file_transfer_model.dart
+
+      - name: Validate homepage send flow
+        run: python3 scripts/check_home_send_flow.py
