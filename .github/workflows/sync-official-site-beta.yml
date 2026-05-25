@@ -20,7 +20,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
   actions: read
   issues: write
 
@@ -56,12 +56,36 @@ jobs:
           fi
           echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
 
+      - name: Load release metadata for version policy sync
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          release_json="$(gh api repos/$RELEASE_REPO/releases/tags/$RELEASE_TAG)"
+          {
+            echo 'GITHUB_RELEASE_TITLE<<EOF'
+            jq -r '.name // .tag_name // ""' <<< "$release_json"
+            echo 'EOF'
+            echo 'GITHUB_RELEASE_BODY<<EOF'
+            jq -r '.body // ""' <<< "$release_json"
+            echo 'EOF'
+            echo "GITHUB_RELEASE_TAG=$RELEASE_TAG"
+            echo "VERSION_PUBLISHED_AT=$(jq -r '.published_at // ""' <<< "$release_json")"
+          } >> "$GITHUB_ENV"
+
       - name: Checkout workflow helper scripts
         uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.release.target_commitish || github.sha }}
+          persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /.github/scripts/**
+            /.github/scripts/generate-official-site-beta-state.py
+            /.github/scripts/sync-app-version-policy.mjs
+            /fabushi/pubspec.yaml
 
       - name: Set up Node.js for Wrangler
         uses: actions/setup-node@v6
@@ -167,7 +191,7 @@ jobs:
             cat "$upload_log"
             echo "uploaded=false" >> "$GITHUB_OUTPUT"
             echo "immutable_release=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Release $RELEASE_TAG is immutable, so OFFICIAL_SITE_RELEASE_STATE.json was not uploaded. The official site will keep using release metadata and TestFlight status fallbacks."
+            echo "::notice::Release $RELEASE_TAG is immutable, so OFFICIAL_SITE_RELEASE_STATE.json was not uploaded."
             rm -f "$upload_log"
             exit 0
           fi
@@ -176,72 +200,45 @@ jobs:
           rm -f "$upload_log"
           exit 1
 
-      - name: Download current official site releases JSON
+      - name: Resolve beta platform sync targets
+        id: policy_targets
         shell: bash
         env:
-          OFFICIAL_SITE_ORIGIN: ${{ vars.OFFICIAL_SITE_ORIGIN || 'https://fabushi.ombhrum.com' }}
+          ANDROID_R2_HREF: ${{ steps.sync_android_r2.outputs.android_r2_href }}
+          IOS_TESTFLIGHT_PUBLIC_URL: ${{ vars.IOS_TESTFLIGHT_PUBLIC_URL || '' }}
         run: |
           set -euo pipefail
-          work_dir="$RUNNER_TEMP/sync-beta-state"
-          mkdir -p "$work_dir"
-          current_json="$work_dir/current-releases.json"
-          if curl -fsSLo "$current_json" "${OFFICIAL_SITE_ORIGIN%/}/api/releases.json"; then
-            echo "Fetched current official site releases JSON from ${OFFICIAL_SITE_ORIGIN%/}/api/releases.json"
-          else
-            echo "{}" > "$current_json"
-            echo "::notice::Current official site releases JSON is not available yet; starting from an empty state."
+          platforms=()
+          if [ -n "${ANDROID_R2_HREF:-}" ]; then
+            platforms+=(android)
+          fi
+          if [ -n "${IOS_TESTFLIGHT_PUBLIC_URL:-}" ]; then
+            platforms+=(ios)
           fi
 
-      - name: Merge generated beta state into official site releases JSON
-        shell: bash
-        env:
-          OFFICIAL_SITE_RELEASE_STATE_PATH: OFFICIAL_SITE_RELEASE_STATE.json
-          OFFICIAL_SITE_RELEASES_EXISTING_PATH: ${{ runner.temp }}/sync-beta-state/current-releases.json
-          OFFICIAL_SITE_RELEASES_OUTPUT_PATH: ${{ runner.temp }}/sync-beta-state/releases.json
-        run: python3 .github/scripts/merge-official-site-beta-state.py
+          if [ "${#platforms[@]}" -eq 0 ]; then
+            echo "platforms=" >> "$GITHUB_OUTPUT"
+            echo "::notice::No beta platform has a public download URL, so api.ombhrum.com sync will be skipped."
+            exit 0
+          fi
 
-      - name: Upload merged official site releases JSON to R2
-        id: sync_releases_json_r2
+          joined="$(IFS=,; echo "${platforms[*]}")"
+          echo "platforms=$joined" >> "$GITHUB_OUTPUT"
+
+      - name: Sync beta metadata into app version policy
+        if: steps.policy_targets.outputs.platforms != ''
         shell: bash
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
-          OFFICIAL_SITE_R2_BUCKET: ${{ vars.OFFICIAL_SITE_R2_BUCKET || 'bushi' }}
-          OFFICIAL_SITE_RELEASES_R2_OBJECT_KEY: ${{ vars.OFFICIAL_SITE_RELEASES_R2_OBJECT_KEY || 'api/releases.json' }}
-          OFFICIAL_SITE_ORIGIN: ${{ vars.OFFICIAL_SITE_ORIGIN || 'https://fabushi.ombhrum.com' }}
+          VERSION_POLICY_ENDPOINT: ${{ vars.VERSION_POLICY_ENDPOINT }}
+          VERSION_POLICY_AUTOMATION_TOKEN: ${{ secrets.VERSION_POLICY_AUTOMATION_TOKEN }}
+          VERSION_POLICY_CHANNELS: beta
+          VERSION_POLICY_PLATFORMS: ${{ steps.policy_targets.outputs.platforms }}
+          APP_DOWNLOAD_URL_ANDROID: ${{ steps.sync_android_r2.outputs.android_r2_href }}
+          APP_DOWNLOAD_URL_IOS: ${{ vars.IOS_TESTFLIGHT_PUBLIC_URL || '' }}
+          VERSION_SYNC_SOURCE: github-actions-official-site-beta
         run: |
           set -euo pipefail
-          merged_json="$RUNNER_TEMP/sync-beta-state/releases.json"
-          if [ ! -f "$merged_json" ]; then
-            echo "Merged releases JSON was not generated." >&2
-            exit 1
-          fi
-
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-            echo "Cloudflare credentials are required to sync the official site releases JSON to R2." >&2
-            exit 1
-          fi
-
-          bucket="${OFFICIAL_SITE_R2_BUCKET:-bushi}"
-          object_key="${OFFICIAL_SITE_RELEASES_R2_OBJECT_KEY:-api/releases.json}"
-          official_site_origin="${OFFICIAL_SITE_ORIGIN:-https://fabushi.ombhrum.com}"
-
-          npx --yes wrangler@latest r2 object put "$bucket/$object_key" \
-            --file "$merged_json" \
-            --content-type application/json \
-            --cache-control no-store \
-            --force \
-            --remote
-
-          releases_json_href="${official_site_origin%/}/${object_key}"
-          echo "releases_json_href=$releases_json_href" >> "$GITHUB_OUTPUT"
-          {
-            echo "## Official site releases JSON synced to R2"
-            echo ""
-            echo "- Bucket: $bucket"
-            echo "- Object key: $object_key"
-            echo "- Official Worker href: $releases_json_href"
-          } >> "$GITHUB_STEP_SUMMARY"
+          node .github/scripts/sync-app-version-policy.mjs --releaseTag "$GITHUB_RELEASE_TAG"
 
       - name: Write summary
         shell: bash
@@ -250,7 +247,8 @@ jobs:
           RELEASE_STATE_UPLOADED: ${{ steps.upload_state.outputs.uploaded }}
           IMMUTABLE_RELEASE: ${{ steps.upload_state.outputs.immutable_release }}
           ANDROID_R2_HREF: ${{ steps.sync_android_r2.outputs.android_r2_href }}
-          RELEASES_JSON_R2_HREF: ${{ steps.sync_releases_json_r2.outputs.releases_json_href }}
+          BETA_POLICY_PLATFORMS: ${{ steps.policy_targets.outputs.platforms }}
+          VERSION_POLICY_ENDPOINT: ${{ vars.VERSION_POLICY_ENDPOINT }}
         run: |
           {
             echo "## Official site beta state synced"
@@ -260,18 +258,19 @@ jobs:
               echo "- Asset: OFFICIAL_SITE_RELEASE_STATE.json uploaded to the GitHub Release"
             elif [ "$IMMUTABLE_RELEASE" = "true" ]; then
               echo "- Asset upload skipped because the GitHub Release is immutable"
-              echo "- Official site fallback remains available through release metadata and TESTFLIGHT_UPLOAD_STATUS.txt"
             else
               echo "- Asset: OFFICIAL_SITE_RELEASE_STATE.json was generated locally"
             fi
             if [ -n "$ANDROID_R2_HREF" ]; then
               echo "- Android APK was copied to R2: $ANDROID_R2_HREF"
             fi
-            if [ -n "$RELEASES_JSON_R2_HREF" ]; then
-              echo "- Official site releases JSON was merged and copied to R2: $RELEASES_JSON_R2_HREF"
+            if [ -n "$BETA_POLICY_PLATFORMS" ]; then
+              echo "- Runtime data source synced through api.ombhrum.com: $VERSION_POLICY_ENDPOINT"
+              echo "- Synced beta platforms: $BETA_POLICY_PLATFORMS"
+            else
+              echo "- Runtime data source sync skipped because no public beta platform URL was available"
             fi
-            echo "- No Git commit or sync PR is needed for /api/releases.json anymore."
-            echo "- If a release only contains one platform, the official site keeps the previous entry for the other platform."
+            echo "- The official site now reads beta runtime metadata from api.ombhrum.com/api/site/releases."
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-beta-sync-failure:
@@ -315,11 +314,12 @@ jobs:
                 '- Android beta 下载入口不会自动切到最新发布版本 APK。',
                 '- iOS TestFlight 状态不会自动同步到官网。',
                 '- 官网“这次更新了什么”和 Android R2 下载入口也不会随本次 release 刷新。',
+                '- api.ombhrum.com/api/site/releases 也不会更新到这次 beta 版本。',
                 '',
                 '### Release context',
                 '',
                 `- Release tag: ${process.env.RELEASE_TAG || 'unknown'}`,
-                '- Check whether the selected release contains an APK asset and TESTFLIGHT_UPLOAD_STATUS.txt when iOS beta should be updated.',
-                '- Check whether IOS_TESTFLIGHT_PUBLIC_URL or OFFICIAL_SITE_ORIGIN variables are malformed when the sync script fails during metadata generation.',
+                '- Check whether the selected release contains an APK asset and whether IOS_TESTFLIGHT_PUBLIC_URL is configured when iOS beta should be public.',
+                '- Check VERSION_POLICY_ENDPOINT and VERSION_POLICY_AUTOMATION_TOKEN when the D1 sync step fails.',
               ],
             });
