@@ -49,11 +49,15 @@ class CbetaSendTextResult {
   final List<CbetaSendText> items;
   final List<dynamic> errors;
   final String api;
+  final bool hasMore;
+  final String? nextCursor;
 
   const CbetaSendTextResult({
     required this.items,
     required this.errors,
     required this.api,
+    this.hasMore = false,
+    this.nextCursor,
   });
 }
 
@@ -74,10 +78,26 @@ class CbetaSendTextService {
   static const int _maxRetries = 3;
   static const Duration _timeout = Duration(seconds: 15);
 
-  Future<CbetaSendTextResult> fetchDefaultSendTexts({int limit = 12}) async {
+  Future<CbetaSendTextResult> fetchDefaultSendTexts({int limit = 12}) {
+    return fetchSendTextsPage(limit: limit);
+  }
+
+  Future<CbetaSendTextResult> fetchSendTextsPage({
+    int limit = 1,
+    int offset = 0,
+    String? cursor,
+  }) async {
+    final queryParameters = <String, String>{'limit': limit.toString()};
+    if (offset > 0) {
+      queryParameters['offset'] = offset.toString();
+    }
+    if (cursor != null && cursor.trim().isNotEmpty) {
+      queryParameters['cursor'] = cursor.trim();
+    }
+
     final uri = AppConfig.buildBackendUri(
       AppConfig.cbetaSendTextsEndpoint,
-      queryParameters: {'limit': limit.toString()},
+      queryParameters: queryParameters,
     );
     final attempts = <Map<String, dynamic>>[];
 
@@ -132,10 +152,21 @@ class CbetaSendTextService {
           continue;
         }
 
+        final nextCursor = (decoded['nextCursor'] ?? decoded['cursor'] ?? '')
+            .toString()
+            .trim();
+        final hasMore =
+            decoded['hasMore'] == true ||
+            decoded['has_next'] == true ||
+            (nextCursor.isNotEmpty && nextCursor != (cursor ?? '').trim()) ||
+            (items.length == limit && limit > 0);
+
         return CbetaSendTextResult(
           items: items,
           errors: serverErrors,
           api: (decoded['api'] ?? '').toString(),
+          hasMore: hasMore,
+          nextCursor: nextCursor.isEmpty ? null : nextCursor,
         );
       } on TimeoutException catch (error) {
         attempts.add({

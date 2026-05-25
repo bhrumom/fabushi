@@ -4,8 +4,6 @@ import '../models/file_transfer_model.dart';
 import '../core/constants/country_servers.dart';
 import 'search_screen.dart';
 
-/// 大乘详细界面
-/// 显示国家列表和实时发送状态
 class GlobalDharmaScreen extends StatefulWidget {
   const GlobalDharmaScreen({Key? key}) : super(key: key);
 
@@ -19,70 +17,29 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final model = context.read<FileTransferModel>();
-      // 只在国家状态为空且未在传输时初始化
       if (model.countryStatuses.isEmpty && !model.isTransferring) {
         model.initializeCountryStatuses(GLOBAL_COUNTRY_SERVERS, COUNTRY_NAMES);
       }
     });
   }
 
-  void _parseLogAndUpdateStatus(String logMessage) {
-    final model = context.read<FileTransferModel>();
-
-    if (logMessage.contains('发送到') && logMessage.contains('成功')) {
-      final regex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*成功');
-      final match = regex.firstMatch(logMessage);
-      if (match != null) {
-        final countryName = match.group(1)?.trim();
-        model.updateCountryStatus(countryName, SendStatus.success);
-      }
-    } else if (logMessage.contains('发送到') && logMessage.contains('失败')) {
-      final regex = RegExp(r'发送到\s+([^()]+)\s+\([^()]+\)\s+.*失败');
-      final match = regex.firstMatch(logMessage);
-      if (match != null) {
-        final countryName = match.group(1)?.trim();
-        model.updateCountryStatus(countryName, SendStatus.failed);
-      }
-    } else if (logMessage.contains('正在发送到')) {
-      final regex = RegExp(r'正在发送到\s+([^()]+)\s+\([^()]+\)');
-      final match = regex.firstMatch(logMessage);
-      if (match != null) {
-        final countryName = match.group(1)?.trim();
-        model.updateCountryStatus(countryName, SendStatus.sending);
-      }
-    }
-  }
-
   Future<void> _startGlobalDharma() async {
     final model = context.read<FileTransferModel>();
+    final sentCount = await model.startDefaultScriptureSendSequence();
 
-    final assetCount = await model.prepareDefaultNonR2AssetsForSending();
-    if (assetCount == 0) {
-      if (!mounted) return;
-      final detail = model.currentLog.isNotEmpty ? '\n${model.currentLog}' : '';
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('未下载到可发送的 CBETA 经文$detail')));
+    if (!mounted || model.isTransferring || model.isPreparingSend) {
       return;
     }
 
-    // 只在用户主动点击开始且当前未在传输时重置状态
-    if (!model.isTransferring) {
-      // 重新初始化国家状态
-      model.initializeCountryStatuses(GLOBAL_COUNTRY_SERVERS, COUNTRY_NAMES);
+    if (sentCount == 0 && model.currentLog.contains('未下载到可发送')) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(model.currentLog)));
     }
-
-    await model.startGlobalTransfer();
   }
 
   void _stopGlobalDharma() {
-    final model = context.read<FileTransferModel>();
-    model.stopTransfer();
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
+    context.read<FileTransferModel>().stopTransfer();
   }
 
   @override
@@ -131,7 +88,6 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
       ),
       body: Column(
         children: [
-          // 统计信息卡片
           Selector<FileTransferModel, List<dynamic>>(
             selector: (_, m) => [
               m.selectedFiles.length,
@@ -148,8 +104,6 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
               data[4] as bool,
             ),
           ),
-
-          // 当前日志
           Selector<FileTransferModel, String>(
             selector: (_, m) => m.currentLog,
             builder: (context, log, child) => log.isNotEmpty
@@ -173,7 +127,6 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                   )
                 : const SizedBox.shrink(),
           ),
-
           Selector<FileTransferModel, String>(
             selector: (_, m) => m.currentSendingScripture,
             builder: (context, scripture, child) => scripture.isNotEmpty
@@ -200,8 +153,6 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                   )
                 : const SizedBox.shrink(),
           ),
-
-          // 国家列表
           Expanded(child: _buildCountryList()),
         ],
       ),
@@ -224,7 +175,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
               : Icon(model.isTransferring ? Icons.stop : Icons.play_arrow),
           label: Text(
             model.isPreparingSend
-                ? '下载经文中'
+                ? '逐部下载中'
                 : model.isTransferring
                 ? '停止发送'
                 : '开始法布施',
@@ -257,7 +208,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const Icon(Icons.file_present, color: Colors.blue),
                 const SizedBox(width: 8),
                 Text(
-                  '默认素材: $filesCount 个',
+                  '当前缓存: $filesCount 部',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -282,7 +233,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                 const Icon(Icons.send, color: Colors.orange),
                 const SizedBox(width: 8),
                 Text(
-                  '已发送: $sentCount 个文件',
+                  '已发送: $sentCount 个国家',
                   style: const TextStyle(fontSize: 16),
                 ),
               ],
