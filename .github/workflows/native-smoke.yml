@@ -12,10 +12,12 @@ on:
       - fabushi/android/**
       - fabushi/ios/**
       - fabushi/lib/**
+      - fabushi/integration_test/**
       - fabushi/pubspec.yaml
       - fabushi/pubspec.lock
       - .github/workflows/native-smoke.yml
       - .github/scripts/native-install-smoke.sh
+      - .github/scripts/android-zen-room-e2e.sh
   schedule:
     - cron: '20 10 * * 1'
 
@@ -107,7 +109,7 @@ jobs:
     name: Android native package install smoke
     needs: resolve-source
     if: github.event_name != 'pull_request'
-    runs-on: macos-13
+    runs-on: macos-15-intel
     timeout-minutes: 45
     defaults:
       run:
@@ -163,6 +165,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
+          emulator-boot-timeout: 1200
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: cd fabushi && bash ../.github/scripts/native-install-smoke.sh android
 
@@ -173,6 +176,72 @@ jobs:
           name: android-native-install-diagnostics
           path: |
             ${{ runner.temp }}/fabushi-android-logcat.txt
+          if-no-files-found: ignore
+
+  android-zen-room-e2e:
+    name: Android emulator Zen room Buddha .model E2E
+    needs: resolve-source
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout Android source and Zen room E2E helper
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+            !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
+            /.github/scripts/android-zen-room-e2e.sh
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Increase Gradle heap for hosted runners
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8
+          kotlin.daemon.jvm.options=-Xmx3g
+          EOF
+
+      - name: Run Zen room Buddha .model E2E on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 1200
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: cd fabushi && bash ../.github/scripts/android-zen-room-e2e.sh
+
+      - name: Upload Zen room E2E diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-zen-room-e2e-diagnostics
+          path: |
+            ${{ runner.temp }}/fabushi-android-zen-room-e2e-logcat.txt
           if-no-files-found: ignore
 
   ios-native-build:

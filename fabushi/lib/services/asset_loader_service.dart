@@ -52,6 +52,13 @@ class AssetLoaderService {
 
   static String get cdnBaseUrl => defaultCdnBaseUrl;
 
+  static const List<int> _flutterSceneModelFileIdentifier = [
+    0x49,
+    0x50,
+    0x53,
+    0x43,
+  ]; // IPSC
+
   // 内存缓存 (仅用于当前会话)
   static final Map<String, Uint8List> _memoryCache = {};
 
@@ -90,6 +97,11 @@ class AssetLoaderService {
         minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
         source: 'persistent-prewarm',
       );
+      _assertAssetSignatureIsValid(
+        fileName,
+        cached,
+        source: 'persistent-prewarm',
+      );
 
       _memoryCache[fileName] = cached;
       debugPrint(
@@ -117,9 +129,7 @@ class AssetLoaderService {
         minExpectedBytes: AppConfig.minBuddhaModelSizeBytes,
       );
     } catch (e) {
-      debugPrint(
-        '⚠️ [AssetLoader] 佛像模型首次加载失败，清理旧缓存后重试 R2: $e',
-      );
+      debugPrint('⚠️ [AssetLoader] 佛像模型首次加载失败，清理旧缓存后重试 R2: $e');
       await evictBuddhaModelCache();
       return _loadAsset(
         AppConfig.buddhaModelAssetPath,
@@ -206,6 +216,11 @@ class AssetLoaderService {
             minExpectedBytes: minExpectedBytes,
             source: 'persistent-cache',
           );
+          _assertAssetSignatureIsValid(
+            fileName,
+            cached,
+            source: 'persistent-cache',
+          );
           debugPrint(
             '✅ [AssetLoader] 从本地存储加载: $fileName (${cached.lengthInBytes} bytes)',
           );
@@ -244,6 +259,7 @@ class AssetLoaderService {
       minExpectedBytes: minExpectedBytes,
       source: 'download',
     );
+    _assertAssetSignatureIsValid(fileName, data, source: 'download');
 
     _memoryCache[fileName] = data;
     return data;
@@ -392,9 +408,9 @@ class AssetLoaderService {
 
         final totalLength = isResuming
             ? _parseTotalLengthFromContentRange(
-                  response.headers['content-range'],
-                ) ??
-                ((response.contentLength ?? 0) + downloadedBytes)
+                    response.headers['content-range'],
+                  ) ??
+                  ((response.contentLength ?? 0) + downloadedBytes)
             : response.contentLength ?? expectedContentLength ?? 0;
         _assertAssetSizeIsValid(
           fileName,
@@ -597,6 +613,32 @@ class AssetLoaderService {
     }
   }
 
+  static void _assertAssetSignatureIsValid(
+    String fileName,
+    Uint8List data, {
+    required String source,
+  }) {
+    if (fileName != AppConfig.buddhaModelAssetPath) return;
+    if (isFlutterSceneModelData(data)) return;
+
+    throw Exception(
+      '资源格式异常($source): $fileName 不是有效的 flutter_scene .model 文件。'
+      '首字节=${_formatHeaderBytes(data)}，'
+      '可能下载到了 GLB、HTML 错误页或错误的 R2 对象。',
+    );
+  }
+
+  @visibleForTesting
+  static bool isFlutterSceneModelData(Uint8List data) {
+    if (data.lengthInBytes < 8) return false;
+    for (var i = 0; i < _flutterSceneModelFileIdentifier.length; i++) {
+      if (data[4 + i] != _flutterSceneModelFileIdentifier[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   static String _formatBytes(int bytes) {
     const units = ['B', 'KB', 'MB', 'GB'];
     double value = bytes.toDouble();
@@ -606,6 +648,15 @@ class AssetLoaderService {
       unitIndex++;
     }
     return '${value.toStringAsFixed(unitIndex == 0 ? 0 : 1)} ${units[unitIndex]}';
+  }
+
+  static String _formatHeaderBytes(Uint8List data) {
+    if (data.isEmpty) return '<empty>';
+    final length = data.lengthInBytes < 12 ? data.lengthInBytes : 12;
+    return data
+        .take(length)
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join(' ');
   }
 
   /// 强制重新下载并清除旧缓存

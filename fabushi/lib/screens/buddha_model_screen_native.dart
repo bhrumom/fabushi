@@ -3,15 +3,12 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vector;
-import 'package:webview_flutter/webview_flutter.dart';
 
-import '../core/config/app_config.dart';
 import '../services/asset_loader_service.dart';
 import '../utils/model_auto_fit.dart';
 
@@ -41,8 +38,6 @@ class BuddhaModelScreen extends StatefulWidget {
 
 class BuddhaModelScreenState extends State<BuddhaModelScreen>
     with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
-  static const String _legacyFallbackChannelName = 'FabushiBuddhaFallback';
-
   late Scene scene;
   late PerspectiveCamera camera;
   late Ticker _ticker;
@@ -52,11 +47,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   double _loadingProgress = 0.0;
   bool _loadFailed = false;
   bool _renderFailed = false;
-  bool _useLegacyWebViewFallback = false;
-  bool _legacyWebViewReady = false;
   String? _lastLoadError;
-  WebViewController? _legacyWebViewController;
-  Timer? _legacyFallbackTimeout;
 
   double _rotationY = 0.0;
   final double _cameraDistance = 250.0;
@@ -78,11 +69,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   final List<double> _particleSpeeds = [];
 
   final List<vector.Vector3> _stars = [];
-
-  bool get _canUseLegacyWebViewFallback =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
 
   @override
   void initState() {
@@ -160,313 +146,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     return picture.toImage(width, height);
   }
 
-  String _buildLegacyBuddhaFallbackHtml() {
-    final glbUrl =
-        '${AppConfig.currentBackendUrl}/r2?file=${Uri.encodeComponent(AppConfig.legacyBuddhaGlbAssetPath)}';
-
-    return '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Fabushi Buddha Fallback</title>
-  <style>
-    html, body {
-      margin: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: linear-gradient(180deg, #1A2864 0%, #111C48 45%, #090E22 100%);
-    }
-    #container {
-      width: 100%;
-      height: 100%;
-    }
-    #status {
-      position: fixed;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: rgba(255, 255, 255, 0.72);
-      font: 500 15px sans-serif;
-      letter-spacing: 0.08em;
-      background: rgba(11, 14, 20, 0.42);
-      z-index: 9;
-      pointer-events: none;
-    }
-  </style>
-</head>
-<body>
-  <div id="container"></div>
-  <div id="status">恭请佛像...</div>
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-      }
-    }
-  </script>
-  <script type="module">
-    import * as THREE from 'three';
-    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-
-    const notifyHost = (message) => {
-      const bridge = window.$_legacyFallbackChannelName;
-      if (bridge && typeof bridge.postMessage === 'function') {
-        bridge.postMessage(message);
-      }
-    };
-
-    const container = document.getElementById('container');
-    const status = document.getElementById('status');
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setClearColor(0x000000, 0);
-    container.appendChild(renderer.domElement);
-
-    camera.position.set(0, 120, 290);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.enablePan = false;
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 1.4;
-    controls.minDistance = 180;
-    controls.maxDistance = 360;
-    controls.target.set(0, 90, 0);
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
-    scene.add(ambientLight);
-
-    const keyLight = new THREE.DirectionalLight(0xffd05b, 1.8);
-    keyLight.position.set(80, 200, 120);
-    scene.add(keyLight);
-
-    const fillLight = new THREE.PointLight(0xffe7aa, 1.1, 620);
-    fillLight.position.set(-120, 110, 90);
-    scene.add(fillLight);
-
-    const rimLight = new THREE.PointLight(0x8b5a16, 0.9, 520);
-    rimLight.position.set(0, 40, -180);
-    scene.add(rimLight);
-
-    const haloGeometry = new THREE.RingGeometry(70, 102, 64);
-    const haloMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffd97b,
-      transparent: true,
-      opacity: 0.24,
-      side: THREE.DoubleSide,
-    });
-    const halo = new THREE.Mesh(haloGeometry, haloMaterial);
-    halo.position.set(0, 150, -32);
-    scene.add(halo);
-
-    const fail = (reason) => {
-      const errorMessage = reason || 'Legacy Buddha GLB load failed';
-      console.error('Legacy Buddha GLB load failed:', errorMessage);
-      if (status) {
-        status.textContent = '佛像兼容加载失败';
-      }
-      notifyHost('error:' + errorMessage);
-    };
-
-    window.addEventListener('error', (event) => {
-      const message = event && event.message ? event.message : 'Legacy Buddha runtime error';
-      fail(message);
-    });
-
-    window.addEventListener('unhandledrejection', (event) => {
-      const reason = event && event.reason ? String(event.reason) : 'Legacy Buddha promise rejection';
-      fail(reason);
-    });
-
-    const loader = new GLTFLoader();
-    loader.load(
-      '$glbUrl',
-      (gltf) => {
-        const model = gltf.scene;
-        const box = new THREE.Box3().setFromObject(model);
-        const size = new THREE.Vector3();
-        const center = new THREE.Vector3();
-        box.getSize(size);
-        box.getCenter(center);
-        const maxDim = Math.max(size.x || 1, size.y || 1, size.z || 1);
-        const scale = 170 / maxDim;
-
-        model.scale.setScalar(scale);
-        model.position.sub(center.multiplyScalar(scale));
-        model.position.y += 18;
-        model.rotation.y = Math.PI;
-        model.rotation.x = 0.08;
-
-        model.traverse((child) => {
-          if (!child.isMesh) return;
-          child.castShadow = false;
-          child.receiveShadow = false;
-          if (child.material) {
-            child.material.metalness = 0.72;
-            child.material.roughness = 0.24;
-            child.material.color = new THREE.Color(0xffd46a);
-            child.material.needsUpdate = true;
-          }
-        });
-
-        scene.add(model);
-        if (status) {
-          status.style.display = 'none';
-        }
-        notifyHost('ready');
-      },
-      undefined,
-      (error) => {
-        const errorMessage = error && error.message
-          ? error.message
-          : 'Legacy Buddha GLB load failed';
-        fail(errorMessage);
-      }
-    );
-
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      halo.rotation.z += 0.0018;
-      renderer.render(scene, camera);
-    }
-
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight, false);
-    });
-
-    animate();
-  </script>
-</body>
-</html>
-''';
-  }
-
-  void _cancelLegacyFallbackTimeout() {
-    _legacyFallbackTimeout?.cancel();
-    _legacyFallbackTimeout = null;
-  }
-
-  void _startLegacyFallbackTimeout() {
-    _cancelLegacyFallbackTimeout();
-    _legacyFallbackTimeout = Timer(const Duration(seconds: 15), () {
-      if (!mounted || _legacyWebViewReady || _loadFailed) {
-        return;
-      }
-      _markLegacyFallbackFailed('legacy GLB fallback timeout');
-    });
-  }
-
-  void _markLegacyFallbackReady() {
-    _cancelLegacyFallbackTimeout();
-    if (!mounted) return;
-    setState(() {
-      _useLegacyWebViewFallback = true;
-      _legacyWebViewReady = true;
-      _isLoading = false;
-      _loadFailed = false;
-      _renderFailed = false;
-    });
-  }
-
-  void _markLegacyFallbackFailed([String? details]) {
-    _cancelLegacyFallbackTimeout();
-    _ticker.stop();
-    if (!mounted) return;
-    setState(() {
-      _legacyWebViewReady = false;
-      _useLegacyWebViewFallback = false;
-      _isLoading = false;
-      _loadFailed = true;
-      _renderFailed = true;
-      if (details != null && details.isNotEmpty) {
-        _lastLoadError = details;
-      }
-    });
-  }
-
-  void _handleLegacyFallbackMessage(String message) {
-    if (message == 'ready') {
-      _markLegacyFallbackReady();
-      return;
-    }
-    if (message.startsWith('error:')) {
-      final details = message.substring('error:'.length).trim();
-      debugPrint('❌ [BuddhaModel] 兼容 WebView GLB 加载失败: $details');
-      _markLegacyFallbackFailed(
-        details.isEmpty ? 'legacy GLB load failed' : details,
-      );
-      return;
-    }
-    debugPrint('ℹ️ [BuddhaModel] 收到兼容 WebView 消息: $message');
-  }
-
-  Future<void> _activateLegacyWebViewFallback() async {
-    if (!_canUseLegacyWebViewFallback || !mounted) {
-      return;
-    }
-
-    _ticker.stop();
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000))
-      ..addJavaScriptChannel(
-        _legacyFallbackChannelName,
-        onMessageReceived: (message) {
-          _handleLegacyFallbackMessage(message.message);
-        },
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (_) {
-            if (!mounted) return;
-            setState(() {
-              _useLegacyWebViewFallback = true;
-              _legacyWebViewReady = false;
-              _isLoading = true;
-              _loadFailed = false;
-              _renderFailed = false;
-            });
-          },
-          onPageFinished: (_) {
-            if (!mounted) return;
-            setState(() {
-              _useLegacyWebViewFallback = true;
-              _legacyWebViewReady = false;
-            });
-          },
-          onWebResourceError: (error) {
-            debugPrint(
-              '⚠️ [BuddhaModel] 兼容 WebView 资源加载异常: ${error.description}',
-            );
-          },
-        ),
-      );
-
-    _legacyWebViewController = controller;
-    _startLegacyFallbackTimeout();
-    try {
-      await controller.loadHtmlString(
-        _buildLegacyBuddhaFallbackHtml(),
-        baseUrl: AppConfig.currentBackendUrl,
-      );
-    } catch (e) {
-      debugPrint('❌ [BuddhaModel] 兼容 WebView 初始化失败: $e');
-      _markLegacyFallbackFailed('legacy GLB init failed');
-    }
-  }
-
   void _initScene() {
     scene = Scene();
     camera = PerspectiveCamera(
@@ -514,12 +193,13 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
           })
           .catchError((e) {
             debugPrint('⚠️ 渲染资源初始化失败 (需开启 Impeller 支持): $e');
-            if (_canUseLegacyWebViewFallback) {
-              _activateLegacyWebViewFallback();
-              return;
-            }
             if (mounted) {
-              setState(() => _loadFailed = true);
+              setState(() {
+                _lastLoadError = '$e';
+                _isLoading = false;
+                _loadFailed = true;
+                _renderFailed = true;
+              });
             }
           });
     } else {
@@ -529,7 +209,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   void _onTick(Duration elapsed) {
-    if (!mounted || !widget.isVisible || _useLegacyWebViewFallback) return;
+    if (!mounted || !widget.isVisible) return;
     final now = elapsed.inMicroseconds / 1000000.0;
     final dt = _lastTime == 0.0 ? 0.0 : (now - _lastTime).clamp(0.0, 1 / 30);
     _lastTime = now;
@@ -583,7 +263,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
     for (int i = 0; i < _particleCount; i++) {
       final p = _smokeParticles[i];
-      final sourceOffset = _incenseStickOffsets[i % _incenseStickOffsets.length];
+      final sourceOffset =
+          _incenseStickOffsets[i % _incenseStickOffsets.length];
       final tipPos = vector.Vector3(
         _incenseBaseX + sourceOffset,
         _incenseBaseY + currentHeight,
@@ -633,10 +314,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   Future<void> _loadModel() async {
-    _cancelLegacyFallbackTimeout();
     _lastLoadError = null;
-    _legacyWebViewReady = false;
-    _legacyWebViewController = null;
 
     if (widget.isVisible) {
       _lastTime = 0.0;
@@ -650,7 +328,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         _isLoading = true;
         _loadFailed = false;
         _renderFailed = false;
-        _useLegacyWebViewFallback = false;
         _loadingProgress = 0.0;
       });
     }
@@ -674,6 +351,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
         if (mounted) {
           setState(() {
             _isLoading = false;
+            _loadFailed = false;
             _renderFailed = false;
           });
         }
@@ -689,18 +367,11 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
           continue;
         }
 
-        if (_canUseLegacyWebViewFallback) {
-          debugPrint(
-            '↪️ [BuddhaModel] .model 链路失败，切换 legacy GLB 兼容渲染: $_lastLoadError',
-          );
-          await _activateLegacyWebViewFallback();
-          return;
-        }
-
         if (mounted) {
           setState(() {
             _isLoading = false;
             _loadFailed = true;
+            _renderFailed = true;
           });
         }
       }
@@ -741,9 +412,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   void _updateVisibilityState(bool isVisible) {
-    if (_useLegacyWebViewFallback) {
-      return;
-    }
     if (isVisible) {
       _lastTime = 0.0;
       if (!_ticker.isTicking && !_renderFailed) _ticker.start();
@@ -756,18 +424,14 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     if (_renderFailed || !mounted) return;
     debugPrint('❌ [BuddhaModel] 场景渲染失败: $error');
 
-    if (!_useLegacyWebViewFallback && _canUseLegacyWebViewFallback) {
-      _lastLoadError = '$error';
-      _activateLegacyWebViewFallback();
-      return;
-    }
-
     _ticker.stop();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      _lastLoadError = '$error';
       setState(() {
         _renderFailed = true;
         _loadFailed = true;
+        _isLoading = false;
       });
     });
   }
@@ -782,7 +446,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
   @override
   void dispose() {
-    _cancelLegacyFallbackTimeout();
     _ticker.dispose();
     super.dispose();
   }
@@ -790,9 +453,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final loadingLabel = _useLegacyWebViewFallback && !_legacyWebViewReady
-        ? '切换兼容佛像...'
-        : '恭请佛像... ${(_loadingProgress * 100).toInt()}%';
+    final loadingLabel = '恭请佛像... ${(_loadingProgress * 100).toInt()}%';
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -800,12 +461,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
         return Listener(
           onPointerDown: (e) {
-            if (_useLegacyWebViewFallback) return;
             _isUserDragging = true;
             _lastPointerX = e.position.dx;
           },
           onPointerMove: (e) {
-            if (_useLegacyWebViewFallback) return;
             if (_isUserDragging && _lastPointerX != null) {
               _rotationY += (e.position.dx - _lastPointerX!) * 0.01;
               _updateCamera();
@@ -832,17 +491,10 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                 child: SizedBox.expand(),
               ),
 
-              if (!_isLoading && !_loadFailed && _useLegacyWebViewFallback)
-                Positioned.fill(
-                  child: RepaintBoundary(
-                    child: _legacyWebViewController == null
-                        ? const SizedBox.shrink()
-                        : WebViewWidget(controller: _legacyWebViewController!),
-                  ),
-                )
-              else if (!_isLoading && !_loadFailed)
+              if (!_isLoading && !_loadFailed)
                 ClipRect(
                   child: RepaintBoundary(
+                    key: const ValueKey('buddha-model-ready'),
                     child: CustomPaint(
                       size: size,
                       painter: ScenePainter(
@@ -870,56 +522,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                   ),
                 ),
 
-              if (!_isLoading && !_loadFailed && _useLegacyWebViewFallback)
-                Positioned(
-                  top: 18,
-                  left: 24,
-                  right: 24,
-                  child: IgnorePointer(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 320),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.48),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: const Color(0xFFD4AF37).withValues(alpha: 0.36),
-                            ),
-                          ),
-                          child: const Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '佛像已切换为兼容展示',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Color(0xFFFFD700),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                '当前仍可继续禅修',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
               if (widget.showBook && widget.bookTitle != null && !_isLoading)
                 Positioned(
                   left: (size.width - 184) / 2,
@@ -935,6 +537,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
               if (_isLoading)
                 Positioned.fill(
                   child: Container(
+                    key: const ValueKey('buddha-model-loading'),
                     color: const Color(0xCC0B0E14),
                     child: Center(
                       child: Column(
@@ -961,6 +564,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
               if (_loadFailed && !_isLoading)
                 Positioned.fill(
                   child: Container(
+                    key: const ValueKey('buddha-model-error'),
                     color: const Color(0xD90B0E14),
                     child: Center(
                       child: Column(
@@ -972,16 +576,34 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                             size: 48,
                           ),
                           const SizedBox(height: 16),
-                          Text(
-                            _canUseLegacyWebViewFallback
-                                ? '禅境展现遇到阻碍\n(.model 与兼容 GLB 均未能载入)'
-                                : '禅境展现遇到阻碍\n(需 Impeller 及正确的 .model 文件)',
+                          const Text(
+                            '禅境展现遇到阻碍\n(请确认 .model 可下载且可解析)',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: Colors.white70,
                               fontSize: 16,
                             ),
                           ),
+                          if (_lastLoadError != null &&
+                              _lastLoadError!.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                top: 10,
+                                left: 24,
+                                right: 24,
+                              ),
+                              child: Text(
+                                _lastLoadError!.replaceAll(RegExp(r'\s+'), ' '),
+                                textAlign: TextAlign.center,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 12,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
                           const SizedBox(height: 24),
                           OutlinedButton(
                             style: OutlinedButton.styleFrom(
@@ -1317,11 +939,11 @@ class ScenePainter extends CustomPainter {
     canvas.drawPath(
       flame,
       Paint()
-        ..shader = ui.Gradient.radial(
-          center.translate(0, -16),
-          20,
-          const [Color(0xFFFFF5B7), Color(0xFFFF8A24), Color(0x00FF8A24)],
-        ),
+        ..shader = ui.Gradient.radial(center.translate(0, -16), 20, const [
+          Color(0xFFFFF5B7),
+          Color(0xFFFF8A24),
+          Color(0x00FF8A24),
+        ]),
     );
     canvas.drawOval(
       Rect.fromCenter(center: center.translate(0, 2), width: 30, height: 12),
