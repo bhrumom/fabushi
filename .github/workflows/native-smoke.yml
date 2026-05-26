@@ -162,7 +162,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          target: default
           arch: x86_64
           profile: pixel_6
           emulator-boot-timeout: 1200
@@ -235,7 +235,7 @@ jobs:
           GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
         with:
           api-level: 35
-          target: google_apis
+          target: default
           arch: x86_64
           profile: pixel_6
           emulator-boot-timeout: 1200
