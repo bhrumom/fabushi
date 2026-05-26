@@ -110,7 +110,7 @@ jobs:
     needs: resolve-source
     if: github.event_name != 'pull_request'
     runs-on: macos-15-intel
-    timeout-minutes: 45
+    timeout-minutes: 75
     defaults:
       run:
         working-directory: fabushi
