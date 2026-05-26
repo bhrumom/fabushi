@@ -47,15 +47,38 @@ else:
 
 android_install_smoke() {
   local apk_path="build/app/outputs/flutter-apk/app-debug.apk"
+  local logcat_path="${RUNNER_TEMP:-/tmp}/fabushi-android-logcat.txt"
+  local launcher_activity="${ANDROID_LAUNCHER_ACTIVITY:-${android_package}/.MainActivity}"
+
+  dump_android_logcat() {
+    adb logcat -d -t 2000 > "$logcat_path" || true
+  }
+
+  trap dump_android_logcat EXIT
+
   test -s "$apk_path"
 
   adb wait-for-device
   adb install -r "$apk_path"
   adb shell pm path "$android_package"
-  adb shell monkey -p "$android_package" -c android.intent.category.LAUNCHER 1
-  sleep 15
+
+  # Launch the app directly so unrelated system UI/assistant ANRs do not cause false failures.
+  adb shell am start -W \
+    -a android.intent.action.MAIN \
+    -c android.intent.category.LAUNCHER \
+    -n "$launcher_activity"
+
+  for _ in $(seq 1 30); do
+    if adb shell pidof "$android_package" >/dev/null 2>&1; then
+      adb shell pidof "$android_package"
+      trap - EXIT
+      dump_android_logcat
+      return 0
+    fi
+    sleep 1
+  done
+
   adb shell pidof "$android_package"
-  adb logcat -d -t 2000 > "${RUNNER_TEMP:-/tmp}/fabushi-android-logcat.txt" || true
 }
 
 ios_install_smoke() {
