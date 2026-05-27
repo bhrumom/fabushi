@@ -74,20 +74,21 @@ jobs:
             !/fabushi/native_libs/llama.cpp
             !/fabushi/native_libs/llama.cpp/**
 
-      - name: Fetch Android three_dart Buddha GLB
+      - name: Verify Android Buddha uses flutter_scene model
         shell: bash
         working-directory: .
         run: |
           set -euo pipefail
-          git lfs pull --include="fabushi/web/assets/models/佛像模型.glb" --exclude=""
-          python3 - <<'PY'
-          from pathlib import Path
-
-          glb = Path("fabushi/web/assets/models/佛像模型.glb")
-          data = glb.read_bytes()
-          if data[:4] != b"glTF" or len(data) < 10 * 1024 * 1024:
-              raise SystemExit(f"{glb} is not the expected bundled GLB ({len(data)} bytes)")
-          PY
+          if [ -d fabushi/web/assets/models ] && find fabushi/web/assets/models -name '*.glb' -print -quit | grep -q .; then
+            echo "Android builds must not package GLB model assets."
+            exit 1
+          fi
+          if grep -R -n -E 'AndroidThreeBuddhaView|androidThreePrimary|_shouldUseAndroidThreePrimary|_startAndroidThreePrimary|androidThreeBuddhaGlbAssetPath|legacyBuddhaGlb|minBuddhaGlbSizeBytes' fabushi/lib fabushi/test fabushi/pubspec.yaml; then
+            echo "Android Buddha renderer must stay on flutter_scene .model."
+            exit 1
+          fi
+          grep -q "models/buddha_model.model" fabushi/lib/core/config/app_config.dart
+          grep -q "AssetLoaderService.loadBuddhaModel" fabushi/lib/screens/buddha_model_screen_native.dart
 
       - name: Set up Java
         uses: actions/setup-java@v4
