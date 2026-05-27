@@ -3,8 +3,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_scene/scene.dart';
@@ -12,9 +10,8 @@ import 'package:vector_math/vector_math.dart' as vector;
 
 import '../services/asset_loader_service.dart';
 import '../utils/model_auto_fit.dart';
-import 'buddha_model_screen_android_three.dart';
 
-enum _BuddhaRendererPath { androidThreePrimary, flutterScenePrimary }
+enum _BuddhaRendererPath { flutterScenePrimary }
 
 class BuddhaModelScreen extends StatefulWidget {
   final bool autoRotate;
@@ -64,12 +61,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   _BuddhaRendererPath? _activeRendererPath;
 
   String? _lastLoadError;
-  String? _androidThreeError;
   String? _flutterSceneError;
   String _loadingLabel = '恭请佛像...';
-
-  bool get _shouldUseAndroidThreePrimary =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   @override
   void initState() {
@@ -84,10 +77,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
   }
 
   Future<void> _bootstrapRenderer() async {
-    if (_shouldUseAndroidThreePrimary) {
-      await _startAndroidThreePrimary();
-      return;
-    }
     await _startFlutterScenePrimary();
   }
 
@@ -108,32 +97,16 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     }
   }
 
-  Future<void> _startAndroidThreePrimary() async {
-    if (!mounted) return;
-    setState(() {
-      _flutterSceneError = null;
-      _androidThreeError = null;
-      _resetForFreshLoad(
-        loadingLabel: '安卓佛像加载中...',
-        activePath: _BuddhaRendererPath.androidThreePrimary,
-      );
-    });
-  }
-
   Future<void> _startFlutterScenePrimary() async {
     if (!mounted) return;
     setState(() {
       _flutterSceneError = null;
-      _androidThreeError = null;
       _resetForFreshLoad(
         loadingLabel: '恭请佛像...',
         activePath: _BuddhaRendererPath.flutterScenePrimary,
       );
     });
-    await _loadFlutterSceneModel(
-      asFallback: false,
-      reasonLabel: '正在安奉佛像...',
-    );
+    await _loadFlutterSceneModel(asFallback: false, reasonLabel: '正在安奉佛像...');
   }
 
   Future<void> _loadFlutterSceneModel({
@@ -298,23 +271,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     return picture.toImage(width, height);
   }
 
-  void _markAndroidThreeReady() {
-    if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-      _loadFailed = false;
-      _renderFailed = false;
-      _loadingProgress = 1.0;
-    });
-  }
-
-  void _handleAndroidThreeFailure(String details) {
-    _androidThreeError = details;
-    _lastLoadError = details;
-    debugPrint('❌ [BuddhaModel] Android three_dart 失败: $details');
-    _markLoadFailed(details);
-  }
-
   void _markFlutterSceneFailed(String details) {
     _flutterSceneError = details;
     _lastLoadError = details;
@@ -347,9 +303,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
   String get _loadFailureDetails {
     final details = <String>[];
-    if (_androidThreeError != null && _androidThreeError!.isNotEmpty) {
-      details.add('Android Three：${_cleanLoadError(_androidThreeError!)}');
-    }
     if (_flutterSceneError != null && _flutterSceneError!.isNotEmpty) {
       details.add('flutter_scene：${_cleanLoadError(_flutterSceneError!)}');
     }
@@ -447,13 +400,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
     }
   }
 
-  String get _compatibilityBanner {
-    if (_activeRendererPath == _BuddhaRendererPath.androidThreePrimary) {
-      return '安卓佛像使用 three_dart 原生渲染';
-    }
-    return '佛像已切换为兼容展示';
-  }
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -498,27 +444,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                 ),
                 child: SizedBox.expand(),
               ),
-              if (!_loadFailed &&
-                  _activeRendererPath ==
-                      _BuddhaRendererPath.androidThreePrimary)
-                Positioned.fill(
-                  child: AndroidThreeBuddhaView(
-                    key: ValueKey(
-                      'android-three-${_loadFailed ? 'failed' : 'active'}',
-                    ),
-                    rotationY: _rotationY,
-                    isVisible: widget.isVisible,
-                    onProgress: (progress) {
-                      if (!mounted) return;
-                      setState(() {
-                        _loadingProgress = progress;
-                      });
-                    },
-                    onReady: _markAndroidThreeReady,
-                    onError: _handleAndroidThreeFailure,
-                  ),
-                )
-              else if (!_isLoading &&
+              if (!_isLoading &&
                   !_loadFailed &&
                   scene != null &&
                   camera != null)
@@ -540,44 +466,6 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                       painter: _IncensePainter(
                         incenseProgress: _currentIncenseProgress,
                         isBurning: widget.isBurning,
-                      ),
-                    ),
-                  ),
-                ),
-              if (!_isLoading &&
-                  !_loadFailed &&
-                  _activeRendererPath !=
-                      _BuddhaRendererPath.flutterScenePrimary)
-                Positioned(
-                  top: 18,
-                  left: 20,
-                  right: 20,
-                  child: IgnorePointer(
-                    child: Center(
-                      child: Container(
-                        constraints: const BoxConstraints(maxWidth: 360),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.48),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: const Color(
-                              0xFFD4AF37,
-                            ).withValues(alpha: 0.36),
-                          ),
-                        ),
-                        child: Text(
-                          _compatibilityBanner,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Color(0xFFFFD700),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
                       ),
                     ),
                   ),
@@ -672,11 +560,7 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                               side: const BorderSide(color: Color(0xFFFFD700)),
                             ),
                             onPressed: () {
-                              if (_shouldUseAndroidThreePrimary) {
-                                unawaited(_startAndroidThreePrimary());
-                              } else {
-                                unawaited(_startFlutterScenePrimary());
-                              }
+                              unawaited(_startFlutterScenePrimary());
                             },
                             child: const Text('静心重试'),
                           ),
