@@ -29,17 +29,29 @@ class PracticeBookService {
   Future<PracticeBook?> getActiveBook(String practiceTitle) async => null;
   Future<PracticeBook> saveBook(
     PracticeBook book, {
-    bool syncCloud = true,
-  }) async => book;
-  Future<void> deleteBook(String id, {bool syncCloud = true}) async {}
+    bool syncCloud = false,
+  }) async => book.copyWith(syncStatus: PracticeBookSyncStatus.localOnly);
+
+  Future<void> deleteBook(String id, {bool syncCloud = false}) async {}
+
   Future<PracticeBookImportResult> importFile({
     required PlatformFile file,
     required String practiceTitle,
   }) async => const PracticeBookImportResult.failure('Web 暂不支持功课本文件导入');
+
   Future<PracticeBookImportResult> importUrl({
     required String url,
     required String practiceTitle,
   }) async => const PracticeBookImportResult.failure('Web 暂不支持功课本链接导入');
+
+  Future<PracticeBook> saveManualText({
+    required String practiceTitle,
+    required String title,
+    required String plainText,
+  }) async {
+    throw UnsupportedError('Web 暂不支持功课本保存');
+  }
+
   Future<PracticeBook> saveExtractedWebText({
     required String practiceTitle,
     required String sourceUrl,

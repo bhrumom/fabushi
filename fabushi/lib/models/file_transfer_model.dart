@@ -1,20 +1,21 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:async';
 
-import '../core/constants/country_servers.dart';
+import '../core/config/app_config.dart';
 import '../screens/asset_screen.dart';
+import '../services/asset_loader_service.dart';
 import '../services/shared_asset_manager.dart';
 import '../services/download_manager.dart' show DownloadStatus;
 import '../services/real_global_send_service.dart';
 import '../services/platform_global_send_service.dart';
 import '../services/ip_location_service.dart';
 import '../services/leaderboard_service.dart';
-import '../services/cbeta_send_text_service.dart';
 import '../services/wifi_field_broadcast_service.dart';
 import '../services/hotspot_manager_service.dart';
 import '../services/keep_alive_service.dart';
@@ -54,7 +55,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   final SharedAssetManager _sharedAssetManager = SharedAssetManager();
   final IPLocationService _ipLocationService = IPLocationService();
-  final CbetaSendTextService _cbetaSendTextService = CbetaSendTextService();
   final Map<String, Uint8List> _downloadedScriptureMemory = {};
 
   WiFiFieldBroadcastService? _fieldBroadcastService;
@@ -67,8 +67,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   LocalLoopbackService? _localLoopbackService;
 
   bool _isDisposed = false;
-  bool _stopRequested = false;
-
   PlatformFile? get selectedFile =>
       _selectedFiles.isNotEmpty ? _selectedFiles.first : null;
   double _progress = 0.0;
@@ -243,12 +241,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     _preparingSendMessage = '';
   }
 
-  void _cacheScriptureFile(PlatformFile file) {
-    if (file.bytes != null) {
-      _downloadedScriptureMemory[file.name] = file.bytes!;
-    }
-  }
-
   void _releaseCachedScriptures({bool clearSelection = true}) {
     _downloadedScriptureMemory.clear();
     if (clearSelection) {
@@ -256,178 +248,28 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  PlatformFile _buildPlatformFileFromText(CbetaSendText text) {
-    final content = [
-      '来源: CBETA',
-      '经名: ${text.title}',
-      '编号: ${text.work} 第 ${text.juan} 卷',
-      if (text.byline.isNotEmpty) '译者/作者: ${text.byline}',
-      if (text.category.isNotEmpty) '分类: ${text.category}',
-      if (text.sourceUrl.isNotEmpty) 'CBETA API: ${text.sourceUrl}',
-      '',
-      text.content,
-    ].join('\n');
-    final bytes = Uint8List.fromList(utf8.encode(content));
-    final file = PlatformFile(
-      name: text.fileName.isNotEmpty ? text.fileName : '${text.work}.txt',
-      size: bytes.length,
-      bytes: bytes,
-    );
-    _cacheScriptureFile(file);
-    return file;
-  }
-
   Future<int> startDefaultScriptureSendSequence() async {
     if (_isPreparingSend || _isTransferring) return 0;
 
-    _stopRequested = false;
-    _isLooping = false;
-    _status = TransferStatus.idle;
-    _globalSentCount = 0;
-    _globalDataSentMB = 0;
-    _releaseCachedScriptures();
-    beginPreparingSend('📚 正在逐部下载经文，下载一部发送一部...');
-
-    final seenScriptures = <String>{};
-    int sentScriptureCount = 0;
-    int offset = 0;
-    String? cursor;
-    bool foundAny = false;
-
-    try {
-      while (!_stopRequested) {
-        final result = await _cbetaSendTextService.fetchSendTextsPage(
-          limit: 1,
-          offset: offset,
-          cursor: cursor,
-        );
-
-        if (result.items.isEmpty) {
-          break;
-        }
-
-        foundAny = true;
-        bool pageHadNewItem = false;
-
-        for (final text in result.items) {
-          if (_stopRequested) break;
-
-          final scriptureKey =
-              '${text.work}_${text.juan}_${text.fileName}_${text.title}';
-          if (!seenScriptures.add(scriptureKey)) {
-            continue;
-          }
-          pageHadNewItem = true;
-
-          final file = _buildPlatformFileFromText(text);
-          _selectedFiles = [file];
-          _currentSendingScripture = text.title;
-          _preparingSendMessage = '📚 已下载《${text.title}》，准备发送到全部国家...';
-          _currentLog = '📚 已将《${text.title}》下载到内存，开始逐国发送';
-          initializeCountryStatuses(GLOBAL_COUNTRY_SERVERS, COUNTRY_NAMES);
-          notifyListeners();
-
-          await startGlobalTransfer(forceSingleRound: true);
-
-          if (_stopRequested) {
-            break;
-          }
-
-          if (_status == TransferStatus.error) {
-            _finishPreparingSend();
-            notifyListeners();
-            return sentScriptureCount;
-          }
-
-          sentScriptureCount++;
-          _releaseCachedScriptures();
-          _currentSendingScripture = '';
-          _currentLog = '✅ 已完成《${text.title}》全球发送，准备下一部经文...';
-          if (!_stopRequested) {
-            beginPreparingSend('📚 《${text.title}》已发送完成，继续下载下一部...');
-          }
-        }
-
-        if (_stopRequested) {
-          break;
-        }
-
-        if (!pageHadNewItem) {
-          break;
-        }
-
-        final nextCursor = result.nextCursor?.trim();
-        if (nextCursor != null &&
-            nextCursor.isNotEmpty &&
-            nextCursor != cursor) {
-          cursor = nextCursor;
-        } else if (result.hasMore) {
-          offset += result.items.length;
-        } else {
-          break;
-        }
-      }
-
-      if (!foundAny) {
-        _currentLog = '未下载到可发送的 CBETA 经文';
-        _finishPreparingSend();
-        notifyListeners();
-        return 0;
-      }
-
-      if (_stopRequested) {
-        _currentLog = '🛑 已停止逐部发送';
-      } else {
-        _currentLog = '✨ 已完成全部经文逐部下载与发送，共 $sentScriptureCount 部';
-        _status = TransferStatus.completed;
-      }
-      _finishPreparingSend();
-      notifyListeners();
-      return sentScriptureCount;
-    } catch (error) {
-      _selectedFiles = [];
-      _releaseCachedScriptures();
-      _currentSendingScripture = '';
-      _finishPreparingSend();
-      _status = TransferStatus.error;
-      updateLog('❌ CBETA 经文逐部下载失败: $error');
-      notifyListeners();
-      return sentScriptureCount;
+    if (!hasFiles) {
+      updateLog('请先选择链接、文本、本机文件或禅室佛像素材后再发送。');
+      return 0;
     }
+
+    await startGlobalTransfer(forceSingleRound: true);
+    return _globalSentCount;
   }
 
   Future<int> prepareDefaultNonR2AssetsForSending() async {
-    beginPreparingSend('📚 正在下载默认经文，下载完成后会自动开始发送...');
-
-    try {
-      final result = await _cbetaSendTextService.fetchDefaultSendTexts();
-      _selectedFiles = result.items.map(_buildPlatformFileFromText).toList();
-
-      _isLooping = true;
-      _currentSendingScripture = result.items.isNotEmpty
-          ? result.items.first.title
-          : '';
-      final titles = result.items.map((item) => '《${item.title}》').join('、');
-      final warning = result.errors.isEmpty
-          ? ''
-          : '；部分经文下载失败: ${jsonEncode(result.errors)}';
-      _preparingSendMessage = '📚 已下载 ${_selectedFiles.length} 部经文，正在启动发送...';
-      updateLog(
-        '📚 已从 CBETA 下载 ${_selectedFiles.length} 部经文，准备发送 $titles$warning',
-      );
-      debugPrint('📚 已从 CBETA 下载 ${_selectedFiles.length} 部经文，循环发送已开启');
-      notifyListeners();
-      return _selectedFiles.length;
-    } catch (error) {
-      _selectedFiles = [];
-      _releaseCachedScriptures();
-      _currentSendingScripture = '';
-      _finishPreparingSend();
-      updateLog('❌ CBETA 经文下载失败: $error');
-      debugPrint('❌ CBETA 经文下载失败: $error');
-      notifyListeners();
+    if (!hasFiles) {
+      updateLog('请先选择链接、文本、本机文件或禅室佛像素材后再发送。');
       return 0;
     }
+
+    _isLooping = true;
+    updateLog('已使用当前选择的内容准备发送。');
+    notifyListeners();
+    return _selectedFiles.length;
   }
 
   Future<void> selectFiles() async {
@@ -642,6 +484,112 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       '📁 添加文件: ${files.map((f) => f.name).join(', ')}，当前总数: ${_selectedFiles.length}',
     );
     notifyListeners();
+  }
+
+  Future<void> addTextContentForSending({
+    required String title,
+    required String text,
+    bool replaceExisting = true,
+  }) async {
+    final normalizedText = text.trim();
+    if (normalizedText.isEmpty) {
+      throw ArgumentError('请输入要发送的文本内容');
+    }
+
+    final fileName = '${_safeFileName(title.isEmpty ? 'text' : title)}.txt';
+    final bytes = Uint8List.fromList(utf8.encode(normalizedText));
+    final file = PlatformFile(name: fileName, size: bytes.length, bytes: bytes);
+
+    if (replaceExisting) {
+      _selectedFiles = [file];
+      _downloadedScriptureMemory
+        ..clear()
+        ..[file.name] = bytes;
+    } else {
+      addFiles([file]);
+      _downloadedScriptureMemory[file.name] = bytes;
+      return;
+    }
+
+    _currentSendingScripture = _displayScriptureName(file.name);
+    _currentLog = '已选择文本内容: ${file.name}';
+    notifyListeners();
+  }
+
+  Future<void> addUrlContentForSending(String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
+      throw ArgumentError('请输入 http/https 链接');
+    }
+
+    beginPreparingSend('正在读取链接内容...');
+    try {
+      final response = await http
+          .get(
+            uri,
+            headers: const {
+              'Accept': 'text/html,text/plain,application/xhtml+xml,*/*',
+            },
+          )
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('链接读取失败: HTTP ${response.statusCode}');
+      }
+
+      final raw = utf8.decode(response.bodyBytes, allowMalformed: true);
+      final contentType = response.headers['content-type'] ?? '';
+      final isHtml =
+          contentType.toLowerCase().contains('html') ||
+          RegExp(r'<html|<body|<p[>\s]', caseSensitive: false).hasMatch(raw);
+      final extractedTitle = isHtml ? _extractHtmlTitle(raw) : null;
+      final bodyText = isHtml ? _htmlToReadableText(raw) : raw.trim();
+      final title = extractedTitle?.trim().isNotEmpty == true
+          ? extractedTitle!.trim()
+          : _titleFromUri(uri);
+      final sendText = [
+        '来源链接: ${uri.toString()}',
+        '',
+        bodyText.isEmpty ? uri.toString() : bodyText,
+      ].join('\n');
+
+      await addTextContentForSending(title: title, text: sendText);
+      _currentLog = '已读取链接内容: $title';
+    } finally {
+      _finishPreparingSend();
+      notifyListeners();
+    }
+  }
+
+  Future<void> addZenBuddhaAssetForSending() async {
+    beginPreparingSend('正在准备禅室佛像素材...');
+    try {
+      final file = await AssetLoaderService.getPersistentAssetFile(
+        AppConfig.buddhaModelAssetPath,
+        ensureLoaded: true,
+        onProgress: (progress) {
+          _preparingSendMessage =
+              '正在准备禅室佛像素材 ${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%';
+          notifyListeners();
+        },
+      );
+      if (file == null || !await file.exists()) {
+        throw StateError('未找到禅室佛像素材');
+      }
+
+      final size = await file.length();
+      final platformFile = PlatformFile(
+        name: _pathBasename(AppConfig.buddhaModelAssetPath),
+        size: size,
+        path: file.path,
+      );
+      _selectedFiles = [platformFile];
+      _downloadedScriptureMemory.clear();
+      _currentSendingScripture = '禅室佛像素材';
+      _currentLog = '已选择禅室佛像素材: ${platformFile.name}';
+    } finally {
+      _finishPreparingSend();
+      notifyListeners();
+    }
   }
 
   void removeFile(PlatformFile file) {
@@ -915,7 +863,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void stopTransfer() {
-    _stopRequested = true;
     if (!_isTransferring && !_isPreparingSend) return;
 
     _isTransferring = false;
@@ -966,6 +913,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  // ignore: unused_element
   void _onToggleAudioMute() async {
     debugPrint('🔇 收到静音切换请求');
     await _keepAliveService.toggleMute();
@@ -1056,6 +1004,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     debugPrint('📋 平台全球发送服务初始化完成 - 模式: $mode');
   }
 
+  // ignore: unused_element
   Future<void> _initializeRealGlobalSendService() async {
     double? userLat;
     double? userLng;
@@ -1280,6 +1229,91 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     );
     final normalized = withoutCbetaPrefix.replaceAll('_', ' ').trim();
     return normalized.isEmpty ? withoutExtension : normalized;
+  }
+
+  String _safeFileName(String value) {
+    final safe = value
+        .replaceAll(RegExp(r'[\\/:*?"<>|]+'), '_')
+        .replaceAll(RegExp(r'\s+'), '_')
+        .trim();
+    if (safe.isEmpty) return 'content';
+    return safe.length > 80 ? safe.substring(0, 80) : safe;
+  }
+
+  String _pathBasename(String value) {
+    final parts = value.split(RegExp(r'[\\/]'));
+    return parts.isEmpty || parts.last.isEmpty ? value : parts.last;
+  }
+
+  String _titleFromUri(Uri uri) {
+    if (uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty) {
+      return Uri.decodeComponent(
+        uri.pathSegments.last.replaceAll(RegExp(r'\.[^.]+$'), ''),
+      );
+    }
+    return uri.host.isEmpty ? 'link' : uri.host;
+  }
+
+  String? _extractHtmlTitle(String html) {
+    final title = RegExp(
+      r'<title>([\s\S]*?)</title>',
+      caseSensitive: false,
+    ).firstMatch(html)?.group(1);
+    if (title == null) return null;
+    return _decodeHtmlEntities(title.replaceAll(RegExp(r'<[^>]+>'), '')).trim();
+  }
+
+  String _htmlToReadableText(String html) {
+    final bodyMatch = RegExp(
+      r'<body[^>]*>([\s\S]*?)</body>',
+      caseSensitive: false,
+    ).firstMatch(html);
+    var source = bodyMatch?.group(1) ?? html;
+    source = source
+        .replaceAll(
+          RegExp(r'<script[\s\S]*?</script>', caseSensitive: false),
+          '',
+        )
+        .replaceAll(RegExp(r'<style[\s\S]*?</style>', caseSensitive: false), '')
+        .replaceAll(
+          RegExp(r'<(p|div|br|h[1-6]|li)\b[^>]*>', caseSensitive: false),
+          '\n',
+        )
+        .replaceAll(RegExp(r'</(p|div|h[1-6]|li)>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'<[^>]+>'), '');
+
+    return _decodeHtmlEntities(source)
+        .replaceAll('\r', '')
+        .replaceAll(RegExp(r'[ \t\f\v]+'), ' ')
+        .replaceAll(RegExp(r'\n[ \t]+'), '\n')
+        .replaceAll(RegExp(r'[ \t]+\n'), '\n')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+  }
+
+  String _decodeHtmlEntities(String value) {
+    const named = {
+      'amp': '&',
+      'lt': '<',
+      'gt': '>',
+      'quot': '"',
+      'apos': "'",
+      'nbsp': ' ',
+    };
+    return value.replaceAllMapped(RegExp(r'&(#x?[0-9a-fA-F]+|[a-zA-Z]+);'), (
+      match,
+    ) {
+      final code = match.group(1) ?? '';
+      if (code.startsWith('#x') || code.startsWith('#X')) {
+        final parsed = int.tryParse(code.substring(2), radix: 16);
+        return parsed == null ? match.group(0)! : String.fromCharCode(parsed);
+      }
+      if (code.startsWith('#')) {
+        final parsed = int.tryParse(code.substring(1));
+        return parsed == null ? match.group(0)! : String.fromCharCode(parsed);
+      }
+      return named[code] ?? match.group(0)!;
+    });
   }
 
   int getSuccessCount() {

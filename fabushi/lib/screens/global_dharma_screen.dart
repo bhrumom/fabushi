@@ -25,13 +25,20 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
 
   Future<void> _startGlobalDharma() async {
     final model = context.read<FileTransferModel>();
-    final sentCount = await model.startDefaultScriptureSendSequence();
+    if (!model.hasFiles) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先在首页选择链接、文本、本机文件或禅室佛像素材。')),
+      );
+      return;
+    }
+
+    await model.startGlobalTransfer();
 
     if (!mounted || model.isTransferring || model.isPreparingSend) {
       return;
     }
 
-    if (sentCount == 0 && model.currentLog.contains('未下载到可发送')) {
+    if (model.globalSentCount == 0 && model.currentLog.isNotEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(model.currentLog)));
@@ -175,7 +182,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
               : Icon(model.isTransferring ? Icons.stop : Icons.play_arrow),
           label: Text(
             model.isPreparingSend
-                ? '逐部下载中'
+                ? '准备发送中'
                 : model.isTransferring
                 ? '停止发送'
                 : '开始法布施',

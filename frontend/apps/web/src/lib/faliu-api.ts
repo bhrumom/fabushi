@@ -1,4 +1,4 @@
-import { CBETA_API_ROOT, CBETA_PROXY_ROOT } from "./cbeta-config";
+import { CBETA_API_ROOT } from "./cbeta-config";
 
 export interface CbetaWorkIndexItem {
   work: string;
@@ -629,12 +629,7 @@ function isBrowserRuntime() {
 
 function cbetaUrls(path: string, params?: Record<string, string | number | undefined>) {
   const directUrl = buildUrl(CBETA_API_ROOT, path, params);
-
-  if (!isBrowserRuntime()) {
-    return [directUrl];
-  }
-
-  return [buildRelativeUrl(CBETA_PROXY_ROOT, path, params), directUrl];
+  return [directUrl];
 }
 
 function appUrls(path: string, params?: Record<string, string | number | undefined>) {
