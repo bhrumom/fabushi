@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { CBETA_API_ROOT, CBETA_PROXY_ROOT } from "../lib/cbeta-config";
+import { CBETA_API_ROOT } from "../lib/cbeta-config";
 import { normalizeCbetaQuery } from "../lib/faliu-api";
 
 const MAX_SUGGESTIONS_PER_GROUP = 8;
@@ -437,27 +437,8 @@ function buildUrl(base: string, path: string, params?: Record<string, string | n
   return url.toString();
 }
 
-function buildRelativeUrl(base: string, path: string, params?: Record<string, string | number | undefined>) {
-  const normalizedBase = base.replace(/\/+$/g, "");
-  const normalizedPath = path.replace(/^\/+/g, "");
-  const query = new URLSearchParams();
-
-  if (params) {
-    for (const [key, value] of Object.entries(params)) {
-      if (value === undefined || value === null || value === "") {
-        continue;
-      }
-
-      query.set(key, String(value));
-    }
-  }
-
-  const suffix = query.toString();
-  return `${normalizedBase}/${normalizedPath}${suffix ? `?${suffix}` : ""}`;
-}
-
 function cbetaUrls(path: string, params: Record<string, string | number | undefined>) {
-  return [buildRelativeUrl(CBETA_PROXY_ROOT, path, params), buildUrl(CBETA_API_ROOT, path, params)];
+  return [buildUrl(CBETA_API_ROOT, path, params)];
 }
 
 async function fetchJson<T>(urls: string[]): Promise<T> {

@@ -150,8 +150,6 @@ class AppConfig {
   static const String testModeStorageKey = 'test_mode';
 
   // API端点
-  static const String cbetaSendTextsEndpoint = '/api/cbeta/send-texts';
-
   static String get loginUrl => buildBackendUrl('/api/auth/login');
   static String get registerUrl => buildBackendUrl('/api/auth/register');
   static String get verifyUrl => buildBackendUrl('/api/auth/verify');

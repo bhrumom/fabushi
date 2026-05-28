@@ -5,15 +5,12 @@ import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:gbk_codec/gbk_codec.dart';
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
-import '../core/config/app_config.dart';
 import '../models/practice_book_model.dart';
-import 'app_settings.dart';
 
 class PracticeBookImportResult {
   final PracticeBook? book;
@@ -46,7 +43,7 @@ class PracticeBookService {
     final dbFile = path.join(dbPath, 'practice_books.db');
     _database = await openDatabase(
       dbFile,
-      version: 1,
+      version: 2,
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE practice_books (
@@ -56,6 +53,7 @@ class PracticeBookService {
             source_type TEXT NOT NULL,
             source_url TEXT,
             source_file_name TEXT,
+            source_file_path TEXT,
             content_hash TEXT NOT NULL,
             plain_text TEXT NOT NULL,
             normalized_text TEXT NOT NULL,
@@ -69,6 +67,13 @@ class PracticeBookService {
         await db.execute(
           'CREATE INDEX idx_practice_books_practice_title ON practice_books(practice_title)',
         );
+      },
+      onUpgrade: (db, oldVersion, _) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            'ALTER TABLE practice_books ADD COLUMN source_file_path TEXT',
+          );
+        }
       },
     );
     return _database!;
@@ -100,45 +105,31 @@ class PracticeBookService {
 
   Future<PracticeBook> saveBook(
     PracticeBook book, {
-    bool syncCloud = true,
+    bool syncCloud = false,
   }) async {
     final db = await database;
+    final localBook = book.copyWith(
+      isActive: true,
+      syncStatus: PracticeBookSyncStatus.localOnly,
+      remoteObjectKey: null,
+    );
     await db.update(
       'practice_books',
       {'is_active': 0},
       where: 'practice_title = ?',
-      whereArgs: [book.practiceTitle],
+      whereArgs: [localBook.practiceTitle],
     );
     await db.insert(
       'practice_books',
-      book.copyWith(isActive: true).toMap(),
+      localBook.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
-
-    if (syncCloud) {
-      return await _uploadBookToCloud(book.copyWith(isActive: true));
-    }
-    return book.copyWith(isActive: true);
+    return localBook;
   }
 
-  Future<void> deleteBook(String id, {bool syncCloud = true}) async {
+  Future<void> deleteBook(String id, {bool syncCloud = false}) async {
     final db = await database;
     await db.delete('practice_books', where: 'id = ?', whereArgs: [id]);
-
-    if (!syncCloud) return;
-    final headers = await _authHeaders();
-    if (headers == null) return;
-    try {
-      final baseUrl = await AppSettings.getBackendUrl();
-      await http.delete(
-        Uri.parse(
-          '$baseUrl/api/meditation/practice-books',
-        ).replace(queryParameters: {'id': id}),
-        headers: headers,
-      );
-    } catch (e) {
-      debugPrint('[PracticeBook] 云端删除失败: $e');
-    }
   }
 
   Future<PracticeBookImportResult> importFile({
@@ -146,8 +137,16 @@ class PracticeBookService {
     required String practiceTitle,
   }) async {
     try {
-      final bytes = await _readPlatformFile(file);
       final extension = path.extension(file.name).toLowerCase();
+      if (_isImageExtension(extension)) {
+        final book = await _importImage(
+          file: file,
+          practiceTitle: practiceTitle,
+        );
+        return PracticeBookImportResult.success(book);
+      }
+
+      final bytes = await _readPlatformFile(file);
       final plainText = switch (extension) {
         '.txt' || '.md' => _decodeTextBytes(bytes),
         '.docx' => _extractDocxText(bytes),
@@ -172,6 +171,7 @@ class PracticeBookService {
         sourceType: PracticeBookSourceType.file,
         sourceFileName: file.name,
         plainText: normalizedPlainText,
+        syncStatus: PracticeBookSyncStatus.localOnly,
       );
       return PracticeBookImportResult.success(await saveBook(book));
     } catch (e) {
@@ -184,49 +184,43 @@ class PracticeBookService {
     required String practiceTitle,
   }) async {
     final normalizedUrl = url.trim();
-    if (!normalizedUrl.startsWith('http://') &&
-        !normalizedUrl.startsWith('https://')) {
+    final uri = Uri.tryParse(normalizedUrl);
+    if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
       return const PracticeBookImportResult.failure('请输入 http/https 链接');
     }
 
-    final headers = await _authHeaders();
-    if (headers == null) {
-      return const PracticeBookImportResult.failure('请先登录后再同步链接功课本');
+    final book = PracticeBook.create(
+      id: const Uuid().v4(),
+      practiceTitle: practiceTitle,
+      title: _titleFromUrl(uri),
+      sourceType: PracticeBookSourceType.url,
+      sourceUrl: normalizedUrl,
+      plainText: normalizedUrl,
+      syncStatus: PracticeBookSyncStatus.localOnly,
+    );
+    return PracticeBookImportResult.success(await saveBook(book));
+  }
+
+  Future<PracticeBook> saveManualText({
+    required String practiceTitle,
+    required String title,
+    required String plainText,
+  }) async {
+    final normalizedPlainText = PracticeBookText.normalizePlainText(plainText);
+    if (normalizedPlainText.length < 2) {
+      throw ArgumentError('请输入功课文本内容');
     }
-
-    try {
-      final baseUrl = await AppSettings.getBackendUrl();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/meditation/practice-books/import-url'),
-        headers: headers,
-        body: jsonEncode({
-          'url': normalizedUrl,
-          'practiceTitle': practiceTitle,
-        }),
-      );
-
-      final data = jsonDecode(response.body);
-      if (response.statusCode != 200 || data['success'] != true) {
-        final needsFallback =
-            data['needsWebViewFallback'] == true ||
-            normalizedUrl.contains('mp.weixin.qq.com');
-        return PracticeBookImportResult.failure(
-          data['error']?.toString() ?? '链接解析失败',
-          needsWebViewFallback: needsFallback,
-        );
-      }
-
-      final book = PracticeBook.fromJson(
-        Map<String, dynamic>.from(data['data']['book'] as Map),
-      ).copyWith(syncStatus: PracticeBookSyncStatus.synced, isActive: true);
-      await saveBook(book, syncCloud: false);
-      return PracticeBookImportResult.success(book);
-    } catch (e) {
-      return PracticeBookImportResult.failure(
-        '链接解析失败: $e',
-        needsWebViewFallback: normalizedUrl.contains('mp.weixin.qq.com'),
-      );
-    }
+    final book = PracticeBook.create(
+      id: const Uuid().v4(),
+      practiceTitle: practiceTitle,
+      title: title.trim().isEmpty
+          ? PracticeBookText.titleFromText(normalizedPlainText)
+          : title.trim(),
+      sourceType: PracticeBookSourceType.manual,
+      plainText: normalizedPlainText,
+      syncStatus: PracticeBookSyncStatus.localOnly,
+    );
+    return saveBook(book);
   }
 
   Future<PracticeBook> saveExtractedWebText({
@@ -245,92 +239,52 @@ class PracticeBookService {
       sourceType: PracticeBookSourceType.url,
       sourceUrl: sourceUrl,
       plainText: normalizedPlainText,
+      syncStatus: PracticeBookSyncStatus.localOnly,
     );
-    return await saveBook(book);
+    return saveBook(book);
   }
 
   Future<void> syncFromCloud() async {
-    final headers = await _authHeaders();
-    if (headers == null) return;
-    try {
-      final baseUrl = await AppSettings.getBackendUrl();
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/meditation/practice-books'),
-        headers: headers,
-      );
-      if (response.statusCode != 200) return;
-      final data = jsonDecode(response.body);
-      if (data['success'] != true) return;
-      final books = (data['data']?['books'] as List<dynamic>? ?? [])
-          .map(
-            (item) =>
-                PracticeBook.fromJson(Map<String, dynamic>.from(item as Map)),
-          )
-          .toList();
-      for (final book in books) {
-        await saveBook(
-          book.copyWith(syncStatus: PracticeBookSyncStatus.synced),
-          syncCloud: false,
-        );
-      }
-    } catch (e) {
-      debugPrint('[PracticeBook] 云端同步失败: $e');
-    }
+    debugPrint('[PracticeBook] Cloud sync disabled; books stay local only.');
   }
 
-  Future<PracticeBook> _uploadBookToCloud(PracticeBook book) async {
-    final headers = await _authHeaders();
-    if (headers == null) {
-      final pending = book.copyWith(
-        syncStatus: PracticeBookSyncStatus.pendingUpload,
-      );
-      await _saveLocalOnly(pending);
-      return pending;
-    }
-
-    try {
-      final baseUrl = await AppSettings.getBackendUrl();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/meditation/practice-books'),
-        headers: headers,
-        body: jsonEncode(book.toJson()),
-      );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data']?['book'] is Map) {
-          final synced = PracticeBook.fromJson(
-            Map<String, dynamic>.from(data['data']['book'] as Map),
-          ).copyWith(syncStatus: PracticeBookSyncStatus.synced);
-          await _saveLocalOnly(synced);
-          return synced;
-        }
-      }
-    } catch (e) {
-      debugPrint('[PracticeBook] 云端上传失败: $e');
-    }
-
-    final failed = book.copyWith(syncStatus: PracticeBookSyncStatus.syncFailed);
-    await _saveLocalOnly(failed);
-    return failed;
-  }
-
-  Future<void> _saveLocalOnly(PracticeBook book) async {
-    final db = await database;
-    await db.insert(
-      'practice_books',
-      book.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
+  Future<PracticeBook> _importImage({
+    required PlatformFile file,
+    required String practiceTitle,
+  }) async {
+    final bytes = await _readPlatformFile(file);
+    final id = const Uuid().v4();
+    final imageFile = await _copyImageToLocalStore(id, file.name, bytes);
+    final title = path.basenameWithoutExtension(file.name).trim().isEmpty
+        ? '图片功课本'
+        : path.basenameWithoutExtension(file.name).trim();
+    final book = PracticeBook.create(
+      id: id,
+      practiceTitle: practiceTitle,
+      title: title,
+      sourceType: PracticeBookSourceType.image,
+      sourceFileName: file.name,
+      sourceFilePath: imageFile.path,
+      plainText: title,
+      syncStatus: PracticeBookSyncStatus.localOnly,
     );
+    return saveBook(book);
   }
 
-  Future<Map<String, String>?> _authHeaders() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(AppConfig.tokenStorageKey);
-    if (token == null || token.isEmpty) return null;
-    return {
-      'Authorization': 'Bearer $token',
-      'Content-Type': 'application/json',
-    };
+  Future<File> _copyImageToLocalStore(
+    String id,
+    String originalName,
+    List<int> bytes,
+  ) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final imageDir = Directory(path.join(dir.path, 'practice_books', 'images'));
+    if (!await imageDir.exists()) {
+      await imageDir.create(recursive: true);
+    }
+    final extension = path.extension(originalName).toLowerCase();
+    final file = File(path.join(imageDir.path, '$id$extension'));
+    await file.writeAsBytes(bytes, flush: true);
+    return file;
   }
 
   Future<List<int>> _readPlatformFile(PlatformFile file) async {
@@ -378,6 +332,25 @@ class PracticeBookService {
     if (text.trim().isNotEmpty) return text;
 
     final fallback = utf8.decode(bytes, allowMalformed: true);
-    return fallback.replaceAll(RegExp(r'[^一-龥A-Za-z0-9，。！？；：、\n ]'), ' ');
+    return fallback.replaceAll(
+      RegExp(r'[^\u4e00-\u9fffA-Za-z0-9，。！？；：、\n ]'),
+      ' ',
+    );
+  }
+
+  bool _isImageExtension(String extension) {
+    return const {'.jpg', '.jpeg', '.png', '.webp', '.gif'}.contains(extension);
+  }
+
+  String _titleFromUrl(Uri uri) {
+    final lastSegment = uri.pathSegments.isNotEmpty
+        ? uri.pathSegments.last.trim()
+        : '';
+    if (lastSegment.isNotEmpty) {
+      return Uri.decodeComponent(
+        lastSegment,
+      ).replaceAll(RegExp(r'\.[^.]+$'), '');
+    }
+    return uri.host.isEmpty ? '链接功课本' : uri.host;
   }
 }
