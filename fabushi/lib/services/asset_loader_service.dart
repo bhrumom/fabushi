@@ -181,6 +181,26 @@ class AssetLoaderService {
   }
 
   // 正在进行的加载任务，防止并发下载同一资源
+  static Future<File?> getPersistentAssetFile(
+    String fileName, {
+    bool ensureLoaded = false,
+    void Function(double progress)? onProgress,
+  }) async {
+    if (kIsWeb) return null;
+
+    if (ensureLoaded) {
+      await _loadAsset(fileName, onProgress: onProgress);
+    }
+
+    final dir = await _getStorageDirectory();
+    final safeFileName = fileName.replaceAll('/', '_');
+    final file = File('${dir.path}/$safeFileName');
+    if (await file.exists() && await file.length() > 0) {
+      return file;
+    }
+    return null;
+  }
+
   static final Map<String, Future<Uint8List>> _loadingFutures = {};
 
   /// 通用资源加载方法

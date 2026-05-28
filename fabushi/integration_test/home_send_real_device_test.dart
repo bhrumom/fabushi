@@ -14,9 +14,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('real device homepage starts scripture sending', (tester) async {
+  testWidgets('real device homepage starts selected content sending', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({'auto_start_guide_shown': true});
     final model = FileTransferModel();
+    await model.addTextContentForSending(
+      title: 'real-device-smoke',
+      text: '南无阿弥陀佛',
+    );
 
     await tester.pumpWidget(
       MultiProvider(
@@ -43,20 +49,16 @@ void main() {
     final deadline = DateTime.now().add(const Duration(seconds: 90));
     while (DateTime.now().isBefore(deadline) &&
         model.currentSendingScripture.isEmpty &&
-        !model.currentLog.contains('已将') &&
-        !model.currentLog.contains('开始逐国发送') &&
+        !model.currentLog.contains('real-device-smoke') &&
         model.globalSentCount == 0 &&
-        !model.currentLog.contains('失败') &&
-        !model.currentLog.contains('未下载')) {
+        !model.currentLog.contains('失败')) {
       await tester.pump(const Duration(milliseconds: 500));
     }
 
     expect(model.currentLog.contains('失败'), isFalse, reason: model.currentLog);
-    expect(model.currentLog.contains('未下载'), isFalse, reason: model.currentLog);
     expect(
       model.currentSendingScripture.isNotEmpty ||
-          model.currentLog.contains('已将') ||
-          model.currentLog.contains('开始逐国发送') ||
+          model.currentLog.contains('real-device-smoke') ||
           model.globalSentCount > 0,
       isTrue,
       reason:

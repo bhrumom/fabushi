@@ -5,40 +5,66 @@ import sys
 
 root = Path(__file__).resolve().parents[1]
 home = root / 'fabushi/lib/screens/globe_home_screen.dart'
+global_dharma = root / 'fabushi/lib/screens/global_dharma_screen.dart'
 model = root / 'fabushi/lib/models/file_transfer_model.dart'
 home_text = home.read_text(encoding='utf-8')
+global_dharma_text = global_dharma.read_text(encoding='utf-8')
 model_text = model.read_text(encoding='utf-8')
 
-method_match = re.search(r"void _startSending\(FileTransferModel model\) async \{(?P<body>.*?)\n  \}", home_text, re.S)
+method_match = re.search(
+    r"void _startSending\(FileTransferModel model\) async \{(?P<body>.*?)\n  \}",
+    home_text,
+    re.S,
+)
 if not method_match:
     print('FAIL: GlobeHomeScreen._startSending was not found')
     sys.exit(1)
+
 body = method_match.group('body')
-call = 'model.startDefaultScriptureSendSequence()'
-call_index = body.find(call)
-if call_index == -1:
-    print(f'FAIL: _startSending does not call {call}')
+if 'model.startDefaultScriptureSendSequence()' in body:
+    print('FAIL: homepage send must not default-download CBETA scriptures')
     sys.exit(1)
 
-pre_call_body = body[:call_index]
-if 'beginPreparingSend(' in pre_call_body:
-    print('FAIL: _startSending calls beginPreparingSend before startDefaultScriptureSendSequence')
-    print('This reintroduces the bug where isPreparingSend is set before the model guard runs.')
+if 'startDefaultScriptureSendSequence()' in global_dharma_text:
+    print('FAIL: global dharma send must not default-download CBETA scriptures')
     sys.exit(1)
 
-if 'if (model.isPreparingSend || model.isTransferring) return;' not in body:
-    print('FAIL: _startSending no longer guards duplicate send taps')
-    sys.exit(1)
-sequence_match = re.search(r"Future<int> startDefaultScriptureSendSequence\(\) async \{(?P<body>.*?)\n  \}", model_text, re.S)
-if not sequence_match:
-    print('FAIL: FileTransferModel.startDefaultScriptureSendSequence was not found')
-    sys.exit(1)
-sequence_body = sequence_match.group('body')
-if 'if (_isPreparingSend || _isTransferring) return 0;' not in sequence_body:
-    print('FAIL: startDefaultScriptureSendSequence guard changed; update this regression test intentionally')
-    sys.exit(1)
-if 'beginPreparingSend(' not in sequence_body:
-    print('FAIL: startDefaultScriptureSendSequence should own the preparing state')
+for method_name in (
+    'startDefaultScriptureSendSequence',
+    'prepareDefaultNonR2AssetsForSending',
+):
+    method_match = re.search(
+        rf"Future<int> {method_name}\(\) async \{{(?P<body>.*?)\n  \}}",
+        model_text,
+        re.S,
+    )
+    if not method_match:
+        print(f'FAIL: FileTransferModel.{method_name} was not found')
+        sys.exit(1)
+    method_body = method_match.group('body')
+    if 'fetchSendTextsPage' in method_body or 'fetchDefaultSendTexts' in method_body:
+        print(f'FAIL: {method_name} must not download default CBETA content')
+        sys.exit(1)
+
+if '_showSendContentSheet(model)' not in body:
+    print('FAIL: homepage send should ask for user-selected content when empty')
     sys.exit(1)
 
-print('PASS: homepage send flow calls startDefaultScriptureSendSequence without pre-setting preparing state')
+pre_sheet_body = body.split('_showSendContentSheet(model)', 1)[0]
+if 'model.hasFiles' in pre_sheet_body:
+    print('FAIL: homepage send should always ask for content before sending')
+    sys.exit(1)
+
+if 'await model.startGlobalTransfer()' not in body:
+    print('FAIL: homepage send should send the selected files/text/link content')
+    sys.exit(1)
+
+if 'Future<void> addUrlContentForSending' not in model_text:
+    print('FAIL: FileTransferModel should support link content sending')
+    sys.exit(1)
+
+if 'Future<void> addTextContentForSending' not in model_text:
+    print('FAIL: FileTransferModel should support manual text sending')
+    sys.exit(1)
+
+print('PASS: homepage send uses user-selected content and does not default-download CBETA')

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -82,13 +84,22 @@ class _PracticeBookSheetState extends State<PracticeBookSheet> {
         allowMultiple: false,
         withData: true,
         type: FileType.custom,
-        allowedExtensions: ['txt', 'md', 'docx', 'pdf'],
+        allowedExtensions: [
+          'txt',
+          'md',
+          'docx',
+          'pdf',
+          'jpg',
+          'jpeg',
+          'png',
+          'webp',
+          'gif',
+        ],
       );
       final files = result?.files ?? const <PlatformFile>[];
       if (files.isEmpty) return;
-      final file = files.first;
       final importResult = await _service.importFile(
-        file: file,
+        file: files.first,
         practiceTitle: widget.practiceTitle,
       );
       await _handleImportResult(importResult);
@@ -103,14 +114,14 @@ class _PracticeBookSheetState extends State<PracticeBookSheet> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('导入链接', style: TextStyle(color: Colors.white)),
+        title: const Text('保存功课链接', style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,
           autofocus: true,
           keyboardType: TextInputType.url,
           style: const TextStyle(color: Colors.white),
           decoration: const InputDecoration(
-            hintText: '粘贴微信公众号或网页链接',
+            hintText: '粘贴网页或文章链接',
             hintStyle: TextStyle(color: Colors.white38),
           ),
         ),
@@ -121,7 +132,7 @@ class _PracticeBookSheetState extends State<PracticeBookSheet> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('导入'),
+            child: const Text('保存'),
           ),
         ],
       ),
@@ -137,22 +148,78 @@ class _PracticeBookSheetState extends State<PracticeBookSheet> {
         url: url,
         practiceTitle: widget.practiceTitle,
       );
-      if (!result.isSuccess && result.needsWebViewFallback && mounted) {
-        final book = await Navigator.push<PracticeBook>(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PracticeBookWebImportScreen(
-              practiceTitle: widget.practiceTitle,
-              sourceUrl: url,
-            ),
-          ),
-        );
-        if (book != null) {
-          await _setBook(book, '已从页面提取功课本');
-          return;
-        }
-      }
       await _handleImportResult(result);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _inputText() async {
+    final titleController = TextEditingController();
+    final textController = TextEditingController();
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('输入功课文本', style: TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: '标题',
+                  labelStyle: TextStyle(color: Colors.white70),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: textController,
+                minLines: 6,
+                maxLines: 10,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: '粘贴或输入要对着念的功课内容',
+                  hintStyle: TextStyle(color: Colors.white38),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, {
+              'title': titleController.text.trim(),
+              'text': textController.text.trim(),
+            }),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || (result['text'] ?? '').trim().isEmpty) return;
+
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      final book = await _service.saveManualText(
+        practiceTitle: widget.practiceTitle,
+        title: result['title'] ?? '',
+        plainText: result['text'] ?? '',
+      );
+      await _setBook(book, '功课本已保存到本机');
+    } catch (e) {
+      if (mounted) setState(() => _message = '保存失败: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -160,7 +227,7 @@ class _PracticeBookSheetState extends State<PracticeBookSheet> {
 
   Future<void> _handleImportResult(PracticeBookImportResult result) async {
     if (result.book != null) {
-      await _setBook(result.book!, '功课本已保存');
+      await _setBook(result.book!, '功课本已保存到本机');
     } else if (mounted) {
       setState(() => _message = result.error ?? '导入失败');
     }
@@ -181,10 +248,12 @@ class _PracticeBookSheetState extends State<PracticeBookSheet> {
       _message = null;
     });
     try {
-      final path = await _modelService.downloadModel();
+      final modelPath = await _modelService.downloadModel();
       if (!mounted) return;
       setState(() {
-        _message = path == null ? _modelService.statusMessage : '离线语音模型已就绪';
+        _message = modelPath == null
+            ? _modelService.statusMessage
+            : '离线语音模型已就绪';
       });
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -200,12 +269,21 @@ class _PracticeBookSheetState extends State<PracticeBookSheet> {
       if (!mounted) return;
       setState(() {
         _book = null;
-        _message = '功课本已删除';
+        _message = '功课本已从本机删除';
       });
       widget.onChanged?.call(null);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _openReader() {
+    final book = _book;
+    if (book == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PracticeBookReaderScreen(book: book)),
+    );
   }
 
   @override
@@ -261,42 +339,54 @@ class _PracticeBookSheetState extends State<PracticeBookSheet> {
                     ),
                   ],
                   const SizedBox(height: 18),
-                  Row(
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
                     children: [
-                      Expanded(
-                        child: _ActionButton(
-                          icon: Icons.upload_file,
-                          label: '文件',
-                          enabled: !_busy,
-                          onTap: _pickFile,
-                        ),
+                      _ActionButton(
+                        icon: Icons.upload_file,
+                        label: '文件/图片',
+                        enabled: !_busy,
+                        onTap: _pickFile,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _ActionButton(
-                          icon: Icons.link,
-                          label: '链接',
-                          enabled: !_busy,
-                          onTap: _inputUrl,
-                        ),
+                      _ActionButton(
+                        icon: Icons.link,
+                        label: '链接',
+                        enabled: !_busy,
+                        onTap: _inputUrl,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _ActionButton(
-                          icon: modelReady ? Icons.check_circle : Icons.mic,
-                          label: modelReady ? '已就绪' : '模型',
-                          enabled: !_busy && !modelReady,
-                          onTap: _downloadModel,
-                        ),
+                      _ActionButton(
+                        icon: Icons.edit_note,
+                        label: '文本',
+                        enabled: !_busy,
+                        onTap: _inputText,
+                      ),
+                      _ActionButton(
+                        icon: modelReady ? Icons.check_circle : Icons.mic,
+                        label: modelReady ? '模型就绪' : '语音模型',
+                        enabled: !_busy && !modelReady,
+                        onTap: _downloadModel,
                       ),
                     ],
                   ),
                   if (_book != null) ...[
-                    const SizedBox(height: 10),
-                    TextButton.icon(
-                      onPressed: _busy ? null : _deleteBook,
-                      icon: const Icon(Icons.delete_outline),
-                      label: const Text('删除当前功课本'),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _busy ? null : _openReader,
+                            icon: const Icon(Icons.menu_book),
+                            label: const Text('打开对着念'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        TextButton.icon(
+                          onPressed: _busy ? null : _deleteBook,
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('删除'),
+                        ),
+                      ],
                     ),
                   ],
                 ],
@@ -309,7 +399,7 @@ class _PracticeBookSheetState extends State<PracticeBookSheet> {
     final book = _book;
     if (book == null) {
       return const Text(
-        '尚未添加功课本。添加后，禅室会用本地语音识别自动判断念诵遍数。',
+        '尚未添加功课本。可保存链接、输入文本，或选择本机文件/图片；内容只保存在本机。',
         style: TextStyle(color: Colors.white70, height: 1.5),
       );
     }
@@ -331,7 +421,7 @@ class _PracticeBookSheetState extends State<PracticeBookSheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            '${book.normalizedText.length} 字 · ${_syncLabel(book.syncStatus)}',
+            '${_sourceLabel(book.sourceType)} · ${_syncLabel(book.syncStatus)}',
             style: const TextStyle(color: Colors.white54, fontSize: 12),
           ),
         ],
@@ -387,13 +477,85 @@ class _PracticeBookSheetState extends State<PracticeBookSheet> {
     );
   }
 
+  String _sourceLabel(PracticeBookSourceType type) {
+    return switch (type) {
+      PracticeBookSourceType.file => '本机文件',
+      PracticeBookSourceType.url => '链接',
+      PracticeBookSourceType.manual => '手输文本',
+      PracticeBookSourceType.image => '图片',
+      PracticeBookSourceType.cloud => '云端记录',
+    };
+  }
+
   String _syncLabel(PracticeBookSyncStatus status) {
     return switch (status) {
-      PracticeBookSyncStatus.synced => '已云端同步',
-      PracticeBookSyncStatus.pendingUpload => '待云端同步',
-      PracticeBookSyncStatus.syncFailed => '云端同步失败',
-      PracticeBookSyncStatus.localOnly => '仅本地',
+      PracticeBookSyncStatus.synced => '仅本机',
+      PracticeBookSyncStatus.pendingUpload => '仅本机',
+      PracticeBookSyncStatus.syncFailed => '仅本机',
+      PracticeBookSyncStatus.localOnly => '仅本机',
     };
+  }
+}
+
+class PracticeBookReaderScreen extends StatelessWidget {
+  final PracticeBook book;
+
+  const PracticeBookReaderScreen({super.key, required this.book});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF101010),
+      appBar: AppBar(
+        title: Text(book.title),
+        backgroundColor: const Color(0xFF151515),
+      ),
+      body: SafeArea(child: _buildBody()),
+    );
+  }
+
+  Widget _buildBody() {
+    if (book.sourceType == PracticeBookSourceType.url &&
+        (book.sourceUrl ?? '').isNotEmpty) {
+      return InAppWebView(
+        initialUrlRequest: URLRequest(url: WebUri(book.sourceUrl!)),
+        initialSettings: InAppWebViewSettings(
+          javaScriptEnabled: true,
+          mediaPlaybackRequiresUserGesture: false,
+        ),
+      );
+    }
+
+    if (book.sourceType == PracticeBookSourceType.image &&
+        (book.sourceFilePath ?? '').isNotEmpty) {
+      return InteractiveViewer(
+        minScale: 0.6,
+        maxScale: 5,
+        child: Center(
+          child: Image.file(
+            File(book.sourceFilePath!),
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) =>
+                const Text('图片文件不存在', style: TextStyle(color: Colors.white70)),
+          ),
+        ),
+      );
+    }
+
+    return Scrollbar(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(22, 22, 22, 40),
+        child: SelectableText(
+          book.plainText,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            height: 1.75,
+            fontFamily: 'NotoSerifSC',
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -490,30 +652,17 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Opacity(
-        opacity: enabled ? 1 : 0.45,
-        child: Container(
-          height: 52,
-          decoration: BoxDecoration(
-            color: const Color(0xFFD4AF37),
-            borderRadius: BorderRadius.circular(26),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: Colors.black, size: 19),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
+    return SizedBox(
+      width: 104,
+      height: 50,
+      child: FilledButton.icon(
+        onPressed: enabled ? onTap : null,
+        icon: Icon(icon, size: 18),
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xFFD4AF37),
+          foregroundColor: Colors.black,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
         ),
       ),
     );

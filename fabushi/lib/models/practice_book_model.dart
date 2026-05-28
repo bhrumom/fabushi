@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
-enum PracticeBookSourceType { file, url, manual, cloud }
+enum PracticeBookSourceType { file, url, manual, image, cloud }
 
 enum PracticeBookSyncStatus { localOnly, pendingUpload, synced, syncFailed }
 
@@ -27,6 +27,7 @@ class PracticeBook {
   final PracticeBookSourceType sourceType;
   final String? sourceUrl;
   final String? sourceFileName;
+  final String? sourceFilePath;
   final String contentHash;
   final String plainText;
   final String normalizedText;
@@ -43,6 +44,7 @@ class PracticeBook {
     required this.sourceType,
     this.sourceUrl,
     this.sourceFileName,
+    this.sourceFilePath,
     required this.contentHash,
     required this.plainText,
     required this.normalizedText,
@@ -60,6 +62,7 @@ class PracticeBook {
     required PracticeBookSourceType sourceType,
     String? sourceUrl,
     String? sourceFileName,
+    String? sourceFilePath,
     required String plainText,
     String? remoteObjectKey,
     PracticeBookSyncStatus syncStatus = PracticeBookSyncStatus.pendingUpload,
@@ -73,6 +76,7 @@ class PracticeBook {
       sourceType: sourceType,
       sourceUrl: sourceUrl,
       sourceFileName: sourceFileName,
+      sourceFilePath: sourceFilePath,
       contentHash: PracticeBookText.sha256Of(plainText),
       plainText: plainText,
       normalizedText: normalizedText,
@@ -96,6 +100,9 @@ class PracticeBook {
       sourceUrl: _emptyToNull(map['source_url'] ?? map['sourceUrl']),
       sourceFileName: _emptyToNull(
         map['source_file_name'] ?? map['sourceFileName'],
+      ),
+      sourceFilePath: _emptyToNull(
+        map['source_file_path'] ?? map['sourceFilePath'],
       ),
       contentHash: (map['content_hash'] ?? map['contentHash'] ?? '').toString(),
       plainText: (map['plain_text'] ?? map['plainText'] ?? '').toString(),
@@ -142,6 +149,7 @@ class PracticeBook {
       'source_type': sourceType.name,
       'source_url': sourceUrl,
       'source_file_name': sourceFileName,
+      'source_file_path': sourceFilePath,
       'content_hash': contentHash,
       'plain_text': plainText,
       'normalized_text': normalizedText,
@@ -160,6 +168,7 @@ class PracticeBook {
     'sourceType': sourceType.name,
     'sourceUrl': sourceUrl,
     'sourceFileName': sourceFileName,
+    'sourceFilePath': sourceFilePath,
     'contentHash': contentHash,
     'plainText': plainText,
     'normalizedText': normalizedText,
@@ -177,6 +186,7 @@ class PracticeBook {
     PracticeBookSourceType? sourceType,
     String? sourceUrl,
     String? sourceFileName,
+    String? sourceFilePath,
     String? contentHash,
     String? plainText,
     String? normalizedText,
@@ -193,6 +203,7 @@ class PracticeBook {
       sourceType: sourceType ?? this.sourceType,
       sourceUrl: sourceUrl ?? this.sourceUrl,
       sourceFileName: sourceFileName ?? this.sourceFileName,
+      sourceFilePath: sourceFilePath ?? this.sourceFilePath,
       contentHash: contentHash ?? this.contentHash,
       plainText: plainText ?? this.plainText,
       normalizedText: normalizedText ?? this.normalizedText,

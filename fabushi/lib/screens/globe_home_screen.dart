@@ -595,7 +595,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                             ),
                             const SizedBox(width: 8),
                             const Text(
-                              '逐部发送',
+                              '内容发送',
                               style: TextStyle(
                                 color: AppTheme.primaryColor,
                                 fontSize: 13,
@@ -711,7 +711,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                                 ),
                               ),
                               label: const Text(
-                                '逐部下载中',
+                                '准备发送中',
                                 style: TextStyle(fontSize: 13),
                               ),
                               style: ElevatedButton.styleFrom(
@@ -895,8 +895,183 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
+  Future<bool> _showSendContentSheet(FileTransferModel model) async {
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: const Color(0xFF171717),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '选择要全球发送的内容',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 14),
+              _SendSourceTile(
+                icon: Icons.link,
+                title: '输入链接',
+                subtitle: '读取链接正文并发送',
+                onTap: () async {
+                  Navigator.pop(sheetContext, await _inputSendLink(model));
+                },
+              ),
+              _SendSourceTile(
+                icon: Icons.edit_note,
+                title: '输入文本',
+                subtitle: '发送手输或粘贴的文本',
+                onTap: () async {
+                  Navigator.pop(sheetContext, await _inputSendText(model));
+                },
+              ),
+              _SendSourceTile(
+                icon: Icons.folder_open,
+                title: '选择本机文件',
+                subtitle: '发送手机本机文件',
+                onTap: () async {
+                  final before = model.selectedFiles.length;
+                  await model.selectFiles();
+                  Navigator.pop(
+                    sheetContext,
+                    model.selectedFiles.length > before,
+                  );
+                },
+              ),
+              _SendSourceTile(
+                icon: Icons.self_improvement,
+                title: '禅室佛像素材',
+                subtitle: '发送禅室当前佛像模型素材',
+                onTap: () async {
+                  Navigator.pop(sheetContext, await _selectBuddhaAsset(model));
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return result == true;
+  }
+
+  Future<bool> _inputSendText(FileTransferModel model) async {
+    final titleController = TextEditingController();
+    final textController = TextEditingController();
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('输入发送文本'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(labelText: '标题'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: textController,
+                minLines: 6,
+                maxLines: 10,
+                decoration: const InputDecoration(
+                  hintText: '输入或粘贴要发送的内容',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, {
+              'title': titleController.text.trim(),
+              'text': textController.text.trim(),
+            }),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || (result['text'] ?? '').trim().isEmpty) return false;
+    await model.addTextContentForSending(
+      title: result['title'] ?? '',
+      text: result['text'] ?? '',
+    );
+    return true;
+  }
+
+  Future<bool> _inputSendLink(FileTransferModel model) async {
+    final controller = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('输入链接'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(hintText: 'https://...'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('读取'),
+          ),
+        ],
+      ),
+    );
+    if (url == null || url.isEmpty) return false;
+    try {
+      await model.addUrlContentForSending(url);
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('链接读取失败: $e'), backgroundColor: Colors.red),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _selectBuddhaAsset(FileTransferModel model) async {
+    try {
+      await model.addZenBuddhaAssetForSending();
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('佛像素材准备失败: $e'), backgroundColor: Colors.red),
+        );
+      }
+      return false;
+    }
+  }
+
   void _startSending(FileTransferModel model) async {
     if (model.isPreparingSend || model.isTransferring) return;
+
+    final prepared = await _showSendContentSheet(model);
+    if (!prepared || !mounted || !model.hasFiles) return;
 
     if (Platform.isAndroid && mounted) {
       try {
@@ -912,14 +1087,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('🌍 开始逐部下载经文，并在每部下载完成后发送到全部国家...'),
+          content: Text('🌍 开始把所选内容发送到全部国家...'),
           duration: Duration(seconds: 2),
           backgroundColor: Colors.black87,
         ),
       );
     }
 
-    final sentCount = await model.startDefaultScriptureSendSequence();
+    await model.startGlobalTransfer();
+    final sentCount = model.globalSentCount;
 
     await _onlineCounterService.leaveActivity();
     _globeKey.currentState?.clearBeams();
@@ -934,7 +1110,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     if (model.status == TransferStatus.completed && sentCount > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('✨ 经文已逐部发送完成，共完成 $sentCount 部！'),
+          content: Text('✨ 所选内容已发送完成，共完成 $sentCount 个国家！'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 3),
         ),
@@ -968,5 +1144,35 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         ),
       );
     }
+  }
+}
+
+class _SendSourceTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Future<void> Function() onTap;
+
+  const _SendSourceTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        backgroundColor: const Color(0xFFD4AF37).withValues(alpha: 0.16),
+        foregroundColor: const Color(0xFFD4AF37),
+        child: Icon(icon),
+      ),
+      title: Text(title, style: const TextStyle(color: Colors.white)),
+      subtitle: Text(subtitle, style: const TextStyle(color: Colors.white60)),
+      trailing: const Icon(Icons.chevron_right, color: Colors.white54),
+      onTap: onTap,
+    );
   }
 }

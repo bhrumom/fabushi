@@ -874,6 +874,7 @@ jobs:
           sparse-checkout: |
             /scripts/check_home_send_flow.py
             /fabushi/lib/screens/globe_home_screen.dart
+            /fabushi/lib/screens/global_dharma_screen.dart
             /fabushi/lib/models/file_transfer_model.dart
 
       - name: Validate homepage send flow

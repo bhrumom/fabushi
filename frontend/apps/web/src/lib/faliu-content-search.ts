@@ -1,4 +1,4 @@
-import { CBETA_API_ROOT, CBETA_PROXY_ROOT } from "./cbeta-config";
+import { CBETA_API_ROOT } from "./cbeta-config";
 import { normalizeCbetaQuery, type CbetaWorkInfo } from "./faliu-api";
 
 const CONTENT_SEARCH_ENDPOINTS = ["search/fulltext", "search/content", "search/all_in_one"] as const;
@@ -26,37 +26,9 @@ function buildUrl(base: string, path: string, params?: Record<string, string | n
   return url.toString();
 }
 
-function buildRelativeUrl(base: string, path: string, params?: Record<string, string | number | undefined>) {
-  const normalizedBase = base.replace(/\/+$/g, "");
-  const normalizedPath = path.replace(/^\/+/g, "");
-  const query = new URLSearchParams();
-
-  if (params) {
-    for (const [key, value] of Object.entries(params)) {
-      if (value === undefined || value === null || value === "") {
-        continue;
-      }
-
-      query.set(key, String(value));
-    }
-  }
-
-  const suffix = query.toString();
-  return `${normalizedBase}/${normalizedPath}${suffix ? `?${suffix}` : ""}`;
-}
-
-function isBrowserRuntime() {
-  return typeof window !== "undefined";
-}
-
 function cbetaUrls(path: string, params?: Record<string, string | number | undefined>) {
   const directUrl = buildUrl(CBETA_API_ROOT, path, params);
-
-  if (!isBrowserRuntime()) {
-    return [directUrl];
-  }
-
-  return [buildRelativeUrl(CBETA_PROXY_ROOT, path, params), directUrl];
+  return [directUrl];
 }
 
 async function fetchJson<T>(urls: string[]): Promise<T> {
