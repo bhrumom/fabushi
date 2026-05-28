@@ -383,23 +383,24 @@ jobs:
             echo "APK is missing the launcher icon resource." >&2
             exit 1
           fi
-          launcher_foreground_block="$(
-            awk '
-              /drawable\/ic_launcher_foreground/ { in_block = 1; print; next }
-              in_block && /^    resource / { in_block = 0 }
-              in_block { print }
-            ' android-apk-resources.txt
-          )"
-          if [ -z "$launcher_foreground_block" ]; then
+          if ! grep -q "drawable/ic_launcher_foreground" android-apk-resources.txt; then
             echo "APK is missing the adaptive launcher foreground resource." >&2
             exit 1
           fi
-          if ! printf '%s\n' "$launcher_foreground_block" | grep -q "type=PNG"; then
-            echo "APK launcher foreground is not packaged from generated app icon PNGs." >&2
+
+          foreground_png_count="$(
+            find android/app/src/main/res -path '*/drawable-*/ic_launcher_foreground.png' -type f | wc -l
+          )"
+          if [ "$foreground_png_count" -eq 0 ]; then
+            echo "Android launcher foreground PNGs are missing from the source tree." >&2
             exit 1
           fi
-          if printf '%s\n' "$launcher_foreground_block" | grep -q "type=XML"; then
-            echo "APK launcher foreground resolved to XML, which indicates the default Android template icon was packaged." >&2
+          if [ -f android/app/src/main/res/drawable/ic_launcher_foreground.xml ]; then
+            echo "Android launcher foreground XML exists, which indicates the default template icon may be packaged." >&2
+            exit 1
+          fi
+          if ! grep -q "@drawable/ic_launcher_foreground" android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml; then
+            echo "Adaptive launcher icon does not reference the generated foreground asset." >&2
             exit 1
           fi
 
