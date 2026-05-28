@@ -350,6 +350,59 @@ jobs:
           flutter build apk --release --build-number "$RELEASE_BUILD_NUMBER" --target-platform android-arm64
           flutter build appbundle --release --build-number "$RELEASE_BUILD_NUMBER"
 
+      - name: Verify packaged Android launcher icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_path="build/app/outputs/flutter-apk/app-release.apk"
+          if [ ! -f "$apk_path" ]; then
+            echo "Expected APK was not built: $apk_path" >&2
+            exit 1
+          fi
+
+          android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$android_sdk" ]; then
+            echo "ANDROID_HOME or ANDROID_SDK_ROOT must point at the Android SDK." >&2
+            exit 1
+          fi
+          aapt_bin="$(find "$android_sdk/build-tools" -name aapt -type f | sort -V | tail -n 1)"
+          aapt2_bin="$(find "$android_sdk/build-tools" -name aapt2 -type f | sort -V | tail -n 1)"
+          if [ -z "$aapt_bin" ] || [ -z "$aapt2_bin" ]; then
+            echo "Android build-tools aapt/aapt2 are required to verify the packaged launcher icon." >&2
+            exit 1
+          fi
+
+          "$aapt_bin" dump badging "$apk_path" | tee android-apk-badging.txt
+          if ! grep -q "^application-icon-" android-apk-badging.txt; then
+            echo "APK badging did not expose any launcher icon density entries." >&2
+            exit 1
+          fi
+
+          "$aapt2_bin" dump resources "$apk_path" > android-apk-resources.txt
+          if ! grep -q "mipmap/ic_launcher" android-apk-resources.txt; then
+            echo "APK is missing the launcher icon resource." >&2
+            exit 1
+          fi
+          launcher_foreground_block="$(
+            awk '
+              /drawable\/ic_launcher_foreground/ { in_block = 1; print; next }
+              in_block && /^    resource / { in_block = 0 }
+              in_block { print }
+            ' android-apk-resources.txt
+          )"
+          if [ -z "$launcher_foreground_block" ]; then
+            echo "APK is missing the adaptive launcher foreground resource." >&2
+            exit 1
+          fi
+          if ! printf '%s\n' "$launcher_foreground_block" | grep -q "type=PNG"; then
+            echo "APK launcher foreground is not packaged from generated app icon PNGs." >&2
+            exit 1
+          fi
+          if printf '%s\n' "$launcher_foreground_block" | grep -q "type=XML"; then
+            echo "APK launcher foreground resolved to XML, which indicates the default Android template icon was packaged." >&2
+            exit 1
+          fi
+
       - name: Normalize Google Play review handoff
         id: google-play-review
         shell: bash
