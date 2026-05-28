@@ -700,6 +700,7 @@ class _IncensePainter extends CustomPainter {
           base.translate(-46, 12),
           base.translate(46, 34),
           const [Color(0xFFFFD36A), Color(0xFF7A4314), Color(0xFFD4AF37)],
+          const [0.0, 0.55, 1.0],
         ),
     );
 
