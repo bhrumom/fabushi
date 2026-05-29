@@ -27,7 +27,44 @@ import '../services/workmanager_keep_alive.dart';
 
 enum TransferStatus { idle, transferring, completed, error }
 
+class LinkSendHistoryEntry {
+  final String url;
+  final String title;
+  final String preview;
+  final DateTime savedAt;
+
+  const LinkSendHistoryEntry({
+    required this.url,
+    required this.title,
+    required this.preview,
+    required this.savedAt,
+  });
+
+  factory LinkSendHistoryEntry.fromJson(Map<String, dynamic> json) {
+    return LinkSendHistoryEntry(
+      url: json['url'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      preview: json['preview'] as String? ?? '',
+      savedAt:
+          DateTime.tryParse(json['savedAt'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'url': url,
+    'title': title,
+    'preview': preview,
+    'savedAt': savedAt.toIso8601String(),
+  };
+}
+
 class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
+  static const String _linkHistoryPrefsKey = 'send_link_history_v1';
+  static const int _maxLinkHistoryEntries = 20;
+  static const int _linkHistoryPreviewLimit = 600;
+  static const int _largePayloadThresholdBytes = 1024 * 1024;
+
   bool _isGlobalSendEnabled = true;
   bool _isLooping = false;
   bool _isFieldEnergyMode = false;
@@ -52,6 +89,12 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   List<CountrySendStatus> _countryStatuses = [];
   String _currentLog = '';
   String _currentSendingScripture = '';
+  String _selectedContentKind = '';
+  String _selectedContentTitle = '';
+  String _selectedContentSubtitle = '';
+  String? _selectedContentPreviewText;
+  String? _selectedContentSourceUrl;
+  List<LinkSendHistoryEntry> _linkHistory = [];
 
   final SharedAssetManager _sharedAssetManager = SharedAssetManager();
   final IPLocationService _ipLocationService = IPLocationService();
@@ -125,6 +168,14 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   List<CountrySendStatus> get countryStatuses => _countryStatuses;
   String get currentLog => _currentLog;
   String get currentSendingScripture => _currentSendingScripture;
+  String get selectedContentKind => _selectedContentKind;
+  String get selectedContentTitle => _selectedContentTitle;
+  String get selectedContentSubtitle => _selectedContentSubtitle;
+  String? get selectedContentPreviewText => _selectedContentPreviewText;
+  String? get selectedContentSourceUrl => _selectedContentSourceUrl;
+  bool get hasSelectedContentPreview =>
+      (_selectedContentPreviewText?.trim().isNotEmpty ?? false);
+  List<LinkSendHistoryEntry> get linkHistory => List.unmodifiable(_linkHistory);
 
   void clearHotspotGuide() {
     _needsHotspotGuide = false;
@@ -245,7 +296,54 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     _downloadedScriptureMemory.clear();
     if (clearSelection) {
       _selectedFiles = [];
+      _clearSelectedContentSummary();
     }
+  }
+
+  void _setSelectedContentSummary({
+    required String kind,
+    required String title,
+    required String subtitle,
+    String? previewText,
+    String? sourceUrl,
+  }) {
+    _selectedContentKind = kind;
+    _selectedContentTitle = title.trim().isEmpty ? kind : title.trim();
+    _selectedContentSubtitle = subtitle.trim();
+    _selectedContentPreviewText = previewText;
+    _selectedContentSourceUrl = sourceUrl;
+  }
+
+  void _clearSelectedContentSummary() {
+    _selectedContentKind = '';
+    _selectedContentTitle = '';
+    _selectedContentSubtitle = '';
+    _selectedContentPreviewText = null;
+    _selectedContentSourceUrl = null;
+  }
+
+  void _updateFileSelectionSummary({String kind = '文件'}) {
+    if (_selectedFiles.isEmpty) {
+      _clearSelectedContentSummary();
+      return;
+    }
+
+    final totalBytes = _selectedFiles.fold<int>(
+      0,
+      (sum, file) => sum + file.size,
+    );
+    final first = _selectedFiles.first;
+    final title = _selectedFiles.length == 1
+        ? first.name
+        : '${first.name} 等 ${_selectedFiles.length} 个文件';
+    _setSelectedContentSummary(
+      kind: kind,
+      title: title,
+      subtitle: '${getFileSizeString(totalBytes)} · 点此重新选择发送内容',
+      previewText: _selectedFiles.length == 1
+          ? '文件名: ${first.name}\n大小: ${getFileSizeString(first.size)}'
+          : '已选择 ${_selectedFiles.length} 个文件\n总大小: ${getFileSizeString(totalBytes)}',
+    );
   }
 
   Future<int> startDefaultScriptureSendSequence() async {
@@ -283,6 +381,8 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
       if (result != null) {
         _selectedFiles.addAll(result.files);
+        _downloadedScriptureMemory.clear();
+        _updateFileSelectionSummary(kind: '本机文件');
         notifyListeners();
 
         for (final file in result.files) {
@@ -480,6 +580,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   void addFiles(List<PlatformFile> files) {
     _selectedFiles.addAll(files);
+    _updateFileSelectionSummary(kind: '素材文件');
     debugPrint(
       '📁 添加文件: ${files.map((f) => f.name).join(', ')}，当前总数: ${_selectedFiles.length}',
     );
@@ -490,6 +591,9 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     required String title,
     required String text,
     bool replaceExisting = true,
+    String sourceKind = '文本',
+    String? sourceUrl,
+    String? previewText,
   }) async {
     final normalizedText = text.trim();
     if (normalizedText.isEmpty) {
@@ -508,11 +612,29 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     } else {
       addFiles([file]);
       _downloadedScriptureMemory[file.name] = bytes;
+      _setSelectedContentSummary(
+        kind: sourceKind,
+        title: title.isEmpty ? file.name : title,
+        subtitle:
+            '${normalizedText.length} 字 · ${getFileSizeString(bytes.length)}',
+        previewText: previewText ?? normalizedText,
+        sourceUrl: sourceUrl,
+      );
       return;
     }
 
     _currentSendingScripture = _displayScriptureName(file.name);
-    _currentLog = '已选择文本内容: ${file.name}';
+    _setSelectedContentSummary(
+      kind: sourceKind,
+      title: title.isEmpty ? _currentSendingScripture : title,
+      subtitle:
+          '${normalizedText.length} 字 · ${getFileSizeString(bytes.length)}',
+      previewText: previewText ?? normalizedText,
+      sourceUrl: sourceUrl,
+    );
+    _currentLog = sourceKind == '链接'
+        ? '已选择链接内容: ${title.isEmpty ? file.name : title}'
+        : '已选择文本内容: ${file.name}';
     notifyListeners();
   }
 
@@ -552,12 +674,59 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
         bodyText.isEmpty ? uri.toString() : bodyText,
       ].join('\n');
 
-      await addTextContentForSending(title: title, text: sendText);
-      _currentLog = '已读取链接内容: $title';
+      await addTextContentForSending(
+        title: title,
+        text: sendText,
+        sourceKind: '链接',
+        sourceUrl: uri.toString(),
+        previewText: bodyText.isEmpty ? uri.toString() : bodyText,
+      );
+      await _rememberLinkHistory(
+        url: uri.toString(),
+        title: title,
+        preview: bodyText.isEmpty ? uri.toString() : bodyText,
+      );
+      _currentLog = bodyText.isEmpty
+          ? '链接未返回正文，已保存链接: $title'
+          : '已读取链接正文: $title（${bodyText.length} 字）';
     } finally {
       _finishPreparingSend();
       notifyListeners();
     }
+  }
+
+  Future<void> _rememberLinkHistory({
+    required String url,
+    required String title,
+    required String preview,
+  }) async {
+    final normalizedUrl = url.trim();
+    if (normalizedUrl.isEmpty) return;
+
+    final normalizedPreview = _compactPreview(preview);
+    _linkHistory = [
+      LinkSendHistoryEntry(
+        url: normalizedUrl,
+        title: title.trim().isEmpty ? normalizedUrl : title.trim(),
+        preview: normalizedPreview,
+        savedAt: DateTime.now(),
+      ),
+      ..._linkHistory.where((entry) => entry.url != normalizedUrl),
+    ].take(_maxLinkHistoryEntries).toList();
+
+    _schedulePersist(_persistLinkHistory);
+  }
+
+  String _compactPreview(String value) {
+    final normalized = value
+        .replaceAll('\r', '')
+        .replaceAll(RegExp(r'[ \t\f\v]+'), ' ')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+    if (normalized.length <= _linkHistoryPreviewLimit) {
+      return normalized;
+    }
+    return '${normalized.substring(0, _linkHistoryPreviewLimit)}...';
   }
 
   Future<void> addZenBuddhaAssetForSending() async {
@@ -586,6 +755,13 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       _downloadedScriptureMemory.clear();
       _currentSendingScripture = '禅室佛像素材';
       _currentLog = '已选择禅室佛像素材: ${platformFile.name}';
+      _setSelectedContentSummary(
+        kind: '禅室佛像素材',
+        title: platformFile.name,
+        subtitle: '${getFileSizeString(size)} · 点此重新选择发送内容',
+        previewText:
+            '禅室佛像素材\n文件名: ${platformFile.name}\n大小: ${getFileSizeString(size)}',
+      );
     } finally {
       _finishPreparingSend();
       notifyListeners();
@@ -595,6 +771,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   void removeFile(PlatformFile file) {
     _selectedFiles.remove(file);
     _downloadedScriptureMemory.remove(file.name);
+    _updateFileSelectionSummary();
     debugPrint('🗑️ 移除文件: ${file.name}，当前总数: ${_selectedFiles.length}');
     notifyListeners();
   }
@@ -602,6 +779,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   void clearFiles() {
     _selectedFiles.clear();
     _downloadedScriptureMemory.clear();
+    _clearSelectedContentSummary();
     debugPrint('🧹 清空所有文件');
     notifyListeners();
   }
@@ -773,16 +951,27 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
       final file = _selectedFiles.first;
       Uint8List? fileBytes = file.bytes;
+      final originalSize = file.size;
 
       if (fileBytes == null && file.path != null) {
         final fileObj = File(file.path!);
-        fileBytes = await fileObj.readAsBytes();
+        if (await fileObj.exists()) {
+          final length = await fileObj.length();
+          final sampleLength = length > 1400 ? 1400 : length;
+          final randomAccessFile = await fileObj.open();
+          try {
+            fileBytes = await randomAccessFile.read(sampleLength);
+          } finally {
+            await randomAccessFile.close();
+          }
+        }
       }
 
       if (fileBytes != null) {
         await _fieldBroadcastService!.startBroadcast(
           data: fileBytes,
           fileName: file.name,
+          originalSize: originalSize,
         );
         debugPrint('🌟 场能广播已启动: ${file.name}');
       }
@@ -845,10 +1034,15 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       );
 
       final file = _selectedFiles.first;
+      final isLargePayload = file.size >= _largePayloadThresholdBytes;
       await _localLoopbackService!.start(
         data: file.bytes,
         filePath: file.path,
         fileName: file.name,
+        mode: LoopbackRunMode.isolate,
+        speedLevel: isLargePayload
+            ? LoopbackSpeedLevel.normal
+            : LoopbackSpeedLevel.high,
       );
     } catch (e) {
       debugPrint('⚠️ 启动本地回环失败: $e');
@@ -1331,6 +1525,19 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       _globalDataSentMB = prefs.getDouble('global_data_sent_mb') ?? 0.0;
       _currentLog = prefs.getString('current_log') ?? '';
 
+      final linkHistoryJson = prefs.getString(_linkHistoryPrefsKey);
+      if (linkHistoryJson != null && linkHistoryJson.isNotEmpty) {
+        final decoded = json.decode(linkHistoryJson);
+        if (decoded is List) {
+          _linkHistory = decoded
+              .whereType<Map<String, dynamic>>()
+              .map(LinkSendHistoryEntry.fromJson)
+              .where((entry) => entry.url.isNotEmpty)
+              .take(_maxLinkHistoryEntries)
+              .toList();
+        }
+      }
+
       final statusesJson = prefs.getString('country_statuses');
       if (statusesJson != null) {
         final List<dynamic> decoded = json.decode(statusesJson);
@@ -1385,6 +1592,18 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _persistLinkHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = json.encode(
+        _linkHistory.map((entry) => entry.toJson()).toList(),
+      );
+      await prefs.setString(_linkHistoryPrefsKey, encoded);
+    } catch (e) {
+      debugPrint('持久化链接历史失败: $e');
+    }
+  }
+
   Future<void> clearPersistedState() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -1393,6 +1612,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       await prefs.remove('global_data_sent_mb');
       await prefs.remove('current_log');
       await prefs.remove('country_statuses');
+      await prefs.remove(_linkHistoryPrefsKey);
     } catch (e) {
       debugPrint('清除持久化状态失败: $e');
     }
