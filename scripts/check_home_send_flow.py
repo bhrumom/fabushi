@@ -46,13 +46,25 @@ for method_name in (
         print(f'FAIL: {method_name} must not download default CBETA content')
         sys.exit(1)
 
-if '_showSendContentSheet(model)' not in body:
-    print('FAIL: homepage send should ask for user-selected content when empty')
+if '_buildSelectedContentTile(model)' not in home_text:
+    print('FAIL: homepage should expose a send-content selection tile')
     sys.exit(1)
 
-pre_sheet_body = body.split('_showSendContentSheet(model)', 1)[0]
-if 'model.hasFiles' in pre_sheet_body:
-    print('FAIL: homepage send should always ask for content before sending')
+if '() => _showSendContentSheet(model)' not in home_text:
+    print('FAIL: homepage content tile should open the send-content picker')
+    sys.exit(1)
+
+if '_showSendContentSheet(model)' in body:
+    print('FAIL: start button should not open the content picker')
+    sys.exit(1)
+
+pre_send_body = body.split('await model.startGlobalTransfer()', 1)[0]
+if '!model.hasFiles' not in pre_send_body:
+    print('FAIL: start button should require pre-selected content before sending')
+    sys.exit(1)
+
+if '请先点' not in pre_send_body:
+    print('FAIL: empty start should tell the user to choose send content first')
     sys.exit(1)
 
 if 'await model.startGlobalTransfer()' not in body:

@@ -42,6 +42,8 @@ class LocalLoopbackService {
 
   /// 批量发送次数 - 每轮发送多个完整文件循环
   static const int _batchCount = 10;
+  static const int _largePayloadThreshold = 1024 * 1024;
+  static const int _largePayloadSampleBytes = 64 * 1024;
 
   bool _isRunning = false;
   int _loopCount = 0;
@@ -61,6 +63,8 @@ class LocalLoopbackService {
   String? _cachedFilePath;
   String? _cachedFileName;
   Uint8List? _cachedHeaderPacket;
+  int _cachedPayloadSize = 0;
+  int _effectiveBatchCount = _batchCount;
 
   // 极致优化：预构建的数据包缓存
   List<Uint8List>? _prebuiltPackets;
@@ -90,17 +94,28 @@ class LocalLoopbackService {
     Uint8List? data,
     String? filePath,
     required String fileName,
-    LoopbackRunMode mode = LoopbackRunMode.mainThread,
+    LoopbackRunMode mode = LoopbackRunMode.isolate,
     LoopbackSpeedLevel speedLevel = LoopbackSpeedLevel.extreme,
   }) async {
     if (_isRunning) return;
+
+    final fileSize = data?.length ?? await _safeFileLength(filePath);
+    final isLargePayload = fileSize >= _largePayloadThreshold;
 
     // 缓存参数
     _cachedData = data;
     _cachedFilePath = filePath;
     _cachedFileName = fileName;
-    _cachedHeaderPacket = _buildHeader(fileName);
-    _speedLevel = speedLevel;
+    _cachedPayloadSize = fileSize;
+    _cachedHeaderPacket = _buildHeader(
+      fileName,
+      originalSize: fileSize,
+      payloadMode: isLargePayload ? 'sample' : 'full',
+    );
+    _speedLevel = isLargePayload && speedLevel == LoopbackSpeedLevel.extreme
+        ? LoopbackSpeedLevel.normal
+        : speedLevel;
+    _effectiveBatchCount = isLargePayload ? 1 : _batchCount;
 
     // 极致优化：预构建数据包
     await _prebuildPackets();
@@ -125,30 +140,50 @@ class LocalLoopbackService {
     if (_cachedData != null) {
       // 内存数据预构建
       final data = _cachedData!;
+      final payload = data.length > _largePayloadThreshold
+          ? Uint8List.sublistView(
+              data,
+              0,
+              data.length < _largePayloadSampleBytes
+                  ? data.length
+                  : _largePayloadSampleBytes,
+            )
+          : data;
       int offset = 0;
 
-      while (offset < data.length) {
-        final end = (offset + _maxChunkSize < data.length)
+      while (offset < payload.length) {
+        final end = (offset + _maxChunkSize < payload.length)
             ? offset + _maxChunkSize
-            : data.length;
+            : payload.length;
         final packetSize = header.length + (end - offset);
         final packet = Uint8List(packetSize);
 
         // 零拷贝：直接写入目标buffer
         packet.setRange(0, header.length, header);
-        packet.setRange(header.length, packetSize, data, offset);
+        packet.setRange(header.length, packetSize, payload, offset);
 
         packets.add(packet);
         offset = end;
       }
 
-      _log('📦 预构建 ${packets.length} 个数据包 (每包最大 $_maxChunkSize 字节)');
+      _log(
+        '📦 预构建 ${packets.length} 个数据包 (原始 ${_formatBytes(_cachedPayloadSize)}, 发送样本 ${_formatBytes(payload.length)})',
+      );
     } else if (_cachedFilePath != null) {
-      // 文件数据：读入内存并预构建
+      // 文件数据：小文件完整预构建，大文件只读取轻量样本，避免卡住 UI。
       final file = File(_cachedFilePath!);
       if (await file.exists()) {
-        final fileData = await file.readAsBytes();
-        _cachedData = fileData; // 缓存到内存
+        final length = await file.length();
+        _cachedPayloadSize = length;
+        final sampleLength = length > _largePayloadThreshold
+            ? (length < _largePayloadSampleBytes
+                  ? length
+                  : _largePayloadSampleBytes)
+            : length;
+        final fileData = length > _largePayloadThreshold
+            ? await _readFileSample(file, sampleLength)
+            : await file.readAsBytes();
+        _cachedData = fileData;
 
         int offset = 0;
         while (offset < fileData.length) {
@@ -165,7 +200,7 @@ class LocalLoopbackService {
           offset = end;
         }
 
-        _log('📦 文件 ${file.lengthSync()} 字节 -> ${packets.length} 个预构建包');
+        _log('📦 文件 ${_formatBytes(length)} -> ${packets.length} 个回环样本包');
       }
     }
 
@@ -240,7 +275,7 @@ class LocalLoopbackService {
           port: _loopbackPort,
           initialLoopCount: _loopCount,
           speedLevel: _speedLevel,
-          batchCount: _batchCount,
+          batchCount: _effectiveBatchCount,
         ),
       );
     } catch (e) {
@@ -297,7 +332,7 @@ class LocalLoopbackService {
 
         try {
           // 批量发送
-          for (int batch = 0; batch < _batchCount; batch++) {
+          for (int batch = 0; batch < _effectiveBatchCount; batch++) {
             _loopCount++;
 
             // 使用预构建包发送
@@ -429,6 +464,8 @@ class LocalLoopbackService {
     _cachedFilePath = null;
     _cachedFileName = null;
     _cachedHeaderPacket = null;
+    _cachedPayloadSize = 0;
+    _effectiveBatchCount = _batchCount;
     _prebuiltPackets = null;
 
     _log('🛑 本地回环已停止');
@@ -439,12 +476,42 @@ class LocalLoopbackService {
     stop();
   }
 
-  Uint8List _buildHeader(String fileName) {
+  Future<int> _safeFileLength(String? filePath) async {
+    if (filePath == null) return 0;
+    try {
+      final file = File(filePath);
+      return await file.exists() ? await file.length() : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<Uint8List> _readFileSample(File file, int sampleLength) async {
+    final randomAccessFile = await file.open();
+    try {
+      return await randomAccessFile.read(sampleLength);
+    } finally {
+      await randomAccessFile.close();
+    }
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  Uint8List _buildHeader(
+    String fileName, {
+    required int originalSize,
+    required String payloadMode,
+  }) {
     final header = {
       'type': 'dharma_local_loop',
       'fileName': fileName,
+      'fileSize': originalSize,
       'timestamp': DateTime.now().toIso8601String(),
-      'mode': 'extreme_speed',
+      'mode': 'loopback_$payloadMode',
     };
 
     final headerBytes = utf8.encode(jsonEncode(header));

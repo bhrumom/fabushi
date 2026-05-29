@@ -142,7 +142,7 @@ class UDPGlobalSendService {
           Uint8List? fileBytes = file.bytes;
 
           // 内存优化：大文件不加载全部内容
-          const int largeFileThreshold = 10 * 1024 * 1024; // 10MB
+          const int largeFileThreshold = 1024 * 1024; // 1MB
 
           if (file.size >= largeFileThreshold) {
             // 大文件：只发送元数据，不加载完整内容
@@ -435,6 +435,7 @@ class UDPGlobalSendService {
       final stream = file.openRead();
       int chunkIndex = 0;
       int totalBytesSent = headerBytes.length;
+      int packetIndex = 0;
 
       await for (var chunk in stream) {
         if (!_isRunning) break;
@@ -452,6 +453,11 @@ class UDPGlobalSendService {
           final sent = socket.send(packet, address, _udpPort);
           totalBytesSent += sent;
           offset = end;
+          packetIndex++;
+
+          if (packetIndex % 32 == 0) {
+            await Future.delayed(Duration.zero);
+          }
         }
 
         chunkIndex++;
@@ -512,6 +518,7 @@ class UDPGlobalSendService {
   static const int _streamChunkSize = 1024 * 1024;
 
   /// 发送元数据 UDP 包（不包含文件内容）- 保留作为备用
+  // ignore: unused_element
   Future<bool> _sendMetadataPacket(
     RawDatagramSocket socket,
     String fileName,

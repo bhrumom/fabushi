@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/file_transfer_model.dart';
 import '../widgets/earth_globe_widget.dart';
@@ -348,7 +349,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                             children: [
                               Text(
                                 scripture.isEmpty
-                                    ? '正在发送经文'
+                                    ? '正在发送内容'
                                     : '正在发送《$scripture》',
                                 style: const TextStyle(
                                   color: Colors.white,
@@ -458,7 +459,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                             Expanded(
                               child: Text(
                                 model.currentSendingScripture.isEmpty
-                                    ? '正在发送经文'
+                                    ? '正在发送内容'
                                     : '正在发送：《${model.currentSendingScripture}》',
                                 style: const TextStyle(
                                   color: Colors.white,
@@ -574,44 +575,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.library_books,
-                              color: AppTheme.primaryColor,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              '内容发送',
-                              style: TextStyle(
-                                color: AppTheme.primaryColor,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const Icon(
-                          Icons.check_circle,
-                          color: AppTheme.primaryColor,
-                          size: 20,
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildSelectedContentTile(model),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -760,6 +724,104 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
+  Widget _buildSelectedContentTile(FileTransferModel model) {
+    final hasContent = model.hasFiles;
+    final title = hasContent ? model.selectedContentTitle : '选择发送内容';
+    final subtitle = hasContent
+        ? (model.selectedContentSubtitle.isEmpty
+              ? '点此重新选择链接、文本、文件或佛像素材'
+              : model.selectedContentSubtitle)
+        : '链接、文本、本机文件或禅室佛像素材';
+    final icon = _contentIcon(model.selectedContentKind);
+
+    return Material(
+      color: Colors.white.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: model.isPreparingSend
+            ? null
+            : () => _showSendContentSheet(model),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Icon(icon, color: AppTheme.primaryColor, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        if (hasContent && model.selectedContentKind.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Text(
+                              model.selectedContentKind,
+                              style: TextStyle(
+                                color: AppTheme.primaryColor.withOpacity(0.9),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (model.hasSelectedContentPreview) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: '查看已读取内容',
+                  icon: const Icon(Icons.visibility, color: Colors.white70),
+                  onPressed: () => _showSelectedContentPreview(model),
+                ),
+              ],
+              const Icon(Icons.chevron_right, color: Colors.white54),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _contentIcon(String kind) {
+    return switch (kind) {
+      '链接' => Icons.link,
+      '文本' => Icons.edit_note,
+      '本机文件' => Icons.folder_open,
+      '素材文件' => Icons.inventory_2,
+      '禅室佛像素材' => Icons.self_improvement,
+      _ => Icons.library_books,
+    };
+  }
+
   void _showHotspotGuideDialog(BuildContext context) {
     String title;
     List<String> steps;
@@ -899,63 +961,106 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final result = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: const Color(0xFF171717),
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '选择要全球发送的内容',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetContext).size.height * 0.84,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '选择要全球发送的内容',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              _SendSourceTile(
-                icon: Icons.link,
-                title: '输入链接',
-                subtitle: '读取链接正文并发送',
-                onTap: () async {
-                  Navigator.pop(sheetContext, await _inputSendLink(model));
-                },
-              ),
-              _SendSourceTile(
-                icon: Icons.edit_note,
-                title: '输入文本',
-                subtitle: '发送手输或粘贴的文本',
-                onTap: () async {
-                  Navigator.pop(sheetContext, await _inputSendText(model));
-                },
-              ),
-              _SendSourceTile(
-                icon: Icons.folder_open,
-                title: '选择本机文件',
-                subtitle: '发送手机本机文件',
-                onTap: () async {
-                  final before = model.selectedFiles.length;
-                  await model.selectFiles();
-                  Navigator.pop(
-                    sheetContext,
-                    model.selectedFiles.length > before,
-                  );
-                },
-              ),
-              _SendSourceTile(
-                icon: Icons.self_improvement,
-                title: '禅室佛像素材',
-                subtitle: '发送禅室当前佛像模型素材',
-                onTap: () async {
-                  Navigator.pop(sheetContext, await _selectBuddhaAsset(model));
-                },
-              ),
-            ],
+                const SizedBox(height: 14),
+                _SendSourceTile(
+                  icon: Icons.link,
+                  title: '输入链接',
+                  subtitle: '读取链接正文，读取后可点开查看',
+                  onTap: () async {
+                    final navigator = Navigator.of(sheetContext);
+                    final selected = await _inputSendLink(model);
+                    if (navigator.mounted) navigator.pop(selected);
+                  },
+                ),
+                _SendSourceTile(
+                  icon: Icons.edit_note,
+                  title: '输入文本',
+                  subtitle: '发送手输或粘贴的文本',
+                  onTap: () async {
+                    final navigator = Navigator.of(sheetContext);
+                    final selected = await _inputSendText(model);
+                    if (navigator.mounted) navigator.pop(selected);
+                  },
+                ),
+                _SendSourceTile(
+                  icon: Icons.folder_open,
+                  title: '选择本机文件',
+                  subtitle: '发送手机本机文件',
+                  onTap: () async {
+                    final navigator = Navigator.of(sheetContext);
+                    final before = model.selectedFiles.length;
+                    await model.selectFiles();
+                    if (navigator.mounted) {
+                      navigator.pop(model.selectedFiles.length > before);
+                    }
+                  },
+                ),
+                _SendSourceTile(
+                  icon: Icons.self_improvement,
+                  title: '禅室佛像素材',
+                  subtitle: '发送禅室当前佛像模型素材',
+                  onTap: () async {
+                    final navigator = Navigator.of(sheetContext);
+                    final selected = await _selectBuddhaAsset(model);
+                    if (navigator.mounted) navigator.pop(selected);
+                  },
+                ),
+                if (model.linkHistory.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    '链接历史',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  ...model.linkHistory
+                      .take(8)
+                      .map(
+                        (entry) => _SendSourceTile(
+                          icon: Icons.history,
+                          title: entry.title.isEmpty ? entry.url : entry.title,
+                          subtitle: entry.preview.isEmpty
+                              ? entry.url
+                              : entry.preview,
+                          onTap: () async {
+                            final navigator = Navigator.of(sheetContext);
+                            final selected = await _selectLinkHistory(
+                              model,
+                              entry,
+                            );
+                            if (navigator.mounted) navigator.pop(selected);
+                          },
+                        ),
+                      ),
+                ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1053,6 +1158,65 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
   }
 
+  Future<bool> _selectLinkHistory(
+    FileTransferModel model,
+    LinkSendHistoryEntry entry,
+  ) async {
+    try {
+      await model.addUrlContentForSending(entry.url);
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('历史链接读取失败: $e'), backgroundColor: Colors.red),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<void> _showSelectedContentPreview(FileTransferModel model) async {
+    final text = model.selectedContentPreviewText?.trim();
+    if (text == null || text.isEmpty) return;
+
+    final title = model.selectedContentTitle.isEmpty
+        ? '已读取内容'
+        : model.selectedContentTitle;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              model.selectedContentSourceUrl == null
+                  ? text
+                  : '来源链接: ${model.selectedContentSourceUrl}\n\n$text',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: text));
+              if (!dialogContext.mounted) return;
+              ScaffoldMessenger.of(
+                dialogContext,
+              ).showSnackBar(const SnackBar(content: Text('内容已复制')));
+            },
+            icon: const Icon(Icons.copy),
+            label: const Text('复制'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<bool> _selectBuddhaAsset(FileTransferModel model) async {
     try {
       await model.addZenBuddhaAssetForSending();
@@ -1070,8 +1234,18 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   void _startSending(FileTransferModel model) async {
     if (model.isPreparingSend || model.isTransferring) return;
 
-    final prepared = await _showSendContentSheet(model);
-    if (!prepared || !mounted || !model.hasFiles) return;
+    if (!model.hasFiles) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('请先点“选择发送内容”选择链接、文本、本机文件或禅室佛像素材。'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.black87,
+          ),
+        );
+      }
+      return;
+    }
 
     if (Platform.isAndroid && mounted) {
       try {

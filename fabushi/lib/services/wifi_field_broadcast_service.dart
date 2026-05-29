@@ -70,6 +70,7 @@ class WiFiFieldBroadcastService {
   Future<void> startBroadcast({
     required Uint8List data,
     required String fileName,
+    int? originalSize,
   }) async {
     if (_isRunning) return;
     if (_socket == null) {
@@ -82,7 +83,7 @@ class WiFiFieldBroadcastService {
     _log('🌟 开始场能广播: $fileName');
 
     // 构建广播数据包
-    final packet = _buildBroadcastPacket(data, fileName);
+    final packet = _buildBroadcastPacket(data, fileName, originalSize);
 
     // 获取所有可用的网络接口地址
     final broadcastAddresses = await _getBroadcastAddresses();
@@ -152,12 +153,17 @@ class WiFiFieldBroadcastService {
   }
 
   /// 构建广播数据包
-  Uint8List _buildBroadcastPacket(Uint8List data, String fileName) {
+  Uint8List _buildBroadcastPacket(
+    Uint8List data,
+    String fileName,
+    int? originalSize,
+  ) {
     final header = {
       'type': 'dharma_field_energy',
       'fileName': fileName,
       'timestamp': DateTime.now().toIso8601String(),
-      'size': data.length,
+      'size': originalSize ?? data.length,
+      'sampleSize': data.length,
       'checksum': _calculateChecksum(data),
     };
 
