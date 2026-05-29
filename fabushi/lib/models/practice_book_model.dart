@@ -6,6 +6,8 @@ enum PracticeBookSourceType { file, url, manual, image, cloud }
 
 enum PracticeBookSyncStatus { localOnly, pendingUpload, synced, syncFailed }
 
+const Object _copyWithUnset = Object();
+
 PracticeBookSourceType practiceBookSourceTypeFromString(String? value) {
   return PracticeBookSourceType.values.firstWhere(
     (item) => item.name == value,
@@ -65,7 +67,7 @@ class PracticeBook {
     String? sourceFilePath,
     required String plainText,
     String? remoteObjectKey,
-    PracticeBookSyncStatus syncStatus = PracticeBookSyncStatus.pendingUpload,
+    PracticeBookSyncStatus syncStatus = PracticeBookSyncStatus.localOnly,
   }) {
     final normalizedText = PracticeBookText.normalizeForMatching(plainText);
     final now = DateTime.now();
@@ -193,7 +195,7 @@ class PracticeBook {
     DateTime? createdAt,
     DateTime? updatedAt,
     PracticeBookSyncStatus? syncStatus,
-    String? remoteObjectKey,
+    Object? remoteObjectKey = _copyWithUnset,
     bool? isActive,
   }) {
     return PracticeBook(
@@ -210,7 +212,9 @@ class PracticeBook {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       syncStatus: syncStatus ?? this.syncStatus,
-      remoteObjectKey: remoteObjectKey ?? this.remoteObjectKey,
+      remoteObjectKey: identical(remoteObjectKey, _copyWithUnset)
+          ? this.remoteObjectKey
+          : remoteObjectKey as String?,
       isActive: isActive ?? this.isActive,
     );
   }

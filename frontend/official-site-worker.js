@@ -1,6 +1,6 @@
 const CBETA_PROXY_ROUTE = /^\/api\/cbeta\/(.+)$/;
 const APP_PROXY_ROUTE = /^\/api\/app\/(.+)$/;
-const CBETA_API_BASE = "https://api.cbetaonline.cn";
+const CBETA_API_BASE = "http://144.24.17.21.sslip.io:3000";
 const APP_API_BASE = "https://api.ombhrum.com/api";
 const OFFICIAL_SITE_HOST = "fabushi.ombhrum.com";
 const ROOT_DOMAIN_REDIRECT_HOSTS = new Set(["ombhrum.com"]);

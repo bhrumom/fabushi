@@ -30,7 +30,10 @@ class PracticeBookService {
   Future<PracticeBook> saveBook(
     PracticeBook book, {
     bool syncCloud = false,
-  }) async => book.copyWith(syncStatus: PracticeBookSyncStatus.localOnly);
+  }) async => book.copyWith(
+    syncStatus: PracticeBookSyncStatus.localOnly,
+    remoteObjectKey: null,
+  );
 
   Future<void> deleteBook(String id, {bool syncCloud = false}) async {}
 
