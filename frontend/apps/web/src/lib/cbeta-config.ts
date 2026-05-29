@@ -1,1 +1,1 @@
-export const CBETA_API_ROOT = "https://cbdata.dila.edu.tw/stable";
+export const CBETA_API_ROOT = "https://api.ombhrum.com/api/cbeta";
