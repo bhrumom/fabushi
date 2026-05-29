@@ -15,7 +15,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodChannel
 
-// 使用 FlutterFragmentActivity 以支持 audio_service 插件
+// 使用 FlutterFragmentActivity 以兼容现有插件和 Activity Result 流程
 class MainActivity : FlutterFragmentActivity() {
     private val CHANNEL = "com.fabushi.app/hotspot"
     private val DEVICE_INFO_CHANNEL = "com.ombhrum.fabushi/device_info"
@@ -103,7 +103,6 @@ class MainActivity : FlutterFragmentActivity() {
         // fail JNI loading on some Android 14 / arm64 devices and crash the app before
         // Flutter renders the first frame.
         registerPlugin(flutterEngine, "app_links") { com.llfbandit.app_links.AppLinksPlugin() }
-        registerPlugin(flutterEngine, "audio_service") { com.ryanheise.audioservice.AudioServicePlugin() }
         registerPlugin(flutterEngine, "audio_session") { com.ryanheise.audio_session.AudioSessionPlugin() }
         registerPlugin(flutterEngine, "cloud_firestore") { io.flutter.plugins.firebase.firestore.FlutterFirebaseFirestorePlugin() }
         registerPlugin(flutterEngine, "connectivity_plus") { dev.fluttercommunity.plus.connectivity.ConnectivityPlugin() }
