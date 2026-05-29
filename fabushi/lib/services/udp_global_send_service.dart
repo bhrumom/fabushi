@@ -23,6 +23,7 @@ class _UdpSendResult {
 class UDPGlobalSendService {
   final ValueChanged<int> onProgress;
   final ValueChanged<double> onDataSent;
+  final ValueChanged<double>? onCountryProgress;
   final VoidCallback onStopped;
   final void Function(String) onLog;
   final Function(
@@ -60,6 +61,7 @@ class UDPGlobalSendService {
   UDPGlobalSendService({
     required this.onProgress,
     required this.onDataSent,
+    this.onCountryProgress,
     required this.onStopped,
     required this.onLog,
     this.onTransferBeam,
@@ -198,7 +200,7 @@ class UDPGlobalSendService {
             '📊 UDP 文件 ${file.name}: ${fileSizeMB.toStringAsFixed(2)} MB × $countriesSent 国 成功',
           );
 
-          await Future.delayed(const Duration(milliseconds: 100));
+          await Future.delayed(const Duration(milliseconds: 800));
         }
       } while (isLoop && _isRunning);
     } catch (e) {
@@ -234,6 +236,7 @@ class UDPGlobalSendService {
 
       // 触发地球轨迹动画
       _triggerBeamAnimation(countryCode, countryName);
+      onCountryProgress?.call(0);
 
       // 获取该国家的 IP 地址
       final ips = _geoIPService.getIPsForCountry(countryCode);
@@ -304,10 +307,12 @@ class UDPGlobalSendService {
       if (countrySuccess) {
         successCount++;
         _sentCount++; // 实时更新国家计数
+        onCountryProgress?.call(1);
         onProgress(_sentCount); // 实时通知进度更新
         onLog(
           '✅ UDP 发送到 $countryName ($countryCode) 成功：《$scriptureTitle》 -> ${lastSuccessIp ?? "未知 IP"}，发送 $sendCount 次，重试 $retryCount 次',
         );
+        await Future.delayed(const Duration(milliseconds: 600));
 
         if (onCountrySent != null) {
           onCountrySent!(fileSize * sendCount);
@@ -336,6 +341,7 @@ class UDPGlobalSendService {
   ) async {
     int successCount = 0;
 
+    final scriptureTitle = _displayScriptureName(file.name);
     final fileSizeMB = (file.size / 1024 / 1024).toStringAsFixed(1);
     onLog(
       '📤 大文件流式发送: ${file.name}, ${fileSizeMB}MB 到 ${countryCodes.length} 个国家',
@@ -370,6 +376,11 @@ class UDPGlobalSendService {
         continue;
       }
 
+      onCountryProgress?.call(0);
+      onLog(
+        '📤 正在发送到 $countryName ($countryCode)：《$scriptureTitle》 - 大文件 ${fileSizeMB}MB',
+      );
+
       // 流式发送文件到该国家
       final success = await _streamSendFileToCountry(
         socket,
@@ -384,7 +395,12 @@ class UDPGlobalSendService {
       if (success) {
         successCount++;
         _sentCount++;
+        onCountryProgress?.call(1);
         onProgress(_sentCount);
+        onLog(
+          '✅ UDP 发送到 $countryName ($countryCode) 成功：《$scriptureTitle》 - 已完整发送 ${file.name}',
+        );
+        await Future.delayed(const Duration(milliseconds: 600));
 
         if (onCountrySent != null) {
           onCountrySent!(file.size);
@@ -436,6 +452,8 @@ class UDPGlobalSendService {
       int chunkIndex = 0;
       int totalBytesSent = headerBytes.length;
       int packetIndex = 0;
+      var payloadBytesSent = 0;
+      var nextProgressReport = 0.02;
 
       await for (var chunk in stream) {
         if (!_isRunning) break;
@@ -452,6 +470,7 @@ class UDPGlobalSendService {
 
           final sent = socket.send(packet, address, _udpPort);
           totalBytesSent += sent;
+          payloadBytesSent += end - offset;
           offset = end;
           packetIndex++;
 
@@ -470,6 +489,14 @@ class UDPGlobalSendService {
         // 每发送 100 个块后稍作延迟，控制发送速率
         if (chunkIndex % 100 == 0) {
           await Future.delayed(const Duration(milliseconds: 10));
+        }
+
+        if (fileSize > 0) {
+          final progress = (payloadBytesSent / fileSize).clamp(0.0, 1.0);
+          if (progress >= nextProgressReport || progress >= 1.0) {
+            onCountryProgress?.call(progress);
+            nextProgressReport += 0.02;
+          }
         }
       }
 

@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
-import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:async';
@@ -83,6 +82,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   int _globalSentCount = 0;
   double _globalDataSentMB = 0.0;
+  double? _currentCountryProgress;
 
   RealGlobalSendService? _realGlobalSendService;
   PlatformGlobalSendService? _platformGlobalSendService;
@@ -165,9 +165,15 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   bool get hasFiles => _selectedFiles.isNotEmpty;
   int get globalSentCount => _globalSentCount;
   double get globalDataSentMB => _globalDataSentMB;
+  double? get currentCountryProgress => _currentCountryProgress;
   List<CountrySendStatus> get countryStatuses => _countryStatuses;
   String get currentLog => _currentLog;
   String get currentSendingScripture => _currentSendingScripture;
+  bool get isCurrentMaterialCompleted =>
+      (_currentLog.contains('文件《') && _currentLog.contains('发送完成')) ||
+      (_currentLog.contains('UDP 发送到') && _currentLog.contains('成功')) ||
+      _currentLog.contains('已完整发送') ||
+      _currentLog.contains('流式发送完成');
   String get selectedContentKind => _selectedContentKind;
   String get selectedContentTitle => _selectedContentTitle;
   String get selectedContentSubtitle => _selectedContentSubtitle;
@@ -370,7 +376,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     return _selectedFiles.length;
   }
 
-  Future<void> selectFiles() async {
+  Future<bool> selectFiles({bool replaceExisting = true}) async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
@@ -380,7 +386,11 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       );
 
       if (result != null) {
-        _selectedFiles.addAll(result.files);
+        if (replaceExisting) {
+          _selectedFiles = result.files;
+        } else {
+          _selectedFiles.addAll(result.files);
+        }
         _downloadedScriptureMemory.clear();
         _updateFileSelectionSummary(kind: '本机文件');
         notifyListeners();
@@ -391,10 +401,12 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
           );
         }
         debugPrint('已选择 ${result.files.length} 个文件');
+        return result.files.isNotEmpty;
       }
     } catch (e) {
       debugPrint('选择文件失败: $e');
     }
+    return false;
   }
 
   Future<void> selectBuiltInAssets(BuildContext context) async {
@@ -406,6 +418,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     if (selectedAssets != null &&
         selectedAssets is List &&
         selectedAssets.isNotEmpty) {
+      if (!context.mounted) return;
       final List<String> assetPaths = selectedAssets
           .map((asset) => asset.toString())
           .toList();
@@ -419,6 +432,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   ) async {
     try {
       await _sharedAssetManager.initialize();
+      if (!context.mounted) return;
 
       final List<String> needDownloadAssets = [];
       final List<String> alreadyDownloadedAssets = [];
@@ -447,7 +461,6 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
       if (alreadyDownloadedAssets.isNotEmpty) {
         final failedAssets = await _reuseDownloadedAssets(
-          context,
           alreadyDownloadedAssets,
         );
         if (failedAssets.isNotEmpty) {
@@ -458,24 +471,24 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
       if (needDownloadAssets.isNotEmpty) {
         for (String assetPath in needDownloadAssets) {
+          if (!context.mounted) return;
           await _downloadSingleAsset(context, assetPath);
         }
       }
 
+      if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('所有素材处理完成')));
     } catch (e) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('处理失败: $e'), backgroundColor: Colors.red),
       );
     }
   }
 
-  Future<List<String>> _reuseDownloadedAssets(
-    BuildContext context,
-    List<String> assetPaths,
-  ) async {
+  Future<List<String>> _reuseDownloadedAssets(List<String> assetPaths) async {
     final List<String> failedAssets = [];
     try {
       for (String assetPath in assetPaths) {
@@ -503,6 +516,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     try {
       final taskId = await _sharedAssetManager.downloadAsset(assetPath);
       final fileName = assetPath.split('/').last;
+      if (!context.mounted) return;
       await _showDownloadProgressDialog(context, taskId, fileName, assetPath);
       debugPrint('✅ 素材下载完成并关闭对话框: $fileName');
     } catch (e) {
@@ -646,19 +660,15 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
     beginPreparingSend('正在读取链接内容...');
     try {
-      final response = await http
-          .get(
-            uri,
-            headers: const {
-              'Accept': 'text/html,text/plain,application/xhtml+xml,*/*',
-            },
-          )
-          .timeout(const Duration(seconds: 20));
+      final response = await _fetchReadableLink(uri);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw StateError('链接读取失败: HTTP ${response.statusCode}');
       }
 
       final raw = utf8.decode(response.bodyBytes, allowMalformed: true);
+      if (_looksLikeWeChatVerificationPage(raw)) {
+        throw StateError('微信链接返回了环境验证页，请稍后重试或重新复制文章链接。');
+      }
       final contentType = response.headers['content-type'] ?? '';
       final isHtml =
           contentType.toLowerCase().contains('html') ||
@@ -693,6 +703,65 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       _finishPreparingSend();
       notifyListeners();
     }
+  }
+
+  Future<http.Response> _fetchReadableLink(Uri uri) async {
+    final candidates = <Uri>[
+      if (_isWeChatArticleUri(uri)) _withWeChatArticleFlags(uri),
+      uri,
+    ];
+
+    http.Response? lastResponse;
+    Object? lastError;
+    for (final candidate in candidates) {
+      try {
+        final response = await http
+            .get(candidate, headers: _linkRequestHeaders(candidate))
+            .timeout(const Duration(seconds: 25));
+        lastResponse = response;
+        final raw = utf8.decode(response.bodyBytes, allowMalformed: true);
+        if (response.statusCode >= 200 &&
+            response.statusCode < 300 &&
+            !_looksLikeWeChatVerificationPage(raw)) {
+          return response;
+        }
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (lastResponse != null) return lastResponse;
+    throw StateError('链接读取失败: $lastError');
+  }
+
+  Map<String, String> _linkRequestHeaders(Uri uri) {
+    final isWeChat = _isWeChatArticleUri(uri);
+    return {
+      'Accept':
+          'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'Cache-Control': 'no-cache',
+      'User-Agent': isWeChat
+          ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.49'
+          : 'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+      if (isWeChat) 'Referer': 'https://mp.weixin.qq.com/',
+    };
+  }
+
+  bool _isWeChatArticleUri(Uri uri) =>
+      uri.host.toLowerCase() == 'mp.weixin.qq.com' &&
+      (uri.path == '/s' || uri.path.startsWith('/s/'));
+
+  Uri _withWeChatArticleFlags(Uri uri) {
+    final query = Map<String, String>.from(uri.queryParameters);
+    query.putIfAbsent('nwr_flag', () => '1');
+    return uri.replace(queryParameters: query);
+  }
+
+  bool _looksLikeWeChatVerificationPage(String html) {
+    return html.contains('当前环境异常') &&
+        html.contains('完成验证后即可继续访问') &&
+        html.contains('环境异常');
   }
 
   Future<void> _rememberLinkHistory({
@@ -880,6 +949,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
     _globalSentCount = 0;
     _loopbackCount = 0;
+    _currentCountryProgress = null;
 
     _schedulePersist(_persistTransferState);
     _scheduleNotify();
@@ -915,12 +985,14 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       _isTransferring = false;
       _status = TransferStatus.completed;
       _currentSendingScripture = '';
+      _currentCountryProgress = null;
     } catch (e) {
       debugPrint('❌ 传输失败: $e');
       _status = TransferStatus.error;
       _isTransferring = false;
       _finishPreparingSend();
       _currentSendingScripture = '';
+      _currentCountryProgress = null;
       _stopFieldEnergyBroadcast();
       await _stopBackgroundService();
       _schedulePersist(_persistTransferState);
@@ -953,23 +1025,10 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       Uint8List? fileBytes = file.bytes;
       final originalSize = file.size;
 
-      if (fileBytes == null && file.path != null) {
-        final fileObj = File(file.path!);
-        if (await fileObj.exists()) {
-          final length = await fileObj.length();
-          final sampleLength = length > 1400 ? 1400 : length;
-          final randomAccessFile = await fileObj.open();
-          try {
-            fileBytes = await randomAccessFile.read(sampleLength);
-          } finally {
-            await randomAccessFile.close();
-          }
-        }
-      }
-
-      if (fileBytes != null) {
+      if (fileBytes != null || file.path != null) {
         await _fieldBroadcastService!.startBroadcast(
           data: fileBytes,
+          filePath: file.path,
           fileName: file.name,
           originalSize: originalSize,
         );
@@ -1044,6 +1103,8 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
             ? LoopbackSpeedLevel.normal
             : LoopbackSpeedLevel.high,
       );
+      _loopbackCount = 1;
+      _scheduleNotify();
     } catch (e) {
       debugPrint('⚠️ 启动本地回环失败: $e');
     }
@@ -1063,6 +1124,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     _finishPreparingSend();
     _status = TransferStatus.idle;
     _currentSendingScripture = '';
+    _currentCountryProgress = null;
 
     _platformGlobalSendService?.stopSending();
     _stopFieldEnergyBroadcast();
@@ -1084,6 +1146,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     _finishPreparingSend();
     _status = TransferStatus.completed;
     _currentSendingScripture = '';
+    _currentCountryProgress = null;
     _schedulePersist(_persistTransferState);
     _scheduleNotify();
   }
@@ -1159,6 +1222,10 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       },
       onDataSent: (dataMB) {
         updateDataSent(dataMB);
+      },
+      onCountryProgress: (progress) {
+        _currentCountryProgress = progress.clamp(0.0, 1.0);
+        _scheduleNotify();
       },
       onStopped: () {
         _onTransferCompleted();
@@ -1294,6 +1361,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   void updateProgress(int count) {
     _globalSentCount = count;
+    _currentCountryProgress = null;
 
     String currentCountry = '全球';
     if (_countryStatuses.isNotEmpty &&
@@ -1399,6 +1467,9 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   void updateLog(String log) {
     _currentLog = log;
     _updateCurrentSendingScriptureFromLog(log);
+    if (isCurrentMaterialCompleted) {
+      _currentCountryProgress = 1.0;
+    }
     if (log.contains('成功') || log.contains('失败') || log.contains('完成')) {
       _schedulePersist(_persistTransferState);
     }
@@ -1449,6 +1520,26 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   String? _extractHtmlTitle(String html) {
+    final metaTitle = RegExp(
+      r'<meta[^>]+property=["'
+      ']og:title["'
+      '][^>]+content=["'
+      ']([^"'
+      ']+)["'
+      '][^>]*>',
+      caseSensitive: false,
+    ).firstMatch(html)?.group(1);
+    if (metaTitle != null && metaTitle.trim().isNotEmpty) {
+      return _decodeHtmlEntities(metaTitle).trim();
+    }
+
+    final activityName = _extractHtmlSectionById(html, 'activity-name');
+    if (activityName != null && activityName.trim().isNotEmpty) {
+      return _decodeHtmlEntities(
+        activityName.replaceAll(RegExp(r'<[^>]+>'), ''),
+      ).trim();
+    }
+
     final title = RegExp(
       r'<title>([\s\S]*?)</title>',
       caseSensitive: false,
@@ -1462,18 +1553,31 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       r'<body[^>]*>([\s\S]*?)</body>',
       caseSensitive: false,
     ).firstMatch(html);
-    var source = bodyMatch?.group(1) ?? html;
+    var source =
+        _extractHtmlSectionById(html, 'js_content') ??
+        _extractHtmlSectionById(html, 'js_content_container') ??
+        bodyMatch?.group(1) ??
+        html;
     source = source
         .replaceAll(
           RegExp(r'<script[\s\S]*?</script>', caseSensitive: false),
           '',
         )
         .replaceAll(RegExp(r'<style[\s\S]*?</style>', caseSensitive: false), '')
+        .replaceAll(RegExp(r'<rt[\s\S]*?</rt>', caseSensitive: false), '')
+        .replaceAll(RegExp(r'<rp[\s\S]*?</rp>', caseSensitive: false), '')
+        .replaceAll(RegExp(r'<!--[\s\S]*?-->', caseSensitive: false), '')
         .replaceAll(
-          RegExp(r'<(p|div|br|h[1-6]|li)\b[^>]*>', caseSensitive: false),
+          RegExp(
+            r'<(p|div|section|br|h[1-6]|li|tr)\b[^>]*>',
+            caseSensitive: false,
+          ),
           '\n',
         )
-        .replaceAll(RegExp(r'</(p|div|h[1-6]|li)>', caseSensitive: false), '\n')
+        .replaceAll(
+          RegExp(r'</(p|div|section|h[1-6]|li|tr)>', caseSensitive: false),
+          '\n',
+        )
         .replaceAll(RegExp(r'<[^>]+>'), '');
 
     return _decodeHtmlEntities(source)
@@ -1483,6 +1587,35 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
         .replaceAll(RegExp(r'[ \t]+\n'), '\n')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
+  }
+
+  String? _extractHtmlSectionById(String html, String id) {
+    final startMatch = RegExp(
+      '<([a-zA-Z0-9]+)[^>]*\\bid=["\\\']${RegExp.escape(id)}["\\\'][^>]*>',
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (startMatch == null) return null;
+
+    final tag = startMatch.group(1);
+    if (tag == null || tag.isEmpty) return null;
+
+    final tagRegex = RegExp('</?$tag\\b[^>]*>', caseSensitive: false);
+    var depth = 1;
+    for (final match in tagRegex.allMatches(html, startMatch.end)) {
+      final token = match.group(0) ?? '';
+      final isClosing = token.startsWith('</');
+      final isSelfClosing = token.endsWith('/>');
+      if (isClosing) {
+        depth--;
+        if (depth == 0) {
+          return html.substring(startMatch.end, match.start);
+        }
+      } else if (!isSelfClosing) {
+        depth++;
+      }
+    }
+
+    return null;
   }
 
   String _decodeHtmlEntities(String value) {
