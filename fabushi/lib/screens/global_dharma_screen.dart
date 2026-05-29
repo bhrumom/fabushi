@@ -77,7 +77,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                       ),
                     ),
                     onPressed: null,
-                    tooltip: '正在下载经文',
+                    tooltip: '正在准备发送',
                   )
                 : model.isTransferring
                 ? IconButton(
@@ -146,7 +146,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '当前经文：《$scripture》',
+                            '当前内容：$scripture',
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,

@@ -71,9 +71,8 @@ class _CbetaJsonResult {
 class CbetaSendTextService {
   static const int _maxRetries = 3;
   static const Duration _timeout = Duration(seconds: 15);
-  static const String _officialApiRoot = 'https://api.cbetaonline.cn';
-  static const String _oracleApiRoot = 'http://144.24.17.21.sslip.io:3000';
-  static const List<String> _apiRoots = [_officialApiRoot, _oracleApiRoot];
+  static const String _selfHostedApiRoot = 'http://144.24.17.21.sslip.io:3000';
+  static const List<String> _apiRoots = [_selfHostedApiRoot];
 
   static const List<String> _defaultSendWorks = [
     'T0365',
@@ -135,7 +134,7 @@ class CbetaSendTextService {
     return CbetaSendTextResult(
       items: items,
       errors: errors,
-      api: _officialApiRoot,
+      api: _selfHostedApiRoot,
       hasMore: hasMore,
       nextCursor: hasMore ? index.toString() : null,
     );

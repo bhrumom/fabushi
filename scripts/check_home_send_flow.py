@@ -54,17 +54,13 @@ if '() => _showSendContentSheet(model)' not in home_text:
     print('FAIL: homepage content tile should open the send-content picker')
     sys.exit(1)
 
-if '_showSendContentSheet(model)' in body:
-    print('FAIL: start button should not open the content picker')
+if 'final prepared = await _showSendContentSheet(model);' not in body:
+    print('FAIL: start button should open the content picker before sending')
     sys.exit(1)
 
 pre_send_body = body.split('await model.startGlobalTransfer()', 1)[0]
-if '!model.hasFiles' not in pre_send_body:
-    print('FAIL: start button should require pre-selected content before sending')
-    sys.exit(1)
-
-if '请先点' not in pre_send_body:
-    print('FAIL: empty start should tell the user to choose send content first')
+if '!prepared || !mounted || !model.hasFiles' not in pre_send_body:
+    print('FAIL: start button should require picker confirmation and selected content before sending')
     sys.exit(1)
 
 if 'await model.startGlobalTransfer()' not in body:

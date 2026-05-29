@@ -50,7 +50,7 @@ class IOSBackgroundAudioHandler extends BaseAudioHandler {
       mediaItem.add(
         MediaItem(
           id: 'dharma_sending',
-          title: '正在发送经文',
+          title: '正在发送内容',
           artist: fileName,
           artUri: null,
           duration: Duration.zero, // 未知时长
@@ -92,7 +92,7 @@ class IOSBackgroundAudioHandler extends BaseAudioHandler {
         _loopCount = loopCount;
       }
 
-      String title = '正在发送经文';
+      String title = '正在发送内容';
       if (_loopCount > 0) {
         title = '循环发送中 (第 $_loopCount 轮)';
       }
