@@ -22,6 +22,7 @@ class WiFiFieldBroadcastService {
   static const int _broadcastPort = 8888;
   static const int _multicastPort = 8889;
   static const String _multicastGroup = '239.255.255.250'; // 标准多播地址
+  static const int _broadcastChunkSize = 1024;
 
   // 常用热点网段
   static const List<String> _hotspotBroadcasts = [
@@ -34,6 +35,13 @@ class WiFiFieldBroadcastService {
   RawDatagramSocket? _socket;
   bool _isRunning = false;
   Timer? _broadcastTimer;
+  RandomAccessFile? _sourceFileHandle;
+  Uint8List? _sourceData;
+  String _fileName = '';
+  int _originalSize = 0;
+  int _offset = 0;
+  int _chunkIndex = 0;
+  bool _isReadingChunk = false;
 
   final void Function(String)? onLog;
   final void Function(int)? onBroadcastCount;
@@ -68,7 +76,8 @@ class WiFiFieldBroadcastService {
   /// [data] 要广播的数据（经文内容）
   /// [fileName] 文件名
   Future<void> startBroadcast({
-    required Uint8List data,
+    Uint8List? data,
+    String? filePath,
     required String fileName,
     int? originalSize,
   }) async {
@@ -79,11 +88,32 @@ class WiFiFieldBroadcastService {
 
     _isRunning = true;
     _broadcastCount = 0;
+    _fileName = fileName;
+    _offset = 0;
+    _chunkIndex = 0;
+    _sourceData = data;
 
     _log('🌟 开始场能广播: $fileName');
 
-    // 构建广播数据包
-    final packet = _buildBroadcastPacket(data, fileName, originalSize);
+    if (_sourceData == null && filePath != null) {
+      final file = File(filePath);
+      if (await file.exists()) {
+        _sourceFileHandle = await file.open();
+        _originalSize = await file.length();
+      }
+    } else {
+      _originalSize = originalSize ?? data?.length ?? 0;
+    }
+
+    if (_sourceData == null && _sourceFileHandle == null) {
+      _log('⚠️ 场能广播没有可用素材数据');
+      _isRunning = false;
+      return;
+    }
+
+    if (_originalSize <= 0) {
+      _originalSize = originalSize ?? _sourceData?.length ?? 0;
+    }
 
     // 获取所有可用的网络接口地址
     final broadcastAddresses = await _getBroadcastAddresses();
@@ -92,12 +122,71 @@ class WiFiFieldBroadcastService {
 
     // 定时广播
     _broadcastTimer = Timer.periodic(
-      const Duration(milliseconds: 500),
-      (_) => _sendBroadcast(packet, broadcastAddresses),
+      const Duration(milliseconds: 150),
+      (_) => _broadcastNextChunk(broadcastAddresses),
     );
 
     // 立即发送一次
-    _sendBroadcast(packet, broadcastAddresses);
+    await _broadcastNextChunk(broadcastAddresses);
+  }
+
+  Future<void> _broadcastNextChunk(List<InternetAddress> addresses) async {
+    if (!_isRunning || _socket == null || _isReadingChunk) return;
+
+    _isReadingChunk = true;
+    try {
+      final chunk = await _readNextChunk();
+      if (chunk == null || chunk.isEmpty) return;
+      final packet = _buildBroadcastPacket(
+        chunk,
+        _fileName,
+        _originalSize,
+        chunkIndex: _chunkIndex,
+        offset: _offset - chunk.length,
+      );
+      _sendBroadcast(packet, addresses);
+      _chunkIndex++;
+    } finally {
+      _isReadingChunk = false;
+    }
+  }
+
+  Future<Uint8List?> _readNextChunk() async {
+    if (_sourceData != null) {
+      final data = _sourceData!;
+      if (data.isEmpty) return null;
+      if (_offset >= data.length) {
+        _offset = 0;
+        _chunkIndex = 0;
+      }
+      final end = (_offset + _broadcastChunkSize < data.length)
+          ? _offset + _broadcastChunkSize
+          : data.length;
+      final chunk = Uint8List.sublistView(data, _offset, end);
+      _offset = end;
+      return chunk;
+    }
+
+    final handle = _sourceFileHandle;
+    if (handle == null) return null;
+    if (_originalSize > 0 && _offset >= _originalSize) {
+      await handle.setPosition(0);
+      _offset = 0;
+      _chunkIndex = 0;
+    }
+
+    final chunk = await handle.read(_broadcastChunkSize);
+    if (chunk.isEmpty) {
+      await handle.setPosition(0);
+      _offset = 0;
+      _chunkIndex = 0;
+      final restarted = await handle.read(_broadcastChunkSize);
+      _offset = restarted.length;
+      return restarted;
+    }
+
+    _offset += chunk.length;
+    return chunk;
   }
 
   /// 发送单次广播
@@ -142,6 +231,11 @@ class WiFiFieldBroadcastService {
     _isRunning = false;
     _broadcastTimer?.cancel();
     _broadcastTimer = null;
+    _sourceFileHandle?.close();
+    _sourceFileHandle = null;
+    _sourceData = null;
+    _offset = 0;
+    _chunkIndex = 0;
     _log('🛑 场能广播已停止，共广播 $_broadcastCount 次');
   }
 
@@ -156,14 +250,21 @@ class WiFiFieldBroadcastService {
   Uint8List _buildBroadcastPacket(
     Uint8List data,
     String fileName,
-    int? originalSize,
-  ) {
+    int? originalSize, {
+    required int chunkIndex,
+    required int offset,
+  }) {
     final header = {
       'type': 'dharma_field_energy',
       'fileName': fileName,
       'timestamp': DateTime.now().toIso8601String(),
       'size': originalSize ?? data.length,
-      'sampleSize': data.length,
+      'chunkIndex': chunkIndex,
+      'chunkOffset': offset,
+      'chunkSize': data.length,
+      'totalChunks': originalSize == null || originalSize <= 0
+          ? 1
+          : (originalSize / _broadcastChunkSize).ceil(),
       'checksum': _calculateChecksum(data),
     };
 
@@ -179,12 +280,8 @@ class WiFiFieldBroadcastService {
     // 头部
     packet.add(headerBytes);
 
-    // 数据（如果太大则截取前1400字节）
-    if (data.length > 1400) {
-      packet.add(data.sublist(0, 1400));
-    } else {
-      packet.add(data);
-    }
+    // 数据块固定小于 UDP 广播安全大小，来自选中素材本体而不是样本包。
+    packet.add(data);
 
     return packet.toBytes();
   }

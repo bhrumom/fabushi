@@ -10,6 +10,7 @@ import 'udp_global_send_service.dart';
 class PlatformGlobalSendService {
   final ValueChanged<int> onProgress;
   final ValueChanged<double> onDataSent;
+  final ValueChanged<double>? onCountryProgress;
   final VoidCallback onStopped;
   final void Function(String) onLog;
   final Function(
@@ -37,6 +38,7 @@ class PlatformGlobalSendService {
   PlatformGlobalSendService({
     required this.onProgress,
     required this.onDataSent,
+    this.onCountryProgress,
     required this.onStopped,
     required this.onLog,
     this.onTransferBeam,
@@ -63,6 +65,7 @@ class PlatformGlobalSendService {
         _httpService = RealGlobalSendService(
           onProgress: onProgress,
           onDataSent: onDataSent,
+          onCountryProgress: onCountryProgress,
           onStopped: onStopped,
           onLog: onLog,
           onTransferBeam: onTransferBeam,
@@ -80,6 +83,7 @@ class PlatformGlobalSendService {
         _udpService = UDPGlobalSendService(
           onProgress: onProgress,
           onDataSent: onDataSent,
+          onCountryProgress: onCountryProgress,
           onStopped: onStopped,
           onLog: onLog,
           onTransferBeam: onTransferBeam,

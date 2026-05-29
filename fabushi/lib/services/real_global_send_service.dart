@@ -1,22 +1,19 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:isolate';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:crypto/crypto.dart' as crypto;
-import 'global_server_config_loader.dart';
 import 'global_country_servers.dart';
 import 'country_coordinates_service.dart';
 import '../core/constants/country_servers.dart' as country_names;
-import 'dart:math' as math;
 
 /// 真实的全球发送服务
 /// 直接发送到249个国家的服务器地址，不使用代理
 class RealGlobalSendService {
   final ValueChanged<int> onProgress;
   final ValueChanged<double> onDataSent;
+  final ValueChanged<double>? onCountryProgress;
   final VoidCallback onStopped;
   final void Function(String) onLog;
   final Function(
@@ -35,14 +32,12 @@ class RealGlobalSendService {
   int _sentCount = 0;
   double _dataSentInMB = 0.0;
   int _totalCountries = 0;
-  int _currentCountryIndex = 0;
   int _loopCount = 0; // 当前轮次
 
   // 全球249个国家的服务器配置（将动态加载）
   Map<String, List<String>> globalCountryServers = {};
 
   final CountryCoordinatesService _coordService = CountryCoordinatesService();
-  final math.Random _random = math.Random();
 
   // 用户位置（固定起点）
   double? _userLatitude;
@@ -51,6 +46,7 @@ class RealGlobalSendService {
   RealGlobalSendService({
     required this.onProgress,
     required this.onDataSent,
+    this.onCountryProgress,
     required this.onStopped,
     required this.onLog,
     this.onTransferBeam,
@@ -67,7 +63,7 @@ class RealGlobalSendService {
   Future<bool> initialize() async {
     // 直接使用内置的全球服务器配置
     try {
-      print('🌍 开始加载全球服务器配置...');
+      debugPrint('🌍 开始加载全球服务器配置...');
       globalCountryServers = GLOBAL_COUNTRY_SERVERS;
       _totalCountries = globalCountryServers.length;
       onLog('✅ 成功加载全球服务器配置，共$_totalCountries个国家');
@@ -82,11 +78,6 @@ class RealGlobalSendService {
     }
   }
 
-  // 内置备用配置
-  Map<String, List<String>> _getBuiltInConfig() {
-    return globalCountryServers;
-  }
-
   // 每次成功发送的回调
   final Function(int)? onCountrySent;
 
@@ -99,7 +90,6 @@ class RealGlobalSendService {
     _isRunning = true;
     _sentCount = 0; // 这里改为国家计数
     _dataSentInMB = 0.0;
-    _currentCountryIndex = 0;
 
     try {
       onLog('🚀 开始真实全球发送 - 文件数量: ${files.length}, 目标国家: $_totalCountries 个');
@@ -257,8 +247,6 @@ class RealGlobalSendService {
         failCount++;
         onLog('❌ 发送到 $countryName ($countryCode) 失败：《$scriptureTitle》');
       }
-
-      _currentCountryIndex++;
 
       // 关键修复：让出主线程控制权，避免阻塞UI
       await Future.delayed(Duration.zero);
@@ -499,51 +487,6 @@ class RealGlobalSendService {
       if (response.statusCode != 201) {
         throw Exception('HTTP ${response.statusCode}');
       }
-    }
-  }
-
-  /// 计算文件哈希（流式读取，不占用大量内存）
-  Future<String> _calculateFileHash(PlatformFile file) async {
-    try {
-      if (file.path != null) {
-        // 有文件路径：流式读取计算哈希
-        final fileObj = File(file.path!);
-        final stream = fileObj.openRead();
-
-        // 使用简单的分块哈希计算，避免依赖 AccumulatorSink
-        var hash = crypto.sha256.convert([]);
-        final chunks = <int>[];
-
-        await for (var chunk in stream) {
-          chunks.addAll(chunk);
-          // 每累积 1MB 计算一次中间哈希，防止内存过大
-          if (chunks.length > 1024 * 1024) {
-            hash = crypto.sha256.convert(chunks);
-            chunks.clear();
-            chunks.addAll(hash.bytes);
-          }
-        }
-
-        // 计算最终哈希
-        return crypto.sha256.convert(chunks).toString();
-      } else if (file.bytes != null && file.bytes!.length < 10 * 1024 * 1024) {
-        // 有内存数据且不太大
-        return crypto.sha256.convert(file.bytes!).toString();
-      } else {
-        // 无法计算，返回基于文件名和大小的伪哈希
-        return crypto.sha256
-            .convert(
-              utf8.encode(
-                '${file.name}-${file.size}-${DateTime.now().millisecondsSinceEpoch}',
-              ),
-            )
-            .toString();
-      }
-    } catch (e) {
-      // 哈希计算失败，返回伪哈希
-      return crypto.sha256
-          .convert(utf8.encode('${file.name}-${file.size}'))
-          .toString();
     }
   }
 
