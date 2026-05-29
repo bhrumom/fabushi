@@ -1,1 +1,1 @@
-export const CBETA_API_ROOT = "http://144.24.17.21.sslip.io:3000";
+export const CBETA_API_ROOT = "https://fabushi.ombhrum.com/api/cbeta";
