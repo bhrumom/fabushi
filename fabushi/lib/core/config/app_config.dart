@@ -203,10 +203,6 @@ class AppConfig {
 
   static String get healthCheckUrl => buildBackendUrl('/health');
 
-  // iOS 后台保活静音音频
-  static String get silenceAudioUrl =>
-      buildBackendUrl('/static/audio/silence.mp3');
-
   // 3D 佛像模型配置
   // 如果 R2 上需要切换到新的对象键，优先改这里，便于强制绕开旧缓存。
   static const String buddhaModelAssetPath = 'models/buddha_model.model';

@@ -1164,7 +1164,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
         totalCountries: _countryStatuses.length,
       );
 
-      debugPrint('✅ 后台音频服务已启动');
+      debugPrint('✅ 无音频后台辅助服务已启动');
     } catch (e) {
       debugPrint('⚠️ 启动后台服务失败: $e');
     }
@@ -1179,7 +1179,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _stopBackgroundService() async {
     try {
       await _keepAliveService.stop();
-      debugPrint('✅ 后台音频服务已停止');
+      debugPrint('✅ 无音频后台辅助服务已停止');
     } catch (e) {
       debugPrint('⚠️ 停止后台服务失败: $e');
     }
