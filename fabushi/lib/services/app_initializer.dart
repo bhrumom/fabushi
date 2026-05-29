@@ -57,10 +57,10 @@ class AppInitializer {
           debugPrint('✅ 内存管理器初始化完成');
         });
 
-        // 初始化统一保活服务（基于 audio_service + MediaSession）
+        // 初始化无音频后台辅助服务（进度通知 + WorkManager 心跳）
         optimizer.addInitTask(() async {
           await KeepAliveService.instance.initialize();
-          debugPrint('✅ 统一保活服务初始化完成');
+          debugPrint('✅ 无音频后台辅助服务初始化完成');
         });
 
         // 初始化 WorkManager 恢复机制（仅 Android）
