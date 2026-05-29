@@ -305,7 +305,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               icon: const Icon(Icons.leaderboard, color: Colors.white),
               style: IconButton.styleFrom(
                 backgroundColor: AppTheme.glassDecoration.color,
-                highlightColor: AppTheme.primaryColor.withOpacity(0.3),
+                highlightColor: AppTheme.primaryColor.withValues(alpha: 0.3),
               ),
               tooltip: '排行榜',
             ),
@@ -316,6 +316,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 return const SizedBox.shrink();
               }
               final scripture = model.currentSendingScripture;
+              final materialCompleted = model.isCurrentMaterialCompleted;
+              final countryProgress = model.currentCountryProgress;
               return Positioned(
                 top: 70,
                 left: 20,
@@ -327,21 +329,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                       vertical: 10,
                     ),
                     decoration: AppTheme.glassDecoration.copyWith(
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.cyan,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
                         Flexible(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
@@ -350,6 +343,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                               Text(
                                 scripture.isEmpty
                                     ? '正在发送内容'
+                                    : materialCompleted
+                                    ? '已完成《$scripture》'
                                     : '正在发送《$scripture》',
                                 style: const TextStyle(
                                   color: Colors.white,
@@ -360,9 +355,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                                 overflow: TextOverflow.ellipsis,
                               ),
                               Text(
-                                '目标: $_currentSendingCountry',
+                                '发送到 $_currentSendingCountry',
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.78),
+                                  color: Colors.white.withValues(alpha: 0.78),
                                   fontSize: 12,
                                 ),
                                 maxLines: 1,
@@ -371,6 +366,27 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                             ],
                           ),
                         ),
+                        const SizedBox(width: 10),
+                        materialCompleted
+                            ? const Icon(
+                                Icons.check_circle,
+                                color: Colors.greenAccent,
+                                size: 18,
+                              )
+                            : SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  value:
+                                      countryProgress != null &&
+                                          countryProgress > 0 &&
+                                          countryProgress < 1
+                                      ? countryProgress
+                                      : null,
+                                  strokeWidth: 2,
+                                  color: Colors.cyan,
+                                ),
+                              ),
                       ],
                     ),
                   ),
@@ -403,9 +419,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.amber.withOpacity(0.16),
+                      color: Colors.amber.withValues(alpha: 0.16),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.amber.withOpacity(0.35)),
+                      border: Border.all(
+                        color: Colors.amber.withValues(alpha: 0.35),
+                      ),
                     ),
                     child: Row(
                       children: [
@@ -440,10 +458,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withOpacity(0.15),
+                      color: AppTheme.primaryColor.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: AppTheme.primaryColor.withOpacity(0.3),
+                        color: AppTheme.primaryColor.withValues(alpha: 0.3),
                       ),
                     ),
                     child: Column(
@@ -476,16 +494,21 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              Icon(
-                                Icons.sync,
-                                color: Colors.cyanAccent,
-                                size: 16,
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.cyanAccent,
+                                ),
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                '动态杨升激活: ${model.loopbackCount} 次',
+                                '动态杨升高速转轮中',
                                 style: TextStyle(
-                                  color: Colors.cyanAccent.withOpacity(0.9),
+                                  color: Colors.cyanAccent.withValues(
+                                    alpha: 0.9,
+                                  ),
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -499,7 +522,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.cyanAccent.withOpacity(0.5),
+                                      color: Colors.cyanAccent.withValues(
+                                        alpha: 0.5,
+                                      ),
                                       blurRadius: 4,
                                       spreadRadius: 1,
                                     ),
@@ -537,7 +562,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.purple.withOpacity(0.5),
+                                      color: Colors.purple.withValues(
+                                        alpha: 0.5,
+                                      ),
                                       blurRadius: 4,
                                       spreadRadius: 1,
                                     ),
@@ -551,7 +578,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
                           child: LinearProgressIndicator(
-                            backgroundColor: Colors.white.withOpacity(0.2),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.2,
+                            ),
                             valueColor: AlwaysStoppedAnimation<Color>(
                               AppTheme.primaryColor,
                             ),
@@ -584,11 +613,13 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     ),
                     decoration: BoxDecoration(
                       color: model.isFieldEnergyMode
-                          ? Colors.purple.withOpacity(0.2)
-                          : Colors.white.withOpacity(0.1),
+                          ? Colors.purple.withValues(alpha: 0.2)
+                          : Colors.white.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                       border: model.isFieldEnergyMode
-                          ? Border.all(color: Colors.purple.withOpacity(0.5))
+                          ? Border.all(
+                              color: Colors.purple.withValues(alpha: 0.5),
+                            )
                           : null,
                     ),
                     child: Row(
@@ -628,7 +659,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                                           : '自动开启热点向周围广播',
                                       style: TextStyle(
                                         color: model.isFieldEnergyMode
-                                            ? Colors.purple.withOpacity(0.7)
+                                            ? Colors.purple.withValues(
+                                                alpha: 0.7,
+                                              )
                                             : Colors.white54,
                                         fontSize: 10,
                                       ),
@@ -653,7 +686,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                                 model.clearHotspotGuide();
                               }
                             },
-                            activeColor: Colors.purple,
+                            activeThumbColor: Colors.purple,
                           ),
                         ),
                       ],
@@ -735,7 +768,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final icon = _contentIcon(model.selectedContentKind);
 
     return Material(
-      color: Colors.white.withOpacity(0.1),
+      color: Colors.white.withValues(alpha: 0.1),
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -761,7 +794,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                             child: Text(
                               model.selectedContentKind,
                               style: TextStyle(
-                                color: AppTheme.primaryColor.withOpacity(0.9),
+                                color: AppTheme.primaryColor.withValues(
+                                  alpha: 0.9,
+                                ),
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -908,9 +943,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.purple.withOpacity(0.2),
+                color: Colors.purple.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                border: Border.all(color: Colors.purple.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
@@ -1011,10 +1046,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   subtitle: '发送手机本机文件',
                   onTap: () async {
                     final navigator = Navigator.of(sheetContext);
-                    final before = model.selectedFiles.length;
-                    await model.selectFiles();
+                    final selected = await model.selectFiles(
+                      replaceExisting: true,
+                    );
                     if (navigator.mounted) {
-                      navigator.pop(model.selectedFiles.length > before);
+                      navigator.pop(selected);
                     }
                   },
                 ),
@@ -1234,7 +1270,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   void _startSending(FileTransferModel model) async {
     if (model.isPreparingSend || model.isTransferring) return;
 
-    final prepared = await _showSendContentSheet(model);
+    final prepared = model.hasFiles || await _showSendContentSheet(model);
     if (!prepared || !mounted || !model.hasFiles) {
       return;
     }
