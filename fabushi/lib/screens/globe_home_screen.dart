@@ -1234,16 +1234,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   void _startSending(FileTransferModel model) async {
     if (model.isPreparingSend || model.isTransferring) return;
 
-    if (!model.hasFiles) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('请先点“选择发送内容”选择链接、文本、本机文件或禅室佛像素材。'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.black87,
-          ),
-        );
-      }
+    final prepared = await _showSendContentSheet(model);
+    if (!prepared || !mounted || !model.hasFiles) {
       return;
     }
 
