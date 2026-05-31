@@ -323,39 +323,6 @@ class _MembershipScreenState extends State<MembershipScreen>
     }
   }
 
-  Future<String?> _showPaymentMethodDialog() async {
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('选择支付方式'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.credit_card, color: Colors.blue),
-              title: const Text('Stripe (信用卡)'),
-              onTap: () => Navigator.of(context).pop('stripe'),
-            ),
-            ListTile(
-              leading: const Icon(
-                Icons.account_balance_wallet,
-                color: Colors.green,
-              ),
-              title: const Text('支付宝'),
-              onTap: () => Navigator.of(context).pop('alipay'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// 根据平台自动选择合适的支付方式
   Future<String?> _getPaymentMethodForPlatform() async {
     // iOS 端使用 Apple IAP
@@ -378,8 +345,15 @@ class _MembershipScreenState extends State<MembershipScreen>
       debugPrint('检查支付宝安装状态失败: $e');
     }
 
-    // 如果支付宝不可用，显示支付方式选择对话框
-    return await _showPaymentMethodDialog();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('请先安装支付宝后再购买会员'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+    return null;
   }
 
   /// 检测是否为桌面平台

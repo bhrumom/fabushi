@@ -17,11 +17,13 @@ class AppleIapService {
   static const String monthlyProductId = 'monthly';
   static const String quarterlyProductId = 'Quarterly';
   static const String yearlyProductId = 'Annual';
+  static const String zenBuddhaAssetProductId = 'zen_buddha_asset';
 
   static const Set<String> _productIds = {
     monthlyProductId,
     quarterlyProductId,
     yearlyProductId,
+    zenBuddhaAssetProductId,
   };
 
   // 产品信息缓存
@@ -59,8 +61,11 @@ class AppleIapService {
       case 'yearly':
         result = yearlyProductId;
         break;
+      case 'zen_buddha_asset':
+        result = zenBuddhaAssetProductId;
+        break;
       default:
-        result = monthlyProductId;
+        result = _productIds.contains(priceType) ? priceType : monthlyProductId;
     }
     debugPrint('AppleIapService: getProductId($priceType) -> $result');
     return result;

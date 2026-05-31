@@ -107,7 +107,7 @@ class AppConfig {
   static const String appName = '大乘';
   // 保持与 pubspec.yaml 中的 version 同步，供 Web 回退和服务端比对使用。
   static const String appVersion = '1.0.0';
-  static const int appBuildNumber = 16;
+  static const int appBuildNumber = 400;
 
   // 功能开关
   static const bool enableFirebaseAuth = true;
@@ -183,6 +183,12 @@ class AppConfig {
 
   static String get appleVerifyReceiptUrl =>
       buildBackendUrl('/api/apple/verify-receipt');
+  static String get purchaseEntitlementUrl =>
+      buildBackendUrl('/api/purchases/entitlement');
+
+  static const String zenBuddhaAssetProductId = 'zen_buddha_asset';
+  static const String zenBuddhaAssetDisplayName = '禅室佛像素材';
+  static const String zenBuddhaAssetPriceLabel = '¥33.00';
 
   static String get adminCheckStatusUrl =>
       buildBackendUrl('/api/admin/check-status');
