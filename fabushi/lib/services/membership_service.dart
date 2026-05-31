@@ -71,6 +71,7 @@ class MembershipService {
           'orderId': response['orderId'],
           'amount': response['amount'],
           'plan': response['plan'],
+          'productType': response['productType'],
           'orderString': response['orderString'],
         };
       }
@@ -100,12 +101,40 @@ class MembershipService {
           'orderId': response['orderId'],
           'amount': response['amount'],
           'plan': response['plan'],
+          'productType': response['productType'],
         };
       }
 
       return _failureResponse(response, '创建支付宝Web订单失败');
     } catch (e) {
       debugPrint('创建支付宝Web订单失败: $e');
+      return {'success': false, 'message': '网络连接失败'};
+    }
+  }
+
+  Future<Map<String, dynamic>> checkPurchaseEntitlement(
+    String token,
+    String productId,
+  ) async {
+    try {
+      final endpoint = Uri.parse(AppConfig.purchaseEntitlementUrl).path;
+      final response = await _apiClient.get(
+        endpoint,
+        token: token,
+        queryParams: {'product': productId},
+      );
+
+      if (_isSuccess(response)) {
+        return {
+          'success': true,
+          'product': response['product'],
+          'unlocked': response['unlocked'] == true,
+        };
+      }
+
+      return _failureResponse(response, '查询付费项目状态失败');
+    } catch (e) {
+      debugPrint('查询付费项目状态失败: $e');
       return {'success': false, 'message': '网络连接失败'};
     }
   }
@@ -294,6 +323,8 @@ class MembershipService {
           'message': response['message'] ?? '会员激活成功',
           'membershipType': response['membershipType'],
           'expiresAt': response['expiresAt'],
+          'productType': response['productType'],
+          'unlocked': response['unlocked'] == true,
           'alreadyProcessed': response['alreadyProcessed'] == true,
         };
       }

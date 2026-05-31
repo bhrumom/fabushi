@@ -1,12 +1,18 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../core/config/app_config.dart';
+import '../features/auth/application/auth_model.dart';
 import '../models/file_transfer_model.dart';
 import '../widgets/earth_globe_widget.dart';
 import 'leaderboard_screen.dart';
 import '../core/design_system/app_theme.dart';
+import '../services/alipay_service.dart';
+import '../services/apple_iap_service.dart';
+import '../services/membership_service.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/online_counter_widget.dart';
 import '../widgets/auto_start_guide_dialog.dart';
@@ -27,6 +33,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   bool _isCallbackSetup = false;
   bool _isVisible = true;
   final _onlineCounterService = OnlineCounterService();
+  final _membershipService = MembershipService();
+  final _alipayService = AlipayService();
+  final _appleIapService = AppleIapService();
+  bool? _buddhaAssetUnlocked;
+  bool _isPurchasingBuddhaAsset = false;
 
   void setVisible(bool visible) {
     if (_isVisible == visible) return;
@@ -1253,8 +1264,266 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
+  void _showBuddhaAssetMessage(String message, {Color? color}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
+  }
+
+  Future<bool> _ensureBuddhaAssetUnlocked() async {
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    final token = authModel.authToken;
+    if (!authModel.isLoggedIn || token == null) {
+      _showBuddhaAssetMessage('请先登录后再解锁禅室佛像素材', color: Colors.orange);
+      return false;
+    }
+
+    if (_buddhaAssetUnlocked == true) {
+      return true;
+    }
+
+    final unlocked = await _checkBuddhaAssetEntitlement(authModel);
+    if (unlocked) return true;
+
+    return await _showBuddhaAssetPaywall(token);
+  }
+
+  Future<bool> _checkBuddhaAssetEntitlement(AuthModel authModel) async {
+    final token = authModel.authToken;
+    if (token == null) return false;
+
+    final result = await _membershipService.checkPurchaseEntitlement(
+      token,
+      AppConfig.zenBuddhaAssetProductId,
+    );
+    if (result['success'] == true) {
+      final unlocked = result['unlocked'] == true;
+      if (mounted) {
+        setState(() => _buddhaAssetUnlocked = unlocked);
+      }
+      return unlocked;
+    }
+
+    return _buddhaAssetUnlocked == true;
+  }
+
+  Future<bool> _showBuddhaAssetPaywall(String token) async {
+    final unlocked = await showDialog<bool>(
+      context: context,
+      barrierDismissible: !_isPurchasingBuddhaAsset,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('解锁${AppConfig.zenBuddhaAssetDisplayName}'),
+        content: const Text('付费后可在首页选择禅室内佛像模型素材，并加入全球发送内容。'),
+        actions: [
+          TextButton(
+            onPressed: _isPurchasingBuddhaAsset
+                ? null
+                : () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.lock_open, size: 18),
+            label: Text('${AppConfig.zenBuddhaAssetPriceLabel} 解锁'),
+            onPressed: _isPurchasingBuddhaAsset
+                ? null
+                : () async {
+                    final navigator = Navigator.of(dialogContext);
+                    final success = AppleIapService.isAppleIapPlatform
+                        ? await _purchaseBuddhaAssetWithApple(token)
+                        : await _purchaseBuddhaAssetWithAlipay(token);
+                    if (success && navigator.mounted) {
+                      navigator.pop(true);
+                    }
+                  },
+          ),
+        ],
+      ),
+    );
+
+    return unlocked == true;
+  }
+
+  Future<bool> _purchaseBuddhaAssetWithApple(String token) async {
+    if (!AppleIapService.isAppleIapPlatform) {
+      _showBuddhaAssetMessage('当前平台不支持 Apple 内购', color: Colors.red);
+      return false;
+    }
+
+    if (mounted) setState(() => _isPurchasingBuddhaAsset = true);
+    final completer = Completer<bool>();
+    final previousSuccess = _appleIapService.onPurchaseSuccess;
+    final previousError = _appleIapService.onPurchaseError;
+
+    try {
+      final available = await _appleIapService.initialize();
+      if (!available) {
+        _showBuddhaAssetMessage('Apple 内购暂不可用，请稍后再试', color: Colors.red);
+        return false;
+      }
+
+      _appleIapService.onPurchaseSuccess = (purchase) async {
+        if (purchase.productID != AppConfig.zenBuddhaAssetProductId) {
+          previousSuccess?.call(purchase);
+          return;
+        }
+
+        final transactionId = _appleIapService.getTransactionId(purchase);
+        if (transactionId == null) {
+          _showBuddhaAssetMessage('Apple 交易号为空，无法完成解锁', color: Colors.red);
+          if (!completer.isCompleted) completer.complete(false);
+          return;
+        }
+
+        final result = await _membershipService.verifyAppleReceipt(
+          token,
+          transactionId,
+          purchase.productID,
+        );
+        final unlocked =
+            result['success'] == true &&
+            (result['unlocked'] == true ||
+                result['productType'] == 'asset_unlock');
+
+        if (unlocked) {
+          if (mounted) setState(() => _buddhaAssetUnlocked = true);
+          _showBuddhaAssetMessage('禅室佛像素材已解锁', color: Colors.green);
+        } else {
+          _showBuddhaAssetMessage(
+            result['message'] ?? 'Apple 内购验证失败',
+            color: Colors.red,
+          );
+        }
+
+        if (!completer.isCompleted) completer.complete(unlocked);
+      };
+
+      _appleIapService.onPurchaseError = (error) {
+        _showBuddhaAssetMessage(error, color: Colors.red);
+        if (!completer.isCompleted) completer.complete(false);
+        previousError?.call(error);
+      };
+
+      final started = await _appleIapService.purchase(
+        AppConfig.zenBuddhaAssetProductId,
+      );
+      if (!started && !completer.isCompleted) {
+        completer.complete(false);
+      }
+
+      return await completer.future.timeout(
+        const Duration(minutes: 2),
+        onTimeout: () {
+          _showBuddhaAssetMessage(
+            'Apple 内购结果超时，请稍后检查解锁状态',
+            color: Colors.orange,
+          );
+          return false;
+        },
+      );
+    } finally {
+      _appleIapService.onPurchaseSuccess = previousSuccess;
+      _appleIapService.onPurchaseError = previousError;
+      if (mounted) setState(() => _isPurchasingBuddhaAsset = false);
+    }
+  }
+
+  Future<bool> _purchaseBuddhaAssetWithAlipay(String token) async {
+    if (kIsWeb || !Platform.isAndroid) {
+      _showBuddhaAssetMessage('请在 Android 手机端使用支付宝解锁', color: Colors.orange);
+      return false;
+    }
+
+    if (mounted) setState(() => _isPurchasingBuddhaAsset = true);
+    try {
+      final initResult = await _alipayService.initAlipay();
+      if (initResult['success'] != true) {
+        _showBuddhaAssetMessage(
+          initResult['message'] ?? '请先安装支付宝后再解锁',
+          color: Colors.red,
+        );
+        return false;
+      }
+
+      final orderResult = await _membershipService.createAlipayOrder(
+        token,
+        AppConfig.zenBuddhaAssetProductId,
+      );
+      if (orderResult['success'] != true) {
+        _showBuddhaAssetMessage(
+          orderResult['message'] ?? '创建支付宝订单失败',
+          color: Colors.red,
+        );
+        return false;
+      }
+
+      final orderId = orderResult['orderId']?.toString();
+      final orderString = orderResult['orderString']?.toString();
+      if (orderId == null ||
+          orderId.isEmpty ||
+          orderString == null ||
+          orderString.isEmpty) {
+        _showBuddhaAssetMessage('支付宝订单参数不完整', color: Colors.red);
+        return false;
+      }
+
+      final payResult = await _alipayService.payWithAlipay(orderString);
+      final resultStatus = payResult['resultStatus']?.toString();
+      if (payResult['success'] == true ||
+          resultStatus == '8000' ||
+          resultStatus == '6004') {
+        return await _waitForBuddhaAssetAlipayUnlock(token, orderId);
+      }
+
+      _showBuddhaAssetMessage(
+        payResult['message'] ?? '支付宝支付未完成',
+        color: Colors.orange,
+      );
+      return false;
+    } finally {
+      if (mounted) setState(() => _isPurchasingBuddhaAsset = false);
+    }
+  }
+
+  Future<bool> _waitForBuddhaAssetAlipayUnlock(
+    String token,
+    String orderId,
+  ) async {
+    const maxRetries = 12;
+    const retryDelay = Duration(seconds: 3);
+
+    for (var i = 0; i < maxRetries; i++) {
+      await Future.delayed(retryDelay);
+      final orderStatus = await _membershipService.queryAlipayOrderStatus(
+        token,
+        orderId,
+      );
+
+      if (orderStatus['status'] == 'PAID') {
+        if (!mounted) return false;
+        final authModel = Provider.of<AuthModel>(context, listen: false);
+        final unlocked = await _checkBuddhaAssetEntitlement(authModel);
+        if (unlocked) {
+          _showBuddhaAssetMessage('禅室佛像素材已解锁', color: Colors.green);
+          return true;
+        }
+      }
+    }
+
+    _showBuddhaAssetMessage('支付状态确认超时，请稍后重新进入首页检查', color: Colors.orange);
+    return false;
+  }
+
+  bool _isBuddhaAssetSelected(FileTransferModel model) {
+    return model.selectedContentKind == AppConfig.zenBuddhaAssetDisplayName ||
+        model.currentSendingScripture == AppConfig.zenBuddhaAssetDisplayName;
+  }
+
   Future<bool> _selectBuddhaAsset(FileTransferModel model) async {
     try {
+      final unlocked = await _ensureBuddhaAssetUnlocked();
+      if (!unlocked) return false;
+
       await model.addZenBuddhaAssetForSending();
       return true;
     } catch (e) {
@@ -1269,6 +1538,14 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   void _startSending(FileTransferModel model) async {
     if (model.isPreparingSend || model.isTransferring) return;
+
+    if (model.hasFiles && _isBuddhaAssetSelected(model)) {
+      final unlocked = await _ensureBuddhaAssetUnlocked();
+      if (!unlocked) {
+        model.clearFiles();
+        return;
+      }
+    }
 
     final prepared = model.hasFiles || await _showSendContentSheet(model);
     if (!prepared || !mounted || !model.hasFiles) {
