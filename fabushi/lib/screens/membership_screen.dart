@@ -17,7 +17,7 @@ import '../services/alipay_service.dart';
 import '../services/apple_iap_service.dart';
 
 class MembershipScreen extends StatefulWidget {
-  const MembershipScreen({Key? key}) : super(key: key);
+  const MembershipScreen({super.key});
 
   @override
   State<MembershipScreen> createState() => _MembershipScreenState();
@@ -235,6 +235,8 @@ class _MembershipScreenState extends State<MembershipScreen>
         'MembershipScreen: 选定的支付方式为: $paymentMethod, 价格类型: $priceType',
       );
 
+      if (!mounted) return;
+
       if (paymentMethod == null) {
         setState(() {
           _isLoading = false;
@@ -257,7 +259,8 @@ class _MembershipScreenState extends State<MembershipScreen>
         if (result['success'] == true) {
           // Stripe支付成功，跳转到支付页面
           final paymentUrl = result['paymentUrl'];
-          if (paymentUrl != null && mounted) {
+          if (!mounted) return;
+          if (paymentUrl != null) {
             _launchStripePayment(paymentUrl, result['sessionId']);
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -409,6 +412,16 @@ class _MembershipScreenState extends State<MembershipScreen>
                 'AppleIapService: 后台续订或已处理，跳过提示弹窗 (isLoading=$_isLoading, alreadyProcessed=$alreadyProcessed)',
               );
             }
+            final rawExpiresAt = result['expiresAt'];
+            final parsedExpiry = rawExpiresAt is String
+                ? DateTime.tryParse(rawExpiresAt)
+                : null;
+            if (parsedExpiry != null) {
+              await authModel.applyMembershipUpdate(
+                membershipType: result['membershipType'] as String? ?? 'paid',
+                membershipExpiry: parsedExpiry,
+              );
+            }
             await authModel.refreshUserInfo();
             _loadHistory();
           } else {
@@ -469,6 +482,7 @@ class _MembershipScreenState extends State<MembershipScreen>
 
       // 发起支付宝APP支付
       final payResult = await _alipayService.payWithAlipay(orderString);
+      if (!mounted) return;
 
       if (payResult['success'] == true) {
         // 支付成功，检查订单状态
@@ -483,6 +497,7 @@ class _MembershipScreenState extends State<MembershipScreen>
         );
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('支付宝支付异常: $e'), backgroundColor: Colors.red),
       );
@@ -498,6 +513,7 @@ class _MembershipScreenState extends State<MembershipScreen>
       final uri = Uri.parse(paymentUrl);
 
       if (await canLaunchUrl(uri)) {
+        if (!mounted) return;
         // 在Web平台上使用window.open打开支付页面，使用同一标签页而不是新窗口
         if (kIsWeb) {
           html.window.open(paymentUrl, '_self');
@@ -508,6 +524,7 @@ class _MembershipScreenState extends State<MembershipScreen>
         // 启动定时器检查支付状态
         _startOrderStatusCheck(orderId);
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('无法打开支付宝支付页面'),
@@ -516,6 +533,7 @@ class _MembershipScreenState extends State<MembershipScreen>
         );
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('启动支付宝支付失败: $e'), backgroundColor: Colors.red),
       );
@@ -528,7 +546,7 @@ class _MembershipScreenState extends State<MembershipScreen>
     const maxChecks = 20; // 最多检查60秒
     int checkCount = 0;
 
-    final timer = Timer.periodic(checkInterval, (timer) async {
+    Timer.periodic(checkInterval, (timer) async {
       checkCount++;
 
       if (checkCount >= maxChecks) {
@@ -576,6 +594,7 @@ class _MembershipScreenState extends State<MembershipScreen>
       final uri = Uri.parse(paymentUrl);
 
       if (await canLaunchUrl(uri)) {
+        if (!mounted) return;
         // 在Web平台上使用window.open打开支付页面，使用同一标签页而不是新窗口
         if (kIsWeb) {
           html.window.open(paymentUrl, '_self');
@@ -586,6 +605,7 @@ class _MembershipScreenState extends State<MembershipScreen>
         // 启动定时器检查支付状态
         _startStripeOrderStatusCheck(sessionId);
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('无法打开Stripe支付页面'),
@@ -594,6 +614,7 @@ class _MembershipScreenState extends State<MembershipScreen>
         );
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('启动Stripe支付失败: $e'),
@@ -609,7 +630,7 @@ class _MembershipScreenState extends State<MembershipScreen>
     const maxChecks = 20; // 最多检查60秒
     int checkCount = 0;
 
-    final timer = Timer.periodic(checkInterval, (timer) async {
+    Timer.periodic(checkInterval, (timer) async {
       checkCount++;
 
       if (checkCount >= maxChecks) {
@@ -982,7 +1003,7 @@ class _MembershipScreenState extends State<MembershipScreen>
                                 ],
                               ),
                             );
-                          }).toList(),
+                          }),
                           const SizedBox(height: 16),
                           SizedBox(
                             width: double.infinity,
@@ -1030,7 +1051,7 @@ class _MembershipScreenState extends State<MembershipScreen>
                 ),
               ),
             );
-          }).toList(),
+          }),
 
           // iOS 端显示"恢复购买"按钮（App Store 审核要求）
           if (AppleIapService.isAppleIapPlatform) ...[
@@ -1053,7 +1074,7 @@ class _MembershipScreenState extends State<MembershipScreen>
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -1145,7 +1166,7 @@ class _MembershipScreenState extends State<MembershipScreen>
 
   // 构建历史记录部分
   Widget _buildHistorySection() {
-    return Container(
+    return SizedBox(
       height: 400,
       child: Card(
         elevation: 4,
@@ -1237,14 +1258,13 @@ class _MembershipScreenState extends State<MembershipScreen>
                 ),
                 Text('金额: ¥${record.amount}'),
                 Text('支付方式: ${_getPaymentMethodName(record.paymentMethod)}'),
-                if (record.status != null)
-                  Text(
-                    '状态: ${_getStatusText(record.status!)}',
-                    style: TextStyle(
-                      color: _getStatusColor(record.status!),
-                      fontWeight: FontWeight.bold,
-                    ),
+                Text(
+                  '状态: ${_getStatusText(record.status)}',
+                  style: TextStyle(
+                    color: _getStatusColor(record.status),
+                    fontWeight: FontWeight.bold,
                   ),
+                ),
               ],
             ),
             trailing: Icon(

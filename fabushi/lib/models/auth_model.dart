@@ -50,7 +50,9 @@ class User {
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       username: json['username'] ?? '',
-      userNo: _parseOptionalInt(json['userNo'] ?? json['user_no'] ?? json['id']),
+      userNo: _parseOptionalInt(
+        json['userNo'] ?? json['user_no'] ?? json['id'],
+      ),
       email: json['email'] ?? '',
       membershipType: json['membershipType'],
       membershipExpiry: json['membershipExpiry'] != null
@@ -62,7 +64,8 @@ class User {
       avatar: json['avatar'],
       phoneNumber: json['phoneNumber'],
       firebaseUid: json['firebaseUid'],
-      usernameChangedAt: json['usernameChangedAt'] ?? json['username_changed_at'],
+      usernameChangedAt:
+          json['usernameChangedAt'] ?? json['username_changed_at'],
     );
   }
 
@@ -81,6 +84,36 @@ class User {
       'firebaseUid': firebaseUid,
       'usernameChangedAt': usernameChangedAt,
     };
+  }
+
+  User copyWith({
+    String? username,
+    int? userNo,
+    String? email,
+    String? membershipType,
+    DateTime? membershipExpiry,
+    bool? isAdmin,
+    String? alipayUserId,
+    String? nickname,
+    String? avatar,
+    String? phoneNumber,
+    String? firebaseUid,
+    String? usernameChangedAt,
+  }) {
+    return User(
+      username: username ?? this.username,
+      userNo: userNo ?? this.userNo,
+      email: email ?? this.email,
+      membershipType: membershipType ?? this.membershipType,
+      membershipExpiry: membershipExpiry ?? this.membershipExpiry,
+      isAdmin: isAdmin ?? this.isAdmin,
+      alipayUserId: alipayUserId ?? this.alipayUserId,
+      nickname: nickname ?? this.nickname,
+      avatar: avatar ?? this.avatar,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      firebaseUid: firebaseUid ?? this.firebaseUid,
+      usernameChangedAt: usernameChangedAt ?? this.usernameChangedAt,
+    );
   }
 
   String get displayName => nickname?.isNotEmpty == true ? nickname! : username;
@@ -142,9 +175,7 @@ class AuthModel extends ChangeNotifier {
       final normalizedPayload = base64.normalize(
         parts[1].replaceAll('-', '+').replaceAll('_', '/'),
       );
-      final payload = jsonDecode(
-        utf8.decode(base64.decode(normalizedPayload)),
-      );
+      final payload = jsonDecode(utf8.decode(base64.decode(normalizedPayload)));
       if (payload is Map) {
         return User._parseOptionalInt(
           payload['userNo'] ??
@@ -257,9 +288,13 @@ class AuthModel extends ChangeNotifier {
       nickname: userJson['nickname'],
       avatar: userJson['avatar'],
       phoneNumber:
-          userJson['phoneNumber'] ?? userJson['phone_number'] ?? fallbackPhoneNumber,
+          userJson['phoneNumber'] ??
+          userJson['phone_number'] ??
+          fallbackPhoneNumber,
       firebaseUid:
-          userJson['firebaseUid'] ?? userJson['firebase_uid'] ?? fallbackFirebaseUid,
+          userJson['firebaseUid'] ??
+          userJson['firebase_uid'] ??
+          fallbackFirebaseUid,
       usernameChangedAt:
           userJson['usernameChangedAt'] ?? userJson['username_changed_at'],
     );
@@ -330,7 +365,9 @@ class AuthModel extends ChangeNotifier {
         _token = result['token'];
         final userJson = result['user'];
 
-        final adminStatusResult = await _membershipService.getAdminStats(_token!);
+        final adminStatusResult = await _membershipService.getAdminStats(
+          _token!,
+        );
         final bool isAdmin =
             adminStatusResult['success'] == true &&
             adminStatusResult['isAdmin'] == true;
@@ -528,6 +565,30 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
+  Future<void> applyMembershipUpdate({
+    required String membershipType,
+    required DateTime membershipExpiry,
+  }) async {
+    final user = _currentUser;
+    final token = _token;
+    if (user == null || token == null) return;
+
+    final currentExpiry = user.membershipExpiry;
+    if (currentExpiry != null && currentExpiry.isAfter(membershipExpiry)) {
+      return;
+    }
+
+    final updatedUser = user.copyWith(
+      membershipType: membershipType,
+      membershipExpiry: membershipExpiry,
+    );
+
+    _currentUser = updatedUser;
+    await _authService.setAuth(token, _buildStoredUserModel(updatedUser));
+    await _storeAuth();
+    notifyListeners();
+  }
+
   Future<Map<String, dynamic>> getAlipayLoginUrl({String? platform}) async {
     try {
       return await _alipayAuthService.getAlipayLoginUrl(platform: platform);
@@ -554,7 +615,7 @@ class AuthModel extends ChangeNotifier {
             ? _buildBootstrapUser(
                 _token!,
                 username,
-                userJson: Map<String, dynamic>.from(userJson as Map),
+                userJson: Map<String, dynamic>.from(userJson),
                 fallbackEmail: email,
                 fallbackMembershipType: 'trial',
                 fallbackMembershipExpiry: trialExpiry,
@@ -567,7 +628,10 @@ class AuthModel extends ChangeNotifier {
                 fallbackMembershipExpiry: trialExpiry,
               );
 
-        await _authService.setAuth(_token!, _buildStoredUserModel(bootstrapUser));
+        await _authService.setAuth(
+          _token!,
+          _buildStoredUserModel(bootstrapUser),
+        );
 
         _currentUser = bootstrapUser;
 
@@ -623,7 +687,7 @@ class AuthModel extends ChangeNotifier {
             ? _buildBootstrapUser(
                 _token!,
                 username,
-                userJson: Map<String, dynamic>.from(userJson as Map),
+                userJson: Map<String, dynamic>.from(userJson),
                 fallbackEmail: email ?? '',
                 fallbackMembershipType: 'trial',
                 fallbackMembershipExpiry: trialExpiry,
@@ -636,7 +700,10 @@ class AuthModel extends ChangeNotifier {
                 fallbackMembershipExpiry: trialExpiry,
               );
 
-        await _authService.setAuth(_token!, _buildStoredUserModel(bootstrapUser));
+        await _authService.setAuth(
+          _token!,
+          _buildStoredUserModel(bootstrapUser),
+        );
 
         _currentUser = bootstrapUser;
 
@@ -706,7 +773,10 @@ class AuthModel extends ChangeNotifier {
                 fallbackMembershipExpiry: trialExpiry,
               );
 
-        await _authService.setAuth(_token!, _buildStoredUserModel(bootstrapUser));
+        await _authService.setAuth(
+          _token!,
+          _buildStoredUserModel(bootstrapUser),
+        );
 
         _currentUser = bootstrapUser;
 
@@ -781,7 +851,10 @@ class AuthModel extends ChangeNotifier {
                 fallbackMembershipExpiry: trialExpiry,
               );
 
-        await _authService.setAuth(_token!, _buildStoredUserModel(bootstrapUser));
+        await _authService.setAuth(
+          _token!,
+          _buildStoredUserModel(bootstrapUser),
+        );
 
         _currentUser = bootstrapUser;
 
@@ -829,7 +902,9 @@ class AuthModel extends ChangeNotifier {
         _token = loginResult['token'];
         final userJson = loginResult['user'];
 
-        final adminStatusResult = await _membershipService.getAdminStats(_token!);
+        final adminStatusResult = await _membershipService.getAdminStats(
+          _token!,
+        );
         final bool isAdmin =
             adminStatusResult['success'] == true &&
             adminStatusResult['isAdmin'] == true;
@@ -888,7 +963,9 @@ class AuthModel extends ChangeNotifier {
           _token = result['token'];
           final userJson = result['user'];
 
-          final adminStatusResult = await _membershipService.getAdminStats(_token!);
+          final adminStatusResult = await _membershipService.getAdminStats(
+            _token!,
+          );
           final bool isAdmin =
               adminStatusResult['success'] == true &&
               adminStatusResult['isAdmin'] == true;
@@ -900,7 +977,9 @@ class AuthModel extends ChangeNotifier {
               fallbackUsername: autoUsername,
               fallbackEmail: autoEmail,
               fallbackMembershipType: 'trial',
-              fallbackMembershipExpiry: DateTime.now().add(const Duration(days: 3)),
+              fallbackMembershipExpiry: DateTime.now().add(
+                const Duration(days: 3),
+              ),
             );
           } else {
             _currentUser = User(
@@ -986,7 +1065,8 @@ class AuthModel extends ChangeNotifier {
         fallbackUser: _currentUser,
         fallbackMembershipType: _currentUser?.membershipType ?? 'trial',
         fallbackMembershipExpiry:
-            _currentUser?.membershipExpiry ?? DateTime.now().add(const Duration(days: 3)),
+            _currentUser?.membershipExpiry ??
+            DateTime.now().add(const Duration(days: 3)),
       );
 
       await _authService.setAuth(token, _buildStoredUserModel(bootstrapUser));
