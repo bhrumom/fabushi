@@ -261,6 +261,7 @@ jobs:
             /fabushi/assets/**
             !/fabushi/assets/built_in/**
             /fabushi/fonts/**
+            /fabushi/ios/Runner/Configuration.storekit
             /fabushi/web/**
             !/fabushi/web/assets/built_in/**
 
@@ -279,6 +280,20 @@ jobs:
           fi
           grep -q "models/buddha_model.model" fabushi/lib/core/config/app_config.dart
           grep -q "AssetLoaderService.loadBuddhaModel" fabushi/lib/screens/buddha_model_screen_native.dart
+
+      - name: Verify Apple Buddha asset StoreKit product
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = JSON.parse(fs.readFileSync('fabushi/ios/Runner/Configuration.storekit', 'utf8'));
+          const product = (config.products || []).find((item) => item.productID === 'zen_buddha_asset');
+          if (!product) throw new Error('Missing zen_buddha_asset in StoreKit config');
+          if (product.type !== 'Non-Consumable') throw new Error(`Unexpected StoreKit product type: ${product.type}`);
+          if (product.displayPrice !== '33.00') throw new Error(`Unexpected StoreKit price: ${product.displayPrice}`);
+          NODE
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2

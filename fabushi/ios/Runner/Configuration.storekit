@@ -4,7 +4,26 @@
 
   ],
   "products" : [
-
+    {
+      "displayPrice" : "33.00",
+      "familyShareable" : false,
+      "internalID" : "C68BD234",
+      "localizations" : [
+        {
+          "description" : "Unlock the Zen room Buddha model asset",
+          "displayName" : "Zen Buddha Asset",
+          "locale" : "en_US"
+        },
+        {
+          "description" : "解锁禅室佛像模型素材",
+          "displayName" : "解锁佛像素材",
+          "locale" : "zh_Hans"
+        }
+      ],
+      "productID" : "zen_buddha_asset",
+      "referenceName" : "Zen Buddha Asset",
+      "type" : "Non-Consumable"
+    }
   ],
   "settings" : {
 
