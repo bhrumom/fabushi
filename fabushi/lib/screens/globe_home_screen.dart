@@ -8,6 +8,8 @@ import '../core/config/app_config.dart';
 import '../features/auth/application/auth_model.dart';
 import '../models/file_transfer_model.dart';
 import '../widgets/earth_globe_widget.dart';
+import '../widgets/home_world_2d_widget.dart';
+import '../widgets/scene_render_mode.dart';
 import 'leaderboard_screen.dart';
 import '../core/design_system/app_theme.dart';
 import '../services/alipay_service.dart';
@@ -26,12 +28,14 @@ class GlobeHomeScreen extends StatefulWidget {
 
 class GlobeHomeScreenState extends State<GlobeHomeScreen>
     with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
-  final GlobalKey<EarthGlobeWidgetState> _globeKey = GlobalKey();
+  final GlobalKey<HomeWorld2DWidgetState> _world2DKey = GlobalKey();
+  final GlobalKey<EarthGlobeWidgetState> _globe3DKey = GlobalKey();
   String _currentSendingCountry = '';
   final List<Map<String, dynamic>> _pendingBeams = [];
   bool _isGlobeLoaded = false;
   bool _isCallbackSetup = false;
   bool _isVisible = true;
+  SceneRenderMode _renderMode = SceneRenderMode.twoD;
   final _onlineCounterService = OnlineCounterService();
   final _membershipService = MembershipService();
   final _alipayService = AlipayService();
@@ -44,10 +48,91 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     _isVisible = visible;
     debugPrint('🌍 地球页面可见性变化: $visible');
 
-    _globeKey.currentState?.setRenderingPaused(!visible);
+    _syncActiveSceneVisibility();
     if (visible) {
       _playPendingBeams();
     }
+  }
+
+  bool get _canUseThreeDNow {
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
+    return SceneRenderAccess.canUseThreeDFor(authModel);
+  }
+
+  bool get _isThreeDActiveNow {
+    return _renderMode == SceneRenderMode.threeD && _canUseThreeDNow;
+  }
+
+  void _syncActiveSceneVisibility() {
+    final useThreeD = _isThreeDActiveNow;
+    _world2DKey.currentState?.setRenderingPaused(!_isVisible || useThreeD);
+    _globe3DKey.currentState?.setRenderingPaused(!_isVisible || !useThreeD);
+  }
+
+  void _selectRenderMode(SceneRenderMode mode) {
+    if (mode == SceneRenderMode.threeD && !_canUseThreeDNow) {
+      if (_renderMode != SceneRenderMode.twoD) {
+        setState(() => _renderMode = SceneRenderMode.twoD);
+      }
+      showThreeDMemberPrompt(context);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncActiveSceneVisibility();
+      });
+      return;
+    }
+
+    if (_renderMode == mode) return;
+    setState(() => _renderMode = mode);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncActiveSceneVisibility();
+      _playPendingBeams();
+    });
+  }
+
+  bool _addTransferBeamToScene(
+    double fromLat,
+    double fromLng,
+    double toLat,
+    double toLng, {
+    Duration? duration,
+    String? toLabel,
+  }) {
+    try {
+      if (_isThreeDActiveNow) {
+        final state = _globe3DKey.currentState;
+        if (state == null) return false;
+        state.addTransferBeam(
+          fromLat,
+          fromLng,
+          toLat,
+          toLng,
+          duration: duration,
+          toLabel: toLabel,
+        );
+        return true;
+      }
+
+      final state = _world2DKey.currentState;
+      if (state == null) return false;
+      state.addTransferBeam(
+        fromLat,
+        fromLng,
+        toLat,
+        toLng,
+        duration: duration,
+        toLabel: toLabel,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('❌ 添加 2D/3D 轨迹失败: $e');
+      return false;
+    }
+  }
+
+  void _clearActiveSceneBeams() {
+    _world2DKey.currentState?.clearBeams();
+    _globe3DKey.currentState?.clearBeams();
   }
 
   @override
@@ -122,7 +207,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   void _setupTransferBeamCallback() {
-    if (_isCallbackSetup && _globeKey.currentState != null) {
+    if (_isCallbackSetup &&
+        (_world2DKey.currentState != null ||
+            _globe3DKey.currentState != null)) {
       return;
     }
 
@@ -142,11 +229,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         });
       }
 
-      final state = _globeKey.currentState;
-
-      if (_isVisible && state != null) {
-        try {
-          state.addTransferBeam(
+      final added =
+          _isVisible &&
+          _addTransferBeamToScene(
             fromLat,
             fromLng,
             toLat,
@@ -154,10 +239,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
             duration: displayDuration ?? const Duration(milliseconds: 800),
             toLabel: toLabel,
           );
-        } catch (e) {
-          debugPrint('❌ 添加轨迹失败: $e');
-        }
-      } else {
+
+      if (!added) {
         _pendingBeams.add({
           'fromLat': fromLat,
           'fromLng': fromLng,
@@ -179,24 +262,25 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     if (_pendingBeams.isEmpty) return;
     if (!_isVisible) return;
 
-    final state = _globeKey.currentState;
-    if (state == null) {
+    final hasScene = _isThreeDActiveNow
+        ? _globe3DKey.currentState != null
+        : _world2DKey.currentState != null;
+    if (!hasScene) {
       Future.delayed(const Duration(milliseconds: 500), _playPendingBeams);
       return;
     }
 
     for (final beam in _pendingBeams) {
-      try {
-        state.addTransferBeam(
-          beam['fromLat'] as double,
-          beam['fromLng'] as double,
-          beam['toLat'] as double,
-          beam['toLng'] as double,
-          duration: const Duration(seconds: 3),
-          toLabel: beam['toLabel'] as String?,
-        );
-      } catch (e) {
-        debugPrint('❌ 播放缓存目标点失败: $e');
+      final added = _addTransferBeamToScene(
+        beam['fromLat'] as double,
+        beam['fromLng'] as double,
+        beam['toLat'] as double,
+        beam['toLng'] as double,
+        duration: const Duration(seconds: 3),
+        toLabel: beam['toLabel'] as String?,
+      );
+      if (!added) {
+        debugPrint('❌ 播放缓存目标点失败');
       }
     }
     _pendingBeams.clear();
@@ -208,12 +292,19 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final authModel = Provider.of<AuthModel?>(context);
+    final canUseThreeD = SceneRenderAccess.canUseThreeDFor(authModel);
+    final effectiveMode = canUseThreeD ? _renderMode : SceneRenderMode.twoD;
+    final useThreeD = effectiveMode == SceneRenderMode.threeD;
 
     if (!_isCallbackSetup) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _setupTransferBeamCallback();
       });
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncActiveSceneVisibility();
+    });
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -225,9 +316,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 ? LayoutBuilder(
                     builder: (context, constraints) {
                       try {
-                        return EarthGlobeWidget(key: _globeKey);
+                        return useThreeD
+                            ? EarthGlobeWidget(key: _globe3DKey)
+                            : HomeWorld2DWidget(key: _world2DKey);
                       } catch (e) {
-                        debugPrint('⚠️ 地球组件渲染失败: $e');
+                        debugPrint('⚠️ 首页场景渲染失败: $e');
                         return Container(
                           color: Colors.transparent,
                           child: const Center(
@@ -241,7 +334,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                                 ),
                                 SizedBox(height: 16),
                                 Text(
-                                  '🌍 地球组件加载中...',
+                                  '🌍 首页场景加载中...',
                                   style: TextStyle(
                                     color: Colors.white70,
                                     fontSize: 16,
@@ -271,7 +364,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                           CircularProgressIndicator(color: Colors.cyan),
                           SizedBox(height: 16),
                           Text(
-                            '🌍 正在加载地球组件...',
+                            '🌍 正在加载首页场景...',
                             style: TextStyle(
                               color: Colors.white70,
                               fontSize: 16,
@@ -614,6 +707,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 10),
+                  _buildRenderModeSegment(),
                   const SizedBox(height: 12),
                   _buildSelectedContentTile(model),
                   const SizedBox(height: 8),
@@ -765,6 +860,81 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildRenderModeSegment() {
+    final canUseThreeD = _canUseThreeDNow;
+    final effectiveMode = canUseThreeD ? _renderMode : SceneRenderMode.twoD;
+
+    return Align(
+      alignment: Alignment.center,
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.26),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white24, width: 0.6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildRenderModeChoice(
+              mode: SceneRenderMode.twoD,
+              effectiveMode: effectiveMode,
+              locked: false,
+            ),
+            _buildRenderModeChoice(
+              mode: SceneRenderMode.threeD,
+              effectiveMode: effectiveMode,
+              locked: !canUseThreeD,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRenderModeChoice({
+    required SceneRenderMode mode,
+    required SceneRenderMode effectiveMode,
+    required bool locked,
+  }) {
+    final selected = mode == effectiveMode;
+    return Tooltip(
+      message: locked ? '会员专享' : '${mode.shortLabel} 模式',
+      child: GestureDetector(
+        onTap: () => _selectRenderMode(mode),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppTheme.primaryColor.withValues(alpha: 0.92)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (locked) ...[
+                const Icon(Icons.lock, color: Colors.white70, size: 13),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                mode.shortLabel,
+                style: TextStyle(
+                  color: selected ? Colors.black : Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1272,9 +1442,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   Future<bool> _ensureBuddhaAssetUnlocked() async {
-    final authModel = Provider.of<AuthModel>(context, listen: false);
-    final token = authModel.authToken;
-    if (!authModel.isLoggedIn || token == null) {
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
+    final token = authModel?.authToken;
+    if (authModel == null || !authModel.isLoggedIn || token == null) {
       _showBuddhaAssetMessage('请先登录后再解锁禅室佛像素材', color: Colors.orange);
       return false;
     }
@@ -1501,7 +1671,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
       if (orderStatus['status'] == 'PAID') {
         if (!mounted) return false;
-        final authModel = Provider.of<AuthModel>(context, listen: false);
+        final authModel = Provider.of<AuthModel?>(context, listen: false);
+        if (authModel == null) return false;
         final unlocked = await _checkBuddhaAssetEntitlement(authModel);
         if (unlocked) {
           _showBuddhaAssetMessage('禅室佛像素材已解锁', color: Colors.green);
@@ -1561,7 +1732,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
 
     await _onlineCounterService.joinActivity('global_sending');
-    _globeKey.currentState?.clearBeams();
+    _clearActiveSceneBeams();
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1577,7 +1748,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final sentCount = model.globalSentCount;
 
     await _onlineCounterService.leaveActivity();
-    _globeKey.currentState?.clearBeams();
+    _clearActiveSceneBeams();
 
     if (mounted) {
       setState(() {
@@ -1608,7 +1779,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   void _stopSending(FileTransferModel model) async {
     model.stopTransfer();
     await _onlineCounterService.leaveActivity();
-    _globeKey.currentState?.clearBeams();
+    _clearActiveSceneBeams();
 
     setState(() {
       _currentSendingCountry = '';
