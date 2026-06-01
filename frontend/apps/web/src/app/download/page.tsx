@@ -38,10 +38,10 @@ const downloadFaqs = [
     answerEn: "Use the main download button on the current card again, then confirm that you downloaded the matching platform and version. If it still fails, send the device model, OS version, and an error screenshot to support.",
   },
   {
-    questionZh: "iOS 为什么会打开 TestFlight？",
-    questionEn: "Why does iOS open TestFlight?",
-    answerZh: "iOS 测试版通过 Apple TestFlight 分发。入口开放后，下载按钮会直接跳转到对应测试页，这是正常流程。",
-    answerEn: "iOS beta is distributed through Apple TestFlight. Once access is open, the download button will jump there directly, which is the expected flow.",
+    questionZh: "iOS 会打开 TestFlight 还是 App Store？",
+    questionEn: "Will iOS open TestFlight or the App Store?",
+    answerZh: "iOS 测试版通过 Apple TestFlight 分发；iOS 正式版通过 App Store 安装。下载页会把两个入口分开显示，按你想要的版本选择即可。",
+    answerEn: "iOS beta builds are distributed through Apple TestFlight; the stable iOS release installs through the App Store. The download page separates both paths so you can choose the version you want.",
   },
 ] as const;
 
@@ -55,8 +55,8 @@ const installSteps = [
   {
     titleZh: "进入对应下载入口并完成安装",
     titleEn: "Open the matching download path and install",
-    descriptionZh: "Android 使用主下载入口直接获取 R2 中的最新安装包；iOS 测试版会通过 TestFlight 打开。",
-    descriptionEn: "Use the main Android button to get the latest APK from R2. iOS beta opens through TestFlight.",
+    descriptionZh: "Android 使用主下载入口直接获取 R2 中的最新安装包；iOS 测试版会打开 TestFlight，正式版会打开 App Store。",
+    descriptionEn: "Use the main Android button to get the latest APK from R2. iOS beta opens TestFlight, while the stable release opens the App Store.",
   },
   {
     titleZh: "安装失败时先看 FAQ，再联系支持",
@@ -76,8 +76,8 @@ const DOWNLOAD_NOTES = [
     en: "Android downloads are served from R2, and each update replaces the APK at the same link.",
   },
   {
-    zh: "iOS 测试版通过 TestFlight 分发，入口开放后会直接跳转。",
-    en: "iOS beta is distributed through TestFlight, and the button will jump there once access opens.",
+    zh: "iOS 测试版通过 TestFlight 分发，正式版通过 App Store 安装。",
+    en: "iOS beta is distributed through TestFlight, while the stable release installs through the App Store.",
   },
 ] as const;
 

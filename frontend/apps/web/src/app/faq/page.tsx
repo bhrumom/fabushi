@@ -8,7 +8,7 @@ import { siteHref, siteUrl } from "../../lib/site-url";
 const faqUrl = siteUrl("/faq");
 const faqTitle = `App 下载常见问题 | Android、iOS、安装与版本说明 | ${brand.name}`;
 const faqDescription =
-  "集中说明法布施大乘 App 的下载问题：正式版和测试版怎么选、Android 下载慢怎么办、iOS 为什么跳到 TestFlight、安装失败怎么排查，以及联系支持前需要准备什么。";
+  "集中说明法布施大乘 App 的下载问题：正式版和测试版怎么选、Android 下载慢怎么办、iOS 如何选择 TestFlight 或 App Store、安装失败怎么排查，以及联系支持前需要准备什么。";
 
 const faqItems = [
   {
@@ -24,16 +24,16 @@ const faqItems = [
     answerEn: "Use the main download button on the current release card again, then confirm that you downloaded the matching platform and version. If it still fails, send the device model, OS version, and an error screenshot to support.",
   },
   {
-    questionZh: "iOS 为什么会跳到 TestFlight？",
-    questionEn: "Why does the iOS download button open TestFlight?",
-    answerZh: "iOS 测试版通过 Apple TestFlight 分发。入口开放后，下载按钮会直接跳到对应测试页，这是正常流程。",
-    answerEn: "The iOS beta build is distributed through Apple TestFlight. Once access is open, the download button jumps there directly, which is the expected flow.",
+    questionZh: "iOS 应该选 TestFlight 还是 App Store？",
+    questionEn: "Should I choose TestFlight or the App Store on iOS?",
+    answerZh: "想体验测试版就选择 TestFlight；想直接安装正式版就选择 App Store。现在 iOS 正式版已经上架，普通用户优先选择 App Store 会更稳。",
+    answerEn: "Choose TestFlight if you want the beta build. Choose the App Store if you want the stable release. The iOS stable release is now live, so most users should start with the App Store.",
   },
   {
     questionZh: "下载前我最少要确认哪些信息？",
     questionEn: "What should I confirm before downloading?",
-    answerZh: "至少先确认设备平台、版本偏好、发布时间，以及是否需要 TestFlight。这样能明显减少下错包或装不上去的概率。",
-    answerEn: "At minimum, confirm the device platform, version preference, publish date, and whether you need TestFlight. That reduces the chance of downloading the wrong build or hitting an avoidable install failure.",
+    answerZh: "至少先确认设备平台、版本偏好、发布时间，以及 iOS 是否要走 App Store 或 TestFlight。这样能明显减少下错包或装不上去的概率。",
+    answerEn: "At minimum, confirm the device platform, version preference, publish date, and whether iOS should use the App Store or TestFlight. That reduces the chance of downloading the wrong build or hitting an avoidable install failure.",
   },
   {
     questionZh: "联系支持前最好准备什么？",

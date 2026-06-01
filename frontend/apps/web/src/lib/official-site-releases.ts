@@ -1,4 +1,5 @@
 const iosTestFlightPublicUrl = process.env.NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL?.trim() || "";
+const iosAppStoreUrl = "https://apps.apple.com/cn/app/%E5%A4%A7%E4%B9%98/id6758606957";
 const configuredReleaseApiBaseUrl =
   process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_API_BASE_URL?.trim() ||
   process.env.NEXT_PUBLIC_FABUSHI_API_BASE_URL?.trim() ||
@@ -72,6 +73,24 @@ const CHANNEL_ORDER: Array<Pick<OfficialSiteChannel, "audience" | "platform">> =
   { audience: "stable", platform: "iOS" },
 ];
 
+const IOS_STABLE_CHANNEL: OfficialSiteChannel = {
+  platform: "iOS",
+  audience: "stable",
+  status: "App Store 已上架",
+  title: "iOS 正式版",
+  description: "已在 App Store 上架，适合 iPhone 和 iPad 用户直接安装。",
+  primaryLabel: "在 App Store 下载",
+  primaryHref: iosAppStoreUrl,
+  version: "1.0",
+  publishedAt: "2026-06-01",
+  updateSummary: [
+    "iOS 1.0 正式版已在 App Store 发布。",
+    "中国大陆可售状态已完成备案信息同步。",
+  ],
+  mirrorLinks: [],
+  note: "点击后会打开 Apple App Store 页面。",
+};
+
 const DEFAULT_STABLE_CHANNELS: OfficialSiteChannel[] = [
   {
     platform: "Android",
@@ -88,6 +107,7 @@ const DEFAULT_STABLE_CHANNELS: OfficialSiteChannel[] = [
     mirrorLinks: [],
     note: "正式版上线后，这里会显示已经同步到 Cloudflare 的下载地址。",
   },
+  IOS_STABLE_CHANNEL,
 ];
 
 function trimTrailingSlash(value: string) {
@@ -274,6 +294,23 @@ function applyConfiguredIosTestFlightChannels(channels: OfficialSiteChannel[]): 
   return channels.map((channel) => applyConfiguredIosTestFlightChannel(channel));
 }
 
+function applyIosStableAppStoreChannel(channel: OfficialSiteChannel): OfficialSiteChannel {
+  if (channel.platform !== "iOS" || channel.audience !== "stable") {
+    return channel;
+  }
+
+  return {
+    ...channel,
+    ...IOS_STABLE_CHANNEL,
+    mirrorLinks: channel.mirrorLinks.length > 0 ? channel.mirrorLinks : IOS_STABLE_CHANNEL.mirrorLinks,
+    releasePageHref: channel.releasePageHref,
+  };
+}
+
+function applyIosStableAppStoreChannels(channels: OfficialSiteChannel[]): OfficialSiteChannel[] {
+  return channels.map((channel) => applyIosStableAppStoreChannel(channel));
+}
+
 async function fetchOfficialSiteReleaseCollectionFromCloudflare(isClient: boolean): Promise<OfficialSiteReleaseCollection | null> {
   const url = buildReleaseApiUrl();
 
@@ -323,7 +360,7 @@ function buildFallbackCollection(): OfficialSiteReleaseCollection {
 function finalizeCollection(collection: OfficialSiteReleaseCollection): OfficialSiteReleaseCollection {
   return {
     betaChannels: applyConfiguredIosTestFlightChannels(collection.betaChannels),
-    stableChannels: mergeChannels(collection.stableChannels, DEFAULT_STABLE_CHANNELS),
+    stableChannels: applyIosStableAppStoreChannels(mergeChannels(collection.stableChannels, DEFAULT_STABLE_CHANNELS)),
     screenshots: collection.screenshots,
     releases: collection.releases,
     notes: collection.notes,
