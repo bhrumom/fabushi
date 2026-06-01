@@ -69,16 +69,22 @@ class OnlineCounterService {
 
       print('🔌 准备连接 WebSocket: $uri');
 
+      WebSocketChannel? channel;
       try {
-        _channel = WebSocketChannel.connect(uri);
+        channel = WebSocketChannel.connect(uri);
         print('🔌 WebSocketChannel.connect 调用完成');
+        await channel.ready.timeout(const Duration(seconds: 3));
+        _channel = channel;
       } catch (e) {
-        print('❌ WebSocketChannel.connect 异常: $e');
+        print('❌ WebSocketChannel.connect/ready 异常: $e');
+        unawaited(channel?.sink.close());
         return false;
       }
+      final activeChannel = channel;
+      if (activeChannel == null) return false;
 
       // 监听消息
-      _channel!.stream.listen(
+      activeChannel.stream.listen(
         (message) {
           if (!_isConnected) {
             _isConnected = true;
@@ -89,7 +95,7 @@ class OnlineCounterService {
         },
         onError: (error) {
           print('❌ WebSocket stream 错误: $error');
-          _handleWebSocketError();
+          _handleWebSocketError(reconnect: _isConnected);
         },
         onDone: () {
           print('🔌 WebSocket stream 关闭');
@@ -156,9 +162,9 @@ class OnlineCounterService {
   }
 
   /// 处理 WebSocket 错误
-  void _handleWebSocketError() {
+  void _handleWebSocketError({bool reconnect = true}) {
     _isConnected = false;
-    if (_shouldReconnect && _currentActivity != null) {
+    if (reconnect && _shouldReconnect && _currentActivity != null) {
       _reconnect();
     }
   }
@@ -257,9 +263,7 @@ class OnlineCounterService {
 
   /// 获取指定活动类型的在线人数（不加入活动）
   Future<void> fetchCountForActivity(String activityType) async {
-    if (_isConnected &&
-        _channel != null &&
-        _currentActivity == activityType) {
+    if (_isConnected && _channel != null && _currentActivity == activityType) {
       return;
     }
 
