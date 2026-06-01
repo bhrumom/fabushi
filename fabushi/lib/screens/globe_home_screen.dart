@@ -18,6 +18,7 @@ import '../services/membership_service.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/online_counter_widget.dart';
 import '../widgets/auto_start_guide_dialog.dart';
+import 'membership_screen.dart';
 
 class GlobeHomeScreen extends StatefulWidget {
   const GlobeHomeScreen({super.key});
@@ -710,151 +711,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   const SizedBox(height: 10),
                   _buildRenderModeSegment(),
                   const SizedBox(height: 12),
-                  _buildSelectedContentTile(model),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: model.isFieldEnergyMode
-                          ? Colors.purple.withValues(alpha: 0.2)
-                          : Colors.white.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                      border: model.isFieldEnergyMode
-                          ? Border.all(
-                              color: Colors.purple.withValues(alpha: 0.5),
-                            )
-                          : null,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Icon(
-                                model.isFieldEnergyMode
-                                    ? Icons.wifi_tethering
-                                    : Icons.wifi_tethering_off,
-                                color: model.isFieldEnergyMode
-                                    ? Colors.purple
-                                    : Colors.white70,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '无网场能模式',
-                                      style: TextStyle(
-                                        color: model.isFieldEnergyMode
-                                            ? Colors.purple
-                                            : Colors.white70,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    Text(
-                                      model.isFieldEnergyMode &&
-                                              model.hotspotMessage.isNotEmpty
-                                          ? model.hotspotMessage
-                                          : '自动开启热点向周围广播',
-                                      style: TextStyle(
-                                        color: model.isFieldEnergyMode
-                                            ? Colors.purple.withValues(
-                                                alpha: 0.7,
-                                              )
-                                            : Colors.white54,
-                                        fontSize: 10,
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        SizedBox(
-                          height: 28,
-                          child: Switch(
-                            value: model.isFieldEnergyMode,
-                            onChanged: (value) async {
-                              await model.setFieldEnergyMode(value);
-                              if (!context.mounted) return;
-                              if (model.needsHotspotGuide) {
-                                _showHotspotGuideDialog(context);
-                                model.clearHotspotGuide();
-                              }
-                            },
-                            activeThumbColor: Colors.purple,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildSendModuleControls(context, model),
                   const SizedBox(height: 12),
                 ],
-                Row(
-                  children: [
-                    Expanded(
-                      child: model.isPreparingSend
-                          ? ElevatedButton.icon(
-                              onPressed: null,
-                              icon: const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                              label: const Text(
-                                '准备发送中',
-                                style: TextStyle(fontSize: 13),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                ),
-                              ),
-                            )
-                          : model.isTransferring
-                          ? ElevatedButton.icon(
-                              onPressed: () => _stopSending(model),
-                              icon: const Icon(Icons.stop, size: 18),
-                              label: const Text(
-                                '停止发送',
-                                style: TextStyle(fontSize: 13),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                ),
-                                backgroundColor: Colors.red.shade600,
-                              ),
-                            )
-                          : ElevatedButton.icon(
-                              onPressed: () => _startSending(model),
-                              icon: const Icon(Icons.send, size: 18),
-                              label: const Text(
-                                '开始发送',
-                                style: TextStyle(fontSize: 13),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                ),
-                                backgroundColor: AppTheme.primaryColor,
-                              ),
-                            ),
-                    ),
-                  ],
-                ),
+                _buildChatComposer(context, model),
               ],
             ),
           ),
@@ -938,31 +798,131 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
-  Widget _buildSelectedContentTile(FileTransferModel model) {
+  Widget _buildSendModuleControls(
+    BuildContext context,
+    FileTransferModel model,
+  ) {
+    final isBusy = model.isPreparingSend || model.isTransferring;
+    final authModel = Provider.of<AuthModel?>(context);
+    final hasPremiumAccess = authModel?.hasPermission('premium') ?? false;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final loopTile = _ModuleSwitchTile(
+          icon: Icons.loop,
+          title: '循环发送',
+          subtitle: model.isLooping ? '完成后自动进入下一轮' : '当前只发送一轮',
+          value: model.isLooping,
+          enabled: !isBusy,
+          onChanged: model.setLooping,
+        );
+        final loopbackTile = _ModuleSwitchTile(
+          icon: Icons.sync_alt,
+          title: '本地回环',
+          subtitle: model.isLocalLoopbackEnabled
+              ? model.loopbackCount > 0
+                    ? '已回环 ${model.loopbackCount} 轮'
+                    : '会员模块已开启'
+              : '会员可开启独立回环',
+          value: model.isLocalLoopbackEnabled,
+          enabled: !isBusy,
+          locked: !hasPremiumAccess,
+          onChanged: (value) => _setLocalLoopbackEnabled(model, value),
+        );
+
+        return Column(
+          children: [
+            if (constraints.maxWidth < 360) ...[
+              loopTile,
+              const SizedBox(height: 8),
+              loopbackTile,
+            ] else
+              Row(
+                children: [
+                  Expanded(child: loopTile),
+                  const SizedBox(width: 8),
+                  Expanded(child: loopbackTile),
+                ],
+              ),
+            const SizedBox(height: 8),
+            _ModuleSwitchTile(
+              icon: model.isFieldEnergyMode
+                  ? Icons.wifi_tethering
+                  : Icons.wifi_tethering_off,
+              title: '无网场能模式',
+              subtitle:
+                  model.isFieldEnergyMode && model.hotspotMessage.isNotEmpty
+                  ? model.hotspotMessage
+                  : '开启热点向周围广播',
+              value: model.isFieldEnergyMode,
+              enabled: !isBusy,
+              activeColor: Colors.purple,
+              onChanged: (value) async {
+                await model.setFieldEnergyMode(value);
+                if (!context.mounted) return;
+                if (model.needsHotspotGuide) {
+                  _showHotspotGuideDialog(context);
+                  model.clearHotspotGuide();
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildChatComposer(BuildContext context, FileTransferModel model) {
     final hasContent = model.hasFiles;
     final title = hasContent ? model.selectedContentTitle : '选择发送内容';
     final subtitle = hasContent
         ? (model.selectedContentSubtitle.isEmpty
-              ? '点此重新选择链接、文本、文件或佛像素材'
+              ? '点 + 可重新选择链接、文本、文件或佛像素材'
               : model.selectedContentSubtitle)
         : '链接、文本、本机文件或禅室佛像素材';
     final icon = _contentIcon(model.selectedContentKind);
+    final isBusy = model.isPreparingSend || model.isTransferring;
 
-    return Material(
-      color: Colors.white.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: model.isPreparingSend
-            ? null
-            : () => _showSendContentSheet(model),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              Icon(icon, color: AppTheme.primaryColor, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 7, 7, 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFF242424).withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Builder(
+            builder: (buttonContext) => IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: '添加发送内容',
+              icon: const Icon(Icons.add, color: Colors.white, size: 24),
+              onPressed: isBusy
+                  ? null
+                  : () => _openSendContentMenu(buttonContext, model),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                disabledBackgroundColor: Colors.white.withValues(alpha: 0.04),
+                fixedSize: const Size(40, 40),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(icon, color: AppTheme.primaryColor, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -970,26 +930,32 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     Row(
                       children: [
                         if (hasContent && model.selectedContentKind.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: Text(
-                              model.selectedContentKind,
-                              style: TextStyle(
-                                color: AppTheme.primaryColor.withValues(
-                                  alpha: 0.9,
+                          Flexible(
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: Text(
+                                model.selectedContentKind,
+                                style: TextStyle(
+                                  color: AppTheme.primaryColor.withValues(
+                                    alpha: 0.95,
+                                  ),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
                                 ),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ),
                         Expanded(
                           child: Text(
                             title,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                            style: TextStyle(
+                              color: hasContent ? Colors.white : Colors.white60,
+                              fontSize: 14,
+                              fontWeight: hasContent
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1001,7 +967,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        color: Colors.white60,
+                        color: Colors.white54,
                         fontSize: 11,
                       ),
                       maxLines: 1,
@@ -1010,18 +976,210 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   ],
                 ),
               ),
-              if (model.hasSelectedContentPreview) ...[
-                const SizedBox(width: 4),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip: '查看已读取内容',
-                  icon: const Icon(Icons.visibility, color: Colors.white70),
-                  onPressed: () => _showSelectedContentPreview(model),
-                ),
-              ],
-              const Icon(Icons.chevron_right, color: Colors.white54),
-            ],
+            ),
           ),
+          if (model.hasSelectedContentPreview)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: '查看已读取内容',
+              icon: const Icon(Icons.visibility, color: Colors.white70),
+              onPressed: () => _showSelectedContentPreview(model),
+            ),
+          const SizedBox(width: 4),
+          _buildComposerActionButton(model),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComposerActionButton(FileTransferModel model) {
+    if (model.isPreparingSend) {
+      return Container(
+        width: 42,
+        height: 42,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    if (model.isTransferring) {
+      return IconButton(
+        tooltip: '停止发送',
+        icon: const Icon(Icons.stop, color: Colors.white, size: 21),
+        onPressed: () => _stopSending(model),
+        style: IconButton.styleFrom(
+          backgroundColor: Colors.red.shade600,
+          fixedSize: const Size(42, 42),
+        ),
+      );
+    }
+
+    return IconButton(
+      tooltip: '开始发送',
+      icon: const Icon(Icons.arrow_upward, color: Colors.black, size: 22),
+      onPressed: () => _startSending(model),
+      style: IconButton.styleFrom(
+        backgroundColor: Colors.white,
+        fixedSize: const Size(42, 42),
+      ),
+    );
+  }
+
+  Future<bool> _openSendContentMenu(
+    BuildContext anchorContext,
+    FileTransferModel model,
+  ) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final anchor = anchorContext.findRenderObject() as RenderBox?;
+    if (overlay == null || anchor == null) return false;
+
+    final anchorTopLeft = anchor.localToGlobal(Offset.zero, ancestor: overlay);
+    final anchorBottomRight = anchor.localToGlobal(
+      anchor.size.bottomRight(Offset.zero),
+      ancestor: overlay,
+    );
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(anchorTopLeft, anchorBottomRight),
+      Offset.zero & overlay.size,
+    );
+
+    final action = await showMenu<String>(
+      context: context,
+      position: position,
+      color: const Color(0xFF333333),
+      surfaceTintColor: Colors.transparent,
+      constraints: const BoxConstraints(minWidth: 260, maxWidth: 320),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      items: [
+        _sendMenuItem('files', Icons.attach_file, '添加照片和文件', '选择手机或电脑中的本机文件'),
+        _sendMenuItem('assets', Icons.inventory_2, '内置素材', '从素材库选择要发送的内容'),
+        _sendMenuItem('link', Icons.link, '输入链接', '读取链接正文后发送'),
+        _sendMenuItem('text', Icons.edit_note, '输入文本', '发送手输或粘贴的文本'),
+        _sendMenuItem(
+          'buddha',
+          Icons.self_improvement,
+          '禅室佛像素材',
+          '发送禅室当前佛像模型素材',
+        ),
+        if (model.linkHistory.isNotEmpty) ...[
+          const PopupMenuDivider(),
+          const PopupMenuItem<String>(
+            enabled: false,
+            height: 28,
+            child: Text(
+              '最近链接',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          ...model.linkHistory.take(5).toList().asMap().entries.map((entry) {
+            final history = entry.value;
+            return _sendMenuItem(
+              'history:${entry.key}',
+              Icons.history,
+              history.title.isEmpty ? history.url : history.title,
+              history.preview.isEmpty ? history.url : history.preview,
+            );
+          }),
+        ],
+      ],
+    );
+
+    if (action == null) return false;
+    return _handleSendMenuAction(model, action);
+  }
+
+  PopupMenuItem<String> _sendMenuItem(
+    String value,
+    IconData icon,
+    String title,
+    String subtitle,
+  ) {
+    return PopupMenuItem<String>(
+      value: value,
+      height: 54,
+      child: _SendMenuRow(icon: icon, title: title, subtitle: subtitle),
+    );
+  }
+
+  Future<bool> _handleSendMenuAction(
+    FileTransferModel model,
+    String action,
+  ) async {
+    if (action == 'files') {
+      return await model.selectFiles(replaceExisting: true);
+    }
+    if (action == 'assets') {
+      await model.selectBuiltInAssets(context);
+      return model.hasFiles;
+    }
+    if (action == 'link') {
+      return await _inputSendLink(model);
+    }
+    if (action == 'text') {
+      return await _inputSendText(model);
+    }
+    if (action == 'buddha') {
+      return await _selectBuddhaAsset(model);
+    }
+    if (action.startsWith('history:')) {
+      final index = int.tryParse(action.substring('history:'.length));
+      if (index == null || index >= model.linkHistory.length) return false;
+      return await _selectLinkHistory(model, model.linkHistory[index]);
+    }
+    return false;
+  }
+
+  Future<void> _setLocalLoopbackEnabled(
+    FileTransferModel model,
+    bool enabled,
+  ) async {
+    if (!enabled) {
+      model.setLocalLoopbackEnabled(false);
+      return;
+    }
+
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
+    final hasPremiumAccess = authModel?.hasPermission('premium') ?? false;
+    if (!hasPremiumAccess) {
+      model.setLocalLoopbackEnabled(false);
+      _showLoopbackMembershipPrompt();
+      return;
+    }
+
+    model.setLocalLoopbackEnabled(true);
+  }
+
+  void _showLoopbackMembershipPrompt() {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('本地回环是会员功能，开通会员后即可开启。'),
+        backgroundColor: Colors.black87,
+        action: SnackBarAction(
+          label: '去开通',
+          textColor: AppTheme.primaryColor,
+          onPressed: () {
+            if (!mounted) return;
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MembershipScreen()),
+            );
+          },
         ),
       ),
     );
@@ -1171,118 +1329,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         ],
       ),
     );
-  }
-
-  Future<bool> _showSendContentSheet(FileTransferModel model) async {
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: const Color(0xFF171717),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(sheetContext).size.height * 0.84,
-          ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '选择要全球发送的内容',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _SendSourceTile(
-                  icon: Icons.link,
-                  title: '输入链接',
-                  subtitle: '读取链接正文，读取后可点开查看',
-                  onTap: () async {
-                    final navigator = Navigator.of(sheetContext);
-                    final selected = await _inputSendLink(model);
-                    if (navigator.mounted) navigator.pop(selected);
-                  },
-                ),
-                _SendSourceTile(
-                  icon: Icons.edit_note,
-                  title: '输入文本',
-                  subtitle: '发送手输或粘贴的文本',
-                  onTap: () async {
-                    final navigator = Navigator.of(sheetContext);
-                    final selected = await _inputSendText(model);
-                    if (navigator.mounted) navigator.pop(selected);
-                  },
-                ),
-                _SendSourceTile(
-                  icon: Icons.folder_open,
-                  title: '选择本机文件',
-                  subtitle: '发送手机本机文件',
-                  onTap: () async {
-                    final navigator = Navigator.of(sheetContext);
-                    final selected = await model.selectFiles(
-                      replaceExisting: true,
-                    );
-                    if (navigator.mounted) {
-                      navigator.pop(selected);
-                    }
-                  },
-                ),
-                _SendSourceTile(
-                  icon: Icons.self_improvement,
-                  title: '禅室佛像素材',
-                  subtitle: '发送禅室当前佛像模型素材',
-                  onTap: () async {
-                    final navigator = Navigator.of(sheetContext);
-                    final selected = await _selectBuddhaAsset(model);
-                    if (navigator.mounted) navigator.pop(selected);
-                  },
-                ),
-                if (model.linkHistory.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  const Text(
-                    '链接历史',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  ...model.linkHistory
-                      .take(8)
-                      .map(
-                        (entry) => _SendSourceTile(
-                          icon: Icons.history,
-                          title: entry.title.isEmpty ? entry.url : entry.title,
-                          subtitle: entry.preview.isEmpty
-                              ? entry.url
-                              : entry.preview,
-                          onTap: () async {
-                            final navigator = Navigator.of(sheetContext);
-                            final selected = await _selectLinkHistory(
-                              model,
-                              entry,
-                            );
-                            if (navigator.mounted) navigator.pop(selected);
-                          },
-                        ),
-                      ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    return result == true;
   }
 
   Future<bool> _inputSendText(FileTransferModel model) async {
@@ -1718,8 +1764,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       }
     }
 
-    final prepared = model.hasFiles || await _showSendContentSheet(model);
-    if (!prepared || !mounted || !model.hasFiles) {
+    if (!mounted) return;
+
+    if (!model.hasFiles) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('请先点击 + 选择链接、文本、文件或素材。'),
+          backgroundColor: Colors.black87,
+        ),
+      );
       return;
     }
 
@@ -1797,32 +1850,134 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 }
 
-class _SendSourceTile extends StatelessWidget {
+class _ModuleSwitchTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  final Future<void> Function() onTap;
+  final bool value;
+  final bool enabled;
+  final bool locked;
+  final Color? activeColor;
+  final ValueChanged<bool> onChanged;
 
-  const _SendSourceTile({
+  const _ModuleSwitchTile({
     required this.icon,
     required this.title,
     required this.subtitle,
-    required this.onTap,
+    required this.value,
+    required this.onChanged,
+    this.enabled = true,
+    this.locked = false,
+    this.activeColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: CircleAvatar(
-        backgroundColor: const Color(0xFFD4AF37).withValues(alpha: 0.16),
-        foregroundColor: const Color(0xFFD4AF37),
-        child: Icon(icon),
+    final effectiveColor = activeColor ?? AppTheme.primaryColor;
+    final isActive = value && enabled;
+    final foreground = isActive ? effectiveColor : Colors.white70;
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 58),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isActive
+            ? effectiveColor.withValues(alpha: 0.16)
+            : Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isActive
+              ? effectiveColor.withValues(alpha: 0.42)
+              : Colors.white.withValues(alpha: 0.08),
+        ),
       ),
-      title: Text(title, style: const TextStyle(color: Colors.white)),
-      subtitle: Text(subtitle, style: const TextStyle(color: Colors.white60)),
-      trailing: const Icon(Icons.chevron_right, color: Colors.white54),
-      onTap: onTap,
+      child: Row(
+        children: [
+          Icon(locked ? Icons.lock_outline : icon, color: foreground, size: 20),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Colors.white54, fontSize: 10),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          Transform.scale(
+            scale: 0.78,
+            child: Switch(
+              value: value,
+              onChanged: enabled ? onChanged : null,
+              activeThumbColor: effectiveColor,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SendMenuRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _SendMenuRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.white, size: 22),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: const TextStyle(color: Colors.white60, fontSize: 11),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
