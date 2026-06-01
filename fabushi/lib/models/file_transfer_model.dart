@@ -66,6 +66,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   bool _isGlobalSendEnabled = true;
   bool _isLooping = false;
+  bool _isLocalLoopbackEnabled = false;
   bool _isFieldEnergyMode = false;
   double _sendRateMB = 1.0;
   int _loopCount = 0;
@@ -149,6 +150,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   bool get isGlobalSendEnabled => _isGlobalSendEnabled;
   bool get isLooping => _isLooping;
+  bool get isLocalLoopbackEnabled => _isLocalLoopbackEnabled;
   bool get isFieldEnergyMode => _isFieldEnergyMode;
   int get loopCount => _loopCount;
   int get loopbackCount => _loopbackCount;
@@ -251,6 +253,16 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   void setLooping(bool looping) {
     _isLooping = looping;
+    notifyListeners();
+  }
+
+  void setLocalLoopbackEnabled(bool enabled) {
+    if (_isLocalLoopbackEnabled == enabled) return;
+    _isLocalLoopbackEnabled = enabled;
+    if (!enabled) {
+      _loopbackCount = 0;
+      _stopLocalLoopback();
+    }
     notifyListeners();
   }
 
@@ -956,7 +968,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       debugPrint(
-        '🚀 开始全球传输 - 文件数量: ${_selectedFiles.length}, 循环: $shouldLoop, 轮次: $_loopCount, 场能模式: $_isFieldEnergyMode',
+        '🚀 开始全球传输 - 文件数量: ${_selectedFiles.length}, 循环: $shouldLoop, 轮次: $_loopCount, 场能模式: $_isFieldEnergyMode, 本地回环: $_isLocalLoopbackEnabled',
       );
 
       if (!isLoopContinuation) {
@@ -966,7 +978,9 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
 
-      await _startLocalLoopback();
+      if (_isLocalLoopbackEnabled) {
+        await _startLocalLoopback();
+      }
 
       debugPrint('🔧 准备初始化平台全球发送服务...');
       await _initializePlatformGlobalSendService();
@@ -1004,7 +1018,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     if (kIsWeb) return;
     if (_selectedFiles.isEmpty) return;
 
-    if (!_isTransferring) {
+    if (!_isTransferring && _isLocalLoopbackEnabled) {
       await _startLocalLoopback();
     }
 
@@ -1044,7 +1058,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     _fieldBroadcastService?.dispose();
     _fieldBroadcastService = null;
 
-    if (!_isTransferring) {
+    if (!_isTransferring && _isLocalLoopbackEnabled) {
       _stopLocalLoopback();
     }
     debugPrint('🛑 场能广播已停止');
