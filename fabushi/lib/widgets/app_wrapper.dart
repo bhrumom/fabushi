@@ -10,7 +10,6 @@ import '../screens/main_navigation_screen.dart';
 import '../services/app_initializer.dart';
 import '../services/app_settings.dart';
 import '../services/app_update_service.dart';
-import '../services/asset_loader_service.dart';
 import '../services/error_report_service.dart';
 import '../services/eula_service.dart';
 import '../services/platform_service.dart';
@@ -68,16 +67,6 @@ class _AppWrapperState extends State<AppWrapper> {
     );
   }
 
-  void _prewarmMeditationAssets() {
-    if (kIsWeb) {
-      return;
-    }
-
-    Future.delayed(const Duration(milliseconds: 450), () {
-      unawaited(AssetLoaderService.prewarmBuddhaModelFromPersistentCache());
-    });
-  }
-
   Future<void> _initializeApp() async {
     try {
       final authModel = Provider.of<AuthModel>(context, listen: false);
@@ -129,8 +118,6 @@ class _AppWrapperState extends State<AppWrapper> {
           _needsEula = needsEula;
           _needsModelSetup = needsModelSetup;
         });
-
-        _prewarmMeditationAssets();
 
         if (needsEula) {
           await _showEulaScreen();
@@ -240,24 +227,23 @@ class _AppWrapperState extends State<AppWrapper> {
                 }
               : null,
           onUpdatePressed: () async {
-            final launched =
-                await AppUpdateService.instance.openUpdatePage(decision);
+            final launched = await AppUpdateService.instance.openUpdatePage(
+              decision,
+            );
             if (!mounted) {
               return;
             }
 
             if (!launched) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('暂时无法打开更新入口，请稍后重试')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('暂时无法打开更新入口，请稍后重试')));
               return;
             }
 
             if (decision.isForce) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('已打开更新入口，更新完成后请重新打开应用'),
-                ),
+                const SnackBar(content: Text('已打开更新入口，更新完成后请重新打开应用')),
               );
               return;
             }
@@ -375,7 +361,10 @@ class _AppWrapperState extends State<AppWrapper> {
 
             return AlertDialog(
               backgroundColor: const Color(0xFF1E1E1E),
-              title: const Text('反馈启动异常', style: TextStyle(color: Colors.white)),
+              title: const Text(
+                '反馈启动异常',
+                style: TextStyle(color: Colors.white),
+              ),
               content: SizedBox(
                 width: 420,
                 child: SingleChildScrollView(
@@ -447,7 +436,10 @@ class _AppWrapperState extends State<AppWrapper> {
                         ),
                         child: Text(
                           '已采集摘要：${report.summary}',
-                          style: const TextStyle(color: Colors.white60, fontSize: 12),
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                       if (validationMessage != null) ...[
@@ -620,7 +612,10 @@ class _AppWrapperState extends State<AppWrapper> {
                       Text(
                         '已自动保存错误快照，可直接提交反馈。',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white60, fontSize: 13),
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 20),

@@ -23,6 +23,8 @@ import '../widgets/practice_selection_sheet.dart';
 import '../widgets/practice_leaderboard_sheet.dart';
 import '../widgets/reflection_dialog.dart';
 import '../widgets/practice_book_sheet.dart';
+import '../widgets/scene_render_mode.dart';
+import '../widgets/zen_buddha_2d_scene.dart';
 import '../widgets/zen_room_2d_elements.dart';
 
 /// 禅室修行界面 - 零摩擦版本
@@ -65,7 +67,9 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   late AnimationController _welcomeController;
 
   // ========== Key ==========
-  final GlobalKey<BuddhaModelScreenState> _buddhaKey = GlobalKey();
+  final GlobalKey<ZenBuddha2DSceneState> _buddha2DKey = GlobalKey();
+  final GlobalKey<BuddhaModelScreenState> _buddha3DKey = GlobalKey();
+  SceneRenderMode _renderMode = SceneRenderMode.twoD;
 
   // ========== 成就监听 ==========
   StreamSubscription<Achievement>? _achievementSubscription;
@@ -283,8 +287,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   }
 
   bool _ensureCloudRecordingReady() {
-    final authModel = context.read<AuthModel>();
-    if (authModel.isLoggedIn && authModel.authToken != null) {
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
+    if (authModel != null &&
+        authModel.isLoggedIn &&
+        authModel.authToken != null) {
       PracticeStatsService().setAuthToken(authModel.authToken);
       return true;
     }
@@ -306,7 +312,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   }
 
   void _onIncenseProgressChanged() {
-    _buddhaKey.currentState?.updateIncenseProgress(_incenseController.value);
+    _buddha2DKey.currentState?.updateIncenseProgress(_incenseController.value);
+    _buddha3DKey.currentState?.updateIncenseProgress(_incenseController.value);
   }
 
   Future<void> _fetchInitialCount() async {
@@ -365,7 +372,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     final result = await _sessionManager.endSession();
     _incenseController.stop();
     _incenseController.reset();
-    _buddhaKey.currentState?.updateIncenseProgress(0);
+    _buddha2DKey.currentState?.updateIncenseProgress(0);
+    _buddha3DKey.currentState?.updateIncenseProgress(0);
 
     if (result.success) {
       // 触发结束成就
@@ -427,8 +435,12 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
   Future<bool> _syncToCloud(SessionResult result, {String? notes}) async {
     try {
-      final authModel = context.read<AuthModel>();
-      if (!authModel.isLoggedIn || authModel.authToken == null) return false;
+      final authModel = Provider.of<AuthModel?>(context, listen: false);
+      if (authModel == null ||
+          !authModel.isLoggedIn ||
+          authModel.authToken == null) {
+        return false;
+      }
 
       final service = PracticeStatsService();
       service.setAuthToken(authModel.authToken);
@@ -525,7 +537,26 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     setState(() {
       _isCircumambulating = !_isCircumambulating;
     });
-    _buddhaKey.currentState?.setAutoRotate(_isCircumambulating);
+    _buddha2DKey.currentState?.setAutoRotate(_isCircumambulating);
+    _buddha3DKey.currentState?.setAutoRotate(_isCircumambulating);
+  }
+
+  bool get _canUseThreeDNow {
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
+    return SceneRenderAccess.canUseThreeDFor(authModel);
+  }
+
+  void _selectRenderMode(SceneRenderMode mode) {
+    if (mode == SceneRenderMode.threeD && !_canUseThreeDNow) {
+      if (_renderMode != SceneRenderMode.twoD) {
+        setState(() => _renderMode = SceneRenderMode.twoD);
+      }
+      showThreeDMemberPrompt(context);
+      return;
+    }
+
+    if (_renderMode == mode) return;
+    setState(() => _renderMode = mode);
   }
 
   /// 显示功课选择（高级选项）
@@ -848,31 +879,52 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
   @override
   Widget build(BuildContext context) {
+    final authModel = Provider.of<AuthModel?>(context);
+    final canUseThreeD = SceneRenderAccess.canUseThreeDFor(authModel);
+    final effectiveMode = canUseThreeD ? _renderMode : SceneRenderMode.twoD;
+    final useThreeD = effectiveMode == SceneRenderMode.threeD;
+
     return ListenableBuilder(
       listenable: _sessionManager,
       builder: (context, _) {
         final practice = _sessionManager.lockedPractice;
         return Stack(
           children: [
-            // 背景：佛像3D场景
+            // 背景：默认 2D 佛像场景，会员可切换 3D。
             Positioned.fill(
               child: GestureDetector(
                 onTap: _onTapCount, // 点击屏幕计数
-                child: BuddhaModelScreen(
-                  key: _buddhaKey,
-                  isVisible: _isPageVisible,
-                  autoRotate: _isCircumambulating,
-                  isBurning: _sessionManager.isInSession,
-                  incenseProgress: _incenseController.value,
-                  showBook: kIsWeb,
-                  bookTitle: kIsWeb ? practice?.title ?? '选择功课' : null,
-                  onBookTap: kIsWeb
-                      ? practice == null ||
-                                practice.filePath.startsWith('manual:')
-                            ? _showPracticeSelection
-                            : _showPracticeBookSheet
-                      : null,
-                ),
+                child: useThreeD
+                    ? BuddhaModelScreen(
+                        key: _buddha3DKey,
+                        isVisible: _isPageVisible,
+                        autoRotate: _isCircumambulating,
+                        isBurning: _sessionManager.isInSession,
+                        incenseProgress: _incenseController.value,
+                        showBook: kIsWeb,
+                        bookTitle: kIsWeb ? practice?.title ?? '选择功课' : null,
+                        onBookTap: kIsWeb
+                            ? practice == null ||
+                                      practice.filePath.startsWith('manual:')
+                                  ? _showPracticeSelection
+                                  : _showPracticeBookSheet
+                            : null,
+                      )
+                    : ZenBuddha2DScene(
+                        key: _buddha2DKey,
+                        isVisible: _isPageVisible,
+                        autoRotate: _isCircumambulating,
+                        isBurning: _sessionManager.isInSession,
+                        incenseProgress: _incenseController.value,
+                        showBook: kIsWeb,
+                        bookTitle: kIsWeb ? practice?.title ?? '选择功课' : null,
+                        onBookTap: kIsWeb
+                            ? practice == null ||
+                                      practice.filePath.startsWith('manual:')
+                                  ? _showPracticeSelection
+                                  : _showPracticeBookSheet
+                            : null,
+                      ),
               ),
             ),
 
@@ -892,7 +944,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                       top: 0,
                       left: 0,
                       right: 0,
-                      child: _buildTopBar(),
+                      child: _buildTopBar(effectiveMode, canUseThreeD),
                     ),
 
                     // 中间点击计数区
@@ -1053,7 +1105,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     );
   }
 
-  Widget _buildTopBar() {
+  Widget _buildTopBar(SceneRenderMode effectiveMode, bool canUseThreeD) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Row(
@@ -1082,6 +1134,11 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
             icon: Icons.leaderboard,
             tooltip: '修行排行',
             onTap: _showPracticeLeaderboard,
+          ),
+          const SizedBox(width: 8),
+          _buildRenderModeSegment(
+            effectiveMode: effectiveMode,
+            canUseThreeD: canUseThreeD,
           ),
           const Spacer(),
 
@@ -1144,6 +1201,78 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRenderModeSegment({
+    required SceneRenderMode effectiveMode,
+    required bool canUseThreeD,
+  }) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.36),
+        borderRadius: BorderRadius.circular(21),
+        border: Border.all(color: Colors.white24, width: 0.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildRenderModeChoice(
+            mode: SceneRenderMode.twoD,
+            effectiveMode: effectiveMode,
+            locked: false,
+          ),
+          _buildRenderModeChoice(
+            mode: SceneRenderMode.threeD,
+            effectiveMode: effectiveMode,
+            locked: !canUseThreeD,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRenderModeChoice({
+    required SceneRenderMode mode,
+    required SceneRenderMode effectiveMode,
+    required bool locked,
+  }) {
+    final selected = mode == effectiveMode;
+    return Tooltip(
+      message: locked ? '会员专享' : '${mode.shortLabel} 模式',
+      child: GestureDetector(
+        onTap: () => _selectRenderMode(mode),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFFD4AF37).withValues(alpha: 0.92)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (locked) ...[
+                const Icon(Icons.lock, color: Colors.white70, size: 12),
+                const SizedBox(width: 3),
+              ],
+              Text(
+                mode.shortLabel,
+                style: TextStyle(
+                  color: selected ? Colors.black : Colors.white70,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
