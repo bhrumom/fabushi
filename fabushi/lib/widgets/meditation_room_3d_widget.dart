@@ -175,10 +175,6 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget>
       ),
       child: Stack(
         children: [
-          if (kIsWeb)
-            Center(
-              child: SizedBox(width: 400, height: 500, child: Buddha3DWidget()),
-            ),
           GestureDetector(
             onTapUp: (details) {
               final size = MediaQuery.of(context).size;
@@ -215,6 +211,10 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget>
               },
             ),
           ),
+          if (kIsWeb)
+            const Center(
+              child: SizedBox(width: 400, height: 500, child: Buddha3DWidget()),
+            ),
           Positioned(
             top: 20,
             left: 0,
