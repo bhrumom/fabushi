@@ -18,6 +18,13 @@ void main() {
       );
     });
 
+    test('declares the premium Buddha material card image', () {
+      expect(
+        AppConfig.zenBuddhaAssetCardImagePath,
+        'assets/images/zen_buddha_material_card.png',
+      );
+    });
+
     test('does not package an Android GLB fallback', () {
       final pubspec = File('pubspec.yaml').readAsStringSync();
 
