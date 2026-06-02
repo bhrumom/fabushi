@@ -189,6 +189,8 @@ class AppConfig {
   static const String zenBuddhaAssetProductId = 'zen_buddha_asset';
   static const String zenBuddhaAssetDisplayName = '禅室佛像素材';
   static const String zenBuddhaAssetPriceLabel = '¥33.00';
+  static const String zenBuddhaAssetCardImagePath =
+      'assets/images/zen_buddha_material_card.png';
 
   static String get adminCheckStatusUrl =>
       buildBackendUrl('/api/admin/check-status');
