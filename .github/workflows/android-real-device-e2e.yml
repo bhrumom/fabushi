@@ -19,7 +19,7 @@ on:
       device_model:
         description: Firebase Test Lab physical device model
         required: false
-        default: Pixel2
+        default: redfin
       device_version:
         description: Android API level for the physical device
         required: false
@@ -37,7 +37,7 @@ on:
       device_model:
         type: string
         required: false
-        default: Pixel2
+        default: redfin
       device_version:
         type: string
         required: false
@@ -158,7 +158,7 @@ jobs:
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_TEST_RESULTS_BUCKET: ${{ secrets.FIREBASE_TEST_RESULTS_BUCKET }}
-          DEVICE_MODEL: ${{ inputs.device_model || github.event.inputs.device_model || 'Pixel2' }}
+          DEVICE_MODEL: ${{ inputs.device_model || github.event.inputs.device_model || 'redfin' }}
           DEVICE_VERSION: ${{ inputs.device_version || github.event.inputs.device_version || '30' }}
           DEVICE_LOCALE: ${{ inputs.device_locale || github.event.inputs.device_locale || 'zh_CN' }}
           DEVICE_ORIENTATION: ${{ inputs.device_orientation || github.event.inputs.device_orientation || 'portrait' }}
