@@ -909,7 +909,7 @@ jobs:
       - name: Publish GitHub Release
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.OFFICIAL_SITE_RELEASE_PAT || github.token }}
           RELEASE_REPO: ${{ github.repository }}
           TAG: ${{ steps.release-assets.outputs.tag }}
           TITLE: ${{ steps.release-assets.outputs.title }}
