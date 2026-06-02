@@ -54,13 +54,45 @@ if '() => _openSendContentMenu(buttonContext, model)' not in home_text:
     print('FAIL: homepage + button should open the send-content menu')
     sys.exit(1)
 
+if "'dharma'" not in home_text or '全球法布施' not in home_text:
+    print('FAIL: + menu should expose Global Dharma mode')
+    sys.exit(1)
+
+if '添加图片和文件' not in home_text:
+    print('FAIL: + menu should expose image/file selection')
+    sys.exit(1)
+
+if "'region'" in home_text or "'loop'" in home_text:
+    print('FAIL: + menu should not expose region or loop as menu entries')
+    sys.exit(1)
+
+if '_showRegionSelector(model)' not in home_text or 'label: model.isLooping ?' not in home_text:
+    print('FAIL: Dharma mode should show region and loop chips above the input')
+    sys.exit(1)
+
+if '_activateDharmaMode(model)' not in home_text:
+    print('FAIL: selecting Global Dharma or images should activate Dharma mode')
+    sys.exit(1)
+
+if '_looksLikeHttpUrl(composerText)' not in body:
+    print('FAIL: composer send should detect http/https links from the input')
+    sys.exit(1)
+
+if 'await model.addUrlContentForSending(composerText)' not in body:
+    print('FAIL: composer link input should be read and sent as link content')
+    sys.exit(1)
+
+if 'await model.addTextContentForSending' not in body:
+    print('FAIL: composer plain text input should be sent as text content')
+    sys.exit(1)
+
 if "if (!model.hasFiles)" not in body:
-    print('FAIL: start button should require selected content before sending')
+    print('FAIL: start button should still require files after empty input')
     sys.exit(1)
 
 pre_send_body = body.split('await model.startGlobalTransfer()', 1)[0]
-if '请先点击 + 选择链接、文本、文件或素材。' not in pre_send_body:
-    print('FAIL: start button should guide users to pick content from the + menu')
+if '请输入要法布施的文字或链接，或点 + 添加图片。' not in pre_send_body:
+    print('FAIL: empty Dharma send should guide users to type content or add an image')
     sys.exit(1)
 
 if 'await model.startGlobalTransfer()' not in body:
