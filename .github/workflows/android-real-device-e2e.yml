@@ -71,6 +71,7 @@ concurrency:
 env:
   FLUTTER_VERSION: '3.41.9'
   REAL_DEVICE_TEST_TARGET: integration_test/home_send_real_device_test.dart
+  REAL_DEVICE_TARGET_PLATFORM: android-arm64
 
 jobs:
   android-real-device-e2e:
@@ -132,9 +133,11 @@ jobs:
           GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
         run: |
           set -euo pipefail
-          flutter build apk --debug --config-only
+          flutter build apk --debug --config-only --target-platform "$REAL_DEVICE_TARGET_PLATFORM"
           pushd android
-          ./gradlew app:assembleDebug app:assembleAndroidTest -Ptarget="$GITHUB_WORKSPACE/fabushi/${REAL_DEVICE_TEST_TARGET}"
+          ./gradlew app:assembleDebug app:assembleAndroidTest \
+            -Ptarget="$GITHUB_WORKSPACE/fabushi/${REAL_DEVICE_TEST_TARGET}" \
+            -Ptarget-platform="$REAL_DEVICE_TARGET_PLATFORM"
           popd
           test -f build/app/outputs/apk/debug/app-debug.apk
           test -f build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
