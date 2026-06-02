@@ -102,6 +102,7 @@ class UDPGlobalSendService {
   Future<void> startSending({
     required List<PlatformFile> files,
     required bool isLoop,
+    List<String>? countryCodes,
   }) async {
     if (_isRunning) return;
 
@@ -116,9 +117,9 @@ class UDPGlobalSendService {
       socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       onLog('🚀 UDP Socket 已创建，本地端口: ${socket.port}');
 
-      final countryCodes = _geoIPService.getAllCountryCodes();
+      final targetCountryCodes = _resolveTargetCountryCodes(countryCodes);
       onLog(
-        '📤 开始 UDP 全球发送 - 文件数: ${files.length}, 目标国家: ${countryCodes.length}',
+        '📤 开始 UDP 全球发送 - 文件数: ${files.length}, 目标国家: ${targetCountryCodes.length}',
       );
 
       _loopCount = 0; // 重置轮次计数
@@ -156,7 +157,7 @@ class UDPGlobalSendService {
             final countriesSent = await _sendLargeFileToAllCountries(
               socket,
               file,
-              countryCodes,
+              targetCountryCodes,
             );
 
             final fileSizeMB = file.size / (1024 * 1024);
@@ -188,7 +189,7 @@ class UDPGlobalSendService {
             file.name,
             fileBytes,
             file.size,
-            countryCodes,
+            targetCountryCodes,
           );
 
           final fileSizeMB = file.size / (1024 * 1024);
@@ -210,6 +211,21 @@ class UDPGlobalSendService {
       _isRunning = false;
       onStopped();
     }
+  }
+
+  List<String> _resolveTargetCountryCodes(List<String>? requestedCodes) {
+    final allCountryCodes = _geoIPService.getAllCountryCodes();
+    if (requestedCodes == null ||
+        requestedCodes.isEmpty ||
+        requestedCodes.contains('ALL')) {
+      return allCountryCodes;
+    }
+
+    final available = allCountryCodes.toSet();
+    return requestedCodes
+        .where((code) => available.contains(code))
+        .toSet()
+        .toList();
   }
 
   Future<int> _sendFileToAllCountriesWithBytes(

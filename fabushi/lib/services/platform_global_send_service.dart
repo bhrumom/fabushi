@@ -106,6 +106,7 @@ class PlatformGlobalSendService {
   Future<void> startSending({
     required List<PlatformFile> files,
     required bool isLoop,
+    List<String>? countryCodes,
   }) async {
     if (!_isInitialized) {
       onLog('⚠️ 服务未初始化，正在初始化...');
@@ -113,9 +114,17 @@ class PlatformGlobalSendService {
     }
 
     if (kIsWeb) {
-      await _httpService?.startSending(files: files, isLoop: isLoop);
+      await _httpService?.startSending(
+        files: files,
+        isLoop: isLoop,
+        countryCodes: countryCodes,
+      );
     } else {
-      await _udpService?.startSending(files: files, isLoop: isLoop);
+      await _udpService?.startSending(
+        files: files,
+        isLoop: isLoop,
+        countryCodes: countryCodes,
+      );
     }
   }
 
