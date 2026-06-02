@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,7 +22,6 @@ import '../services/llm_model_config.dart';
 import '../services/llm_model_manager.dart';
 import '../services/membership_service.dart';
 import '../services/online_counter_service.dart';
-import '../widgets/online_counter_widget.dart';
 import '../widgets/auto_start_guide_dialog.dart';
 import 'membership_screen.dart';
 
@@ -34,6 +34,7 @@ class GlobeHomeScreen extends StatefulWidget {
 
 class GlobeHomeScreenState extends State<GlobeHomeScreen>
     with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey<HomeWorld2DWidgetState> _world2DKey = GlobalKey();
   final GlobalKey<EarthGlobeWidgetState> _globe3DKey = GlobalKey();
   String _currentSendingCountry = '';
@@ -42,12 +43,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   bool _isCallbackSetup = false;
   bool _isVisible = true;
   bool _isDharmaComposerMode = false;
+  bool _showMaterialGallery = false;
+  bool _isGlobalSendTimelineVisible = false;
   bool _isAiGenerating = false;
   String _streamingAiText = '';
-  SceneRenderMode _renderMode = SceneRenderMode.twoD;
+  final SceneRenderMode _renderMode = SceneRenderMode.twoD;
   final TextEditingController _chatInputController = TextEditingController();
   final ScrollController _homeChatScrollController = ScrollController();
   final List<_HomeChatMessage> _homeChatMessages = [];
+  final List<_HomeConversation> _conversationHistory = [];
   StreamSubscription<String>? _aiStreamSubscription;
   List<LLMModelType> _availableChatModels = [];
   LLMModelType? _selectedChatModel;
@@ -57,6 +61,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   final _appleIapService = AppleIapService();
   bool? _buddhaAssetUnlocked;
   bool _isPurchasingBuddhaAsset = false;
+  DateTime? _sendStartedAt;
+  String _activeSendTitle = '';
+  String _activeSendRegion = '';
 
   void setVisible(bool visible) {
     if (_isVisible == visible) return;
@@ -82,27 +89,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final useThreeD = _isThreeDActiveNow;
     _world2DKey.currentState?.setRenderingPaused(!_isVisible || useThreeD);
     _globe3DKey.currentState?.setRenderingPaused(!_isVisible || !useThreeD);
-  }
-
-  void _selectRenderMode(SceneRenderMode mode) {
-    if (mode == SceneRenderMode.threeD && !_canUseThreeDNow) {
-      if (_renderMode != SceneRenderMode.twoD) {
-        setState(() => _renderMode = SceneRenderMode.twoD);
-      }
-      showThreeDMemberPrompt(context);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _syncActiveSceneVisibility();
-      });
-      return;
-    }
-
-    if (_renderMode == mode) return;
-    setState(() => _renderMode = mode);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _syncActiveSceneVisibility();
-      _playPendingBeams();
-    });
   }
 
   bool _addTransferBeamToScene(
@@ -350,9 +336,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   Widget build(BuildContext context) {
     super.build(context);
     final authModel = Provider.of<AuthModel?>(context);
-    final canUseThreeD = SceneRenderAccess.canUseThreeDFor(authModel);
-    final effectiveMode = canUseThreeD ? _renderMode : SceneRenderMode.twoD;
-    final useThreeD = effectiveMode == SceneRenderMode.threeD;
 
     if (!_isCallbackSetup) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -361,453 +344,124 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _syncActiveSceneVisibility();
+      if (mounted) _playPendingBeams();
     });
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: Colors.transparent,
+      drawerScrimColor: Colors.black.withValues(alpha: 0.58),
+      drawer: _buildConversationDrawer(),
       body: Stack(
         children: [
-          Container(
-            color: Colors.transparent,
-            child: _isGlobeLoaded
-                ? LayoutBuilder(
-                    builder: (context, constraints) {
-                      try {
-                        return useThreeD
-                            ? EarthGlobeWidget(key: _globe3DKey)
-                            : HomeWorld2DWidget(key: _world2DKey);
-                      } catch (e) {
-                        debugPrint('⚠️ 首页场景渲染失败: $e');
-                        return Container(
-                          color: Colors.transparent,
-                          child: const Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.public,
-                                  size: 80,
-                                  color: Colors.cyan,
-                                ),
-                                SizedBox(height: 16),
-                                Text(
-                                  '🌍 首页场景加载中...',
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                SizedBox(height: 8),
-                                Text(
-                                  '请稍后或重启应用',
-                                  style: TextStyle(
-                                    color: Colors.white54,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
-                    },
-                  )
-                : Container(
-                    color: Colors.transparent,
-                    child: const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CircularProgressIndicator(color: Colors.cyan),
-                          SizedBox(height: 16),
-                          Text(
-                            '🌍 正在加载首页场景...',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 16,
-                            ),
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            '首次加载可能需要几秒钟',
-                            style: TextStyle(
-                              color: Colors.white54,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
+          _buildHomeBackground(),
+          SafeArea(
+            child: Consumer<FileTransferModel>(
+              builder: (context, model, _) {
+                return Column(
+                  children: [
+                    _buildTopBar(authModel),
+                    Expanded(child: _buildHomeBody(context, model, authModel)),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
+                      child: _buildChatComposer(context, model),
                     ),
-                  ),
-          ),
-          Positioned(
-            top: 20,
-            left: 20,
-            child: OnlineCounterWidget(
-              countStream: _onlineCounterService.onlineCountStream,
-              initialCount: _onlineCounterService.currentCount,
-              icon: Icons.public,
-              prefix: '🌍 正在全球发送:',
-              color: AppTheme.primaryColor,
-            ),
-          ),
-          Positioned(
-            top: 20,
-            right: 20,
-            child: IconButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const LeaderboardScreen(),
-                  ),
+                  ],
                 );
               },
-              icon: const Icon(Icons.leaderboard, color: Colors.white),
-              style: IconButton.styleFrom(
-                backgroundColor: AppTheme.glassDecoration.color,
-                highlightColor: AppTheme.primaryColor.withValues(alpha: 0.3),
-              ),
-              tooltip: '排行榜',
             ),
-          ),
-          Consumer<FileTransferModel>(
-            builder: (context, model, _) {
-              if (!model.isTransferring || _currentSendingCountry.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              final scripture = model.currentSendingScripture;
-              final materialCompleted = model.isCurrentMaterialCompleted;
-              final countryProgress = model.currentCountryProgress;
-              return Positioned(
-                top: 70,
-                left: 20,
-                right: 20,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    decoration: AppTheme.glassDecoration.copyWith(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                scripture.isEmpty
-                                    ? '正在发送内容'
-                                    : materialCompleted
-                                    ? '已完成《$scripture》'
-                                    : '正在发送《$scripture》',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Text(
-                                '发送到 $_currentSendingCountry',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.78),
-                                  fontSize: 12,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        materialCompleted
-                            ? const Icon(
-                                Icons.check_circle,
-                                color: Colors.greenAccent,
-                                size: 18,
-                              )
-                            : SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  value:
-                                      countryProgress != null &&
-                                          countryProgress > 0 &&
-                                          countryProgress < 1
-                                      ? countryProgress
-                                      : null,
-                                  strokeWidth: 2,
-                                  color: Colors.cyan,
-                                ),
-                              ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-          Positioned(
-            bottom: 100,
-            left: 20,
-            right: 20,
-            child: _buildControlPanel(context),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildControlPanel(BuildContext context) {
-    return Consumer<FileTransferModel>(
-      builder: (context, model, _) {
-        return Container(
-          decoration: AppTheme.glassDecoration,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (model.isPreparingSend) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: Colors.amber.withValues(alpha: 0.35),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.amber,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            model.preparingSendMessage.isEmpty
-                                ? '正在准备发送...'
-                                : model.preparingSendMessage,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ] else if (model.isTransferring) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.menu_book,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                model.currentSendingScripture.isEmpty
-                                    ? '正在发送内容'
-                                    : '正在发送：《${model.currentSendingScripture}》',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (model.loopbackCount > 0) ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.cyanAccent,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '动态杨升高速转轮中',
-                                style: TextStyle(
-                                  color: Colors.cyanAccent.withValues(
-                                    alpha: 0.9,
-                                  ),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: Colors.cyanAccent,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.cyanAccent.withValues(
-                                        alpha: 0.5,
-                                      ),
-                                      blurRadius: 4,
-                                      spreadRadius: 1,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                        if (model.isFieldEnergyMode &&
-                            model.fieldBroadcastCount > 0) ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.wifi_tethering,
-                                color: Colors.purple,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '场能广播: ${model.fieldBroadcastCount} 次',
-                                style: const TextStyle(
-                                  color: Colors.purple,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: Colors.purple,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.purple.withValues(
-                                        alpha: 0.5,
-                                      ),
-                                      blurRadius: 4,
-                                      spreadRadius: 1,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                        const SizedBox(height: 10),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            backgroundColor: Colors.white.withValues(
-                              alpha: 0.2,
-                            ),
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              AppTheme.primaryColor,
-                            ),
-                            minHeight: 6,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ] else ...[
-                  const Text(
-                    '全球普渡',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white,
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 10),
-                  _buildRenderModeSegment(),
-                  const SizedBox(height: 12),
-                  if (!_isDharmaComposerMode &&
-                      _homeChatMessages.isNotEmpty) ...[
-                    _buildHomeChatThread(),
-                    const SizedBox(height: 12),
-                  ],
-                ],
-                _buildChatComposer(context, model),
-              ],
+  Widget _buildHomeBackground() {
+    return Positioned.fill(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Image.asset(
+              'assets/images/home_world_lightfield.webp',
+              fit: BoxFit.cover,
+              color: Colors.black.withValues(alpha: 0.18),
+              colorBlendMode: BlendMode.darken,
             ),
           ),
-        );
-      },
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xAA071828), Color(0xEE07090B)],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildRenderModeSegment() {
-    final canUseThreeD = _canUseThreeDNow;
-    final effectiveMode = canUseThreeD ? _renderMode : SceneRenderMode.twoD;
-
-    return Align(
-      alignment: Alignment.center,
-      child: Container(
-        height: 36,
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.26),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white24, width: 0.6),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+  Widget _buildTopBar(AuthModel? authModel) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+      child: SizedBox(
+        height: 52,
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            _buildRenderModeChoice(
-              mode: SceneRenderMode.twoD,
-              effectiveMode: effectiveMode,
-              locked: false,
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Builder(
+                builder: (buttonContext) => IconButton(
+                  tooltip: '对话',
+                  onPressed: () => Scaffold.of(buttonContext).openDrawer(),
+                  icon: const Icon(Icons.menu_rounded, color: Colors.white),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.24),
+                    fixedSize: const Size(46, 46),
+                  ),
+                ),
+              ),
             ),
-            _buildRenderModeChoice(
-              mode: SceneRenderMode.threeD,
-              effectiveMode: effectiveMode,
-              locked: !canUseThreeD,
+            const Text(
+              '灵光',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 25,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: '排行榜',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const LeaderboardScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.leaderboard_rounded,
+                      color: Colors.white70,
+                    ),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black.withValues(alpha: 0.2),
+                      fixedSize: const Size(42, 42),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildAvatar(authModel),
+                ],
+              ),
             ),
           ],
         ),
@@ -815,104 +469,587 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
-  Widget _buildRenderModeChoice({
-    required SceneRenderMode mode,
-    required SceneRenderMode effectiveMode,
-    required bool locked,
-  }) {
-    final selected = mode == effectiveMode;
-    return Tooltip(
-      message: locked ? '会员专享' : '${mode.shortLabel} 模式',
-      child: GestureDetector(
-        onTap: () => _selectRenderMode(mode),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          height: 30,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: selected
-                ? AppTheme.primaryColor.withValues(alpha: 0.92)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (locked) ...[
-                const Icon(Icons.lock, color: Colors.white70, size: 13),
-                const SizedBox(width: 4),
-              ],
-              Text(
-                mode.shortLabel,
-                style: TextStyle(
-                  color: selected ? Colors.black : Colors.white70,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
+  Widget _buildAvatar(AuthModel? authModel) {
+    final user = authModel?.currentUser;
+    final avatar = user?.avatar?.trim();
+    final displayName = user?.displayName.trim() ?? '';
+    final initial = displayName.isNotEmpty ? displayName.substring(0, 1) : '灵';
+
+    return CircleAvatar(
+      radius: 22,
+      backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.24),
+      backgroundImage:
+          avatar != null &&
+              (avatar.startsWith('http://') || avatar.startsWith('https://'))
+          ? NetworkImage(avatar)
+          : null,
+      child: avatar == null || avatar.isEmpty
+          ? Text(
+              initial,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
               ),
-            ],
+            )
+          : null,
+    );
+  }
+
+  Widget _buildConversationDrawer() {
+    final drawerWidth = (MediaQuery.sizeOf(context).width * 0.78)
+        .clamp(292.0, 360.0)
+        .toDouble();
+    final currentTitle = _conversationTitleFrom(_homeChatMessages);
+
+    return Drawer(
+      width: drawerWidth,
+      backgroundColor: const Color(0xFF1E2024),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+          child: Consumer<FileTransferModel>(
+            builder: (context, model, _) {
+              final isBusy =
+                  model.isPreparingSend ||
+                  model.isTransferring ||
+                  _isAiGenerating;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '灵光',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '关闭',
+                        onPressed: () => Navigator.maybePop(context),
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: isBusy
+                          ? null
+                          : () => _startNewConversation(model),
+                      icon: const Icon(Icons.add_comment_outlined, size: 20),
+                      label: const Text('开启新对话'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF30343A),
+                        disabledBackgroundColor: Colors.white.withValues(
+                          alpha: 0.08,
+                        ),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(50),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  const _DrawerSectionLabel('今天'),
+                  if (_homeChatMessages.isNotEmpty) ...[
+                    _ConversationTile(
+                      title: currentTitle,
+                      selected: true,
+                      onTap: () => Navigator.maybePop(context),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  Expanded(
+                    child: _conversationHistory.isEmpty
+                        ? const Center(
+                            child: Text(
+                              '没有更多内容啦',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: _conversationHistory.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final conversation = _conversationHistory[index];
+                              return _ConversationTile(
+                                title: conversation.title,
+                                selected: false,
+                                onTap: isBusy
+                                    ? null
+                                    : () => _openConversation(conversation),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHomeChatThread() {
-    final messages = [
-      ..._homeChatMessages,
-      if (_isAiGenerating && _streamingAiText.isNotEmpty)
-        _HomeChatMessage(text: _streamingAiText, isUser: false),
-    ];
+  Widget _buildHomeBody(
+    BuildContext context,
+    FileTransferModel model,
+    AuthModel? authModel,
+  ) {
+    if (_showMaterialGallery) {
+      return _buildMaterialGallery(model);
+    }
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 220),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.18),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        ),
-        child: ListView.separated(
-          controller: _homeChatScrollController,
-          padding: const EdgeInsets.all(12),
-          shrinkWrap: true,
-          itemCount: messages.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            final message = messages[index];
-            final alignment = message.isUser
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start;
-            final bubbleColor = message.isUser
-                ? AppTheme.primaryColor.withValues(alpha: 0.22)
-                : message.isError
-                ? Colors.red.withValues(alpha: 0.18)
-                : Colors.white.withValues(alpha: 0.08);
+    final showChat =
+        _homeChatMessages.isNotEmpty ||
+        _isAiGenerating ||
+        _shouldShowGlobalSendProcess(model);
 
-            return Column(
-              crossAxisAlignment: alignment,
-              children: [
-                Container(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 9,
-                  ),
-                  decoration: BoxDecoration(
-                    color: bubbleColor,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(
-                    message.text,
-                    style: TextStyle(
-                      color: message.isError ? Colors.red[100] : Colors.white,
-                      fontSize: 13,
-                      height: 1.45,
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 240),
+      child: showChat ? _buildChatTimeline(model) : _buildIntroPanel(authModel),
+    );
+  }
+
+  Widget _buildIntroPanel(AuthModel? authModel) {
+    final rawName = authModel?.currentUser?.displayName.trim() ?? '';
+    final name = rawName.isEmpty ? '千瓷' : rawName;
+
+    return Padding(
+      key: const ValueKey('intro'),
+      padding: const EdgeInsets.fromLTRB(30, 80, 30, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Spacer(flex: 2),
+          Text(
+            'Hi, $name',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 44,
+              fontWeight: FontWeight.w900,
+              height: 1.05,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            '让复杂，变简单',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 46),
+          Wrap(
+            spacing: 12,
+            runSpacing: 14,
+            children: [
+              _QuickPromptPill(
+                icon: Icons.auto_awesome,
+                iconColor: const Color(0xFF67AEFF),
+                label: '你是谁',
+                onTap: () => _prefillPrompt('你是谁？'),
+              ),
+              _QuickPromptPill(
+                icon: Icons.bubble_chart_rounded,
+                iconColor: const Color(0xFF4DDE7A),
+                label: '一句话生成闪应用',
+                onTap: () => _prefillPrompt('帮我用一句话生成一个闪应用'),
+              ),
+              _QuickPromptPill(
+                icon: Icons.sports_esports_rounded,
+                iconColor: const Color(0xFFFF9F69),
+                label: '摇个小游戏',
+                onTap: () => _prefillPrompt('给我摇一个轻松小游戏'),
+              ),
+              _QuickPromptPill(
+                icon: Icons.view_in_ar_rounded,
+                iconColor: const Color(0xFFA979FF),
+                label: '体验世界模型',
+                onTap: () => _prefillPrompt('带我体验一个世界模型'),
+              ),
+              _QuickPromptPill(
+                icon: Icons.image_rounded,
+                iconColor: const Color(0xFFFF7D8A),
+                label: '百变影像馆',
+                onTap: () => _prefillPrompt('帮我设计一张创意图片'),
+              ),
+            ],
+          ),
+          const Spacer(flex: 3),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMaterialGallery(FileTransferModel model) {
+    final selected = _isBuddhaAssetSelected(model);
+    final unlocked = _buddhaAssetUnlocked == true;
+
+    return SingleChildScrollView(
+      key: const ValueKey('materials'),
+      padding: const EdgeInsets.fromLTRB(20, 34, 20, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 14),
+          const Center(
+            child: Text(
+              '超高能素材',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 30,
+                fontWeight: FontWeight.w900,
+                height: 1.18,
+              ),
+            ),
+          ),
+          const SizedBox(height: 28),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cardWidth = constraints.maxWidth > 560
+                  ? (constraints.maxWidth - 16) / 2
+                  : constraints.maxWidth;
+              return Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  SizedBox(
+                    width: cardWidth,
+                    child: _MaterialCard(
+                      imagePath: AppConfig.zenBuddhaAssetCardImagePath,
+                      title: '3D佛像素材',
+                      priceLabel: unlocked ? '已解锁' : '¥33 解锁',
+                      locked: !unlocked,
+                      selected: selected,
+                      onTap: () => _selectZenBuddhaMaterial(model),
                     ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatTimeline(FileTransferModel model) {
+    final hasSendingProcess = _shouldShowGlobalSendProcess(model);
+
+    _scrollHomeChatToBottom();
+    return ListView(
+      key: const ValueKey('chat'),
+      controller: _homeChatScrollController,
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+      children: [
+        for (final message in _homeChatMessages) ...[
+          _buildChatBubble(message),
+          const SizedBox(height: 18),
+        ],
+        if (_isAiGenerating)
+          _streamingAiText.trim().isEmpty
+              ? const Align(
+                  alignment: Alignment.centerLeft,
+                  child: _ThinkingDots(label: '正在思考'),
+                )
+              : _buildChatBubble(
+                  _HomeChatMessage(text: _streamingAiText, isUser: false),
+                ),
+        if (_isAiGenerating) const SizedBox(height: 18),
+        if (hasSendingProcess) _buildGlobalSendingProcess(model),
+      ],
+    );
+  }
+
+  Widget _buildChatBubble(_HomeChatMessage message) {
+    final bubbleColor = message.isUser
+        ? const Color(0xFF1B1B1D)
+        : message.isError
+        ? Colors.red.withValues(alpha: 0.20)
+        : Colors.white.withValues(alpha: 0.08);
+    final alignment = message.isUser
+        ? Alignment.centerRight
+        : Alignment.centerLeft;
+    final radius = BorderRadius.only(
+      topLeft: const Radius.circular(24),
+      topRight: const Radius.circular(24),
+      bottomLeft: Radius.circular(message.isUser ? 24 : 8),
+      bottomRight: Radius.circular(message.isUser ? 8 : 24),
+    );
+
+    return Align(
+      alignment: alignment,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 430),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
+        child: Text(
+          message.text,
+          style: TextStyle(
+            color: message.isError ? Colors.red[100] : Colors.white,
+            fontSize: 17,
+            height: 1.42,
+            fontWeight: message.isUser ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _shouldShowGlobalSendProcess(FileTransferModel model) {
+    return _isGlobalSendTimelineVisible ||
+        model.isPreparingSend ||
+        model.isTransferring;
+  }
+
+  Widget _buildGlobalSendingProcess(FileTransferModel model) {
+    final label = model.isPreparingSend
+        ? (model.preparingSendMessage.isEmpty
+              ? '正在准备全球发送'
+              : model.preparingSendMessage)
+        : model.isTransferring
+        ? _currentSendingCountry.isEmpty
+              ? '正在全球发送'
+              : '正在发送到 $_currentSendingCountry'
+        : '正在整理本次发送数据';
+
+    final successCount = model.countryStatuses
+        .where((status) => status.status == SendStatus.success)
+        .length;
+    final totalCount = model.countryStatuses.length;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ThinkingDots(label: label),
+          const SizedBox(height: 14),
+          _buildScenePreview(),
+          const SizedBox(height: 12),
+          Container(
+            constraints: const BoxConstraints(maxWidth: 430),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    totalCount == 0
+                        ? '已传播 ${model.globalSentCount} 个节点'
+                        : '已完成 $successCount / $totalCount 个国家',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '${model.globalDataSentMB.toStringAsFixed(2)} MB',
+                  style: TextStyle(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.95),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ],
-            );
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScenePreview() {
+    final useThreeD = _isThreeDActiveNow;
+
+    return GestureDetector(
+      onTap: _openFullScreenScene,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 520),
+        height: 268,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.46),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.32),
+              blurRadius: 24,
+              offset: const Offset(0, 14),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_isGlobeLoaded)
+              useThreeD
+                  ? EarthGlobeWidget(key: _globe3DKey)
+                  : HomeWorld2DWidget(key: _world2DKey)
+            else
+              const Center(
+                child: CircularProgressIndicator(color: Colors.cyan),
+              ),
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.48),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: const Icon(
+                  Icons.fullscreen_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _prefillPrompt(String prompt) {
+    _chatInputController.text = prompt;
+    _chatInputController.selection = TextSelection.collapsed(
+      offset: _chatInputController.text.length,
+    );
+    setState(() {});
+  }
+
+  String _conversationTitleFrom(List<_HomeChatMessage> messages) {
+    String? firstUserMessage;
+    for (final message in messages) {
+      final text = message.text.trim();
+      if (message.isUser && text.isNotEmpty) {
+        firstUserMessage = text;
+        break;
+      }
+    }
+    final raw = firstUserMessage ?? '你好';
+    return raw.length > 18 ? '${raw.substring(0, 18)}...' : raw;
+  }
+
+  void _snapshotCurrentConversation() {
+    if (_homeChatMessages.isEmpty) return;
+    final snapshot = _HomeConversation(
+      title: _conversationTitleFrom(_homeChatMessages),
+      messages: List<_HomeChatMessage>.from(_homeChatMessages),
+      updatedAt: DateTime.now(),
+    );
+    _conversationHistory.removeWhere((item) => item.title == snapshot.title);
+    _conversationHistory.insert(0, snapshot);
+    if (_conversationHistory.length > 30) {
+      _conversationHistory.removeRange(30, _conversationHistory.length);
+    }
+  }
+
+  void _startNewConversation(FileTransferModel model) {
+    _snapshotCurrentConversation();
+    _stopAiGeneration();
+    model.clearFiles();
+    _chatInputController.clear();
+    setState(() {
+      _homeChatMessages.clear();
+      _streamingAiText = '';
+      _isDharmaComposerMode = false;
+      _showMaterialGallery = false;
+      _isGlobalSendTimelineVisible = false;
+      _currentSendingCountry = '';
+      _activeSendTitle = '';
+      _activeSendRegion = '';
+      _sendStartedAt = null;
+    });
+    Navigator.maybePop(context);
+  }
+
+  void _openConversation(_HomeConversation conversation) {
+    _snapshotCurrentConversation();
+    _stopAiGeneration();
+    _chatInputController.clear();
+    setState(() {
+      _homeChatMessages
+        ..clear()
+        ..addAll(conversation.messages);
+      _streamingAiText = '';
+      _isDharmaComposerMode = false;
+      _showMaterialGallery = false;
+      _isGlobalSendTimelineVisible = false;
+      _currentSendingCountry = '';
+      _activeSendTitle = '';
+      _activeSendRegion = '';
+      _sendStartedAt = null;
+    });
+    Navigator.maybePop(context);
+    _scrollHomeChatToBottom();
+  }
+
+  Future<void> _selectZenBuddhaMaterial(FileTransferModel model) async {
+    _activateDharmaMode(model, showMaterials: true);
+    final unlocked = await _ensureBuddhaAssetUnlocked();
+    if (!unlocked) return;
+
+    try {
+      await model.addZenBuddhaAssetForSending();
+      if (!mounted) return;
+      setState(() {
+        _buddhaAssetUnlocked = true;
+        _isDharmaComposerMode = true;
+        _showMaterialGallery = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('素材准备失败: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _openFullScreenScene() async {
+    final model = Provider.of<FileTransferModel>(context, listen: false);
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _FullScreenSendScene(
+          useThreeD: _isThreeDActiveNow,
+          model: model,
+          onClose: () {
+            _isCallbackSetup = false;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _setupTransferBeamCallback();
+            });
           },
         ),
       ),
@@ -1185,7 +1322,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     String action,
   ) async {
     if (action == 'dharma') {
-      _activateDharmaMode(model);
+      _activateDharmaMode(model, showMaterials: true);
       return true;
     }
     if (action == 'files') {
@@ -1205,7 +1342,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
   }
 
-  void _activateDharmaMode(FileTransferModel model) {
+  void _activateDharmaMode(
+    FileTransferModel model, {
+    bool showMaterials = false,
+  }) {
     if (model.countryList.isEmpty) {
       model.setCountryList(['ALL']);
     }
@@ -1217,6 +1357,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
     setState(() {
       _isDharmaComposerMode = true;
+      _showMaterialGallery = showMaterials;
     });
   }
 
@@ -1225,6 +1366,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     model.clearFiles();
     setState(() {
       _isDharmaComposerMode = false;
+      _showMaterialGallery = false;
     });
   }
 
@@ -2095,6 +2237,79 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
   }
 
+  String _sendContentTitle(FileTransferModel model, String composerText) {
+    if (model.selectedContentTitle.trim().isNotEmpty) {
+      return model.selectedContentTitle.trim();
+    }
+    final text = composerText.trim();
+    if (text.isNotEmpty) {
+      return _looksLikeHttpUrl(text) ? text : '法布施文字';
+    }
+    final file = model.selectedFile;
+    return file?.name ?? '法布施内容';
+  }
+
+  String _formatElapsed(Duration duration) {
+    if (duration.inMinutes >= 1) {
+      final seconds = duration.inSeconds % 60;
+      return '${duration.inMinutes}分$seconds秒';
+    }
+    return '${duration.inSeconds.clamp(1, 999)}秒';
+  }
+
+  void _appendGlobalSendResult(FileTransferModel model) {
+    final successCount = model.countryStatuses
+        .where((status) => status.status == SendStatus.success)
+        .length;
+    final completedCount = model.globalSentCount > 0
+        ? model.globalSentCount
+        : successCount;
+    final elapsed = _sendStartedAt == null
+        ? null
+        : _formatElapsed(DateTime.now().difference(_sendStartedAt!));
+    final title = _activeSendTitle.isEmpty ? '法布施内容' : _activeSendTitle;
+    final region = _activeSendRegion.isEmpty
+        ? _regionSummary(model)
+        : _activeSendRegion;
+
+    String text;
+    if (model.status == TransferStatus.completed && completedCount > 0) {
+      text = [
+        '本次全球法布施已完成。',
+        '',
+        '素材：$title',
+        '范围：$region',
+        '完成：$completedCount 个国家',
+        '数据量：${model.globalDataSentMB.toStringAsFixed(2)} MB',
+        if (elapsed != null) '用时：$elapsed',
+      ].join('\n');
+    } else if (model.status == TransferStatus.error) {
+      text = [
+        '本次发送遇到问题。',
+        if (model.currentLog.trim().isNotEmpty) model.currentLog.trim(),
+      ].join('\n');
+    } else if (model.isTransferring) {
+      text = '本地模块仍在运行，可以点击右侧停止按钮结束。';
+    } else {
+      text = [
+        '本次发送已停止。',
+        if (completedCount > 0) '已完成：$completedCount 个国家',
+        if (model.globalDataSentMB > 0)
+          '数据量：${model.globalDataSentMB.toStringAsFixed(2)} MB',
+      ].join('\n');
+    }
+
+    setState(() {
+      _homeChatMessages.add(_HomeChatMessage(text: text, isUser: false));
+      _isGlobalSendTimelineVisible = model.isTransferring;
+      if (!model.isTransferring) {
+        _currentSendingCountry = '';
+        _sendStartedAt = null;
+      }
+    });
+    _scrollHomeChatToBottom();
+  }
+
   void _startSending(FileTransferModel model) async {
     if (model.isPreparingSend || model.isTransferring) return;
 
@@ -2108,6 +2323,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
             title: '法布施',
             text: composerText,
             sourceKind: '文本',
+            replaceExisting: !model.hasFiles,
           );
         }
         _chatInputController.clear();
@@ -2153,7 +2369,24 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       return;
     }
 
-    if (Platform.isAndroid && mounted) {
+    final sendTitle = _sendContentTitle(model, composerText);
+    final sendRegion = _regionSummary(model);
+
+    setState(() {
+      _homeChatMessages.add(
+        _HomeChatMessage(text: '开始全球法布施：$sendTitle', isUser: true),
+      );
+      _isDharmaComposerMode = false;
+      _showMaterialGallery = false;
+      _isGlobalSendTimelineVisible = true;
+      _activeSendTitle = sendTitle;
+      _activeSendRegion = sendRegion;
+      _sendStartedAt = DateTime.now();
+      _isCallbackSetup = false;
+    });
+    _scrollHomeChatToBottom();
+
+    if (!kIsWeb && Platform.isAndroid && mounted) {
       try {
         await AutoStartGuideDialog.showIfNeeded(context);
       } catch (e) {
@@ -2164,21 +2397,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     await _onlineCounterService.joinActivity('global_sending');
     _clearActiveSceneBeams();
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('🌍 开始法布施到${_regionSummary(model)}...'),
-          duration: const Duration(seconds: 2),
-          backgroundColor: Colors.black87,
-        ),
-      );
-    }
-
     await model.startGlobalTransfer();
-    final sentCount = model.globalSentCount;
 
-    await _onlineCounterService.leaveActivity();
-    _clearActiveSceneBeams();
+    if (!model.isTransferring) {
+      await _onlineCounterService.leaveActivity();
+      _clearActiveSceneBeams();
+    }
 
     if (mounted) {
       setState(() {
@@ -2187,31 +2411,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
 
     if (!mounted) return;
-    if (model.status == TransferStatus.completed && sentCount > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✨ 所选内容已发送完成，共完成 $sentCount 个国家！'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    } else if (model.status == TransferStatus.idle) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🛑 已停止发送'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
-        ),
-      );
-    } else if (model.isTransferring) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('本地模块运行中，可点击停止结束。'),
-          backgroundColor: Colors.black87,
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
+    _appendGlobalSendResult(model);
   }
 
   void _stopSending(FileTransferModel model) async {
@@ -2221,17 +2421,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
     setState(() {
       _currentSendingCountry = '';
+      _isGlobalSendTimelineVisible = false;
     });
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🛑 已停止发送'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
+    if (mounted) _appendGlobalSendResult(model);
   }
 }
 
@@ -2407,6 +2600,482 @@ class _HomeChatMessage {
     required this.isUser,
     this.isError = false,
   });
+}
+
+class _HomeConversation {
+  final String title;
+  final List<_HomeChatMessage> messages;
+  final DateTime updatedAt;
+
+  const _HomeConversation({
+    required this.title,
+    required this.messages,
+    required this.updatedAt,
+  });
+}
+
+class _DrawerSectionLabel extends StatelessWidget {
+  final String label;
+
+  const _DrawerSectionLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white38,
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _ConversationTile extends StatelessWidget {
+  final String title;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _ConversationTile({
+    required this.title,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 56),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.chat_bubble : Icons.history,
+              color: Colors.white70,
+              size: 18,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickPromptPill extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final VoidCallback onTap;
+
+  const _QuickPromptPill({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        height: 60,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF24262B).withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: iconColor, size: 24),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MaterialCard extends StatelessWidget {
+  final String imagePath;
+  final String title;
+  final String priceLabel;
+  final bool locked;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _MaterialCard({
+    required this.imagePath,
+    required this.title,
+    required this.priceLabel,
+    required this.locked,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: AspectRatio(
+        aspectRatio: 1.42,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.asset(imagePath, fit: BoxFit.cover),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x11000000), Color(0xCC000000)],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 18,
+                right: 18,
+                bottom: 18,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Colors.greenAccent.withValues(alpha: 0.92)
+                            : Colors.black.withValues(alpha: 0.58),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            selected
+                                ? Icons.check
+                                : locked
+                                ? Icons.lock
+                                : Icons.lock_open,
+                            color: selected ? Colors.black : Colors.white,
+                            size: 15,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            selected ? '已选择' : priceLabel,
+                            style: TextStyle(
+                              color: selected ? Colors.black : Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThinkingDots extends StatefulWidget {
+  final String label;
+
+  const _ThinkingDots({required this.label});
+
+  @override
+  State<_ThinkingDots> createState() => _ThinkingDotsState();
+}
+
+class _ThinkingDotsState extends State<_ThinkingDots> {
+  Timer? _timer;
+  int _phase = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 420), (_) {
+      if (!mounted) return;
+      setState(() => _phase = (_phase + 1) % 4);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 430),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.auto_awesome, color: Colors.white70, size: 17),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              '${widget.label}${List.filled(_phase, '.').join()}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FullScreenSendScene extends StatefulWidget {
+  final bool useThreeD;
+  final FileTransferModel model;
+  final VoidCallback onClose;
+
+  const _FullScreenSendScene({
+    required this.useThreeD,
+    required this.model,
+    required this.onClose,
+  });
+
+  @override
+  State<_FullScreenSendScene> createState() => _FullScreenSendSceneState();
+}
+
+class _FullScreenSendSceneState extends State<_FullScreenSendScene> {
+  final GlobalKey<HomeWorld2DWidgetState> _world2DKey = GlobalKey();
+  final GlobalKey<EarthGlobeWidgetState> _globe3DKey = GlobalKey();
+  final List<Map<String, dynamic>> _pendingBeams = [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _setupTransferBeamCallback();
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.onClose();
+    super.dispose();
+  }
+
+  void _setupTransferBeamCallback() {
+    widget.model.setTransferBeamCallback((
+      fromLat,
+      fromLng,
+      toLat,
+      toLng, {
+      String? fromLabel,
+      String? toLabel,
+      Duration? displayDuration,
+    }) {
+      final added = _addTransferBeam(
+        fromLat,
+        fromLng,
+        toLat,
+        toLng,
+        duration: displayDuration ?? const Duration(milliseconds: 900),
+        toLabel: toLabel,
+      );
+      if (!added) {
+        _pendingBeams.add({
+          'fromLat': fromLat,
+          'fromLng': fromLng,
+          'toLat': toLat,
+          'toLng': toLng,
+          'toLabel': toLabel,
+        });
+        if (_pendingBeams.length > 20) _pendingBeams.removeAt(0);
+      }
+    });
+    _playPendingBeams();
+  }
+
+  bool _addTransferBeam(
+    double fromLat,
+    double fromLng,
+    double toLat,
+    double toLng, {
+    Duration? duration,
+    String? toLabel,
+  }) {
+    try {
+      if (widget.useThreeD) {
+        final state = _globe3DKey.currentState;
+        if (state == null) return false;
+        state.addTransferBeam(
+          fromLat,
+          fromLng,
+          toLat,
+          toLng,
+          duration: duration,
+          toLabel: toLabel,
+        );
+        return true;
+      }
+
+      final state = _world2DKey.currentState;
+      if (state == null) return false;
+      state.addTransferBeam(
+        fromLat,
+        fromLng,
+        toLat,
+        toLng,
+        duration: duration,
+        toLabel: toLabel,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('全屏地球轨迹添加失败: $e');
+      return false;
+    }
+  }
+
+  void _playPendingBeams() {
+    if (_pendingBeams.isEmpty) return;
+    final hasScene = widget.useThreeD
+        ? _globe3DKey.currentState != null
+        : _world2DKey.currentState != null;
+    if (!hasScene) {
+      Future.delayed(const Duration(milliseconds: 300), _playPendingBeams);
+      return;
+    }
+
+    for (final beam in _pendingBeams) {
+      _addTransferBeam(
+        beam['fromLat'] as double,
+        beam['fromLng'] as double,
+        beam['toLat'] as double,
+        beam['toLng'] as double,
+        duration: const Duration(seconds: 3),
+        toLabel: beam['toLabel'] as String?,
+      );
+    }
+    _pendingBeams.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _setupTransferBeamCallback();
+    });
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: widget.useThreeD
+                  ? EarthGlobeWidget(key: _globe3DKey)
+                  : HomeWorld2DWidget(key: _world2DKey),
+            ),
+            Positioned(
+              top: 14,
+              left: 14,
+              child: IconButton(
+                tooltip: '关闭',
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close, color: Colors.white),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black.withValues(alpha: 0.44),
+                  fixedSize: const Size(46, 46),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 76,
+              top: 22,
+              right: 76,
+              child: Text(
+                widget.useThreeD ? '3D 实时轨迹' : '2D 实时轨迹',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _SendMenuRow extends StatelessWidget {

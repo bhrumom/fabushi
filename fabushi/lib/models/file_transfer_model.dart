@@ -871,8 +871,8 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       _currentLog = '已选择禅室佛像素材: ${platformFile.name}';
       _setSelectedContentSummary(
         kind: '禅室佛像素材',
-        title: platformFile.name,
-        subtitle: '${getFileSizeString(size)} · 点此重新选择发送内容',
+        title: AppConfig.zenBuddhaAssetDisplayName,
+        subtitle: '${getFileSizeString(size)} · ${platformFile.name} · 点此查看素材',
         previewText:
             '禅室佛像素材\n文件名: ${platformFile.name}\n大小: ${getFileSizeString(size)}',
       );
