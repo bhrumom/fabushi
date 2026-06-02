@@ -84,6 +84,7 @@ class RealGlobalSendService {
   Future<void> startSending({
     required List<PlatformFile> files,
     required bool isLoop,
+    List<String>? countryCodes,
   }) async {
     if (_isRunning) return;
 
@@ -92,6 +93,8 @@ class RealGlobalSendService {
     _dataSentInMB = 0.0;
 
     try {
+      final targetCountryCodes = _resolveTargetCountryCodes(countryCodes);
+      _totalCountries = targetCountryCodes.length;
       onLog('🚀 开始真实全球发送 - 文件数量: ${files.length}, 目标国家: $_totalCountries 个');
 
       _loopCount = 0; // 重置轮次计数
@@ -114,7 +117,10 @@ class RealGlobalSendService {
           // 关键修复：在处理每个文件前让出主线程控制权
           await Future.delayed(Duration.zero);
 
-          final countriesSent = await _sendFileToAllCountries(file);
+          final countriesSent = await _sendFileToAllCountries(
+            file,
+            targetCountryCodes,
+          );
 
           final fileSizeMB = file.size / (1024 * 1024);
           _dataSentInMB += fileSizeMB * countriesSent;
@@ -135,11 +141,13 @@ class RealGlobalSendService {
     }
   }
 
-  Future<int> _sendFileToAllCountries(PlatformFile file) async {
+  Future<int> _sendFileToAllCountries(
+    PlatformFile file,
+    List<String> countryCodes,
+  ) async {
     final scriptureTitle = _displayScriptureName(file.name);
     onLog('📤 准备发送《$scriptureTitle》: ${file.name}');
 
-    final countryCodes = globalCountryServers.keys.toList();
     int successCount = 0;
     int failCount = 0;
 
@@ -259,6 +267,20 @@ class RealGlobalSendService {
 
     onLog('✅ 文件《$scriptureTitle》发送完成 - 成功: $successCount, 失败: $failCount');
     return successCount; // 返回成功发送的国家数
+  }
+
+  List<String> _resolveTargetCountryCodes(List<String>? requestedCodes) {
+    if (requestedCodes == null ||
+        requestedCodes.isEmpty ||
+        requestedCodes.contains('ALL')) {
+      return globalCountryServers.keys.toList();
+    }
+
+    final available = globalCountryServers.keys.toSet();
+    return requestedCodes
+        .where((code) => available.contains(code))
+        .toSet()
+        .toList();
   }
 
   /// 发送文件到服务器

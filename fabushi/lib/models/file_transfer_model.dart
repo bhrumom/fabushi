@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'dart:async';
 
 import '../core/config/app_config.dart';
+import '../core/constants/country_servers.dart' as country_catalog;
 import '../screens/asset_screen.dart';
 import '../services/asset_loader_service.dart';
 import '../services/shared_asset_manager.dart';
@@ -60,6 +61,7 @@ class LinkSendHistoryEntry {
 
 class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   static const String _linkHistoryPrefsKey = 'send_link_history_v1';
+  static const String _sendCountryListPrefsKey = 'send_country_list_v1';
   static const int _maxLinkHistoryEntries = 20;
   static const int _linkHistoryPreviewLimit = 600;
   static const int _largePayloadThresholdBytes = 1024 * 1024;
@@ -248,11 +250,13 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   void setGlobalSendEnabled(bool enabled) {
     _isGlobalSendEnabled = enabled;
+    _schedulePersist(_persistSendPreferences);
     notifyListeners();
   }
 
   void setLooping(bool looping) {
     _isLooping = looping;
+    _schedulePersist(_persistSendPreferences);
     notifyListeners();
   }
 
@@ -263,6 +267,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       _loopbackCount = 0;
       _stopLocalLoopback();
     }
+    _schedulePersist(_persistSendPreferences);
     notifyListeners();
   }
 
@@ -270,6 +275,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     _isFieldEnergyMode = enabled;
     _hotspotMessage = '';
     _needsHotspotGuide = false;
+    _schedulePersist(_persistSendPreferences);
     notifyListeners();
     debugPrint('🌟 无网场能模式: ${enabled ? "开启" : "关闭"}');
 
@@ -293,8 +299,35 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void setCountryList(List<String> countries) {
-    _countryList = countries;
+    _countryList = countries.isEmpty ? <String>[] : countries.toSet().toList();
+    _schedulePersist(_persistSendPreferences);
     notifyListeners();
+  }
+
+  List<String>? get _selectedGlobalCountryCodes {
+    if (!_isGlobalSendEnabled || _countryList.isEmpty) {
+      return const [];
+    }
+    if (_countryList.contains('ALL')) {
+      return null;
+    }
+    return _countryList
+        .where(
+          (code) => country_catalog.GLOBAL_COUNTRY_SERVERS.containsKey(code),
+        )
+        .toSet()
+        .toList();
+  }
+
+  void _prepareCountryStatusesForTargets(List<String>? countryCodes) {
+    final servers = countryCodes == null
+        ? country_catalog.GLOBAL_COUNTRY_SERVERS
+        : {
+            for (final code in countryCodes)
+              if (country_catalog.GLOBAL_COUNTRY_SERVERS.containsKey(code))
+                code: country_catalog.GLOBAL_COUNTRY_SERVERS[code]!,
+          };
+    initializeCountryStatuses(servers, country_catalog.COUNTRY_NAMES);
   }
 
   void beginPreparingSend(String message) {
@@ -943,6 +976,19 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     final shouldLoop = !forceSingleRound && _isLooping;
+    final targetCountryCodes = _selectedGlobalCountryCodes;
+    final shouldSendGlobal =
+        _isGlobalSendEnabled &&
+        (targetCountryCodes == null || targetCountryCodes.isNotEmpty);
+    final shouldRunLocal =
+        _isFieldEnergyMode || (_isLocalLoopbackEnabled && !kIsWeb);
+
+    if (!shouldSendGlobal && !shouldRunLocal) {
+      updateLog('请先在地区中选择全球、国家、本地场能或本地转经轮。');
+      _finishPreparingSend();
+      _scheduleNotify();
+      return;
+    }
 
     _isTransferring = true;
     _finishPreparingSend();
@@ -959,6 +1005,12 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       _loopCount++;
     }
 
+    if (shouldSendGlobal) {
+      _prepareCountryStatusesForTargets(targetCountryCodes);
+    } else {
+      _countryStatuses = [];
+    }
+
     _globalSentCount = 0;
     _loopbackCount = 0;
     _currentCountryProgress = null;
@@ -968,7 +1020,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       debugPrint(
-        '🚀 开始全球传输 - 文件数量: ${_selectedFiles.length}, 循环: $shouldLoop, 轮次: $_loopCount, 场能模式: $_isFieldEnergyMode, 本地回环: $_isLocalLoopbackEnabled',
+        '🚀 开始传输 - 文件数量: ${_selectedFiles.length}, 全球发送: $shouldSendGlobal, 循环: $shouldLoop, 轮次: $_loopCount, 场能模式: $_isFieldEnergyMode, 本地回环: $_isLocalLoopbackEnabled',
       );
 
       if (!isLoopContinuation) {
@@ -982,12 +1034,20 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
         await _startLocalLoopback();
       }
 
+      if (!shouldSendGlobal) {
+        updateLog('本地模块运行中，可点击停止结束。');
+        _schedulePersist(_persistTransferState);
+        _scheduleNotify();
+        return;
+      }
+
       debugPrint('🔧 准备初始化平台全球发送服务...');
       await _initializePlatformGlobalSendService();
       debugPrint('🔧 平台服务初始化完成，准备开始发送...');
       await _platformGlobalSendService?.startSending(
         files: _selectedFiles,
         isLoop: shouldLoop,
+        countryCodes: targetCountryCodes,
       );
       debugPrint('🔧 发送方法执行完毕，准备上传数据...');
       await _uploadPendingData();
@@ -995,6 +1055,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('✅ 传输完成，循环模式: $shouldLoop, 轮次: $_loopCount');
 
       _stopFieldEnergyBroadcast();
+      _stopLocalLoopback();
       await _stopBackgroundService();
       _isTransferring = false;
       _status = TransferStatus.completed;
@@ -1008,6 +1069,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       _currentSendingScripture = '';
       _currentCountryProgress = null;
       _stopFieldEnergyBroadcast();
+      _stopLocalLoopback();
       await _stopBackgroundService();
       _schedulePersist(_persistTransferState);
       _scheduleNotify();
@@ -1671,6 +1733,29 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       _globalSentCount = prefs.getInt('global_sent_count') ?? 0;
       _globalDataSentMB = prefs.getDouble('global_data_sent_mb') ?? 0.0;
       _currentLog = prefs.getString('current_log') ?? '';
+      _isGlobalSendEnabled = prefs.getBool('send_global_enabled') ?? true;
+      _isLooping = prefs.getBool('send_looping') ?? false;
+      _isFieldEnergyMode = prefs.getBool('send_field_energy') ?? false;
+      _isLocalLoopbackEnabled = prefs.getBool('send_local_loopback') ?? false;
+
+      final countryListJson = prefs.getString(_sendCountryListPrefsKey);
+      if (countryListJson != null && countryListJson.isNotEmpty) {
+        final decoded = json.decode(countryListJson);
+        if (decoded is List) {
+          _countryList = decoded
+              .whereType<String>()
+              .where(
+                (code) =>
+                    code == 'ALL' ||
+                    country_catalog.GLOBAL_COUNTRY_SERVERS.containsKey(code),
+              )
+              .toSet()
+              .toList();
+        }
+      }
+      if (_countryList.isEmpty && _isGlobalSendEnabled) {
+        _countryList = ['ALL'];
+      }
 
       final linkHistoryJson = prefs.getString(_linkHistoryPrefsKey);
       if (linkHistoryJson != null && linkHistoryJson.isNotEmpty) {
@@ -1715,6 +1800,22 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       await prefs.setString('current_log', _currentLog);
     } catch (e) {
       debugPrint('持久化传输状态失败: $e');
+    }
+  }
+
+  Future<void> _persistSendPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('send_global_enabled', _isGlobalSendEnabled);
+      await prefs.setBool('send_looping', _isLooping);
+      await prefs.setBool('send_field_energy', _isFieldEnergyMode);
+      await prefs.setBool('send_local_loopback', _isLocalLoopbackEnabled);
+      await prefs.setString(
+        _sendCountryListPrefsKey,
+        json.encode(_countryList),
+      );
+    } catch (e) {
+      debugPrint('持久化发送偏好失败: $e');
     }
   }
 
