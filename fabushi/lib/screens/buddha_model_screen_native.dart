@@ -10,6 +10,7 @@ import 'package:vector_math/vector_math.dart' as vector;
 
 import '../services/asset_loader_service.dart';
 import '../utils/model_auto_fit.dart';
+import '../widgets/buddha_model_loading_overlay.dart';
 
 enum _BuddhaRendererPath { flutterScenePrimary }
 
@@ -483,90 +484,16 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                 ),
               if (_isLoading)
                 Positioned.fill(
-                  child: Container(
-                    color: const Color(0xCC0B0E14),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const CircularProgressIndicator(
-                            color: Color(0xFFFFD700),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _loadingLabel,
-                            style: const TextStyle(
-                              color: Color(0xFFFFD700),
-                              fontSize: 14,
-                              letterSpacing: 1.0,
-                            ),
-                          ),
-                          if (_loadingProgress > 0)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                '${(_loadingProgress * 100).toInt()}%',
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+                  child: BuddhaModelLoadingOverlay.loading(
+                    progress: _loadingProgress,
+                    label: _loadingLabel,
                   ),
                 ),
               if (_loadFailed && !_isLoading)
                 Positioned.fill(
-                  child: Container(
-                    color: const Color(0xD90B0E14),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            color: Colors.white54,
-                            size: 48,
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            '禅境展现遇到阻碍',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 340),
-                            child: Text(
-                              _loadFailureDetails,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white54,
-                                fontSize: 12,
-                                height: 1.35,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFFFFD700),
-                              side: const BorderSide(color: Color(0xFFFFD700)),
-                            ),
-                            onPressed: () {
-                              unawaited(_startFlutterScenePrimary());
-                            },
-                            child: const Text('静心重试'),
-                          ),
-                        ],
-                      ),
-                    ),
+                  child: BuddhaModelLoadingOverlay.failed(
+                    failureDetails: _loadFailureDetails,
+                    onRetry: () => unawaited(_startFlutterScenePrimary()),
                   ),
                 ),
             ],
