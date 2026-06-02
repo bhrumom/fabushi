@@ -92,11 +92,21 @@ android {
 }
 
 dependencies {
+    val androidxTestRunnerVersion = "1.6.2"
+    val androidxTestRulesVersion = "1.6.1"
+    val espressoCoreVersion = "3.6.1"
+
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test:rules:1.6.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+
+    // Keep debug and androidTest classpaths aligned because AGP applies
+    // consistent dependency resolution between those configurations.
+    debugImplementation("androidx.test:runner:$androidxTestRunnerVersion")
+    debugImplementation("androidx.test:rules:$androidxTestRulesVersion")
+    debugImplementation("androidx.test.espresso:espresso-core:$espressoCoreVersion")
+    androidTestImplementation("androidx.test:runner:$androidxTestRunnerVersion")
+    androidTestImplementation("androidx.test:rules:$androidxTestRulesVersion")
+    androidTestImplementation("androidx.test.espresso:espresso-core:$espressoCoreVersion")
 }
 
 flutter {

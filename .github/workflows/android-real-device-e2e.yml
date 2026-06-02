@@ -19,7 +19,7 @@ on:
       device_model:
         description: Firebase Test Lab physical device model
         required: false
-        default: Pixel2
+        default: redfin
       device_version:
         description: Android API level for the physical device
         required: false
@@ -37,7 +37,7 @@ on:
       device_model:
         type: string
         required: false
-        default: Pixel2
+        default: redfin
       device_version:
         type: string
         required: false
@@ -71,6 +71,7 @@ concurrency:
 env:
   FLUTTER_VERSION: '3.41.9'
   REAL_DEVICE_TEST_TARGET: integration_test/home_send_real_device_test.dart
+  REAL_DEVICE_TARGET_PLATFORM: android-arm64
 
 jobs:
   android-real-device-e2e:
@@ -132,9 +133,11 @@ jobs:
           GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
         run: |
           set -euo pipefail
-          flutter build apk --debug --config-only
+          flutter build apk --debug --config-only --target-platform "$REAL_DEVICE_TARGET_PLATFORM"
           pushd android
-          ./gradlew app:assembleDebug app:assembleAndroidTest -Ptarget="$GITHUB_WORKSPACE/fabushi/${REAL_DEVICE_TEST_TARGET}"
+          ./gradlew app:assembleDebug app:assembleAndroidTest \
+            -Ptarget="$GITHUB_WORKSPACE/fabushi/${REAL_DEVICE_TEST_TARGET}" \
+            -Ptarget-platform="$REAL_DEVICE_TARGET_PLATFORM"
           popd
           test -f build/app/outputs/apk/debug/app-debug.apk
           test -f build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
@@ -155,7 +158,7 @@ jobs:
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_TEST_RESULTS_BUCKET: ${{ secrets.FIREBASE_TEST_RESULTS_BUCKET }}
-          DEVICE_MODEL: ${{ inputs.device_model || github.event.inputs.device_model || 'Pixel2' }}
+          DEVICE_MODEL: ${{ inputs.device_model || github.event.inputs.device_model || 'redfin' }}
           DEVICE_VERSION: ${{ inputs.device_version || github.event.inputs.device_version || '30' }}
           DEVICE_LOCALE: ${{ inputs.device_locale || github.event.inputs.device_locale || 'zh_CN' }}
           DEVICE_ORIENTATION: ${{ inputs.device_orientation || github.event.inputs.device_orientation || 'portrait' }}
