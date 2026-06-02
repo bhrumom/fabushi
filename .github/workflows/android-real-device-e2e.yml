@@ -117,6 +117,15 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
+      - name: Increase Gradle heap for hosted runners
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8
+          kotlin.daemon.jvm.options=-Xmx3g
+          EOF
+
       - name: Build Android app and instrumentation test APKs
         shell: bash
         env:
