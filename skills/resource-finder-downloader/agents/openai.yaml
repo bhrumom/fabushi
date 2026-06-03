@@ -1,0 +1,3 @@
+display_name: Resource Finder Downloader
+short_description: Search, download, and prepare shareable dharma resources.
+default_prompt: Find a legally shareable dharma resource, download readable text, and prepare it for global dharma sharing.
