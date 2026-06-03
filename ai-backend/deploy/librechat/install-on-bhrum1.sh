@@ -80,8 +80,10 @@ ensure_hex_secret() {
   local key="$1"
   local bytes="$2"
   local current
+  local example
   current="$(grep -E "^${key}=" .env | tail -n 1 | cut -d= -f2- || true)"
-  if [[ -z "$current" || "$current" == "changeme" || "$current" == *"your"* || "$current" == *"replace"* ]]; then
+  example="$(grep -E "^${key}=" .env.example | tail -n 1 | cut -d= -f2- || true)"
+  if [[ -z "$current" || "$current" == "$example" || "$current" == "changeme" || "$current" == *"your"* || "$current" == *"replace"* ]]; then
     set_env "$key" "$(openssl rand -hex "$bytes")"
   fi
 }
