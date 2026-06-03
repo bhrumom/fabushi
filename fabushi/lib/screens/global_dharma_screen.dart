@@ -27,7 +27,7 @@ class _GlobalDharmaScreenState extends State<GlobalDharmaScreen> {
     final model = context.read<FileTransferModel>();
     if (!model.hasFiles) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先在首页选择链接、文本、本机文件或禅室佛像素材。')),
+        const SnackBar(content: Text('请先在首页选择链接、文本、本机文件或3D佛像素材。')),
       );
       return;
     }

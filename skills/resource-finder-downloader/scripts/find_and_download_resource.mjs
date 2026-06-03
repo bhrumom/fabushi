@@ -6,7 +6,7 @@ import process from 'node:process';
 function parseArgs(argv) {
   const args = {
     query: '',
-    backend: process.env.DACHENG_AI_BACKEND_URL || 'https://api.ombhrum.com',
+    backend: process.env.DACHENG_AI_BACKEND_URL || 'http://141.148.140.39',
     limit: 8,
     pick: 1,
     output: process.cwd(),

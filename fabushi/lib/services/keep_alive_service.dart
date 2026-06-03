@@ -270,7 +270,7 @@ class KeepAliveService {
       body = '第 $_loopCount 轮 · $body';
     }
     if (_isLoopbackActive) {
-      body = '$body | 本地回环: $_loopbackCount 次';
+      body = '$body | 不可思议扬升能量场: $_loopbackCount 次';
     }
     return body;
   }
