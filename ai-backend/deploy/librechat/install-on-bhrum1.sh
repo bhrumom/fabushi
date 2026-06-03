@@ -92,7 +92,7 @@ services:
   api:
     environment:
       - CONFIG_PATH=/app/librechat.yaml
-    ports:
+    ports: !override
       - "127.0.0.1:3080:3080"
     extra_hosts:
       - "host.docker.internal:host-gateway"
