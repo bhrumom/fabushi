@@ -41,6 +41,11 @@ class AppConfig {
       'https://fabushi-flutter-web-dev.bhrumom.workers.dev';
   static const String localDevUrl = 'http://localhost:8787';
   static const String publicWebUrl = 'https://flutter.ombhrum.com';
+  static const String configuredAiBackendUrl = String.fromEnvironment(
+    'AI_BACKEND_URL',
+    defaultValue: '',
+  );
+  static const String vpsAiBackendUrl = 'http://141.148.140.39';
 
   static String get currentBackendUrl {
     if (configuredApiBaseUrl.isNotEmpty) {
@@ -63,6 +68,13 @@ class AppConfig {
   }
 
   static String get apiUrl => currentBackendUrl;
+
+  static String get currentAiBackendUrl {
+    if (configuredAiBackendUrl.isNotEmpty) {
+      return configuredAiBackendUrl;
+    }
+    return currentBackendUrl;
+  }
 
   /// 大厂式 API 网关入口：客户端只允许构造自家后端的相对路径。
   ///
