@@ -45,10 +45,11 @@ This still uses Cloudflare DNS/Tunnel only; no Worker is created.
 
 ### Runtime configuration
 
-The installer generates missing `CREDS_IV`, `CREDS_KEY`, `JWT_SECRET`, and
-`JWT_REFRESH_SECRET` values in `/opt/librechat/current/.env`. If the existing
-Dacheng AI bridge has `DEEPSEEK_API_KEY`, the installer copies it locally into
-LibreChat's `.env` without printing it.
+The installer generates missing `CREDS_IV`, `CREDS_KEY`, `JWT_SECRET`,
+`JWT_REFRESH_SECRET`, and `MEILI_MASTER_KEY` values in
+`/opt/librechat/current/.env`. If the existing Dacheng AI bridge has
+`DEEPSEEK_API_KEY`, the installer copies it locally into LibreChat's `.env`
+without printing it.
 
 Keep `DOMAIN_CLIENT=https://ai.ombhrum.com`, `DOMAIN_SERVER=https://ai.ombhrum.com`,
 and `TRUST_PROXY=1`. Do not commit runtime secrets.

@@ -109,6 +109,7 @@ ensure_hex_secret "CREDS_KEY" 32
 ensure_hex_secret "CREDS_IV" 16
 ensure_hex_secret "JWT_SECRET" 32
 ensure_hex_secret "JWT_REFRESH_SECRET" 32
+ensure_hex_secret "MEILI_MASTER_KEY" 32
 
 if [[ -f /opt/dacheng-ai/.env ]] && grep -q '^DEEPSEEK_API_KEY=' /opt/dacheng-ai/.env && ! grep -q '^DEEPSEEK_API_KEY=' .env; then
   deepseek_key="$(grep '^DEEPSEEK_API_KEY=' /opt/dacheng-ai/.env | tail -n 1 | cut -d= -f2-)"
