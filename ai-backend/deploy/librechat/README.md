@@ -1,7 +1,7 @@
 # LibreChat on ai.ombhrum.com
 
-This deployment keeps Cloudflare in DNS/proxy mode only. Do not create or attach a
-Cloudflare Worker for `ai.ombhrum.com`.
+This deployment keeps Cloudflare in DNS/proxy/tunnel mode only. Do not create,
+attach, or route a Cloudflare Worker for `ai.ombhrum.com`.
 
 ## Topology
 
@@ -10,11 +10,13 @@ Cloudflare Worker for `ai.ombhrum.com`.
 - `https://ai.ombhrum.com/api/resources/*` -> Dacheng AI bridge resource tools
 - `https://ai.ombhrum.com/health` -> Dacheng AI bridge health endpoint
 
-Cloudflare may keep the record proxied. If SSE streaming or WebSocket upgrades
-misbehave, switch only this DNS record to DNS-only and keep the same origin
-configuration.
+Cloudflare may keep the record proxied when using a direct DNS record. If SSE
+streaming or WebSocket upgrades misbehave, switch only this DNS record to
+DNS-only and keep the same origin configuration.
 
 ## Deploy
+
+### Direct DNS/proxy mode
 
 1. Point Cloudflare DNS at the VPS:
 
@@ -28,20 +30,37 @@ configuration.
    sudo DOMAIN=ai.ombhrum.com ./install-on-bhrum1.sh
    ```
 
-3. Configure LibreChat secrets in `/opt/librechat/current/.env`.
+### Cloudflare Tunnel mode
 
-   Keep `DOMAIN_CLIENT=https://ai.ombhrum.com`, `DOMAIN_SERVER=https://ai.ombhrum.com`,
-   and `TRUST_PROXY=1`. Generate fresh `CREDS_IV`, `CREDS_KEY`, `JWT_SECRET`,
-   and `JWT_REFRESH_SECRET`; do not commit them.
+If `bhrum1` already runs a named Cloudflare Tunnel, route the hostname to the
+same VPS and let local Caddy handle path routing:
 
-4. Restart services:
+```bash
+cloudflared tunnel route dns --overwrite-dns <tunnel-id> ai.ombhrum.com
+sudo DOMAIN=ai.ombhrum.com CADDY_MODE=tunnel CADDY_TUNNEL_PORT=8090 ./install-on-bhrum1.sh
+sudo DOMAIN=ai.ombhrum.com CADDY_TUNNEL_PORT=8090 ./configure-cloudflare-tunnel.sh
+```
 
-   ```bash
-   sudo systemctl restart dacheng-ai-backend
-   sudo systemctl reload caddy
-   cd /opt/librechat/current
-   sudo docker compose up -d
-   ```
+This still uses Cloudflare DNS/Tunnel only; no Worker is created.
+
+### Runtime configuration
+
+The installer generates missing `CREDS_IV`, `CREDS_KEY`, `JWT_SECRET`, and
+`JWT_REFRESH_SECRET` values in `/opt/librechat/current/.env`. If the existing
+Dacheng AI bridge has `DEEPSEEK_API_KEY`, the installer copies it locally into
+LibreChat's `.env` without printing it.
+
+Keep `DOMAIN_CLIENT=https://ai.ombhrum.com`, `DOMAIN_SERVER=https://ai.ombhrum.com`,
+and `TRUST_PROXY=1`. Do not commit runtime secrets.
+
+After any config edit, restart services:
+
+```bash
+sudo systemctl restart dacheng-ai-backend
+sudo systemctl reload caddy
+cd /opt/librechat/current
+sudo docker compose up -d
+```
 
 ## Verification
 

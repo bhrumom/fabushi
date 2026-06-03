@@ -5,6 +5,8 @@ DOMAIN="${DOMAIN:-ai.ombhrum.com}"
 LIBRECHAT_DIR="${LIBRECHAT_DIR:-/opt/librechat/current}"
 LIBRECHAT_REPO="${LIBRECHAT_REPO:-https://github.com/danny-avila/LibreChat.git}"
 LIBRECHAT_REF="${LIBRECHAT_REF:-main}"
+CADDY_MODE="${CADDY_MODE:-direct}"
+CADDY_TUNNEL_PORT="${CADDY_TUNNEL_PORT:-8090}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -51,10 +53,45 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
 fi
 
+set_env() {
+  local key="$1"
+  local value="$2"
+  local tmp
+  tmp="$(mktemp)"
+  awk -v key="$key" -v value="$value" '
+    BEGIN { done = 0 }
+    $0 ~ "^" key "=" && done == 0 {
+      print key "=" value
+      done = 1
+      next
+    }
+    { print }
+    END {
+      if (done == 0) {
+        print key "=" value
+      }
+    }
+  ' .env > "$tmp"
+  cat "$tmp" > .env
+  rm -f "$tmp"
+}
+
+ensure_hex_secret() {
+  local key="$1"
+  local bytes="$2"
+  local current
+  current="$(grep -E "^${key}=" .env | tail -n 1 | cut -d= -f2- || true)"
+  if [[ -z "$current" || "$current" == "changeme" || "$current" == *"your"* || "$current" == *"replace"* ]]; then
+    set_env "$key" "$(openssl rand -hex "$bytes")"
+  fi
+}
+
 cp "$SCRIPT_DIR/librechat.yaml" "$LIBRECHAT_DIR/librechat.yaml"
 cat > "$LIBRECHAT_DIR/docker-compose.override.yml" <<'EOF'
 services:
   api:
+    environment:
+      - CONFIG_PATH=/app/librechat.yaml
     ports:
       - "127.0.0.1:3080:3080"
     extra_hosts:
@@ -65,21 +102,30 @@ services:
         target: /app/librechat.yaml
 EOF
 
-if ! grep -q '^DOMAIN_CLIENT=' .env; then
-  cat >> .env <<EOF
+set_env "DOMAIN_CLIENT" "https://${DOMAIN}"
+set_env "DOMAIN_SERVER" "https://${DOMAIN}"
+set_env "TRUST_PROXY" "1"
+ensure_hex_secret "CREDS_KEY" 32
+ensure_hex_secret "CREDS_IV" 16
+ensure_hex_secret "JWT_SECRET" 32
+ensure_hex_secret "JWT_REFRESH_SECRET" 32
 
-DOMAIN_CLIENT=https://${DOMAIN}
-DOMAIN_SERVER=https://${DOMAIN}
-TRUST_PROXY=1
-EOF
+if [[ -f /opt/dacheng-ai/.env ]] && grep -q '^DEEPSEEK_API_KEY=' /opt/dacheng-ai/.env && ! grep -q '^DEEPSEEK_API_KEY=' .env; then
+  deepseek_key="$(grep '^DEEPSEEK_API_KEY=' /opt/dacheng-ai/.env | tail -n 1 | cut -d= -f2-)"
+  set_env "DEEPSEEK_API_KEY" "$deepseek_key"
 fi
 
 docker compose pull
 docker compose up -d
 
 install -d -m 0755 /etc/caddy/conf.d
-sed "s/ai\\.ombhrum\\.com/${DOMAIN}/g" "$SCRIPT_DIR/Caddyfile" \
-  > /etc/caddy/conf.d/ai.ombhrum.com.caddy
+if [[ "$CADDY_MODE" == "tunnel" ]]; then
+  sed "s/:8090/:${CADDY_TUNNEL_PORT}/g" "$SCRIPT_DIR/Caddyfile.tunnel" \
+    > /etc/caddy/conf.d/ai.ombhrum.com.caddy
+else
+  sed "s/ai\\.ombhrum\\.com/${DOMAIN}/g" "$SCRIPT_DIR/Caddyfile" \
+    > /etc/caddy/conf.d/ai.ombhrum.com.caddy
+fi
 
 if ! grep -q 'import /etc/caddy/conf.d/\*.caddy' /etc/caddy/Caddyfile; then
   cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.backup.$(date +%Y%m%d%H%M%S)"
