@@ -130,7 +130,16 @@ else
     > /etc/caddy/conf.d/ai.ombhrum.com.caddy
 fi
 
-if ! grep -q 'import /etc/caddy/conf.d/\*.caddy' /etc/caddy/Caddyfile; then
+if [[ "$CADDY_MODE" == "tunnel" ]]; then
+  cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.backup.$(date +%Y%m%d%H%M%S)"
+  cat > /etc/caddy/Caddyfile <<'EOF'
+{
+	auto_https off
+}
+
+import /etc/caddy/conf.d/*.caddy
+EOF
+elif ! grep -q 'import /etc/caddy/conf.d/\*.caddy' /etc/caddy/Caddyfile; then
   cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.backup.$(date +%Y%m%d%H%M%S)"
   printf '\nimport /etc/caddy/conf.d/*.caddy\n' >> /etc/caddy/Caddyfile
 fi
