@@ -9,7 +9,9 @@ import '../core/config/app_config.dart';
 import '../core/constants/country_servers.dart' as country_catalog;
 import '../features/auth/application/auth_model.dart';
 import '../models/file_transfer_model.dart';
-import '../services/app_settings.dart';
+import '../services/dacheng_ai_service.dart';
+import '../services/meditation_session_manager.dart';
+import '../services/practice_book_service.dart';
 import '../widgets/earth_globe_widget.dart';
 import '../widgets/home_world_2d_widget.dart';
 import '../widgets/scene_render_mode.dart';
@@ -17,9 +19,6 @@ import 'leaderboard_screen.dart';
 import '../core/design_system/app_theme.dart';
 import '../services/alipay_service.dart';
 import '../services/apple_iap_service.dart';
-import '../services/llm_inference_service.dart';
-import '../services/llm_model_config.dart';
-import '../services/llm_model_manager.dart';
 import '../services/membership_service.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/auto_start_guide_dialog.dart';
@@ -53,8 +52,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   final List<_HomeChatMessage> _homeChatMessages = [];
   final List<_HomeConversation> _conversationHistory = [];
   StreamSubscription<String>? _aiStreamSubscription;
-  List<LLMModelType> _availableChatModels = [];
-  LLMModelType? _selectedChatModel;
+  final DachengAiService _dachengAiService = DachengAiService();
+  String? _activeConversationId;
+  int _aiRequestSerial = 0;
   final _onlineCounterService = OnlineCounterService();
   final _membershipService = MembershipService();
   final _alipayService = AlipayService();
@@ -141,47 +141,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadGlobe();
-    _loadAvailableChatModel();
     _fetchInitialCount();
     _onlineCounterService.startCountPolling('global_sending');
-  }
-
-  Future<void> _loadAvailableChatModel() async {
-    if (kIsWeb) return;
-    try {
-      final downloadedModels = await LLMModelManager.instance
-          .getDownloadedModels();
-      final isMobile = Platform.isAndroid || Platform.isIOS;
-      final platformModels = LLMModelConfig.getChatModelsForPlatform(
-        isMobile: isMobile,
-      );
-      final supportedTypes = platformModels
-          .map((config) => config.type)
-          .toSet();
-      final chatModels = downloadedModels
-          .where((type) => supportedTypes.contains(type))
-          .toList();
-
-      LLMModelType? savedModel;
-      final savedModelName = await AppSettings.getSelectedModelName();
-      if (savedModelName != null) {
-        try {
-          savedModel = LLMModelType.values.firstWhere(
-            (type) => type.name == savedModelName,
-          );
-          if (!chatModels.contains(savedModel)) savedModel = null;
-        } catch (_) {}
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _availableChatModels = chatModels;
-        _selectedChatModel =
-            savedModel ?? (chatModels.isNotEmpty ? chatModels.first : null);
-      });
-    } catch (e) {
-      debugPrint('首页 AI 模型加载失败: $e');
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_loadRemoteConversations());
+    });
   }
 
   Future<void> _fetchInitialCount() async {
@@ -190,6 +154,33 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       await _onlineCounterService.fetchCountForActivity('global_sending');
     } catch (e) {
       debugPrint('获取初始在线人数失败: $e');
+    }
+  }
+
+  Future<void> _loadRemoteConversations() async {
+    try {
+      final authModel = Provider.of<AuthModel?>(context, listen: false);
+      final summaries = await _dachengAiService.listConversations(
+        token: authModel?.authToken,
+        username: authModel?.currentUser?.username,
+      );
+      if (!mounted || summaries.isEmpty) return;
+      setState(() {
+        _conversationHistory
+          ..clear()
+          ..addAll(
+            summaries.map(
+              (summary) => _HomeConversation(
+                id: summary.id,
+                title: summary.title,
+                messages: const [],
+                updatedAt: summary.updatedAt,
+              ),
+            ),
+          );
+      });
+    } catch (e) {
+      debugPrint('加载大乘 AI 历史失败: $e');
     }
   }
 
@@ -427,7 +418,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               ),
             ),
             const Text(
-              '灵光',
+              '大乘',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 25,
@@ -520,7 +511,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     children: [
                       const Expanded(
                         child: Text(
-                          '灵光',
+                          '大乘',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 24,
@@ -646,7 +637,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           ),
           const SizedBox(height: 12),
           const Text(
-            '让复杂，变简单',
+            '把可分享的善法资源，带到全球',
             style: TextStyle(
               color: Colors.white70,
               fontSize: 20,
@@ -661,32 +652,32 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               _QuickPromptPill(
                 icon: Icons.auto_awesome,
                 iconColor: const Color(0xFF67AEFF),
-                label: '你是谁',
-                onTap: () => _prefillPrompt('你是谁？'),
+                label: '大乘能做什么',
+                onTap: () => _prefillPrompt('大乘如何帮助我做全球法布施？'),
               ),
               _QuickPromptPill(
-                icon: Icons.bubble_chart_rounded,
+                icon: Icons.public,
                 iconColor: const Color(0xFF4DDE7A),
-                label: '一句话生成闪应用',
-                onTap: () => _prefillPrompt('帮我用一句话生成一个闪应用'),
+                label: '开始全球法布施',
+                onTap: () => _prefillPrompt('帮我整理一段适合全球法布施的善法文字'),
               ),
               _QuickPromptPill(
-                icon: Icons.sports_esports_rounded,
+                icon: Icons.search_rounded,
                 iconColor: const Color(0xFFFF9F69),
-                label: '摇个小游戏',
-                onTap: () => _prefillPrompt('给我摇一个轻松小游戏'),
+                label: '查找下载资源',
+                onTap: () => _prefillPrompt('帮我查找可以下载和分享的佛法资源'),
               ),
               _QuickPromptPill(
-                icon: Icons.view_in_ar_rounded,
+                icon: Icons.menu_book_rounded,
                 iconColor: const Color(0xFFA979FF),
-                label: '体验世界模型',
-                onTap: () => _prefillPrompt('带我体验一个世界模型'),
+                label: '加入功课本',
+                onTap: () => _prefillPrompt('找一份适合放进禅室功课本的经典或仪轨'),
               ),
               _QuickPromptPill(
-                icon: Icons.image_rounded,
+                icon: Icons.volunteer_activism_rounded,
                 iconColor: const Color(0xFFFF7D8A),
-                label: '百变影像馆',
-                onTap: () => _prefillPrompt('帮我设计一张创意图片'),
+                label: '发愿文案',
+                onTap: () => _prefillPrompt('帮我写一段庄重、简洁的全球法布施发愿文'),
               ),
             ],
           ),
@@ -964,11 +955,16 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   void _snapshotCurrentConversation() {
     if (_homeChatMessages.isEmpty) return;
     final snapshot = _HomeConversation(
+      id: _activeConversationId,
       title: _conversationTitleFrom(_homeChatMessages),
       messages: List<_HomeChatMessage>.from(_homeChatMessages),
       updatedAt: DateTime.now(),
     );
-    _conversationHistory.removeWhere((item) => item.title == snapshot.title);
+    _conversationHistory.removeWhere(
+      (item) =>
+          (snapshot.id != null && item.id == snapshot.id) ||
+          item.title == snapshot.title,
+    );
     _conversationHistory.insert(0, snapshot);
     if (_conversationHistory.length > 30) {
       _conversationHistory.removeRange(30, _conversationHistory.length);
@@ -981,6 +977,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     model.clearFiles();
     _chatInputController.clear();
     setState(() {
+      _activeConversationId = null;
       _homeChatMessages.clear();
       _streamingAiText = '';
       _isDharmaComposerMode = false;
@@ -994,14 +991,39 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     Navigator.maybePop(context);
   }
 
-  void _openConversation(_HomeConversation conversation) {
+  Future<void> _openConversation(_HomeConversation conversation) async {
     _snapshotCurrentConversation();
     _stopAiGeneration();
     _chatInputController.clear();
+    var messages = conversation.messages;
+    final conversationId = conversation.id;
+
+    if (conversationId != null && conversationId.isNotEmpty) {
+      try {
+        final authModel = Provider.of<AuthModel?>(context, listen: false);
+        final remoteMessages = await _dachengAiService.getConversationMessages(
+          conversationId: conversationId,
+          token: authModel?.authToken,
+        );
+        messages = remoteMessages
+            .map(
+              (message) => _HomeChatMessage(
+                text: message.content,
+                isUser: message.role == 'user',
+              ),
+            )
+            .toList();
+      } catch (e) {
+        debugPrint('打开大乘 AI 历史失败: $e');
+      }
+    }
+
+    if (!mounted) return;
     setState(() {
+      _activeConversationId = conversationId;
       _homeChatMessages
         ..clear()
-        ..addAll(conversation.messages);
+        ..addAll(messages);
       _streamingAiText = '';
       _isDharmaComposerMode = false;
       _showMaterialGallery = false;
@@ -1297,6 +1319,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           '添加图片和文件',
           '选择本机图片或文件',
         ),
+        _sendMenuItem(
+          'resources',
+          Icons.manage_search_rounded,
+          '查找下载资源',
+          '搜索、下载，并一键法布施或加入功课本',
+        ),
       ],
     );
 
@@ -1330,6 +1358,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       final selected = await model.selectFiles(replaceExisting: true);
       if (selected && mounted) setState(() {});
       return selected;
+    }
+    if (action == 'resources') {
+      await _openResourceFinder(model);
+      return true;
     }
     return false;
   }
@@ -1612,11 +1644,334 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
+  Future<void> _openResourceFinder(FileTransferModel model) async {
+    final initialQuery = _chatInputController.text.trim();
+    final controller = TextEditingController(
+      text: initialQuery.isEmpty ? '大乘经典 法布施' : initialQuery,
+    );
+    var query = controller.text.trim();
+    var isSearching = false;
+    String? busyResourceId;
+    String? errorMessage;
+    var results = <DharmaResourceSearchResult>[];
+
+    Future<void> runSearch(void Function(void Function()) setSheetState) async {
+      final searchQuery = controller.text.trim();
+      if (searchQuery.length < 2) {
+        setSheetState(() => errorMessage = '请输入至少 2 个字的关键词');
+        return;
+      }
+
+      setSheetState(() {
+        query = searchQuery;
+        isSearching = true;
+        errorMessage = null;
+      });
+
+      try {
+        final authModel = Provider.of<AuthModel?>(context, listen: false);
+        final items = await _dachengAiService.searchResources(
+          query: searchQuery,
+          token: authModel?.authToken,
+        );
+        setSheetState(() {
+          results = items;
+          errorMessage = items.isEmpty ? '暂时没有找到可下载资源，请换个关键词试试' : null;
+        });
+      } catch (e) {
+        setSheetState(() => errorMessage = '资源查找失败: $e');
+      } finally {
+        setSheetState(() => isSearching = false);
+      }
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+            final isBusy = isSearching || busyResourceId != null;
+
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: bottomInset),
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(sheetContext).size.height * 0.86,
+                  ),
+                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF181A1F),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(24),
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white24,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              '查找下载资源',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 21,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: '关闭',
+                            onPressed: isBusy
+                                ? null
+                                : () => Navigator.pop(sheetContext),
+                            icon: const Icon(
+                              Icons.close,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: controller,
+                              enabled: !isBusy,
+                              style: const TextStyle(color: Colors.white),
+                              cursorColor: AppTheme.primaryColor,
+                              textInputAction: TextInputAction.search,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                prefixIcon: const Icon(
+                                  Icons.search,
+                                  color: Colors.white54,
+                                ),
+                                hintText: '输入经典、咒语、仪轨或主题',
+                                hintStyle: const TextStyle(
+                                  color: Colors.white38,
+                                ),
+                                filled: true,
+                                fillColor: Colors.white.withValues(alpha: 0.08),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                              onSubmitted: (_) => runSearch(setSheetState),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          FilledButton.icon(
+                            onPressed: isBusy
+                                ? null
+                                : () => runSearch(setSheetState),
+                            icon: isSearching
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.manage_search, size: 19),
+                            label: const Text('查找'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppTheme.primaryColor,
+                              foregroundColor: Colors.black,
+                              minimumSize: const Size(92, 46),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (errorMessage != null)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Colors.orange.withValues(alpha: 0.28),
+                            ),
+                          ),
+                          child: Text(
+                            errorMessage!,
+                            style: const TextStyle(color: Colors.orangeAccent),
+                          ),
+                        ),
+                      if (errorMessage != null) const SizedBox(height: 12),
+                      Expanded(
+                        child: results.isEmpty && !isSearching
+                            ? _ResourceFinderEmptyState(query: query)
+                            : ListView.separated(
+                                itemCount: results.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(height: 10),
+                                itemBuilder: (context, index) {
+                                  final item = results[index];
+                                  final sendBusyId = 'send:${item.id}';
+                                  final bookBusyId = 'book:${item.id}';
+                                  return _ResourceResultCard(
+                                    item: item,
+                                    sending: busyResourceId == sendBusyId,
+                                    saving: busyResourceId == bookBusyId,
+                                    disabled: busyResourceId != null,
+                                    onSend: () async {
+                                      setSheetState(
+                                        () => busyResourceId = sendBusyId,
+                                      );
+                                      try {
+                                        await _sendResourceNow(model, item);
+                                        setSheetState(
+                                          () => busyResourceId = null,
+                                        );
+                                        if (sheetContext.mounted) {
+                                          Navigator.pop(sheetContext);
+                                        }
+                                      } catch (e) {
+                                        setSheetState(
+                                          () => errorMessage = '资源法布施失败: $e',
+                                        );
+                                        setSheetState(
+                                          () => busyResourceId = null,
+                                        );
+                                      }
+                                    },
+                                    onSaveToBook: () async {
+                                      setSheetState(
+                                        () => busyResourceId = bookBusyId,
+                                      );
+                                      try {
+                                        await _saveResourceToPracticeBook(item);
+                                        if (!mounted || !sheetContext.mounted) {
+                                          return;
+                                        }
+                                        ScaffoldMessenger.of(
+                                          sheetContext,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('已添加到禅室功课本'),
+                                          ),
+                                        );
+                                      } catch (e) {
+                                        setSheetState(
+                                          () => errorMessage = '加入功课本失败: $e',
+                                        );
+                                      } finally {
+                                        setSheetState(
+                                          () => busyResourceId = null,
+                                        );
+                                      }
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+  }
+
+  Future<DharmaResourceContent> _downloadResource(
+    DharmaResourceSearchResult resource,
+  ) async {
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
+    return _dachengAiService.downloadResource(
+      resource: resource,
+      token: authModel?.authToken,
+    );
+  }
+
+  Future<void> _sendResourceNow(
+    FileTransferModel model,
+    DharmaResourceSearchResult resource,
+  ) async {
+    final content = await _downloadResource(resource);
+    final sendText = [
+      '来源: ${content.sourceName}',
+      '链接: ${content.url}',
+      '',
+      content.contentText,
+    ].join('\n');
+
+    await model.addTextContentForSending(
+      title: content.title,
+      text: sendText,
+      sourceKind: '资源',
+      sourceUrl: content.url,
+      previewText: content.contentText,
+    );
+    _activateDharmaMode(model);
+    if (!mounted) return;
+    _startSending(model);
+  }
+
+  Future<void> _saveResourceToPracticeBook(
+    DharmaResourceSearchResult resource,
+  ) async {
+    final content = await _downloadResource(resource);
+    final practiceTitle = _practiceTitleForResource();
+    await PracticeBookService.instance.saveExtractedWebText(
+      practiceTitle: practiceTitle,
+      sourceUrl: content.url,
+      title: content.title,
+      plainText: content.contentText,
+    );
+  }
+
+  String _practiceTitleForResource() {
+    final lockedPractice = MeditationSessionManager().lockedPractice;
+    final title = lockedPractice?.title.trim();
+    if (title != null && title.isNotEmpty) {
+      return title;
+    }
+
+    final currentSutra = MeditationSessionManager().currentSutra.trim();
+    if (currentSutra.isNotEmpty && currentSutra != '默认功课') {
+      return currentSutra;
+    }
+
+    return '资源功课';
+  }
+
   Future<void> _sendAiChatFromComposer() async {
     final text = _chatInputController.text.trim();
     if (text.isEmpty || _isAiGenerating) return;
 
     HapticFeedback.lightImpact();
+    final requestSerial = ++_aiRequestSerial;
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
     await _aiStreamSubscription?.cancel();
     _aiStreamSubscription = null;
     _chatInputController.clear();
@@ -1628,67 +1983,34 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     _scrollHomeChatToBottom();
 
     try {
-      if (kIsWeb) {
-        throw UnsupportedError('Web 平台暂不支持本地 AI 对话');
-      }
-      final selectedModel = _selectedChatModel;
-      if (selectedModel == null ||
-          !_availableChatModels.contains(selectedModel)) {
-        throw StateError('请先在 AI 页面下载并选择一个本地模型');
-      }
-
-      final inferenceService = LLMInferenceService.instance;
-      final modelPath = await LLMModelManager.instance.getModelPath(
-        selectedModel,
+      final result = await _dachengAiService.sendChat(
+        message: text,
+        conversationId: _activeConversationId,
+        token: authModel?.authToken,
+        username: authModel?.currentUser?.username,
+        isMember: authModel?.hasPermission('premium') ?? false,
       );
-      if (!inferenceService.isInitialized ||
-          inferenceService.modelPath != modelPath) {
-        await inferenceService.initialize(modelPath);
-      }
 
-      final stream = inferenceService.generateStream(_buildHomeAiPrompt(text));
-      _aiStreamSubscription = stream.listen(
-        (token) {
-          if (!mounted) return;
-          setState(() {
-            _streamingAiText += token;
-          });
-          _scrollHomeChatToBottom();
-        },
-        onDone: () {
-          if (!mounted) return;
-          setState(() {
-            if (_streamingAiText.trim().isNotEmpty) {
-              _homeChatMessages.add(
-                _HomeChatMessage(text: _streamingAiText, isUser: false),
-              );
-            }
-            _streamingAiText = '';
-            _isAiGenerating = false;
-          });
-          _scrollHomeChatToBottom();
-        },
-        onError: (error) {
-          if (!mounted) return;
-          setState(() {
-            _homeChatMessages.add(
-              _HomeChatMessage(
-                text: '生成失败: $error',
-                isUser: false,
-                isError: true,
-              ),
-            );
-            _streamingAiText = '';
-            _isAiGenerating = false;
-          });
-          _scrollHomeChatToBottom();
-        },
-      );
+      if (!mounted || requestSerial != _aiRequestSerial) return;
+      setState(() {
+        _activeConversationId = result.conversationId;
+        _homeChatMessages.add(
+          _HomeChatMessage(text: result.message, isUser: false),
+        );
+        _streamingAiText = '';
+        _isAiGenerating = false;
+      });
+      _scrollHomeChatToBottom();
+      unawaited(_loadRemoteConversations());
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestSerial != _aiRequestSerial) return;
       setState(() {
         _homeChatMessages.add(
-          _HomeChatMessage(text: '生成失败: $e', isUser: false, isError: true),
+          _HomeChatMessage(
+            text: '大乘 AI 生成失败: $e',
+            isUser: false,
+            isError: true,
+          ),
         );
         _streamingAiText = '';
         _isAiGenerating = false;
@@ -1697,31 +2019,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
   }
 
-  String _buildHomeAiPrompt(String question) {
-    final previousMessages = _homeChatMessages.length > 1
-        ? _homeChatMessages.take(_homeChatMessages.length - 1)
-        : const Iterable<_HomeChatMessage>.empty();
-    final recent = previousMessages
-        .toList()
-        .reversed
-        .take(6)
-        .toList()
-        .reversed
-        .map((message) => '${message.isUser ? "用户" : "AI"}: ${message.text}')
-        .join('\n');
-
-    return [
-      '你是法布施应用首页里的 AI 助手。回答要简洁、直接、友善。',
-      if (recent.isNotEmpty) '最近对话:\n$recent',
-      '用户: $question',
-      'AI:',
-    ].join('\n\n');
-  }
-
   void _stopAiGeneration() {
+    _aiRequestSerial++;
     _aiStreamSubscription?.cancel();
     _aiStreamSubscription = null;
-    unawaited(LLMInferenceService.instance.stopGeneration());
     if (!mounted) return;
     setState(() {
       if (_streamingAiText.trim().isNotEmpty) {
@@ -2603,11 +2904,13 @@ class _HomeChatMessage {
 }
 
 class _HomeConversation {
+  final String? id;
   final String title;
   final List<_HomeChatMessage> messages;
   final DateTime updatedAt;
 
   const _HomeConversation({
+    this.id,
     required this.title,
     required this.messages,
     required this.updatedAt,
@@ -2728,6 +3031,194 @@ class _QuickPromptPill extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ResourceFinderEmptyState extends StatelessWidget {
+  final String query;
+
+  const _ResourceFinderEmptyState({required this.query});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasQuery = query.trim().isNotEmpty;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.travel_explore_rounded,
+              color: AppTheme.primaryColor.withValues(alpha: 0.8),
+              size: 42,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              hasQuery ? '点击查找开始检索资源' : '输入关键词查找可下载资源',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ResourceResultCard extends StatelessWidget {
+  final DharmaResourceSearchResult item;
+  final bool sending;
+  final bool saving;
+  final bool disabled;
+  final VoidCallback onSend;
+  final VoidCallback onSaveToBook;
+
+  const _ResourceResultCard({
+    required this.item,
+    required this.sending,
+    required this.saving,
+    required this.disabled,
+    required this.onSend,
+    required this.onSaveToBook,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final actionDisabled = disabled && !sending && !saving;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  item.resourceType == 'scripture'
+                      ? Icons.menu_book_rounded
+                      : Icons.description_rounded,
+                  color: AppTheme.primaryColor,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        height: 1.25,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.sourceName,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (item.snippet.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              item.snippet,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                height: 1.45,
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: actionDisabled ? null : onSend,
+                  icon: sending
+                      ? const SizedBox(
+                          width: 15,
+                          height: 15,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.public, size: 18),
+                  label: const Text('全球法布施'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    foregroundColor: Colors.black,
+                    disabledBackgroundColor: Colors.white12,
+                    minimumSize: const Size.fromHeight(42),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: actionDisabled ? null : onSaveToBook,
+                  icon: saving
+                      ? const SizedBox(
+                          width: 15,
+                          height: 15,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.playlist_add_check, size: 18),
+                  label: const Text('加入功课本'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    disabledForegroundColor: Colors.white38,
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.18),
+                    ),
+                    minimumSize: const Size.fromHeight(42),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
