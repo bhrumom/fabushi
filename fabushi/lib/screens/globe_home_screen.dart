@@ -10,8 +10,6 @@ import '../core/constants/country_servers.dart' as country_catalog;
 import '../features/auth/application/auth_model.dart';
 import '../models/file_transfer_model.dart';
 import '../services/dacheng_ai_service.dart';
-import '../services/meditation_session_manager.dart';
-import '../services/practice_book_service.dart';
 import '../widgets/earth_globe_widget.dart';
 import '../widgets/home_world_2d_widget.dart';
 import '../widgets/scene_render_mode.dart';
@@ -46,12 +44,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   bool _isGlobalSendTimelineVisible = false;
   bool _isAiGenerating = false;
   String _streamingAiText = '';
-  final SceneRenderMode _renderMode = SceneRenderMode.twoD;
+  SceneRenderMode _renderMode = SceneRenderMode.twoD;
   final TextEditingController _chatInputController = TextEditingController();
   final ScrollController _homeChatScrollController = ScrollController();
   final List<_HomeChatMessage> _homeChatMessages = [];
   final List<_HomeConversation> _conversationHistory = [];
-  StreamSubscription<String>? _aiStreamSubscription;
+  StreamSubscription<DachengAiStreamEvent>? _aiStreamSubscription;
   final DachengAiService _dachengAiService = DachengAiService();
   String? _activeConversationId;
   int _aiRequestSerial = 0;
@@ -136,6 +134,24 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     _globe3DKey.currentState?.clearBeams();
   }
 
+  void _toggleSceneRenderMode() {
+    if (_renderMode == SceneRenderMode.twoD && !_canUseThreeDNow) {
+      showThreeDMemberPrompt(context);
+      return;
+    }
+
+    setState(() {
+      _renderMode = _renderMode == SceneRenderMode.twoD
+          ? SceneRenderMode.threeD
+          : SceneRenderMode.twoD;
+      _isCallbackSetup = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncActiveSceneVisibility();
+      if (mounted) _setupTransferBeamCallback();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -145,6 +161,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     _onlineCounterService.startCountPolling('global_sending');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_loadRemoteConversations());
+      unawaited(_refreshBuddhaAssetEntitlement());
     });
   }
 
@@ -181,6 +198,16 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       });
     } catch (e) {
       debugPrint('加载大乘 AI 历史失败: $e');
+    }
+  }
+
+  Future<void> _refreshBuddhaAssetEntitlement() async {
+    try {
+      final authModel = Provider.of<AuthModel?>(context, listen: false);
+      if (authModel == null || !authModel.isLoggedIn) return;
+      await _checkBuddhaAssetEntitlement(authModel);
+    } catch (e) {
+      debugPrint('刷新 3D 佛像素材解锁状态失败: $e');
     }
   }
 
@@ -500,10 +527,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
           child: Consumer<FileTransferModel>(
             builder: (context, model, _) {
-              final isBusy =
-                  model.isPreparingSend ||
-                  model.isTransferring ||
-                  _isAiGenerating;
+              final isBusy = _isAiGenerating;
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -554,6 +578,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     _ConversationTile(
                       title: currentTitle,
                       selected: true,
+                      running: _shouldShowGlobalSendProcess(model),
                       onTap: () => Navigator.maybePop(context),
                     ),
                     const SizedBox(height: 8),
@@ -579,6 +604,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                               return _ConversationTile(
                                 title: conversation.title,
                                 selected: false,
+                                running: conversation.isGlobalSendRunning,
                                 onTap: isBusy
                                     ? null
                                     : () => _openConversation(conversation),
@@ -664,8 +690,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               _QuickPromptPill(
                 icon: Icons.search_rounded,
                 iconColor: const Color(0xFFFF9F69),
-                label: '查找下载资源',
-                onTap: () => _prefillPrompt('帮我查找可以下载和分享的佛法资源'),
+                label: 'AI找资源',
+                onTap: () => _prefillPrompt('帮我自动查找并下载可以分享的佛法资源'),
               ),
               _QuickPromptPill(
                 icon: Icons.menu_book_rounded,
@@ -743,7 +769,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   Widget _buildChatTimeline(FileTransferModel model) {
     final hasSendingProcess = _shouldShowGlobalSendProcess(model);
 
-    _scrollHomeChatToBottom();
     return ListView(
       key: const ValueKey('chat'),
       controller: _homeChatScrollController,
@@ -804,9 +829,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   bool _shouldShowGlobalSendProcess(FileTransferModel model) {
-    return _isGlobalSendTimelineVisible ||
-        model.isPreparingSend ||
-        model.isTransferring;
+    return _isGlobalSendTimelineVisible || model.isPreparingSend;
   }
 
   Widget _buildGlobalSendingProcess(FileTransferModel model) {
@@ -909,6 +932,32 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               ),
             Positioned(
               top: 12,
+              left: 12,
+              child: InkWell(
+                onTap: _toggleSceneRenderMode,
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  height: 36,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.48),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Text(
+                    useThreeD ? '3D' : '2D',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 12,
               right: 12,
               child: Container(
                 width: 38,
@@ -952,13 +1001,14 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     return raw.length > 18 ? '${raw.substring(0, 18)}...' : raw;
   }
 
-  void _snapshotCurrentConversation() {
+  void _snapshotCurrentConversation({bool isGlobalSendRunning = false}) {
     if (_homeChatMessages.isEmpty) return;
     final snapshot = _HomeConversation(
       id: _activeConversationId,
       title: _conversationTitleFrom(_homeChatMessages),
       messages: List<_HomeChatMessage>.from(_homeChatMessages),
       updatedAt: DateTime.now(),
+      isGlobalSendRunning: isGlobalSendRunning,
     );
     _conversationHistory.removeWhere(
       (item) =>
@@ -972,9 +1022,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   void _startNewConversation(FileTransferModel model) {
-    _snapshotCurrentConversation();
+    final hasRunningGlobalSend =
+        model.isPreparingSend ||
+        model.isTransferring ||
+        _isGlobalSendTimelineVisible;
+    _snapshotCurrentConversation(isGlobalSendRunning: hasRunningGlobalSend);
     _stopAiGeneration();
-    model.clearFiles();
+    if (!hasRunningGlobalSend) {
+      model.clearFiles();
+    }
     _chatInputController.clear();
     setState(() {
       _activeConversationId = null;
@@ -983,16 +1039,24 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       _isDharmaComposerMode = false;
       _showMaterialGallery = false;
       _isGlobalSendTimelineVisible = false;
-      _currentSendingCountry = '';
-      _activeSendTitle = '';
-      _activeSendRegion = '';
-      _sendStartedAt = null;
+      if (!hasRunningGlobalSend) {
+        _currentSendingCountry = '';
+        _activeSendTitle = '';
+        _activeSendRegion = '';
+        _sendStartedAt = null;
+      }
     });
     Navigator.maybePop(context);
   }
 
   Future<void> _openConversation(_HomeConversation conversation) async {
-    _snapshotCurrentConversation();
+    final model = Provider.of<FileTransferModel>(context, listen: false);
+    _snapshotCurrentConversation(
+      isGlobalSendRunning:
+          model.isPreparingSend ||
+          model.isTransferring ||
+          _isGlobalSendTimelineVisible,
+    );
     _stopAiGeneration();
     _chatInputController.clear();
     var messages = conversation.messages;
@@ -1027,11 +1091,13 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       _streamingAiText = '';
       _isDharmaComposerMode = false;
       _showMaterialGallery = false;
-      _isGlobalSendTimelineVisible = false;
-      _currentSendingCountry = '';
-      _activeSendTitle = '';
-      _activeSendRegion = '';
-      _sendStartedAt = null;
+      _isGlobalSendTimelineVisible = conversation.isGlobalSendRunning;
+      if (!conversation.isGlobalSendRunning) {
+        _currentSendingCountry = '';
+        _activeSendTitle = '';
+        _activeSendRegion = '';
+        _sendStartedAt = null;
+      }
     });
     Navigator.maybePop(context);
     _scrollHomeChatToBottom();
@@ -1079,7 +1145,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   Widget _buildChatComposer(BuildContext context, FileTransferModel model) {
-    final isBusy = model.isPreparingSend || model.isTransferring;
+    final isBusy =
+        model.isPreparingSend ||
+        (_isDharmaComposerMode && model.isTransferring);
     final inputText = _chatInputController.text.trim();
     final canSubmit = _isDharmaComposerMode
         ? (inputText.isNotEmpty || model.hasFiles)
@@ -1181,7 +1249,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               Expanded(
                 child: TextField(
                   controller: _chatInputController,
-                  enabled: !model.isPreparingSend && !model.isTransferring,
+                  enabled:
+                      !model.isPreparingSend &&
+                      (!model.isTransferring || !_isDharmaComposerMode),
                   minLines: 1,
                   maxLines: 4,
                   textInputAction: TextInputAction.send,
@@ -1250,7 +1320,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       );
     }
 
-    if (model.isTransferring) {
+    if (model.isTransferring && _isGlobalSendTimelineVisible) {
       return IconButton(
         tooltip: '停止发送',
         icon: const Icon(Icons.stop, color: Colors.white, size: 21),
@@ -1319,12 +1389,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           '添加图片和文件',
           '选择本机图片或文件',
         ),
-        _sendMenuItem(
-          'resources',
-          Icons.manage_search_rounded,
-          '查找下载资源',
-          '搜索、下载，并一键法布施或加入功课本',
-        ),
       ],
     );
 
@@ -1358,10 +1422,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       final selected = await model.selectFiles(replaceExisting: true);
       if (selected && mounted) setState(() {});
       return selected;
-    }
-    if (action == 'resources') {
-      await _openResourceFinder(model);
-      return true;
     }
     return false;
   }
@@ -1563,8 +1623,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                                 : Icons.lock_outline,
                             title: '本地转经轮',
                             subtitle: hasPremiumAccess
-                                ? '本地回环独立运行'
-                                : '会员可开启本地回环',
+                                ? '不可思议扬升能量场'
+                                : '会员可开启不可思议扬升能量场',
                             selected: localLoopback,
                             onChanged: (selected) {
                               if (selected && !hasPremiumAccess) {
@@ -1644,327 +1704,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
-  Future<void> _openResourceFinder(FileTransferModel model) async {
-    final initialQuery = _chatInputController.text.trim();
-    final controller = TextEditingController(
-      text: initialQuery.isEmpty ? '大乘经典 法布施' : initialQuery,
-    );
-    var query = controller.text.trim();
-    var isSearching = false;
-    String? busyResourceId;
-    String? errorMessage;
-    var results = <DharmaResourceSearchResult>[];
-
-    Future<void> runSearch(void Function(void Function()) setSheetState) async {
-      final searchQuery = controller.text.trim();
-      if (searchQuery.length < 2) {
-        setSheetState(() => errorMessage = '请输入至少 2 个字的关键词');
-        return;
-      }
-
-      setSheetState(() {
-        query = searchQuery;
-        isSearching = true;
-        errorMessage = null;
-      });
-
-      try {
-        final authModel = Provider.of<AuthModel?>(context, listen: false);
-        final items = await _dachengAiService.searchResources(
-          query: searchQuery,
-          token: authModel?.authToken,
-        );
-        setSheetState(() {
-          results = items;
-          errorMessage = items.isEmpty ? '暂时没有找到可下载资源，请换个关键词试试' : null;
-        });
-      } catch (e) {
-        setSheetState(() => errorMessage = '资源查找失败: $e');
-      } finally {
-        setSheetState(() => isSearching = false);
-      }
-    }
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (sheetContext, setSheetState) {
-            final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
-            final isBusy = isSearching || busyResourceId != null;
-
-            return SafeArea(
-              top: false,
-              child: Padding(
-                padding: EdgeInsets.only(bottom: bottomInset),
-                child: Container(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(sheetContext).size.height * 0.86,
-                  ),
-                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF181A1F),
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(24),
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 42,
-                          height: 4,
-                          margin: const EdgeInsets.only(bottom: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.white24,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              '查找下载资源',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 21,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: '关闭',
-                            onPressed: isBusy
-                                ? null
-                                : () => Navigator.pop(sheetContext),
-                            icon: const Icon(
-                              Icons.close,
-                              color: Colors.white70,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: controller,
-                              enabled: !isBusy,
-                              style: const TextStyle(color: Colors.white),
-                              cursorColor: AppTheme.primaryColor,
-                              textInputAction: TextInputAction.search,
-                              decoration: InputDecoration(
-                                isDense: true,
-                                prefixIcon: const Icon(
-                                  Icons.search,
-                                  color: Colors.white54,
-                                ),
-                                hintText: '输入经典、咒语、仪轨或主题',
-                                hintStyle: const TextStyle(
-                                  color: Colors.white38,
-                                ),
-                                filled: true,
-                                fillColor: Colors.white.withValues(alpha: 0.08),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                              ),
-                              onSubmitted: (_) => runSearch(setSheetState),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          FilledButton.icon(
-                            onPressed: isBusy
-                                ? null
-                                : () => runSearch(setSheetState),
-                            icon: isSearching
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.manage_search, size: 19),
-                            label: const Text('查找'),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: AppTheme.primaryColor,
-                              foregroundColor: Colors.black,
-                              minimumSize: const Size(92, 46),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      if (errorMessage != null)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: Colors.orange.withValues(alpha: 0.28),
-                            ),
-                          ),
-                          child: Text(
-                            errorMessage!,
-                            style: const TextStyle(color: Colors.orangeAccent),
-                          ),
-                        ),
-                      if (errorMessage != null) const SizedBox(height: 12),
-                      Expanded(
-                        child: results.isEmpty && !isSearching
-                            ? _ResourceFinderEmptyState(query: query)
-                            : ListView.separated(
-                                itemCount: results.length,
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(height: 10),
-                                itemBuilder: (context, index) {
-                                  final item = results[index];
-                                  final sendBusyId = 'send:${item.id}';
-                                  final bookBusyId = 'book:${item.id}';
-                                  return _ResourceResultCard(
-                                    item: item,
-                                    sending: busyResourceId == sendBusyId,
-                                    saving: busyResourceId == bookBusyId,
-                                    disabled: busyResourceId != null,
-                                    onSend: () async {
-                                      setSheetState(
-                                        () => busyResourceId = sendBusyId,
-                                      );
-                                      try {
-                                        await _sendResourceNow(model, item);
-                                        setSheetState(
-                                          () => busyResourceId = null,
-                                        );
-                                        if (sheetContext.mounted) {
-                                          Navigator.pop(sheetContext);
-                                        }
-                                      } catch (e) {
-                                        setSheetState(
-                                          () => errorMessage = '资源法布施失败: $e',
-                                        );
-                                        setSheetState(
-                                          () => busyResourceId = null,
-                                        );
-                                      }
-                                    },
-                                    onSaveToBook: () async {
-                                      setSheetState(
-                                        () => busyResourceId = bookBusyId,
-                                      );
-                                      try {
-                                        await _saveResourceToPracticeBook(item);
-                                        if (!mounted || !sheetContext.mounted) {
-                                          return;
-                                        }
-                                        ScaffoldMessenger.of(
-                                          sheetContext,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('已添加到禅室功课本'),
-                                          ),
-                                        );
-                                      } catch (e) {
-                                        setSheetState(
-                                          () => errorMessage = '加入功课本失败: $e',
-                                        );
-                                      } finally {
-                                        setSheetState(
-                                          () => busyResourceId = null,
-                                        );
-                                      }
-                                    },
-                                  );
-                                },
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    controller.dispose();
-  }
-
-  Future<DharmaResourceContent> _downloadResource(
-    DharmaResourceSearchResult resource,
-  ) async {
-    final authModel = Provider.of<AuthModel?>(context, listen: false);
-    return _dachengAiService.downloadResource(
-      resource: resource,
-      token: authModel?.authToken,
-    );
-  }
-
-  Future<void> _sendResourceNow(
-    FileTransferModel model,
-    DharmaResourceSearchResult resource,
-  ) async {
-    final content = await _downloadResource(resource);
-    final sendText = [
-      '来源: ${content.sourceName}',
-      '链接: ${content.url}',
-      '',
-      content.contentText,
-    ].join('\n');
-
-    await model.addTextContentForSending(
-      title: content.title,
-      text: sendText,
-      sourceKind: '资源',
-      sourceUrl: content.url,
-      previewText: content.contentText,
-    );
-    _activateDharmaMode(model);
-    if (!mounted) return;
-    _startSending(model);
-  }
-
-  Future<void> _saveResourceToPracticeBook(
-    DharmaResourceSearchResult resource,
-  ) async {
-    final content = await _downloadResource(resource);
-    final practiceTitle = _practiceTitleForResource();
-    await PracticeBookService.instance.saveExtractedWebText(
-      practiceTitle: practiceTitle,
-      sourceUrl: content.url,
-      title: content.title,
-      plainText: content.contentText,
-    );
-  }
-
-  String _practiceTitleForResource() {
-    final lockedPractice = MeditationSessionManager().lockedPractice;
-    final title = lockedPractice?.title.trim();
-    if (title != null && title.isNotEmpty) {
-      return title;
-    }
-
-    final currentSutra = MeditationSessionManager().currentSutra.trim();
-    if (currentSutra.isNotEmpty && currentSutra != '默认功课') {
-      return currentSutra;
-    }
-
-    return '资源功课';
-  }
-
   Future<void> _sendAiChatFromComposer() async {
     final text = _chatInputController.text.trim();
     if (text.isEmpty || _isAiGenerating) return;
@@ -1980,27 +1719,67 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       _isAiGenerating = true;
       _streamingAiText = '';
     });
-    _scrollHomeChatToBottom();
+    _scrollHomeChatToBottom(force: true);
 
     try {
-      final result = await _dachengAiService.sendChat(
+      final stepLines = <String>[];
+      var finalText = '';
+      String? latestConversationId = _activeConversationId;
+
+      await for (final event in _dachengAiService.sendChatStream(
         message: text,
         conversationId: _activeConversationId,
         token: authModel?.authToken,
         username: authModel?.currentUser?.username,
         isMember: authModel?.hasPermission('premium') ?? false,
-      );
+      )) {
+        if (!mounted || requestSerial != _aiRequestSerial) return;
+
+        if (event.conversationId != null && event.conversationId!.isNotEmpty) {
+          latestConversationId = event.conversationId;
+        }
+
+        if (event.isStep) {
+          final title = (event.raw['title'] ?? '').toString().trim();
+          final message = (event.raw['message'] ?? event.text)
+              .toString()
+              .trim();
+          final line = [
+            if (title.isNotEmpty) title,
+            if (message.isNotEmpty) message,
+          ].join('：');
+          if (line.isNotEmpty) stepLines.add('· $line');
+        } else if (event.isDelta) {
+          finalText += event.text;
+        } else if (event.isDone) {
+          latestConversationId = event.conversationId ?? latestConversationId;
+          finalText = (event.raw['message'] ?? finalText).toString();
+        } else if (event.isError) {
+          throw StateError(event.text.isEmpty ? '大乘 AI 生成失败' : event.text);
+        }
+
+        setState(() {
+          _activeConversationId = latestConversationId;
+          _streamingAiText = [
+            if (stepLines.isNotEmpty) stepLines.join('\n'),
+            if (finalText.trim().isNotEmpty) finalText,
+          ].join('\n\n');
+        });
+        _scrollHomeChatToBottom();
+      }
 
       if (!mounted || requestSerial != _aiRequestSerial) return;
       setState(() {
-        _activeConversationId = result.conversationId;
-        _homeChatMessages.add(
-          _HomeChatMessage(text: result.message, isUser: false),
-        );
+        _activeConversationId = latestConversationId;
+        if (finalText.trim().isNotEmpty) {
+          _homeChatMessages.add(
+            _HomeChatMessage(text: finalText.trim(), isUser: false),
+          );
+        }
         _streamingAiText = '';
         _isAiGenerating = false;
       });
-      _scrollHomeChatToBottom();
+      _scrollHomeChatToBottom(force: true);
       unawaited(_loadRemoteConversations());
     } catch (e) {
       if (!mounted || requestSerial != _aiRequestSerial) return;
@@ -2015,7 +1794,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         _streamingAiText = '';
         _isAiGenerating = false;
       });
-      _scrollHomeChatToBottom();
+      _scrollHomeChatToBottom(force: true);
     }
   }
 
@@ -2035,11 +1814,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     });
   }
 
-  void _scrollHomeChatToBottom() {
+  void _scrollHomeChatToBottom({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_homeChatScrollController.hasClients) return;
+      final position = _homeChatScrollController.position;
+      if (!force && position.maxScrollExtent - position.pixels > 180) {
+        return;
+      }
       _homeChatScrollController.animateTo(
-        _homeChatScrollController.position.maxScrollExtent,
+        position.maxScrollExtent,
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
       );
@@ -2072,7 +1855,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        content: const Text('本地回环是会员功能，开通会员后即可开启。'),
+        content: const Text('不可思议扬升能量场是会员功能，开通会员后即可开启。'),
         backgroundColor: Colors.black87,
         action: SnackBarAction(
           label: '去开通',
@@ -2090,14 +1873,21 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   IconData _contentIcon(String kind) {
-    return switch (kind) {
-      '链接' => Icons.link,
-      '文本' => Icons.edit_note,
-      '本机文件' => Icons.folder_open,
-      '素材文件' => Icons.inventory_2,
-      '禅室佛像素材' => Icons.self_improvement,
-      _ => Icons.library_books,
-    };
+    switch (kind) {
+      case '链接':
+        return Icons.link;
+      case '文本':
+        return Icons.edit_note;
+      case '本机文件':
+        return Icons.folder_open;
+      case '素材文件':
+        return Icons.inventory_2;
+      case '3D佛像素材':
+      case '禅室佛像素材':
+        return Icons.self_improvement;
+      default:
+        return Icons.library_books;
+    }
   }
 
   void _showHotspotGuideDialog(BuildContext context) {
@@ -2288,7 +2078,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final authModel = Provider.of<AuthModel?>(context, listen: false);
     final token = authModel?.authToken;
     if (authModel == null || !authModel.isLoggedIn || token == null) {
-      _showBuddhaAssetMessage('请先登录后再解锁禅室佛像素材', color: Colors.orange);
+      _showBuddhaAssetMessage('请先登录后再解锁3D佛像素材', color: Colors.orange);
       return false;
     }
 
@@ -2327,7 +2117,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       barrierDismissible: !_isPurchasingBuddhaAsset,
       builder: (dialogContext) => AlertDialog(
         title: Text('解锁${AppConfig.zenBuddhaAssetDisplayName}'),
-        content: const Text('付费后可在首页选择禅室内佛像模型素材，并加入全球发送内容。'),
+        content: const Text('付费后可在首页选择3D佛像素材，并加入全球发送内容。'),
         actions: [
           TextButton(
             onPressed: _isPurchasingBuddhaAsset
@@ -2400,7 +2190,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
         if (unlocked) {
           if (mounted) setState(() => _buddhaAssetUnlocked = true);
-          _showBuddhaAssetMessage('禅室佛像素材已解锁', color: Colors.green);
+          _showBuddhaAssetMessage('3D佛像素材已解锁', color: Colors.green);
         } else {
           _showBuddhaAssetMessage(
             result['message'] ?? 'Apple 内购验证失败',
@@ -2518,7 +2308,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         if (authModel == null) return false;
         final unlocked = await _checkBuddhaAssetEntitlement(authModel);
         if (unlocked) {
-          _showBuddhaAssetMessage('禅室佛像素材已解锁', color: Colors.green);
+          _showBuddhaAssetMessage('3D佛像素材已解锁', color: Colors.green);
           return true;
         }
       }
@@ -2530,7 +2320,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   bool _isBuddhaAssetSelected(FileTransferModel model) {
     return model.selectedContentKind == AppConfig.zenBuddhaAssetDisplayName ||
-        model.currentSendingScripture == AppConfig.zenBuddhaAssetDisplayName;
+        model.selectedContentKind == '禅室佛像素材' ||
+        model.currentSendingScripture == AppConfig.zenBuddhaAssetDisplayName ||
+        model.currentSendingScripture == '禅室佛像素材';
   }
 
   bool _looksLikeHttpUrl(String text) {
@@ -2612,7 +2404,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   void _startSending(FileTransferModel model) async {
-    if (model.isPreparingSend || model.isTransferring) return;
+    if (model.isPreparingSend || model.isTransferring) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('后台正有一个会话在全球法布施，请等待完成或先停止后再开启新的全球法布施。'),
+          backgroundColor: Colors.black87,
+        ),
+      );
+      return;
+    }
 
     final composerText = _chatInputController.text.trim();
     if (composerText.isNotEmpty) {
@@ -2908,12 +2708,14 @@ class _HomeConversation {
   final String title;
   final List<_HomeChatMessage> messages;
   final DateTime updatedAt;
+  final bool isGlobalSendRunning;
 
   const _HomeConversation({
     this.id,
     required this.title,
     required this.messages,
     required this.updatedAt,
+    this.isGlobalSendRunning = false,
   });
 }
 
@@ -2941,11 +2743,13 @@ class _DrawerSectionLabel extends StatelessWidget {
 class _ConversationTile extends StatelessWidget {
   final String title;
   final bool selected;
+  final bool running;
   final VoidCallback? onTap;
 
   const _ConversationTile({
     required this.title,
     required this.selected,
+    this.running = false,
     required this.onTap,
   });
 
@@ -2965,11 +2769,20 @@ class _ConversationTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(
-              selected ? Icons.chat_bubble : Icons.history,
-              color: Colors.white70,
-              size: 18,
-            ),
+            running
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppTheme.primaryColor,
+                    ),
+                  )
+                : Icon(
+                    selected ? Icons.chat_bubble : Icons.history,
+                    color: Colors.white70,
+                    size: 18,
+                  ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -3031,194 +2844,6 @@ class _QuickPromptPill extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ResourceFinderEmptyState extends StatelessWidget {
-  final String query;
-
-  const _ResourceFinderEmptyState({required this.query});
-
-  @override
-  Widget build(BuildContext context) {
-    final hasQuery = query.trim().isNotEmpty;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.travel_explore_rounded,
-              color: AppTheme.primaryColor.withValues(alpha: 0.8),
-              size: 42,
-            ),
-            const SizedBox(height: 14),
-            Text(
-              hasQuery ? '点击查找开始检索资源' : '输入关键词查找可下载资源',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ResourceResultCard extends StatelessWidget {
-  final DharmaResourceSearchResult item;
-  final bool sending;
-  final bool saving;
-  final bool disabled;
-  final VoidCallback onSend;
-  final VoidCallback onSaveToBook;
-
-  const _ResourceResultCard({
-    required this.item,
-    required this.sending,
-    required this.saving,
-    required this.disabled,
-    required this.onSend,
-    required this.onSaveToBook,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final actionDisabled = disabled && !sending && !saving;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  item.resourceType == 'scripture'
-                      ? Icons.menu_book_rounded
-                      : Icons.description_rounded,
-                  color: AppTheme.primaryColor,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        height: 1.25,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      item.sourceName,
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (item.snippet.trim().isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              item.snippet,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-                height: 1.45,
-              ),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: actionDisabled ? null : onSend,
-                  icon: sending
-                      ? const SizedBox(
-                          width: 15,
-                          height: 15,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.public, size: 18),
-                  label: const Text('全球法布施'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
-                    foregroundColor: Colors.black,
-                    disabledBackgroundColor: Colors.white12,
-                    minimumSize: const Size.fromHeight(42),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: actionDisabled ? null : onSaveToBook,
-                  icon: saving
-                      ? const SizedBox(
-                          width: 15,
-                          height: 15,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.playlist_add_check, size: 18),
-                  label: const Text('加入功课本'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    disabledForegroundColor: Colors.white38,
-                    side: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.18),
-                    ),
-                    minimumSize: const Size.fromHeight(42),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }

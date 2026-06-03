@@ -18,7 +18,6 @@ class HomeWorld2DWidget extends StatefulWidget {
 
 class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
     with SingleTickerProviderStateMixin {
-  static const String _earthTextureAsset = 'assets/earth_texture.jpg';
   static const String _riveOrbitAsset = 'assets/rive/home_world_orbit.riv';
   static const String _riveStateMachineName = 'HomeWorldOrbit';
   static const double _idleRotationDegreesPerSecond = 4.5;
@@ -53,27 +52,8 @@ class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
   void initState() {
     super.initState();
     _ticker = createTicker(_onTick)..start();
-    _loadEarthTexture();
     _checkRiveAsset();
     _initializeServices();
-  }
-
-  Future<void> _loadEarthTexture() async {
-    try {
-      final bytes = await rootBundle.load(_earthTextureAsset);
-      final codec = await ui.instantiateImageCodec(
-        Uint8List.view(bytes.buffer, bytes.offsetInBytes, bytes.lengthInBytes),
-      );
-      final frame = await codec.getNextFrame();
-      codec.dispose();
-      if (!mounted) {
-        frame.image.dispose();
-        return;
-      }
-      setState(() => _earthTexture = frame.image);
-    } catch (error) {
-      debugPrint('2D 首页地球纹理加载失败: $error');
-    }
   }
 
   Future<void> _checkRiveAsset() async {
@@ -375,7 +355,6 @@ class _HomeWorld2DPainter extends CustomPainter {
 
     _drawAtmosphere(canvas, size, globeCenter, globeRadius);
     _drawEarthSphere(canvas, globeCenter, globeRadius);
-    _drawLotusNodes(canvas, globeCenter, globeRadius);
     _drawBeams(canvas, globeCenter, globeRadius);
     _drawBottomGlow(canvas, size);
   }
@@ -498,10 +477,84 @@ class _HomeWorld2DPainter extends CustomPainter {
         ..shader = uiGradientRadial(
           center.translate(-radius * 0.18, -radius * 0.22),
           radius * 1.18,
-          const [Color(0xFF2D9FDB), Color(0xFF166A9A), Color(0xFF0A2552)],
+          const [Color(0xFF9FE8FF), Color(0xFF2BA7CE), Color(0xFF174B7A)],
           const [0, 0.62, 1],
         ),
     );
+    _drawPainterlyContinents(canvas, center, radius);
+    _drawSoftCloudBands(canvas, center, radius);
+  }
+
+  void _drawPainterlyContinents(Canvas canvas, Offset center, double radius) {
+    final landPaint = Paint()
+      ..color = const Color(0xCCF8D88A)
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.8);
+    final shadowPaint = Paint()
+      ..color = const Color(0x554B812E)
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.4);
+
+    const continents = <List<(double, double)>>[
+      [(54, -132), (64, -96), (48, -62), (25, -80), (14, -106), (30, -132)],
+      [(12, -82), (4, -62), (-18, -58), (-52, -70), (-32, -45), (-4, -78)],
+      [(70, -12), (62, 58), (36, 92), (8, 76), (4, 30), (28, -8)],
+      [(34, 70), (24, 112), (2, 122), (-9, 96), (8, 78)],
+      [(31, -10), (18, 30), (-30, 26), (-36, 12), (-4, -12)],
+      [(-12, 112), (-22, 148), (-44, 146), (-38, 114)],
+    ];
+
+    for (final polygon in continents) {
+      final points = polygon
+          .map((point) => _project(point.$1, point.$2, center, radius))
+          .whereType<Offset>()
+          .toList();
+      if (points.length < 3) continue;
+
+      final path = Path()..moveTo(points.first.dx, points.first.dy);
+      for (var i = 1; i < points.length; i++) {
+        final current = points[i];
+        final previous = points[i - 1];
+        path.quadraticBezierTo(
+          previous.dx,
+          previous.dy,
+          (previous.dx + current.dx) / 2,
+          (previous.dy + current.dy) / 2,
+        );
+      }
+      path.close();
+      canvas.drawPath(path.shift(const Offset(0, 1.6)), shadowPaint);
+      canvas.drawPath(path, landPaint);
+    }
+  }
+
+  void _drawSoftCloudBands(Canvas canvas, Offset center, double radius) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = radius * 0.035
+      ..shader = uiGradientLinear(
+        center.translate(-radius, 0),
+        center.translate(radius, 0),
+        const [Color(0x00FFFFFF), Color(0x99FFFFFF), Color(0x00FFFFFF)],
+      )
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+
+    for (var i = 0; i < 4; i++) {
+      final y = center.dy + radius * (-0.42 + i * 0.26);
+      final phase = timeSeconds * 0.28 + i * 1.7;
+      final path = Path()
+        ..moveTo(center.dx - radius * 0.82, y + math.sin(phase) * radius * 0.03)
+        ..cubicTo(
+          center.dx - radius * 0.34,
+          y - radius * (0.08 + i * 0.012),
+          center.dx + radius * 0.34,
+          y + radius * (0.08 - i * 0.01),
+          center.dx + radius * 0.82,
+          y + math.cos(phase) * radius * 0.03,
+        );
+      canvas.drawPath(path, paint);
+    }
   }
 
   void _drawProjectedTexture(
@@ -626,55 +679,6 @@ class _HomeWorld2DPainter extends CustomPainter {
     );
   }
 
-  void _drawLotusNodes(Canvas canvas, Offset center, double radius) {
-    const nodes = <(double, double)>[
-      (34.0, 108.0),
-      (23.0, 77.0),
-      (1.0, 103.0),
-      (-25.0, 133.0),
-      (-33.0, -58.0),
-      (-15.0, -47.0),
-      (-32.0, 151.0),
-    ];
-
-    for (var i = 0; i < nodes.length; i++) {
-      final position = _project(nodes[i].$1, nodes[i].$2, center, radius);
-      if (position == null) continue;
-      final pulse = 0.5 + math.sin(timeSeconds * 1.5 + i) * 0.5;
-      _drawLotusMark(canvas, position, 8 + pulse * 2.4);
-    }
-  }
-
-  void _drawLotusMark(Canvas canvas, Offset center, double radius) {
-    canvas.drawCircle(
-      center,
-      radius * 2.6,
-      Paint()
-        ..color = const Color(0x55FFD76B)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-    for (final angle in const [-0.75, -0.38, 0.0, 0.38, 0.75]) {
-      canvas.save();
-      canvas.translate(center.dx, center.dy);
-      canvas.rotate(angle);
-      final petal = Path()
-        ..moveTo(0, radius)
-        ..quadraticBezierTo(-radius * 0.82, 0, 0, -radius * 1.45)
-        ..quadraticBezierTo(radius * 0.82, 0, 0, radius)
-        ..close();
-      canvas.drawPath(
-        petal,
-        Paint()
-          ..shader = uiGradientLinear(
-            Offset(0, -radius * 1.5),
-            Offset(0, radius),
-            const [Color(0xFFFFFFFF), Color(0xFFFFD43B)],
-          ),
-      );
-      canvas.restore();
-    }
-  }
-
   void _drawBeams(Canvas canvas, Offset center, double radius) {
     for (final beam in beams) {
       final age = timeSeconds - beam.startedAt;
@@ -723,14 +727,16 @@ class _HomeWorld2DPainter extends CustomPainter {
           ..strokeWidth = 3.0
           ..strokeCap = StrokeCap.round,
       );
-      canvas.drawCircle(
+      canvas.drawLine(
+        tail,
         head,
-        4.6,
         Paint()
-          ..color = Colors.white
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+          ..color = Colors.white.withValues(alpha: 0.34)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 8.0
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
       );
-      canvas.drawCircle(head, 2.0, Paint()..color = const Color(0xFFFFF4B8));
 
       if (beam.toLabel != null && progress > 0.82) {
         _drawLabel(canvas, beam.toLabel!, end);

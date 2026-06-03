@@ -73,7 +73,7 @@ class AppConfig {
     if (configuredAiBackendUrl.isNotEmpty) {
       return configuredAiBackendUrl;
     }
-    return currentBackendUrl;
+    return vpsAiBackendUrl;
   }
 
   /// 大厂式 API 网关入口：客户端只允许构造自家后端的相对路径。
@@ -199,7 +199,7 @@ class AppConfig {
       buildBackendUrl('/api/purchases/entitlement');
 
   static const String zenBuddhaAssetProductId = 'zen_buddha_asset';
-  static const String zenBuddhaAssetDisplayName = '禅室佛像素材';
+  static const String zenBuddhaAssetDisplayName = '3D佛像素材';
   static const String zenBuddhaAssetPriceLabel = '¥33.00';
   static const String zenBuddhaAssetCardImagePath =
       'assets/images/zen_buddha_material_card.png';

@@ -401,7 +401,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
     if (_isPreparingSend || _isTransferring) return 0;
 
     if (!hasFiles) {
-      updateLog('请先选择链接、文本、本机文件或禅室佛像素材后再发送。');
+      updateLog('请先选择链接、文本、本机文件或3D佛像素材后再发送。');
       return 0;
     }
 
@@ -411,7 +411,7 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<int> prepareDefaultNonR2AssetsForSending() async {
     if (!hasFiles) {
-      updateLog('请先选择链接、文本、本机文件或禅室佛像素材后再发送。');
+      updateLog('请先选择链接、文本、本机文件或3D佛像素材后再发送。');
       return 0;
     }
 
@@ -844,19 +844,19 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> addZenBuddhaAssetForSending() async {
-    beginPreparingSend('正在准备禅室佛像素材...');
+    beginPreparingSend('正在准备3D佛像素材...');
     try {
       final file = await AssetLoaderService.getPersistentAssetFile(
         AppConfig.buddhaModelAssetPath,
         ensureLoaded: true,
         onProgress: (progress) {
           _preparingSendMessage =
-              '正在准备禅室佛像素材 ${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%';
+              '正在准备3D佛像素材 ${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%';
           notifyListeners();
         },
       );
       if (file == null || !await file.exists()) {
-        throw StateError('未找到禅室佛像素材');
+        throw StateError('未找到3D佛像素材');
       }
 
       final size = await file.length();
@@ -867,14 +867,15 @@ class FileTransferModel extends ChangeNotifier with WidgetsBindingObserver {
       );
       _selectedFiles = [platformFile];
       _downloadedScriptureMemory.clear();
-      _currentSendingScripture = '禅室佛像素材';
-      _currentLog = '已选择禅室佛像素材: ${platformFile.name}';
+      _currentSendingScripture = AppConfig.zenBuddhaAssetDisplayName;
+      _currentLog =
+          '已选择${AppConfig.zenBuddhaAssetDisplayName}: ${platformFile.name}';
       _setSelectedContentSummary(
-        kind: '禅室佛像素材',
+        kind: AppConfig.zenBuddhaAssetDisplayName,
         title: AppConfig.zenBuddhaAssetDisplayName,
         subtitle: '${getFileSizeString(size)} · ${platformFile.name} · 点此查看素材',
         previewText:
-            '禅室佛像素材\n文件名: ${platformFile.name}\n大小: ${getFileSizeString(size)}',
+            '${AppConfig.zenBuddhaAssetDisplayName}\n文件名: ${platformFile.name}\n大小: ${getFileSizeString(size)}',
       );
     } finally {
       _finishPreparingSend();

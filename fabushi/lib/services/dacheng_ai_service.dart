@@ -154,6 +154,27 @@ class DharmaResourceContent {
   }
 }
 
+class DachengAiStreamEvent {
+  final String type;
+  final String text;
+  final String? conversationId;
+  final DachengAiUsage? usage;
+  final Map<String, dynamic> raw;
+
+  const DachengAiStreamEvent({
+    required this.type,
+    required this.text,
+    this.conversationId,
+    this.usage,
+    this.raw = const {},
+  });
+
+  bool get isStep => type == 'step';
+  bool get isDelta => type == 'delta';
+  bool get isDone => type == 'done';
+  bool get isError => type == 'error';
+}
+
 class DachengAiService {
   DachengAiService({
     http.Client? httpClient,
@@ -183,6 +204,90 @@ class DachengAiService {
       },
     );
     return DachengAiChatResult.fromJson(data);
+  }
+
+  Stream<DachengAiStreamEvent> sendChatStream({
+    required String message,
+    String? conversationId,
+    String? token,
+    String? username,
+    bool isMember = false,
+  }) async* {
+    final uri = await _buildUri('/api/ai/chat/stream');
+    final request = http.Request('POST', uri)
+      ..headers.addAll(_headers(token))
+      ..body = jsonEncode({
+        'message': message,
+        if (conversationId != null && conversationId.isNotEmpty)
+          'conversationId': conversationId,
+        if (username != null && username.isNotEmpty) 'username': username,
+        'clientMembershipHint': isMember,
+      });
+
+    final response = await _httpClient
+        .send(request)
+        .timeout(AppConfig.requestTimeout);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final body = await utf8.decodeStream(response.stream);
+      throw StateError(body.trim().isEmpty ? '请求失败' : body);
+    }
+
+    String eventName = 'message';
+    final dataLines = <String>[];
+
+    DachengAiStreamEvent? flushEvent() {
+      if (dataLines.isEmpty) return null;
+      final dataText = dataLines.join('\n');
+      dataLines.clear();
+      final currentEvent = eventName;
+      eventName = 'message';
+
+      Map<String, dynamic> data;
+      try {
+        final decoded = jsonDecode(dataText);
+        data = decoded is Map<String, dynamic>
+            ? decoded
+            : Map<String, dynamic>.from(decoded as Map);
+      } catch (_) {
+        data = {'text': dataText};
+      }
+
+      final text =
+          (data['text'] ??
+                  data['message'] ??
+                  data['title'] ??
+                  data['stage'] ??
+                  '')
+              .toString();
+      return DachengAiStreamEvent(
+        type: currentEvent,
+        text: text,
+        conversationId: data['conversationId']?.toString(),
+        usage: data['usage'] is Map
+            ? DachengAiUsage.fromJson(Map<String, dynamic>.from(data['usage']))
+            : null,
+        raw: data,
+      );
+    }
+
+    await for (final line
+        in response.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())) {
+      if (line.isEmpty) {
+        final event = flushEvent();
+        if (event != null) yield event;
+        continue;
+      }
+      if (line.startsWith('event:')) {
+        eventName = line.substring('event:'.length).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.add(line.substring('data:'.length).trim());
+      }
+    }
+
+    final event = flushEvent();
+    if (event != null) yield event;
   }
 
   Future<List<DachengConversationSummary>> listConversations({

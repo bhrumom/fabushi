@@ -71,7 +71,7 @@ class _CbetaJsonResult {
 class CbetaSendTextService {
   static const int _maxRetries = 3;
   static const Duration _timeout = Duration(seconds: 15);
-  static const String _selfHostedApiRoot = 'http://144.24.17.21.sslip.io:3000';
+  static const String _selfHostedApiRoot = 'https://144.24.17.21.sslip.io';
   static const List<String> _apiRoots = [_selfHostedApiRoot];
 
   static const List<String> _defaultSendWorks = [
