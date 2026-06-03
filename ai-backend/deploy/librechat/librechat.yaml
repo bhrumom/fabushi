@@ -9,7 +9,11 @@ interface:
   agents: true
   fileSearch: true
   webSearch: true
-  mcpServers: true
+  mcpServers:
+    use: true
+    create: true
+    share: false
+    public: false
 
 endpoints:
   custom:
