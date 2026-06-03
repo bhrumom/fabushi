@@ -14,6 +14,11 @@ const NAV_ITEMS = [
     en: "Download FAQ",
   },
   {
+    href: "https://ai.ombhrum.com",
+    zh: "大乘 AI",
+    en: "AI",
+  },
+  {
     href: "/contact",
     zh: "联系支持",
     en: "Contact Support",

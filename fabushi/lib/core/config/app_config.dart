@@ -45,7 +45,7 @@ class AppConfig {
     'AI_BACKEND_URL',
     defaultValue: '',
   );
-  static const String vpsAiBackendUrl = 'http://141.148.140.39';
+  static const String vpsAiBackendUrl = 'https://ai.ombhrum.com';
 
   static String get currentBackendUrl {
     if (configuredApiBaseUrl.isNotEmpty) {
