@@ -496,6 +496,65 @@ h3,
   height: 100%;
 }
 
+.global-network-globe {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  opacity: 0.98;
+  filter: saturate(1.02);
+}
+
+.global-network-globe canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.global-network-tooltip {
+  position: absolute;
+  z-index: 3;
+  min-width: 138px;
+  max-width: 210px;
+  transform: translate(-50%, calc(-100% - 14px));
+  pointer-events: none;
+  border: 1px solid rgba(247, 142, 53, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 38px rgba(17, 24, 39, 0.16);
+  color: #111827;
+  padding: 8px 11px 9px;
+}
+
+.global-network-tooltip strong,
+.global-network-tooltip span,
+.global-network-tooltip em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-network-tooltip strong {
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.global-network-tooltip span {
+  margin-top: 3px;
+  color: #4b5563;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.global-network-tooltip em {
+  margin-top: 4px;
+  color: #f78e35;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .phone-stack {
   position: relative;
   z-index: 2;
@@ -572,10 +631,25 @@ h3,
   border-bottom: 1px solid var(--line);
 }
 
-.download-hero .zen-orbit {
+.download-hero .zen-orbit,
+.download-hero .global-network-globe {
   left: auto;
   width: min(46vw, 520px);
-  opacity: 0.56;
+  opacity: 0.66;
+  z-index: 0;
+}
+
+.download-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(90deg, #05070d 0%, rgba(5, 7, 13, 0.96) 48%, rgba(5, 7, 13, 0.58) 100%);
+}
+
+.download-hero .inner-copy {
+  z-index: 2;
 }
 
 .inner-copy,
@@ -1061,6 +1135,24 @@ h3,
     right: 6%;
     bottom: 10px;
     width: 124px;
+  }
+
+  .download-hero {
+    min-height: 64svh;
+  }
+
+  .download-hero .zen-orbit,
+  .download-hero .global-network-globe {
+    inset: auto -24vw 0 auto;
+    width: min(92vw, 420px);
+    height: 54%;
+    opacity: 0.42;
+  }
+
+  .download-hero::after {
+    background:
+      linear-gradient(180deg, #05070d 0%, rgba(5, 7, 13, 0.94) 48%, rgba(5, 7, 13, 0.74) 100%),
+      linear-gradient(90deg, #05070d 0%, rgba(5, 7, 13, 0.9) 62%, rgba(5, 7, 13, 0.48) 100%);
   }
 
   .release-card-header {

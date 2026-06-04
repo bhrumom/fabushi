@@ -6,7 +6,7 @@ import { DownloadLink } from "../../components/download-link";
 import { LocalizedText } from "../../components/localized-text";
 import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
-import { ZenOrbit } from "../../components/zen-orbit";
+import { GlobalNetworkGlobe } from "../../components/global-network-globe";
 import {
   getOfficialSiteReleaseCollection,
   type OfficialSiteChannel,
@@ -311,7 +311,7 @@ export default async function DownloadPage() {
 
       <section className="inner-hero download-hero">
         <SiteHeader />
-        <ZenOrbit />
+        <GlobalNetworkGlobe />
         <div className="inner-copy">
           <p className="eyebrow">
             <LocalizedText zh="下载" en="Download" />
