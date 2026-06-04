@@ -645,71 +645,101 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final rawName = authModel?.currentUser?.displayName.trim() ?? '';
     final name = rawName.isEmpty ? '千瓷' : rawName;
 
-    return Padding(
+    return LayoutBuilder(
       key: const ValueKey('intro'),
-      padding: const EdgeInsets.fromLTRB(30, 80, 30, 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Spacer(flex: 2),
-          Text(
-            'Hi, $name',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 44,
-              fontWeight: FontWeight.w900,
-              height: 1.05,
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 620;
+        final horizontalPadding = compact ? 24.0 : 30.0;
+        final verticalPadding = compact ? 22.0 : 40.0;
+        final promptGap = compact ? 28.0 : 42.0;
+
+        return SingleChildScrollView(
+          physics: compact
+              ? const ClampingScrollPhysics()
+              : const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            verticalPadding,
+            horizontalPadding,
+            24,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: (constraints.maxHeight - verticalPadding - 24)
+                  .clamp(0.0, double.infinity)
+                  .toDouble(),
+            ),
+            child: Column(
+              mainAxisAlignment: compact
+                  ? MainAxisAlignment.start
+                  : MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hi, $name',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: compact ? 40 : 44,
+                    fontWeight: FontWeight.w900,
+                    height: 1.05,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '把可分享的善法资源，带到全球',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: compact ? 19 : 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: promptGap),
+                Wrap(
+                  spacing: compact ? 10 : 12,
+                  runSpacing: compact ? 10 : 14,
+                  children: [
+                    _QuickPromptPill(
+                      icon: Icons.auto_awesome,
+                      iconColor: const Color(0xFF67AEFF),
+                      label: '大乘能做什么',
+                      compact: compact,
+                      onTap: () => _prefillPrompt('大乘如何帮助我做全球法布施？'),
+                    ),
+                    _QuickPromptPill(
+                      icon: Icons.public,
+                      iconColor: const Color(0xFF4DDE7A),
+                      label: '开始全球法布施',
+                      compact: compact,
+                      onTap: () => _prefillPrompt('帮我整理一段适合全球法布施的善法文字'),
+                    ),
+                    _QuickPromptPill(
+                      icon: Icons.search_rounded,
+                      iconColor: const Color(0xFFFF9F69),
+                      label: 'AI找资源',
+                      compact: compact,
+                      onTap: () => _prefillPrompt('帮我自动查找并下载可以分享的佛法资源'),
+                    ),
+                    _QuickPromptPill(
+                      icon: Icons.menu_book_rounded,
+                      iconColor: const Color(0xFFA979FF),
+                      label: '加入功课本',
+                      compact: compact,
+                      onTap: () => _prefillPrompt('找一份适合放进禅室功课本的经典或仪轨'),
+                    ),
+                    _QuickPromptPill(
+                      icon: Icons.volunteer_activism_rounded,
+                      iconColor: const Color(0xFFFF7D8A),
+                      label: '发愿文案',
+                      compact: compact,
+                      onTap: () => _prefillPrompt('帮我写一段庄重、简洁的全球法布施发愿文'),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          const Text(
-            '把可分享的善法资源，带到全球',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 46),
-          Wrap(
-            spacing: 12,
-            runSpacing: 14,
-            children: [
-              _QuickPromptPill(
-                icon: Icons.auto_awesome,
-                iconColor: const Color(0xFF67AEFF),
-                label: '大乘能做什么',
-                onTap: () => _prefillPrompt('大乘如何帮助我做全球法布施？'),
-              ),
-              _QuickPromptPill(
-                icon: Icons.public,
-                iconColor: const Color(0xFF4DDE7A),
-                label: '开始全球法布施',
-                onTap: () => _prefillPrompt('帮我整理一段适合全球法布施的善法文字'),
-              ),
-              _QuickPromptPill(
-                icon: Icons.search_rounded,
-                iconColor: const Color(0xFFFF9F69),
-                label: 'AI找资源',
-                onTap: () => _prefillPrompt('帮我自动查找并下载可以分享的佛法资源'),
-              ),
-              _QuickPromptPill(
-                icon: Icons.menu_book_rounded,
-                iconColor: const Color(0xFFA979FF),
-                label: '加入功课本',
-                onTap: () => _prefillPrompt('找一份适合放进禅室功课本的经典或仪轨'),
-              ),
-              _QuickPromptPill(
-                icon: Icons.volunteer_activism_rounded,
-                iconColor: const Color(0xFFFF7D8A),
-                label: '发愿文案',
-                onTap: () => _prefillPrompt('帮我写一段庄重、简洁的全球法布施发愿文'),
-              ),
-            ],
-          ),
-          const Spacer(flex: 3),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -2807,23 +2837,30 @@ class _QuickPromptPill extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final String label;
+  final bool compact;
   final VoidCallback onTap;
 
   const _QuickPromptPill({
     required this.icon,
     required this.iconColor,
     required this.label,
+    this.compact = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final height = compact ? 54.0 : 60.0;
+    final horizontalPadding = compact ? 16.0 : 20.0;
+    final iconSize = compact ? 22.0 : 24.0;
+    final labelSize = compact ? 16.0 : 17.0;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
       child: Container(
-        height: 60,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+        height: height,
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
         decoration: BoxDecoration(
           color: const Color(0xFF24262B).withValues(alpha: 0.88),
           borderRadius: BorderRadius.circular(999),
@@ -2832,13 +2869,13 @@ class _QuickPromptPill extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: iconColor, size: 24),
-            const SizedBox(width: 12),
+            Icon(icon, color: iconColor, size: iconSize),
+            SizedBox(width: compact ? 10 : 12),
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: Colors.white70,
-                fontSize: 17,
+                fontSize: labelSize,
                 fontWeight: FontWeight.w800,
               ),
             ),
