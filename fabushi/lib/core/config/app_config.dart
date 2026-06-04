@@ -179,6 +179,14 @@ class AppConfig {
   static String get appVersionPolicyUrl =>
       buildBackendUrl('/api/app/version-policy');
 
+  static String get agentChatUrl => buildBackendUrl('/api/agent/chat');
+  static String agentRunEventsUrl(String runId) =>
+      buildBackendUrl('/api/agent/runs/$runId/events');
+  static String agentRunCancelUrl(String runId) =>
+      buildBackendUrl('/api/agent/runs/$runId/cancel');
+  static String agentMessageFeedbackUrl(String messageId) =>
+      buildBackendUrl('/api/agent/messages/$messageId/feedback');
+
   static String get alipayCreateOrderUrl =>
       buildBackendUrl('/api/alipay/create-order');
   static String get alipayQueryOrderUrl =>
