@@ -4,7 +4,7 @@ import { DownloadLink } from "../components/download-link";
 import { LocalizedText } from "../components/localized-text";
 import { SiteFooter } from "../components/site-footer";
 import { SiteHeader } from "../components/site-header";
-import { ZenOrbit } from "../components/zen-orbit";
+import { GlobalNetworkGlobe } from "../components/global-network-globe";
 import {
   FALLBACK_SCREENSHOTS,
   getOfficialSiteReleaseCollection,
@@ -358,7 +358,7 @@ export default async function HomePage() {
           </section>
 
           <section className="hero-visual" aria-label="Fabushi product preview">
-            <ZenOrbit />
+            <GlobalNetworkGlobe />
             <div className="phone-stack">
               <div className="phone-frame main-phone poster-frame">
                 <img
