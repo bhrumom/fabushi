@@ -1,10 +1,10 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
-import 'package:rive/rive.dart' hide Image, LinearGradient, RadialGradient;
 
 import '../services/country_coordinates_service.dart';
 import '../services/ip_location_service.dart';
@@ -18,8 +18,9 @@ class HomeWorld2DWidget extends StatefulWidget {
 
 class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
     with SingleTickerProviderStateMixin {
-  static const String _riveOrbitAsset = 'assets/rive/home_world_orbit.riv';
-  static const String _riveStateMachineName = 'HomeWorldOrbit';
+  static const String _landTextureAsset = 'assets/images/global_land_mask.png';
+  static const String _networkDataAsset =
+      'assets/data/global_network_globe.json';
   static const double _idleRotationDegreesPerSecond = 4.5;
   static const double _sendingRotationDegreesPerSecond = 1.15;
   static const Duration _targetFocusDuration = Duration(milliseconds: 2000);
@@ -27,48 +28,80 @@ class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
   final CountryCoordinatesService _coordService = CountryCoordinatesService();
   final IPLocationService _ipLocationService = IPLocationService();
   final List<_HomeWorldBeam> _beams = <_HomeWorldBeam>[];
+  final List<_NetworkNode> _networkNodes = <_NetworkNode>[];
+  final List<_NetworkRoute> _networkRoutes = <_NetworkRoute>[];
 
   late final Ticker _ticker;
   Duration _lastFrame = Duration.zero;
   double _timeSeconds = 0;
-  double _rotationLongitudeDegrees = 108;
+  double _rotationLongitudeDegrees = -101;
   double? _focusStartLongitudeDegrees;
   double? _focusTargetLongitudeDegrees;
   double _focusStartSeconds = 0;
   bool _isRenderingPaused = false;
+  bool _isInteractionPaused = false;
   bool _isLocationInitialized = false;
-  bool _riveAssetAvailable = false;
 
   double? _userLatitude;
   double? _userLongitude;
   String? _userCountryCode;
   String? _currentToLabel;
-  ui.Image? _earthTexture;
-  SMIBool? _riveIsSending;
-  SMINumber? _rivePulse;
-  SMINumber? _riveRotationSpeed;
+  ui.Image? _landTexture;
+  _NetworkNode? _activeNode;
 
   @override
   void initState() {
     super.initState();
     _ticker = createTicker(_onTick)..start();
-    _checkRiveAsset();
     _initializeServices();
-  }
-
-  Future<void> _checkRiveAsset() async {
-    try {
-      await rootBundle.load(_riveOrbitAsset);
-      if (!mounted) return;
-      setState(() => _riveAssetAvailable = true);
-    } catch (error) {
-      debugPrint('2D 首页 Rive 资产不可用，使用 Flutter 地球投影层渲染: $error');
-    }
+    _loadGlobeAssets();
   }
 
   Future<void> _initializeServices() async {
     await _coordService.initialize();
     await _initializeUserLocation();
+  }
+
+  Future<void> _loadGlobeAssets() async {
+    try {
+      final textureBytes = await rootBundle.load(_landTextureAsset);
+      final codec = await ui.instantiateImageCodec(
+        textureBytes.buffer.asUint8List(),
+      );
+      final frame = await codec.getNextFrame();
+      codec.dispose();
+
+      final rawData = await rootBundle.loadString(_networkDataAsset);
+      final decoded = jsonDecode(rawData) as Map<String, dynamic>;
+      final nodes = ((decoded['nodes'] as List<dynamic>?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(_NetworkNode.fromJson)
+          .toList(growable: false);
+      final nodeById = {for (final node in nodes) node.id: node};
+      final routes = ((decoded['routes'] as List<dynamic>?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map((item) => _NetworkRoute.fromJson(item, nodeById))
+          .whereType<_NetworkRoute>()
+          .toList(growable: false);
+
+      if (!mounted) {
+        frame.image.dispose();
+        return;
+      }
+
+      setState(() {
+        _landTexture?.dispose();
+        _landTexture = frame.image;
+        _networkNodes
+          ..clear()
+          ..addAll(nodes);
+        _networkRoutes
+          ..clear()
+          ..addAll(routes);
+      });
+    } catch (error) {
+      debugPrint('2D 首页全球网络资产加载失败: $error');
+    }
   }
 
   Future<void> _initializeUserLocation() async {
@@ -105,14 +138,19 @@ class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
 
     final previousFrame = _lastFrame;
     _lastFrame = elapsed;
-    final seconds = elapsed.inMicroseconds / Duration.microsecondsPerSecond;
     final deltaSeconds = previousFrame == Duration.zero
         ? 0.0
         : (elapsed - previousFrame).inMicroseconds /
               Duration.microsecondsPerSecond;
 
+    if (_isInteractionPaused) {
+      return;
+    }
+
+    _timeSeconds += deltaSeconds;
+
     _beams.removeWhere((beam) {
-      final age = seconds - beam.startedAt;
+      final age = _timeSeconds - beam.startedAt;
       return age > beam.duration.inMilliseconds / 1000 + 1.2;
     });
 
@@ -121,7 +159,7 @@ class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
     final focusTarget = _focusTargetLongitudeDegrees;
     if (focusStart != null && focusTarget != null) {
       final progress =
-          ((seconds - _focusStartSeconds) /
+          ((_timeSeconds - _focusStartSeconds) /
                   (_targetFocusDuration.inMilliseconds / 1000))
               .clamp(0.0, 1.0)
               .toDouble();
@@ -142,41 +180,8 @@ class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
       );
     }
 
-    _syncRiveInputs(isSending: isSending);
-
     if (mounted) {
-      setState(() => _timeSeconds = seconds);
-    }
-  }
-
-  void _syncRiveInputs({required bool isSending}) {
-    _riveIsSending?.value = isSending;
-    _rivePulse?.value = (0.5 + math.sin(_timeSeconds * 1.8) * 0.5)
-        .clamp(0.0, 1.0)
-        .toDouble();
-    _riveRotationSpeed?.value = isSending
-        ? _sendingRotationDegreesPerSecond
-        : _idleRotationDegreesPerSecond;
-  }
-
-  void _onRiveInit(Artboard artboard) {
-    try {
-      final controller = StateMachineController.fromArtboard(
-        artboard,
-        _riveStateMachineName,
-      );
-      if (controller == null) {
-        debugPrint('2D 首页 Rive 未找到状态机: $_riveStateMachineName');
-        return;
-      }
-      artboard.addController(controller);
-      _riveIsSending = controller.findInput<bool>('isSending') as SMIBool?;
-      _rivePulse = controller.findInput<double>('pulse') as SMINumber?;
-      _riveRotationSpeed =
-          controller.findInput<double>('rotationSpeed') as SMINumber?;
-      _syncRiveInputs(isSending: _beams.isNotEmpty);
-    } catch (error) {
-      debugPrint('2D 首页 Rive 状态机初始化失败: $error');
+      setState(() {});
     }
   }
 
@@ -208,7 +213,7 @@ class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
           fromLng: startLng,
           toLat: toLat,
           toLng: toLng,
-          color: color ?? const Color(0xFFFFD76B),
+          color: color ?? const Color(0xFFFFB653),
           duration: duration ?? const Duration(milliseconds: 1800),
           startedAt: _timeSeconds,
           toLabel: toCountry,
@@ -218,7 +223,6 @@ class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
         _beams.removeRange(0, _beams.length - 8);
       }
     });
-    _syncRiveInputs(isSending: true);
   }
 
   void clearBeams() {
@@ -229,7 +233,6 @@ class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
       _focusStartLongitudeDegrees = null;
       _focusTargetLongitudeDegrees = null;
     });
-    _syncRiveInputs(isSending: false);
   }
 
   Future<void> relocateUser() async {
@@ -250,7 +253,7 @@ class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
   void setRenderingPaused(bool paused) {
     if (_isRenderingPaused == paused) return;
     _isRenderingPaused = paused;
-    debugPrint('🌏 2D 首页渲染暂停状态: $paused');
+    debugPrint('2D 首页渲染暂停状态: $paused');
     if (paused) {
       _ticker.stop();
       return;
@@ -264,38 +267,114 @@ class HomeWorld2DWidgetState extends State<HomeWorld2DWidget>
   @override
   void dispose() {
     _ticker.dispose();
-    _earthTexture?.dispose();
+    _landTexture?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return RepaintBoundary(
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.asset(
-            'assets/images/home_world_lightfield.webp',
-            fit: BoxFit.cover,
-          ),
-          if (_riveAssetAvailable)
-            RiveAnimation.asset(
-              _riveOrbitAsset,
-              fit: BoxFit.cover,
-              onInit: _onRiveInit,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final size = Size(
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 1,
+            constraints.maxHeight.isFinite ? constraints.maxHeight : 1,
+          );
+
+          return MouseRegion(
+            cursor: _activeNode == null
+                ? SystemMouseCursors.basic
+                : SystemMouseCursors.click,
+            onHover: (event) => _updateActiveNode(event.localPosition, size),
+            onExit: (_) => _clearActiveNode(),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (details) =>
+                  _updateActiveNode(details.localPosition, size, fromTap: true),
+              child: CustomPaint(
+                painter: _HomeWorld2DPainter(
+                  timeSeconds: _timeSeconds,
+                  rotationLongitudeDegrees: _rotationLongitudeDegrees,
+                  landTexture: _landTexture,
+                  beams: List<_HomeWorldBeam>.unmodifiable(_beams),
+                  nodes: List<_NetworkNode>.unmodifiable(_networkNodes),
+                  routes: List<_NetworkRoute>.unmodifiable(_networkRoutes),
+                  activeNode: _activeNode,
+                  currentToLabel: _currentToLabel,
+                ),
+              ),
             ),
-          CustomPaint(
-            painter: _HomeWorld2DPainter(
-              timeSeconds: _timeSeconds,
-              rotationLongitudeDegrees: _rotationLongitudeDegrees,
-              earthTexture: _earthTexture,
-              beams: List<_HomeWorldBeam>.unmodifiable(_beams),
-              currentToLabel: _currentToLabel,
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
+  }
+
+  void _updateActiveNode(
+    Offset localPosition,
+    Size size, {
+    bool fromTap = false,
+  }) {
+    final node = _findNodeAt(localPosition, size);
+    if (node == _activeNode && _isInteractionPaused == (node != null)) {
+      return;
+    }
+
+    setState(() {
+      _activeNode = node;
+      _isInteractionPaused = node != null;
+    });
+
+    if (fromTap && node == null && !_ticker.isTicking && !_isRenderingPaused) {
+      _ticker.start();
+    }
+  }
+
+  void _clearActiveNode() {
+    if (_activeNode == null && !_isInteractionPaused) return;
+    setState(() {
+      _activeNode = null;
+      _isInteractionPaused = false;
+    });
+  }
+
+  _NetworkNode? _findNodeAt(Offset localPosition, Size size) {
+    _NetworkNode? closest;
+    var closestDistance = double.infinity;
+    final metrics = _HomeWorldGlobeMetrics.fromSize(size);
+    for (final node in _networkNodes) {
+      final projected = _project(
+        node.lat,
+        node.lng,
+        metrics.center,
+        metrics.radius,
+      );
+      if (projected == null || projected.visibility < 0) continue;
+      final distance = (projected.offset - localPosition).distance;
+      final threshold = 8 + node.tier * 2.4;
+      if (distance <= threshold && distance < closestDistance) {
+        closest = node;
+        closestDistance = distance;
+      }
+    }
+    return closest;
+  }
+
+  _ProjectedPoint? _project(
+    double lat,
+    double lng,
+    Offset center,
+    double radius,
+  ) {
+    final relativeLng =
+        _normalizeLongitude(lng - _rotationLongitudeDegrees) * math.pi / 180;
+    final latRad = lat * math.pi / 180;
+    final visibility = math.cos(latRad) * math.cos(relativeLng);
+    if (visibility < -0.14) return null;
+
+    final x = center.dx + radius * math.cos(latRad) * math.sin(relativeLng);
+    final y = center.dy - radius * math.sin(latRad);
+    return _ProjectedPoint(Offset(x, y), visibility);
   }
 
   double _normalizeLongitude(double lng) {
@@ -329,18 +408,99 @@ class _HomeWorldBeam {
   });
 }
 
+class _NetworkNode {
+  final String id;
+  final String country;
+  final String city;
+  final String continent;
+  final double lat;
+  final double lng;
+  final int tier;
+
+  const _NetworkNode({
+    required this.id,
+    required this.country,
+    required this.city,
+    required this.continent,
+    required this.lat,
+    required this.lng,
+    required this.tier,
+  });
+
+  factory _NetworkNode.fromJson(Map<String, dynamic> json) {
+    return _NetworkNode(
+      id: (json['id'] ?? '').toString(),
+      country: (json['country'] ?? '').toString(),
+      city: (json['city'] ?? '').toString(),
+      continent: (json['continent'] ?? '').toString(),
+      lat: (json['lat'] as num).toDouble(),
+      lng: (json['lng'] as num).toDouble(),
+      tier: math
+          .max(1, math.min(3, ((json['tier'] as num?) ?? 1).toInt()))
+          .toInt(),
+    );
+  }
+}
+
+class _NetworkRoute {
+  final _NetworkNode from;
+  final _NetworkNode to;
+
+  const _NetworkRoute({required this.from, required this.to});
+
+  static _NetworkRoute? fromJson(
+    Map<String, dynamic> json,
+    Map<String, _NetworkNode> nodeById,
+  ) {
+    final from = nodeById[(json['from'] ?? '').toString()];
+    final to = nodeById[(json['to'] ?? '').toString()];
+    if (from == null || to == null) return null;
+    return _NetworkRoute(from: from, to: to);
+  }
+}
+
+class _HomeWorldGlobeMetrics {
+  final Offset center;
+  final double radius;
+
+  const _HomeWorldGlobeMetrics({required this.center, required this.radius});
+
+  factory _HomeWorldGlobeMetrics.fromSize(Size size) {
+    final radius = math
+        .min(size.width * 0.72, size.height * 0.92)
+        .clamp(148.0, 720.0);
+    return _HomeWorldGlobeMetrics(
+      center: Offset(size.width * 0.52, size.height * 0.88),
+      radius: radius.toDouble(),
+    );
+  }
+}
+
+class _ProjectedPoint {
+  final Offset offset;
+  final double visibility;
+
+  const _ProjectedPoint(this.offset, this.visibility);
+}
+
 class _HomeWorld2DPainter extends CustomPainter {
   final double timeSeconds;
   final double rotationLongitudeDegrees;
-  final ui.Image? earthTexture;
+  final ui.Image? landTexture;
   final List<_HomeWorldBeam> beams;
+  final List<_NetworkNode> nodes;
+  final List<_NetworkRoute> routes;
+  final _NetworkNode? activeNode;
   final String? currentToLabel;
 
   const _HomeWorld2DPainter({
     required this.timeSeconds,
     required this.rotationLongitudeDegrees,
-    required this.earthTexture,
+    required this.landTexture,
     required this.beams,
+    required this.nodes,
+    required this.routes,
+    required this.activeNode,
     required this.currentToLabel,
   });
 
@@ -348,213 +508,92 @@ class _HomeWorld2DPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty || !size.width.isFinite || !size.height.isFinite) return;
 
-    final globeCenter = Offset(size.width / 2, size.height * 0.34);
-    final globeRadius = (math.min(size.width, size.height) * 0.34)
-        .clamp(122.0, 260.0)
-        .toDouble();
-
-    _drawAtmosphere(canvas, size, globeCenter, globeRadius);
-    _drawEarthSphere(canvas, globeCenter, globeRadius);
-    _drawBeams(canvas, globeCenter, globeRadius);
-    _drawBottomGlow(canvas, size);
+    final metrics = _HomeWorldGlobeMetrics.fromSize(size);
+    _drawCloudflareGround(canvas, size, metrics.center, metrics.radius);
+    _drawEarthSphere(canvas, metrics.center, metrics.radius);
+    _drawAmbientRoutes(canvas, metrics.center, metrics.radius);
+    _drawBeams(canvas, metrics.center, metrics.radius);
+    _drawNodes(canvas, metrics.center, metrics.radius);
+    _drawBottomFade(canvas, size);
+    _drawTooltip(canvas, metrics.center, metrics.radius);
   }
 
-  void _drawAtmosphere(Canvas canvas, Size size, Offset center, double radius) {
-    final pulse = 0.5 + math.sin(timeSeconds * 1.2) * 0.5;
+  void _drawCloudflareGround(
+    Canvas canvas,
+    Size size,
+    Offset center,
+    double radius,
+  ) {
     canvas.drawRect(
       Offset.zero & size,
       Paint()
-        ..shader = RadialGradient(
-          center: Alignment(
-            (center.dx / size.width) * 2 - 1,
-            (center.dy / size.height) * 2 - 1,
-          ),
-          radius: 0.82,
-          colors: [
-            Color.lerp(
-              const Color(0x55FFFFFF),
-              const Color(0x88FFE9A3),
-              pulse,
-            )!,
-            const Color(0x00000000),
-          ],
-        ).createShader(Offset.zero & size),
+        ..shader = uiGradientLinear(
+          Offset(size.width * 0.5, 0),
+          Offset(size.width * 0.5, size.height),
+          const [Color(0xFFFFFEFA), Color(0xFFFFFCF5), Color(0xFFFFFFFF)],
+        ),
     );
 
-    for (var i = 0; i < 18; i++) {
-      final phase = timeSeconds * 0.08 + i * 0.37;
-      final x = (math.sin(phase * 1.7) * 0.5 + 0.5) * size.width;
-      final y = (math.cos(phase * 1.1) * 0.5 + 0.5) * size.height * 0.58;
-      final opacity = 0.12 + (math.sin(phase * 2.3) * 0.5 + 0.5) * 0.18;
-      canvas.drawCircle(
-        Offset(x, y),
-        1.2 + (i % 4) * 0.8,
-        Paint()
-          ..color = Color.fromRGBO(255, 246, 196, opacity)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
-      );
-    }
+    canvas.drawCircle(
+      center.translate(0, -radius * 0.08),
+      radius * 1.1,
+      Paint()
+        ..color = const Color(0x2DFFB454)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 34),
+    );
   }
 
   void _drawEarthSphere(Canvas canvas, Offset center, double radius) {
     canvas.drawCircle(
       center,
-      radius * 1.08,
+      radius * 1.01,
       Paint()
-        ..color = const Color(0x44FFFFFF)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+        ..color = const Color(0x66F7A84B)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.9),
     );
 
     canvas.save();
     canvas.clipPath(
       Path()..addOval(Rect.fromCircle(center: center, radius: radius)),
     );
-    final texture = earthTexture;
+
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..shader = uiGradientRadial(
+          center.translate(-radius * 0.18, -radius * 0.42),
+          radius * 1.16,
+          const [
+            Color(0xFFFFFFFF),
+            Color(0xFFFFFCF7),
+            Color(0xFFFFF2DF),
+            Color(0xFFFFFBF7),
+          ],
+          const [0.0, 0.44, 0.78, 1.0],
+        ),
+    );
+
+    final texture = landTexture;
     if (texture == null) {
-      _drawTextureFallback(canvas, center, radius);
+      _drawFallbackLand(canvas, center, radius);
     } else {
       _drawProjectedTexture(canvas, center, radius, texture);
     }
-    canvas.drawCircle(
-      center,
-      radius,
+
+    canvas.drawRect(
+      Rect.fromCircle(center: center, radius: radius),
       Paint()
         ..shader = uiGradientRadial(
-          center.translate(-radius * 0.28, -radius * 0.22),
+          center.translate(-radius * 0.22, -radius * 0.36),
           radius * 1.18,
-          const [
-            Color(0x55FFFFFF),
-            Color(0x113FE7E0),
-            Color(0x66111F4A),
-            Color(0x99040A18),
-          ],
-          const [0.0, 0.35, 0.78, 1.0],
+          const [Color(0x22FFFFFF), Color(0x00FFFFFF), Color(0x38FFFFFF)],
+          const [0.0, 0.62, 1.0],
         ),
     );
     canvas.restore();
-
-    final ringPaint = Paint()
-      ..color = const Color(0xCCFFF2A8)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5);
-    canvas.drawCircle(center, radius, ringPaint);
-
-    final gridPaint = Paint()
-      ..color = const Color(0x33FFFFFF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.7;
-    for (final scaleY in const [0.22, 0.42, 0.62]) {
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: center,
-          width: radius * 1.72,
-          height: radius * 2 * scaleY,
-        ),
-        gridPaint,
-      );
-    }
-    for (final offset in const [-0.46, -0.22, 0.0, 0.22, 0.46]) {
-      final path = Path()
-        ..moveTo(center.dx + radius * offset, center.dy - radius * 0.96)
-        ..cubicTo(
-          center.dx + radius * offset * 1.9,
-          center.dy - radius * 0.42,
-          center.dx + radius * offset * 1.9,
-          center.dy + radius * 0.42,
-          center.dx + radius * offset,
-          center.dy + radius * 0.96,
-        );
-      canvas.drawPath(path, gridPaint);
-    }
-  }
-
-  void _drawTextureFallback(Canvas canvas, Offset center, double radius) {
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..shader = uiGradientRadial(
-          center.translate(-radius * 0.18, -radius * 0.22),
-          radius * 1.18,
-          const [Color(0xFF9FE8FF), Color(0xFF2BA7CE), Color(0xFF174B7A)],
-          const [0, 0.62, 1],
-        ),
-    );
-    _drawPainterlyContinents(canvas, center, radius);
-    _drawSoftCloudBands(canvas, center, radius);
-  }
-
-  void _drawPainterlyContinents(Canvas canvas, Offset center, double radius) {
-    final landPaint = Paint()
-      ..color = const Color(0xCCF8D88A)
-      ..style = PaintingStyle.fill
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.8);
-    final shadowPaint = Paint()
-      ..color = const Color(0x554B812E)
-      ..style = PaintingStyle.fill
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.4);
-
-    const continents = <List<(double, double)>>[
-      [(54, -132), (64, -96), (48, -62), (25, -80), (14, -106), (30, -132)],
-      [(12, -82), (4, -62), (-18, -58), (-52, -70), (-32, -45), (-4, -78)],
-      [(70, -12), (62, 58), (36, 92), (8, 76), (4, 30), (28, -8)],
-      [(34, 70), (24, 112), (2, 122), (-9, 96), (8, 78)],
-      [(31, -10), (18, 30), (-30, 26), (-36, 12), (-4, -12)],
-      [(-12, 112), (-22, 148), (-44, 146), (-38, 114)],
-    ];
-
-    for (final polygon in continents) {
-      final points = polygon
-          .map((point) => _project(point.$1, point.$2, center, radius))
-          .whereType<Offset>()
-          .toList();
-      if (points.length < 3) continue;
-
-      final path = Path()..moveTo(points.first.dx, points.first.dy);
-      for (var i = 1; i < points.length; i++) {
-        final current = points[i];
-        final previous = points[i - 1];
-        path.quadraticBezierTo(
-          previous.dx,
-          previous.dy,
-          (previous.dx + current.dx) / 2,
-          (previous.dy + current.dy) / 2,
-        );
-      }
-      path.close();
-      canvas.drawPath(path.shift(const Offset(0, 1.6)), shadowPaint);
-      canvas.drawPath(path, landPaint);
-    }
-  }
-
-  void _drawSoftCloudBands(Canvas canvas, Offset center, double radius) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = radius * 0.035
-      ..shader = uiGradientLinear(
-        center.translate(-radius, 0),
-        center.translate(radius, 0),
-        const [Color(0x00FFFFFF), Color(0x99FFFFFF), Color(0x00FFFFFF)],
-      )
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-
-    for (var i = 0; i < 4; i++) {
-      final y = center.dy + radius * (-0.42 + i * 0.26);
-      final phase = timeSeconds * 0.28 + i * 1.7;
-      final path = Path()
-        ..moveTo(center.dx - radius * 0.82, y + math.sin(phase) * radius * 0.03)
-        ..cubicTo(
-          center.dx - radius * 0.34,
-          y - radius * (0.08 + i * 0.012),
-          center.dx + radius * 0.34,
-          y + radius * (0.08 - i * 0.01),
-          center.dx + radius * 0.82,
-          y + math.cos(phase) * radius * 0.03,
-        );
-      canvas.drawPath(path, paint);
-    }
   }
 
   void _drawProjectedTexture(
@@ -563,9 +602,11 @@ class _HomeWorld2DPainter extends CustomPainter {
     double radius,
     ui.Image texture,
   ) {
-    final columns = (radius / 3.2).clamp(44.0, 96.0).round();
-    final rows = (radius / 4.0).clamp(32.0, 72.0).round();
-    final paint = Paint()..filterQuality = FilterQuality.medium;
+    final columns = (radius / 2.2).clamp(74.0, 192.0).round();
+    final rows = (radius / 3.0).clamp(48.0, 128.0).round();
+    final paint = Paint()
+      ..filterQuality = FilterQuality.high
+      ..isAntiAlias = true;
     final texWidth = texture.width.toDouble();
     final texHeight = texture.height.toDouble();
     final cellWidth = radius * 2 / columns;
@@ -573,7 +614,7 @@ class _HomeWorld2DPainter extends CustomPainter {
 
     for (var col = 0; col < columns; col++) {
       final x0 = -radius + col * cellWidth;
-      final x1 = x0 + cellWidth + 0.75;
+      final x1 = x0 + cellWidth + 0.8;
       final nx0 = (x0 / radius).clamp(-1.0, 1.0).toDouble();
       final nx1 = (x1 / radius).clamp(-1.0, 1.0).toDouble();
       final midX = ((x0 + x1) / (2 * radius)).clamp(-1.0, 1.0).toDouble();
@@ -589,21 +630,21 @@ class _HomeWorld2DPainter extends CustomPainter {
             math.pi /
             360 *
             texWidth *
-            1.35,
+            1.22,
       );
 
       for (var row = 0; row < rows; row++) {
         final y0 = -radius + row * cellHeight;
-        final y1 = y0 + cellHeight + 0.75;
+        final y1 = y0 + cellHeight + 0.8;
         final midY = ((y0 + y1) / (2 * radius)).clamp(-1.0, 1.0).toDouble();
-        if (midX * midX + midY * midY > 1.02) continue;
+        if (midX * midX + midY * midY > 1.025) continue;
 
         final lat =
             math.asin((-midY).clamp(-1.0, 1.0).toDouble()) * 180 / math.pi;
         final srcY = ((90 - lat) / 180) * texHeight;
         final srcH = math.max(
           1.0,
-          cellHeight / (radius * 2) * texHeight * 1.15,
+          cellHeight / (radius * 2) * texHeight * 1.12,
         );
 
         _drawWrappedImageRect(
@@ -615,18 +656,6 @@ class _HomeWorld2DPainter extends CustomPainter {
         );
       }
     }
-
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..shader = uiGradientRadial(
-          center.translate(-radius * 0.36, -radius * 0.28),
-          radius * 1.32,
-          const [Color(0x44FFFFFF), Color(0x00000000), Color(0x6607132F)],
-          const [0, 0.46, 1],
-        ),
-    );
   }
 
   void _drawWrappedImageRect(
@@ -679,6 +708,38 @@ class _HomeWorld2DPainter extends CustomPainter {
     );
   }
 
+  void _drawFallbackLand(Canvas canvas, Offset center, double radius) {
+    canvas.drawCircle(
+      center,
+      radius * 0.72,
+      Paint()
+        ..color = const Color(0x77F78E35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
+    );
+  }
+
+  void _drawAmbientRoutes(Canvas canvas, Offset center, double radius) {
+    if (routes.isEmpty) return;
+    final visibleRoutes = routes.take(16).toList(growable: false);
+    for (var i = 0; i < visibleRoutes.length; i++) {
+      final route = visibleRoutes[i];
+      final start = _project(route.from.lat, route.from.lng, center, radius);
+      final end = _project(route.to.lat, route.to.lng, center, radius);
+      if (start == null || end == null) continue;
+      if (start.visibility < -0.02 || end.visibility < -0.02) continue;
+      final phase = (timeSeconds * 0.13 + i * 0.087) % 1.0;
+      _drawRoutePath(
+        canvas,
+        start.offset,
+        end.offset,
+        radius,
+        progress: phase,
+        color: const Color(0xFFFFB653),
+        subtle: true,
+      );
+    }
+  }
+
   void _drawBeams(Canvas canvas, Offset center, double radius) {
     for (final beam in beams) {
       final age = timeSeconds - beam.startedAt;
@@ -689,70 +750,198 @@ class _HomeWorld2DPainter extends CustomPainter {
       final start = _project(beam.fromLat, beam.fromLng, center, radius);
       final end = _project(beam.toLat, beam.toLng, center, radius);
       if (start == null || end == null) continue;
-      final control = Offset(
-        (start.dx + end.dx) / 2,
-        math.min(start.dy, end.dy) - radius * (0.24 + progress * 0.10),
-      );
-
-      final path = Path()
-        ..moveTo(start.dx, start.dy)
-        ..quadraticBezierTo(control.dx, control.dy, end.dx, end.dy);
-
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = beam.color.withValues(alpha: 0.22)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.0
-          ..strokeCap = StrokeCap.round,
-      );
-
-      final head = _quadraticPoint(start, control, end, progress);
-      final tail = _quadraticPoint(
-        start,
-        control,
-        end,
-        (progress - 0.18).clamp(0.0, 1.0).toDouble(),
-      );
-      canvas.drawLine(
-        tail,
-        head,
-        Paint()
-          ..shader = uiGradientLinear(tail, head, [
-            beam.color.withValues(alpha: 0.0),
-            beam.color.withValues(alpha: 0.75),
-            Colors.white,
-          ])
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.0
-          ..strokeCap = StrokeCap.round,
-      );
-      canvas.drawLine(
-        tail,
-        head,
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.34)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 8.0
-          ..strokeCap = StrokeCap.round
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+      _drawRoutePath(
+        canvas,
+        start.offset,
+        end.offset,
+        radius,
+        progress: progress,
+        color: beam.color,
+        subtle: false,
       );
 
       if (beam.toLabel != null && progress > 0.82) {
-        _drawLabel(canvas, beam.toLabel!, end);
+        _drawSmallLabel(canvas, beam.toLabel!, end.offset);
       }
     }
   }
 
-  void _drawLabel(Canvas canvas, String label, Offset anchor) {
+  void _drawRoutePath(
+    Canvas canvas,
+    Offset start,
+    Offset end,
+    double radius, {
+    required double progress,
+    required Color color,
+    required bool subtle,
+  }) {
+    final control = Offset(
+      (start.dx + end.dx) / 2,
+      math.min(start.dy, end.dy) - radius * (subtle ? 0.14 : 0.22),
+    );
+    final path = Path()
+      ..moveTo(start.dx, start.dy)
+      ..quadraticBezierTo(control.dx, control.dy, end.dx, end.dy);
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color.withValues(alpha: subtle ? 0.18 : 0.28)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = subtle ? 0.8 : 1.2
+        ..strokeCap = StrokeCap.round,
+    );
+
+    final head = _quadraticPoint(start, control, end, progress);
+    final tail = _quadraticPoint(
+      start,
+      control,
+      end,
+      (progress - (subtle ? 0.12 : 0.18)).clamp(0.0, 1.0).toDouble(),
+    );
+    canvas.drawLine(
+      tail,
+      head,
+      Paint()
+        ..shader = uiGradientLinear(tail, head, [
+          color.withValues(alpha: 0.0),
+          color.withValues(alpha: subtle ? 0.48 : 0.82),
+          Colors.white.withValues(alpha: subtle ? 0.7 : 1.0),
+        ])
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = subtle ? 1.6 : 3.0
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  void _drawNodes(Canvas canvas, Offset center, double radius) {
+    for (final node in nodes) {
+      final projected = _project(node.lat, node.lng, center, radius);
+      if (projected == null || projected.visibility < -0.02) continue;
+      final isActive = node == activeNode;
+      final baseRadius = 1.25 + node.tier * 0.72;
+      final nodeRadius = isActive ? baseRadius + 2.0 : baseRadius;
+      final alpha = (0.38 + projected.visibility * 0.62).clamp(0.0, 1.0);
+
+      canvas.drawCircle(
+        projected.offset,
+        nodeRadius + 3.2,
+        Paint()
+          ..color = const Color(0xFFFFFFFF).withValues(alpha: alpha * 0.42)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+      canvas.drawCircle(
+        projected.offset,
+        nodeRadius,
+        Paint()
+          ..color =
+              (isActive ? const Color(0xFF243E62) : const Color(0xFF536783))
+                  .withValues(alpha: alpha)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawCircle(
+        projected.offset,
+        nodeRadius,
+        Paint()
+          ..color = Colors.white.withValues(alpha: alpha * 0.72)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.75,
+      );
+    }
+  }
+
+  void _drawTooltip(Canvas canvas, Offset center, double radius) {
+    final node = activeNode;
+    if (node == null) return;
+    final projected = _project(node.lat, node.lng, center, radius);
+    if (projected == null || projected.visibility < -0.02) return;
+
+    final title = node.city.isEmpty ? node.country : node.city;
+    final subtitle = node.city.isEmpty
+        ? '${node.continent} · 全球节点'
+        : '${node.country} · ${node.continent}';
+    final titlePainter = TextPainter(
+      text: TextSpan(
+        text: title,
+        style: const TextStyle(
+          color: Color(0xFF111827),
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      maxLines: 1,
+      ellipsis: '...',
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 150);
+    final subtitlePainter = TextPainter(
+      text: TextSpan(
+        text: subtitle,
+        style: const TextStyle(
+          color: Color(0xFF4B5563),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      maxLines: 1,
+      ellipsis: '...',
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 170);
+    final statusPainter = TextPainter(
+      text: const TextSpan(
+        text: '节点在线',
+        style: TextStyle(
+          color: Color(0xFFF78E35),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      maxLines: 1,
+      ellipsis: '...',
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 170);
+
+    final boxWidth =
+        math.max(
+          titlePainter.width,
+          math.max(subtitlePainter.width, statusPainter.width),
+        ) +
+        24;
+    final boxHeight = 64.0;
+    var left = projected.offset.dx - boxWidth / 2;
+    final top = projected.offset.dy - boxHeight - 14;
+    left = left.clamp(8.0, center.dx + radius - boxWidth - 8).toDouble();
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(left, top, boxWidth, boxHeight),
+      const Radius.circular(8),
+    );
+    canvas.drawRRect(
+      rect,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.12)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+    canvas.drawRRect(rect, Paint()..color = const Color(0xF7FFFFFF));
+    canvas.drawRRect(
+      rect,
+      Paint()
+        ..color = const Color(0x33F78E35)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    titlePainter.paint(canvas, Offset(left + 12, top + 8));
+    subtitlePainter.paint(canvas, Offset(left + 12, top + 27));
+    statusPainter.paint(canvas, Offset(left + 12, top + 45));
+  }
+
+  void _drawSmallLabel(Canvas canvas, String label, Offset anchor) {
     final painter = TextPainter(
       text: TextSpan(
         text: label,
         style: const TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
+          color: Color(0xFF111827),
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          shadows: [Shadow(color: Colors.white, blurRadius: 8)],
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -762,28 +951,33 @@ class _HomeWorld2DPainter extends CustomPainter {
     painter.paint(canvas, anchor.translate(-painter.width / 2, 10));
   }
 
-  void _drawBottomGlow(Canvas canvas, Size size) {
+  void _drawBottomFade(Canvas canvas, Size size) {
     canvas.drawRect(
       Rect.fromLTWH(0, size.height * 0.62, size.width, size.height * 0.38),
       Paint()
         ..shader = uiGradientLinear(
           Offset(0, size.height * 0.62),
           Offset(0, size.height),
-          const [Color(0x00000000), Color(0x88FFF6D4)],
+          const [Color(0x00FFFFFF), Color(0xCCFFFFFF), Color(0xFFFFFFFF)],
         ),
     );
   }
 
-  Offset? _project(double lat, double lng, Offset center, double radius) {
+  _ProjectedPoint? _project(
+    double lat,
+    double lng,
+    Offset center,
+    double radius,
+  ) {
     final relativeLng =
         _normalizeLongitude(lng - rotationLongitudeDegrees) * math.pi / 180;
     final latRad = lat * math.pi / 180;
-    final visible = math.cos(latRad) * math.cos(relativeLng);
-    if (visible < -0.16) return null;
+    final visibility = math.cos(latRad) * math.cos(relativeLng);
+    if (visibility < -0.14) return null;
 
     final x = center.dx + radius * math.cos(latRad) * math.sin(relativeLng);
     final y = center.dy - radius * math.sin(latRad);
-    return Offset(x, y);
+    return _ProjectedPoint(Offset(x, y), visibility);
   }
 
   Offset _quadraticPoint(Offset a, Offset b, Offset c, double t) {
@@ -802,8 +996,11 @@ class _HomeWorld2DPainter extends CustomPainter {
   bool shouldRepaint(covariant _HomeWorld2DPainter oldDelegate) {
     return oldDelegate.timeSeconds != timeSeconds ||
         oldDelegate.rotationLongitudeDegrees != rotationLongitudeDegrees ||
-        oldDelegate.earthTexture != earthTexture ||
+        oldDelegate.landTexture != landTexture ||
         oldDelegate.beams != beams ||
+        oldDelegate.nodes != nodes ||
+        oldDelegate.routes != routes ||
+        oldDelegate.activeNode != activeNode ||
         oldDelegate.currentToLabel != currentToLabel;
   }
 }
