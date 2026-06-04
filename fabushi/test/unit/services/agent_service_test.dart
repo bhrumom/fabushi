@@ -53,13 +53,15 @@ void main() {
             request.url.toString(),
             'https://api.ombhrum.com/api/agent/runs/run_1/events',
           );
-          return http.Response(
-            'event: assistant.delta\n'
-            'data: {"text":"阿弥"}\n\n'
-            'event: run.completed\n'
-            'data: {"usage":{"totalTokens":10}}\n\n',
+          return http.Response.bytes(
+            utf8.encode(
+              'event: assistant.delta\n'
+              'data: {"text":"阿弥"}\n\n'
+              'event: run.completed\n'
+              'data: {"usage":{"totalTokens":10}}\n\n',
+            ),
             200,
-            headers: {'content-type': 'text/event-stream'},
+            headers: {'content-type': 'text/event-stream; charset=utf-8'},
           );
         }),
       );
