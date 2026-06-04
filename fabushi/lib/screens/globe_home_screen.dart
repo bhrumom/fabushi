@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
@@ -44,6 +45,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   bool _isGlobalSendTimelineVisible = false;
   bool _isAiGenerating = false;
   String _streamingAiText = '';
+  String _aiActivityText = '';
   SceneRenderMode _renderMode = SceneRenderMode.twoD;
   final TextEditingController _chatInputController = TextEditingController();
   final ScrollController _homeChatScrollController = ScrollController();
@@ -810,12 +812,25 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         ],
         if (_isAiGenerating)
           _streamingAiText.trim().isEmpty
-              ? const Align(
+              ? Align(
                   alignment: Alignment.centerLeft,
-                  child: _ThinkingDots(label: '正在思考'),
+                  child: _ThinkingDots(
+                    label: _aiActivityText.trim().isEmpty
+                        ? '正在思考'
+                        : _aiActivityText.trim(),
+                  ),
                 )
-              : _buildChatBubble(
-                  _HomeChatMessage(text: _streamingAiText, isUser: false),
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_aiActivityText.trim().isNotEmpty) ...[
+                      _AiActivityLabel(_aiActivityText.trim()),
+                      const SizedBox(height: 8),
+                    ],
+                    _buildChatBubble(
+                      _HomeChatMessage(text: _streamingAiText, isUser: false),
+                    ),
+                  ],
                 ),
         if (_isAiGenerating) const SizedBox(height: 18),
         if (hasSendingProcess) _buildGlobalSendingProcess(model),
@@ -845,15 +860,17 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         constraints: const BoxConstraints(maxWidth: 430),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
-        child: Text(
-          message.text,
-          style: TextStyle(
-            color: message.isError ? Colors.red[100] : Colors.white,
-            fontSize: 17,
-            height: 1.42,
-            fontWeight: message.isUser ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
+        child: message.isUser || message.isError
+            ? Text(
+                message.text,
+                style: TextStyle(
+                  color: message.isError ? Colors.red[100] : Colors.white,
+                  fontSize: 17,
+                  height: 1.42,
+                  fontWeight: message.isUser ? FontWeight.w700 : FontWeight.w500,
+                ),
+              )
+            : _MarkdownChatText(message.text),
       ),
     );
   }
@@ -1066,6 +1083,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       _activeConversationId = null;
       _homeChatMessages.clear();
       _streamingAiText = '';
+      _aiActivityText = '';
       _isDharmaComposerMode = false;
       _showMaterialGallery = false;
       _isGlobalSendTimelineVisible = false;
@@ -1119,6 +1137,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         ..clear()
         ..addAll(messages);
       _streamingAiText = '';
+      _aiActivityText = '';
       _isDharmaComposerMode = false;
       _showMaterialGallery = false;
       _isGlobalSendTimelineVisible = conversation.isGlobalSendRunning;
@@ -1748,6 +1767,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       _homeChatMessages.add(_HomeChatMessage(text: text, isUser: true));
       _isAiGenerating = true;
       _streamingAiText = '';
+      _aiActivityText = '正在思考';
     });
     _scrollHomeChatToBottom(force: true);
 
@@ -1770,15 +1790,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         }
 
         if (event.isStep) {
-          final title = (event.raw['title'] ?? '').toString().trim();
-          final message = (event.raw['message'] ?? event.text)
-              .toString()
-              .trim();
-          final line = [
-            if (title.isNotEmpty) title,
-            if (message.isNotEmpty) message,
-          ].join('：');
-          if (line.isNotEmpty) stepLines.add('· $line');
+          final visibleStep = _visibleAiStepLabel(event);
+          if (visibleStep != null) {
+            stepLines
+              ..clear()
+              ..add(visibleStep);
+          }
         } else if (event.isDelta) {
           finalText += event.text;
         } else if (event.isDone) {
@@ -1790,10 +1807,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
         setState(() {
           _activeConversationId = latestConversationId;
-          _streamingAiText = [
-            if (stepLines.isNotEmpty) stepLines.join('\n'),
-            if (finalText.trim().isNotEmpty) finalText,
-          ].join('\n\n');
+          _aiActivityText = stepLines.isNotEmpty
+              ? stepLines.last
+              : (finalText.trim().isEmpty ? '正在思考' : '正在生成');
+          _streamingAiText = finalText;
         });
         _scrollHomeChatToBottom();
       }
@@ -1807,6 +1824,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           );
         }
         _streamingAiText = '';
+        _aiActivityText = '';
         _isAiGenerating = false;
       });
       _scrollHomeChatToBottom(force: true);
@@ -1822,6 +1840,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           ),
         );
         _streamingAiText = '';
+        _aiActivityText = '';
         _isAiGenerating = false;
       });
       _scrollHomeChatToBottom(force: true);
@@ -1840,8 +1859,23 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         );
       }
       _streamingAiText = '';
+      _aiActivityText = '';
       _isAiGenerating = false;
     });
+  }
+
+  String? _visibleAiStepLabel(DachengAiStreamEvent event) {
+    final title = (event.raw['title'] ?? '').toString().trim();
+    final message = (event.raw['message'] ?? event.text).toString().trim();
+    final combined = [title, message].where((part) => part.isNotEmpty).join(' ');
+    if (combined.isEmpty) return null;
+    if (RegExp(r'VPS|后端|DeepSeek|OpenAI-compatible|直连|连接').hasMatch(combined)) {
+      return null;
+    }
+    if (RegExp(r'执行命令|调用工具|搜索|下载|资源|整理|计划|文件|MCP|工具').hasMatch(combined)) {
+      return title.isNotEmpty ? title : message;
+    }
+    return null;
   }
 
   void _scrollHomeChatToBottom({bool force = false}) {
@@ -2714,6 +2748,116 @@ class _RegionCheckTile extends StatelessWidget {
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AiActivityLabel extends StatelessWidget {
+  final String label;
+
+  const _AiActivityLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.8,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                AppTheme.primaryColor.withValues(alpha: 0.82),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MarkdownChatText extends StatelessWidget {
+  final String data;
+
+  const _MarkdownChatText(this.data);
+
+  @override
+  Widget build(BuildContext context) {
+    const baseStyle = TextStyle(
+      color: Colors.white,
+      fontSize: 17,
+      height: 1.46,
+      fontWeight: FontWeight.w500,
+    );
+
+    return MarkdownBody(
+      data: data,
+      selectable: true,
+      softLineBreak: true,
+      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+        p: baseStyle,
+        strong: baseStyle.copyWith(fontWeight: FontWeight.w800),
+        em: baseStyle.copyWith(fontStyle: FontStyle.italic),
+        h1: baseStyle.copyWith(fontSize: 22, fontWeight: FontWeight.w800),
+        h2: baseStyle.copyWith(fontSize: 20, fontWeight: FontWeight.w800),
+        h3: baseStyle.copyWith(fontSize: 18, fontWeight: FontWeight.w800),
+        blockquote: baseStyle.copyWith(color: Colors.white70),
+        blockquoteDecoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(8),
+          border: Border(
+            left: BorderSide(
+              color: AppTheme.primaryColor.withValues(alpha: 0.72),
+              width: 3,
+            ),
+          ),
+        ),
+        code: baseStyle.copyWith(
+          color: const Color(0xFFE9F4FF),
+          fontFamily: 'monospace',
+          fontSize: 15,
+        ),
+        codeblockDecoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.24),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        listBullet: baseStyle,
+        a: baseStyle.copyWith(
+          color: AppTheme.primaryColor,
+          decoration: TextDecoration.underline,
+          decorationColor: AppTheme.primaryColor.withValues(alpha: 0.7),
+        ),
+        tableBody: baseStyle.copyWith(fontSize: 14),
+        tableHead: baseStyle.copyWith(fontSize: 14, fontWeight: FontWeight.w800),
+        horizontalRuleDecoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
           ),
         ),
       ),
