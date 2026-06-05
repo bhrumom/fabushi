@@ -7,11 +7,13 @@ import 'keep_alive_guide_screen.dart';
 import 'practice_privacy_screen.dart';
 import '../core/constants/app_constants.dart';
 import '../services/api_client.dart';
+import '../services/ai_backend_policy.dart';
 import '../services/app_build_info_service.dart';
 import '../services/app_settings.dart';
 import '../services/llm_model_config.dart';
 import '../services/llm_model_manager.dart';
 import '../services/device_capability_service.dart';
+import '../services/openclaw/openclaw_runtime.dart';
 import '../services/worker_config.dart';
 import '../widgets/model_selection_dialog.dart';
 import '../models/auth_model.dart';
@@ -43,6 +45,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _downloadProgress = 0.0;
   String _downloadStage = '';
   bool _isDownloading = false;
+
+  // 桌面 AI / OpenClaw 设置
+  String _aiBackendModeName = 'auto';
+  OpenClawRuntimeStatus? _openClawStatus;
+  bool _isRestartingOpenClaw = false;
 
   @override
   void initState() {
@@ -99,7 +106,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final defaultMuted = await AppSettings.getDefaultTtsMuted();
     final fastMatchThreshold = await AppSettings.getFastMatchThreshold();
     final matchThreshold = await AppSettings.getMatchThreshold();
-    final appVersionLabel = await AppBuildInfoService.instance.getVersionLabel();
+    final appVersionLabel = await AppBuildInfoService.instance
+        .getVersionLabel();
 
     // 加载 AI 模型相关设置
     final deviceInfo = await DeviceCapabilityService.instance
@@ -115,6 +123,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } catch (_) {}
     }
 
+    final aiBackendModeName = await AppSettings.getAiBackendModeName();
+    OpenClawRuntimeStatus? openClawStatus;
+    if (AiBackendPolicy.isDesktopNative) {
+      openClawStatus = await OpenClawRuntime.instance.getStatus(probe: false);
+    }
+
     if (mounted) {
       setState(() {
         _defaultTtsMuted = defaultMuted;
@@ -124,6 +138,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _deviceInfo = deviceInfo;
         _modelStatus = modelStatus;
         _selectedModel = selectedModel;
+        _aiBackendModeName = aiBackendModeName;
+        _openClawStatus = openClawStatus;
         _isLoading = false;
       });
     }
@@ -142,6 +158,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _setMatchThreshold(double value) async {
     setState(() => _matchThreshold = value);
     await AppSettings.setMatchThreshold(value);
+  }
+
+  Future<void> _setAiBackendModeName(String? value) async {
+    if (value == null || value.isEmpty) return;
+    setState(() => _aiBackendModeName = value);
+    await AppSettings.setAiBackendModeName(value);
+  }
+
+  Future<void> _refreshOpenClawStatus() async {
+    if (!AiBackendPolicy.isDesktopNative) return;
+    final status = await OpenClawRuntime.instance.getStatus();
+    if (mounted) {
+      setState(() => _openClawStatus = status);
+    }
+  }
+
+  Future<void> _restartOpenClawRuntime() async {
+    if (!AiBackendPolicy.isDesktopNative || _isRestartingOpenClaw) return;
+    setState(() => _isRestartingOpenClaw = true);
+    final status = await OpenClawRuntime.instance.restart();
+    if (!mounted) return;
+    setState(() {
+      _openClawStatus = status;
+      _isRestartingOpenClaw = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(status.isHealthy ? '本机 OpenClaw 已启动' : status.message),
+        backgroundColor: status.isHealthy ? Colors.green : Colors.redAccent,
+      ),
+    );
   }
 
   String _feedbackPlatformLabel() {
@@ -237,7 +284,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             return AlertDialog(
               backgroundColor: const Color(0xFF1E1E1E),
-              title: const Text('提交问题反馈', style: TextStyle(color: Colors.white)),
+              title: const Text(
+                '提交问题反馈',
+                style: TextStyle(color: Colors.white),
+              ),
               content: SizedBox(
                 width: 420,
                 child: SingleChildScrollView(
@@ -252,7 +302,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 8),
                       Text(
                         '当前版本：$_appVersionLabel',
-                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       TextField(
@@ -420,6 +473,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   //
                   // // 读诵匹配阈值设置
                   // _buildRecitationThresholdSettings(),
+                  if (AiBackendPolicy.isDesktopNative) ...[
+                    _buildOpenClawSettingCard(),
+                    const SizedBox(height: 12),
+                  ],
 
                   // Android 后台保活设置（仅 Android 显示）
                   if (Platform.isAndroid)
@@ -503,6 +560,154 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildOpenClawSettingCard() {
+    final mode = aiBackendModeFromStorageName(_aiBackendModeName);
+    final status = _openClawStatus;
+    final statusColor = switch (status?.state) {
+      OpenClawRuntimeState.running => Colors.greenAccent,
+      OpenClawRuntimeState.starting => Colors.amberAccent,
+      OpenClawRuntimeState.notBundled => Colors.orangeAccent,
+      OpenClawRuntimeState.failed => Colors.redAccent,
+      OpenClawRuntimeState.unsupported => Colors.white38,
+      _ => Colors.white54,
+    };
+
+    return Card(
+      color: const Color(0xFF1E1E1E),
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.greenAccent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.hub_outlined,
+                    color: Colors.greenAccent,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '桌面 AI / OpenClaw',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        '桌面首页 AI 对话默认使用 App 内置本机 OpenClaw',
+                        style: TextStyle(color: Colors.white54, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<String>(
+              value: mode.storageName,
+              dropdownColor: const Color(0xFF2A2A2A),
+              decoration: InputDecoration(
+                labelText: 'AI 后端',
+                labelStyle: const TextStyle(color: Colors.white70),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.04),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              style: const TextStyle(color: Colors.white),
+              items: AiBackendMode.values
+                  .map(
+                    (item) => DropdownMenuItem<String>(
+                      value: item.storageName,
+                      child: Text('${item.label} · ${item.description}'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: _isRestartingOpenClaw ? null : _setAiBackendModeName,
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.circle, size: 10, color: statusColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      status == null
+                          ? '尚未检测本机 OpenClaw 状态'
+                          : '${status.label} · ${status.message}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isRestartingOpenClaw
+                        ? null
+                        : _refreshOpenClawStatus,
+                    icon: const Icon(
+                      Icons.health_and_safety_outlined,
+                      size: 18,
+                    ),
+                    label: const Text('检测'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _isRestartingOpenClaw
+                        ? null
+                        : _restartOpenClawRuntime,
+                    icon: _isRestartingOpenClaw
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.restart_alt, size: 18),
+                    label: Text(_isRestartingOpenClaw ? '启动中' : '重启本机 AI'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 

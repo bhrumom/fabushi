@@ -1,0 +1,456 @@
+name: Desktop installers
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - fabushi/**
+      - .github/scripts/package-desktop-*
+      - .github/workflows/desktop-installers.yml
+  push:
+    branches:
+      - main
+    paths:
+      - fabushi/**
+      - .github/scripts/package-desktop-*
+      - .github/workflows/desktop-installers.yml
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Commit SHA to package. Leave empty to use the selected ref.
+        required: false
+        type: string
+      release_tag:
+        description: Existing or new GitHub Release tag. Leave empty to generate one.
+        required: false
+        type: string
+      publish_release:
+        description: Publish packages to a GitHub Release after successful builds.
+        required: false
+        default: true
+        type: boolean
+      openclaw_version:
+        description: OpenClaw npm version to vendor into desktop packages.
+        required: false
+        default: 2026.6.1
+        type: string
+
+concurrency:
+  group: desktop-installers-${{ github.event.pull_request.number || github.ref || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+  checks: read
+  pull-requests: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  FLUTTER_VERSION: '3.41.9'
+  OPENCLAW_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.openclaw_version || '2026.6.1' }}
+
+jobs:
+  resolve-release-context:
+    name: Resolve desktop release context
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      source_sha: ${{ steps.context.outputs.source_sha }}
+      app_version: ${{ steps.context.outputs.app_version }}
+      version_slug: ${{ steps.context.outputs.version_slug }}
+      release_tag: ${{ steps.context.outputs.release_tag }}
+      publish_release: ${{ steps.context.outputs.publish_release }}
+    steps:
+      - name: Checkout release metadata
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.source_sha || github.sha }}
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            fabushi/pubspec.yaml
+
+      - name: Resolve source, version, and release policy
+        id: context
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          INPUT_PUBLISH_RELEASE: ${{ inputs.publish_release }}
+        run: |
+          set -euo pipefail
+
+          source_sha="${PR_HEAD_SHA:-${INPUT_SOURCE_SHA:-${GITHUB_SHA}}}"
+          app_version="$(awk '/^version:/ { print $2; exit }' fabushi/pubspec.yaml)"
+          if [ -z "$app_version" ]; then
+            echo "Unable to read app version from fabushi/pubspec.yaml" >&2
+            exit 1
+          fi
+
+          version_slug="${app_version//+/-}"
+          short_sha="$(git rev-parse --short=12 HEAD)"
+          release_tag="${INPUT_RELEASE_TAG:-desktop-v${version_slug}-${GITHUB_RUN_NUMBER}-${short_sha}}"
+
+          publish_release=false
+          case "$EVENT_NAME" in
+            pull_request)
+              publish_release=false
+              ;;
+            workflow_dispatch)
+              case "${INPUT_PUBLISH_RELEASE:-true}" in
+                true|TRUE|True|1|yes|YES) publish_release=true ;;
+                *) publish_release=false ;;
+              esac
+              ;;
+            push)
+              publish_release=true
+              ;;
+          esac
+
+          {
+            echo "source_sha=$source_sha"
+            echo "app_version=$app_version"
+            echo "version_slug=$version_slug"
+            echo "release_tag=$release_tag"
+            echo "publish_release=$publish_release"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Desktop release context"
+            echo ""
+            echo "- Source SHA: \`$source_sha\`"
+            echo "- App version: \`$app_version\`"
+            echo "- Release tag: \`$release_tag\`"
+            echo "- Publish release: \`$publish_release\`"
+            echo "- OpenClaw version: \`${OPENCLAW_VERSION}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build-desktop-installers:
+    name: Build ${{ matrix.label }} installer
+    needs: resolve-release-context
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS
+            target: macos
+            os: macos-15
+          - label: Linux
+            target: linux
+            os: ubuntu-latest
+            openclaw_platform: linux-x64
+            desktop_arch: x64
+          - label: Windows
+            target: windows
+            os: windows-latest
+            openclaw_platform: windows-x64
+            desktop_arch: x64
+    defaults:
+      run:
+        working-directory: fabushi
+    env:
+      APP_VERSION: ${{ needs.resolve-release-context.outputs.app_version }}
+      MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+    steps:
+      - name: Checkout desktop source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-release-context.outputs.source_sha }}
+          lfs: true
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Install Linux desktop dependencies
+        if: matrix.target == 'linux'
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            cmake \
+            fakeroot \
+            libasound2-dev \
+            libgtk-3-0 \
+            libgtk-3-dev \
+            liblzma-dev \
+            libsecret-1-dev \
+            ninja-build \
+            pkg-config
+
+      - name: Install Windows installer toolchain
+        if: matrix.target == 'windows'
+        shell: pwsh
+        working-directory: .
+        run: choco install nsis -y --no-progress
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Set up Node.js for OpenClaw vendoring
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable Flutter desktop target
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.target }}" in
+            macos) flutter config --enable-macos-desktop ;;
+            linux) flutter config --enable-linux-desktop ;;
+            windows) flutter config --enable-windows-desktop ;;
+          esac
+
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+
+      - name: Stabilize generated desktop plugin bindings
+        shell: bash
+        run: scripts/fix_desktop_generated_plugins.sh
+
+      - name: Resolve OpenClaw bundle platform
+        id: openclaw
+        shell: bash
+        run: |
+          set -euo pipefail
+          platform="${{ matrix.openclaw_platform }}"
+          arch="${{ matrix.desktop_arch }}"
+          if [ "${{ matrix.target }}" = "macos" ]; then
+            case "$(uname -m)" in
+              arm64)
+                platform="macos-arm64"
+                arch="arm64"
+                ;;
+              *)
+                platform="macos-x64"
+                arch="x64"
+                ;;
+            esac
+          fi
+          echo "platform=$platform" >> "$GITHUB_OUTPUT"
+          echo "arch=$arch" >> "$GITHUB_OUTPUT"
+          echo "DESKTOP_ARCH=$arch" >> "$GITHUB_ENV"
+
+      - name: Vendor embedded OpenClaw runtime
+        shell: bash
+        env:
+          OPENCLAW_VERSION: ${{ env.OPENCLAW_VERSION }}
+        run: scripts/build_openclaw_desktop_bundle.sh "${{ steps.openclaw.outputs.platform }}"
+
+      - name: Build macOS release app
+        if: matrix.target == 'macos'
+        run: flutter build macos --release --no-pub
+
+      - name: Import macOS Developer ID certificate
+        if: >-
+          matrix.target == 'macos' &&
+          github.event_name != 'pull_request' &&
+          env.MACOS_CERTIFICATE_P12_BASE64 != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          certificate_path="$RUNNER_TEMP/macos_certificate.p12"
+          keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
+          echo "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$RUNNER_TEMP" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$RUNNER_TEMP" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security list-keychain -d user -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$RUNNER_TEMP" "$keychain_path"
+
+      - name: Code sign macOS app
+        if: >-
+          matrix.target == 'macos' &&
+          github.event_name != 'pull_request' &&
+          env.MACOS_CERTIFICATE_P12_BASE64 != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity="$MACOS_CODESIGN_IDENTITY"
+          if [ -z "$identity" ]; then
+            identity="$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+          fi
+          if [ -z "$identity" ]; then
+            echo "Unable to resolve macOS code signing identity." >&2
+            exit 1
+          fi
+          app_path="build/macos/Build/Products/Release/global_dharma_sharing.app"
+          codesign --force --deep --timestamp --options runtime --sign "$identity" "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+
+      - name: Package macOS installer
+        if: matrix.target == 'macos'
+        shell: bash
+        env:
+          OUT_DIR: ${{ github.workspace }}/desktop-artifacts
+        run: ../.github/scripts/package-desktop-macos.sh
+
+      - name: Notarize macOS DMG
+        if: >-
+          matrix.target == 'macos' &&
+          github.event_name != 'pull_request' &&
+          env.MACOS_CERTIFICATE_P12_BASE64 != '' &&
+          env.APPLE_ID != '' &&
+          env.APPLE_TEAM_ID != '' &&
+          env.APPLE_APP_SPECIFIC_PASSWORD != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg_path="$(find "$GITHUB_WORKSPACE/desktop-artifacts" -maxdepth 1 -name '*macos-*.dmg' -print -quit)"
+          identity="$MACOS_CODESIGN_IDENTITY"
+          if [ -z "$identity" ]; then
+            identity="$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+          fi
+          codesign --force --timestamp --sign "$identity" "$dmg_path"
+          xcrun notarytool submit "$dmg_path" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+          xcrun stapler staple "$dmg_path"
+
+      - name: Build Linux release app
+        if: matrix.target == 'linux'
+        run: flutter build linux --release --no-pub
+
+      - name: Package Linux installers
+        if: matrix.target == 'linux'
+        shell: bash
+        env:
+          OUT_DIR: ${{ github.workspace }}/desktop-artifacts
+        run: ../.github/scripts/package-desktop-linux.sh
+
+      - name: Build Windows release app
+        if: matrix.target == 'windows'
+        run: flutter build windows --release --no-pub
+
+      - name: Package Windows installer
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: ../.github/scripts/package-desktop-windows.ps1 -OutDir "$env:GITHUB_WORKSPACE\desktop-artifacts"
+
+      - name: Upload desktop installer artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.target }}-${{ steps.openclaw.outputs.arch }}
+          path: desktop-artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-github-release:
+    name: Publish desktop installers to GitHub Release
+    needs:
+      - resolve-release-context
+      - build-desktop-installers
+    if: needs.resolve-release-context.outputs.publish_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download desktop installer artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: downloaded-desktop-artifacts
+          pattern: desktop-*
+          merge-multiple: true
+
+      - name: Create checksums and release notes
+        id: release-files
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ needs.resolve-release-context.outputs.source_sha }}
+          APP_VERSION: ${{ needs.resolve-release-context.outputs.app_version }}
+          RELEASE_TAG: ${{ needs.resolve-release-context.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p desktop-release-artifacts
+          find downloaded-desktop-artifacts -maxdepth 2 -type f -print0 |
+            while IFS= read -r -d '' file; do
+              cp "$file" "desktop-release-artifacts/$(basename "$file")"
+            done
+
+          if ! find desktop-release-artifacts -type f -print -quit | grep -q .; then
+            echo "No desktop installer artifacts were downloaded." >&2
+            exit 1
+          fi
+
+          (
+            cd desktop-release-artifacts
+            sha256sum * > SHA256SUMS.txt
+          )
+
+          cat > release-notes.md <<EOF
+          Desktop installers for global_dharma_sharing $APP_VERSION.
+
+          Source commit: $SOURCE_SHA
+          OpenClaw version: ${OPENCLAW_VERSION}
+
+          Artifacts include:
+          - macOS DMG and ZIP
+          - Linux DEB and TAR.GZ
+          - Windows NSIS setup EXE and ZIP
+
+          SHA256 checksums are attached as SHA256SUMS.txt.
+          EOF
+
+          echo "artifact_dir=$PWD/desktop-release-artifacts" >> "$GITHUB_OUTPUT"
+          echo "notes_file=$PWD/release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-release-context.outputs.release_tag }}
+          SOURCE_SHA: ${{ needs.resolve-release-context.outputs.source_sha }}
+          APP_VERSION: ${{ needs.resolve-release-context.outputs.app_version }}
+          NOTES_FILE: ${{ steps.release-files.outputs.notes_file }}
+          ARTIFACT_DIR: ${{ steps.release-files.outputs.artifact_dir }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --target "$SOURCE_SHA" \
+              --title "Desktop installers $APP_VERSION" \
+              --notes-file "$NOTES_FILE"
+          else
+            gh release create "$RELEASE_TAG" \
+              --target "$SOURCE_SHA" \
+              --title "Desktop installers $APP_VERSION" \
+              --notes-file "$NOTES_FILE"
+          fi
+
+          while IFS= read -r -d '' artifact; do
+            gh release upload "$RELEASE_TAG" "$artifact" --clobber
+          done < <(find "$ARTIFACT_DIR" -type f -print0)
+
+          {
+            echo "## Published desktop installers"
+            echo ""
+            echo "- Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
+            echo "- Source SHA: \`${SOURCE_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
