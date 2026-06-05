@@ -7,6 +7,7 @@ on:
     paths:
       - fabushi/**
       - .github/scripts/package-desktop-*
+      - .github/scripts/upload-macos-app-store.sh
       - .github/workflows/desktop-installers.yml
   push:
     branches:
@@ -14,6 +15,7 @@ on:
     paths:
       - fabushi/**
       - .github/scripts/package-desktop-*
+      - .github/scripts/upload-macos-app-store.sh
       - .github/workflows/desktop-installers.yml
   workflow_dispatch:
     inputs:
@@ -27,6 +29,11 @@ on:
         type: string
       publish_release:
         description: Publish packages to a GitHub Release after successful builds.
+        required: false
+        default: true
+        type: boolean
+      upload_macos_app_store:
+        description: Upload the macOS App Store package to App Store Connect for TestFlight/App Store processing.
         required: false
         default: true
         type: boolean
@@ -60,8 +67,10 @@ jobs:
       source_sha: ${{ steps.context.outputs.source_sha }}
       app_version: ${{ steps.context.outputs.app_version }}
       version_slug: ${{ steps.context.outputs.version_slug }}
+      release_build_number: ${{ steps.context.outputs.release_build_number }}
       release_tag: ${{ steps.context.outputs.release_tag }}
       publish_release: ${{ steps.context.outputs.publish_release }}
+      upload_macos_app_store: ${{ steps.context.outputs.upload_macos_app_store }}
     steps:
       - name: Checkout release metadata
         uses: actions/checkout@v5
@@ -81,6 +90,7 @@ jobs:
           INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
           INPUT_PUBLISH_RELEASE: ${{ inputs.publish_release }}
+          INPUT_UPLOAD_MACOS_APP_STORE: ${{ inputs.upload_macos_app_store }}
         run: |
           set -euo pipefail
 
@@ -92,22 +102,33 @@ jobs:
           fi
 
           version_slug="${app_version//+/-}"
+          release_build_number="${app_version##*+}"
+          if [ "$release_build_number" = "$app_version" ] || [ -z "$release_build_number" ]; then
+            release_build_number="$GITHUB_RUN_NUMBER"
+          fi
           short_sha="$(git rev-parse --short=12 HEAD)"
           release_tag="${INPUT_RELEASE_TAG:-desktop-v${version_slug}-${GITHUB_RUN_NUMBER}-${short_sha}}"
 
           publish_release=false
+          upload_macos_app_store=false
           case "$EVENT_NAME" in
             pull_request)
               publish_release=false
+              upload_macos_app_store=false
               ;;
             workflow_dispatch)
               case "${INPUT_PUBLISH_RELEASE:-true}" in
                 true|TRUE|True|1|yes|YES) publish_release=true ;;
                 *) publish_release=false ;;
               esac
+              case "${INPUT_UPLOAD_MACOS_APP_STORE:-true}" in
+                true|TRUE|True|1|yes|YES) upload_macos_app_store=true ;;
+                *) upload_macos_app_store=false ;;
+              esac
               ;;
             push)
               publish_release=true
+              upload_macos_app_store=true
               ;;
           esac
 
@@ -115,8 +136,10 @@ jobs:
             echo "source_sha=$source_sha"
             echo "app_version=$app_version"
             echo "version_slug=$version_slug"
+            echo "release_build_number=$release_build_number"
             echo "release_tag=$release_tag"
             echo "publish_release=$publish_release"
+            echo "upload_macos_app_store=$upload_macos_app_store"
           } >> "$GITHUB_OUTPUT"
 
           {
@@ -124,8 +147,10 @@ jobs:
             echo ""
             echo "- Source SHA: \`$source_sha\`"
             echo "- App version: \`$app_version\`"
+            echo "- Release build number: \`$release_build_number\`"
             echo "- Release tag: \`$release_tag\`"
             echo "- Publish release: \`$publish_release\`"
+            echo "- Upload macOS App Store Connect build: \`$upload_macos_app_store\`"
             echo "- OpenClaw version: \`${OPENCLAW_VERSION}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -162,6 +187,9 @@ jobs:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
     steps:
       - name: Checkout desktop source
         uses: actions/checkout@v5
@@ -320,7 +348,7 @@ jobs:
           security set-keychain-settings -lut 21600 "$keychain_path"
           security unlock-keychain -p "$RUNNER_TEMP" "$keychain_path"
           security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
-          security list-keychain -d user -s "$keychain_path"
+          security list-keychains -d user -s "$keychain_path" login.keychain-db
           security set-key-partition-list -S apple-tool:,apple: -s -k "$RUNNER_TEMP" "$keychain_path"
 
       - name: Code sign macOS app
@@ -354,10 +382,7 @@ jobs:
         if: >-
           matrix.target == 'macos' &&
           github.event_name != 'pull_request' &&
-          env.MACOS_CERTIFICATE_P12_BASE64 != '' &&
-          env.APPLE_ID != '' &&
-          env.APPLE_TEAM_ID != '' &&
-          env.APPLE_APP_SPECIFIC_PASSWORD != ''
+          env.MACOS_CERTIFICATE_P12_BASE64 != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -367,11 +392,27 @@ jobs:
             identity="$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
           fi
           codesign --force --timestamp --sign "$identity" "$dmg_path"
-          xcrun notarytool submit "$dmg_path" \
-            --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-            --wait
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]; then
+            xcrun notarytool submit "$dmg_path" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --wait
+          elif [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] && [ -n "$APP_STORE_CONNECT_API_ISSUER_ID" ] && [ -n "$APP_STORE_CONNECT_API_KEY_BASE64" ]; then
+            key_dir="$RUNNER_TEMP/notarytool/private_keys"
+            key_path="$key_dir/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+            mkdir -p "$key_dir"
+            printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$key_path"
+            chmod 600 "$key_path"
+            xcrun notarytool submit "$dmg_path" \
+              --key "$key_path" \
+              --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
+              --issuer "$APP_STORE_CONNECT_API_ISSUER_ID" \
+              --wait
+          else
+            echo "Skipping notarization because neither Apple ID credentials nor App Store Connect API credentials are configured."
+            exit 0
+          fi
           xcrun stapler staple "$dmg_path"
 
       - name: Build Linux release app
@@ -400,6 +441,141 @@ jobs:
           name: desktop-${{ matrix.target }}-${{ steps.openclaw.outputs.arch }}
           path: desktop-artifacts/*
           if-no-files-found: error
+          retention-days: 30
+
+  upload-macos-app-store:
+    name: Upload macOS build to App Store Connect
+    needs:
+      - resolve-release-context
+    if: needs.resolve-release-context.outputs.upload_macos_app_store == 'true'
+    runs-on: macos-15
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        working-directory: fabushi
+    env:
+      APP_VERSION: ${{ needs.resolve-release-context.outputs.app_version }}
+      RELEASE_BUILD_NUMBER: ${{ needs.resolve-release-context.outputs.release_build_number }}
+      SOURCE_SHA: ${{ needs.resolve-release-context.outputs.source_sha }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      MACOS_APP_STORE_UPLOAD_ENABLED: ${{ needs.resolve-release-context.outputs.upload_macos_app_store }}
+      MACOS_APP_STORE_UPLOAD_REQUIRED: ${{ needs.resolve-release-context.outputs.upload_macos_app_store }}
+      MACOS_APP_STORE_TEAM_ID: ${{ vars.MACOS_APP_STORE_TEAM_ID || vars.APPLE_TEAM_ID || 'M4Q99K4UR4' }}
+      MACOS_APP_STORE_BUNDLE_ID: ${{ vars.MACOS_APP_STORE_BUNDLE_ID || 'com.ombhrum.fabushi' }}
+      MACOS_APP_STORE_INTERNAL_TESTING_ONLY: ${{ vars.MACOS_APP_STORE_INTERNAL_TESTING_ONLY || 'false' }}
+      MACOS_APP_STORE_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_APP_STORE_CERTIFICATE_P12_BASE64 }}
+      MACOS_APP_STORE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_APP_STORE_CERTIFICATE_PASSWORD }}
+      MACOS_APP_STORE_INSTALLER_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_APP_STORE_INSTALLER_CERTIFICATE_P12_BASE64 }}
+      MACOS_APP_STORE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_APP_STORE_INSTALLER_CERTIFICATE_PASSWORD }}
+      MACOS_APP_STORE_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_APP_STORE_PROVISIONING_PROFILE_BASE64 }}
+      MACOS_APP_STORE_SIGNING_CERTIFICATE: ${{ vars.MACOS_APP_STORE_SIGNING_CERTIFICATE || 'Mac App Distribution' }}
+      MACOS_APP_STORE_INSTALLER_SIGNING_CERTIFICATE: ${{ vars.MACOS_APP_STORE_INSTALLER_SIGNING_CERTIFICATE || 'Mac Installer Distribution' }}
+      MACOS_APP_STORE_STATUS_DIR: ${{ github.workspace }}/macos-app-store-assets
+    steps:
+      - name: Checkout desktop source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-release-context.outputs.source_sha }}
+          lfs: true
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Set up Node.js for OpenClaw vendoring
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable Flutter macOS desktop target
+        run: flutter config --enable-macos-desktop
+
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+
+      - name: Stabilize macOS native asset toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          developer_dir="$(xcode-select -p)"
+          if [ ! -x "$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" ]; then
+            developer_app="$(
+              find /Applications -maxdepth 1 -type d -name 'Xcode*.app' -print |
+                while IFS= read -r app; do
+                  if [ -x "$app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" ]; then
+                    echo "$app"
+                  fi
+                done |
+                sort |
+                tail -n 1
+            )"
+            if [ -z "$developer_app" ]; then
+              echo "Unable to find a usable Xcode installation." >&2
+              exit 1
+            fi
+            sudo xcode-select -s "$developer_app/Contents/Developer"
+            developer_dir="$(xcode-select -p)"
+          fi
+
+          cc="$(xcrun --find clang)"
+          cxx="$(xcrun --find clang++)"
+          {
+            echo "DEVELOPER_DIR=$developer_dir"
+            echo "CC=$cc"
+            echo "CXX=$cxx"
+          } >> "$GITHUB_ENV"
+
+          for package_dir in "$PUB_CACHE"/hosted/pub.dev/flutter_scene_importer-*; do
+            [ -d "$package_dir" ] || continue
+            find "$package_dir" -name CMakeCache.txt -delete
+            find "$package_dir" -type d \( -name CMakeFiles -o -name 'cmake-build-*' -o -name build \) -prune -exec rm -rf {} +
+          done
+
+          xcodebuild -version
+          "$cc" --version
+
+      - name: Stabilize generated desktop plugin bindings
+        shell: bash
+        run: scripts/fix_desktop_generated_plugins.sh
+
+      - name: Vendor embedded OpenClaw runtime
+        shell: bash
+        env:
+          OPENCLAW_VERSION: ${{ env.OPENCLAW_VERSION }}
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            arm64) platform="macos-arm64" ;;
+            *) platform="macos-x64" ;;
+          esac
+          scripts/build_openclaw_desktop_bundle.sh "$platform"
+
+      - name: Archive, export, and upload macOS App Store package
+        shell: bash
+        run: ../.github/scripts/upload-macos-app-store.sh
+
+      - name: Upload macOS App Store package status
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-app-store-status
+          path: macos-app-store-assets
+          if-no-files-found: warn
           retention-days: 30
 
   publish-github-release:
