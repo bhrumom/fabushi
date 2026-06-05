@@ -43,8 +43,8 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_14)
   target_compile_options(${TARGET} PRIVATE -Wall -Werror)
   # Some third-party Flutter Linux plugins vendor C sources that are warning-clean
-  # on older toolchains but trip unused-variable under newer GitHub runner clang.
-  target_compile_options(${TARGET} PRIVATE -Wno-error=unused-variable)
+  # on older toolchains but trip unused diagnostics under newer runner clang.
+  target_compile_options(${TARGET} PRIVATE -Wno-error=unused)
   target_compile_options(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-O3>")
   target_compile_definitions(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:NDEBUG>")
 endfunction()
