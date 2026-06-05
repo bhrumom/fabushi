@@ -18,6 +18,8 @@ write_status() {
   } > "$status_file"
 }
 
+trap 'exit_code=$?; if [ "$exit_code" -ne 0 ]; then write_status "failed" "macos_app_store_upload_failed_exit_${exit_code}"; fi' EXIT
+
 require_config() {
   local missing=()
   for name in "$@"; do
@@ -144,6 +146,18 @@ if [ "$manual_signing" = "true" ]; then
     echo "Provisioning profile app identifier '$profile_app_identifier' does not match '$expected_profile_app_identifier'." >&2
     exit 1
   fi
+
+  {
+    echo ""
+    echo "// Injected by CI for the macOS App Store archive. Only the Runner target includes this xcconfig."
+    echo "PRODUCT_BUNDLE_IDENTIFIER = $MACOS_APP_STORE_BUNDLE_ID"
+    echo "MARKETING_VERSION = $version_name"
+    echo "CURRENT_PROJECT_VERSION = $build_number"
+    echo "DEVELOPMENT_TEAM = $MACOS_APP_STORE_TEAM_ID"
+    echo "CODE_SIGN_STYLE = Manual"
+    echo "CODE_SIGN_IDENTITY = ${MACOS_APP_STORE_SIGNING_CERTIFICATE:-Mac App Distribution}"
+    echo "PROVISIONING_PROFILE_SPECIFIER = $profile_name"
+  } >> macos/Runner/Configs/AppInfo.xcconfig
 fi
 
 archive_path="$PWD/build/macos/AppStore/global_dharma_sharing.xcarchive"
@@ -165,20 +179,14 @@ archive_args=(
   -configuration Release
   -destination "generic/platform=macOS"
   -archivePath "$archive_path"
-  MARKETING_VERSION="$version_name"
-  CURRENT_PROJECT_VERSION="$build_number"
-  PRODUCT_BUNDLE_IDENTIFIER="$MACOS_APP_STORE_BUNDLE_ID"
-  DEVELOPMENT_TEAM="$MACOS_APP_STORE_TEAM_ID"
 )
 
-if [ "$manual_signing" = "true" ]; then
+if [ "$manual_signing" != "true" ]; then
   archive_args+=(
-    CODE_SIGN_STYLE=Manual
-    CODE_SIGN_IDENTITY="${MACOS_APP_STORE_SIGNING_CERTIFICATE:-Mac App Distribution}"
-    PROVISIONING_PROFILE_SPECIFIER="$profile_name"
-  )
-else
-  archive_args+=(
+    MARKETING_VERSION="$version_name"
+    CURRENT_PROJECT_VERSION="$build_number"
+    PRODUCT_BUNDLE_IDENTIFIER="$MACOS_APP_STORE_BUNDLE_ID"
+    DEVELOPMENT_TEAM="$MACOS_APP_STORE_TEAM_ID"
     CODE_SIGN_STYLE=Automatic
   )
 fi
