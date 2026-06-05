@@ -327,7 +327,10 @@ fi
 short_sha="${SOURCE_SHA:-${GITHUB_SHA:-unknown}}"
 short_sha="${short_sha:0:12}"
 pkg_name="global_dharma_sharing-${version_name}-${build_number}-macos-app-store-${short_sha}.pkg"
-cp "$pkg_path" "$status_dir/$pkg_name"
+{
+  echo "package_name=$pkg_name"
+  echo "package_path=$pkg_path"
+} > "$status_dir/MACOS_APP_STORE_PACKAGE.txt"
 
 xcrun altool --validate-app \
   --type macos \
