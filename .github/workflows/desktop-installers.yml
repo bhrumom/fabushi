@@ -225,6 +225,49 @@ jobs:
       - name: Resolve Flutter dependencies
         run: flutter pub get
 
+      - name: Stabilize macOS native asset toolchain
+        if: matrix.target == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          developer_dir="$(xcode-select -p)"
+          if [ ! -x "$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" ]; then
+            developer_app="$(
+              find /Applications -maxdepth 1 -type d -name 'Xcode*.app' -print |
+                while IFS= read -r app; do
+                  if [ -x "$app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" ]; then
+                    echo "$app"
+                  fi
+                done |
+                sort |
+                tail -n 1
+            )"
+            if [ -z "$developer_app" ]; then
+              echo "Unable to find a usable Xcode installation." >&2
+              exit 1
+            fi
+            sudo xcode-select -s "$developer_app/Contents/Developer"
+            developer_dir="$(xcode-select -p)"
+          fi
+
+          cc="$(xcrun --find clang)"
+          cxx="$(xcrun --find clang++)"
+          {
+            echo "DEVELOPER_DIR=$developer_dir"
+            echo "CC=$cc"
+            echo "CXX=$cxx"
+          } >> "$GITHUB_ENV"
+
+          for package_dir in "$PUB_CACHE"/hosted/pub.dev/flutter_scene_importer-*; do
+            [ -d "$package_dir" ] || continue
+            find "$package_dir" -name CMakeCache.txt -delete
+            find "$package_dir" -type d \( -name CMakeFiles -o -name 'cmake-build-*' -o -name build \) -prune -exec rm -rf {} +
+          done
+
+          xcodebuild -version
+          "$cc" --version
+
       - name: Stabilize generated desktop plugin bindings
         shell: bash
         run: scripts/fix_desktop_generated_plugins.sh
