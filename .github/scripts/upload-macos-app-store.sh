@@ -18,6 +18,38 @@ write_status() {
   } > "$status_file"
 }
 
+handle_altool_result() {
+  local action="$1"
+  local exit_code="$2"
+  local log_file="$3"
+
+  if [ "$exit_code" -eq 0 ]; then
+    return 0
+  fi
+
+  if grep -Eq "ATTRIBUTE.INVALID.DUPLICATE|value that has already been used|bundle version must be higher" "$log_file" &&
+     grep -Eq "previousBundleVersion = ${build_number};|previously uploaded version: .${build_number}." "$log_file"; then
+    echo "App Store Connect already has build number ${build_number}; treating ${action} as an idempotent success."
+    write_status "uploaded" "already_uploaded_to_app_store_connect" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    exit 0
+  fi
+
+  return "$exit_code"
+}
+
+run_altool() {
+  local action="$1"
+  shift
+  local log_file="$status_dir/MACOS_APP_STORE_${action}_ALTOOL.log"
+
+  set +e
+  "$@" 2>&1 | tee "$log_file"
+  local exit_code="${PIPESTATUS[0]}"
+  set -e
+
+  handle_altool_result "$action" "$exit_code" "$log_file"
+}
+
 trap 'exit_code=$?; if [ "$exit_code" -ne 0 ]; then write_status "failed" "macos_app_store_upload_failed_exit_${exit_code}"; fi' EXIT
 
 require_config() {
@@ -332,13 +364,15 @@ pkg_name="global_dharma_sharing-${version_name}-${build_number}-macos-app-store-
   echo "package_path=$pkg_path"
 } > "$status_dir/MACOS_APP_STORE_PACKAGE.txt"
 
-xcrun altool --validate-app \
+run_altool validate \
+  xcrun altool --validate-app \
   --type macos \
   --file "$pkg_path" \
   --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
   --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
 
-xcrun altool --upload-app \
+run_altool upload \
+  xcrun altool --upload-app \
   --type macos \
   --file "$pkg_path" \
   --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
