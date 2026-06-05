@@ -256,6 +256,7 @@ fi
 archive_path="$PWD/build/macos/AppStore/global_dharma_sharing.xcarchive"
 export_path="$PWD/build/macos/AppStore/export"
 export_options="$RUNNER_TEMP/macos-app-store-export-options.plist"
+derived_data_path="$RUNNER_TEMP/macos-app-store-derived-data"
 rm -rf "$archive_path" "$export_path"
 mkdir -p "$(dirname "$archive_path")" "$export_path"
 
@@ -272,6 +273,7 @@ archive_args=(
   -configuration Release
   -destination "generic/platform=macOS"
   -archivePath "$archive_path"
+  -derivedDataPath "$derived_data_path"
 )
 
 if [ "$manual_signing" != "true" ]; then
@@ -284,11 +286,44 @@ if [ "$manual_signing" != "true" ]; then
   )
 fi
 
-xcodebuild \
-  "${archive_args[@]}" \
-  "${auth_args[@]}" \
-  -allowProvisioningUpdates \
-  clean archive
+archive_attempts="${MACOS_APP_STORE_ARCHIVE_ATTEMPTS:-2}"
+case "$archive_attempts" in
+  ''|*[!0-9]*)
+    echo "MACOS_APP_STORE_ARCHIVE_ATTEMPTS must be a positive integer." >&2
+    exit 2
+    ;;
+esac
+if [ "$archive_attempts" -le 0 ]; then
+  echo "MACOS_APP_STORE_ARCHIVE_ATTEMPTS must be greater than zero." >&2
+  exit 2
+fi
+
+archive_attempt=1
+while true; do
+  archive_log="$RUNNER_TEMP/macos-app-store-archive-attempt-${archive_attempt}.log"
+  set +e
+  xcodebuild \
+    "${archive_args[@]}" \
+    "${auth_args[@]}" \
+    -allowProvisioningUpdates \
+    clean archive 2>&1 | tee "$archive_log"
+  archive_exit_code="${PIPESTATUS[0]}"
+  set -e
+
+  if [ "$archive_exit_code" -eq 0 ]; then
+    break
+  fi
+
+  if [ "$archive_attempt" -lt "$archive_attempts" ] &&
+     grep -Eq "Xcode build system has crashed|Build again to continue|unexpected service error" "$archive_log"; then
+    echo "Xcode archive crashed during attempt ${archive_attempt}; retrying."
+    rm -rf "$archive_path" "$derived_data_path"
+    archive_attempt=$((archive_attempt + 1))
+    continue
+  fi
+
+  exit "$archive_exit_code"
+done
 
 internal_only=false
 case "${MACOS_APP_STORE_INTERNAL_TESTING_ONLY:-false}" in
