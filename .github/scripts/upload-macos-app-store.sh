@@ -147,17 +147,78 @@ if [ "$manual_signing" = "true" ]; then
     exit 1
   fi
 
-  {
-    echo ""
-    echo "// Injected by CI for the macOS App Store archive. Only the Runner target includes this xcconfig."
-    echo "PRODUCT_BUNDLE_IDENTIFIER = $MACOS_APP_STORE_BUNDLE_ID"
-    echo "MARKETING_VERSION = $version_name"
-    echo "CURRENT_PROJECT_VERSION = $build_number"
-    echo "DEVELOPMENT_TEAM = $MACOS_APP_STORE_TEAM_ID"
-    echo "CODE_SIGN_STYLE = Manual"
-    echo "CODE_SIGN_IDENTITY = ${MACOS_APP_STORE_SIGNING_CERTIFICATE:-Mac App Distribution}"
-    echo "PROVISIONING_PROFILE_SPECIFIER = $profile_name"
-  } >> macos/Runner/Configs/AppInfo.xcconfig
+  ruby - \
+    macos/Runner.xcodeproj/project.pbxproj \
+    "$MACOS_APP_STORE_TEAM_ID" \
+    "$MACOS_APP_STORE_BUNDLE_ID" \
+    "$version_name" \
+    "$build_number" \
+    "${MACOS_APP_STORE_SIGNING_CERTIFICATE:-Mac App Distribution}" \
+    "$profile_name" <<'RUBY'
+project_path, team_id, bundle_id, version_name, build_number, signing_identity, profile_name = ARGV
+text = File.read(project_path)
+
+def render_build_value(value)
+  value = value.to_s
+  return value if value.match?(/\A[A-Za-z0-9_.+-]+\z/)
+
+  '"' + value.gsub('\\', '\\\\\\').gsub('"', '\\"') + '"'
+end
+
+target_match = text.match(/^\s*([A-F0-9]+) \/\* Runner \*\/ = \{\n\s*isa = PBXNativeTarget;\n.*?^\s*\};/m)
+raise "Unable to find Runner target in #{project_path}" unless target_match
+
+target_id = target_match[1]
+target_block = target_match[0]
+config_list_id = target_block[/buildConfigurationList = ([A-F0-9]+)/, 1]
+raise "Unable to find Runner build configuration list" unless config_list_id
+
+config_list_match = text.match(/^\s*#{Regexp.escape(config_list_id)} \/\* Build configuration list for PBXNativeTarget "Runner" \*\/ = \{\n.*?^\s*\};/m)
+raise "Unable to resolve Runner build configuration list #{config_list_id}" unless config_list_match
+
+runner_configs = config_list_match[0].scan(/([A-F0-9]+) \/\* (Debug|Release|Profile) \*\//)
+raise "Unable to find Runner Release build configuration" unless runner_configs.any? { |_, name| name == "Release" }
+
+settings = {
+  "PRODUCT_BUNDLE_IDENTIFIER" => bundle_id,
+  "MARKETING_VERSION" => version_name,
+  "CURRENT_PROJECT_VERSION" => build_number,
+  "DEVELOPMENT_TEAM" => team_id,
+  "CODE_SIGN_STYLE" => "Manual",
+  "CODE_SIGN_IDENTITY" => signing_identity,
+  "PROVISIONING_PROFILE_SPECIFIER" => profile_name
+}
+
+runner_configs.each do |config_id, config_name|
+  next unless config_name == "Release"
+
+  config_re = /^(\s*#{Regexp.escape(config_id)} \/\* #{Regexp.escape(config_name)} \*\/ = \{\n.*?buildSettings = \{\n)(.*?)(^\s*\};\n\s*name = #{Regexp.escape(config_name)};\n\s*\};)/m
+  replaced = text.sub!(config_re) do
+    prefix = Regexp.last_match(1)
+    body = Regexp.last_match(2)
+    suffix = Regexp.last_match(3)
+
+    settings.each do |key, value|
+      rendered = "#{key} = #{render_build_value(value)};"
+      if body.match?(/^(\s*)#{Regexp.escape(key)} = .*;$/)
+        body = body.gsub(/^(\s*)#{Regexp.escape(key)} = .*;$/, "\\1#{rendered}")
+      else
+        body << "\t\t\t\t\t#{rendered}\n"
+      end
+    end
+
+    prefix + body + suffix
+  end
+
+  raise "Unable to patch Runner #{config_name} build settings" unless replaced
+end
+
+target_attr_re = /^(\s*#{Regexp.escape(target_id)} = \{\n.*?ProvisioningStyle = )Automatic(;.*?^\s*\};)/m
+text.sub!(target_attr_re, "\\1Manual\\2")
+
+File.write(project_path, text)
+puts "Configured Runner Release signing settings for macOS App Store archive."
+RUBY
 fi
 
 archive_path="$PWD/build/macos/AppStore/global_dharma_sharing.xcarchive"
