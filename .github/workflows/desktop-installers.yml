@@ -7,6 +7,7 @@ on:
     paths:
       - fabushi/**
       - .github/scripts/package-desktop-*
+      - .github/scripts/notarize-macos-dmg.sh
       - .github/scripts/upload-macos-app-store.sh
       - .github/workflows/desktop-installers.yml
   push:
@@ -15,6 +16,7 @@ on:
     paths:
       - fabushi/**
       - .github/scripts/package-desktop-*
+      - .github/scripts/notarize-macos-dmg.sh
       - .github/scripts/upload-macos-app-store.sh
       - .github/workflows/desktop-installers.yml
   workflow_dispatch:
@@ -158,7 +160,7 @@ jobs:
     name: Build ${{ matrix.label }} installer
     needs: resolve-release-context
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 150
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
@@ -384,36 +386,22 @@ jobs:
           github.event_name != 'pull_request' &&
           env.MACOS_CERTIFICATE_P12_BASE64 != ''
         shell: bash
+        env:
+          MACOS_NOTARIZATION_STATUS_DIR: ${{ github.workspace }}/macos-notarization-status
+          MACOS_NOTARIZATION_TIMEOUT_MINUTES: 330
         run: |
           set -euo pipefail
           dmg_path="$(find "$GITHUB_WORKSPACE/desktop-artifacts" -maxdepth 1 -name '*macos-*.dmg' -print -quit)"
-          identity="$MACOS_CODESIGN_IDENTITY"
-          if [ -z "$identity" ]; then
-            identity="$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
-          fi
-          codesign --force --timestamp --sign "$identity" "$dmg_path"
-          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]; then
-            xcrun notarytool submit "$dmg_path" \
-              --apple-id "$APPLE_ID" \
-              --team-id "$APPLE_TEAM_ID" \
-              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-              --wait
-          elif [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] && [ -n "$APP_STORE_CONNECT_API_ISSUER_ID" ] && [ -n "$APP_STORE_CONNECT_API_KEY_BASE64" ]; then
-            key_dir="$RUNNER_TEMP/notarytool/private_keys"
-            key_path="$key_dir/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
-            mkdir -p "$key_dir"
-            printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$key_path"
-            chmod 600 "$key_path"
-            xcrun notarytool submit "$dmg_path" \
-              --key "$key_path" \
-              --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
-              --issuer "$APP_STORE_CONNECT_API_ISSUER_ID" \
-              --wait
-          else
-            echo "Skipping notarization because neither Apple ID credentials nor App Store Connect API credentials are configured."
-            exit 0
-          fi
-          xcrun stapler staple "$dmg_path"
+          ../.github/scripts/notarize-macos-dmg.sh "$dmg_path"
+
+      - name: Upload macOS notarization status
+        if: always() && matrix.target == 'macos'
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-notarization-status
+          path: macos-notarization-status
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Build Linux release app
         if: matrix.target == 'linux'
