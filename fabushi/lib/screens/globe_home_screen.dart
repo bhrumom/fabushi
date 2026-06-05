@@ -10,6 +10,7 @@ import '../core/config/app_config.dart';
 import '../core/constants/country_servers.dart' as country_catalog;
 import '../features/auth/application/auth_model.dart';
 import '../models/file_transfer_model.dart';
+import '../services/ai_backend_policy.dart';
 import '../services/dacheng_ai_service.dart';
 import '../widgets/earth_globe_widget.dart';
 import '../widgets/home_world_2d_widget.dart';
@@ -446,13 +447,19 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 ),
               ),
             ),
-            const Text(
-              '大乘',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 25,
-                fontWeight: FontWeight.w800,
-              ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '大乘',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 25,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (AiBackendPolicy.isDesktopNative) _buildAiBackendBadge(),
+              ],
             ),
             Align(
               alignment: Alignment.centerRight,
@@ -486,6 +493,35 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAiBackendBadge() {
+    return FutureBuilder<String>(
+      future: AiBackendPolicy.activeBackendLabel(),
+      builder: (context, snapshot) {
+        final label = snapshot.data ?? '本机 OpenClaw';
+        final isLocal = label.contains('OpenClaw');
+        return Container(
+          margin: const EdgeInsets.only(top: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          decoration: BoxDecoration(
+            color: (isLocal ? Colors.greenAccent : Colors.blueAccent)
+                .withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          child: Text(
+            isLocal ? '本机 OpenClaw' : '云端 API',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 10,
+              height: 1.1,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -867,7 +903,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   color: message.isError ? Colors.red[100] : Colors.white,
                   fontSize: 17,
                   height: 1.42,
-                  fontWeight: message.isUser ? FontWeight.w700 : FontWeight.w500,
+                  fontWeight: message.isUser
+                      ? FontWeight.w700
+                      : FontWeight.w500,
                 ),
               )
             : _MarkdownChatText(message.text),
@@ -1867,7 +1905,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   String? _visibleAiStepLabel(DachengAiStreamEvent event) {
     final title = (event.raw['title'] ?? '').toString().trim();
     final message = (event.raw['message'] ?? event.text).toString().trim();
-    final combined = [title, message].where((part) => part.isNotEmpty).join(' ');
+    final combined = [
+      title,
+      message,
+    ].where((part) => part.isNotEmpty).join(' ');
     if (combined.isEmpty) return null;
     if (RegExp(r'VPS|后端|DeepSeek|OpenAI-compatible|直连|连接').hasMatch(combined)) {
       return null;
@@ -2854,7 +2895,10 @@ class _MarkdownChatText extends StatelessWidget {
           decorationColor: AppTheme.primaryColor.withValues(alpha: 0.7),
         ),
         tableBody: baseStyle.copyWith(fontSize: 14),
-        tableHead: baseStyle.copyWith(fontSize: 14, fontWeight: FontWeight.w800),
+        tableHead: baseStyle.copyWith(
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
+        ),
         horizontalRuleDecoration: BoxDecoration(
           border: Border(
             top: BorderSide(color: Colors.white.withValues(alpha: 0.14)),

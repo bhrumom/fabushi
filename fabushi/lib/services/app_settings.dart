@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:math';
+
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../core/config/app_config.dart';
 
 class AppSettings {
@@ -145,5 +149,80 @@ class AppSettings {
   static Future<void> setModelSetupComplete(bool complete) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_modelSetupCompleteKey, complete);
+  }
+
+  // ============ AI 后端 / 内置 OpenClaw 设置 ============
+
+  static const String _aiBackendModeKey = 'ai_backend_mode_v1';
+  static const String _openClawGatewayPortKey = 'openclaw_gateway_port_v1';
+  static const String _openClawGatewayTokenKey = 'openclaw_gateway_token_v1';
+  static const String _openClawModelKey = 'openclaw_model_v1';
+  static const String _openClawModelOverrideKey = 'openclaw_model_override_v1';
+
+  /// AI 后端模式：auto / embedded_openclaw / cloud_api。
+  ///
+  /// 默认 auto：桌面端走内置 OpenClaw，移动端/Web 继续走云端 API。
+  static Future<String> getAiBackendModeName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_aiBackendModeKey) ?? 'auto';
+  }
+
+  static Future<void> setAiBackendModeName(String modeName) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_aiBackendModeKey, modeName);
+  }
+
+  static Future<int> getOpenClawGatewayPort({int defaultValue = 18789}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getInt(_openClawGatewayPortKey);
+    if (saved == null || saved < 1024 || saved > 65535) {
+      return defaultValue;
+    }
+    return saved;
+  }
+
+  static Future<void> setOpenClawGatewayPort(int port) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_openClawGatewayPortKey, port.clamp(1024, 65535));
+  }
+
+  /// 生成并持久化本机 Gateway bearer token。
+  /// token 只用于 App 与本机 loopback Gateway 之间通信，不同步到云端。
+  static Future<String> getOpenClawGatewayToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString(_openClawGatewayTokenKey);
+    if (existing != null && existing.length >= 32) {
+      return existing;
+    }
+    final random = Random.secure();
+    final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+    final token = base64UrlEncode(bytes).replaceAll('=', '');
+    await prefs.setString(_openClawGatewayTokenKey, token);
+    return token;
+  }
+
+  static Future<String> getOpenClawModel({
+    String defaultValue = 'openclaw/default',
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_openClawModelKey)?.trim();
+    return value == null || value.isEmpty ? defaultValue : value;
+  }
+
+  static Future<void> setOpenClawModel(String model) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_openClawModelKey, model.trim());
+  }
+
+  static Future<String> getOpenClawModelOverride({
+    String defaultValue = '',
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_openClawModelOverrideKey)?.trim() ?? defaultValue;
+  }
+
+  static Future<void> setOpenClawModelOverride(String modelOverride) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_openClawModelOverrideKey, modelOverride.trim());
   }
 }

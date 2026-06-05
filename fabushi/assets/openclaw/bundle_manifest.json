@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "version": "openclaw-embedded-2026.06",
+  "defaultPort": 18789,
+  "defaultModel": "openclaw/default",
+  "defaultModelOverride": "",
+  "gatewayArgs": ["gateway", "--port", "{port}"],
+  "platforms": {
+    "macos-arm64": {
+      "nodeExecutable": "node/bin/node",
+      "cliEntrypoint": "openclaw/bin/openclaw.js"
+    },
+    "macos-x64": {
+      "nodeExecutable": "node/bin/node",
+      "cliEntrypoint": "openclaw/bin/openclaw.js"
+    },
+    "windows-x64": {
+      "nodeExecutable": "node/node.exe",
+      "cliEntrypoint": "openclaw/bin/openclaw.js"
+    },
+    "linux-x64": {
+      "nodeExecutable": "node/bin/node",
+      "cliEntrypoint": "openclaw/bin/openclaw.js"
+    }
+  }
+}
