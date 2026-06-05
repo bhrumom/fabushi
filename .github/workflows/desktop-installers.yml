@@ -476,21 +476,31 @@ jobs:
         run: |
           set -euo pipefail
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" \
-              --target "$SOURCE_SHA" \
-              --title "Desktop installers $APP_VERSION" \
-              --notes-file "$NOTES_FILE"
-          else
-            gh release create "$RELEASE_TAG" \
-              --target "$SOURCE_SHA" \
-              --title "Desktop installers $APP_VERSION" \
-              --notes-file "$NOTES_FILE"
+          release_assets=()
+          while IFS= read -r -d '' artifact; do
+            release_assets+=("$artifact")
+          done < <(find "$ARTIFACT_DIR" -type f -print0 | sort -z)
+          if [ "${#release_assets[@]}" -eq 0 ]; then
+            echo "No release assets found in $ARTIFACT_DIR." >&2
+            exit 1
           fi
 
-          while IFS= read -r -d '' artifact; do
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; recreating it for an idempotent installer publish."
+            gh release delete "$RELEASE_TAG" --cleanup-tag --yes
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            --draft \
+            --target "$SOURCE_SHA" \
+            --title "Desktop installers $APP_VERSION" \
+            --notes-file "$NOTES_FILE"
+
+          for artifact in "${release_assets[@]}"; do
             gh release upload "$RELEASE_TAG" "$artifact" --clobber
-          done < <(find "$ARTIFACT_DIR" -type f -print0)
+          done
+
+          gh release edit "$RELEASE_TAG" --draft=false
 
           {
             echo "## Published desktop installers"
