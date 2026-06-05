@@ -169,6 +169,11 @@ jobs:
           ref: ${{ needs.resolve-release-context.outputs.source_sha }}
           lfs: true
           fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
 
       - name: Install Linux desktop dependencies
         if: matrix.target == 'linux'
