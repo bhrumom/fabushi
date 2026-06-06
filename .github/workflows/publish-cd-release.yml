@@ -412,32 +412,61 @@ jobs:
           GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW: ${{ vars.GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW }}
         run: |
           set -euo pipefail
-          changes_not_sent_for_review="${GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW:-}"
+          raw_changes_not_sent_for_review="${GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW:-}"
           track="${GOOGLE_PLAY_TRACKS:-production}"
+          use_changes_not_sent_for_review=false
+          changes_not_sent_for_review=""
 
-          if [ -z "$changes_not_sent_for_review" ]; then
-            changes_not_sent_for_review=true
-          fi
-
-          case "$track:$changes_not_sent_for_review" in
-            production:true|production:TRUE|production:True|production:1|production:yes|production:YES)
+          case "$raw_changes_not_sent_for_review" in
+            ""|omit|OMIT|auto|AUTO|Auto)
+              use_changes_not_sent_for_review=false
+              changes_not_sent_for_review=""
+              ;;
+            true|TRUE|True|1|yes|YES)
+              use_changes_not_sent_for_review=true
               changes_not_sent_for_review=true
               ;;
-            production:*)
-              echo "Google Play production uploads require changesNotSentForReview=true; forcing manual review handoff."
-              changes_not_sent_for_review=true
+            false|FALSE|False|0|no|NO)
+              use_changes_not_sent_for_review=true
+              changes_not_sent_for_review=false
+              ;;
+            *)
+              echo "Unsupported GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW value: $raw_changes_not_sent_for_review" >&2
+              exit 1
               ;;
           esac
 
+          echo "use_changes_not_sent_for_review=$use_changes_not_sent_for_review" >> "$GITHUB_OUTPUT"
           echo "changes_not_sent_for_review=$changes_not_sent_for_review" >> "$GITHUB_OUTPUT"
           {
             echo "## Google Play publish mode"
             echo ""
             echo "- Track: $track"
-            echo "- changesNotSentForReview: $changes_not_sent_for_review"
+            if [ "$use_changes_not_sent_for_review" = "true" ]; then
+              echo "- changesNotSentForReview: $changes_not_sent_for_review"
+            else
+              echo "- changesNotSentForReview: omitted; Play Console will use the app account review behavior"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Android app bundle to Google Play
+        if: steps.google-play-review.outputs.use_changes_not_sent_for_review != 'true'
+        uses: r0adkll/upload-google-play@v1.1.5
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.GOOGLE_PLAY_PACKAGE_NAME || 'com.ombhrum.fabushi' }}
+          GOOGLE_PLAY_TRACKS: ${{ vars.GOOGLE_PLAY_TRACKS || 'production' }}
+          GOOGLE_PLAY_RELEASE_STATUS: ${{ vars.GOOGLE_PLAY_RELEASE_STATUS || 'completed' }}
+        with:
+          serviceAccountJsonPlainText: ${{ env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.GOOGLE_PLAY_PACKAGE_NAME }}
+          releaseFiles: fabushi/build/app/outputs/bundle/release/app-release.aab
+          tracks: ${{ env.GOOGLE_PLAY_TRACKS }}
+          status: ${{ env.GOOGLE_PLAY_RELEASE_STATUS }}
+          releaseName: ${{ needs.resolve-cd-context.outputs.release_build_number }}-${{ needs.resolve-cd-context.outputs.source_sha }}
+
+      - name: Upload Android app bundle to Google Play with explicit review handoff
+        if: steps.google-play-review.outputs.use_changes_not_sent_for_review == 'true'
         uses: r0adkll/upload-google-play@v1.1.5
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
