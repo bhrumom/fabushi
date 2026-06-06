@@ -2423,6 +2423,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
             ? '- ✅ ${result.platform.info.label}：${result.message}'
             : '- ⚠️ ${result.platform.info.label}：${result.message}',
         for (final step in result.steps) '  - $step',
+        if (result.screenshotPaths.isNotEmpty) '  - 浏览器截图（折叠展示）',
+        for (var i = 0; i < result.screenshotPaths.length; i++)
+          '    - 截图 ${i + 1}: ${result.screenshotPaths[i]}',
       ],
       '',
       '草稿内容已复制到剪贴板；若平台要求登录、验证码或最终发布确认，请在打开的页面/App 中完成。',

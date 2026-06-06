@@ -171,12 +171,14 @@ class DharmaPublishResult {
   final bool success;
   final String message;
   final List<String> steps;
+  final List<String> screenshotPaths;
 
   const DharmaPublishResult({
     required this.platform,
     required this.success,
     required this.message,
     this.steps = const [],
+    this.screenshotPaths = const [],
   });
 }
 
