@@ -1563,11 +1563,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     String action,
   ) async {
     if (action == 'dharma') {
-      _activateDharmaMode(
-        model,
-        showMaterials: true,
-        target: DharmaComposerTarget.global,
-      );
+      _activateDharmaMode(model);
+      setState(() => _showMaterialGallery = true);
       return true;
     }
     if (action == 'platform_publish') {
@@ -3370,8 +3367,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     if (composerText.isNotEmpty) {
       try {
         final sharedLink = _firstHttpUrl(composerText);
-        if (_looksLikeHttpUrl(composerText) || sharedLink != null) {
-          await model.addUrlContentForSending(sharedLink ?? composerText);
+        if (_looksLikeHttpUrl(composerText)) {
+          await model.addUrlContentForSending(composerText);
+        } else if (sharedLink != null) {
+          await model.addUrlContentForSending(sharedLink);
         } else {
           await model.addTextContentForSending(
             title: '法布施',
