@@ -12,6 +12,9 @@ import '../features/auth/application/auth_model.dart';
 import '../models/file_transfer_model.dart';
 import '../services/ai_backend_policy.dart';
 import '../services/dacheng_ai_service.dart';
+import '../services/dharma_publish_service.dart';
+import '../services/inbound_share_service.dart';
+import 'dharma_publish_browser_screen.dart';
 import '../widgets/earth_globe_widget.dart';
 import '../widgets/home_world_2d_widget.dart';
 import '../widgets/scene_render_mode.dart';
@@ -42,9 +45,14 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   bool _isCallbackSetup = false;
   bool _isVisible = true;
   bool _isDharmaComposerMode = false;
+  DharmaComposerTarget _dharmaComposerTarget = DharmaComposerTarget.global;
+  final Set<DharmaPublishPlatform> _selectedPublishPlatforms = {
+    DharmaPublishPlatform.xiaohongshu,
+  };
   bool _showMaterialGallery = false;
   bool _isGlobalSendTimelineVisible = false;
   bool _isAiGenerating = false;
+  bool _isPublishingDraft = false;
   String _streamingAiText = '';
   String _aiActivityText = '';
   SceneRenderMode _renderMode = SceneRenderMode.twoD;
@@ -54,6 +62,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   final List<_HomeConversation> _conversationHistory = [];
   StreamSubscription<DachengAiStreamEvent>? _aiStreamSubscription;
   final DachengAiService _dachengAiService = DachengAiService();
+  final DharmaPublishService _dharmaPublishService = DharmaPublishService();
+  StreamSubscription<IncomingSharePayload>? _incomingShareSubscription;
+  String? _lastIncomingShareFingerprint;
   String? _activeConversationId;
   int _aiRequestSerial = 0;
   final _onlineCounterService = OnlineCounterService();
@@ -161,10 +172,14 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     WidgetsBinding.instance.addObserver(this);
     _loadGlobe();
     _fetchInitialCount();
+    InboundShareService.instance.start();
+    _incomingShareSubscription = InboundShareService.instance.incomingShares
+        .listen((payload) => unawaited(_handleIncomingShare(payload)));
     _onlineCounterService.startCountPolling('global_sending');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_loadRemoteConversations());
       unawaited(_refreshBuddhaAssetEntitlement());
+      unawaited(_consumeInitialShare());
     });
   }
 
@@ -242,6 +257,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         _isCallbackSetup = false;
         _setupTransferBeamCallback();
       }
+      unawaited(_consumeInitialShare());
     }
   }
 
@@ -263,6 +279,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       ).setTransferBeamCallback(null);
     } catch (_) {}
     _onlineCounterService.dispose();
+    _incomingShareSubscription?.cancel();
     _aiStreamSubscription?.cancel();
     _chatInputController.dispose();
     _homeChatScrollController.dispose();
@@ -1234,10 +1251,14 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   Widget _buildChatComposer(BuildContext context, FileTransferModel model) {
     final isBusy =
         model.isPreparingSend ||
+        _isPublishingDraft ||
         (_isDharmaComposerMode && model.isTransferring);
     final inputText = _chatInputController.text.trim();
     final canSubmit = _isDharmaComposerMode
-        ? (inputText.isNotEmpty || model.hasFiles)
+        ? _dharmaComposerTarget == DharmaComposerTarget.platform
+              ? (inputText.isNotEmpty || model.hasFiles) &&
+                    _selectedPublishPlatforms.isNotEmpty
+              : (inputText.isNotEmpty || model.hasFiles)
         : inputText.isNotEmpty;
 
     return Container(
@@ -1271,26 +1292,35 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     active: true,
                     onRemove: () => _clearDharmaMode(model),
                   ),
-                  _ComposerChip(
-                    icon: Icons.public,
-                    label: '地区 ${_regionSummary(model)}',
-                    active:
-                        model.isGlobalSendEnabled ||
-                        model.isFieldEnergyMode ||
-                        model.isLocalLoopbackEnabled,
-                    onTap: isBusy ? null : () => _showRegionSelector(model),
-                  ),
-                  _ComposerChip(
-                    icon: Icons.loop,
-                    label: model.isLooping ? '循环' : '单轮',
-                    active: model.isLooping,
-                    onTap: isBusy
-                        ? null
-                        : () {
-                            model.setLooping(!model.isLooping);
-                            setState(() {});
-                          },
-                  ),
+                  if (_dharmaComposerTarget == DharmaComposerTarget.platform)
+                    _ComposerChip(
+                      icon: Icons.campaign_outlined,
+                      label: '平台 ${_platformSummary()}',
+                      active: _selectedPublishPlatforms.isNotEmpty,
+                      onTap: isBusy ? null : () => _showPublishPlatformSelector(),
+                    )
+                  else ...[
+                    _ComposerChip(
+                      icon: Icons.public,
+                      label: '地区 ${_regionSummary(model)}',
+                      active:
+                          model.isGlobalSendEnabled ||
+                          model.isFieldEnergyMode ||
+                          model.isLocalLoopbackEnabled,
+                      onTap: isBusy ? null : () => _showRegionSelector(model),
+                    ),
+                    _ComposerChip(
+                      icon: Icons.loop,
+                      label: model.isLooping ? '循环' : '单轮',
+                      active: model.isLooping,
+                      onTap: isBusy
+                          ? null
+                          : () {
+                              model.setLooping(!model.isLooping);
+                              setState(() {});
+                            },
+                    ),
+                  ],
                   if (model.hasFiles)
                     _ComposerChip(
                       icon: _contentIcon(model.selectedContentKind),
@@ -1352,7 +1382,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     isDense: true,
                     border: InputBorder.none,
                     hintText: _isDharmaComposerMode
-                        ? (model.hasFiles ? '可继续输入法布施文字或链接' : '输入文字或链接')
+                        ? _dharmaComposerTarget == DharmaComposerTarget.platform
+                              ? (model.hasFiles ? '可继续输入发布说明' : '粘贴要发布的链接或正文')
+                              : (model.hasFiles ? '可继续输入法布施文字或链接' : '输入文字或链接')
                         : '问问 AI',
                     hintStyle: const TextStyle(
                       color: Colors.white54,
@@ -1378,6 +1410,23 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     FileTransferModel model, {
     required bool canSubmit,
   }) {
+    if (_isPublishingDraft) {
+      return Container(
+        width: 42,
+        height: 42,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
     if (model.isPreparingSend) {
       return Container(
         width: 42,
@@ -1420,7 +1469,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
 
     return IconButton(
-      tooltip: _isDharmaComposerMode ? '开始法布施' : '发送消息',
+      tooltip: _isDharmaComposerMode
+          ? _dharmaComposerTarget == DharmaComposerTarget.platform
+                ? '预览并发布'
+                : '开始法布施'
+          : '发送消息',
       icon: Icon(
         Icons.arrow_upward,
         color: canSubmit ? Colors.black : Colors.white54,
@@ -1468,7 +1521,16 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           'dharma',
           Icons.self_improvement,
           '全球法布施',
-          _isDharmaComposerMode ? '已选择，可在输入框上方调整' : '默认全球发送',
+          _isDharmaComposerMode &&
+                  _dharmaComposerTarget == DharmaComposerTarget.global
+              ? '已选择，可在输入框上方调整'
+              : '默认全球发送',
+        ),
+        _sendMenuItem(
+          'platform_publish',
+          Icons.campaign_outlined,
+          '法布施到平台',
+          '公众号、小红书、抖音、微博等多选',
         ),
         _sendMenuItem(
           'files',
@@ -1501,11 +1563,20 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     String action,
   ) async {
     if (action == 'dharma') {
-      _activateDharmaMode(model, showMaterials: true);
+      _activateDharmaMode(
+        model,
+        showMaterials: true,
+        target: DharmaComposerTarget.global,
+      );
       return true;
     }
+    if (action == 'platform_publish') {
+      _activateDharmaMode(model, target: DharmaComposerTarget.platform);
+      await _showPublishPlatformSelector();
+      return _selectedPublishPlatforms.isNotEmpty;
+    }
     if (action == 'files') {
-      _activateDharmaMode(model);
+      _activateDharmaMode(model, target: _dharmaComposerTarget);
       final selected = await model.selectFiles(replaceExisting: true);
       if (selected && mounted) setState(() {});
       return selected;
@@ -1515,7 +1586,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   void _submitComposer(FileTransferModel model) {
     if (_isDharmaComposerMode) {
-      _startSending(model);
+      if (_dharmaComposerTarget == DharmaComposerTarget.platform) {
+        unawaited(_startPlatformPublish(model));
+      } else {
+        _startSending(model);
+      }
     } else {
       _sendAiChatFromComposer();
     }
@@ -1524,19 +1599,23 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   void _activateDharmaMode(
     FileTransferModel model, {
     bool showMaterials = false,
+    DharmaComposerTarget target = DharmaComposerTarget.global,
   }) {
-    if (model.countryList.isEmpty) {
-      model.setCountryList(['ALL']);
-    }
-    if (!model.isGlobalSendEnabled &&
-        !model.isFieldEnergyMode &&
-        !model.isLocalLoopbackEnabled) {
-      model.setGlobalSendEnabled(true);
-      model.setCountryList(['ALL']);
+    if (target == DharmaComposerTarget.global) {
+      if (model.countryList.isEmpty) {
+        model.setCountryList(['ALL']);
+      }
+      if (!model.isGlobalSendEnabled &&
+          !model.isFieldEnergyMode &&
+          !model.isLocalLoopbackEnabled) {
+        model.setGlobalSendEnabled(true);
+        model.setCountryList(['ALL']);
+      }
     }
     setState(() {
       _isDharmaComposerMode = true;
-      _showMaterialGallery = showMaterials;
+      _dharmaComposerTarget = target;
+      _showMaterialGallery = showMaterials && target == DharmaComposerTarget.global;
     });
   }
 
@@ -1545,6 +1624,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     model.clearFiles();
     setState(() {
       _isDharmaComposerMode = false;
+      _dharmaComposerTarget = DharmaComposerTarget.global;
       _showMaterialGallery = false;
     });
   }
@@ -1584,6 +1664,773 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         .toList();
     entries.sort((a, b) => a.value.compareTo(b.value));
     return entries;
+  }
+
+  String _platformSummary() {
+    if (_selectedPublishPlatforms.isEmpty) return '未选择';
+    final labels = _selectedPublishPlatforms
+        .map((platform) => platform.info.shortLabel)
+        .toList();
+    if (labels.length <= 2) return labels.join('、');
+    return '${labels.take(2).join('、')} 等 ${labels.length} 个';
+  }
+
+  Future<void> _showPublishPlatformSelector() async {
+    final selected = Set<DharmaPublishPlatform>.from(_selectedPublishPlatforms);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            return SafeArea(
+              top: false,
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(sheetContext).size.height * 0.76,
+                ),
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF202020),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '选择法布施平台',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => setSheetState(() {
+                            selected
+                              ..clear()
+                              ..addAll(DharmaPublishService.allPlatforms);
+                          }),
+                          child: const Text('全选'),
+                        ),
+                        TextButton(
+                          onPressed: () => setSheetState(selected.clear),
+                          child: const Text('清空'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      '发布前会先下载/整理链接内容，缺少标题或正文时会在对话里补全并预览。',
+                      style: TextStyle(color: Colors.white60, fontSize: 13),
+                    ),
+                    const SizedBox(height: 14),
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          for (final platform in DharmaPublishService.allPlatforms)
+                            _PlatformCheckTile(
+                              platform: platform,
+                              selected: selected.contains(platform),
+                              onChanged: (checked) {
+                                setSheetState(() {
+                                  if (checked) {
+                                    selected.add(platform);
+                                  } else {
+                                    selected.remove(platform);
+                                  }
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(sheetContext),
+                            child: const Text('取消'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: selected.isEmpty
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _selectedPublishPlatforms
+                                        ..clear()
+                                        ..addAll(selected);
+                                    });
+                                    Navigator.pop(sheetContext);
+                                  },
+                            child: const Text('完成'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _consumeInitialShare() async {
+    final payload = await InboundShareService.instance.takeInitialShare();
+    if (payload == null || payload.isEmpty || !mounted) return;
+    await _handleIncomingShare(payload);
+    await InboundShareService.instance.clearInitialShare();
+  }
+
+  Future<void> _handleIncomingShare(IncomingSharePayload payload) async {
+    if (!mounted || payload.isEmpty) return;
+    final fingerprint = '${payload.bestText}|${payload.title}|${payload.sourcePackage}';
+    if (_lastIncomingShareFingerprint == fingerprint) return;
+    _lastIncomingShareFingerprint = fingerprint;
+
+    final model = Provider.of<FileTransferModel>(context, listen: false);
+    final sharedText = _normalizeIncomingShareText(payload);
+    final candidateUrl = payload.url.trim().isNotEmpty
+        ? payload.url.trim()
+        : _firstHttpUrl(sharedText);
+    final composerText = candidateUrl ?? sharedText;
+    if (composerText.trim().isEmpty) return;
+
+    if (mounted) {
+      _chatInputController.text = composerText.trim();
+      _chatInputController.selection = TextSelection.collapsed(
+        offset: _chatInputController.text.length,
+      );
+      setState(() {});
+    }
+
+    final target = await _showIncomingShareTargetSheet(payload, composerText);
+    if (target == null || !mounted) return;
+
+    _activateDharmaMode(model, target: target);
+    if (target == DharmaComposerTarget.platform) {
+      await _showPublishPlatformSelector();
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _homeChatMessages.add(
+        _HomeChatMessage(
+          text: [
+            '已接收外部分享。',
+            '',
+            '来源：${payload.displaySource}',
+            '模式：${target == DharmaComposerTarget.global ? "全球法布施" : "法布施到平台"}',
+            if (candidateUrl != null) '链接：$candidateUrl',
+          ].join('\n'),
+          isUser: false,
+        ),
+      );
+    });
+    _scrollHomeChatToBottom();
+  }
+
+  Future<DharmaComposerTarget?> _showIncomingShareTargetSheet(
+    IncomingSharePayload payload,
+    String text,
+  ) {
+    final preview = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return showModalBottomSheet<DharmaComposerTarget>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+            decoration: const BoxDecoration(
+              color: Color(0xFF202020),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const Text(
+                  '收到外部分享',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  preview.length > 120 ? '${preview.substring(0, 120)}...' : preview,
+                  style: const TextStyle(color: Colors.white60, height: 1.35),
+                ),
+                const SizedBox(height: 16),
+                _ShareTargetTile(
+                  icon: Icons.public,
+                  title: '全球法布施',
+                  subtitle: '把链接放入输入框，点击发送后下载内容并进行全球法布施。',
+                  onTap: () => Navigator.pop(
+                    sheetContext,
+                    DharmaComposerTarget.global,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _ShareTargetTile(
+                  icon: Icons.campaign_outlined,
+                  title: '法布施到平台',
+                  subtitle: '选择公众号、小红书、抖音、微博等平台，补齐标题正文后预览发布。',
+                  onTap: () => Navigator.pop(
+                    sheetContext,
+                    DharmaComposerTarget.platform,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    child: const Text('先放到输入框'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _normalizeIncomingShareText(IncomingSharePayload payload) {
+    final parts = <String>[
+      if (payload.title.trim().isNotEmpty) payload.title.trim(),
+      if (payload.text.trim().isNotEmpty) payload.text.trim(),
+      if (payload.url.trim().isNotEmpty && !payload.text.contains(payload.url))
+        payload.url.trim(),
+    ];
+    return parts.join('\n').trim();
+  }
+
+  String? _firstHttpUrl(String text) {
+    final match = RegExp(
+      r'https?://[^\s]+',
+      caseSensitive: false,
+    ).firstMatch(text.trim());
+    if (match == null) return null;
+    return match
+        .group(0)!
+        .replaceAll(RegExp(r'[，。、,.)）\]】>》]+$'), '')
+        .trim();
+  }
+
+  Future<bool> _prepareComposerContentForModel(
+    FileTransferModel model,
+    String composerText,
+  ) async {
+    final text = composerText.trim();
+    if (text.isEmpty) return model.hasFiles;
+
+    final link = _firstHttpUrl(text);
+    if (link != null) {
+      await model.addUrlContentForSending(link);
+    } else {
+      await model.addTextContentForSending(
+        title: '法布施',
+        text: text,
+        sourceKind: '文本',
+        replaceExisting: !model.hasFiles,
+      );
+    }
+
+    _chatInputController.clear();
+    if (mounted) setState(() {});
+    return true;
+  }
+
+  Future<void> _startPlatformPublish(FileTransferModel model) async {
+    if (model.isPreparingSend || _isPublishingDraft) return;
+    if (_selectedPublishPlatforms.isEmpty) {
+      await _showPublishPlatformSelector();
+      if (_selectedPublishPlatforms.isEmpty) return;
+    }
+
+    final composerText = _chatInputController.text.trim();
+    if (composerText.isEmpty && !model.hasFiles) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('请先粘贴链接或输入要发布的正文。'),
+          backgroundColor: Colors.black87,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isPublishingDraft = true);
+    DharmaPublishDraft draft;
+    try {
+      final prepared = await _prepareComposerContentForModel(model, composerText);
+      if (!prepared || !model.hasFiles) {
+        throw StateError('没有可发布的内容');
+      }
+      draft = _dharmaPublishService.buildDraftFromModel(
+        model,
+        fallbackText: composerText,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isPublishingDraft = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('内容准备失败: $e'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _isPublishingDraft = false);
+
+    final completedDraft = await _ensurePublishDraftComplete(
+      draft,
+      _selectedPublishPlatforms,
+    );
+    if (completedDraft == null || !mounted) return;
+
+    final reviewedDraft = await _reviewPublishDraft(
+      completedDraft,
+      _selectedPublishPlatforms,
+    );
+    if (reviewedDraft == null || !mounted) return;
+
+    setState(() => _isPublishingDraft = true);
+    try {
+      setState(() {
+        _homeChatMessages.add(
+          _HomeChatMessage(
+            text: _dharmaPublishService.buildPreviewMarkdown(
+              reviewedDraft,
+              _selectedPublishPlatforms,
+            ),
+            isUser: true,
+          ),
+        );
+      });
+      _scrollHomeChatToBottom();
+
+      final results = await _publishDraftWithBestPlatformExperience(
+        reviewedDraft,
+      );
+      if (!mounted) return;
+      setState(() {
+        _homeChatMessages.add(
+          _HomeChatMessage(
+            text: _publishResultsMarkdown(reviewedDraft, results),
+            isUser: false,
+          ),
+        );
+        _isDharmaComposerMode = false;
+        _dharmaComposerTarget = DharmaComposerTarget.global;
+      });
+      _scrollHomeChatToBottom();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _homeChatMessages.add(
+          _HomeChatMessage(
+            text: '发布流程遇到问题：$e',
+            isUser: false,
+            isError: true,
+          ),
+        );
+      });
+      _scrollHomeChatToBottom();
+    } finally {
+      if (mounted) setState(() => _isPublishingDraft = false);
+    }
+  }
+
+  Future<List<DharmaPublishResult>> _publishDraftWithBestPlatformExperience(
+    DharmaPublishDraft draft,
+  ) async {
+    if (!kIsWeb &&
+        (Platform.isMacOS || Platform.isWindows)) {
+      final results = await Navigator.push<List<DharmaPublishResult>>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DharmaPublishBrowserScreen(
+            draft: draft,
+            platforms: _selectedPublishPlatforms.toList(),
+          ),
+        ),
+      );
+      return results ??
+          _selectedPublishPlatforms
+              .map(
+                (platform) => DharmaPublishResult(
+                  platform: platform,
+                  success: false,
+                  message: '用户关闭了内置浏览器发布工作台',
+                  steps: const ['发布流程已取消或未完成。'],
+                ),
+              )
+              .toList();
+    }
+
+    return _dharmaPublishService.publishDraft(
+      draft: draft,
+      platforms: _selectedPublishPlatforms,
+    );
+  }
+
+  Future<DharmaPublishDraft?> _ensurePublishDraftComplete(
+    DharmaPublishDraft draft,
+    Set<DharmaPublishPlatform> platforms,
+  ) async {
+    if (_dharmaPublishService.missingFields(draft, platforms).isEmpty) {
+      return draft;
+    }
+    return _showEditDraftDialog(
+      draft,
+      title: '补全发布信息',
+      helperText: '检测到标题或正文不完整。可以自己输入，也可以使用 AI 生成/润色。',
+    );
+  }
+
+  Future<DharmaPublishDraft?> _reviewPublishDraft(
+    DharmaPublishDraft draft,
+    Set<DharmaPublishPlatform> platforms,
+  ) async {
+    var current = draft;
+    while (mounted) {
+      final action = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('发布预览'),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: MarkdownBody(
+                data: _dharmaPublishService.buildPreviewMarkdown(
+                  current,
+                  platforms,
+                ),
+                selectable: true,
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'cancel'),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'edit'),
+              child: const Text('自己修改'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'ai'),
+              child: const Text('AI 修改'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, 'publish'),
+              child: const Text('发布'),
+            ),
+          ],
+        ),
+      );
+
+      if (action == 'publish') return current;
+      if (action == 'edit') {
+        final edited = await _showEditDraftDialog(current);
+        if (edited != null) current = edited;
+        continue;
+      }
+      if (action == 'ai') {
+        final requirement = await _askDraftRevisionRequirement();
+        if (requirement == null) continue;
+        final body = await _generateRevisedBody(current, requirement);
+        current = current.copyWith(
+          title: current.title.trim().isEmpty
+              ? await _generateTitleForDraft(current)
+              : current.title,
+          body: body,
+        );
+        continue;
+      }
+      return null;
+    }
+    return null;
+  }
+
+  Future<DharmaPublishDraft?> _showEditDraftDialog(
+    DharmaPublishDraft draft, {
+    String title = '修改发布草稿',
+    String helperText = '请确认标题、正文、标签和来源链接。',
+  }) async {
+    final titleController = TextEditingController(text: draft.title);
+    final bodyController = TextEditingController(text: draft.body);
+    final tagController = TextEditingController(text: draft.tags.join(' '));
+    final sourceController = TextEditingController(text: draft.sourceUrl);
+    bool generating = false;
+
+    final result = await showDialog<DharmaPublishDraft>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            Future<void> generateTitle() async {
+              setDialogState(() => generating = true);
+              final generated = await _generateTitleForDraft(
+                draft.copyWith(body: bodyController.text),
+              );
+              titleController.text = generated;
+              setDialogState(() => generating = false);
+            }
+
+            Future<void> polishBody() async {
+              setDialogState(() => generating = true);
+              final revised = await _generateRevisedBody(
+                draft.copyWith(
+                  title: titleController.text,
+                  body: bodyController.text,
+                ),
+                '润色为适合自媒体发布的温和、清晰、尊重平台规则的文案',
+              );
+              bodyController.text = revised;
+              setDialogState(() => generating = false);
+            }
+
+            return AlertDialog(
+              title: Text(title),
+              content: SizedBox(
+                width: 520,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(helperText),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: titleController,
+                        decoration: InputDecoration(
+                          labelText: '标题',
+                          suffixIcon: IconButton(
+                            tooltip: 'AI 生成标题',
+                            onPressed: generating ? null : generateTitle,
+                            icon: const Icon(Icons.auto_awesome),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: bodyController,
+                        minLines: 6,
+                        maxLines: 12,
+                        decoration: InputDecoration(
+                          labelText: '正文',
+                          alignLabelWithHint: true,
+                          suffixIcon: IconButton(
+                            tooltip: 'AI 润色正文',
+                            onPressed: generating ? null : polishBody,
+                            icon: const Icon(Icons.auto_fix_high),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: tagController,
+                        decoration: const InputDecoration(
+                          labelText: '标签（空格分隔）',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: sourceController,
+                        decoration: const InputDecoration(labelText: '来源链接'),
+                      ),
+                      if (generating) ...[
+                        const SizedBox(height: 12),
+                        const LinearProgressIndicator(),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: generating
+                      ? null
+                      : () => Navigator.pop(dialogContext),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: generating
+                      ? null
+                      : () {
+                          Navigator.pop(
+                            dialogContext,
+                            draft.copyWith(
+                              title: titleController.text.trim(),
+                              body: bodyController.text.trim(),
+                              sourceUrl: sourceController.text.trim(),
+                              tags: tagController.text
+                                  .split(RegExp(r'[\s,，#]+'))
+                                  .map((tag) => tag.trim())
+                                  .where((tag) => tag.isNotEmpty)
+                                  .toSet()
+                                  .toList(),
+                            ),
+                          );
+                        },
+                  child: const Text('继续'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    titleController.dispose();
+    bodyController.dispose();
+    tagController.dispose();
+    sourceController.dispose();
+    return result;
+  }
+
+  Future<String?> _askDraftRevisionRequirement() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('输入 AI 修改要求'),
+        content: TextField(
+          controller: controller,
+          minLines: 3,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            hintText: '例如：更适合小红书，语气更温和，保留来源链接，控制在 500 字以内。',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('生成'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<String> _generateTitleForDraft(DharmaPublishDraft draft) async {
+    final prompt = [
+      '请为下面法布施/公益分享内容生成一个适合自媒体发布的中文标题。',
+      '要求：只返回标题，不超过 28 个字，不夸大，不制造焦虑。',
+      '',
+      draft.bodyPreview,
+    ].join('\n');
+    final ai = await _askDachengAi(prompt);
+    final title = ai?.split('\n').first.trim();
+    if (title != null && title.isNotEmpty) return title;
+    return _dharmaPublishService.suggestTitle(draft);
+  }
+
+  Future<String> _generateRevisedBody(
+    DharmaPublishDraft draft,
+    String requirement,
+  ) async {
+    final prompt = [
+      '请根据要求修改下面的发布草稿。',
+      '要求：$requirement',
+      '请直接返回可发布正文，不要解释。',
+      '',
+      '标题：${draft.title}',
+      '正文：',
+      draft.body,
+      if (draft.sourceUrl.trim().isNotEmpty) '来源链接：${draft.sourceUrl}',
+    ].join('\n');
+    final ai = await _askDachengAi(prompt);
+    if (ai != null && ai.trim().isNotEmpty) return ai.trim();
+    return _dharmaPublishService.polishBody(draft);
+  }
+
+  Future<String?> _askDachengAi(String prompt) async {
+    try {
+      final authModel = Provider.of<AuthModel?>(context, listen: false);
+      final result = await _dachengAiService.sendChat(
+        message: prompt,
+        token: authModel?.authToken,
+        username: authModel?.currentUser?.username,
+        isMember: authModel?.hasPermission('premium') ?? false,
+      );
+      final message = result.message.trim();
+      return message.isEmpty ? null : message;
+    } catch (e) {
+      debugPrint('发布草稿 AI 生成失败，使用本地规则兜底: $e');
+      return null;
+    }
+  }
+
+  String _publishResultsMarkdown(
+    DharmaPublishDraft draft,
+    List<DharmaPublishResult> results,
+  ) {
+    final success = results.where((result) => result.success).length;
+    final lines = <String>[
+      '### 发布流程完成',
+      '',
+      '标题：${draft.title.trim().isEmpty ? "未命名" : draft.title.trim()}',
+      '平台：$success / ${results.length} 个入口已拉起',
+      '',
+      for (final result in results) ...[
+        result.success
+            ? '- ✅ ${result.platform.info.label}：${result.message}'
+            : '- ⚠️ ${result.platform.info.label}：${result.message}',
+        for (final step in result.steps) '  - $step',
+      ],
+      '',
+      '草稿内容已复制到剪贴板；若平台要求登录、验证码或最终发布确认，请在打开的页面/App 中完成。',
+    ];
+    return lines.join('\n');
   }
 
   Future<void> _showRegionSelector(FileTransferModel model) async {
@@ -2522,8 +3369,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final composerText = _chatInputController.text.trim();
     if (composerText.isNotEmpty) {
       try {
-        if (_looksLikeHttpUrl(composerText)) {
-          await model.addUrlContentForSending(composerText);
+        final sharedLink = _firstHttpUrl(composerText);
+        if (_looksLikeHttpUrl(composerText) || sharedLink != null) {
+          await model.addUrlContentForSending(sharedLink ?? composerText);
         } else {
           await model.addTextContentForSending(
             title: '法布施',
@@ -2795,6 +3643,153 @@ class _RegionCheckTile extends StatelessWidget {
     );
   }
 }
+
+
+class _PlatformCheckTile extends StatelessWidget {
+  final DharmaPublishPlatform platform;
+  final bool selected;
+  final ValueChanged<bool> onChanged;
+
+  const _PlatformCheckTile({
+    required this.platform,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final info = platform.info;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: () => onChanged(!selected),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppTheme.primaryColor.withValues(alpha: 0.14)
+                : Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? AppTheme.primaryColor.withValues(alpha: 0.38)
+                  : Colors.white.withValues(alpha: 0.08),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.campaign_outlined,
+                color: selected ? AppTheme.primaryColor : Colors.white70,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      info.label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      info.description,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 11,
+                        height: 1.25,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Checkbox(
+                value: selected,
+                onChanged: (value) => onChanged(value ?? false),
+                activeColor: AppTheme.primaryColor,
+                checkColor: Colors.black,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShareTargetTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _ShareTargetTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: AppTheme.primaryColor, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white38),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 
 class _AiActivityLabel extends StatelessWidget {
   final String label;
