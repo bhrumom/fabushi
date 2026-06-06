@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../core/design_system/app_theme.dart';
+import '../services/dharma_publish_screenshot_store.dart';
 import '../services/dharma_publish_service.dart';
 
 class DharmaPublishBrowserScreen extends StatefulWidget {
@@ -29,6 +31,7 @@ class _DharmaPublishBrowserScreenState
   bool _loading = true;
   bool _runningScript = false;
   final Map<DharmaPublishPlatform, List<String>> _steps = {};
+  final Map<DharmaPublishPlatform, List<String>> _screenshots = {};
   final Set<DharmaPublishPlatform> _completed = {};
 
   DharmaPublishPlatform get _currentPlatform => widget.platforms[_currentIndex];
@@ -40,6 +43,7 @@ class _DharmaPublishBrowserScreenState
       _steps[platform] = <String>[
         '已创建发布任务：${platform.info.label}',
       ];
+      _screenshots[platform] = <String>[];
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _copyDraftToClipboard();
@@ -56,6 +60,30 @@ class _DharmaPublishBrowserScreenState
     setState(() {
       _steps.putIfAbsent(platform, () => <String>[]).add(message);
     });
+  }
+
+  Future<void> _captureStepScreenshot(
+    DharmaPublishPlatform platform,
+    String label,
+  ) async {
+    final controller = _controller;
+    if (controller == null) return;
+    try {
+      final Uint8List? bytes = await controller.takeScreenshot();
+      if (bytes == null || bytes.isEmpty) return;
+      final path = await saveDharmaPublishScreenshot(
+        platformName: platform.name,
+        label: label,
+        bytes: bytes,
+      );
+      if (path == null || path.isEmpty || !mounted) return;
+      setState(() {
+        _screenshots.putIfAbsent(platform, () => <String>[]).add(path);
+      });
+      _addStep(platform, '已保存步骤截图：$path');
+    } catch (e) {
+      _addStep(platform, '步骤截图保存失败：$e');
+    }
   }
 
   Future<void> _runAutofill() async {
@@ -80,6 +108,7 @@ class _DharmaPublishBrowserScreenState
         platform,
         text.isEmpty ? '已执行页面自动填充脚本。' : '页面自动填充结果：$text',
       );
+      await _captureStepScreenshot(platform, 'autofill');
       _addStep(platform, '请在页面中检查标题、正文和附件，再点击平台自己的发布/保存按钮。');
     } catch (e) {
       _addStep(platform, '自动填充脚本执行失败：$e');
@@ -146,6 +175,9 @@ class _DharmaPublishBrowserScreenState
             ? '已在内置浏览器打开 ${platform.info.label} 并准备草稿'
             : '已记录 ${platform.info.label} 的浏览器步骤，尚未标记完成',
         steps: steps,
+        screenshotPaths: List<String>.from(
+          _screenshots[platform] ?? const <String>[],
+        ),
       );
     }).toList();
   }
@@ -153,6 +185,7 @@ class _DharmaPublishBrowserScreenState
   Future<void> _markCurrentDone() async {
     final platform = _currentPlatform;
     _addStep(platform, '用户已确认此平台页面处理完成。');
+    await _captureStepScreenshot(platform, 'confirmed');
     setState(() => _completed.add(platform));
     if (_currentIndex < widget.platforms.length - 1) {
       setState(() {
@@ -314,6 +347,7 @@ class _DharmaPublishBrowserScreenState
                   onLoadStop: (controller, url) async {
                     setState(() => _loading = false);
                     _addStep(platform, '页面加载完成：${url?.toString() ?? ''}');
+                    await _captureStepScreenshot(platform, 'load_stop');
                     await _runAutofill();
                   },
                   onReceivedError: (controller, request, error) {

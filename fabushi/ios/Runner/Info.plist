@@ -47,8 +47,6 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	
-	<!-- 支付宝 URL Scheme - 用于支付宝授权/支付回调 -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -61,57 +59,47 @@
 				<string>alipay2021005193647715</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>fabushi-share</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>fabushi</string>
+			</array>
+		</dict>
 	</array>
-	
-	<!-- 应用查询 schemes（检测其他应用是否安装）-->
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>alipay</string>
 		<string>alipays</string>
 		<string>alipayshare</string>
 	</array>
-	
-	<!-- 后台模式 - 音频、后台获取、后台处理 -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
 		<string>fetch</string>
 		<string>processing</string>
 	</array>
-	
-	<!-- BGTaskScheduler 任务标识符 (iOS 13+) -->
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.ombhrum.fabushi.keepalive</string>
 	</array>
-	
-	<!-- 通知权限说明 -->
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>需要通知权限以显示发送进度和状态</string>
-	
-	<!-- 媒体库权限说明 -->
 	<key>NSAppleMusicUsageDescription</key>
 	<string>应用需要音频播放功能以保持后台运行</string>
-	
-	<!-- 麦克风权限说明 - 读诵录音功能 -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>需要麦克风权限以录制您的读诵音频</string>
-	
-	<!-- 语音识别权限说明 - 智能检测读诵进度 -->
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>需要语音识别权限以智能检测您的读诵进度</string>
-	
-	<!-- 位置权限说明 - 某些第三方库可能需要 -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>应用可能需要访问您的位置以提供本地化服务</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>应用可能需要访问您的位置以提供本地化服务</string>
-	
-	<!-- 相册权限说明 - 用于保存或选择图片 -->
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>应用需要访问您的相册以保存或选择图片</string>
-	
-	<!-- Firebase 配置 - 禁用 Method Swizzling 以避免 AppDelegate 代理冲突 -->
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
 </dict>
