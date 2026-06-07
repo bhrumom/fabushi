@@ -8,6 +8,7 @@ on:
       - fabushi/**
       - .github/scripts/package-desktop-*
       - .github/scripts/notarize-macos-dmg.sh
+      - .github/scripts/fix-macos-bundled-dylibs.sh
       - .github/scripts/upload-macos-app-store.sh
       - .github/workflows/desktop-installers.yml
   push:
@@ -17,6 +18,7 @@ on:
       - fabushi/**
       - .github/scripts/package-desktop-*
       - .github/scripts/notarize-macos-dmg.sh
+      - .github/scripts/fix-macos-bundled-dylibs.sh
       - .github/scripts/upload-macos-app-store.sh
       - .github/workflows/desktop-installers.yml
   workflow_dispatch:
@@ -363,6 +365,11 @@ jobs:
           security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
           security list-keychains -d user -s "$keychain_path" login.keychain-db
           security set-key-partition-list -S apple-tool:,apple: -s -k "$RUNNER_TEMP" "$keychain_path"
+
+      - name: Fix bundled macOS dynamic library references
+        if: matrix.target == 'macos'
+        shell: bash
+        run: ../.github/scripts/fix-macos-bundled-dylibs.sh build/macos/Build/Products/Release/global_dharma_sharing.app
 
       - name: Code sign macOS app
         if: >-
