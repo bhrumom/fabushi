@@ -325,6 +325,12 @@ while true; do
   exit "$archive_exit_code"
 done
 
+archived_app_path="$archive_path/Products/Applications/global_dharma_sharing.app"
+fix_bundled_dylibs_script="$PWD/../.github/scripts/fix-macos-bundled-dylibs.sh"
+if [ -x "$fix_bundled_dylibs_script" ]; then
+  "$fix_bundled_dylibs_script" "$archived_app_path"
+fi
+
 internal_only=false
 case "${MACOS_APP_STORE_INTERNAL_TESTING_ONLY:-false}" in
   true|TRUE|True|1|yes|YES) internal_only=true ;;
