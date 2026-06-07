@@ -37,7 +37,6 @@ hdiutil create \
   -fs HFS+ \
   -size "${dmg_size_mb}m" \
   -ov \
-  -format UDRW \
   "$RW_DMG_PATH"
 
 hdiutil attach "$RW_DMG_PATH" -nobrowse -mountpoint "$DMG_MOUNT_POINT"
