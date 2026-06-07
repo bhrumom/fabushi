@@ -48,10 +48,34 @@ collect_homebrew_deps() {
     done
 }
 
+rewrite_dep_target() {
+  local dep="$1"
+  case "$(basename "$dep")" in
+    libz.1.dylib)
+      printf '%s\n' /usr/lib/libz.1.dylib
+      ;;
+    *)
+      printf '@rpath/%s\n' "$(basename "$dep")"
+      ;;
+  esac
+}
+
+should_bundle_dep() {
+  local dep="$1"
+  case "$(rewrite_dep_target "$dep")" in
+    @rpath/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 resolve_dep_path() {
   local dep="$1"
   local dep_name
   local candidate
+
+  if ! should_bundle_dep "$dep"; then
+    return 1
+  fi
 
   if [ -f "$dep" ]; then
     printf '%s\n' "$dep"
@@ -85,20 +109,27 @@ fi
 index=0
 while [ "$index" -lt "${#homebrew_deps[@]}" ]; do
   dep="${homebrew_deps[$index]}"
-  dep_path="$(resolve_dep_path "$dep" || true)"
-  if [ -z "$dep_path" ]; then
-    echo "Unable to locate Homebrew dependency referenced by bundle: $dep" >&2
-    exit 1
-  fi
+  if should_bundle_dep "$dep"; then
+    dep_path="$(resolve_dep_path "$dep" || true)"
+    if [ -z "$dep_path" ]; then
+      echo "Unable to locate Homebrew dependency referenced by bundle: $dep" >&2
+      exit 1
+    fi
 
-  while IFS= read -r nested_dep; do
-    add_dep "$nested_dep"
-  done < <(collect_homebrew_deps "$dep_path")
+    while IFS= read -r nested_dep; do
+      add_dep "$nested_dep"
+    done < <(collect_homebrew_deps "$dep_path")
+  fi
 
   index=$((index + 1))
 done
 
 for dep in "${homebrew_deps[@]}"; do
+  if ! should_bundle_dep "$dep"; then
+    echo "Rewriting $dep to $(rewrite_dep_target "$dep") without bundling."
+    continue
+  fi
+
   dep_path="$(resolve_dep_path "$dep" || true)"
   if [ -z "$dep_path" ]; then
     echo "Unable to locate Homebrew dependency referenced by bundle: $dep" >&2
@@ -116,8 +147,7 @@ done
 while IFS= read -r -d '' file; do
   changed=false
   while IFS= read -r dep; do
-    dep_name="$(basename "$dep")"
-    install_name_tool -change "$dep" "@rpath/$dep_name" "$file"
+    install_name_tool -change "$dep" "$(rewrite_dep_target "$dep")" "$file"
     changed=true
   done < <(collect_homebrew_deps "$file")
   if [ "$changed" = "true" ]; then
