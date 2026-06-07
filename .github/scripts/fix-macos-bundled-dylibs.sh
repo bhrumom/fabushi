@@ -14,7 +14,27 @@ fi
 frameworks_dir="$app_path/Contents/Frameworks"
 mkdir -p "$frameworks_dir"
 
-declare -A homebrew_deps=()
+homebrew_deps=()
+
+has_dep() {
+  local needle="$1"
+  local dep
+  for dep in "${homebrew_deps[@]}"; do
+    if [ "$dep" = "$needle" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+add_dep() {
+  local dep="$1"
+  [ -n "$dep" ] || return 0
+  if ! has_dep "$dep"; then
+    homebrew_deps+=("$dep")
+  fi
+}
+
 collect_homebrew_deps() {
   local binary="$1"
   otool -L "$binary" 2>/dev/null |
@@ -28,10 +48,32 @@ collect_homebrew_deps() {
     done
 }
 
+resolve_dep_path() {
+  local dep="$1"
+  local dep_name
+  local candidate
+
+  if [ -f "$dep" ]; then
+    printf '%s\n' "$dep"
+    return 0
+  fi
+
+  dep_name="$(basename "$dep")"
+  for candidate in \
+    "/opt/homebrew/lib/$dep_name" \
+    "/usr/local/lib/$dep_name"; do
+    if [ -f "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 while IFS= read -r -d '' file; do
   while IFS= read -r dep; do
-    [ -n "$dep" ] || continue
-    homebrew_deps["$dep"]=1
+    add_dep "$dep"
   done < <(collect_homebrew_deps "$file")
 done < <(find "$app_path/Contents" -type f \( -perm -111 -o -name '*.dylib' -o -path '*.framework/Versions/*/*' \) -print0)
 
@@ -40,22 +82,25 @@ if [ "${#homebrew_deps[@]}" -eq 0 ]; then
   exit 0
 fi
 
-for dep in "${!homebrew_deps[@]}"; do
-  dep_path="$dep"
-  if [ ! -f "$dep_path" ]; then
-    dep_name="$(basename "$dep")"
-    for candidate in \
-      "/opt/homebrew/lib/$dep_name" \
-      "/opt/homebrew/opt/$(basename "${dep%/lib/*}")/lib/$dep_name" \
-      "/usr/local/lib/$dep_name"; do
-      if [ -f "$candidate" ]; then
-        dep_path="$candidate"
-        break
-      fi
-    done
+index=0
+while [ "$index" -lt "${#homebrew_deps[@]}" ]; do
+  dep="${homebrew_deps[$index]}"
+  dep_path="$(resolve_dep_path "$dep" || true)"
+  if [ -z "$dep_path" ]; then
+    echo "Unable to locate Homebrew dependency referenced by bundle: $dep" >&2
+    exit 1
   fi
 
-  if [ ! -f "$dep_path" ]; then
+  while IFS= read -r nested_dep; do
+    add_dep "$nested_dep"
+  done < <(collect_homebrew_deps "$dep_path")
+
+  index=$((index + 1))
+done
+
+for dep in "${homebrew_deps[@]}"; do
+  dep_path="$(resolve_dep_path "$dep" || true)"
+  if [ -z "$dep_path" ]; then
     echo "Unable to locate Homebrew dependency referenced by bundle: $dep" >&2
     exit 1
   fi
@@ -71,7 +116,6 @@ done
 while IFS= read -r -d '' file; do
   changed=false
   while IFS= read -r dep; do
-    [ -n "$dep" ] || continue
     dep_name="$(basename "$dep")"
     install_name_tool -change "$dep" "@rpath/$dep_name" "$file"
     changed=true
