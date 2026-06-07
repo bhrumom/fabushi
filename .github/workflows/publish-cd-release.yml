@@ -423,8 +423,9 @@ jobs:
               changes_not_sent_for_review=""
               ;;
             true|TRUE|True|1|yes|YES)
-              use_changes_not_sent_for_review=true
-              changes_not_sent_for_review=true
+              echo "GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW=true is no longer supported for this app because Google Play sends changes for review automatically; omitting changesNotSentForReview."
+              use_changes_not_sent_for_review=false
+              changes_not_sent_for_review=""
               ;;
             false|FALSE|False|0|no|NO)
               use_changes_not_sent_for_review=true
