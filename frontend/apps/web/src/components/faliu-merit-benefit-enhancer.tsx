@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { getFaliuMeritBenefits, type FaliuMeritBenefit } from "../lib/faliu-merit-benefits";
 
 const PANEL_TITLE = "功德利益";
+const ALL_SECTIONS_KEY = "__all_sections__";
 const READER_SELECTOR = 'section[aria-label="法流"] [class*="readerHtml"]';
 const MODAL_SELECTOR = 'section[aria-label="法流"] [role="dialog"][aria-modal="true"]';
 const HOST_SELECTOR = '[data-faliu-merit-benefit-host="true"]';
@@ -20,6 +21,12 @@ interface IndexedCharacter {
 interface TextMatch {
   range: Range;
   element: HTMLElement;
+}
+
+interface BenefitSection {
+  key: string;
+  title: string;
+  benefits: FaliuMeritBenefit[];
 }
 
 function normalizeText(value: string) {
@@ -277,6 +284,39 @@ function groupBenefits(benefits: FaliuMeritBenefit[]) {
   }, {});
 }
 
+function getSectionTitle(benefit: FaliuMeritBenefit) {
+  return benefit.sectionTitle?.trim() ?? "";
+}
+
+function getBenefitSections(benefits: FaliuMeritBenefit[]) {
+  const sections: BenefitSection[] = [];
+  const indexByTitle = new Map<string, number>();
+
+  for (const benefit of benefits) {
+    const title = getSectionTitle(benefit);
+
+    if (!title) {
+      continue;
+    }
+
+    const existingIndex = indexByTitle.get(title);
+
+    if (existingIndex !== undefined) {
+      sections[existingIndex].benefits.push(benefit);
+      continue;
+    }
+
+    indexByTitle.set(title, sections.length);
+    sections.push({
+      key: `section-${sections.length}`,
+      title,
+      benefits: [benefit],
+    });
+  }
+
+  return sections;
+}
+
 function ensurePortalHost(panel: HTMLElement) {
   const existingHost = panel.querySelector<HTMLElement>(HOST_SELECTOR);
 
@@ -322,7 +362,23 @@ function restorePanelChildren(panel: HTMLElement, host: HTMLElement) {
 }
 
 function MeritBenefitPanel({ benefits }: { benefits: FaliuMeritBenefit[] }) {
-  const groups = useMemo(() => groupBenefits(benefits), [benefits]);
+  const sections = useMemo(() => getBenefitSections(benefits), [benefits]);
+  const hasSectionFilter = sections.length > 1;
+  const [activeSectionKey, setActiveSectionKey] = useState<string | null>(null);
+  const activeSection = sections.find((section) => section.key === activeSectionKey) ?? sections[0] ?? null;
+  const visibleBenefits = hasSectionFilter && activeSectionKey !== ALL_SECTIONS_KEY && activeSection ? activeSection.benefits : benefits;
+  const groups = useMemo(() => groupBenefits(visibleBenefits), [visibleBenefits]);
+
+  useEffect(() => {
+    if (!hasSectionFilter) {
+      setActiveSectionKey(null);
+      return;
+    }
+
+    if (!activeSectionKey || (activeSectionKey !== ALL_SECTIONS_KEY && !sections.some((section) => section.key === activeSectionKey))) {
+      setActiveSectionKey(sections[0]?.key ?? ALL_SECTIONS_KEY);
+    }
+  }, [activeSectionKey, hasSectionFilter, sections]);
 
   return (
     <div data-faliu-merit-benefits="true" style={{ display: "grid", gap: 16 }}>
@@ -332,6 +388,62 @@ function MeritBenefitPanel({ benefits }: { benefits: FaliuMeritBenefit[] }) {
           共 {benefits.length} 句。点击句子可跳到经文对应位置。
         </p>
       </div>
+
+      {hasSectionFilter ? (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }} role="tablist" aria-label="按品查看功德利益">
+          {sections.map((section) => {
+            const isActive = section.key === activeSectionKey;
+            return (
+              <button
+                key={section.key}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setActiveSectionKey(section.key)}
+                style={{
+                  minHeight: 34,
+                  maxWidth: "100%",
+                  border: `1px solid ${isActive ? "rgba(232, 189, 107, 0.48)" : "rgba(255, 255, 255, 0.12)"}`,
+                  borderRadius: 8,
+                  padding: "7px 10px",
+                  background: isActive ? "rgba(232, 189, 107, 0.16)" : "rgba(255, 255, 255, 0.055)",
+                  color: isActive ? "#ffffff" : "rgba(255, 255, 255, 0.68)",
+                  cursor: "pointer",
+                  fontSize: "0.82rem",
+                  fontWeight: 760,
+                  lineHeight: 1.25,
+                }}
+              >
+                {section.title} · {section.benefits.length}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSectionKey === ALL_SECTIONS_KEY}
+            onClick={() => setActiveSectionKey(ALL_SECTIONS_KEY)}
+            style={{
+              minHeight: 34,
+              border: `1px solid ${activeSectionKey === ALL_SECTIONS_KEY ? "rgba(232, 189, 107, 0.48)" : "rgba(255, 255, 255, 0.12)"}`,
+              borderRadius: 8,
+              padding: "7px 10px",
+              background: activeSectionKey === ALL_SECTIONS_KEY ? "rgba(232, 189, 107, 0.16)" : "rgba(255, 255, 255, 0.055)",
+              color: activeSectionKey === ALL_SECTIONS_KEY ? "#ffffff" : "rgba(255, 255, 255, 0.68)",
+              cursor: "pointer",
+              fontSize: "0.82rem",
+              fontWeight: 760,
+              lineHeight: 1.25,
+            }}
+          >
+            全部 · {benefits.length}
+          </button>
+        </div>
+      ) : sections[0] ? (
+        <div style={{ color: "rgba(255, 255, 255, 0.52)", fontSize: "0.82rem", lineHeight: 1.5 }}>
+          {sections[0].title}
+        </div>
+      ) : null}
 
       {Object.entries(groups).map(([category, items]) => (
         <section key={category} style={{ display: "grid", gap: 10 }}>
