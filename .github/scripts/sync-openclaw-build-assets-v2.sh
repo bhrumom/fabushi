@@ -28,6 +28,12 @@ mkdir -p "$target_dir"
 rm -rf "$target_dir"
 mkdir -p "$target_dir"
 cp -R "$source_dir/." "$target_dir/"
+find "$target_dir/openclaw" -type f \( \
+  -name '*.d.ts' -o \
+  -name '*.d.mts' -o \
+  -name '*.map' -o \
+  -name '*.tsbuildinfo' \
+\) -delete
 
 python3 - "$build_assets" "$index_file" "$bundle_manifest" <<'PY_INDEX'
 import json
