@@ -347,6 +347,10 @@ jobs:
       - name: Refresh Flutter generated asset manifest
         run: flutter pub get
 
+      - name: Restabilize generated desktop plugin bindings
+        shell: bash
+        run: scripts/fix_desktop_generated_plugins.sh
+
       - name: Build macOS release app
         if: matrix.target == 'macos'
         run: flutter build macos --release --no-pub
