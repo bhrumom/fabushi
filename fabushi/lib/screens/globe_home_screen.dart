@@ -9,6 +9,11 @@ import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
 import '../core/constants/country_servers.dart' as country_catalog;
 import '../features/auth/application/auth_model.dart';
+import '../features/flashcards/application/content_pipeline.dart';
+import '../features/flashcards/application/flashcard_service.dart';
+import '../features/flashcards/data/flashcard_repository.dart';
+import '../features/flashcards/domain/flashcard_models.dart';
+import '../features/flashcards/presentation/flashcard_study_screen.dart';
 import '../models/file_transfer_model.dart';
 import '../services/ai_backend_policy.dart';
 import '../services/dacheng_ai_service.dart';
@@ -53,6 +58,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   bool _isGlobalSendTimelineVisible = false;
   bool _isAiGenerating = false;
   bool _isPublishingDraft = false;
+  bool _isFlashcardComposerMode = false;
+  bool _isPreparingFlashcardContent = false;
+  bool _isFlashcardGenerating = false;
+  FlashcardCreationMode _flashcardMode = FlashcardCreationMode.randomCloze;
+  PreparedContent? _activeFlashcardContent;
+  String? _flashcardGenerationMessageId;
   String _streamingAiText = '';
   String _aiActivityText = '';
   SceneRenderMode _renderMode = SceneRenderMode.twoD;
@@ -61,12 +72,18 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   final List<_HomeChatMessage> _homeChatMessages = [];
   final List<_HomeConversation> _conversationHistory = [];
   StreamSubscription<DachengAiStreamEvent>? _aiStreamSubscription;
+  StreamSubscription<FlashcardGenerationEvent>?
+  _flashcardGenerationSubscription;
   final DachengAiService _dachengAiService = DachengAiService();
   final DharmaPublishService _dharmaPublishService = DharmaPublishService();
+  late final FlashcardRepository _flashcardRepository;
+  late final ContentPipeline _contentPipeline;
+  late final FlashcardService _flashcardService;
   StreamSubscription<IncomingSharePayload>? _incomingShareSubscription;
   String? _lastIncomingShareFingerprint;
   String? _activeConversationId;
   int _aiRequestSerial = 0;
+  int _flashcardRequestSerial = 0;
   final _onlineCounterService = OnlineCounterService();
   final _membershipService = MembershipService();
   final _alipayService = AlipayService();
@@ -169,6 +186,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   @override
   void initState() {
     super.initState();
+    _flashcardRepository = FlashcardRepository();
+    _contentPipeline = ContentPipeline(repository: _flashcardRepository);
+    _flashcardService = FlashcardService(
+      repository: _flashcardRepository,
+      aiService: _dachengAiService,
+    );
     WidgetsBinding.instance.addObserver(this);
     _loadGlobe();
     _fetchInitialCount();
@@ -281,6 +304,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     _onlineCounterService.dispose();
     _incomingShareSubscription?.cancel();
     _aiStreamSubscription?.cancel();
+    _flashcardGenerationSubscription?.cancel();
     _chatInputController.dispose();
     _homeChatScrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -913,21 +937,661 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         constraints: const BoxConstraints(maxWidth: 430),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
-        child: message.isUser || message.isError
-            ? Text(
-                message.text,
-                style: TextStyle(
-                  color: message.isError ? Colors.red[100] : Colors.white,
-                  fontSize: 17,
-                  height: 1.42,
-                  fontWeight: message.isUser
-                      ? FontWeight.w700
-                      : FontWeight.w500,
-                ),
-              )
-            : _MarkdownChatText(message.text),
+        child: _buildChatBubbleBody(message),
       ),
     );
+  }
+
+  Widget _buildChatBubbleBody(_HomeChatMessage message) {
+    switch (message.messageType) {
+      case _HomeChatMessageType.contentPreview:
+        final content = message.content;
+        if (content == null) return _MarkdownChatText(message.text);
+        return _buildContentPreviewMessage(content);
+      case _HomeChatMessageType.choice:
+        return _buildInlineChoiceMessage(message);
+      case _HomeChatMessageType.flashcardPreview:
+        final deck = message.deck;
+        if (deck == null) return _MarkdownChatText(message.text);
+        return _buildFlashcardDeckPreview(deck);
+      case _HomeChatMessageType.text:
+        if (message.isUser || message.isError) {
+          return Text(
+            message.text,
+            style: TextStyle(
+              color: message.isError ? Colors.red[100] : Colors.white,
+              fontSize: 17,
+              height: 1.42,
+              fontWeight: message.isUser ? FontWeight.w700 : FontWeight.w500,
+            ),
+          );
+        }
+        return _MarkdownChatText(message.text);
+    }
+  }
+
+  Widget _buildContentPreviewMessage(PreparedContent content) {
+    final isDocument = content.document != null;
+    final isFailed = content.isFailed;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Icon(
+              isFailed
+                  ? Icons.error_outline
+                  : isDocument
+                  ? Icons.description_outlined
+                  : Icons.article_outlined,
+              color: isFailed ? Colors.red[100] : AppTheme.primaryColor,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                isDocument ? '内容已整理为文档' : '内容预览卡',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(
+          content.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            height: 1.35,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            _MiniInfoPill(content.displaySource),
+            _MiniInfoPill('${content.text.runes.length} 字'),
+            if (isDocument) const _MiniInfoPill('长文档'),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(
+          isFailed
+              ? (content.errorMessage ?? content.previewText)
+              : content.previewText,
+          maxLines: isDocument ? 4 : 7,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: isFailed ? Colors.red[100] : Colors.white70,
+            fontSize: 15,
+            height: 1.48,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        if (!isFailed && content.text.trim().isNotEmpty) ...[
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => _showPreparedContentDocument(content),
+            icon: const Icon(Icons.open_in_full, size: 16),
+            label: Text(isDocument ? '打开完整文档' : '展开全文'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildInlineChoiceMessage(_HomeChatMessage message) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          message.text,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            height: 1.35,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 12),
+        for (final option in message.choices) ...[
+          _InlineChoiceButton(
+            icon: option.icon,
+            title: option.title,
+            subtitle: option.subtitle,
+            selected: message.selectedValue == option.value,
+            disabled:
+                message.selectedValue != null &&
+                message.selectedValue != option.value,
+            onTap: message.selectedValue == null
+                ? () => unawaited(_selectInlineChoice(message, option))
+                : null,
+          ),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildFlashcardDeckPreview(FlashcardDeck deck) {
+    final sampleCards = deck.cards.take(3).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.style_outlined,
+              color: AppTheme.primaryColor,
+              size: 22,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '已生成 ${deck.cardCount} 张背诵闪卡',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(
+          deck.title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            height: 1.35,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            _MiniInfoPill(deck.mode.label),
+            _MiniInfoPill(deck.status.storageValue),
+          ],
+        ),
+        const SizedBox(height: 12),
+        for (final card in sampleCards)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Text(
+              card.front,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white70,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        const SizedBox(height: 6),
+        FilledButton.icon(
+          onPressed: () => _openFlashcardDeck(deck),
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('开始背诵'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _selectInlineChoice(
+    _HomeChatMessage message,
+    _HomeChoiceOption option,
+  ) async {
+    if (message.selectedValue != null) return;
+    HapticFeedback.lightImpact();
+    setState(() => message.selectedValue = option.value);
+    try {
+      final callback = option.onSelected;
+      if (callback != null) await Future<void>.sync(callback);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _homeChatMessages.add(
+          _HomeChatMessage(text: '处理选择失败：$e', isUser: false, isError: true),
+        );
+      });
+    }
+    _scrollHomeChatToBottom(force: true);
+  }
+
+  Future<void> _showPreparedContentDocument(PreparedContent content) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.78,
+          minChildSize: 0.45,
+          maxChildSize: 0.94,
+          builder: (context, controller) {
+            return Container(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+              decoration: const BoxDecoration(
+                color: Color(0xFF202020),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    content.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 21,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${content.text.runes.length} 字 · ${content.displaySource}',
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: controller,
+                      child: Text(
+                        content.text,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 16,
+                          height: 1.65,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _openFlashcardDeck(FlashcardDeck deck) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            FlashcardStudyScreen(deck: deck, repository: _flashcardRepository),
+      ),
+    );
+  }
+
+  void _activateFlashcardMode({
+    FlashcardCreationMode? mode,
+    PreparedContent? content,
+  }) {
+    setState(() {
+      _isFlashcardComposerMode = true;
+      _isDharmaComposerMode = false;
+      _showMaterialGallery = false;
+      _flashcardMode = mode ?? _flashcardMode;
+      _activeFlashcardContent = content ?? _activeFlashcardContent;
+    });
+  }
+
+  void _clearFlashcardMode() {
+    _stopFlashcardGeneration(silent: true);
+    setState(() {
+      _isFlashcardComposerMode = false;
+      _activeFlashcardContent = null;
+      _flashcardMode = FlashcardCreationMode.randomCloze;
+    });
+  }
+
+  void _appendFlashcardModeChoiceMessage() {
+    setState(() {
+      _homeChatMessages.add(
+        _HomeChatMessage.choice(
+          text: '请选择背诵闪卡制作模式',
+          choices: [
+            _HomeChoiceOption(
+              value: FlashcardCreationMode.randomCloze.storageValue,
+              icon: Icons.auto_fix_high,
+              title: '随机挖空',
+              subtitle: '本地快速生成，无需 AI，适合立即背诵。',
+              onSelected: () {
+                _activateFlashcardMode(mode: FlashcardCreationMode.randomCloze);
+              },
+            ),
+            _HomeChoiceOption(
+              value: FlashcardCreationMode.aiCards.storageValue,
+              icon: Icons.auto_awesome,
+              title: 'AI 制卡',
+              subtitle: '按你的要求生成问答/挖空卡，失败自动回退。',
+              onSelected: () {
+                _activateFlashcardMode(mode: FlashcardCreationMode.aiCards);
+              },
+            ),
+          ],
+        ),
+      );
+    });
+    _scrollHomeChatToBottom(force: true);
+  }
+
+  Future<PreparedContent?> _prepareFlashcardContent(
+    String composerText,
+    FileTransferModel model,
+  ) async {
+    final text = composerText.trim();
+    if (_activeFlashcardContent != null) {
+      return _activeFlashcardContent;
+    }
+
+    if (text.isEmpty && model.hasSelectedContentPreview) {
+      final preview = model.selectedContentPreviewText?.trim() ?? '';
+      if (preview.isNotEmpty) {
+        return _contentPipeline.prepare(
+          ContentInput(
+            text: preview,
+            title: model.selectedContentTitle,
+            url: model.selectedContentSourceUrl,
+            sourceApp: '法布施内容',
+            sourceType: 'existing_dharma_content',
+          ),
+        );
+      }
+    }
+
+    if (text.isEmpty) {
+      throw StateError('请输入链接或至少 20 个字的正文。');
+    }
+
+    final url = ContentPipeline.firstHttpUrl(text);
+    return _contentPipeline.prepare(
+      ContentInput(
+        text: text,
+        url: url,
+        title: url != null ? '链接内容' : '背诵内容',
+        sourceType: url != null ? 'composer_url' : 'composer_text',
+      ),
+    );
+  }
+
+  Future<void> _startFlashcardGeneration(FileTransferModel model) async {
+    if (_isPreparingFlashcardContent || _isFlashcardGenerating) return;
+
+    final composerText = _chatInputController.text.trim();
+    final requirement = _activeFlashcardContent == null ? '' : composerText;
+    final requestSerial = ++_flashcardRequestSerial;
+
+    setState(() => _isPreparingFlashcardContent = true);
+    PreparedContent content;
+    try {
+      content =
+          await _prepareFlashcardContent(composerText, model) ??
+          (throw StateError('没有可制卡的内容'));
+      if (content.isFailed) {
+        throw StateError(content.errorMessage ?? '内容提取失败');
+      }
+    } catch (e) {
+      if (!mounted || requestSerial != _flashcardRequestSerial) return;
+      setState(() {
+        _isPreparingFlashcardContent = false;
+        _homeChatMessages.add(
+          _HomeChatMessage.contentPreview(
+            content: PreparedContent(
+              source: ContentSource(
+                id: flashcardId('source_failed'),
+                sourceType: 'composer_text',
+                rawText: composerText,
+                title: '内容准备失败',
+                sourceApp: '',
+                mimeType: '',
+                receivedAt: DateTime.now(),
+                rawTextHash: '',
+              ),
+              title: '内容准备失败',
+              text: composerText,
+              summary: '内容准备失败',
+              previewText: e.toString(),
+              isLong: false,
+              isFailed: true,
+              errorMessage: e.toString(),
+            ),
+          ),
+        );
+      });
+      _scrollHomeChatToBottom(force: true);
+      return;
+    }
+
+    if (!mounted || requestSerial != _flashcardRequestSerial) return;
+    final inputTextForMessage = _activeFlashcardContent == null
+        ? composerText
+        : requirement;
+    _chatInputController.clear();
+    final generationMessage = _HomeChatMessage(
+      text: '正在准备内容...',
+      isUser: false,
+    );
+
+    setState(() {
+      if (inputTextForMessage.isNotEmpty) {
+        _homeChatMessages.add(
+          _HomeChatMessage(text: inputTextForMessage, isUser: true),
+        );
+      }
+      _activeFlashcardContent = content;
+      _homeChatMessages.add(_HomeChatMessage.contentPreview(content: content));
+      _homeChatMessages.add(generationMessage);
+      _flashcardGenerationMessageId = generationMessage.id;
+      _isPreparingFlashcardContent = false;
+      _isFlashcardGenerating = true;
+    });
+    _scrollHomeChatToBottom(force: true);
+
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
+    final input = FlashcardInput(
+      title: content.title,
+      text: content.text,
+      documentId: content.document?.id,
+      sourceUrl: content.sourceUrl,
+      requirement: requirement,
+    );
+    final startedAt = DateTime.now();
+    final eventStream = _flashcardMode == FlashcardCreationMode.aiCards
+        ? _flashcardService.generateAiCardsStream(
+            input,
+            conversationId: _activeConversationId,
+            token: authModel?.authToken,
+            username: authModel?.currentUser?.username,
+            isMember: authModel?.hasPermission('premium') ?? false,
+          )
+        : _flashcardService.generateRandomClozeStream(input);
+
+    await _flashcardGenerationSubscription?.cancel();
+    _flashcardGenerationSubscription = eventStream.listen(
+      (event) {
+        if (!mounted || requestSerial != _flashcardRequestSerial) return;
+        if (event.type == FlashcardGenerationEventType.done &&
+            event.deck != null) {
+          final elapsed = DateTime.now().difference(startedAt).inMilliseconds;
+          setState(() {
+            _replaceFlashcardGenerationMessage(
+              '制卡完成：${event.deck!.cardCount} 张 · ${elapsed}ms。',
+            );
+            _homeChatMessages.add(
+              _HomeChatMessage.flashcardPreview(deck: event.deck!),
+            );
+            _isFlashcardGenerating = false;
+            _flashcardGenerationSubscription = null;
+            _flashcardGenerationMessageId = null;
+          });
+          _scrollHomeChatToBottom(force: true);
+          return;
+        }
+        if (event.type == FlashcardGenerationEventType.error) {
+          setState(() {
+            _replaceFlashcardGenerationMessage('制卡失败：${event.message}');
+            _isFlashcardGenerating = false;
+            _flashcardGenerationSubscription = null;
+            _flashcardGenerationMessageId = null;
+          });
+          _scrollHomeChatToBottom(force: true);
+          return;
+        }
+        final progress = event.progress > 0 ? ' (${event.progress}%)' : '';
+        final cardText = event.card == null ? '' : '\n- ${event.card!.front}';
+        setState(() {
+          _replaceFlashcardGenerationMessage(
+            '${event.message}$progress$cardText',
+          );
+        });
+        _scrollHomeChatToBottom();
+      },
+      onError: (Object error) {
+        if (!mounted || requestSerial != _flashcardRequestSerial) return;
+        setState(() {
+          _replaceFlashcardGenerationMessage('制卡失败：$error');
+          _isFlashcardGenerating = false;
+          _flashcardGenerationSubscription = null;
+          _flashcardGenerationMessageId = null;
+        });
+      },
+      onDone: () {
+        if (!mounted || requestSerial != _flashcardRequestSerial) return;
+        if (_isFlashcardGenerating) {
+          setState(() => _isFlashcardGenerating = false);
+        }
+      },
+    );
+  }
+
+  void _replaceFlashcardGenerationMessage(String text) {
+    final id = _flashcardGenerationMessageId;
+    if (id == null) return;
+    final index = _homeChatMessages.indexWhere((message) => message.id == id);
+    if (index < 0) return;
+    _homeChatMessages[index].text = text;
+  }
+
+  void _stopFlashcardGeneration({bool silent = false}) {
+    _flashcardRequestSerial++;
+    _flashcardGenerationSubscription?.cancel();
+    _flashcardGenerationSubscription = null;
+    if (!mounted) return;
+    setState(() {
+      if (!silent) {
+        _replaceFlashcardGenerationMessage('制卡已停止。可切换模式或补充正文后重新发送。');
+      }
+      _isPreparingFlashcardContent = false;
+      _isFlashcardGenerating = false;
+      _flashcardGenerationMessageId = null;
+    });
+  }
+
+  void _appendIncomingShareChoiceMessage(
+    IncomingSharePayload payload,
+    PreparedContent content,
+    FileTransferModel model,
+  ) {
+    setState(() {
+      _homeChatMessages.add(
+        _HomeChatMessage.choice(
+          text: '请选择处理方式\n来源：${payload.displaySource}',
+          choices: [
+            _HomeChoiceOption(
+              value: 'global_dharma',
+              icon: Icons.public,
+              title: '全球法布施',
+              subtitle: '把整理后的内容发送到全球节点。',
+              onSelected: () async {
+                await _usePreparedContentForDharma(model, content);
+                _activateDharmaMode(model, target: DharmaComposerTarget.global);
+              },
+            ),
+            _HomeChoiceOption(
+              value: 'platform_publish',
+              icon: Icons.campaign_outlined,
+              title: '法布施到平台',
+              subtitle: '生成平台发布草稿并预览。',
+              onSelected: () async {
+                await _usePreparedContentForDharma(model, content);
+                _activateDharmaMode(
+                  model,
+                  target: DharmaComposerTarget.platform,
+                );
+                await _showPublishPlatformSelector();
+              },
+            ),
+            _HomeChoiceOption(
+              value: 'flashcards',
+              icon: Icons.style_outlined,
+              title: '制作背诵闪卡',
+              subtitle: '随机挖空或 AI 制卡，进入背诵页。',
+              onSelected: () {
+                _activateFlashcardMode(content: content);
+              },
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Future<void> _usePreparedContentForDharma(
+    FileTransferModel model,
+    PreparedContent content,
+  ) async {
+    await model.addTextContentForSending(
+      title: content.title,
+      text: content.text,
+      sourceKind: content.sourceUrl == null ? '文本' : '链接',
+      sourceUrl: content.sourceUrl,
+      previewText: content.previewText,
+      replaceExisting: true,
+    );
+    if (mounted) setState(() {});
   }
 
   bool _shouldShowGlobalSendProcess(FileTransferModel model) {
@@ -1252,9 +1916,17 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final isBusy =
         model.isPreparingSend ||
         _isPublishingDraft ||
+        _isPreparingFlashcardContent ||
+        _isFlashcardGenerating ||
         (_isDharmaComposerMode && model.isTransferring);
     final inputText = _chatInputController.text.trim();
-    final canSubmit = _isDharmaComposerMode
+    final hasFlashcardContext =
+        (_activeFlashcardContent?.text.trim().isNotEmpty ?? false);
+    final canSubmit = _isFlashcardComposerMode
+        ? !_isPreparingFlashcardContent &&
+              !_isFlashcardGenerating &&
+              (inputText.isNotEmpty || hasFlashcardContext)
+        : _isDharmaComposerMode
         ? _dharmaComposerTarget == DharmaComposerTarget.platform
               ? (inputText.isNotEmpty || model.hasFiles) &&
                     _selectedPublishPlatforms.isNotEmpty
@@ -1265,7 +1937,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       padding: const EdgeInsets.fromLTRB(8, 8, 7, 8),
       decoration: BoxDecoration(
         color: const Color(0xFF242424).withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(_isDharmaComposerMode ? 24 : 26),
+        borderRadius: BorderRadius.circular(
+          (_isDharmaComposerMode || _isFlashcardComposerMode) ? 24 : 26,
+        ),
         border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
         boxShadow: [
           BoxShadow(
@@ -1279,7 +1953,50 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_isDharmaComposerMode) ...[
+          if (_isFlashcardComposerMode) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(5, 1, 6, 8),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  _ComposerChip(
+                    icon: Icons.style_outlined,
+                    label: '背诵闪卡',
+                    active: true,
+                    onRemove: _isFlashcardGenerating
+                        ? null
+                        : _clearFlashcardMode,
+                  ),
+                  _ComposerChip(
+                    icon: _flashcardMode == FlashcardCreationMode.aiCards
+                        ? Icons.auto_awesome
+                        : Icons.auto_fix_high,
+                    label: '模式 ${_flashcardMode.label}',
+                    active: true,
+                    onTap: isBusy ? null : _appendFlashcardModeChoiceMessage,
+                  ),
+                  if (_activeFlashcardContent != null)
+                    _ComposerChip(
+                      icon: _activeFlashcardContent!.hasDocument
+                          ? Icons.description_outlined
+                          : Icons.article_outlined,
+                      label: _activeFlashcardContent!.hasDocument
+                          ? '文档 ${_activeFlashcardContent!.title}'
+                          : '内容 ${_activeFlashcardContent!.title}',
+                      active: true,
+                      onTap: () => _showPreparedContentDocument(
+                        _activeFlashcardContent!,
+                      ),
+                      onRemove: isBusy
+                          ? null
+                          : () =>
+                                setState(() => _activeFlashcardContent = null),
+                    ),
+                ],
+              ),
+            ),
+          ] else if (_isDharmaComposerMode) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(5, 1, 6, 8),
               child: Wrap(
@@ -1297,7 +2014,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                       icon: Icons.campaign_outlined,
                       label: '平台 ${_platformSummary()}',
                       active: _selectedPublishPlatforms.isNotEmpty,
-                      onTap: isBusy ? null : () => _showPublishPlatformSelector(),
+                      onTap: isBusy
+                          ? null
+                          : () => _showPublishPlatformSelector(),
                     )
                   else ...[
                     _ComposerChip(
@@ -1368,6 +2087,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   controller: _chatInputController,
                   enabled:
                       !model.isPreparingSend &&
+                      !_isPreparingFlashcardContent &&
+                      !_isFlashcardGenerating &&
                       (!model.isTransferring || !_isDharmaComposerMode),
                   minLines: 1,
                   maxLines: 4,
@@ -1381,7 +2102,13 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   decoration: InputDecoration(
                     isDense: true,
                     border: InputBorder.none,
-                    hintText: _isDharmaComposerMode
+                    hintText: _isFlashcardComposerMode
+                        ? _flashcardMode == FlashcardCreationMode.aiCards
+                              ? (_activeFlashcardContent == null
+                                    ? '粘贴链接或正文，发送后 AI 制卡'
+                                    : '输入制卡要求，例如：按重点概念出题')
+                              : '输入链接或正文，发送后自动挖空'
+                        : _isDharmaComposerMode
                         ? _dharmaComposerTarget == DharmaComposerTarget.platform
                               ? (model.hasFiles ? '可继续输入发布说明' : '粘贴要发布的链接或正文')
                               : (model.hasFiles ? '可继续输入法布施文字或链接' : '输入文字或链接')
@@ -1410,6 +2137,35 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     FileTransferModel model, {
     required bool canSubmit,
   }) {
+    if (_isPreparingFlashcardContent) {
+      return Container(
+        width: 42,
+        height: 42,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    if (_isFlashcardGenerating) {
+      return IconButton(
+        tooltip: '停止制卡',
+        icon: const Icon(Icons.stop, color: Colors.white, size: 21),
+        onPressed: _stopFlashcardGeneration,
+        style: IconButton.styleFrom(
+          backgroundColor: Colors.red.shade600,
+          fixedSize: const Size(42, 42),
+        ),
+      );
+    }
+
     if (_isPublishingDraft) {
       return Container(
         width: 42,
@@ -1469,7 +2225,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
 
     return IconButton(
-      tooltip: _isDharmaComposerMode
+      tooltip: _isFlashcardComposerMode
+          ? '开始制卡'
+          : _isDharmaComposerMode
           ? _dharmaComposerTarget == DharmaComposerTarget.platform
                 ? '预览并发布'
                 : '开始法布施'
@@ -1533,6 +2291,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           '公众号、小红书、抖音、微博等多选',
         ),
         _sendMenuItem(
+          'flashcards',
+          Icons.style_outlined,
+          '背诵闪卡',
+          '把链接或正文制作成可背诵卡片',
+        ),
+        _sendMenuItem(
           'files',
           Icons.add_photo_alternate,
           '添加图片和文件',
@@ -1572,6 +2336,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       await _showPublishPlatformSelector();
       return _selectedPublishPlatforms.isNotEmpty;
     }
+    if (action == 'flashcards') {
+      _activateFlashcardMode();
+      _appendFlashcardModeChoiceMessage();
+      return true;
+    }
     if (action == 'files') {
       _activateDharmaMode(model, target: _dharmaComposerTarget);
       final selected = await model.selectFiles(replaceExisting: true);
@@ -1582,6 +2351,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   void _submitComposer(FileTransferModel model) {
+    if (_isFlashcardComposerMode) {
+      unawaited(_startFlashcardGeneration(model));
+      return;
+    }
     if (_isDharmaComposerMode) {
       if (_dharmaComposerTarget == DharmaComposerTarget.platform) {
         unawaited(_startPlatformPublish(model));
@@ -1611,8 +2384,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
     setState(() {
       _isDharmaComposerMode = true;
+      _isFlashcardComposerMode = false;
       _dharmaComposerTarget = target;
-      _showMaterialGallery = showMaterials && target == DharmaComposerTarget.global;
+      _showMaterialGallery =
+          showMaterials && target == DharmaComposerTarget.global;
     });
   }
 
@@ -1621,6 +2396,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     model.clearFiles();
     setState(() {
       _isDharmaComposerMode = false;
+      _isFlashcardComposerMode = false;
+      _activeFlashcardContent = null;
       _dharmaComposerTarget = DharmaComposerTarget.global;
       _showMaterialGallery = false;
     });
@@ -1743,7 +2520,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     Expanded(
                       child: ListView(
                         children: [
-                          for (final platform in DharmaPublishService.allPlatforms)
+                          for (final platform
+                              in DharmaPublishService.allPlatforms)
                             _PlatformCheckTile(
                               platform: platform,
                               selected: selected.contains(platform),
@@ -1806,7 +2584,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   Future<void> _handleIncomingShare(IncomingSharePayload payload) async {
     if (!mounted || payload.isEmpty) return;
-    final fingerprint = '${payload.bestText}|${payload.title}|${payload.sourcePackage}';
+    final fingerprint =
+        '${payload.bestText}|${payload.title}|${payload.sourcePackage}';
     if (_lastIncomingShareFingerprint == fingerprint) return;
     _lastIncomingShareFingerprint = fingerprint;
 
@@ -1818,40 +2597,85 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final composerText = candidateUrl ?? sharedText;
     if (composerText.trim().isEmpty) return;
 
-    if (mounted) {
-      _chatInputController.text = composerText.trim();
-      _chatInputController.selection = TextSelection.collapsed(
-        offset: _chatInputController.text.length,
-      );
-      setState(() {});
-    }
-
-    final target = await _showIncomingShareTargetSheet(payload, composerText);
-    if (target == null || !mounted) return;
-
-    _activateDharmaMode(model, target: target);
-    if (target == DharmaComposerTarget.platform) {
-      await _showPublishPlatformSelector();
-    }
-
-    if (!mounted) return;
     setState(() {
       _homeChatMessages.add(
         _HomeChatMessage(
           text: [
             '已接收外部分享。',
-            '',
             '来源：${payload.displaySource}',
-            '模式：${target == DharmaComposerTarget.global ? "全球法布施" : "法布施到平台"}',
+            if (payload.title.trim().isNotEmpty) '标题：${payload.title.trim()}',
             if (candidateUrl != null) '链接：$candidateUrl',
           ].join('\n'),
           isUser: false,
         ),
       );
+      _isPreparingFlashcardContent = true;
     });
-    _scrollHomeChatToBottom();
+    _scrollHomeChatToBottom(force: true);
+
+    PreparedContent content;
+    try {
+      content = await _contentPipeline.prepare(
+        ContentInput(
+          text: sharedText.isEmpty ? composerText : sharedText,
+          url: candidateUrl,
+          title: payload.title.trim().isEmpty ? '外部分享' : payload.title.trim(),
+          sourceApp: payload.displaySource,
+          mimeType: payload.mimeType,
+          sourceType: 'external_share',
+        ),
+      );
+    } catch (e) {
+      content = PreparedContent(
+        source: ContentSource(
+          id: flashcardId('share_failed'),
+          sourceType: 'external_share',
+          rawText: composerText,
+          url: candidateUrl,
+          title: payload.title.trim().isEmpty ? '外部分享' : payload.title.trim(),
+          sourceApp: payload.displaySource,
+          mimeType: payload.mimeType,
+          receivedAt: payload.receivedAt,
+          rawTextHash: '',
+        ),
+        title: payload.title.trim().isEmpty ? '外部分享' : payload.title.trim(),
+        text: composerText,
+        summary: '外部分享内容提取失败',
+        previewText: e.toString(),
+        isLong: false,
+        isFailed: true,
+        errorMessage: e.toString(),
+      );
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isPreparingFlashcardContent = false;
+      _activeFlashcardContent = content.isFailed ? null : content;
+      _chatInputController.clear();
+      _homeChatMessages.add(_HomeChatMessage.contentPreview(content: content));
+    });
+    if (content.isFailed) {
+      _chatInputController.text = composerText.trim();
+      _chatInputController.selection = TextSelection.collapsed(
+        offset: _chatInputController.text.length,
+      );
+      setState(() {
+        _homeChatMessages.add(
+          _HomeChatMessage(
+            text: '链接或分享内容暂时无法自动提取。你可以在输入框里改为粘贴正文后，再选择法布施或背诵闪卡。',
+            isUser: false,
+            isError: true,
+          ),
+        );
+      });
+    } else {
+      _appendIncomingShareChoiceMessage(payload, content, model);
+    }
+    _scrollHomeChatToBottom(force: true);
   }
 
+  // ignore: unused_element
   Future<DharmaComposerTarget?> _showIncomingShareTargetSheet(
     IncomingSharePayload payload,
     String text,
@@ -1894,7 +2718,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  preview.length > 120 ? '${preview.substring(0, 120)}...' : preview,
+                  preview.length > 120
+                      ? '${preview.substring(0, 120)}...'
+                      : preview,
                   style: const TextStyle(color: Colors.white60, height: 1.35),
                 ),
                 const SizedBox(height: 16),
@@ -1902,10 +2728,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   icon: Icons.public,
                   title: '全球法布施',
                   subtitle: '把链接放入输入框，点击发送后下载内容并进行全球法布施。',
-                  onTap: () => Navigator.pop(
-                    sheetContext,
-                    DharmaComposerTarget.global,
-                  ),
+                  onTap: () =>
+                      Navigator.pop(sheetContext, DharmaComposerTarget.global),
                 ),
                 const SizedBox(height: 10),
                 _ShareTargetTile(
@@ -1949,10 +2773,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       caseSensitive: false,
     ).firstMatch(text.trim());
     if (match == null) return null;
-    return match
-        .group(0)!
-        .replaceAll(RegExp(r'[，。、,.)）\]】>》]+$'), '')
-        .trim();
+    return match.group(0)!.replaceAll(RegExp(r'[，。、,.)）\]】>》]+$'), '').trim();
   }
 
   Future<bool> _prepareComposerContentForModel(
@@ -1963,19 +2784,36 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     if (text.isEmpty) return model.hasFiles;
 
     final link = _firstHttpUrl(text);
-    if (link != null) {
-      await model.addUrlContentForSending(link);
-    } else {
-      await model.addTextContentForSending(
-        title: '法布施',
+    final content = await _contentPipeline.prepare(
+      ContentInput(
         text: text,
-        sourceKind: '文本',
-        replaceExisting: !model.hasFiles,
-      );
+        url: link,
+        title: link == null ? '法布施' : '链接内容',
+        sourceType: link == null ? 'composer_text' : 'composer_url',
+      ),
+    );
+    if (content.isFailed) {
+      throw StateError(content.errorMessage ?? '内容准备失败');
     }
 
+    await model.addTextContentForSending(
+      title: content.title,
+      text: content.text,
+      sourceKind: content.sourceUrl == null ? '文本' : '链接',
+      sourceUrl: content.sourceUrl,
+      previewText: content.previewText,
+      replaceExisting: !model.hasFiles,
+    );
+
     _chatInputController.clear();
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {
+        _homeChatMessages.add(
+          _HomeChatMessage.contentPreview(content: content),
+        );
+      });
+      _scrollHomeChatToBottom();
+    }
     return true;
   }
 
@@ -2000,7 +2838,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     setState(() => _isPublishingDraft = true);
     DharmaPublishDraft draft;
     try {
-      final prepared = await _prepareComposerContentForModel(model, composerText);
+      final prepared = await _prepareComposerContentForModel(
+        model,
+        composerText,
+      );
       if (!prepared || !model.hasFiles) {
         throw StateError('没有可发布的内容');
       }
@@ -2065,11 +2906,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       if (!mounted) return;
       setState(() {
         _homeChatMessages.add(
-          _HomeChatMessage(
-            text: '发布流程遇到问题：$e',
-            isUser: false,
-            isError: true,
-          ),
+          _HomeChatMessage(text: '发布流程遇到问题：$e', isUser: false, isError: true),
         );
       });
       _scrollHomeChatToBottom();
@@ -2081,8 +2918,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   Future<List<DharmaPublishResult>> _publishDraftWithBestPlatformExperience(
     DharmaPublishDraft draft,
   ) async {
-    if (!kIsWeb &&
-        (Platform.isMacOS || Platform.isWindows)) {
+    if (!kIsWeb && (Platform.isMacOS || Platform.isWindows)) {
       final results = await Navigator.push<List<DharmaPublishResult>>(
         context,
         MaterialPageRoute(
@@ -2348,7 +3184,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
             child: const Text('生成'),
           ),
         ],
@@ -3646,7 +4483,6 @@ class _RegionCheckTile extends StatelessWidget {
   }
 }
 
-
 class _PlatformCheckTile extends StatelessWidget {
   final DharmaPublishPlatform platform;
   final bool selected;
@@ -3792,7 +4628,6 @@ class _ShareTargetTile extends StatelessWidget {
   }
 }
 
-
 class _AiActivityLabel extends StatelessWidget {
   final String label;
 
@@ -3906,16 +4741,188 @@ class _MarkdownChatText extends StatelessWidget {
   }
 }
 
+enum _HomeChatMessageType { text, contentPreview, choice, flashcardPreview }
+
 class _HomeChatMessage {
-  final String text;
+  final String id;
+  String text;
   final bool isUser;
   final bool isError;
+  final _HomeChatMessageType messageType;
+  final PreparedContent? content;
+  final FlashcardDeck? deck;
+  final List<_HomeChoiceOption> choices;
+  String? selectedValue;
 
-  const _HomeChatMessage({
+  _HomeChatMessage({
+    String? id,
     required this.text,
     required this.isUser,
     this.isError = false,
+    this.messageType = _HomeChatMessageType.text,
+    this.content,
+    this.deck,
+    this.choices = const [],
+    this.selectedValue,
+  }) : id = id ?? flashcardId('home_msg');
+
+  factory _HomeChatMessage.contentPreview({required PreparedContent content}) {
+    return _HomeChatMessage(
+      text: content.summary,
+      isUser: false,
+      isError: content.isFailed,
+      messageType: _HomeChatMessageType.contentPreview,
+      content: content,
+    );
+  }
+
+  factory _HomeChatMessage.choice({
+    required String text,
+    required List<_HomeChoiceOption> choices,
+  }) {
+    return _HomeChatMessage(
+      text: text,
+      isUser: false,
+      messageType: _HomeChatMessageType.choice,
+      choices: choices,
+    );
+  }
+
+  factory _HomeChatMessage.flashcardPreview({required FlashcardDeck deck}) {
+    return _HomeChatMessage(
+      text: deck.title,
+      isUser: false,
+      messageType: _HomeChatMessageType.flashcardPreview,
+      deck: deck,
+    );
+  }
+}
+
+class _HomeChoiceOption {
+  final String value;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final FutureOr<void> Function()? onSelected;
+
+  const _HomeChoiceOption({
+    required this.value,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.onSelected,
   });
+}
+
+class _MiniInfoPill extends StatelessWidget {
+  final String label;
+
+  const _MiniInfoPill(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Colors.white60,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _InlineChoiceButton extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final bool disabled;
+  final VoidCallback? onTap;
+
+  const _InlineChoiceButton({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.selected = false,
+    this.disabled = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = selected ? AppTheme.primaryColor : Colors.white;
+    return InkWell(
+      onTap: disabled ? null : onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 160),
+        opacity: disabled ? 0.48 : 1,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppTheme.primaryColor.withValues(alpha: 0.14)
+                : Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? AppTheme.primaryColor.withValues(alpha: 0.6)
+                  : Colors.white.withValues(alpha: 0.08),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: foreground, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (selected)
+                const Icon(
+                  Icons.check_circle,
+                  color: AppTheme.primaryColor,
+                  size: 20,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _HomeConversation {
