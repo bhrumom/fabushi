@@ -34,8 +34,10 @@ print(cli)
 PY_PATHS
 )
 
-node_path="$asset_root/${paths[0]}"
-cli_path="$asset_root/${paths[1]}"
+node_rel="${paths[0]%$'\r'}"
+cli_rel="${paths[1]%$'\r'}"
+node_path="$asset_root/$node_rel"
+cli_path="$asset_root/$cli_rel"
 
 if [ ! -f "$node_path" ]; then
   echo "Missing bundled Node executable: $node_path" >&2
