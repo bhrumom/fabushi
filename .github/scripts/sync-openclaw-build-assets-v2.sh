@@ -24,7 +24,7 @@ fi
 
 mkdir -p "$build_assets/assets/openclaw"
 rm -rf "$target_dir"
-cp -R "$source_dir" "$target_dir"
+cp -R "$source_dir/." "$target_dir"
 
 python3 - "$build_assets" "$index_file" <<'PY_INDEX'
 import json
