@@ -432,6 +432,11 @@ jobs:
         if: matrix.target == 'linux'
         run: flutter build linux --release --no-pub
 
+      - name: Sync Linux OpenClaw assets into release build
+        if: matrix.target == 'linux'
+        shell: bash
+        run: ../.github/scripts/sync-openclaw-build-assets-v2.sh linux-x64 build/linux/x64/release/bundle/data/flutter_assets
+
       - name: Package Linux installers
         if: matrix.target == 'linux'
         shell: bash
@@ -442,6 +447,11 @@ jobs:
       - name: Build Windows release app
         if: matrix.target == 'windows'
         run: flutter build windows --release --no-pub
+
+      - name: Sync Windows OpenClaw assets into release build
+        if: matrix.target == 'windows'
+        shell: bash
+        run: ../.github/scripts/sync-openclaw-build-assets-v2.sh windows-x64 build/windows/x64/runner/Release/data/flutter_assets
 
       - name: Verify Windows OpenClaw bundle in release build
         if: matrix.target == 'windows'
