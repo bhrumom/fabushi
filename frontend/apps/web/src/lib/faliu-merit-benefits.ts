@@ -6,6 +6,7 @@ import { T1153_JUAN_1_MERIT_BENEFITS, T1153_JUAN_2_MERIT_BENEFITS } from "./fali
 export interface FaliuMeritBenefit {
   id: string;
   category: string;
+  sectionTitle?: string;
   text: string;
   anchorText: string;
   note?: string;
