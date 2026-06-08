@@ -28,6 +28,19 @@ if (Test-Path $InstallerPath) {
 
 Compress-Archive -Path (Join-Path $BuildDir "*") -DestinationPath $ZipPath -Force
 
+# NSIS cannot reliably read source paths longer than MAX_PATH. Stage the
+# release bundle under RUNNER_TEMP so deeply nested Node assets remain below it.
+$NsisSourceDir = Join-Path $env:RUNNER_TEMP "gds-nsis"
+if (Test-Path $NsisSourceDir) {
+  Remove-Item $NsisSourceDir -Recurse -Force
+}
+New-Item -ItemType Directory -Force -Path $NsisSourceDir | Out-Null
+robocopy $BuildDir $NsisSourceDir /E /NFL /NDL /NJH /NJS /NC /NS | Out-Host
+if ($LASTEXITCODE -ge 8) {
+  throw "Failed to stage Windows release bundle for NSIS: robocopy exit code $LASTEXITCODE"
+}
+$global:LASTEXITCODE = 0
+
 $NsisPath = Join-Path $env:RUNNER_TEMP "global_dharma_sharing.nsi"
 $UninstallRegKey = "Software\Microsoft\Windows\CurrentVersion\Uninstall\GlobalDharmaSharing"
 $NsiContent = @"
@@ -45,7 +58,7 @@ UninstPage instfiles
 Section "Install"
   SetShellVarContext all
   SetOutPath "`$INSTDIR"
-  File /r "$BuildDir\*.*"
+  File /r "$NsisSourceDir\*.*"
   CreateDirectory "`$SMPROGRAMS\Global Dharma Sharing"
   CreateShortCut "`$SMPROGRAMS\Global Dharma Sharing\$DisplayName.lnk" "`$INSTDIR\$AppName.exe"
   CreateShortCut "`$DESKTOP\$DisplayName.lnk" "`$INSTDIR\$AppName.exe"
