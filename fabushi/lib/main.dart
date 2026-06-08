@@ -23,6 +23,7 @@ import 'providers/tts_mute_notifier.dart';
 import 'providers/video_feed_visibility_notifier.dart';
 import 'services/app_initializer.dart';
 import 'services/error_report_service.dart';
+import 'services/openclaw/openclaw_home_chat_e2e.dart';
 import 'widgets/app_wrapper.dart';
 
 Future<void> main() async {
@@ -131,6 +132,7 @@ Future<void> main() async {
 
     debugPrint('🚀 [main] runApp(MyApp) begin');
     runApp(const MyApp());
+    await maybeRunOpenClawHomeChatE2E();
   }, (error, stackTrace) {
     unawaited(
       ErrorReportService.instance.recordError(

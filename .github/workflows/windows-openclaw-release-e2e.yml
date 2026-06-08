@@ -1,0 +1,45 @@
+name: Windows OpenClaw release E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: GitHub Release tag containing the Windows zip. Use latest by default.
+        required: false
+        default: latest
+        type: string
+      asset_pattern:
+        description: Windows zip asset glob.
+        required: false
+        default: '*windows-x64.zip'
+        type: string
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-openclaw-release-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-e2e:
+    name: Test published Windows package home OpenClaw chat
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout E2E scripts
+        uses: actions/checkout@v5
+
+      - name: Run Windows OpenClaw release E2E
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          .github/scripts/windows-openclaw-release-e2e.ps1
+          -ReleaseTag '${{ github.event.inputs.release_tag || 'latest' }}'
+          -AssetPattern '${{ github.event.inputs.asset_pattern || '*windows-x64.zip' }}'
+          -TimeoutSeconds 240
