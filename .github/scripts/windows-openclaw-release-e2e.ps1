@@ -28,10 +28,20 @@ $zip = Get-ChildItem -Path $zipDir -Filter "*.zip" | Select-Object -First 1
 if (-not $zip) { Fail "No Windows release zip matched $AssetPattern" }
 Expand-Archive -Path $zip.FullName -DestinationPath $appDir -Force
 
-$node = Join-Path $appDir "data\flutter_assets\assets\openclaw\windows-x64\node\node.exe"
-$cli = Join-Path $appDir "data\flutter_assets\assets\openclaw\windows-x64\openclaw\bin\openclaw.js"
+$assetRoot = Join-Path $appDir "data\flutter_assets\assets\openclaw\windows-x64"
+$manifestPath = Join-Path $appDir "data\flutter_assets\assets\openclaw\bundle_manifest.json"
+if (-not (Test-Path $manifestPath)) { Fail "Release package is missing OpenClaw manifest: $manifestPath" }
+
+$manifest = Get-Content -Raw -Path $manifestPath | ConvertFrom-Json
+$platform = $manifest.platforms.'windows-x64'
+if (-not $platform) { Fail "OpenClaw manifest is missing windows-x64 configuration" }
+
+$nodeRel = if ($platform.nodeExecutable) { $platform.nodeExecutable } else { "node\node.exe" }
+$cliRel = if ($platform.cliEntrypoint) { $platform.cliEntrypoint } else { "openclaw\openclaw.mjs" }
+$node = Join-Path $assetRoot $nodeRel
+$cli = Join-Path $assetRoot $cliRel
 if (-not (Test-Path $node)) { Fail "Release package is missing embedded node.exe: $node" }
-if (-not (Test-Path $cli)) { Fail "Release package is missing embedded openclaw.js: $cli" }
+if (-not (Test-Path $cli)) { Fail "Release package is missing embedded OpenClaw CLI: $cli" }
 
 $exe = Get-ChildItem -Path $appDir -Filter "*.exe" | Where-Object { $_.Name -ne "Uninstall.exe" } | Select-Object -First 1
 if (-not $exe) { Fail "No app executable found in expanded release zip" }

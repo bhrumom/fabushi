@@ -11,15 +11,38 @@ fi
 
 asset_root="$bundle_root/data/flutter_assets/assets/openclaw/$platform"
 manifest="$bundle_root/data/flutter_assets/assets/openclaw/bundle_manifest.json"
-node_path="$asset_root/node/node.exe"
-cli_path="$asset_root/openclaw/bin/openclaw.js"
 
 if [ ! -f "$manifest" ]; then
   echo "Missing OpenClaw manifest: $manifest" >&2
   exit 1
 fi
+
+readarray -t paths < <(python3 - "$manifest" "$platform" <<'PY_PATHS'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    manifest = json.load(handle)
+platform = manifest.get("platforms", {}).get(sys.argv[2], {})
+node = platform.get(
+    "nodeExecutable",
+    "node/node.exe" if sys.argv[2].startswith("windows-") else "node/bin/node",
+)
+cli = platform.get("cliEntrypoint", "openclaw/openclaw.mjs")
+print(node)
+print(cli)
+PY_PATHS
+)
+
+node_path="$asset_root/${paths[0]}"
+cli_path="$asset_root/${paths[1]}"
+
 if [ ! -f "$node_path" ]; then
   echo "Missing bundled Node executable: $node_path" >&2
+  exit 1
+fi
+if [[ "$platform" != windows-* ]] && [ ! -x "$node_path" ]; then
+  echo "Bundled Node executable is not executable: $node_path" >&2
   exit 1
 fi
 if [ ! -f "$cli_path" ]; then
@@ -35,4 +58,4 @@ if [ "$node_count" -lt 20 ] || [ "$openclaw_count" -lt 20 ]; then
 fi
 
 bytes="$(du -sk "$asset_root" | awk '{print $1}')"
-echo "OpenClaw $platform bundle verified at $asset_root (${bytes} KiB, node files=$node_count, openclaw files=$openclaw_count)."
+echo "OpenClaw $platform bundle verified at $asset_root (${bytes} KiB, node=$node_path, cli=$cli_path, node files=$node_count, openclaw files=$openclaw_count)."

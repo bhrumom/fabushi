@@ -57,6 +57,26 @@ if manifest.exists():
     elif isinstance(parsed, list):
         existing = {str(item): [str(item)] for item in parsed}
 
+def read_openclaw_bin(platform_name):
+    package_json = openclaw / platform_name / "openclaw" / "package.json"
+    if not package_json.exists():
+        return "openclaw/openclaw.mjs"
+    try:
+        data = json.loads(package_json.read_text(encoding="utf-8"))
+    except Exception:
+        return "openclaw/openclaw.mjs"
+    bin_field = data.get("bin")
+    if isinstance(bin_field, str):
+        return f"openclaw/{bin_field}"
+    if isinstance(bin_field, dict):
+        entry = bin_field.get("openclaw") or next(iter(bin_field.values()), None)
+        if entry:
+            return f"openclaw/{entry}"
+    return "openclaw/openclaw.mjs"
+
+
+platform_names = sorted(path.name for path in openclaw.iterdir() if path.is_dir())
+
 for item in items:
     existing[item] = [item]
 
@@ -71,12 +91,22 @@ index.write_text(
 bundle_manifest.write_text(
     json.dumps(
         {
+            "schema": 1,
+            "version": "openclaw-embedded-2026.06",
+            "defaultPort": 18789,
+            "defaultModel": "openclaw/default",
+            "defaultModelOverride": "",
+            "gatewayArgs": ["gateway", "--port", "{port}"],
             "assets": items,
-            "platforms": sorted(
-                path.name
-                for path in openclaw.iterdir()
-                if path.is_dir()
-            ),
+            "platforms": {
+                platform_name: {
+                    "nodeExecutable": "node/node.exe"
+                    if platform_name.startswith("windows-")
+                    else "node/bin/node",
+                    "cliEntrypoint": read_openclaw_bin(platform_name),
+                }
+                for platform_name in platform_names
+            },
         },
         ensure_ascii=False,
         indent=2,
@@ -97,8 +127,16 @@ if [[ "$platform" != windows-* ]] && [ ! -x "$target_dir/node/bin/node" ]; then
   find "$target_dir/node" -maxdepth 4 -type f | sort | head -200 >&2 || true
   exit 1
 fi
-if [ ! -f "$target_dir/openclaw/bin/openclaw.js" ]; then
-  echo "Synced OpenClaw assets are missing openclaw/bin/openclaw.js" >&2
+cli_entrypoint="$(python3 - "$bundle_manifest" "$platform" <<'PY_CLI'
+import json
+import sys
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+platform = manifest.get("platforms", {}).get(sys.argv[2], {})
+print(platform.get("cliEntrypoint", "openclaw/openclaw.mjs"))
+PY_CLI
+)"
+if [ ! -f "$target_dir/$cli_entrypoint" ]; then
+  echo "Synced OpenClaw assets are missing CLI entrypoint: $target_dir/$cli_entrypoint" >&2
   find "$target_dir/openclaw" -maxdepth 5 -type f | sort | head -200 >&2 || true
   exit 1
 fi
