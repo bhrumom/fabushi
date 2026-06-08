@@ -53,7 +53,9 @@ class _FlashcardStudyScreenState extends State<FlashcardStudyScreen> {
   Future<void> _loadProgress() async {
     final progress = await _repository.getStudyProgress(widget.deck.id);
     if (!mounted) return;
-    final index = progress.currentIndex.clamp(0, max(0, _cards.length - 1));
+    final index = progress.currentIndex
+        .clamp(0, max(0, _cards.length - 1))
+        .toInt();
     setState(() {
       _progress = progress;
       _currentIndex = index;
