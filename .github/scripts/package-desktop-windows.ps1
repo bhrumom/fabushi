@@ -5,6 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $AppName = "global_dharma_sharing"
+$CliName = "global_dharma_sharing_cli"
 $DisplayName = "全球法布施"
 $AppVersion = if ($env:APP_VERSION) { $env:APP_VERSION } else { "1.0.0" }
 $VersionSlug = $AppVersion -replace "\+", "-"
@@ -61,6 +62,7 @@ Section "Install"
   File /r "$NsisSourceDir\*.*"
   CreateDirectory "`$SMPROGRAMS\Global Dharma Sharing"
   CreateShortCut "`$SMPROGRAMS\Global Dharma Sharing\$DisplayName.lnk" "`$INSTDIR\$AppName.exe"
+  CreateShortCut "`$SMPROGRAMS\Global Dharma Sharing\Global Dharma Sharing CLI.lnk" "`$INSTDIR\$CliName.exe" "doctor --json"
   CreateShortCut "`$DESKTOP\$DisplayName.lnk" "`$INSTDIR\$AppName.exe"
   WriteUninstaller "`$INSTDIR\Uninstall.exe"
   WriteRegStr HKLM "$UninstallRegKey" "DisplayName" "$DisplayName"
@@ -74,6 +76,7 @@ Section "Uninstall"
   SetShellVarContext all
   Delete "`$DESKTOP\$DisplayName.lnk"
   Delete "`$SMPROGRAMS\Global Dharma Sharing\$DisplayName.lnk"
+  Delete "`$SMPROGRAMS\Global Dharma Sharing\Global Dharma Sharing CLI.lnk"
   RMDir "`$SMPROGRAMS\Global Dharma Sharing"
   RMDir /r "`$INSTDIR"
   DeleteRegKey HKLM "$UninstallRegKey"
