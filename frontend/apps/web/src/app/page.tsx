@@ -332,11 +332,14 @@ export default async function HomePage() {
               />
             </p>
             <div className="hero-actions">
-              <a className="primary-action" href={siteHref("/download")}>
-                <LocalizedText zh="下载 App" en="Download App" />
+              <a className="primary-action" href={siteHref("/app")}>
+                <LocalizedText zh="打开 Web 版" en="Open Web App" />
               </a>
-              <a className="secondary-action" href={siteHref("/download#release-changelog")}>
-                <LocalizedText zh="查看版本说明" en="View release notes" />
+              <a className="secondary-action" href={siteHref("/app/ai")}>
+                <LocalizedText zh="进入大乘 AI" en="Open Dacheng AI" />
+              </a>
+              <a className="secondary-action" href={siteHref("/download")}>
+                <LocalizedText zh="下载 App" en="Download App" />
               </a>
             </div>
             <div className="release-pill-grid" aria-label="Quick service entry / 服务入口">

@@ -1,5 +1,11 @@
 import { View, Text } from "@tarojs/components";
-import { brand, homeHighlights } from "@fabushi/shared";
+import {
+  aiQuickPrompts,
+  appExperienceStats,
+  appModules,
+  brand,
+  dharmaFeedItems,
+} from "@fabushi/shared";
 import "./index.scss";
 
 export default function IndexPage() {
@@ -7,29 +13,55 @@ export default function IndexPage() {
     <View className="page">
       <View className="hero">
         <Text className="eyebrow">Fabushi Mini Program</Text>
-        <Text className="title">{brand.tagline}</Text>
+        <Text className="title">大乘微信小程序</Text>
         <Text className="subtitle">
-          小程序首期先承接轻浏览、榜单、公开档案与微信生态内的便捷触达。
+          {brand.tagline} 微信内先承接轻浏览、经文续读、修行计划和 AI 找资源。
         </Text>
       </View>
 
-      <View className="section">
-        <Text className="section-title">首期重点</Text>
-        {homeHighlights.map((item) => (
-          <View key={item.title} className="card">
-            <Text className="card-title">{item.title}</Text>
-            <Text className="card-copy">{item.description}</Text>
+      <View className="stats">
+        {appExperienceStats.map((item) => (
+          <View className="stat" key={item.label}>
+            <Text className="stat-value">{item.value}</Text>
+            <Text className="stat-label">
+              {item.label} · {item.unit}
+            </Text>
           </View>
         ))}
       </View>
 
       <View className="section">
-        <Text className="section-title">后端复用</Text>
-        <View className="card">
-          <Text className="card-copy">
-            继续共用现有 Cloudflare Workers API 与数据层，把多端差异压缩在前端展现层。
-          </Text>
-        </View>
+        <Text className="section-title">核心入口</Text>
+        {appModules.map((item) => (
+          <View key={item.id} className={`module module-${item.tone}`}>
+            <Text className="module-icon">{item.shortTitle}</Text>
+            <View className="module-body">
+              <Text className="card-title">{item.title}</Text>
+              <Text className="card-copy">{item.summary}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <View className="section">
+        <Text className="section-title">AI 快捷任务</Text>
+        {aiQuickPrompts.slice(0, 3).map((prompt) => (
+          <View className="prompt" key={prompt}>
+            <Text>{prompt}</Text>
+          </View>
+        ))}
+      </View>
+
+      <View className="section">
+        <Text className="section-title">今日法流</Text>
+        {dharmaFeedItems.map((item) => (
+          <View className="feed" key={item.title}>
+            <Text className="card-title">{item.title}</Text>
+            <Text className="card-copy">
+              {item.tag} · {item.readTime}
+            </Text>
+          </View>
+        ))}
       </View>
     </View>
   );

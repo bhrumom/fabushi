@@ -4,6 +4,16 @@ import { siteHref } from "../lib/site-url";
 
 const NAV_ITEMS = [
   {
+    href: "/app",
+    zh: "Web App",
+    en: "Web App",
+  },
+  {
+    href: "/app/ai",
+    zh: "大乘 AI",
+    en: "Dacheng AI",
+  },
+  {
     href: "/faliu",
     zh: "法流",
     en: "Faloo",
@@ -12,11 +22,6 @@ const NAV_ITEMS = [
     href: "/faq",
     zh: "下载 FAQ",
     en: "Download FAQ",
-  },
-  {
-    href: "https://ai.ombhrum.com",
-    zh: "大乘 AI",
-    en: "AI",
   },
   {
     href: "/contact",
@@ -51,8 +56,8 @@ export function SiteHeader() {
         </div>
         <div className="site-nav-actions">
           <LanguageSwitch />
-          <a className="nav-cta" href={siteHref("/download")}>
-            <LocalizedText zh="下载 App" en="Download App" />
+          <a className="nav-cta" href={siteHref("/app")}>
+            <LocalizedText zh="打开 Web 版" en="Open Web App" />
           </a>
         </div>
       </div>

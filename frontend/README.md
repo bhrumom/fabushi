@@ -2,7 +2,7 @@
 
 这个目录承接两个新前端入口：
 
-- `apps/web`：官网，使用 Next.js
+- `apps/web`：官网和新的 Web App，使用 Next.js
 - `apps/mp-wechat`：微信小程序，使用 Taro
 
 共享层拆成两个包：
@@ -26,6 +26,8 @@ pnpm dev:mp
 
 ## 约定
 
-- 后端继续复用 `https://flutter.ombhrum.com`
+- 主业务后端继续复用 `https://flutter.ombhrum.com`
+- 新 Web App 路径是 `/app`，大乘 AI Web 入口是 `/app/ai`
+- 官方站 Worker 通过 `/api/dacheng-ai/*` 反代大乘 AI 后端；小程序默认也调用这个 HTTPS 入口
 - 新增接口或类型时，优先改 `packages/api-client`
 - 新增品牌文案、导航、固定配置时，优先改 `packages/shared`

@@ -3,6 +3,16 @@ import { siteHref } from "../lib/site-url";
 
 const FOOTER_LINKS = [
   {
+    href: "/app",
+    zh: "Web App",
+    en: "Web App",
+  },
+  {
+    href: "/app/ai",
+    zh: "大乘 AI",
+    en: "Dacheng AI",
+  },
+  {
     href: "/download",
     zh: "下载 App",
     en: "Download App",
@@ -33,8 +43,8 @@ export function SiteFooter() {
         </p>
         <p className="footer-copy">
           <LocalizedText
-            zh="全球法布施 App 下载、安装支持、版本说明与基础信任信息。"
-            en="Fabushi app download, install support, release notes, and essential trust information."
+            zh="全球法布施 Web App、App 下载、安装支持、版本说明与基础信任信息。"
+            en="Fabushi Web App, app download, install support, release notes, and essential trust information."
           />
         </p>
       </div>
