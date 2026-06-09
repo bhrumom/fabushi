@@ -1,4 +1,10 @@
 import type { UserConfigExport } from "@tarojs/cli";
+import path from "node:path";
+
+const sharedSourcePaths = [
+  path.resolve(__dirname, "../../../packages/shared/src"),
+  path.resolve(__dirname, "../node_modules/@fabushi/shared/src"),
+];
 
 export default {
   projectName: "fabushi-mp-wechat",
@@ -16,6 +22,9 @@ export default {
   },
   plugins: [],
   mini: {
+    compile: {
+      include: sharedSourcePaths,
+    },
     postcss: {
       pxtransform: {
         enable: true,

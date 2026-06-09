@@ -46,6 +46,12 @@ class AppConfig {
     defaultValue: '',
   );
   static const String vpsAiBackendUrl = 'https://ai.ombhrum.com';
+  static const String configuredDachengAiWebUrl = String.fromEnvironment(
+    'DACHENG_AI_WEB_URL',
+    defaultValue: '',
+  );
+  static const String defaultDachengAiWebUrl =
+      'https://fabushi.ombhrum.com/app/ai';
 
   static String get currentBackendUrl {
     if (configuredApiBaseUrl.isNotEmpty) {
@@ -74,6 +80,30 @@ class AppConfig {
       return configuredAiBackendUrl;
     }
     return vpsAiBackendUrl;
+  }
+
+  static String get dachengAiWebUrl {
+    if (configuredDachengAiWebUrl.isNotEmpty) {
+      return configuredDachengAiWebUrl;
+    }
+    return defaultDachengAiWebUrl;
+  }
+
+  static Uri buildDachengAiWebUri({
+    String? prompt,
+    String? bookTitle,
+    String? context,
+  }) {
+    final base = Uri.parse(dachengAiWebUrl);
+    final query = <String, String>{
+      ...base.queryParameters,
+      if (prompt != null && prompt.trim().isNotEmpty) 'prompt': prompt.trim(),
+      if (bookTitle != null && bookTitle.trim().isNotEmpty)
+        'book': bookTitle.trim(),
+      if (context != null && context.trim().isNotEmpty)
+        'context': context.trim(),
+    };
+    return base.replace(queryParameters: query.isEmpty ? null : query);
   }
 
   /// 大厂式 API 网关入口：客户端只允许构造自家后端的相对路径。
