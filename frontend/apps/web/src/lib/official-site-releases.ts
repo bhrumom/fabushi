@@ -1,10 +1,15 @@
 const iosTestFlightPublicUrl = process.env.NEXT_PUBLIC_IOS_TESTFLIGHT_PUBLIC_URL?.trim() || "";
 const iosAppStoreUrl = "https://apps.apple.com/cn/app/%E5%A4%A7%E4%B9%98/id6758606957";
+const desktopReleasePageUrl = "https://github.com/bhrumom/fabushi/releases/tag/desktop-v1.0.1-408-49-a0e997f3aa61";
+const desktopDownloadBaseUrl =
+  "https://github.com/bhrumom/fabushi/releases/download/desktop-v1.0.1-408-49-a0e997f3aa61";
 const configuredReleaseApiBaseUrl =
   process.env.NEXT_PUBLIC_OFFICIAL_SITE_RELEASE_API_BASE_URL?.trim() ||
   process.env.NEXT_PUBLIC_FABUSHI_API_BASE_URL?.trim() ||
   process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
   "https://api.ombhrum.com";
+
+export type OfficialSitePlatform = "Android" | "iOS" | "macOS" | "Windows" | "Linux";
 
 export interface OfficialSiteMirrorLink {
   label: string;
@@ -12,7 +17,7 @@ export interface OfficialSiteMirrorLink {
 }
 
 export interface OfficialSiteChannel {
-  platform: "Android" | "iOS";
+  platform: OfficialSitePlatform;
   audience: "beta" | "stable";
   status: string;
   title: string;
@@ -67,10 +72,13 @@ export const FALLBACK_SCREENSHOTS: Record<string, string> = {
 };
 
 const CHANNEL_ORDER: Array<Pick<OfficialSiteChannel, "audience" | "platform">> = [
-  { audience: "beta", platform: "Android" },
-  { audience: "beta", platform: "iOS" },
-  { audience: "stable", platform: "Android" },
   { audience: "stable", platform: "iOS" },
+  { audience: "stable", platform: "macOS" },
+  { audience: "stable", platform: "Windows" },
+  { audience: "stable", platform: "Linux" },
+  { audience: "stable", platform: "Android" },
+  { audience: "beta", platform: "iOS" },
+  { audience: "beta", platform: "Android" },
 ];
 
 const IOS_STABLE_CHANNEL: OfficialSiteChannel = {
@@ -92,6 +100,76 @@ const IOS_STABLE_CHANNEL: OfficialSiteChannel = {
 };
 
 const DEFAULT_STABLE_CHANNELS: OfficialSiteChannel[] = [
+  IOS_STABLE_CHANNEL,
+  {
+    platform: "macOS",
+    audience: "stable",
+    status: "GitHub Release 可下载",
+    title: "macOS 桌面版",
+    description: "适合 macOS Apple Silicon 设备安装桌面版。",
+    primaryLabel: "下载 macOS DMG",
+    primaryHref: `${desktopDownloadBaseUrl}/global_dharma_sharing-1.0.1-408-macos-arm64.dmg`,
+    version: "1.0.1-408",
+    publishedAt: "2026-06-08T12:21:06Z",
+    updateSummary: [
+      "桌面版安装包已发布到 GitHub Release。",
+      "提供 DMG 和 ZIP 两种 macOS 下载格式。",
+    ],
+    mirrorLinks: [
+      {
+        label: "下载 macOS ZIP",
+        href: `${desktopDownloadBaseUrl}/global_dharma_sharing-1.0.1-408-macos-arm64.zip`,
+      },
+    ],
+    note: "桌面版文件由 GitHub Release 提供。",
+    releasePageHref: desktopReleasePageUrl,
+  },
+  {
+    platform: "Windows",
+    audience: "stable",
+    status: "GitHub Release 可下载",
+    title: "Windows 桌面版",
+    description: "适合 Windows x64 设备安装桌面版。",
+    primaryLabel: "下载 Windows 安装器",
+    primaryHref: `${desktopDownloadBaseUrl}/global_dharma_sharing-1.0.1-408-windows-x64-setup.exe`,
+    version: "1.0.1-408",
+    publishedAt: "2026-06-08T12:21:06Z",
+    updateSummary: [
+      "桌面版安装包已发布到 GitHub Release。",
+      "提供安装器和 ZIP 两种 Windows 下载格式。",
+    ],
+    mirrorLinks: [
+      {
+        label: "下载 Windows ZIP",
+        href: `${desktopDownloadBaseUrl}/global_dharma_sharing-1.0.1-408-windows-x64.zip`,
+      },
+    ],
+    note: "桌面版文件由 GitHub Release 提供。",
+    releasePageHref: desktopReleasePageUrl,
+  },
+  {
+    platform: "Linux",
+    audience: "stable",
+    status: "GitHub Release 可下载",
+    title: "Linux 桌面版",
+    description: "适合 Linux x64 设备安装桌面版。",
+    primaryLabel: "下载 Linux DEB",
+    primaryHref: `${desktopDownloadBaseUrl}/global-dharma-sharing_1.0.1-408_amd64.deb`,
+    version: "1.0.1-408",
+    publishedAt: "2026-06-08T12:21:06Z",
+    updateSummary: [
+      "桌面版安装包已发布到 GitHub Release。",
+      "提供 DEB 和 tar.gz 两种 Linux 下载格式。",
+    ],
+    mirrorLinks: [
+      {
+        label: "下载 Linux tar.gz",
+        href: `${desktopDownloadBaseUrl}/global_dharma_sharing-1.0.1-408-linux-x64.tar.gz`,
+      },
+    ],
+    note: "桌面版文件由 GitHub Release 提供。",
+    releasePageHref: desktopReleasePageUrl,
+  },
   {
     platform: "Android",
     audience: "stable",
@@ -107,7 +185,6 @@ const DEFAULT_STABLE_CHANNELS: OfficialSiteChannel[] = [
     mirrorLinks: [],
     note: "正式版上线后，这里会显示已经同步到 Cloudflare 的下载地址。",
   },
-  IOS_STABLE_CHANNEL,
 ];
 
 function trimTrailingSlash(value: string) {
@@ -144,7 +221,7 @@ function normalizeChannel(input: unknown): OfficialSiteChannel | null {
 
   const channel = input as Record<string, unknown>;
   if (
-    (channel.platform !== "Android" && channel.platform !== "iOS") ||
+    !isOfficialSitePlatform(channel.platform) ||
     (channel.audience !== "beta" && channel.audience !== "stable") ||
     typeof channel.status !== "string" ||
     typeof channel.title !== "string" ||
@@ -186,6 +263,16 @@ function normalizeChannel(input: unknown): OfficialSiteChannel | null {
         ? channel.releasePageHref
         : undefined,
   };
+}
+
+function isOfficialSitePlatform(platform: unknown): platform is OfficialSitePlatform {
+  return (
+    platform === "Android" ||
+    platform === "iOS" ||
+    platform === "macOS" ||
+    platform === "Windows" ||
+    platform === "Linux"
+  );
 }
 
 function normalizeScreenshots(input: unknown): OfficialSiteScreenshots | undefined {
@@ -251,6 +338,18 @@ function getChannelKey(channel: Pick<OfficialSiteChannel, "audience" | "platform
   return `${channel.audience}:${channel.platform}`;
 }
 
+function orderChannels(channels: OfficialSiteChannel[]): OfficialSiteChannel[] {
+  const orderedChannels = CHANNEL_ORDER.map((channel) =>
+    channels.find((item) => getChannelKey(item) === getChannelKey(channel)),
+  ).filter(
+    (channel): channel is OfficialSiteChannel => Boolean(channel),
+  );
+  const seenKeys = new Set(orderedChannels.map((channel) => getChannelKey(channel)));
+  const remainingChannels = channels.filter((channel) => !seenKeys.has(getChannelKey(channel)));
+
+  return [...orderedChannels, ...remainingChannels];
+}
+
 function mergeChannels(primary: OfficialSiteChannel[], fallback: OfficialSiteChannel[]): OfficialSiteChannel[] {
   const merged = new Map<string, OfficialSiteChannel>();
 
@@ -262,13 +361,7 @@ function mergeChannels(primary: OfficialSiteChannel[], fallback: OfficialSiteCha
     merged.set(getChannelKey(channel), channel);
   }
 
-  const orderedChannels = CHANNEL_ORDER.map((channel) => merged.get(getChannelKey(channel))).filter(
-    (channel): channel is OfficialSiteChannel => Boolean(channel),
-  );
-  const seenKeys = new Set(orderedChannels.map((channel) => getChannelKey(channel)));
-  const remainingChannels = Array.from(merged.values()).filter((channel) => !seenKeys.has(getChannelKey(channel)));
-
-  return [...orderedChannels, ...remainingChannels];
+  return orderChannels(Array.from(merged.values()));
 }
 
 function applyConfiguredIosTestFlightChannel(channel: OfficialSiteChannel): OfficialSiteChannel {
@@ -359,7 +452,7 @@ function buildFallbackCollection(): OfficialSiteReleaseCollection {
 
 function finalizeCollection(collection: OfficialSiteReleaseCollection): OfficialSiteReleaseCollection {
   return {
-    betaChannels: applyConfiguredIosTestFlightChannels(collection.betaChannels),
+    betaChannels: orderChannels(applyConfiguredIosTestFlightChannels(collection.betaChannels)),
     stableChannels: applyIosStableAppStoreChannels(mergeChannels(collection.stableChannels, DEFAULT_STABLE_CHANNELS)),
     screenshots: collection.screenshots,
     releases: collection.releases,

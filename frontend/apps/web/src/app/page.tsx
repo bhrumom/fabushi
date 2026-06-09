@@ -179,6 +179,27 @@ function getChannelActionCopy(channel: OfficialSiteChannel) {
     };
   }
 
+  if (channel.platform === "macOS") {
+    return {
+      zh: "下载 macOS 桌面版",
+      en: "Download macOS Desktop",
+    };
+  }
+
+  if (channel.platform === "Windows") {
+    return {
+      zh: "下载 Windows 桌面版",
+      en: "Download Windows Desktop",
+    };
+  }
+
+  if (channel.platform === "Linux") {
+    return {
+      zh: "下载 Linux 桌面版",
+      en: "Download Linux Desktop",
+    };
+  }
+
   return {
     zh: channel.audience === "beta" ? "下载 Android 测试版" : "下载 Android 正式版",
     en: channel.audience === "beta" ? "Download Android Beta" : "Download Android Stable",
@@ -200,6 +221,9 @@ export const metadata: Metadata = {
     "佛经听诵 app",
     "iOS TestFlight",
     "Android APK",
+    "macOS 下载",
+    "Windows 下载",
+    "Linux 下载",
   ],
   openGraph: {
     title: homeTitle,
@@ -222,7 +246,7 @@ export default async function HomePage() {
     ...FALLBACK_SCREENSHOTS,
     ...releaseCollection.screenshots,
   };
-  const channels = [...releaseCollection.betaChannels, ...releaseCollection.stableChannels].slice(0, 2);
+  const channels = [...releaseCollection.stableChannels, ...releaseCollection.betaChannels].slice(0, 2);
   const supportEmail =
     contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
   const latestRelease = releaseCollection.releases[0] ?? null;
@@ -253,7 +277,7 @@ export default async function HomePage() {
         "@type": "SoftwareApplication",
         name: `${brand.name} Fabushi`,
         applicationCategory: "LifestyleApplication",
-        operatingSystem: "iOS, Android",
+        operatingSystem: "iOS, Android, macOS, Windows, Linux",
         downloadUrl: siteUrl("/download"),
         description: homeDescription,
         screenshot: APP_SCREENSHOTS.map((item) => siteUrl(resolveScreenshot(screenshots, item.screenshot))),
