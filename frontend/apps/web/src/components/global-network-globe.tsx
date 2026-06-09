@@ -230,7 +230,7 @@ export function GlobalNetworkGlobe() {
       const gradient = context.createLinearGradient(tail.x, tail.y, head.x, head.y);
       gradient.addColorStop(0, "rgba(246, 139, 54, 0)");
       gradient.addColorStop(0.72, subtle ? "rgba(246, 139, 54, 0.48)" : "rgba(246, 139, 54, 0.82)");
-      gradient.addColorStop(1, subtle ? "rgba(255, 255, 255, 0.7)" : "rgba(255, 255, 255, 1)");
+      gradient.addColorStop(1, subtle ? "rgba(255, 227, 163, 0.72)" : "rgba(120, 214, 232, 0.92)");
       context.strokeStyle = gradient;
       context.lineWidth = subtle ? 1.6 : 3;
       context.beginPath();
@@ -247,15 +247,16 @@ export function GlobalNetworkGlobe() {
 
       context.clearRect(0, 0, width, height);
       const bg = context.createLinearGradient(width / 2, 0, width / 2, height);
-      bg.addColorStop(0, "#fffefa");
-      bg.addColorStop(0.58, "#fffcf5");
-      bg.addColorStop(1, "#ffffff");
+      bg.addColorStop(0, "#05070d");
+      bg.addColorStop(0.58, "#0c111a");
+      bg.addColorStop(1, "#05070d");
       context.fillStyle = bg;
       context.fillRect(0, 0, width, height);
 
       const halo = context.createRadialGradient(centerX, centerY - radius * 0.08, radius * 0.12, centerX, centerY, radius * 1.15);
-      halo.addColorStop(0, "rgba(255, 180, 84, 0.22)");
-      halo.addColorStop(1, "rgba(255, 180, 84, 0)");
+      halo.addColorStop(0, "rgba(232, 189, 107, 0.3)");
+      halo.addColorStop(0.42, "rgba(120, 214, 232, 0.1)");
+      halo.addColorStop(1, "rgba(232, 189, 107, 0)");
       context.fillStyle = halo;
       context.beginPath();
       context.arc(centerX, centerY, radius * 1.15, 0, Math.PI * 2);
@@ -267,28 +268,32 @@ export function GlobalNetworkGlobe() {
       context.clip();
 
       const ocean = context.createRadialGradient(centerX - radius * 0.18, centerY - radius * 0.42, radius * 0.04, centerX, centerY, radius * 1.16);
-      ocean.addColorStop(0, "#ffffff");
-      ocean.addColorStop(0.44, "#fffcf7");
-      ocean.addColorStop(0.78, "#fff2df");
-      ocean.addColorStop(1, "#fffbf7");
+      ocean.addColorStop(0, "#213344");
+      ocean.addColorStop(0.42, "#132333");
+      ocean.addColorStop(0.78, "#0b121d");
+      ocean.addColorStop(1, "#05070d");
       context.fillStyle = ocean;
       context.beginPath();
       context.arc(centerX, centerY, radius, 0, Math.PI * 2);
       context.fill();
 
       if (runtime) {
+        context.save();
+        context.globalAlpha = 0.66;
+        context.filter = "sepia(1) saturate(1.45) hue-rotate(342deg) brightness(0.82)";
         drawProjectedTexture(runtime.image, centerX, centerY, radius, runtime.rotation);
+        context.restore();
       }
 
       const shine = context.createRadialGradient(centerX - radius * 0.22, centerY - radius * 0.36, radius * 0.08, centerX, centerY, radius * 1.18);
-      shine.addColorStop(0, "rgba(255,255,255,0.14)");
-      shine.addColorStop(0.62, "rgba(255,255,255,0)");
-      shine.addColorStop(1, "rgba(255,255,255,0.22)");
+      shine.addColorStop(0, "rgba(255,227,163,0.2)");
+      shine.addColorStop(0.58, "rgba(120,214,232,0.03)");
+      shine.addColorStop(1, "rgba(5,7,13,0.26)");
       context.fillStyle = shine;
       context.fillRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
       context.restore();
 
-      context.strokeStyle = "rgba(247, 168, 75, 0.42)";
+      context.strokeStyle = "rgba(232, 189, 107, 0.5)";
       context.lineWidth = 1.4;
       context.beginPath();
       context.arc(centerX, centerY, radius * 1.01, 0, Math.PI * 2);
@@ -309,24 +314,24 @@ export function GlobalNetworkGlobe() {
           const alpha = Math.max(0, Math.min(1, 0.38 + projected.visibility * 0.62));
           const nodeRadius = 1.25 + node.tier * 0.72 + (active ? 2 : 0);
 
-          context.fillStyle = `rgba(255,255,255,${alpha * 0.42})`;
+          context.fillStyle = `rgba(232,189,107,${alpha * 0.32})`;
           context.beginPath();
           context.arc(projected.x, projected.y, nodeRadius + 3.2, 0, Math.PI * 2);
           context.fill();
-          context.fillStyle = active ? `rgba(36,62,98,${alpha})` : `rgba(83,103,131,${alpha})`;
+          context.fillStyle = active ? `rgba(120,214,232,${alpha})` : `rgba(255,227,163,${alpha * 0.88})`;
           context.beginPath();
           context.arc(projected.x, projected.y, nodeRadius, 0, Math.PI * 2);
           context.fill();
-          context.strokeStyle = `rgba(255,255,255,${alpha * 0.72})`;
+          context.strokeStyle = `rgba(255,249,235,${alpha * 0.58})`;
           context.lineWidth = 0.75;
           context.stroke();
         });
       }
 
       const fade = context.createLinearGradient(0, height * 0.62, 0, height);
-      fade.addColorStop(0, "rgba(255,255,255,0)");
-      fade.addColorStop(0.62, "rgba(255,255,255,0.82)");
-      fade.addColorStop(1, "rgba(255,255,255,1)");
+      fade.addColorStop(0, "rgba(5,7,13,0)");
+      fade.addColorStop(0.62, "rgba(5,7,13,0.7)");
+      fade.addColorStop(1, "rgba(5,7,13,0.98)");
       context.fillStyle = fade;
       context.fillRect(0, height * 0.62, width, height * 0.38);
 
