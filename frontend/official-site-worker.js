@@ -1,5 +1,7 @@
 const APP_PROXY_ROUTE = /^\/api\/app\/(.+)$/;
 const APP_API_BASE = "https://api.ombhrum.com/api";
+const DACHENG_AI_PROXY_ROUTE = /^\/api\/dacheng-ai\/(.+)$/;
+const DEFAULT_DACHENG_AI_API_BASE = "https://ai.ombhrum.com";
 const OFFICIAL_SITE_HOST = "fabushi.ombhrum.com";
 const ROOT_DOMAIN_REDIRECT_HOSTS = new Set(["ombhrum.com"]);
 const RELEASES_JSON_ROUTE = "/api/releases.json";
@@ -33,6 +35,7 @@ export default {
 
     const androidDownload = ANDROID_R2_DOWNLOADS.get(url.pathname);
     const appMatch = url.pathname.match(APP_PROXY_ROUTE);
+    const dachengAiMatch = url.pathname.match(DACHENG_AI_PROXY_ROUTE);
 
     if (url.pathname === RELEASES_JSON_ROUTE) {
       return serveReleaseStateR2Object(request, env, RELEASES_JSON_R2_OBJECT);
@@ -44,6 +47,11 @@ export default {
 
     if (appMatch) {
       return proxyApiRequest(request, APP_API_BASE, appMatch[1], ["GET", "POST", "HEAD", "OPTIONS"]);
+    }
+
+    if (dachengAiMatch) {
+      const aiBase = (env?.DACHENG_AI_API_BASE || DEFAULT_DACHENG_AI_API_BASE).replace(/\/+$/, "");
+      return proxyApiRequest(request, aiBase, dachengAiMatch[1], ["GET", "POST", "HEAD", "OPTIONS"]);
     }
 
     return env.ASSETS.fetch(request);
@@ -218,9 +226,7 @@ async function proxyApiRequest(request, upstreamBase, upstreamPath, allowedMetho
   responseHeaders.delete("Set-Cookie");
   responseHeaders.set("X-Fabushi-Proxy", "official-site");
 
-  if (upstreamBase === APP_API_BASE) {
-    responseHeaders.set("Cache-Control", "no-store");
-  }
+  responseHeaders.set("Cache-Control", "no-store");
 
   return new Response(upstreamResponse.body, {
     status: upstreamResponse.status,
