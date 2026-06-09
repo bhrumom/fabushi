@@ -7,6 +7,9 @@ on:
     paths:
       - fabushi/**
       - .github/scripts/package-desktop-*
+      - .github/scripts/build-desktop-cli.sh
+      - .github/scripts/assert-openclaw-bundle.sh
+      - .github/scripts/sync-openclaw-build-assets-v2.sh
       - .github/scripts/notarize-macos-dmg.sh
       - .github/scripts/fix-macos-bundled-dylibs.sh
       - .github/scripts/upload-macos-app-store.sh
@@ -17,6 +20,9 @@ on:
     paths:
       - fabushi/**
       - .github/scripts/package-desktop-*
+      - .github/scripts/build-desktop-cli.sh
+      - .github/scripts/assert-openclaw-bundle.sh
+      - .github/scripts/sync-openclaw-build-assets-v2.sh
       - .github/scripts/notarize-macos-dmg.sh
       - .github/scripts/fix-macos-bundled-dylibs.sh
       - .github/scripts/upload-macos-app-store.sh
@@ -344,9 +350,31 @@ jobs:
           OPENCLAW_VERSION: ${{ env.OPENCLAW_VERSION }}
         run: scripts/build_openclaw_desktop_bundle.sh "${{ steps.openclaw.outputs.platform }}"
 
+      - name: Refresh Flutter generated asset manifest
+        run: flutter pub get
+
+      - name: Restabilize generated desktop plugin bindings
+        shell: bash
+        run: scripts/fix_desktop_generated_plugins.sh
+
       - name: Build macOS release app
         if: matrix.target == 'macos'
         run: flutter build macos --release --no-pub
+
+      - name: Build macOS package CLI
+        if: matrix.target == 'macos'
+        shell: bash
+        run: ../.github/scripts/build-desktop-cli.sh macos
+
+      - name: Verify macOS OpenClaw bundle in release app
+        if: matrix.target == 'macos'
+        shell: bash
+        run: ../.github/scripts/assert-openclaw-bundle.sh build/macos/Build/Products/Release/global_dharma_sharing.app "${{ steps.openclaw.outputs.platform }}"
+
+      - name: Run macOS package CLI smoke
+        if: matrix.target == 'macos'
+        shell: bash
+        run: build/macos/Build/Products/Release/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli gateway-smoke --timeout-seconds 120 --json
 
       - name: Import macOS Developer ID certificate
         if: >-
@@ -398,6 +426,29 @@ jobs:
           OUT_DIR: ${{ github.workspace }}/desktop-artifacts
         run: ../.github/scripts/package-desktop-macos.sh
 
+      - name: Install and smoke macOS package CLI
+        if: matrix.target == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg_path="$(find "$GITHUB_WORKSPACE/desktop-artifacts" -maxdepth 1 -name '*macos-*.dmg' -print -quit)"
+          if [ -z "$dmg_path" ]; then
+            echo "No macOS DMG artifact found" >&2
+            exit 1
+          fi
+          mount_dir="$RUNNER_TEMP/gds-dmg"
+          install_dir="$RUNNER_TEMP/gds-installed"
+          rm -rf "$mount_dir" "$install_dir"
+          mkdir -p "$mount_dir" "$install_dir"
+          hdiutil attach "$dmg_path" -nobrowse -mountpoint "$mount_dir"
+          cleanup() { hdiutil detach "$mount_dir" -quiet >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          ditto "$mount_dir/global_dharma_sharing.app" "$install_dir/global_dharma_sharing.app"
+          cleanup
+          trap - EXIT
+          "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" doctor --json
+          "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" gateway-smoke --timeout-seconds 120 --json
+
       - name: Notarize macOS DMG
         if: >-
           matrix.target == 'macos' &&
@@ -425,6 +476,26 @@ jobs:
         if: matrix.target == 'linux'
         run: flutter build linux --release --no-pub
 
+      - name: Sync Linux OpenClaw assets into release build
+        if: matrix.target == 'linux'
+        shell: bash
+        run: ../.github/scripts/sync-openclaw-build-assets-v2.sh linux-x64 build/linux/x64/release/bundle/data/flutter_assets
+
+      - name: Build Linux package CLI
+        if: matrix.target == 'linux'
+        shell: bash
+        run: ../.github/scripts/build-desktop-cli.sh linux
+
+      - name: Verify Linux OpenClaw bundle in release build
+        if: matrix.target == 'linux'
+        shell: bash
+        run: ../.github/scripts/assert-openclaw-bundle.sh build/linux/x64/release/bundle linux-x64
+
+      - name: Run Linux package CLI smoke
+        if: matrix.target == 'linux'
+        shell: bash
+        run: build/linux/x64/release/bundle/global_dharma_sharing_cli gateway-smoke --timeout-seconds 120 --json
+
       - name: Package Linux installers
         if: matrix.target == 'linux'
         shell: bash
@@ -432,14 +503,64 @@ jobs:
           OUT_DIR: ${{ github.workspace }}/desktop-artifacts
         run: ../.github/scripts/package-desktop-linux.sh
 
+      - name: Install and smoke Linux package CLI
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb_path="$(find "$GITHUB_WORKSPACE/desktop-artifacts" -maxdepth 1 -name 'global-dharma-sharing_*.deb' -print -quit)"
+          if [ -z "$deb_path" ]; then
+            echo "No Linux DEB artifact found" >&2
+            exit 1
+          fi
+          sudo apt-get update
+          sudo apt-get install -y "$deb_path"
+          global-dharma-sharing-cli doctor --json
+          global-dharma-sharing-cli gateway-smoke --timeout-seconds 120 --json
+
       - name: Build Windows release app
         if: matrix.target == 'windows'
         run: flutter build windows --release --no-pub
+
+      - name: Sync Windows OpenClaw assets into release build
+        if: matrix.target == 'windows'
+        shell: bash
+        run: ../.github/scripts/sync-openclaw-build-assets-v2.sh windows-x64 build/windows/x64/runner/Release/data/flutter_assets
+
+      - name: Build Windows package CLI
+        if: matrix.target == 'windows'
+        shell: bash
+        run: ../.github/scripts/build-desktop-cli.sh windows
+
+      - name: Verify Windows OpenClaw bundle in release build
+        if: matrix.target == 'windows'
+        shell: bash
+        run: ../.github/scripts/assert-openclaw-bundle.sh build/windows/x64/runner/Release windows-x64
+
+      - name: Run Windows package CLI smoke
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: .\build\windows\x64\runner\Release\global_dharma_sharing_cli.exe gateway-smoke --timeout-seconds 120 --json
 
       - name: Package Windows installer
         if: matrix.target == 'windows'
         shell: pwsh
         run: ../.github/scripts/package-desktop-windows.ps1 -OutDir "$env:GITHUB_WORKSPACE\desktop-artifacts"
+
+      - name: Install and smoke Windows zip package CLI
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\desktop-artifacts" -Filter "*windows-x64.zip" | Select-Object -First 1
+          if (-not $zip) { throw "No Windows zip artifact found" }
+          $installDir = Join-Path $env:RUNNER_TEMP "gds-installed"
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath $installDir -Force
+          $cli = Join-Path $installDir "global_dharma_sharing_cli.exe"
+          if (-not (Test-Path $cli)) { throw "Installed package CLI not found: $cli" }
+          & $cli doctor --json
+          & $cli gateway-smoke --timeout-seconds 120 --json
 
       - name: Upload desktop installer artifacts
         uses: actions/upload-artifact@v7

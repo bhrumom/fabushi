@@ -21,7 +21,7 @@ OUT_DIR="$ROOT_DIR/assets/openclaw/$PLATFORM"
 WORK_DIR="$ROOT_DIR/.dart_tool/openclaw_bundle/$PLATFORM"
 
 if [[ -z "$PLATFORM" ]]; then
-  echo "usage: $0 <macos-arm64|macos-x64|linux-x64|windows-x64>" >&2
+  echo "usage: $0 <macos-arm64|macos-x64|linux-x64|linux-arm64|windows-x64|windows-arm64>" >&2
   exit 2
 fi
 
@@ -29,7 +29,9 @@ case "$PLATFORM" in
   macos-arm64) NODE_DIST="node-v$NODE_VERSION-darwin-arm64" ;;
   macos-x64) NODE_DIST="node-v$NODE_VERSION-darwin-x64" ;;
   linux-x64) NODE_DIST="node-v$NODE_VERSION-linux-x64" ;;
+  linux-arm64) NODE_DIST="node-v$NODE_VERSION-linux-arm64" ;;
   windows-x64) NODE_DIST="node-v$NODE_VERSION-win-x64" ;;
+  windows-arm64) NODE_DIST="node-v$NODE_VERSION-win-arm64" ;;
   *) echo "unsupported platform: $PLATFORM" >&2; exit 2 ;;
 esac
 
@@ -74,6 +76,8 @@ popd >/dev/null
 if [[ "$PLATFORM" != windows-* ]]; then
   chmod +x "$NODE_BIN"
 fi
+
+python3 "$ROOT_DIR/scripts/update_openclaw_bundle_manifest.py" "$PLATFORM"
 
 popd >/dev/null
 

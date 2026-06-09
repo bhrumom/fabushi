@@ -2,6 +2,7 @@
 set -euo pipefail
 
 APP_NAME="global_dharma_sharing"
+CLI_NAME="global_dharma_sharing_cli"
 PACKAGE_NAME="global-dharma-sharing"
 DISPLAY_NAME="全球法布施"
 APP_VERSION="${APP_VERSION:-1.0.0}"
@@ -30,6 +31,7 @@ mkdir -p \
 
 cp -a "$BUNDLE_DIR/." "$DEB_ROOT/opt/$PACKAGE_NAME/"
 ln -s "/opt/$PACKAGE_NAME/$APP_NAME" "$DEB_ROOT/usr/bin/$PACKAGE_NAME"
+ln -s "/opt/$PACKAGE_NAME/$CLI_NAME" "$DEB_ROOT/usr/bin/global-dharma-sharing-cli"
 
 installed_size="$(du -sk "$DEB_ROOT/opt/$PACKAGE_NAME" | awk '{print $1}')"
 cat > "$DEB_ROOT/DEBIAN/control" <<EOF
@@ -40,7 +42,7 @@ Priority: optional
 Architecture: $ARCH
 Installed-Size: $installed_size
 Maintainer: bhrumom <support@fabushi.com>
-Depends: libgtk-3-0, liblzma5, libstdc++6, libgcc-s1, libasound2
+Depends: libgtk-3-0, liblzma5, libstdc++6, libgcc-s1, libasound2 | libasound2t64
 Description: Global Dharma Sharing desktop application
  A Flutter desktop application for Buddhist scripture and dharma sharing.
 EOF

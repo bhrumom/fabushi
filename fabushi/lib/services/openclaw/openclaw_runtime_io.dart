@@ -238,7 +238,7 @@ class OpenClawRuntime {
     try {
       await process.exitCode.timeout(const Duration(seconds: 5));
     } catch (_) {
-      process.kill(ProcessSignal.sigkill);
+      process.kill();
     }
   }
 
@@ -280,6 +280,7 @@ class OpenClawRuntime {
     final configPath = await _ensureConfigFile(
       stateRoot: stateRoot,
       port: port,
+      token: token,
     );
 
     final nodePath = p.join(runtimeDir.path, spec.nodeExecutable);
@@ -482,13 +483,34 @@ class OpenClawRuntime {
 
   Future<bool> _probe(int port, String token) async {
     try {
-      final response = await http
+      final modelsResponse = await http
           .get(
             Uri.parse('http://127.0.0.1:$port/v1/models'),
             headers: {'Authorization': 'Bearer $token'},
           )
           .timeout(_probeTimeout);
-      return response.statusCode >= 200 && response.statusCode < 300;
+      if (modelsResponse.statusCode < 200 || modelsResponse.statusCode >= 300) {
+        return false;
+      }
+
+      // `/v1/models` can be healthy while `/v1/chat/completions` is disabled
+      // by an old config. The home screen uses chat completions, so treat 404
+      // or auth failures as an unhealthy embedded runtime and restart it with
+      // the repaired config below. A 4xx validation error is acceptable here:
+      // it proves the OpenAI-compatible chat route is wired.
+      final chatResponse = await http
+          .post(
+            Uri.parse('http://127.0.0.1:$port/v1/chat/completions'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: '{}',
+          )
+          .timeout(_probeTimeout);
+      return chatResponse.statusCode != 401 &&
+          chatResponse.statusCode != 403 &&
+          chatResponse.statusCode != 404;
     } catch (_) {
       return false;
     }
@@ -497,6 +519,7 @@ class OpenClawRuntime {
   Future<File> _ensureConfigFile({
     required Directory stateRoot,
     required int port,
+    required String token,
   }) async {
     final configDir = Directory(p.join(stateRoot.path, 'config'));
     await configDir.create(recursive: true);
@@ -506,9 +529,10 @@ class OpenClawRuntime {
 
     final config = <String, dynamic>{
       'gateway': {
+        'mode': 'local',
         'port': port,
         'bind': 'loopback',
-        'auth': {'mode': 'token', 'token': r'${OPENCLAW_GATEWAY_TOKEN}'},
+        'auth': {'mode': 'token', 'token': token},
         'http': {
           'endpoints': {
             'chatCompletions': {'enabled': true},
@@ -524,13 +548,63 @@ class OpenClawRuntime {
       },
     };
 
-    // 仅在缺失时创建默认配置，用户通过 OpenClaw Control UI 调整后的配置不被覆盖。
-    if (!await configPath.exists()) {
-      await configPath.writeAsString(
-        const JsonEncoder.withIndent('  ').convert(config),
-      );
-    }
+    // Repair older embedded configs in-place. OpenClaw 2026.6 requires
+    // gateway.mode=local, and the home screen requires the OpenAI-compatible
+    // chat endpoint. Preserve unrelated user edits while fixing the fields
+    // needed for the app-owned embedded gateway to start reliably.
+    final merged = await _mergeEmbeddedConfig(configPath, config);
+    await configPath.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(merged),
+    );
     return configPath;
+  }
+
+  Future<Map<String, dynamic>> _mergeEmbeddedConfig(
+    File configPath,
+    Map<String, dynamic> defaults,
+  ) async {
+    Map<String, dynamic> current = <String, dynamic>{};
+    if (await configPath.exists()) {
+      try {
+        final decoded = jsonDecode(await configPath.readAsString());
+        if (decoded is Map<String, dynamic>) {
+          current = decoded;
+        } else if (decoded is Map) {
+          current = Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {
+        current = <String, dynamic>{};
+      }
+    }
+
+    final gateway = _mutableMap(current['gateway']);
+    final defaultGateway = _mutableMap(defaults['gateway']);
+    gateway['mode'] = 'local';
+    gateway['port'] = defaultGateway['port'];
+    gateway['bind'] = defaultGateway['bind'];
+    gateway['auth'] = Map<String, dynamic>.from(defaultGateway['auth'] as Map);
+
+    final gatewayHttp = _mutableMap(gateway['http']);
+    final endpoints = _mutableMap(gatewayHttp['endpoints']);
+    endpoints['chatCompletions'] = {'enabled': true};
+    endpoints['responses'] = {'enabled': true};
+    gatewayHttp['endpoints'] = endpoints;
+    gateway['http'] = gatewayHttp;
+    current['gateway'] = gateway;
+
+    final agents = _mutableMap(current['agents']);
+    final defaultAgents = _mutableMap(defaults['agents']);
+    agents['defaults'] ??= defaultAgents['defaults'];
+    agents['list'] ??= defaultAgents['list'];
+    current['agents'] = agents;
+
+    return current;
+  }
+
+  Map<String, dynamic> _mutableMap(Object? value) {
+    if (value is Map<String, dynamic>) return Map<String, dynamic>.from(value);
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
   }
 
   void _captureLogs(Process process) {
