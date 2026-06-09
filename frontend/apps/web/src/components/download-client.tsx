@@ -9,9 +9,10 @@ import {
   getUserFacingStatus,
   getUserFacingSummary,
 } from "../lib/channel-display";
+import { siteHref } from "../lib/site-url";
 
 export interface DownloadChannel {
-  platform: "Android" | "iOS";
+  platform: "Android" | "iOS" | "macOS" | "Windows" | "Linux";
   audience: "beta" | "stable";
   status: string;
   title: string;
@@ -26,7 +27,7 @@ export interface DownloadChannel {
   releasePageHref?: string;
 }
 
-type DetectedPlatform = "android" | "ios" | "other";
+type DetectedPlatform = "android" | "ios" | "macos" | "windows" | "linux" | "other";
 
 function detectPlatform(): DetectedPlatform {
   if (typeof navigator === "undefined") return "other";
@@ -34,15 +35,24 @@ function detectPlatform(): DetectedPlatform {
   if (/android/.test(ua)) return "android";
   if (/iphone|ipad|ipod/.test(ua)) return "ios";
   if (/macintosh/.test(ua) && "maxTouchPoints" in navigator && navigator.maxTouchPoints > 1) return "ios";
+  if (/macintosh|mac os x/.test(ua)) return "macos";
+  if (/windows/.test(ua)) return "windows";
+  if (/linux/.test(ua)) return "linux";
   return "other";
 }
 
 function getRecommendedTitle(platform: DetectedPlatform, locale: "zh" | "en"): string {
   switch (platform) {
     case "android":
-      return locale === "zh" ? "推荐 Android 测试版" : "Recommended Android Beta";
+      return locale === "zh" ? "推荐 Android 入口" : "Recommended Android path";
     case "ios":
-      return locale === "zh" ? "推荐 iOS 测试版" : "Recommended iOS Beta";
+      return locale === "zh" ? "推荐 iOS 入口" : "Recommended iOS path";
+    case "macos":
+      return locale === "zh" ? "推荐 macOS 桌面版" : "Recommended macOS Desktop";
+    case "windows":
+      return locale === "zh" ? "推荐 Windows 桌面版" : "Recommended Windows Desktop";
+    case "linux":
+      return locale === "zh" ? "推荐 Linux 桌面版" : "Recommended Linux Desktop";
     default:
       return "";
   }
@@ -51,6 +61,9 @@ function getRecommendedTitle(platform: DetectedPlatform, locale: "zh" | "en"): s
 function matchesPlatform(channel: DownloadChannel, platform: DetectedPlatform): boolean {
   if (platform === "android") return channel.platform === "Android";
   if (platform === "ios") return channel.platform === "iOS";
+  if (platform === "macos") return channel.platform === "macOS";
+  if (platform === "windows") return channel.platform === "Windows";
+  if (platform === "linux") return channel.platform === "Linux";
   return false;
 }
 
@@ -75,6 +88,27 @@ function getChannelActionCopy(channel: DownloadChannel) {
     return {
       zh: channel.audience === "beta" ? "下载 iOS 测试版" : "下载 iOS 正式版",
       en: channel.audience === "beta" ? "Download iOS Beta" : "Download iOS Stable",
+    };
+  }
+
+  if (channel.platform === "macOS") {
+    return {
+      zh: "下载 macOS 桌面版",
+      en: "Download macOS Desktop",
+    };
+  }
+
+  if (channel.platform === "Windows") {
+    return {
+      zh: "下载 Windows 桌面版",
+      en: "Download Windows Desktop",
+    };
+  }
+
+  if (channel.platform === "Linux") {
+    return {
+      zh: "下载 Linux 桌面版",
+      en: "Download Linux Desktop",
     };
   }
 
@@ -124,6 +158,15 @@ function ChannelCard({ channel, recommended = false }: { channel: DownloadChanne
         <DownloadLink className="primary-action" channel={channel}>
           <LocalizedText zh={actionCopy.zh} en={actionCopy.en} />
         </DownloadLink>
+        {channel.mirrorLinks.length > 0 ? (
+          <div className="platform-mirror-links">
+            {channel.mirrorLinks.map((link) => (
+              <a key={link.href} className="secondary-action compact-action" href={siteHref(link.href)}>
+                {link.label}
+              </a>
+            ))}
+          </div>
+        ) : null}
       </div>
     </article>
   );

@@ -1,5 +1,5 @@
 interface DownloadHrefChannel {
-  platform: "Android" | "iOS";
+  platform: "Android" | "iOS" | "macOS" | "Windows" | "Linux";
   primaryHref: string;
   audience?: "beta" | "stable";
 }
