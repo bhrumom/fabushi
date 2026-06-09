@@ -6,9 +6,9 @@ import { SiteHeader } from "../../components/site-header";
 import { siteHref, siteUrl } from "../../lib/site-url";
 
 const faqUrl = siteUrl("/faq");
-const faqTitle = `App 下载常见问题 | Android、iOS、安装与版本说明 | ${brand.name}`;
+const faqTitle = `App 下载常见问题 | iOS、Android、桌面版与安装说明 | ${brand.name}`;
 const faqDescription =
-  "集中说明法布施大乘 App 的下载问题：正式版和测试版怎么选、Android 下载慢怎么办、iOS 如何选择 TestFlight 或 App Store、安装失败怎么排查，以及联系支持前需要准备什么。";
+  "集中说明法布施大乘 App 的下载问题：正式版和测试版怎么选、桌面版从哪里下载、Android 下载慢怎么办、iOS 如何选择 TestFlight 或 App Store、安装失败怎么排查，以及联系支持前需要准备什么。";
 
 const faqItems = [
   {
@@ -28,6 +28,12 @@ const faqItems = [
     questionEn: "Should I choose TestFlight or the App Store on iOS?",
     answerZh: "想体验测试版就选择 TestFlight；想直接安装正式版就选择 App Store。现在 iOS 正式版已经上架，普通用户优先选择 App Store 会更稳。",
     answerEn: "Choose TestFlight if you want the beta build. Choose the App Store if you want the stable release. The iOS stable release is now live, so most users should start with the App Store.",
+  },
+  {
+    questionZh: "macOS、Windows、Linux 桌面版在哪里？",
+    questionEn: "Where are the macOS, Windows, and Linux desktop builds?",
+    answerZh: "进入下载页后，iOS 正式版会排在最前面，后面会按 macOS、Windows、Linux 分别显示桌面版 GitHub Release 下载入口和备用格式。",
+    answerEn: "Open the download page: iOS stable appears first, followed by separate macOS, Windows, and Linux GitHub Release download paths with alternate formats.",
   },
   {
     questionZh: "下载前我最少要确认哪些信息？",
@@ -54,6 +60,10 @@ export const metadata: Metadata = {
     "App 下载常见问题",
     "Android 下载",
     "iOS 下载",
+    "macOS 下载",
+    "Windows 下载",
+    "Linux 下载",
+    "桌面版下载",
     "TestFlight",
     "安装失败",
     "R2 下载",

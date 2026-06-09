@@ -8,7 +8,7 @@ import "./globals.css";
 const homeUrl = siteUrl("/");
 const siteTitle = `${brand.name} | 全球法布施 App 下载官网`;
 const siteDescription =
-  "Fabushi 官网只服务 App 下载与安装转化，提供 iOS 与 Android 下载入口、版本说明、安装支持、下载 FAQ 与基础隐私信息。";
+  "Fabushi 官网只服务 App 下载与安装转化，提供 iOS、Android 与桌面版下载入口、版本说明、安装支持、下载 FAQ 与基础隐私信息。";
 
 export const metadata: Metadata = {
   title: siteTitle,
@@ -20,6 +20,10 @@ export const metadata: Metadata = {
     "App 下载",
     "iOS 下载",
     "Android 下载",
+    "macOS 下载",
+    "Windows 下载",
+    "Linux 下载",
+    "桌面版下载",
     "TestFlight",
     "APK 下载",
     "下载 FAQ",

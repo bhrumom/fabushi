@@ -20,9 +20,9 @@ import {
 import { siteHref, siteUrl } from "../../lib/site-url";
 
 const downloadUrl = siteUrl("/download");
-const downloadTitle = `法布施大乘 App 下载 | Android、iOS、版本与安装说明 | ${brand.name}`;
+const downloadTitle = `法布施大乘 App 下载 | iOS、Android、桌面版与安装说明 | ${brand.name}`;
 const downloadDescription =
-  "法布施大乘 App 下载页，集中提供 Android、iOS 下载入口、版本说明、安装步骤与常见下载问题。";
+  "法布施大乘 App 下载页，集中提供 iOS、Android、macOS、Windows、Linux 下载入口、版本说明、安装步骤与常见下载问题。";
 
 const downloadFaqs = [
   {
@@ -38,6 +38,12 @@ const downloadFaqs = [
     answerEn: "Use the main download button on the current card again, then confirm that you downloaded the matching platform and version. If it still fails, send the device model, OS version, and an error screenshot to support.",
   },
   {
+    questionZh: "桌面版从哪里下载？",
+    questionEn: "Where can I download the desktop app?",
+    answerZh: "桌面版按 macOS、Windows、Linux 分开显示，下载按钮会打开对应的 GitHub Release 安装包；同一卡片里也保留备用压缩包格式。",
+    answerEn: "Desktop builds are listed separately for macOS, Windows, and Linux. Buttons open the matching GitHub Release installer, with alternate archive formats on the same card.",
+  },
+  {
     questionZh: "iOS 会打开 TestFlight 还是 App Store？",
     questionEn: "Will iOS open TestFlight or the App Store?",
     answerZh: "iOS 测试版通过 Apple TestFlight 分发；iOS 正式版通过 App Store 安装。下载页会把两个入口分开显示，按你想要的版本选择即可。",
@@ -49,14 +55,14 @@ const installSteps = [
   {
     titleZh: "先确认你的设备平台和版本偏好",
     titleEn: "Confirm your device and version preference first",
-    descriptionZh: "Android 与 iOS 入口分开显示；想先体验新功能可以看测试版，更想稳一点就先看正式版。",
-    descriptionEn: "Android and iOS paths are listed separately. Choose beta for newer features first, or stable for a calmer install path.",
+    descriptionZh: "iOS、Android 和桌面端入口分开显示；普通用户优先选择正式版，需要提前体验再看测试版。",
+    descriptionEn: "iOS, Android, and desktop paths are listed separately. Start with stable for ordinary use, or choose beta for early access.",
   },
   {
     titleZh: "进入对应下载入口并完成安装",
     titleEn: "Open the matching download path and install",
-    descriptionZh: "Android 使用主下载入口直接获取 R2 中的最新安装包；iOS 测试版会打开 TestFlight，正式版会打开 App Store。",
-    descriptionEn: "Use the main Android button to get the latest APK from R2. iOS beta opens TestFlight, while the stable release opens the App Store.",
+    descriptionZh: "iOS 正式版会打开 App Store；桌面版会打开 GitHub Release 安装包；Android 测试版继续使用主下载入口。",
+    descriptionEn: "iOS stable opens the App Store. Desktop builds open GitHub Release installers, while Android beta keeps using the main download path.",
   },
   {
     titleZh: "安装失败时先看 FAQ，再联系支持",
@@ -72,12 +78,16 @@ const DOWNLOAD_NOTES = [
     en: "Check the platform, version, and publish date before downloading so you get the right build.",
   },
   {
-    zh: "Android 安装包由 R2 提供，更新后会直接替换为最新 APK。",
-    en: "Android downloads are served from R2, and each update replaces the APK at the same link.",
+    zh: "iOS 正式版放在最前面，普通用户可直接进入 App Store。",
+    en: "The iOS stable release is listed first and opens the App Store directly.",
   },
   {
-    zh: "iOS 测试版通过 TestFlight 分发，正式版通过 App Store 安装。",
-    en: "iOS beta is distributed through TestFlight, while the stable release installs through the App Store.",
+    zh: "桌面版使用 GitHub Release 下载链接，按 macOS、Windows、Linux 分开显示。",
+    en: "Desktop builds use GitHub Release links and are split by macOS, Windows, and Linux.",
+  },
+  {
+    zh: "Android 测试版使用主下载入口，iOS 测试版通过 TestFlight 分发。",
+    en: "Android beta uses the main download path, while iOS beta is distributed through TestFlight.",
   },
 ] as const;
 
@@ -89,6 +99,10 @@ export const metadata: Metadata = {
     "Fabushi 下载",
     "Android 下载",
     "iOS 下载",
+    "macOS 下载",
+    "Windows 下载",
+    "Linux 下载",
+    "桌面版下载",
     "TestFlight",
     "安装说明",
     "版本说明",
@@ -133,6 +147,27 @@ function getChannelActionCopy(channel: OfficialSiteChannel) {
     return {
       zh: channel.audience === "beta" ? "下载 iOS 测试版" : "下载 iOS 正式版",
       en: channel.audience === "beta" ? "Download iOS Beta" : "Download iOS Stable",
+    };
+  }
+
+  if (channel.platform === "macOS") {
+    return {
+      zh: "下载 macOS 桌面版",
+      en: "Download macOS Desktop",
+    };
+  }
+
+  if (channel.platform === "Windows") {
+    return {
+      zh: "下载 Windows 桌面版",
+      en: "Download Windows Desktop",
+    };
+  }
+
+  if (channel.platform === "Linux") {
+    return {
+      zh: "下载 Linux 桌面版",
+      en: "Download Linux Desktop",
     };
   }
 
@@ -196,9 +231,14 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
         <DownloadLink className="primary-action" channel={channel}>
           <LocalizedText zh={actionCopy.zh} en={actionCopy.en} />
         </DownloadLink>
+        {channel.mirrorLinks.map((link) => (
+          <a key={link.href} className="secondary-action compact-action" href={siteHref(link.href)}>
+            {link.label}
+          </a>
+        ))}
         {channel.releasePageHref ? (
-          <a className="secondary-action" href={siteHref("/download#release-changelog")}>
-            <LocalizedText zh="查看下载内容说明" en="View download notes" />
+          <a className="secondary-action compact-action" href={siteHref(channel.releasePageHref)}>
+            <LocalizedText zh="查看发布页" en="View release page" />
           </a>
         ) : null}
       </div>
@@ -213,9 +253,9 @@ function ReleaseChannelCard({ channel }: { channel: OfficialSiteChannel }) {
 
 export default async function DownloadPage() {
   const releaseCollection = await getOfficialSiteReleaseCollection();
-  const betaChannels = releaseCollection.betaChannels;
   const stableChannels = releaseCollection.stableChannels;
-  const allChannels = [...betaChannels, ...stableChannels];
+  const betaChannels = releaseCollection.betaChannels;
+  const allChannels = [...stableChannels, ...betaChannels];
   const supportEmail =
     contactChannels.find((item) => item.href.startsWith("mailto:"))?.value ?? "support@ombhrum.com";
 
@@ -233,7 +273,7 @@ export default async function DownloadPage() {
           name: `${brand.name} Fabushi`,
           url: siteUrl("/"),
         },
-        about: ["App 下载", "Android 下载", "iOS 下载", "安装说明", "版本说明"],
+        about: ["App 下载", "iOS 下载", "Android 下载", "桌面版下载", "安装说明", "版本说明"],
       },
       {
         "@type": "BreadcrumbList",
@@ -256,7 +296,7 @@ export default async function DownloadPage() {
         "@type": "SoftwareApplication",
         name: `${brand.name} Fabushi`,
         applicationCategory: "LifestyleApplication",
-        operatingSystem: "Android, iOS",
+        operatingSystem: "iOS, Android, macOS, Windows, Linux",
         url: downloadUrl,
         downloadUrl,
         description: downloadDescription,
@@ -324,20 +364,36 @@ export default async function DownloadPage() {
           </h1>
           <p className="lede">
             <LocalizedText
-              zh="这一页集中放置 Android、iOS、版本说明和安装步骤，让下载路径更短。"
-              en="This page keeps Android, iOS, release notes, and install steps in one place so the download path stays short."
+              zh="这一页集中放置 iOS、Android、桌面版、版本说明和安装步骤，让下载路径更短。"
+              en="This page keeps iOS, Android, desktop releases, notes, and install steps in one place so the download path stays short."
             />
           </p>
         </div>
       </section>
 
-      <section className="band compact-band" id="beta-channels">
+      <section className="band compact-band" id="stable-channels">
         <div className="section-heading tight">
           <p>
             <LocalizedText zh="下载" en="Download" />
           </p>
           <h2>
-            <LocalizedText zh="先从最合适的平台入口开始。" en="Start with the path that matches your device." />
+            <LocalizedText zh="iOS 正式版在最前面，桌面版也都在这里。" en="iOS stable comes first, with every desktop build beside it." />
+          </h2>
+        </div>
+        <div className="download-grid">
+          {stableChannels.map((channel) => (
+            <ReleaseChannelCard key={`${channel.audience}-${channel.platform}`} channel={channel} />
+          ))}
+        </div>
+      </section>
+
+      <section className="band alt" id="beta-channels">
+        <div className="section-heading tight">
+          <p>
+            <LocalizedText zh="测试版" en="Beta" />
+          </p>
+          <h2>
+            <LocalizedText zh="想提前体验，再看测试入口。" en="Use beta paths when you want early access." />
           </h2>
         </div>
         {betaChannels.length > 0 ? (
@@ -372,22 +428,6 @@ export default async function DownloadPage() {
             </article>
           </div>
         )}
-      </section>
-
-      <section className="band alt" id="stable-channels">
-        <div className="section-heading tight">
-          <p>
-            <LocalizedText zh="正式版" en="Stable" />
-          </p>
-          <h2>
-            <LocalizedText zh="适合想要更稳安装的人。" en="For people who would rather wait for a steadier install path." />
-          </h2>
-        </div>
-        <div className="download-grid">
-          {stableChannels.map((channel) => (
-            <ReleaseChannelCard key={`${channel.audience}-${channel.platform}`} channel={channel} />
-          ))}
-        </div>
       </section>
 
       <section className="band" id="install-steps">
