@@ -1,4 +1,5 @@
 import type { FaliuMeritBenefit } from "./faliu-merit-benefits";
+import { T0244_JUAN_4_SEGMENT_17_MERIT_BENEFITS } from "./faliu-merit-benefits-t0244-juan4-segment17";
 
 export const T0244_JUAN_4_SEGMENT_16_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   {
@@ -57,4 +58,5 @@ export const T0244_JUAN_4_SEGMENT_16_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     anchorText: "如是羯磨印，速證菩提道",
     note: "第十六分结尾劝授此法印，明说速证菩提、难成义能成、所作无碍，未入坛场亦刹那成就。",
   },
+  ...T0244_JUAN_4_SEGMENT_17_MERIT_BENEFITS,
 ];
