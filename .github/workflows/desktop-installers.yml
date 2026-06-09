@@ -361,6 +361,11 @@ jobs:
         if: matrix.target == 'macos'
         run: flutter build macos --release --no-pub
 
+      - name: Sync macOS OpenClaw assets into release app
+        if: matrix.target == 'macos'
+        shell: bash
+        run: ../.github/scripts/sync-openclaw-build-assets-v2.sh "${{ steps.openclaw.outputs.platform }}" build/macos/Build/Products/Release/global_dharma_sharing.app/Contents/Frameworks/App.framework/Resources/flutter_assets
+
       - name: Build macOS package CLI
         if: matrix.target == 'macos'
         shell: bash
