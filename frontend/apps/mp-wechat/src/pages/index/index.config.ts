@@ -1,3 +1,3 @@
 export default definePageConfig({
-  navigationBarTitleText: "法布施",
+  navigationBarTitleText: "大乘 Web",
 });

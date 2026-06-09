@@ -6,6 +6,8 @@ export const dynamic = "force-static";
 
 const staticRoutes = [
   "/",
+  "/app",
+  "/app/ai",
   "/download",
   "/apply",
   "/faq",
@@ -30,6 +32,8 @@ const staticRoutes = [
 
 const weeklyRoutes = new Set([
   "/",
+  "/app",
+  "/app/ai",
   "/download",
   "/faq",
   "/buddhadharma",
@@ -50,6 +54,8 @@ const weeklyRoutes = new Set([
 
 const routeLastModified: Partial<Record<(typeof staticRoutes)[number], string>> = {
   "/": "2026-05-18",
+  "/app": "2026-06-09",
+  "/app/ai": "2026-06-09",
   "/download": "2026-05-18",
   "/faq": "2026-05-17",
   "/privacy": "2026-05-08",
