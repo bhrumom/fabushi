@@ -1,3 +1,5 @@
+import type { FaliuMeritBenefit } from "./faliu-merit-benefits";
+
 export const T0245_JUAN_1_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   {
     id: "t0245-001-001",
