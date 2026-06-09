@@ -8,10 +8,10 @@
       "description": "官网按钮会直接下载已经同步到 R2 的最新 Android APK 安装包。",
       "primaryLabel": "下载 Android Beta",
       "primaryHref": "https://fabushi.ombhrum.com/downloads/android/fabushi-android-beta.apk",
-      "version": "v1.0.0-377-mobile.3dd4e4dc806f",
-      "publishedAt": "2026-05-23T05:11:23Z",
+      "version": "v1.0.1-481-mobile.05532d825da8",
+      "publishedAt": "2026-06-09T03:41:54Z",
       "updateSummary": [
-        "改进下载体验与版本信息展示。",
+        "同步最新移动端 1.0.1+481 发布。",
         "优化整体稳定性与页面呈现。"
       ],
       "mirrorLinks": [],
@@ -25,15 +25,15 @@
       "description": "TestFlight 上传成功后，官网会和 Android beta 一起更新这里的测试入口。",
       "primaryLabel": "加入 iOS TestFlight",
       "primaryHref": "https://testflight.apple.com/join/98KFgV2z",
-      "version": "377",
-      "publishedAt": "2026-05-23T05:10:23Z",
+      "version": "481",
+      "publishedAt": "2026-06-09T03:41:00Z",
       "updateSummary": [
-        "改进下载体验与版本信息展示。",
+        "TestFlight 上传已被 App Store Connect 接收。",
         "优化整体稳定性与页面呈现。"
       ],
       "mirrorLinks": [],
       "note": "",
-      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.0-377-mobile.3dd4e4dc806f"
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.1-481-mobile.05532d825da8"
     }
   ],
   "stableChannels": [
@@ -53,10 +53,99 @@
       ],
       "mirrorLinks": [],
       "note": "点击后会打开 Apple App Store 页面。"
+    },
+    {
+      "platform": "macOS",
+      "audience": "stable",
+      "status": "GitHub Release 可下载",
+      "title": "macOS 桌面版",
+      "description": "适合 macOS Apple Silicon 设备安装桌面版。",
+      "primaryLabel": "下载 macOS DMG",
+      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/desktop-v1.0.1-408-49-a0e997f3aa61/global_dharma_sharing-1.0.1-408-macos-arm64.dmg",
+      "version": "1.0.1-408",
+      "publishedAt": "2026-06-08T12:21:06Z",
+      "updateSummary": [
+        "桌面版安装包已发布到 GitHub Release。",
+        "提供 DMG 和 ZIP 两种 macOS 下载格式。"
+      ],
+      "mirrorLinks": [
+        {
+          "label": "下载 macOS ZIP",
+          "href": "https://github.com/bhrumom/fabushi/releases/download/desktop-v1.0.1-408-49-a0e997f3aa61/global_dharma_sharing-1.0.1-408-macos-arm64.zip"
+        }
+      ],
+      "note": "桌面版文件由 GitHub Release 提供。",
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/desktop-v1.0.1-408-49-a0e997f3aa61"
+    },
+    {
+      "platform": "Windows",
+      "audience": "stable",
+      "status": "GitHub Release 可下载",
+      "title": "Windows 桌面版",
+      "description": "适合 Windows x64 设备安装桌面版。",
+      "primaryLabel": "下载 Windows 安装器",
+      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/desktop-v1.0.1-408-49-a0e997f3aa61/global_dharma_sharing-1.0.1-408-windows-x64-setup.exe",
+      "version": "1.0.1-408",
+      "publishedAt": "2026-06-08T12:21:06Z",
+      "updateSummary": [
+        "桌面版安装包已发布到 GitHub Release。",
+        "提供安装器和 ZIP 两种 Windows 下载格式。"
+      ],
+      "mirrorLinks": [
+        {
+          "label": "下载 Windows ZIP",
+          "href": "https://github.com/bhrumom/fabushi/releases/download/desktop-v1.0.1-408-49-a0e997f3aa61/global_dharma_sharing-1.0.1-408-windows-x64.zip"
+        }
+      ],
+      "note": "桌面版文件由 GitHub Release 提供。",
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/desktop-v1.0.1-408-49-a0e997f3aa61"
+    },
+    {
+      "platform": "Linux",
+      "audience": "stable",
+      "status": "GitHub Release 可下载",
+      "title": "Linux 桌面版",
+      "description": "适合 Linux x64 设备安装桌面版。",
+      "primaryLabel": "下载 Linux DEB",
+      "primaryHref": "https://github.com/bhrumom/fabushi/releases/download/desktop-v1.0.1-408-49-a0e997f3aa61/global-dharma-sharing_1.0.1-408_amd64.deb",
+      "version": "1.0.1-408",
+      "publishedAt": "2026-06-08T12:21:06Z",
+      "updateSummary": [
+        "桌面版安装包已发布到 GitHub Release。",
+        "提供 DEB 和 tar.gz 两种 Linux 下载格式。"
+      ],
+      "mirrorLinks": [
+        {
+          "label": "下载 Linux tar.gz",
+          "href": "https://github.com/bhrumom/fabushi/releases/download/desktop-v1.0.1-408-49-a0e997f3aa61/global_dharma_sharing-1.0.1-408-linux-x64.tar.gz"
+        }
+      ],
+      "note": "桌面版文件由 GitHub Release 提供。",
+      "releasePageHref": "https://github.com/bhrumom/fabushi/releases/tag/desktop-v1.0.1-408-49-a0e997f3aa61"
     }
   ],
   "screenshots": {},
   "releases": [
+    {
+      "tag": "v1.0.1-481-mobile.05532d825da8",
+      "title": "Fabushi mobile 1.0.1+481 (05532d825da8)",
+      "publishedAt": "2026-06-09T03:41:54Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/v1.0.1-481-mobile.05532d825da8",
+      "summary": [
+        "同步最新移动端 1.0.1+481 发布。",
+        "TestFlight 上传已被 App Store Connect 接收。"
+      ]
+    },
+    {
+      "tag": "desktop-v1.0.1-408-49-a0e997f3aa61",
+      "title": "Fabushi desktop 1.0.1-408 (a0e997f3aa61)",
+      "publishedAt": "2026-06-08T12:21:06Z",
+      "htmlUrl": "https://github.com/bhrumom/fabushi/releases/tag/desktop-v1.0.1-408-49-a0e997f3aa61",
+      "summary": [
+        "新增 macOS、Windows、Linux 桌面版下载入口。",
+        "桌面版安装包由 GitHub Release 提供。"
+      ]
+    },
     {
       "tag": "v1.0.0-377-mobile.3dd4e4dc806f",
       "title": "Fabushi mobile 1.0.0+377 (3dd4e4dc806f)",
@@ -109,6 +198,7 @@
   "notes": [
     "Android beta APK 已同步到 R2，官网按钮会直接下载 R2 中的最新安装包。",
     "iOS 正式版已上架 App Store，官网正式版入口会直接打开 App Store。",
+    "桌面版已开放 macOS、Windows、Linux GitHub Release 下载入口。",
     "iOS TestFlight 入口会在上传状态成功后同步到官网。",
     "官网展示的 iOS TestFlight 入口来自本次发布携带的上传状态与公开加入链接；如需确认 App Store Connect 后台最终处理态，仍需额外核验。",
     "如果本次 GitHub Release 只带了一个平台，官网会继续保留另一个平台上一版可用信息。"
