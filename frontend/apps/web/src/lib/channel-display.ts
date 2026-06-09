@@ -1,5 +1,5 @@
 export interface DisplayChannel {
-  platform: "Android" | "iOS";
+  platform: "Android" | "iOS" | "macOS" | "Windows" | "Linux";
   audience: "beta" | "stable";
   status: string;
   description: string;
@@ -17,6 +17,13 @@ interface LocalizedCopy {
 const TECHNICAL_COPY_PATTERN = /github|自动同步|仓库|app store connect|凭据|发布记录|release|同步|uploaded|upload|asset|api/i;
 
 function fallbackDescription(channel: DisplayChannel): LocalizedCopy {
+  if (isDesktopPlatform(channel.platform)) {
+    return {
+      zh: `适合在 ${channel.platform} 桌面设备上安装使用。`,
+      en: `For installing the desktop app on ${channel.platform}.`,
+    };
+  }
+
   if (channel.platform === "Android" && channel.audience === "beta") {
     return {
       zh: "适合希望第一时间体验新功能的用户。",
@@ -38,6 +45,19 @@ function fallbackDescription(channel: DisplayChannel): LocalizedCopy {
 }
 
 function fallbackSummary(channel: DisplayChannel): LocalizedCopy[] {
+  if (isDesktopPlatform(channel.platform)) {
+    return [
+      {
+        zh: "桌面版安装包已经开放下载。",
+        en: "The desktop installer is available to download.",
+      },
+      {
+        zh: "如需其他压缩包格式，可使用卡片里的备用入口。",
+        en: "Use the alternate link on the card if you need the archive format.",
+      },
+    ];
+  }
+
   if (channel.platform === "Android" && channel.audience === "beta") {
     return [
       {
@@ -77,6 +97,13 @@ function fallbackSummary(channel: DisplayChannel): LocalizedCopy[] {
 }
 
 export function getUserFacingStatus(channel: DisplayChannel): LocalizedCopy {
+  if (isDesktopPlatform(channel.platform)) {
+    return {
+      zh: "桌面版可下载",
+      en: "Desktop available",
+    };
+  }
+
   if (channel.platform === "Android" && channel.audience === "beta") {
     return {
       zh: "最新测试版",
@@ -134,6 +161,13 @@ export function getUserFacingSummary(channel: DisplayChannel): LocalizedCopy[] {
 }
 
 export function getUserFacingNote(channel: DisplayChannel): LocalizedCopy | null {
+  if (isDesktopPlatform(channel.platform)) {
+    return {
+      zh: "如需校验文件完整性，可在对应的 GitHub Release 页面查看 SHA256SUMS。",
+      en: "Use the linked GitHub Release page if you need SHA256 checksums.",
+    };
+  }
+
   if (channel.platform === "iOS" && channel.audience === "beta") {
     return channel.primaryHref.includes("testflight.apple.com")
       ? {
@@ -154,4 +188,8 @@ export function getUserFacingNote(channel: DisplayChannel): LocalizedCopy | null
   }
 
   return null;
+}
+
+function isDesktopPlatform(platform: DisplayChannel["platform"]) {
+  return platform === "macOS" || platform === "Windows" || platform === "Linux";
 }
