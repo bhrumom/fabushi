@@ -55,7 +55,7 @@ export const dachengToolEntries = [
   },
 ] as const satisfies readonly DachengToolEntry[];
 
-export const dachengHeroChips = [
+export const dachengHeroChips: readonly DachengHeroChip[] = [
   {
     id: "who",
     label: "你是谁",
@@ -88,7 +88,7 @@ export const dachengHeroChips = [
     icon: "🧭",
     prompt: "根据今天的状态安排一个 20 分钟修行计划。",
   },
-] as const satisfies readonly DachengHeroChip[];
+];
 
 export const dachengQuickPrompts = dachengHeroChips.map((item) => item.prompt);
 
