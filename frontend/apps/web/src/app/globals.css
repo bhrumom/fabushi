@@ -51,6 +51,22 @@ textarea {
   resize: none;
 }
 
+.localized-text {
+  display: inline;
+}
+
+.locale-en {
+  display: none;
+}
+
+html[data-site-locale="en"] .locale-zh {
+  display: none;
+}
+
+html[data-site-locale="en"] .locale-en {
+  display: inline;
+}
+
 h1,
 h2,
 h3,
