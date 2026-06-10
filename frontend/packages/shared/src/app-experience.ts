@@ -10,10 +10,19 @@ export const appModules = [
     id: "global-dharma",
     title: "全球法布施",
     shortTitle: "法布施",
-    summary: "选择经文、音频、图片或发愿文，一键发送到全球节点。",
+    summary: "选择经文、音频、图片或发愿文，一键发送到全球 HTTP 公共端点。",
     action: "开始发送",
     tone: "cyan",
     screenshot: "/product/global-dharma.png",
+  },
+  {
+    id: "flashcards",
+    title: "背诵闪卡",
+    shortTitle: "闪卡",
+    summary: "参考 RemNote 的挖空卡、双向卡和间隔复习，把经文内容变成可背诵知识点。",
+    action: "开始背诵",
+    tone: "blue",
+    screenshot: "/product/main-sutra.png",
   },
   {
     id: "sutra",
@@ -50,15 +59,6 @@ export const appModules = [
     action: "查看榜单",
     tone: "violet",
     screenshot: "/product/global-ranking.png",
-  },
-  {
-    id: "ai",
-    title: "大乘 AI",
-    shortTitle: "AI",
-    summary: "帮你查找可分享资源、整理经文摘要、生成发愿文和修行计划。",
-    action: "问问 AI",
-    tone: "blue",
-    screenshot: "/product/global-donation.png",
   },
 ] as const;
 
@@ -144,9 +144,5 @@ export const leaderboardPreview = [
 ] as const;
 
 export const miniProgramTabs = [
-  { pagePath: "pages/index/index", text: "首页", icon: "home" },
-  { pagePath: "pages/sutra/index", text: "经文", icon: "sutra" },
-  { pagePath: "pages/practice/index", text: "修行", icon: "practice" },
-  { pagePath: "pages/ai/index", text: "AI", icon: "ai" },
-  { pagePath: "pages/me/index", text: "我的", icon: "me" },
+  { pagePath: "pages/index/index", text: "大乘", icon: "home" },
 ] as const;
