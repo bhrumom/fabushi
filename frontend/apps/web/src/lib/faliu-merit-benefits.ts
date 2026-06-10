@@ -1,3 +1,4 @@
+import { T0001_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0001-juan2";
 import { T0235_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0235";
 import { T0237_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0237";
 import { T0238_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0238";
@@ -184,6 +185,10 @@ export function getFaliuMeritBenefits(work: string | null | undefined, juan: str
 
   if (normalizedWork === "T0001" && normalizedJuan === "1") {
     return T0001_JUAN_1_MERIT_BENEFITS;
+  }
+
+  if (normalizedWork === "T0001" && normalizedJuan === "2") {
+    return T0001_JUAN_2_MERIT_BENEFITS;
   }
 
   if (normalizedWork === "T0235" && normalizedJuan === "1") {
