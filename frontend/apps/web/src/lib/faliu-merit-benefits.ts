@@ -21,6 +21,7 @@ import { T0244_JUAN_7_MERIT_BENEFITS } from "./faliu-merit-benefits-t0244-juan7"
 import { T0244_JUAN_7_SEGMENT_25_MERIT_BENEFITS } from "./faliu-merit-benefits-t0244-juan7-segment25";
 import { T0245_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0245";
 import { T0245_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0245-juan2";
+import { T0246_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0246";
 import { T0262_JUAN_7_MERIT_BENEFITS } from "./faliu-merit-benefits-t0262";
 import { T0366_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0366";
 import { T1153_JUAN_1_MERIT_BENEFITS, T1153_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t1153";
@@ -259,6 +260,10 @@ export function getFaliuMeritBenefits(work: string | null | undefined, juan: str
 
   if (normalizedWork === "T0245" && normalizedJuan === "2") {
     return T0245_JUAN_2_MERIT_BENEFITS;
+  }
+
+  if (normalizedWork === "T0246" && normalizedJuan === "1") {
+    return T0246_JUAN_1_MERIT_BENEFITS;
   }
 
   if (normalizedWork === "T0262" && normalizedJuan === "7") {
