@@ -3,10 +3,11 @@ import type { Metadata, Viewport } from "next";
 import { dachengBrand } from "@fabushi/shared";
 import { siteUrl } from "../lib/site-url";
 import "./globals.css";
+import "./fast-home.css";
 
 const homeUrl = siteUrl("/");
 const siteTitle = `${dachengBrand.name} | 极速首页`;
-const siteDescription = "大乘 Web 只保留首页对话、全球法布施和背诵闪卡功能，使用静态首屏和轻量交互。";
+const siteDescription = "大乘 Web 首页提供对话、全球法布施和背诵闪卡，使用静态首屏和轻量交互。";
 
 export const metadata: Metadata = {
   title: siteTitle,
