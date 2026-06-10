@@ -1,16 +1,32 @@
+import { LanguageSwitch } from "./language-switch";
 import { LocalizedText } from "./localized-text";
 import { siteHref } from "../lib/site-url";
 
 const NAV_ITEMS = [
   {
-    href: "/",
-    zh: "首页",
-    en: "Home",
-  },
-  {
     href: "/app",
     zh: "大乘 Web",
     en: "Dacheng Web",
+  },
+  {
+    href: "/faliu",
+    zh: "法流",
+    en: "Faloo",
+  },
+  {
+    href: "/faq",
+    zh: "下载 FAQ",
+    en: "Download FAQ",
+  },
+  {
+    href: "/contact",
+    zh: "联系支持",
+    en: "Contact Support",
+  },
+  {
+    href: "/privacy",
+    zh: "隐私说明",
+    en: "Privacy",
   },
 ] as const;
 
@@ -34,6 +50,7 @@ export function SiteHeader() {
           ))}
         </div>
         <div className="site-nav-actions">
+          <LanguageSwitch />
           <a className="nav-cta" href={siteHref("/app")}>
             <LocalizedText zh="打开大乘" en="Open Dacheng" />
           </a>
