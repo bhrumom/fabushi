@@ -123,6 +123,7 @@ export function GlobalNetworkGlobe() {
     let raf = 0;
     let disposed = false;
     let lastFrame = 0;
+    let lastPaint = 0;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     reduceMotionRef.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -141,13 +142,13 @@ export function GlobalNetworkGlobe() {
       radius: number,
       rotation: number,
     ) {
-      const columns = Math.round(Math.min(192, Math.max(74, radius / 2.2)));
-      const rows = Math.round(Math.min(128, Math.max(48, radius / 3)));
+      const columns = Math.round(Math.min(96, Math.max(56, radius / 5.5)));
+      const rows = Math.round(Math.min(64, Math.max(36, radius / 7)));
       const cellWidth = (radius * 2) / columns;
       const cellHeight = (radius * 2) / rows;
 
       context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
+      context.imageSmoothingQuality = "medium";
 
       for (let col = 0; col < columns; col += 1) {
         const x0 = -radius + col * cellWidth;
@@ -240,6 +241,12 @@ export function GlobalNetworkGlobe() {
     }
 
     function draw(timestamp: number) {
+      if (timestamp && lastPaint && timestamp - lastPaint < 33) {
+        raf = window.requestAnimationFrame(draw);
+        return;
+      }
+      lastPaint = timestamp;
+
       const runtime = runtimeRef.current;
       const width = drawingCanvas.clientWidth;
       const height = drawingCanvas.clientHeight;
