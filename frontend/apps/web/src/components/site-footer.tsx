@@ -4,13 +4,8 @@ import { siteHref } from "../lib/site-url";
 const FOOTER_LINKS = [
   {
     href: "/app",
-    zh: "Web App",
-    en: "Web App",
-  },
-  {
-    href: "/app/ai",
-    zh: "大乘 AI",
-    en: "Dacheng AI",
+    zh: "大乘 Web",
+    en: "Dacheng Web",
   },
   {
     href: "/download",
@@ -39,12 +34,12 @@ export function SiteFooter() {
     <footer className="site-footer">
       <div>
         <p className="footer-title">
-          <LocalizedText zh="法布施 大乘" en="Fabushi" />
+          <LocalizedText zh="大乘" en="Dacheng" />
         </p>
         <p className="footer-copy">
           <LocalizedText
-            zh="全球法布施 Web App、App 下载、安装支持、版本说明与基础信任信息。"
-            en="Fabushi Web App, app download, install support, release notes, and essential trust information."
+            zh="统一聊天入口、全球法布施、背诵闪卡、App 下载与支持信息。"
+            en="Unified chat entry, global Dharma sharing, recitation flashcards, app downloads, and support."
           />
         </p>
       </div>
