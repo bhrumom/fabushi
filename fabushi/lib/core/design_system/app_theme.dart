@@ -124,6 +124,74 @@ class AppTheme {
     ),
   );
 
+  // Web 首屏使用系统字体，避免 NotoSansSC/NotoSerifSC 在首帧前被拉取。
+  static ThemeData webFastTheme = ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.dark,
+    scaffoldBackgroundColor: Colors.transparent,
+    colorScheme: const ColorScheme.dark(
+      primary: primaryColor,
+      secondary: secondaryColor,
+      tertiary: accentColor,
+      surface: Color(0xFF1E1E2C),
+      background: Colors.transparent,
+    ),
+    appBarTheme: const AppBarTheme(
+      centerTitle: true,
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      foregroundColor: starlightWhite,
+      titleTextStyle: TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+        color: starlightWhite,
+      ),
+    ),
+    cardTheme: CardThemeData(
+      elevation: 0,
+      color: glassSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: glassBorder, width: 0.5),
+      ),
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        elevation: 4,
+        shadowColor: nebulaPurple.withOpacity(0.32),
+        backgroundColor: primaryColor,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: glassSurface,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: glassBorder),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: glassBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: accentColor, width: 1),
+      ),
+      hintStyle: TextStyle(color: starlightWhite.withOpacity(0.5)),
+      labelStyle: const TextStyle(color: starlightWhite),
+    ),
+    textTheme: const TextTheme(
+      bodyLarge: TextStyle(color: starlightWhite),
+      bodyMedium: TextStyle(color: starlightWhite),
+      titleLarge: TextStyle(color: starlightWhite, fontWeight: FontWeight.bold),
+    ),
+  );
+
   // Light Theme (Keeping it but making it compatible if needed, or just redirect to Dark)
   // For this request, we might want to force Dark mode or make Light mode also "Spacey" (maybe day-sky).
   // Let's stick to the user request "Space travel" -> Dark.
