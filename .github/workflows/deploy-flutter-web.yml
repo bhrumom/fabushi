@@ -1,0 +1,158 @@
+name: CD - Flutter Web
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/deploy-flutter-web.yml'
+      - 'fabushi/analysis_options.yaml'
+      - 'fabushi/l10n.yaml'
+      - 'fabushi/pubspec.yaml'
+      - 'fabushi/pubspec.lock'
+      - 'fabushi/lib/**'
+      - 'fabushi/web/**'
+      - 'fabushi/assets/**'
+      - '!fabushi/assets/built_in/**'
+      - 'fabushi/fonts/**'
+  workflow_dispatch:
+    inputs:
+      project_name:
+        description: Cloudflare Pages project name.
+        required: false
+        type: string
+        default: fabushi-flutter-web
+
+concurrency:
+  group: flutter-web-production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  deployments: write
+
+env:
+  FLUTTER_VERSION: '3.41.9'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  deploy-flutter-web:
+    name: Build and deploy Flutter Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://flutter.ombhrum.com
+    defaults:
+      run:
+        working-directory: fabushi
+    env:
+      CLOUDFLARE_PAGES_PROJECT: ${{ github.event.inputs.project_name || vars.CLOUDFLARE_PAGES_PROJECT || 'fabushi-flutter-web' }}
+    steps:
+      - name: Checkout Flutter Web source
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/analysis_options.yaml
+            /fabushi/l10n.yaml
+            /fabushi/pubspec.yaml
+            /fabushi/pubspec.lock
+            /fabushi/lib/**
+            /fabushi/web/**
+            !/fabushi/web/assets/built_in/**
+            /fabushi/assets/**
+            !/fabushi/assets/built_in/**
+            /fabushi/fonts/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Show build context
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter --version
+          echo "Cloudflare Pages project: $CLOUDFLARE_PAGES_PROJECT"
+          echo "Deploy source ref: $GITHUB_REF_NAME"
+          echo "Deploy source SHA: $GITHUB_SHA"
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter Web entrypoint
+        run: flutter analyze lib/main.dart
+
+      - name: Build Flutter Web release
+        run: flutter build web --release
+
+      - name: Smoke test built Flutter Web app
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8080 --directory build/web > /tmp/fabushi-flutter-web.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/ > /tmp/fabushi-index.html; then
+              break
+            fi
+            sleep 1
+          done
+
+          test -s /tmp/fabushi-index.html
+          grep -Eq 'flutter|main\.dart\.js|flutter_bootstrap\.js' /tmp/fabushi-index.html
+
+      - name: Upload Flutter Web build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: flutter-web-build-${{ github.sha }}
+          path: fabushi/build/web
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Check Cloudflare credential presence
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo "Cloudflare API token is not configured."; exit 1; }
+          [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo "Cloudflare account id is not configured."; exit 1; }
+          echo "Cloudflare credentials are configured."
+
+      - name: Deploy Flutter Web to Cloudflare Pages
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@latest pages deploy build/web \
+            --project-name "$CLOUDFLARE_PAGES_PROJECT" \
+            --branch "$GITHUB_REF_NAME" \
+            --commit-hash "$GITHUB_SHA"
+
+      - name: Write deployment summary
+        shell: bash
+        run: |
+          {
+            echo "## Flutter Web deployment"
+            echo ""
+            echo "- Source SHA: $GITHUB_SHA"
+            echo "- Trigger: $GITHUB_EVENT_NAME"
+            echo "- Cloudflare Pages project: $CLOUDFLARE_PAGES_PROJECT"
+            echo "- Production URL: https://flutter.ombhrum.com"
+          } >> "$GITHUB_STEP_SUMMARY"
