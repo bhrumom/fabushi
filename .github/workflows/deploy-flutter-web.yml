@@ -16,12 +16,6 @@ on:
       - '!fabushi/assets/built_in/**'
       - 'fabushi/fonts/**'
   workflow_dispatch:
-    inputs:
-      project_name:
-        description: Cloudflare Pages project name.
-        required: false
-        type: string
-        default: fabushi-web-prod
 
 concurrency:
   group: flutter-web-production
@@ -34,6 +28,8 @@ permissions:
 env:
   FLUTTER_VERSION: '3.41.9'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  CLOUDFLARE_PAGES_PROJECT: fabushi-web-prod
+  EXPECTED_CUSTOM_DOMAIN: flutter.ombhrum.com
 
 jobs:
   deploy-flutter-web:
@@ -46,8 +42,6 @@ jobs:
     defaults:
       run:
         working-directory: fabushi
-    env:
-      CLOUDFLARE_PAGES_PROJECT: ${{ github.event.inputs.project_name || vars.CLOUDFLARE_PAGES_PROJECT || 'fabushi-web-prod' }}
     steps:
       - name: Checkout Flutter Web source
         uses: actions/checkout@v5
@@ -84,6 +78,7 @@ jobs:
           set -euo pipefail
           flutter --version
           echo "Cloudflare Pages project: $CLOUDFLARE_PAGES_PROJECT"
+          echo "Expected custom domain: $EXPECTED_CUSTOM_DOMAIN"
           echo "Deploy source ref: $GITHUB_REF_NAME"
           echo "Deploy source SHA: $GITHUB_SHA"
 
@@ -129,9 +124,51 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
         run: |
           set -euo pipefail
+          [ "$CLOUDFLARE_PAGES_PROJECT" = "fabushi-web-prod" ] || { echo "Refusing to deploy to unexpected Pages project: $CLOUDFLARE_PAGES_PROJECT"; exit 1; }
           [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo "Cloudflare API token is not configured."; exit 1; }
           [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo "Cloudflare account id is not configured."; exit 1; }
           echo "Cloudflare credentials are configured."
+
+      - name: Verify custom domain before deploy
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status=$(curl -sS -w '%{http_code}' -o "$response_file" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$CLOUDFLARE_PAGES_PROJECT/domains")
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "Failed to read Cloudflare Pages custom domains. HTTP status: $status"
+            cat "$response_file"
+            exit 1
+          fi
+          python3 - "$response_file" "$EXPECTED_CUSTOM_DOMAIN" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          payload = json.loads(Path(sys.argv[1]).read_text())
+          expected = sys.argv[2]
+
+          def contains_domain(value):
+              if isinstance(value, dict):
+                  for key in ("name", "domain", "hostname"):
+                      if value.get(key) == expected:
+                          return True
+                  return any(contains_domain(item) for item in value.values())
+              if isinstance(value, list):
+                  return any(contains_domain(item) for item in value)
+              return value == expected
+
+          if not contains_domain(payload):
+              print(f"Expected custom domain {expected} is not bound to this Pages project.")
+              raise SystemExit(1)
+
+          print(f"Verified custom domain before deploy: {expected}")
+          PY
 
       - name: Deploy Flutter Web to Cloudflare Pages
         shell: bash
@@ -145,6 +182,47 @@ jobs:
             --branch "$GITHUB_REF_NAME" \
             --commit-hash "$GITHUB_SHA"
 
+      - name: Verify custom domain after deploy
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status=$(curl -sS -w '%{http_code}' -o "$response_file" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$CLOUDFLARE_PAGES_PROJECT/domains")
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "Failed to read Cloudflare Pages custom domains after deploy. HTTP status: $status"
+            cat "$response_file"
+            exit 1
+          fi
+          python3 - "$response_file" "$EXPECTED_CUSTOM_DOMAIN" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          payload = json.loads(Path(sys.argv[1]).read_text())
+          expected = sys.argv[2]
+
+          def contains_domain(value):
+              if isinstance(value, dict):
+                  for key in ("name", "domain", "hostname"):
+                      if value.get(key) == expected:
+                          return True
+                  return any(contains_domain(item) for item in value.values())
+              if isinstance(value, list):
+                  return any(contains_domain(item) for item in value)
+              return value == expected
+
+          if not contains_domain(payload):
+              print(f"Expected custom domain {expected} is missing after deploy.")
+              raise SystemExit(1)
+
+          print(f"Verified custom domain after deploy: {expected}")
+          PY
+
       - name: Write deployment summary
         shell: bash
         run: |
@@ -154,5 +232,6 @@ jobs:
             echo "- Source SHA: $GITHUB_SHA"
             echo "- Trigger: $GITHUB_EVENT_NAME"
             echo "- Cloudflare Pages project: $CLOUDFLARE_PAGES_PROJECT"
+            echo "- Verified custom domain: $EXPECTED_CUSTOM_DOMAIN"
             echo "- Production URL: https://flutter.ombhrum.com"
           } >> "$GITHUB_STEP_SUMMARY"
