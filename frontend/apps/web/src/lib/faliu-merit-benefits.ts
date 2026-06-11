@@ -50,7 +50,7 @@ import { T0261_JUAN_7_MERIT_BENEFITS } from "./faliu-merit-benefits-t0261-juan7"
 import { T0261_JUAN_8_MERIT_BENEFITS } from "./faliu-merit-benefits-t0261-juan8";
 import { T0261_JUAN_9_MERIT_BENEFITS } from "./faliu-merit-benefits-t0261-juan9";
 import { T0261_JUAN_10_MERIT_BENEFITS } from "./faliu-merit-benefits-t0261-juan10";
-import { T0262_JUAN_7_MERIT_BENEFITS } from "./faliu-merit-benefits-t0262";
+import { T0262_JUAN_1_MERIT_BENEFITS, T0262_JUAN_7_MERIT_BENEFITS } from "./faliu-merit-benefits-t0262";
 import { T0366_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0366";
 import { T1153_JUAN_1_MERIT_BENEFITS, T1153_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t1153";
 
@@ -137,6 +137,7 @@ export function getFaliuMeritBenefits(work: string | null | undefined, juan: str
   if (normalizedWork === "T0261" && normalizedJuan === "8") return T0261_JUAN_8_MERIT_BENEFITS;
   if (normalizedWork === "T0261" && normalizedJuan === "9") return T0261_JUAN_9_MERIT_BENEFITS;
   if (normalizedWork === "T0261" && normalizedJuan === "10") return T0261_JUAN_10_MERIT_BENEFITS;
+  if (normalizedWork === "T0262" && normalizedJuan === "1") return T0262_JUAN_1_MERIT_BENEFITS;
   if (normalizedWork === "T0262" && normalizedJuan === "7") return T0262_JUAN_7_MERIT_BENEFITS;
   if (normalizedWork === "T0366" && normalizedJuan === "1") return T0366_JUAN_1_MERIT_BENEFITS;
   if (normalizedWork === "T1153" && normalizedJuan === "1") return T1153_JUAN_1_MERIT_BENEFITS;
