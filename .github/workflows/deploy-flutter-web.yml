@@ -231,15 +231,71 @@ jobs:
           name = "fabushi-flutter-web-static-prod"
           main = "flutter-web-static-worker.js"
           compatibility_date = "2026-06-11"
-          workers_dev = false
+          workers_dev = true
 
           [assets]
           directory = "build/web"
           EOF
 
+          fallback_worker_name="fabushi-flutter-web-static-prod"
+
           npx --yes wrangler@latest deploy \
-            --config wrangler.flutter-web-static.toml \
-            --domain "$EXPECTED_CUSTOM_DOMAIN"
+            --config wrangler.flutter-web-static.toml
+
+          api_base="https://api.cloudflare.com/client/v4"
+          root_domain="ombhrum.com"
+          route_pattern="${EXPECTED_CUSTOM_DOMAIN}/*"
+
+          cloudflare_request() {
+            local method="$1"
+            local url="$2"
+            local body="${3:-}"
+
+            if [ -n "${body}" ]; then
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "${body}"
+            else
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json"
+            fi
+          }
+
+          assert_cloudflare_success() {
+            local response="$1"
+            local context="$2"
+
+            if [ "$(jq -r '.success // false' <<< "${response}")" != "true" ]; then
+              echo "Cloudflare API request failed: ${context}" >&2
+              jq '.' <<< "${response}" >&2
+              exit 1
+            fi
+          }
+
+          zone_response="$(cloudflare_request GET "${api_base}/zones?name=${root_domain}&status=active")"
+          assert_cloudflare_success "${zone_response}" "resolve zone ${root_domain}"
+          zone_id="$(jq -r '.result[0].id // empty' <<< "${zone_response}")"
+
+          if [ -z "${zone_id}" ]; then
+            echo "Could not resolve Cloudflare zone id for ${root_domain}." >&2
+            exit 1
+          fi
+
+          routes_response="$(cloudflare_request GET "${api_base}/zones/${zone_id}/workers/routes")"
+          assert_cloudflare_success "${routes_response}" "list worker routes"
+          route_json="$(jq -c --arg pattern "${route_pattern}" '.result[]? | select(.pattern == $pattern)' <<< "${routes_response}" | head -n 1)"
+          route_body="$(jq -n --arg pattern "${route_pattern}" --arg script "${fallback_worker_name}" '{pattern: $pattern, script: $script}')"
+
+          if [ -z "${route_json}" ]; then
+            route_response="$(cloudflare_request POST "${api_base}/zones/${zone_id}/workers/routes" "${route_body}")"
+            assert_cloudflare_success "${route_response}" "create route ${route_pattern}"
+          else
+            route_id="$(jq -r '.id' <<< "${route_json}")"
+            route_response="$(cloudflare_request PUT "${api_base}/zones/${zone_id}/workers/routes/${route_id}" "${route_body}")"
+            assert_cloudflare_success "${route_response}" "update route ${route_pattern}"
+          fi
 
           echo "target=cloudflare-worker-static-assets" >> "$GITHUB_OUTPUT"
 
