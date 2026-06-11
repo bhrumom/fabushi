@@ -21,7 +21,7 @@ on:
         description: Cloudflare Pages project name.
         required: false
         type: string
-        default: fabushi-flutter-web
+        default: fabushi-web-prod
 
 concurrency:
   group: flutter-web-production
@@ -47,7 +47,7 @@ jobs:
       run:
         working-directory: fabushi
     env:
-      CLOUDFLARE_PAGES_PROJECT: ${{ github.event.inputs.project_name || vars.CLOUDFLARE_PAGES_PROJECT || 'fabushi-flutter-web' }}
+      CLOUDFLARE_PAGES_PROJECT: ${{ github.event.inputs.project_name || vars.CLOUDFLARE_PAGES_PROJECT || 'fabushi-web-prod' }}
     steps:
       - name: Checkout Flutter Web source
         uses: actions/checkout@v5
