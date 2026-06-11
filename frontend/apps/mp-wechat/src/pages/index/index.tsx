@@ -3,13 +3,10 @@ import { Button, Text, Textarea, View } from "@tarojs/components";
 import {
   buildGlobalDharmaChecklist,
   createDachengId,
-  dachengBrand,
-  dachengHeroChips,
-  dachengToolEntries,
+  dachengHomeExperience,
   globalDharmaStartMessage,
   makeDachengFlashcards,
   nextDachengFlashcardDue,
-  remnoteInspiredFlashcardPrinciples,
   type DachengFlashcard,
   type DachengRating,
   type DachengToolId,
@@ -26,6 +23,12 @@ interface Message {
 }
 
 const ratingLabels: DachengRating[] = ["Again", "Hard", "Good", "Easy"];
+const {
+  brand,
+  heroChips,
+  toolEntries,
+  flashcardPrinciples,
+} = dachengHomeExperience;
 
 export default function IndexPage() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -36,7 +39,7 @@ export default function IndexPage() {
   const [cards, setCards] = useState<DachengFlashcard[]>([]);
   const [cardIndex, setCardIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
-  const activeTool = dachengToolEntries.find((item) => item.id === tool) ?? null;
+  const activeTool = toolEntries.find((item) => item.id === tool) ?? null;
   const activeCard = cards[cardIndex] ?? null;
 
   function add(role: Role, text: string, tag?: string) {
@@ -69,7 +72,7 @@ export default function IndexPage() {
   }
 
   function submit() {
-    const text = input.trim() || dachengBrand.defaultText;
+    const text = input.trim() || brand.defaultText;
     setInput("");
     add("user", text, activeTool?.title);
     if (tool === "global-dharma") runGlobalDharma(text);
@@ -94,16 +97,16 @@ export default function IndexPage() {
     <View className={messages.length ? "page has-chat" : "page"}>
       <View className="bg" />
       <View className="topbar">
-        <Text className="brand">{dachengBrand.name}</Text>
+        <Text className="brand">{brand.name}</Text>
         <Button className="login">登录</Button>
       </View>
 
       {!messages.length && (
         <View className="hero">
-          <Text className="title">{dachengBrand.greeting}</Text>
-          <Text className="subtitle">{dachengBrand.tagline}</Text>
+          <Text className="title">{brand.greeting}</Text>
+          <Text className="subtitle">{brand.tagline}</Text>
           <View className="chips">
-            {dachengHeroChips.map((chip) => (
+            {heroChips.map((chip) => (
               <Button className="chip" key={chip.id} onClick={() => choosePrompt(chip.prompt, chip.tool)}>
                 <Text className="chip-icon">{chip.icon}</Text>
                 <Text>{chip.label}</Text>
@@ -116,7 +119,7 @@ export default function IndexPage() {
       <View className="messages">
         {messages.map((message) => (
           <View className={`message ${message.role}`} key={message.id}>
-            <Text className="avatar">{message.role === "user" ? "我" : dachengBrand.name.slice(0, 1)}</Text>
+            <Text className="avatar">{message.role === "user" ? "我" : brand.name.slice(0, 1)}</Text>
             <Text className="bubble">{message.tag ? `${message.tag}：` : ""}{message.text}</Text>
           </View>
         ))}
@@ -144,13 +147,13 @@ export default function IndexPage() {
           ) : (
             <Text className="panel-copy">选择背诵闪卡后会自动生成挖空卡和双向卡。</Text>
           )}
-          {remnoteInspiredFlashcardPrinciples.map((item) => <Text className="principle" key={item}>• {item}</Text>)}
+          {flashcardPrinciples.map((item) => <Text className="principle" key={item}>• {item}</Text>)}
         </View>
       </View>
 
       {menuOpen && (
         <View className="menu">
-          {dachengToolEntries.map((item) => (
+          {toolEntries.map((item) => (
             <View className="menu-item" key={item.id} onClick={() => { setTool(item.id); setMenuOpen(false); }}>
               <Text className="menu-icon">{item.icon}</Text>
               <View>
@@ -170,7 +173,7 @@ export default function IndexPage() {
           maxlength={1800}
           autoHeight
           onInput={(event) => setInput(event.detail.value)}
-          placeholder={activeTool ? `${activeTool.action}，也可以继续问一问${dachengBrand.name}` : dachengBrand.inputPlaceholder}
+          placeholder={activeTool ? `${activeTool.action}，也可以继续问一问${brand.name}` : brand.inputPlaceholder}
         />
         {activeTool && <Button className="mode" onClick={() => setTool(null)}>{activeTool.shortTitle}×</Button>}
         <Button className="send" onClick={submit}>➤</Button>
