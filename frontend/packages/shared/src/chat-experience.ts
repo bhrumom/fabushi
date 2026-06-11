@@ -181,3 +181,11 @@ export function globalDharmaStartMessage(platform: "web" | "mini" | "static" = "
   const label = platform === "mini" ? "小程序版" : platform === "static" ? "极速 Web 版" : "Web 版";
   return `开始全球法布施：${label}只保留首页轻量流程，不加载 App 专属页面。`;
 }
+
+export const dachengHomeExperience = {
+  brand: dachengBrand,
+  heroChips: dachengHeroChips,
+  toolEntries: dachengToolEntries,
+  regions: globalDharmaRegions,
+  flashcardPrinciples: remnoteInspiredFlashcardPrinciples,
+} as const;

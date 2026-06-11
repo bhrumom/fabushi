@@ -1,33 +1,37 @@
 import {
-  dachengBrand,
-  dachengHeroChips,
-  dachengToolEntries,
-  globalDharmaRegions,
-  remnoteInspiredFlashcardPrinciples,
+  dachengHomeExperience,
 } from "@fabushi/shared";
 import { siteHref } from "../lib/site-url";
 
 export function FastDachengHome() {
+  const {
+    brand,
+    heroChips,
+    toolEntries,
+    regions,
+    flashcardPrinciples,
+  } = dachengHomeExperience;
+
   return (
     <main
       className="fast-home"
       data-fast-home-root
-      data-brand-name={dachengBrand.name}
-      data-default-text={dachengBrand.defaultText}
-      data-input-placeholder={dachengBrand.inputPlaceholder}
+      data-brand-name={brand.name}
+      data-default-text={brand.defaultText}
+      data-input-placeholder={brand.inputPlaceholder}
     >
       <div className="fast-bg" aria-hidden="true" />
 
       <aside className="fast-sidebar" aria-label="首页功能">
         <a className="fast-logo" href={siteHref("/")}>
           <span className="fast-logo-mark">大</span>
-          <span>{dachengBrand.name}</span>
+          <span>{brand.name}</span>
         </a>
         <button className="fast-side-button" type="button" data-new-chat>
           ✦ 新对话
         </button>
         <nav className="fast-side-nav" aria-label="快捷功能">
-          {dachengToolEntries.map((item) => (
+          {toolEntries.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -46,7 +50,7 @@ export function FastDachengHome() {
 
       <section className="fast-stage" aria-label="大乘首页">
         <header className="fast-topbar">
-          <span className="fast-mobile-brand">{dachengBrand.name}</span>
+          <span className="fast-mobile-brand">{brand.name}</span>
           <div>
             <span className="fast-speed-badge">极速 Web</span>
             <button type="button" className="fast-login">登录</button>
@@ -54,10 +58,10 @@ export function FastDachengHome() {
         </header>
 
         <section className="fast-hero" data-empty-state>
-          <h1>{dachengBrand.greeting}</h1>
-          <p>{dachengBrand.tagline}</p>
+          <h1>{brand.greeting}</h1>
+          <p>{brand.tagline}</p>
           <div className="fast-chips" aria-label="建议问题">
-            {dachengHeroChips.map((chip) => (
+            {heroChips.map((chip) => (
               <button
                 key={chip.id}
                 type="button"
@@ -76,7 +80,7 @@ export function FastDachengHome() {
 
         <section className="fast-composer-wrap" aria-label="输入框">
           <div className="fast-tool-menu" data-tool-menu hidden>
-            {dachengToolEntries.map((item) => (
+            {toolEntries.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -99,8 +103,8 @@ export function FastDachengHome() {
               data-composer-input
               rows={1}
               maxLength={1800}
-              placeholder={dachengBrand.inputPlaceholder}
-              aria-label={dachengBrand.inputPlaceholder}
+              placeholder={brand.inputPlaceholder}
+              aria-label={brand.inputPlaceholder}
             />
             <button className="fast-mode" type="button" data-current-mode hidden />
             <button className="fast-send" type="submit" aria-label="发送">
@@ -116,7 +120,7 @@ export function FastDachengHome() {
           <p>只保留首页轻量流程，首屏不加载 App 专属页面。</p>
           <pre data-global-log>等待输入正文后生成全球法布施清单。</pre>
           <div className="fast-region-list" aria-hidden="true">
-            {globalDharmaRegions.map((region) => (
+            {regions.map((region) => (
               <span key={region} data-region={region}>{region}</span>
             ))}
           </div>
@@ -126,7 +130,7 @@ export function FastDachengHome() {
           <p data-card-count>暂无卡片</p>
           <div className="fast-card" data-card-wrap />
           <ul>
-            {remnoteInspiredFlashcardPrinciples.map((item) => (
+            {flashcardPrinciples.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>

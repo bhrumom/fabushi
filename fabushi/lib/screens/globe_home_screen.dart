@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter/services.dart';
@@ -15,26 +15,48 @@ import '../features/flashcards/application/flashcard_service.dart';
 import '../features/flashcards/data/flashcard_repository.dart';
 import '../features/flashcards/domain/flashcard_models.dart';
 import '../features/flashcards/presentation/flashcard_study_screen.dart';
-import '../models/file_transfer_model.dart';
+import '../models/file_transfer_model.dart'
+    if (dart.library.html) '../models/file_transfer_model_web.dart';
 import '../services/ai_backend_policy.dart';
+import '../services/alipay_service.dart'
+    if (dart.library.html) '../services/alipay_service_web.dart';
 import '../services/dacheng_ai_service.dart';
 import '../services/dharma_publish_service.dart';
 import '../services/inbound_share_service.dart';
-import 'dharma_publish_browser_screen.dart';
+import 'dharma_publish_browser_screen.dart'
+    if (dart.library.html) 'dharma_publish_browser_screen_web.dart';
 import '../widgets/earth_globe_widget.dart';
 import '../widgets/home_world_2d_widget.dart';
 import '../widgets/scene_render_mode.dart';
 import 'leaderboard_screen.dart';
 import '../core/design_system/app_theme.dart';
-import '../services/alipay_service.dart';
-import '../services/apple_iap_service.dart';
+import '../services/apple_iap_service.dart'
+    if (dart.library.html) '../services/apple_iap_service_web.dart';
 import '../services/membership_service.dart';
 import '../services/online_counter_service.dart';
 import '../widgets/auto_start_guide_dialog.dart';
-import 'membership_screen.dart';
+import 'membership_screen.dart'
+    if (dart.library.html) 'membership_screen_web.dart';
+
+bool get _isNativeAndroid =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+bool get _isNativeIos => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+bool get _isNativeMacOs =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+bool get _isNativeMacOrWindows =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows);
 
 class GlobeHomeScreen extends StatefulWidget {
-  const GlobeHomeScreen({super.key});
+  const GlobeHomeScreen({
+    super.key,
+    this.topBarTrailing,
+    this.composerLeftInset,
+  });
+
+  final Widget? topBarTrailing;
+  final double? composerLeftInset;
 
   @override
   State<GlobeHomeScreen> createState() => GlobeHomeScreenState();
@@ -426,7 +448,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     _buildTopBar(authModel),
                     Expanded(child: _buildHomeBody(context, model, authModel)),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
+                      padding: EdgeInsets.fromLTRB(
+                        widget.composerLeftInset ?? 18,
+                        8,
+                        18,
+                        16,
+                      ),
                       child: _buildChatComposer(context, model),
                     ),
                   ],
@@ -505,32 +532,34 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: '排行榜',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const LeaderboardScreen(),
+              child:
+                  widget.topBarTrailing ??
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: '排行榜',
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const LeaderboardScreen(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.leaderboard_rounded,
+                          color: Colors.white70,
                         ),
-                      );
-                    },
-                    icon: const Icon(
-                      Icons.leaderboard_rounded,
-                      color: Colors.white70,
-                    ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.black.withValues(alpha: 0.2),
-                      fixedSize: const Size(42, 42),
-                    ),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.black.withValues(alpha: 0.2),
+                          fixedSize: const Size(42, 42),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _buildAvatar(authModel),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  _buildAvatar(authModel),
-                ],
-              ),
             ),
           ],
         ),
@@ -1762,15 +1791,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         webOnlyWindowName: kIsWeb ? '_self' : null,
       );
       if (!opened && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('暂时无法打开大乘 AI Web 入口')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('暂时无法打开大乘 AI Web 入口')));
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('暂时无法打开大乘 AI Web 入口: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('暂时无法打开大乘 AI Web 入口: $e')));
     }
   }
 
@@ -1780,11 +1809,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     if (mounted) {
       setState(() {});
     }
-    unawaited(
-      _openDachengAiWeb(
-        prompt: prompt,
-      ),
-    );
+    unawaited(_openDachengAiWeb(prompt: prompt));
   }
 
   String _conversationTitleFrom(List<_HomeChatMessage> messages) {
@@ -2854,6 +2879,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     if (model.isPreparingSend || _isPublishingDraft) return;
     if (_selectedPublishPlatforms.isEmpty) {
       await _showPublishPlatformSelector();
+      if (!mounted) return;
       if (_selectedPublishPlatforms.isEmpty) return;
     }
 
@@ -2951,7 +2977,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   Future<List<DharmaPublishResult>> _publishDraftWithBestPlatformExperience(
     DharmaPublishDraft draft,
   ) async {
-    if (!kIsWeb && (Platform.isMacOS || Platform.isWindows)) {
+    if (_isNativeMacOrWindows) {
       final results = await Navigator.push<List<DharmaPublishResult>>(
         context,
         MaterialPageRoute(
@@ -3720,7 +3746,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
     if (kIsWeb) {
       return;
-    } else if (Platform.isIOS) {
+    } else if (_isNativeIos) {
       title = '开启个人热点';
       steps = [
         '1. 点击下方"前往设置"按钮',
@@ -3729,7 +3755,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         '4. 返回本应用开始发送',
       ];
       tip = '💡 开启热点后，经文能量将通过 Wi-Fi 信号向周围空间广播';
-    } else if (Platform.isAndroid) {
+    } else if (_isNativeAndroid) {
       title = '开启便携式热点';
       steps = [
         '1. 点击下方"前往设置"按钮',
@@ -3738,7 +3764,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         '4. 返回本应用开始发送',
       ];
       tip = '💡 开启热点后，经文能量将通过 Wi-Fi 信号向周围空间广播';
-    } else if (Platform.isMacOS) {
+    } else if (_isNativeMacOs) {
       title = '开启互联网共享';
       steps = [
         '1. 点击下方"前往设置"按钮',
@@ -4055,7 +4081,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   Future<bool> _purchaseBuddhaAssetWithAlipay(String token) async {
-    if (kIsWeb || !Platform.isAndroid) {
+    if (!_isNativeAndroid) {
       _showBuddhaAssetMessage('请在 Android 手机端使用支付宝解锁', color: Colors.orange);
       return false;
     }
@@ -4313,7 +4339,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     });
     _scrollHomeChatToBottom();
 
-    if (!kIsWeb && Platform.isAndroid && mounted) {
+    if (_isNativeAndroid && mounted) {
       try {
         await AutoStartGuideDialog.showIfNeeded(context);
       } catch (e) {
@@ -4797,8 +4823,8 @@ class _HomeChatMessage {
     this.content,
     this.deck,
     this.choices = const [],
-    this.selectedValue,
-  }) : id = id ?? flashcardId('home_msg');
+  }) : selectedValue = null,
+       id = id ?? flashcardId('home_msg');
 
   factory _HomeChatMessage.contentPreview({required PreparedContent content}) {
     return _HomeChatMessage(
