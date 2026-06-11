@@ -1,0 +1,12 @@
+{
+  "name": "fabushi-lingguang-miniprogram",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "check": "node scripts/check.js",
+    "upload": "miniprogram-ci upload --pp ./project.config.json --pkp ./private.key --appid $WECHAT_MINIPROGRAM_APPID --uv $npm_package_version --ud 'Flutter Web reusable mini program shell'"
+  },
+  "devDependencies": {
+    "miniprogram-ci": "^2.1.15"
+  }
+}
