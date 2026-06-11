@@ -2,8 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../models/file_transfer_model.dart';
-
 enum DharmaComposerTarget { global, platform }
 
 enum DharmaPublishPlatform {
@@ -199,12 +197,12 @@ class DharmaPublishService {
   ];
 
   DharmaPublishDraft buildDraftFromModel(
-    FileTransferModel model, {
+    dynamic model, {
     String fallbackText = '',
   }) {
-    final sourceUrl = model.selectedContentSourceUrl?.trim() ?? '';
-    final preview = model.selectedContentPreviewText?.trim() ?? '';
-    final title = model.selectedContentTitle.trim();
+    final sourceUrl = (model.selectedContentSourceUrl as String?)?.trim() ?? '';
+    final preview = (model.selectedContentPreviewText as String?)?.trim() ?? '';
+    final title = (model.selectedContentTitle as String).trim();
     final text = preview.isNotEmpty ? preview : fallbackText.trim();
 
     return DharmaPublishDraft(
@@ -220,8 +218,12 @@ class DharmaPublishService {
     DharmaPublishDraft draft,
     Iterable<DharmaPublishPlatform> platforms,
   ) {
-    final requiresTitle = platforms.any((platform) => platform.info.titleRequired);
-    final requiresBody = platforms.any((platform) => platform.info.bodyRequired);
+    final requiresTitle = platforms.any(
+      (platform) => platform.info.titleRequired,
+    );
+    final requiresBody = platforms.any(
+      (platform) => platform.info.bodyRequired,
+    );
     final missing = <String>[];
 
     if (requiresTitle && _needsTitleReview(draft)) missing.add('title');
@@ -251,7 +253,9 @@ class DharmaPublishService {
   String polishBody(DharmaPublishDraft draft) {
     final body = draft.body.trim();
     if (body.isEmpty) return body;
-    final title = draft.title.trim().isEmpty ? suggestTitle(draft) : draft.title.trim();
+    final title = draft.title.trim().isEmpty
+        ? suggestTitle(draft)
+        : draft.title.trim();
     final tags = draft.tags.isEmpty ? ['法布施', '大乘'] : draft.tags;
     return [
       title,
@@ -300,23 +304,18 @@ class DharmaPublishService {
     DharmaPublishPlatform platform,
   ) async {
     final info = platform.info;
-    final steps = <String>[
-      '已生成 ${info.label} 发布草稿',
-      '已复制标题、正文、来源链接和标签到剪贴板',
-    ];
+    final steps = <String>['已生成 ${info.label} 发布草稿', '已复制标题、正文、来源链接和标签到剪贴板'];
 
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       try {
-        final response = await _platformChannel.invokeMethod<dynamic>(
-          'shareToPlatform',
-          {
-            'packageName': info.androidPackage,
-            'platformName': info.label,
-            'title': draft.title,
-            'text': draft.fullText,
-            'url': draft.sourceUrl,
-          },
-        );
+        final response = await _platformChannel
+            .invokeMethod<dynamic>('shareToPlatform', {
+              'packageName': info.androidPackage,
+              'platformName': info.label,
+              'title': draft.title,
+              'text': draft.fullText,
+              'url': draft.sourceUrl,
+            });
         final map = response is Map ? response : const <dynamic, dynamic>{};
         final success = map['success'] == true;
         final message = (map['message'] ?? '').toString();
@@ -364,7 +363,9 @@ class DharmaPublishService {
   bool _needsTitleReview(DharmaPublishDraft draft) {
     final title = draft.title.trim();
     if (title.length < 4) return true;
-    if (title.startsWith('http://') || title.startsWith('https://')) return true;
+    if (title.startsWith('http://') || title.startsWith('https://')) {
+      return true;
+    }
     if (draft.sourceUrl.trim().isEmpty) return false;
     final uri = Uri.tryParse(draft.sourceUrl.trim());
     if (uri == null) return false;

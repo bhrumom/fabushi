@@ -4,8 +4,11 @@ import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
 import '../core/design_system/app_theme.dart';
 import '../features/auth/application/auth_model.dart';
-import '../features/auth/presentation/screens/douyin_login_screen.dart' deferred as login;
+import '../features/auth/presentation/screens/douyin_login_screen.dart'
+    deferred as login;
 import '../l10n/app_localizations.dart';
+import '../models/file_transfer_model.dart'
+    if (dart.library.html) '../models/file_transfer_model_web.dart';
 import '../models/settings_model.dart';
 import '../widgets/app_wrapper.dart';
 
@@ -17,6 +20,7 @@ class WebFullApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthModel()),
+        ChangeNotifierProvider(create: (_) => FileTransferModel()),
         ChangeNotifierProvider(create: (_) => SettingsModel()),
       ],
       child: Consumer<SettingsModel>(
@@ -46,7 +50,8 @@ class _DeferredWebLoginScreen extends StatefulWidget {
   const _DeferredWebLoginScreen();
 
   @override
-  State<_DeferredWebLoginScreen> createState() => _DeferredWebLoginScreenState();
+  State<_DeferredWebLoginScreen> createState() =>
+      _DeferredWebLoginScreenState();
 }
 
 class _DeferredWebLoginScreenState extends State<_DeferredWebLoginScreen> {
