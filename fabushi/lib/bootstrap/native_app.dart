@@ -85,7 +85,7 @@ class _DeferredLoginScreenState extends State<_DeferredLoginScreen> {
       future: _loader,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.done) {
-          return const login.DouyinLoginScreen();
+          return login.DouyinLoginScreen();
         }
 
         return const Scaffold(
