@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { getFaliuMeritBenefits, type FaliuMeritBenefit } from "../lib/faliu-merit-benefits";
 
 const PANEL_TITLE = "功德利益";
+const VIDEO_PANEL_TITLE = "视频";
 const ALL_SECTIONS_KEY = "__all_sections__";
 const READER_SELECTOR = 'section[aria-label="法流"] [class*="readerHtml"]';
 const MODAL_SELECTOR = 'section[aria-label="法流"] [role="dialog"][aria-modal="true"]';
@@ -27,6 +28,36 @@ interface BenefitSection {
   key: string;
   title: string;
   benefits: FaliuMeritBenefit[];
+}
+
+interface FaliuVideoItem {
+  id: string;
+  title: string;
+  description: string;
+  src: string;
+  duration: string;
+  source: string;
+}
+
+const FALIU_VIDEOS: Record<string, FaliuVideoItem[]> = {
+  "T0235:1": [
+    {
+      id: "t0235-001-episode1",
+      title: "金剛般若波羅蜜經 · 第一支試片",
+      description: "以發心、降伏其心、無住布施為主題的 12 秒動畫導讀。導讀與經文原文在畫面中分開標注。",
+      src: "/faliu/videos/t0235-001-episode1.mp4",
+      duration: "12 秒",
+      source: "CBETA XML P5 · T/T08/T08n0235.xml",
+    },
+  ],
+};
+
+function getFaliuVideos(work: string | null, juan: string | null) {
+  if (!work || !juan) {
+    return [];
+  }
+
+  return FALIU_VIDEOS[`${work}:${juan}`] ?? [];
 }
 
 function normalizeText(value: string) {
@@ -361,7 +392,7 @@ function restorePanelChildren(panel: HTMLElement, host: HTMLElement) {
   }
 }
 
-function MeritBenefitPanel({ benefits }: { benefits: FaliuMeritBenefit[] }) {
+function BenefitList({ benefits }: { benefits: FaliuMeritBenefit[] }) {
   const sections = useMemo(() => getBenefitSections(benefits), [benefits]);
   const hasSectionFilter = sections.length > 1;
   const [activeSectionKey, setActiveSectionKey] = useState<string | null>(null);
@@ -481,21 +512,122 @@ function MeritBenefitPanel({ benefits }: { benefits: FaliuMeritBenefit[] }) {
     </div>
   );
 }
+function VideoPanel({ videos }: { videos: FaliuVideoItem[] }) {
+  return (
+    <div data-faliu-videos="true" style={{ display: "grid", gap: 14 }}>
+      <div>
+        <h4 style={{ margin: "0 0 8px", color: "#ffffff", fontSize: "1rem" }}>{VIDEO_PANEL_TITLE}</h4>
+        <p style={{ margin: 0, color: "rgba(255, 255, 255, 0.58)", fontSize: "0.9rem", lineHeight: 1.65 }}>
+          共 {videos.length} 支。视频为导读试片，经文原文与说明文字已分开标注。
+        </p>
+      </div>
+
+      {videos.map((video) => (
+        <section key={video.id} style={{ display: "grid", gap: 10 }}>
+          <video
+            controls
+            preload="metadata"
+            src={video.src}
+            style={{
+              width: "100%",
+              aspectRatio: "16 / 9",
+              border: "1px solid rgba(232, 189, 107, 0.2)",
+              borderRadius: 8,
+              background: "#050505",
+            }}
+          />
+          <div style={{ display: "grid", gap: 6 }}>
+            <strong style={{ color: "#ffffff", fontSize: "0.94rem", lineHeight: 1.45 }}>{video.title}</strong>
+            <span style={{ color: "rgba(232, 189, 107, 0.76)", fontSize: "0.8rem", lineHeight: 1.4 }}>{video.duration}</span>
+            <p style={{ margin: 0, color: "rgba(255, 255, 255, 0.62)", fontSize: "0.86rem", lineHeight: 1.65 }}>
+              {video.description}
+            </p>
+            <small style={{ color: "rgba(255, 255, 255, 0.42)", fontSize: "0.76rem", lineHeight: 1.45 }}>
+              来源：{video.source}
+            </small>
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function FaliuSidePanel({ benefits, videos }: { benefits: FaliuMeritBenefit[]; videos: FaliuVideoItem[] }) {
+  const [activePanel, setActivePanel] = useState<"video" | "benefits">(videos.length > 0 ? "video" : "benefits");
+
+  useEffect(() => {
+    setActivePanel((current) => {
+      if (current === "video" && videos.length > 0) {
+        return current;
+      }
+
+      if (current === "benefits" && benefits.length > 0) {
+        return current;
+      }
+
+      return videos.length > 0 ? "video" : "benefits";
+    });
+  }, [benefits.length, videos.length]);
+
+  const tabs = [
+    { key: "video" as const, label: VIDEO_PANEL_TITLE, count: videos.length, disabled: videos.length === 0 },
+    { key: "benefits" as const, label: PANEL_TITLE, count: benefits.length, disabled: benefits.length === 0 },
+  ];
+
+  return (
+    <div data-faliu-side-panel="true" style={{ display: "grid", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }} role="tablist" aria-label="法流侧边栏内容">
+        {tabs.map((tab) => {
+          const isActive = activePanel === tab.key;
+
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              disabled={tab.disabled}
+              onClick={() => setActivePanel(tab.key)}
+              style={{
+                minHeight: 36,
+                border: `1px solid ${isActive ? "rgba(232, 189, 107, 0.48)" : "rgba(255, 255, 255, 0.12)"}`,
+                borderRadius: 8,
+                padding: "8px 10px",
+                background: isActive ? "rgba(232, 189, 107, 0.16)" : "rgba(255, 255, 255, 0.055)",
+                color: tab.disabled ? "rgba(255, 255, 255, 0.32)" : isActive ? "#ffffff" : "rgba(255, 255, 255, 0.68)",
+                cursor: tab.disabled ? "not-allowed" : "pointer",
+                fontSize: "0.84rem",
+                fontWeight: 760,
+                lineHeight: 1.25,
+              }}
+            >
+              {tab.label} · {tab.count}
+            </button>
+          );
+        })}
+      </div>
+
+      {activePanel === "video" && videos.length > 0 ? <VideoPanel videos={videos} /> : <BenefitList benefits={benefits} />}
+    </div>
+  );
+}
 
 export function FaliuMeritBenefitEnhancer() {
   const [targetHost, setTargetHost] = useState<HTMLElement | null>(null);
   const [targetPanel, setTargetPanel] = useState<HTMLElement | null>(null);
   const [benefits, setBenefits] = useState<FaliuMeritBenefit[]>([]);
+  const [videos, setVideos] = useState<FaliuVideoItem[]>([]);
 
   useEffect(() => {
     function refresh() {
       const modal = document.querySelector<HTMLElement>(MODAL_SELECTOR);
       const { work, juan } = getSelectedWorkAndJuan(modal);
       const nextBenefits = getFaliuMeritBenefits(work, juan);
+      const nextVideos = getFaliuVideos(work, juan);
       const infoPanels = Array.from(modal?.querySelectorAll<HTMLElement>('[class*="infoPanel"]') ?? []);
       const tocPanel = infoPanels.find((panel) => panel.querySelector("h4")?.textContent?.trim() === "目录") ?? null;
 
-      if (nextBenefits.length > 0 && tocPanel) {
+      if ((nextBenefits.length > 0 || nextVideos.length > 0) && tocPanel) {
         setTargetPanel(tocPanel);
         setTargetHost(ensurePortalHost(tocPanel));
       } else {
@@ -504,6 +636,7 @@ export function FaliuMeritBenefitEnhancer() {
       }
 
       setBenefits(nextBenefits);
+      setVideos(nextVideos);
     }
 
     refresh();
@@ -515,7 +648,7 @@ export function FaliuMeritBenefitEnhancer() {
   }, []);
 
   useEffect(() => {
-    if (!targetPanel || !targetHost || benefits.length === 0) {
+    if (!targetPanel || !targetHost || (benefits.length === 0 && videos.length === 0)) {
       return;
     }
 
@@ -524,15 +657,15 @@ export function FaliuMeritBenefitEnhancer() {
     return () => {
       restorePanelChildren(targetPanel, targetHost);
     };
-  }, [benefits.length, targetHost, targetPanel]);
+  }, [benefits.length, targetHost, targetPanel, videos.length]);
 
   useEffect(() => {
     return () => clearMarks(document.querySelector<HTMLElement>(READER_SELECTOR));
   }, []);
 
-  if (!targetHost || benefits.length === 0) {
+  if (!targetHost || (benefits.length === 0 && videos.length === 0)) {
     return null;
   }
 
-  return createPortal(<MeritBenefitPanel benefits={benefits} />, targetHost);
+  return createPortal(<FaliuSidePanel benefits={benefits} videos={videos} />, targetHost);
 }
