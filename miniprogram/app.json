@@ -1,0 +1,13 @@
+{
+  "pages": [
+    "pages/web/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "灵光",
+    "navigationBarTextStyle": "white",
+    "navigationBarBackgroundColor": "#111318",
+    "backgroundColor": "#111318"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
