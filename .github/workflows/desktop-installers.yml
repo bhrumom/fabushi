@@ -317,6 +317,22 @@ jobs:
           xcodebuild -version
           "$cc" --version
 
+      - name: Stabilize Windows native asset toolchain
+        if: matrix.target == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Native asset hooks run their own CMake/MSVC builds from the pub
+          # cache, so they do not inherit definitions from windows/CMakeLists.txt.
+          echo "CL=/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS ${CL:-}" >> "$GITHUB_ENV"
+
+          for package_dir in "$PUB_CACHE"/hosted/pub.dev/flutter_scene_importer-*; do
+            [ -d "$package_dir" ] || continue
+            find "$package_dir" -name CMakeCache.txt -delete
+            find "$package_dir" -type d \( -name CMakeFiles -o -name 'cmake-build-*' -o -name build \) -prune -exec rm -rf {} +
+          done
+
       - name: Stabilize generated desktop plugin bindings
         shell: bash
         run: scripts/fix_desktop_generated_plugins.sh
