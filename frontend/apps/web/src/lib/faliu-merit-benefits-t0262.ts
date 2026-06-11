@@ -1,4 +1,5 @@
 import type { FaliuMeritBenefit } from "./faliu-merit-benefits";
+import { T0262_JUAN_1_FANGBIAN_MERIT_BENEFITS } from "./faliu-merit-benefits-t0262-juan1-fangbian";
 
 const XUPIN_SECTION_TITLE = "序品第一";
 const PUMEN_SECTION_TITLE = "觀世音菩薩普門品第二十五";
@@ -156,6 +157,7 @@ export const T0262_JUAN_1_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     anchorText: "諸求三乘人，若有疑悔者",
     note: "最后以佛将为三乘求法者除断疑悔作结，为下一品承接。",
   },
+  ...T0262_JUAN_1_FANGBIAN_MERIT_BENEFITS,
 ];
 
 export const T0262_JUAN_7_MERIT_BENEFITS: FaliuMeritBenefit[] = [
