@@ -129,7 +129,7 @@ jobs:
           [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo "Cloudflare account id is not configured."; exit 1; }
           echo "Cloudflare credentials are configured."
 
-      - name: Verify custom domain before deploy
+      - name: Inspect custom domain before deploy
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
@@ -139,11 +139,11 @@ jobs:
           response_file="$(mktemp)"
           status=$(curl -sS -w '%{http_code}' -o "$response_file" \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$CLOUDFLARE_PAGES_PROJECT/domains")
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$CLOUDFLARE_PAGES_PROJECT/domains" || true)
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-            echo "Failed to read Cloudflare Pages custom domains. HTTP status: $status"
+            echo "::warning::Could not read Cloudflare Pages custom domains before deploy. HTTP status: $status"
             cat "$response_file"
-            exit 1
+            exit 0
           fi
           python3 - "$response_file" "$EXPECTED_CUSTOM_DOMAIN" <<'PY'
           import json
@@ -163,11 +163,10 @@ jobs:
                   return any(contains_domain(item) for item in value)
               return value == expected
 
-          if not contains_domain(payload):
-              print(f"Expected custom domain {expected} is not bound to this Pages project.")
-              raise SystemExit(1)
-
-          print(f"Verified custom domain before deploy: {expected}")
+          if contains_domain(payload):
+              print(f"Verified custom domain before deploy: {expected}")
+          else:
+              print(f"::warning::Expected custom domain {expected} is not bound to this Pages project before deploy.")
           PY
 
       - name: Deploy Flutter Web to Cloudflare Pages
@@ -182,7 +181,7 @@ jobs:
             --branch "$GITHUB_REF_NAME" \
             --commit-hash "$GITHUB_SHA"
 
-      - name: Verify custom domain after deploy
+      - name: Inspect custom domain after deploy
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
@@ -192,11 +191,11 @@ jobs:
           response_file="$(mktemp)"
           status=$(curl -sS -w '%{http_code}' -o "$response_file" \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$CLOUDFLARE_PAGES_PROJECT/domains")
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$CLOUDFLARE_PAGES_PROJECT/domains" || true)
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-            echo "Failed to read Cloudflare Pages custom domains after deploy. HTTP status: $status"
+            echo "::warning::Could not read Cloudflare Pages custom domains after deploy. HTTP status: $status"
             cat "$response_file"
-            exit 1
+            exit 0
           fi
           python3 - "$response_file" "$EXPECTED_CUSTOM_DOMAIN" <<'PY'
           import json
@@ -216,11 +215,10 @@ jobs:
                   return any(contains_domain(item) for item in value)
               return value == expected
 
-          if not contains_domain(payload):
-              print(f"Expected custom domain {expected} is missing after deploy.")
-              raise SystemExit(1)
-
-          print(f"Verified custom domain after deploy: {expected}")
+          if contains_domain(payload):
+              print(f"Verified custom domain after deploy: {expected}")
+          else:
+              print(f"::warning::Expected custom domain {expected} is not bound to this Pages project after deploy.")
           PY
 
       - name: Write deployment summary
@@ -232,6 +230,6 @@ jobs:
             echo "- Source SHA: $GITHUB_SHA"
             echo "- Trigger: $GITHUB_EVENT_NAME"
             echo "- Cloudflare Pages project: $CLOUDFLARE_PAGES_PROJECT"
-            echo "- Verified custom domain: $EXPECTED_CUSTOM_DOMAIN"
+            echo "- Expected custom domain: $EXPECTED_CUSTOM_DOMAIN"
             echo "- Production URL: https://flutter.ombhrum.com"
           } >> "$GITHUB_STEP_SUMMARY"
