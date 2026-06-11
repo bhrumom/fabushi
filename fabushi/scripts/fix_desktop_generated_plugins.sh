@@ -56,6 +56,26 @@ patch_windows() {
   fi
 
   patch_cmake_taudio "$cmake_file" windows
+  patch_cmake_rive_common_windows "$cmake_file"
+}
+
+patch_cmake_rive_common_windows() {
+  local cmake_file="$1"
+
+  if [[ ! -f "$cmake_file" ]]; then
+    return 0
+  fi
+
+  if grep -q "Wno-nontrivial-memcall" "$cmake_file"; then
+    return 0
+  fi
+
+  cat >> "$cmake_file" <<'EOF'
+
+if(TARGET rive_common_plugin)
+  target_compile_options(rive_common_plugin PRIVATE -Wno-nontrivial-memcall)
+endif()
+EOF
 }
 
 patch_cmake_taudio() {
