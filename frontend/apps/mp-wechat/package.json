@@ -5,6 +5,9 @@
   "scripts": {
     "dev:weapp": "taro build --type weapp --watch",
     "build:weapp": "taro build --type weapp",
+    "open:weapp": "node scripts/wechat-devtools.mjs open",
+    "preview:weapp": "node scripts/wechat-devtools.mjs preview",
+    "check:preview": "node scripts/wechat-devtools.mjs check",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
