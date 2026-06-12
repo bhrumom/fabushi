@@ -51,6 +51,7 @@ import { T0261_JUAN_8_MERIT_BENEFITS } from "./faliu-merit-benefits-t0261-juan8"
 import { T0261_JUAN_9_MERIT_BENEFITS } from "./faliu-merit-benefits-t0261-juan9";
 import { T0261_JUAN_10_MERIT_BENEFITS } from "./faliu-merit-benefits-t0261-juan10";
 import { T0262_JUAN_1_MERIT_BENEFITS, T0262_JUAN_7_MERIT_BENEFITS } from "./faliu-merit-benefits-t0262";
+import { T0262_JUAN_7_MIAOYIN_MERIT_BENEFITS } from "./faliu-merit-benefits-t0262-juan7-miaoyin";
 import { T0262_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0262-juan2";
 import { T0262_JUAN_3_MERIT_BENEFITS } from "./faliu-merit-benefits-t0262-juan3";
 import { T0262_JUAN_3_YAOCAOYU_MERIT_BENEFITS } from "./faliu-merit-benefits-t0262-juan3-yaocaoyu";
@@ -156,7 +157,7 @@ export function getFaliuMeritBenefits(work: string | null | undefined, juan: str
   if (normalizedWork === "T0262" && normalizedJuan === "4") return [...T0262_JUAN_4_MERIT_BENEFITS, ...T0262_JUAN_4_WUBAIDIZI_MERIT_BENEFITS, ...T0262_JUAN_4_FASHI_MERIT_BENEFITS];
   if (normalizedWork === "T0262" && normalizedJuan === "5") return [...T0262_JUAN_5_MERIT_BENEFITS, ...T0262_JUAN_5_ANLEXING_MERIT_BENEFITS, ...T0262_JUAN_5_CONGDIYONGCHU_MERIT_BENEFITS, ...T0262_JUAN_5_FENBIEGONGDE_MERIT_BENEFITS];
   if (normalizedWork === "T0262" && normalizedJuan === "6") return [...T0262_JUAN_6_MERIT_BENEFITS, ...T0262_JUAN_6_CHANGBUQING_MERIT_BENEFITS, ...T0262_JUAN_6_YAOWANG_MERIT_BENEFITS];
-  if (normalizedWork === "T0262" && normalizedJuan === "7") return T0262_JUAN_7_MERIT_BENEFITS;
+  if (normalizedWork === "T0262" && normalizedJuan === "7") return [...T0262_JUAN_7_MERIT_BENEFITS, ...T0262_JUAN_7_MIAOYIN_MERIT_BENEFITS];
   if (normalizedWork === "T0366" && normalizedJuan === "1") return T0366_JUAN_1_MERIT_BENEFITS;
   if (normalizedWork === "T1153" && normalizedJuan === "1") return T1153_JUAN_1_MERIT_BENEFITS;
   if (normalizedWork === "T1153" && normalizedJuan === "2") return T1153_JUAN_2_MERIT_BENEFITS;
