@@ -48,9 +48,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       children: [
         Positioned.fill(
           child: GlobeHomeScreen(
-            topBarTrailing: user == null
-                ? _TopLoginButton(onPressed: _openLogin)
-                : const SizedBox(width: 42, height: 42),
+            topBarTrailing: _TopLoginButton(
+              label: user == null ? '登录' : user.displayName,
+              onPressed: user == null ? _openLogin : _toggleProfileMenu,
+            ),
             composerLeftInset: compact ? 84 : 88,
           ),
         ),
@@ -101,14 +102,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 class _TopLoginButton extends StatelessWidget {
-  const _TopLoginButton({required this.onPressed});
+  const _TopLoginButton({required this.label, required this.onPressed});
 
+  final String label;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 96,
+      width: 104,
       height: 42,
       child: FilledButton(
         style: FilledButton.styleFrom(
@@ -120,10 +122,10 @@ class _TopLoginButton extends StatelessWidget {
           ),
         ),
         onPressed: onPressed,
-        child: const FittedBox(
+        child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
-            '登录',
+            label,
             maxLines: 1,
             softWrap: false,
             style: TextStyle(fontWeight: FontWeight.w800),
