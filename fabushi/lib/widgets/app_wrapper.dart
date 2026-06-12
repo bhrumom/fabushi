@@ -81,11 +81,13 @@ class _AppWrapperState extends State<AppWrapper> {
       _setStartupPhase('正在整理本地设置');
       _ensureBackgroundInitialization();
 
-      final needsEula = !await _guardStartupStep<bool>(
-        stage: 'check_eula_acceptance',
-        action: EulaService.isAccepted,
-        fallbackValue: true,
-      );
+      final needsEula = kIsWeb
+          ? false
+          : !await _guardStartupStep<bool>(
+              stage: 'check_eula_acceptance',
+              action: EulaService.isAccepted,
+              fallbackValue: true,
+            );
 
       bool needsModelSetup = false;
       if (_modelSetupUiEnabled) {
@@ -570,6 +572,10 @@ class _AppWrapperState extends State<AppWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb && _initError == null) {
+      return const MainNavigationScreen();
+    }
+
     if (!_isInitialized) {
       return StartupSplashScreen(phaseLabel: _startupPhase);
     }
