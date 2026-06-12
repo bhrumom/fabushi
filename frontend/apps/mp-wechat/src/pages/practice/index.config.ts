@@ -1,3 +1,4 @@
 export default definePageConfig({
-  navigationBarTitleText: "修行",
+  enableShareAppMessage: true,
+  navigationBarTitleText: "禅室修行",
 });

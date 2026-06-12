@@ -1,26 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Input, Text, Textarea, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { aiQuickPrompts } from "@fabushi/shared";
+import {
+  dachengAiEndpoints,
+  getDachengAiApiBaseUrl,
+  type DachengAiChatResponse,
+  type DharmaResourceSearchItem,
+  type DharmaResourceSearchResponse,
+} from "@fabushi/api-client";
 import "./index.scss";
 
-const AI_BASE =
-  process.env.TARO_APP_DACHENG_AI_API_BASE_URL?.replace(/\/+$/, "") ||
-  "https://fabushi.ombhrum.com/api/dacheng-ai";
-
-interface ChatPayload {
-  success?: boolean;
-  message?: string;
-}
-
-interface ResourceItem {
-  id: string;
-  title: string;
-  sourceName: string;
-  snippet: string;
-  resourceType: string;
-  url: string;
-}
+const AI_BASE = getDachengAiApiBaseUrl();
 
 export default function AiPage() {
   const [prompt, setPrompt] = useState<string>(aiQuickPrompts[0]);
@@ -28,7 +19,15 @@ export default function AiPage() {
   const [status, setStatus] = useState("已连接大乘 AI 网关");
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("心经 可公开分享 经文");
-  const [resources, setResources] = useState<ResourceItem[]>([]);
+  const [resources, setResources] = useState<DharmaResourceSearchItem[]>([]);
+
+  useEffect(() => {
+    const storedPrompt = Taro.getStorageSync("fabushi_mp_ai_prompt") as string | undefined;
+    if (storedPrompt) {
+      setPrompt(storedPrompt);
+      Taro.removeStorageSync("fabushi_mp_ai_prompt");
+    }
+  }, []);
 
   async function sendPrompt() {
     const text = prompt.trim();
@@ -36,8 +35,8 @@ export default function AiPage() {
     setLoading(true);
     setStatus("生成中");
     try {
-      const response = await Taro.request<ChatPayload>({
-        url: `${AI_BASE}/api/ai/chat`,
+      const response = await Taro.request<DachengAiChatResponse>({
+        url: `${AI_BASE}${dachengAiEndpoints.chat}`,
         method: "POST",
         header: {
           Accept: "application/json",
@@ -67,8 +66,8 @@ export default function AiPage() {
     if (!text) return;
     setStatus("搜索资源中");
     try {
-      const response = await Taro.request<{ success?: boolean; items?: ResourceItem[]; message?: string }>({
-        url: `${AI_BASE}/api/resources/search`,
+      const response = await Taro.request<DharmaResourceSearchResponse & { message?: string }>({
+        url: `${AI_BASE}${dachengAiEndpoints.resourceSearch}`,
         method: "POST",
         header: {
           Accept: "application/json",
@@ -91,7 +90,9 @@ export default function AiPage() {
   return (
     <View className="page">
       <Text className="title">大乘 AI</Text>
-      <Text className="subtitle">小程序版使用非流式回答，适合微信内快速问经、找资源和整理发愿文。</Text>
+      <Text className="subtitle">
+        复用 Flutter 的大乘 AI 网关和提示词协议；微信原生端使用非流式回答，适合问经、找资源和整理发愿文。
+      </Text>
 
       <View className="panel">
         <Text className="panel-title">快捷任务</Text>

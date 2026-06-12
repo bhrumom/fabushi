@@ -1,14 +1,31 @@
-import { View, Text } from "@tarojs/components";
-import { brand } from "@fabushi/shared";
+import { Button, Text, View } from "@tarojs/components";
+import Taro from "@tarojs/taro";
+import {
+  brand,
+  miniProgramFlutterParity,
+  miniProgramNativeLimitations,
+} from "@fabushi/shared";
 import "./index.scss";
 
 const entries = [
-  ["Web 版", "https://fabushi.ombhrum.com/app"],
-  ["大乘 AI", "https://fabushi.ombhrum.com/app/ai"],
+  ["修行记录", "本地记录已接入，云端同步等待微信登录"],
+  ["账号登录", "后续接入微信 code 换取大乘账号会话"],
+  ["隐私与设置", "复用 Flutter 设置页的信息架构"],
   ["支持邮箱", "support@ombhrum.com"],
 ] as const;
 
 export default function MePage() {
+  function handleEntry(title: string, value: string) {
+    if (value.includes("@") || value.startsWith("http")) {
+      Taro.setClipboardData({
+        data: value,
+        success: () => Taro.showToast({ title: "已复制", icon: "success" }),
+      });
+      return;
+    }
+    Taro.showToast({ title, icon: "none" });
+  }
+
   return (
     <View className="page">
       <View className="profile">
@@ -22,18 +39,31 @@ export default function MePage() {
       <View className="section">
         <Text className="section-title">服务入口</Text>
         {entries.map(([title, value]) => (
-          <View className="item" key={title}>
+          <Button className="item" key={title} onClick={() => handleEntry(title, value)}>
             <Text className="item-title">{title}</Text>
             <Text className="copy">{value}</Text>
+          </Button>
+        ))}
+      </View>
+
+      <View className="section">
+        <Text className="section-title">复用边界</Text>
+        {miniProgramFlutterParity.map((item) => (
+          <View className="item" key={item.flutter}>
+            <Text className="item-title">{item.title}</Text>
+            <Text className="copy">{item.nativeScope}</Text>
           </View>
         ))}
       </View>
 
       <View className="section">
-        <Text className="section-title">版本</Text>
+        <Text className="section-title">非 WebView 说明</Text>
         <View className="item">
-          <Text className="item-title">微信小程序首版</Text>
-          <Text className="copy">经文、修行、AI、榜单和 Web 入口已经打通，后续继续补登录与深度共修能力。</Text>
+          {miniProgramNativeLimitations.map((item) => (
+            <Text className="copy" key={item}>
+              {item}
+            </Text>
+          ))}
         </View>
       </View>
     </View>

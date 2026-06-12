@@ -1,3 +1,4 @@
 export default definePageConfig({
-  navigationBarTitleText: "经文听诵",
+  enableShareAppMessage: true,
+  navigationBarTitleText: "经文续读",
 });

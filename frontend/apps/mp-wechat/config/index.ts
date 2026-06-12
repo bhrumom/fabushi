@@ -1,9 +1,11 @@
 import type { UserConfigExport } from "@tarojs/cli";
 import path from "node:path";
 
-const sharedSourcePaths = [
+const workspaceSourcePaths = [
   path.resolve(__dirname, "../../../packages/shared/src"),
+  path.resolve(__dirname, "../../../packages/api-client/src"),
   path.resolve(__dirname, "../node_modules/@fabushi/shared/src"),
+  path.resolve(__dirname, "../node_modules/@fabushi/api-client/src"),
 ];
 
 export default {
@@ -23,7 +25,7 @@ export default {
   plugins: [],
   mini: {
     compile: {
-      include: sharedSourcePaths,
+      include: workspaceSourcePaths,
     },
     postcss: {
       pxtransform: {
