@@ -639,6 +639,10 @@ class _AppWrapperState extends State<AppWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb && _initError == null) {
+      return const MainNavigationScreen();
+    }
+
     if (!_isInitialized) {
       return StartupSplashScreen(phaseLabel: _startupPhase);
     }
