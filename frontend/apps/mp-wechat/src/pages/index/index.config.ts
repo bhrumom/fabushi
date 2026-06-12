@@ -1,3 +1,4 @@
 export default definePageConfig({
-  navigationBarTitleText: "大乘 Web",
+  enableShareAppMessage: true,
+  navigationBarTitleText: "全球法布施",
 });
