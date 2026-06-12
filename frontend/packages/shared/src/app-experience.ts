@@ -1,8 +1,71 @@
 export const appExperienceStats = [
   { label: "今日共修", value: "12,086", unit: "人次" },
-  { label: "法布施发送", value: "8.42", unit: "TB" },
+  { label: "全球发送", value: "8.42", unit: "TB" },
   { label: "在线国家", value: "64", unit: "个" },
   { label: "经文素材", value: "1,248", unit: "份" },
+] as const;
+
+export const flutterDesignTokens = {
+  colors: {
+    spaceDeepBlue: "#0b0e14",
+    spaceBlue: "#1b263b",
+    starlightWhite: "#e8eaf6",
+    nebulaPurple: "#7b1fa2",
+    nebulaPink: "#e91e63",
+    cosmicGold: "#ffd700",
+    glassBorder: "rgba(255, 255, 255, 0.15)",
+    glassSurface: "rgba(255, 255, 255, 0.1)",
+  },
+  radius: {
+    panel: 8,
+    control: 8,
+  },
+  sources: [
+    "fabushi/lib/core/design_system/colors.dart",
+    "fabushi/lib/core/design_system/app_theme.dart",
+    "fabushi/lib/screens/main_navigation_screen.dart",
+    "fabushi/lib/screens/globe_home_screen.dart",
+    "fabushi/lib/screens/meditation_room_screen.dart",
+    "fabushi/lib/screens/my_profile_screen.dart",
+  ],
+} as const;
+
+export const miniProgramFlutterParity = [
+  {
+    flutter: "GlobeHomeScreen",
+    miniProgram: "pages/index/index",
+    title: "全球法布施",
+    reused: "品牌、全局统计、AI 快捷任务、全球发送信息架构与宇宙玻璃视觉 token",
+    nativeScope: "微信原生 View/Text/Button/Input 复刻首页与发送入口",
+  },
+  {
+    flutter: "SutraReaderScreen / VideoFeedViewFullTextReader",
+    miniProgram: "pages/sutra/index",
+    title: "经文续读",
+    reused: "经文书架、进度、功德利益和 AI 问经入口",
+    nativeScope: "微信原生列表、搜索和进度条",
+  },
+  {
+    flutter: "MeditationRoomScreen",
+    miniProgram: "pages/practice/index",
+    title: "禅室修行",
+    reused: "零摩擦开始修行、计时、念诵计数、回向和榜单入口",
+    nativeScope: "微信原生计时器、计数器、本地草稿保存",
+  },
+  {
+    flutter: "DachengAiService / SutraAIPage",
+    miniProgram: "pages/ai/index",
+    title: "大乘 AI",
+    reused: "AI 网关、快捷提示词、资源搜索类型与请求协议",
+    nativeScope: "微信原生表单和 HTTPS request",
+  },
+  {
+    flutter: "MyProfileScreen",
+    miniProgram: "pages/me/index",
+    title: "我的",
+    reused: "账号、修行记录、设置、支持入口的信息架构",
+    nativeScope: "微信原生资料卡和服务列表",
+  },
 ] as const;
 
 export const appModules = [
@@ -10,7 +73,7 @@ export const appModules = [
     id: "global-dharma",
     title: "全球法布施",
     shortTitle: "法布施",
-    summary: "选择经文、音频、图片或发愿文，一键发送到全球 HTTP 公共端点。",
+    summary: "选择经文、音频、图片或发愿文，一键发送到全球节点。",
     action: "开始发送",
     tone: "cyan",
     screenshot: "/product/global-dharma.png",
@@ -59,6 +122,15 @@ export const appModules = [
     action: "查看榜单",
     tone: "violet",
     screenshot: "/product/global-ranking.png",
+  },
+  {
+    id: "ai",
+    title: "大乘 AI",
+    shortTitle: "AI",
+    summary: "帮你查找可分享资源、整理经文摘要、生成发愿文和修行计划。",
+    action: "问问 AI",
+    tone: "blue",
+    screenshot: "/product/global-donation.png",
   },
 ] as const;
 
@@ -111,6 +183,13 @@ export const practicePlan = [
   },
 ] as const;
 
+export const practiceSessionPresets = [
+  { title: "心经", targetMinutes: 18, dedication: "回向给今日同行者与一切众生" },
+  { title: "金刚经", targetMinutes: 42, dedication: "愿以读诵功德增长智慧与慈悲" },
+  { title: "地藏经", targetMinutes: 54, dedication: "回向父母眷属、祖先与有缘众生" },
+  { title: "楞严咒", targetMinutes: 24, dedication: "愿身心清明，护持正念" },
+] as const;
+
 export const dharmaFeedItems = [
   {
     title: "如何把一段经文整理成可分享资料",
@@ -136,6 +215,12 @@ export const aiQuickPrompts = [
   "把这段经文解释给初学者听，语气庄重简洁",
 ] as const;
 
+export const globalDharmaActions = [
+  { label: "发送经文", detail: "选择公共领域经文，生成可分享资料" },
+  { label: "AI 找资源", detail: "调用大乘 AI 网关检索可公开传播来源" },
+  { label: "加入共修", detail: "选择一门功课，开始计时与念诵计数" },
+] as const;
+
 export const leaderboardPreview = [
   { name: "明净", region: "中国", value: "328 分钟", rank: 1 },
   { name: "善行", region: "新加坡", value: "271 分钟", rank: 2 },
@@ -144,5 +229,15 @@ export const leaderboardPreview = [
 ] as const;
 
 export const miniProgramTabs = [
-  { pagePath: "pages/index/index", text: "大乘", icon: "home" },
+  { pagePath: "pages/index/index", text: "首页", icon: "home" },
+  { pagePath: "pages/sutra/index", text: "经文", icon: "sutra" },
+  { pagePath: "pages/practice/index", text: "修行", icon: "practice" },
+  { pagePath: "pages/ai/index", text: "AI", icon: "ai" },
+  { pagePath: "pages/me/index", text: "我的", icon: "me" },
+] as const;
+
+export const miniProgramNativeLimitations = [
+  "微信小程序不运行 Flutter Engine，不能直接加载 Flutter Widget tree。",
+  "当前 Flutter App 的 Firebase、3D、音视频、文件、支付、离线模型等插件不能在微信原生运行时无损复用。",
+  "小程序侧复用 Flutter 的信息架构、设计 token、领域数据和 HTTPS API，UI 用微信原生组件等价实现。",
 ] as const;
