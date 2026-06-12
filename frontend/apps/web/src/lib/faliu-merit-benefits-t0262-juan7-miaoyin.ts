@@ -1,6 +1,7 @@
 import type { FaliuMeritBenefit } from "./faliu-merit-benefits";
 
 const MIAOYIN_SECTION_TITLE = "妙音菩薩品第二十四";
+const DHARANI_SECTION_TITLE = "陀羅尼品第二十六";
 
 export const T0262_JUAN_7_MIAOYIN_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   {
@@ -162,5 +163,93 @@ export const T0262_JUAN_7_MIAOYIN_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     text: "說是妙音菩薩來往品時。四萬二千天子。得無生法忍。華德菩薩。得法華三昧。",
     anchorText: "四萬二千天子。得無生法忍",
     note: "本品結尾明說說此來往品時，四萬二千天子得無生法忍，華德菩薩得法華三昧。",
+  },
+  {
+    id: "t0262-007-037",
+    category: "受持功德",
+    sectionTitle: DHARANI_SECTION_TITLE,
+    text: "佛言。若善男子善女人。能於是經。乃至受持一四句偈。讀誦解義。如說修行。功德甚多。",
+    anchorText: "能於是經。乃至受持一四句偈",
+    note: "佛以供養無量諸佛為比較，明說受持乃至一四句偈、讀誦解義、如說修行，功德甚多。",
+  },
+  {
+    id: "t0262-007-038",
+    category: "陀羅尼守護",
+    sectionTitle: DHARANI_SECTION_TITLE,
+    text: "世尊。我今當與說法者陀羅尼咒。以守護之。",
+    anchorText: "我今當與說法者陀羅尼咒",
+    note: "藥王菩薩發願為說法者說陀羅尼咒，以作守護。",
+  },
+  {
+    id: "t0262-007-039",
+    category: "諸佛所說",
+    sectionTitle: DHARANI_SECTION_TITLE,
+    text: "世尊。是陀羅尼神咒。六十二憶恆河沙等諸佛所說。若有侵毀此法師者。則為侵毀是諸佛已。",
+    anchorText: "六十二憶恆河沙等諸佛所說",
+    note: "藥王菩薩說此陀羅尼為諸佛所說，並警示侵毀法師即同侵毀諸佛。",
+  },
+  {
+    id: "t0262-007-040",
+    category: "多所饒益",
+    sectionTitle: DHARANI_SECTION_TITLE,
+    text: "善哉善哉。藥王。汝愍念擁護此法師故。說是陀羅尼。於諸眾生。多所饒益。",
+    anchorText: "汝愍念擁護此法師故",
+    note: "佛讚藥王菩薩愍念擁護法師而說陀羅尼，於眾生多所饒益。",
+  },
+  {
+    id: "t0262-007-041",
+    category: "護持讀誦",
+    sectionTitle: DHARANI_SECTION_TITLE,
+    text: "世尊。我亦為擁護讀誦受持法華經者。說陀羅尼。若此法師得是陀羅尼。若夜叉。若羅剎。若富單那。若吉蔗。若鳩槃荼。若餓鬼等。伺求其短。無能得便。",
+    anchorText: "我亦為擁護讀誦受持法華經者",
+    note: "勇施菩薩說陀羅尼擁護讀誦受持《法華經》者，使諸鬼神伺求其短不得其便。",
+  },
+  {
+    id: "t0262-007-042",
+    category: "擁護無患",
+    sectionTitle: DHARANI_SECTION_TITLE,
+    text: "世尊。以是神咒。擁護法師。我亦自當擁護持是經者。令百由旬內。無諸衰患。",
+    anchorText: "我亦自當擁護持是經者",
+    note: "毗沙門天王明說以神咒擁護法師，並自當擁護持經者，使百由旬內無諸衰患。",
+  },
+  {
+    id: "t0262-007-043",
+    category: "擁護持經",
+    sectionTitle: DHARANI_SECTION_TITLE,
+    text: "世尊。我亦以陀羅尼神咒。擁護持法華經者。",
+    anchorText: "擁護持法華經者",
+    note: "持國天王亦以陀羅尼神咒擁護持《法華經》者。",
+  },
+  {
+    id: "t0262-007-044",
+    category: "除衰患",
+    sectionTitle: DHARANI_SECTION_TITLE,
+    text: "世尊。我等亦欲擁護讀誦受持法華經者。除其衰患。若有伺求法師短者。令不得便。",
+    anchorText: "我等亦欲擁護讀誦受持法華經者",
+    note: "十羅剎女與鬼子母等發願擁護讀誦受持《法華經》者，除其衰患，令伺求法師短者不得其便。",
+  },
+  {
+    id: "t0262-007-045",
+    category: "安隱離患",
+    sectionTitle: DHARANI_SECTION_TITLE,
+    text: "世尊。我等亦當身自擁護受持讀誦修行是經者。令得安隱。離諸衰患。消眾毒藥。",
+    anchorText: "身自擁護受持讀誦修行是經者",
+    note: "羅剎女等明說親自擁護受持、讀誦、修行此經者，令得安隱、離諸衰患、消眾毒藥。",
+  },
+  {
+    id: "t0262-007-046",
+    category: "福不可量",
+    sectionTitle: DHARANI_SECTION_TITLE,
+    text: "善哉善哉。汝等但能擁護受持法華名者。福不可量。何況擁護具足受持。供養經卷。華香瓔珞。末香塗香燒香。旛蓋伎樂。燃種種燈。",
+    anchorText: "擁護受持法華名者。福不可量",
+    note: "佛讚羅剎女等，即使只擁護受持法華名者，福已不可量，何況擁護具足受持供養經卷者。",
+  },
+  {
+    id: "t0262-007-047",
+    category: "聞品證法",
+    sectionTitle: DHARANI_SECTION_TITLE,
+    text: "說是陀羅尼品時。六萬八千人。得無生法忍。",
+    anchorText: "六萬八千人。得無生法忍",
+    note: "本品結尾明說，說陀羅尼品時，六萬八千人得無生法忍。",
   },
 ];
