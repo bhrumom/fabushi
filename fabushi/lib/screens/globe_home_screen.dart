@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../core/config/app_config.dart';
 import '../core/constants/country_servers.dart' as country_catalog;
 import '../features/auth/application/auth_model.dart';
@@ -223,10 +222,24 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         .listen((payload) => unawaited(_handleIncomingShare(payload)));
     _onlineCounterService.startCountPolling('global_sending');
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _consumeInitialWebPrompt();
       unawaited(_loadRemoteConversations());
       unawaited(_refreshBuddhaAssetEntitlement());
       unawaited(_consumeInitialShare());
     });
+  }
+
+  void _consumeInitialWebPrompt() {
+    if (!kIsWeb) return;
+    final prompt = Uri.base.queryParameters['prompt']?.trim();
+    if (prompt == null || prompt.isEmpty) return;
+
+    _prefillPrompt(prompt);
+
+    final shouldAutoStart = Uri.base.queryParameters['autostart'] == '1';
+    if (shouldAutoStart) {
+      unawaited(_sendAiChatFromComposer());
+    }
   }
 
   Future<void> _fetchInitialCount() async {
@@ -1777,39 +1790,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   void _prefillPrompt(String prompt) {
-    unawaited(_openDachengAiWeb(prompt: prompt));
-  }
-
-  Future<void> _openDachengAiWeb({String? prompt}) async {
-    final uri = AppConfig.buildDachengAiWebUri(prompt: prompt);
-    try {
-      final opened = await launchUrl(
-        uri,
-        mode: kIsWeb
-            ? LaunchMode.platformDefault
-            : LaunchMode.externalApplication,
-        webOnlyWindowName: kIsWeb ? '_self' : null,
-      );
-      if (!opened && mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('暂时无法打开大乘 AI Web 入口')));
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('暂时无法打开大乘 AI Web 入口: $e')));
-    }
-  }
-
-  void _openDachengAiWebFromComposer() {
-    final prompt = _chatInputController.text.trim();
-    _chatInputController.clear();
-    if (mounted) {
-      setState(() {});
-    }
-    unawaited(_openDachengAiWeb(prompt: prompt));
+    _chatInputController.text = prompt;
+    _chatInputController.selection = TextSelection.collapsed(
+      offset: _chatInputController.text.length,
+    );
+    setState(() {
+      _showMaterialGallery = false;
+      _isDharmaComposerMode = false;
+      _isFlashcardComposerMode = false;
+    });
   }
 
   String _conversationTitleFrom(List<_HomeChatMessage> messages) {
@@ -2160,17 +2149,17 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   decoration: InputDecoration(
                     isDense: true,
                     border: InputBorder.none,
-                    hintText: _isFlashcardComposerMode
+                    hintText: _isDharmaComposerMode
+                        ? _dharmaComposerTarget == DharmaComposerTarget.platform
+                              ? (model.hasFiles ? '可继续输入发布说明' : '粘贴要发布的链接或正文')
+                              : (model.hasFiles ? '可继续输入法布施文字或链接' : '输入文字或链接')
+                        : _isFlashcardComposerMode
                         ? _flashcardMode == FlashcardCreationMode.aiCards
                               ? (_activeFlashcardContent == null
                                     ? '粘贴链接或正文，发送后 AI 制卡'
                                     : '输入制卡要求，例如：按重点概念出题')
                               : '输入链接或正文，发送后自动挖空'
-                        : _isDharmaComposerMode
-                        ? _dharmaComposerTarget == DharmaComposerTarget.platform
-                              ? (model.hasFiles ? '可继续输入发布说明' : '粘贴要发布的链接或正文')
-                              : (model.hasFiles ? '可继续输入法布施文字或链接' : '输入文字或链接')
-                        : '打开大乘 AI Web',
+                        : '问问大乘',
                     hintStyle: const TextStyle(
                       color: Colors.white54,
                       fontSize: 15,
@@ -2289,7 +2278,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           ? _dharmaComposerTarget == DharmaComposerTarget.platform
                 ? '预览并发布'
                 : '开始法布施'
-          : '打开大乘 AI',
+          : '发送问题',
       icon: Icon(
         Icons.arrow_upward,
         color: canSubmit ? Colors.black : Colors.white54,
@@ -2420,7 +2409,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         _startSending(model);
       }
     } else {
-      _openDachengAiWebFromComposer();
+      unawaited(_sendAiChatFromComposer());
     }
   }
 
