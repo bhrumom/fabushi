@@ -23,7 +23,14 @@ import '../widgets/auto_start_guide_dialog.dart';
 import 'membership_screen.dart';
 
 class GlobeHomeScreen extends StatefulWidget {
-  const GlobeHomeScreen({super.key});
+  const GlobeHomeScreen({
+    super.key,
+    this.topBarTrailing,
+    this.composerLeftInset,
+  });
+
+  final Widget? topBarTrailing;
+  final double? composerLeftInset;
 
   @override
   State<GlobeHomeScreen> createState() => GlobeHomeScreenState();
@@ -160,9 +167,23 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     _fetchInitialCount();
     _onlineCounterService.startCountPolling('global_sending');
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _consumeInitialWebPrompt();
       unawaited(_loadRemoteConversations());
       unawaited(_refreshBuddhaAssetEntitlement());
     });
+  }
+
+  void _consumeInitialWebPrompt() {
+    if (!kIsWeb) return;
+    final prompt = Uri.base.queryParameters['prompt']?.trim();
+    if (prompt == null || prompt.isEmpty) return;
+
+    _prefillPrompt(prompt);
+
+    final shouldAutoStart = Uri.base.queryParameters['autostart'] == '1';
+    if (shouldAutoStart) {
+      unawaited(_sendAiChatFromComposer());
+    }
   }
 
   Future<void> _fetchInitialCount() async {
@@ -381,7 +402,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     _buildTopBar(authModel),
                     Expanded(child: _buildHomeBody(context, model, authModel)),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
+                      padding: EdgeInsets.fromLTRB(
+                        widget.composerLeftInset ?? 18,
+                        8,
+                        18,
+                        16,
+                      ),
                       child: _buildChatComposer(context, model),
                     ),
                   ],
@@ -454,32 +480,34 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: '排行榜',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const LeaderboardScreen(),
+              child:
+                  widget.topBarTrailing ??
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: '排行榜',
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const LeaderboardScreen(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.leaderboard_rounded,
+                          color: Colors.white70,
                         ),
-                      );
-                    },
-                    icon: const Icon(
-                      Icons.leaderboard_rounded,
-                      color: Colors.white70,
-                    ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.black.withValues(alpha: 0.2),
-                      fixedSize: const Size(42, 42),
-                    ),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.black.withValues(alpha: 0.2),
+                          fixedSize: const Size(42, 42),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _buildAvatar(authModel),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  _buildAvatar(authModel),
-                ],
-              ),
             ),
           ],
         ),
@@ -985,7 +1013,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     _chatInputController.selection = TextSelection.collapsed(
       offset: _chatInputController.text.length,
     );
-    setState(() {});
+    setState(() {
+      _showMaterialGallery = false;
+      _isDharmaComposerMode = false;
+    });
   }
 
   String _conversationTitleFrom(List<_HomeChatMessage> messages) {
@@ -1266,7 +1297,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     border: InputBorder.none,
                     hintText: _isDharmaComposerMode
                         ? (model.hasFiles ? '可继续输入法布施文字或链接' : '输入文字或链接')
-                        : '问问 AI',
+                        : '问问大乘',
                     hintStyle: const TextStyle(
                       color: Colors.white54,
                       fontSize: 15,
@@ -1333,7 +1364,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
 
     return IconButton(
-      tooltip: _isDharmaComposerMode ? '开始法布施' : '发送消息',
+      tooltip: _isDharmaComposerMode ? '开始法布施' : '发送问题',
       icon: Icon(
         Icons.arrow_upward,
         color: canSubmit ? Colors.black : Colors.white54,
@@ -1430,7 +1461,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     if (_isDharmaComposerMode) {
       _startSending(model);
     } else {
-      _sendAiChatFromComposer();
+      unawaited(_sendAiChatFromComposer());
     }
   }
 

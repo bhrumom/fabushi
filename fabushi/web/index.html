@@ -52,9 +52,6 @@
   <!-- Flutter Angle for WebGL2 - 非关键，延迟加载 -->
   <script src="https://cdn.jsdelivr.net/gh/Knightro63/flutter_angle/assets/gles_bindings.js" defer></script>
 
-  <!-- Three.js 延迟加载 - 仅在需要时加载 -->
-  <script src="lazy-three.js" defer></script>
-
   <!-- sql.js for drift -->
   <script>
     // Configure sql.js BEFORE loading the library
@@ -101,7 +98,7 @@
       display: none;
     }
 
-    /* 🎨 骨架屏样式 */
+    /* 🎨 首屏占位：优先给出输入框感知 */
     #loading-skeleton {
       position: fixed;
       top: 0;
@@ -109,10 +106,13 @@
       width: 100%;
       height: 100%;
       display: flex;
-      flex-direction: column;
-      align-items: center;
+      align-items: flex-end;
       justify-content: center;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 18px;
+      box-sizing: border-box;
+      background:
+        linear-gradient(180deg, rgba(8, 23, 40, 0.68) 0%, rgba(7, 9, 11, 0.82) 100%),
+        linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       z-index: 9999;
       opacity: 1;
       transition: opacity 0.5s ease-out;
@@ -123,81 +123,88 @@
       pointer-events: none;
     }
 
-    /* 地球骨架 */
-    .skeleton-globe {
-      width: 280px;
-      height: 280px;
+    .loading-shell {
+      width: min(720px, calc(100vw - 36px));
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .loading-chip {
+      width: 148px;
+      height: 40px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(10px);
+    }
+
+    .loading-composer {
+      width: 100%;
+      min-height: 56px;
+      padding: 8px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 26px;
+      background: rgba(36, 36, 36, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
+    }
+
+    .loading-composer-plus {
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
-      background: linear-gradient(90deg,
-          rgba(255, 255, 255, 0.1) 25%,
-          rgba(255, 255, 255, 0.2) 50%,
-          rgba(255, 255, 255, 0.1) 75%);
-      background-size: 200% 100%;
-      animation: shimmer 2s infinite;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3),
-        inset 0 0 60px rgba(255, 255, 255, 0.1);
-      position: relative;
-      overflow: hidden;
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 24px;
+      border: 0;
     }
 
-    /* 地球网格效果 */
-    .skeleton-globe::before {
-      content: '';
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: repeating-linear-gradient(0deg,
-          transparent,
-          transparent 20px,
-          rgba(255, 255, 255, 0.05) 20px,
-          rgba(255, 255, 255, 0.05) 22px);
-      animation: rotate 20s linear infinite;
+    .loading-composer-input {
+      flex: 1;
+      min-width: 0;
     }
 
-    @keyframes shimmer {
-      0% {
-        background-position: 200% 0;
-      }
-
-      100% {
-        background-position: -200% 0;
-      }
+    .loading-composer-input input {
+      width: 100%;
+      height: 40px;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: #fff;
+      font-size: 16px;
+      line-height: 40px;
+      padding: 0;
     }
 
-    @keyframes rotate {
-      from {
-        transform: rotate(0deg);
-      }
-
-      to {
-        transform: rotate(360deg);
-      }
+    .loading-composer-input input::placeholder {
+      color: rgba(255, 255, 255, 0.56);
     }
 
-    /* 加载文本 */
-    .loading-text {
-      margin-top: 40px;
-      color: rgba(255, 255, 255, 0.95);
+    .loading-composer-send {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      border: 0;
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
       font-size: 18px;
-      font-weight: 500;
-      text-align: center;
-      letter-spacing: 1px;
-    }
-
-    .loading-subtext {
-      margin-top: 12px;
-      color: rgba(255, 255, 255, 0.7);
-      font-size: 14px;
-      text-align: center;
     }
 
     /* 加载进度指示器 */
     .loading-dots {
       display: flex;
       gap: 8px;
-      margin-top: 20px;
+      margin-left: 14px;
     }
 
     .loading-dot {
@@ -234,19 +241,27 @@
         opacity: 1;
       }
     }
+
   </style>
 </head>
 
 <body>
   <!-- 🎨 加载骨架屏 -->
   <div id="loading-skeleton">
-    <div class="skeleton-globe"></div>
-    <div class="loading-text">全球法布施</div>
-    <div class="loading-subtext">正在加载...</div>
-    <div class="loading-dots">
-      <div class="loading-dot"></div>
-      <div class="loading-dot"></div>
-      <div class="loading-dot"></div>
+    <div class="loading-shell">
+      <div class="loading-chip"></div>
+      <form id="loading-composer-form" class="loading-composer" autocomplete="off">
+        <button class="loading-composer-plus" type="button" aria-label="更多">+</button>
+        <label class="loading-composer-input" aria-label="问问大乘">
+          <input id="loading-composer-input" type="text" placeholder="问问大乘" />
+        </label>
+        <button id="loading-composer-send" class="loading-composer-send" type="submit" aria-label="发送">↑</button>
+      </form>
+      <div class="loading-dots" aria-hidden="true">
+        <div class="loading-dot"></div>
+        <div class="loading-dot"></div>
+        <div class="loading-dot"></div>
+      </div>
     </div>
   </div>
 
@@ -263,61 +278,84 @@
   <!-- Flutter 引导脚本 -->
   <script src="flutter_bootstrap.js" async></script>
 
-  <!-- 🚀 Flutter 加载配置 - 自动选择最优渲染器 -->
+  <!-- 🚀 Flutter 启动后处理：收起骨架屏 -->
   <script>
-    window.addEventListener('load', function (ev) {
-      console.log('🚀 Starting Flutter app...');
+    (function () {
+      let appReady = false;
+      const pendingUrl = new URL(window.location.href);
+      const shellForm = document.getElementById('loading-composer-form');
+      const shellInput = document.getElementById('loading-composer-input');
 
-      _flutter.loader.load({
-        // Flutter 3.38+ 自动选择最优渲染器
-        // 首次加载通常使用 HTML 渲染器 (快速)
-        // 3D 场景自动切换到 CanvasKit (性能)
-        onEntrypointLoaded: async function (engineInitializer) {
-          console.log('✅ Flutter entrypoint loaded');
-          const appRunner = await engineInitializer.initializeEngine();
-          console.log('✅ Flutter engine initialized');
-          await appRunner.runApp();
-          console.log('✅ Flutter app started');
+      function syncBootstrapPrompt(autoStart) {
+        if (!shellInput) return;
+        const prompt = shellInput.value.trim();
+        if (!prompt) return;
 
-          // 移除骨架屏
-          setTimeout(() => {
-            const skeleton = document.getElementById('loading-skeleton');
-            const appContainer = document.getElementById('app-container');
+        pendingUrl.searchParams.set('prompt', prompt);
+        if (autoStart) {
+          pendingUrl.searchParams.set('autostart', '1');
+        } else {
+          pendingUrl.searchParams.delete('autostart');
+        }
+        window.history.replaceState({}, '', pendingUrl);
+      }
 
-            if (skeleton) {
-              skeleton.classList.add('fade-out');
-              setTimeout(() => skeleton.remove(), 500);
-            }
+      if (shellInput) {
+        const existingPrompt = pendingUrl.searchParams.get('prompt');
+        if (existingPrompt) {
+          shellInput.value = existingPrompt;
+        }
 
-            if (appContainer) {
-              appContainer.classList.add('loaded');
-            }
+        shellInput.addEventListener('input', () => syncBootstrapPrompt(false));
+      }
 
-            console.log('🎉 App fully loaded');
-          }, 300);
-
-          // 在空闲时预加载 CanvasKit (如果尚未加载)
-          if ('requestIdleCallback' in window) {
-            requestIdleCallback(() => {
-              console.log('🔮 Preloading CanvasKit in background...');
-              // 预加载 CanvasKit wasm 文件
-              const link = document.createElement('link');
-              link.rel = 'prefetch';
-              link.href = 'canvaskit/canvaskit.wasm';
-              document.head.appendChild(link);
-            }, { timeout: 3000 });
+      if (shellForm) {
+        shellForm.addEventListener('submit', (event) => {
+          event.preventDefault();
+          if (!shellInput || !shellInput.value.trim()) {
+            return;
           }
+          syncBootstrapPrompt(true);
+        });
+      }
 
-          // 预加载 Three.js (如果用户可能访问 3D 页面)
-          window.preloadThreeJS && window.preloadThreeJS();
+      function revealApp() {
+        if (appReady) return;
+        appReady = true;
+
+        const skeleton = document.getElementById('loading-skeleton');
+        const appContainer = document.getElementById('app-container');
+
+        if (skeleton) {
+          skeleton.classList.add('fade-out');
+          setTimeout(() => skeleton.remove(), 500);
+        }
+
+        if (appContainer) {
+          appContainer.classList.add('loaded');
+        }
+
+        console.log('🎉 Flutter view detected');
+      }
+
+      const observer = new MutationObserver(() => {
+        if (document.querySelector('flutter-view, flt-glass-pane, [flt-renderer]')) {
+          observer.disconnect();
+          revealApp();
         }
       });
-    });
 
-    // 监听 Flutter 首帧渲染完成事件
-    window.addEventListener('flutter-first-frame', function () {
-      console.log('🖼️ Flutter first frame rendered');
-    });
+      observer.observe(document.body, { childList: true, subtree: true });
+
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          if (document.querySelector('flutter-view, flt-glass-pane, [flt-renderer]')) {
+            observer.disconnect();
+            revealApp();
+          }
+        }, 1500);
+      });
+    })();
   </script>
 </body>
 
