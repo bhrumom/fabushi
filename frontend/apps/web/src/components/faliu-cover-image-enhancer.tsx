@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 const COVER_IMAGES: Record<string, string> = {
   T0251: "/faliu/covers/T0251-heart-sutra-cover-thumb.jpg",
+  T0366: "/faliu/covers/T0366-amitabha-sutra-cover-thumb.jpg",
 };
 
 function findCoverElement(card: HTMLElement, work: string) {
