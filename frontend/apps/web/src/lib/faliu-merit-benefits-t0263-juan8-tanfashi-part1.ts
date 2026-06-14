@@ -1,8 +1,9 @@
 import type { FaliuMeritBenefit } from "./faliu-merit-benefits";
+import { T0263_JUAN_8_TANFASHI_REMAINDER_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan8-tanfashi-remainder";
 
 const TANFASHI_SECTION_TITLE = "歎法師品第十八";
 
-export const T0263_JUAN_8_TANFASHI_PART1_MERIT_BENEFITS: FaliuMeritBenefit[] = [
+const T0263_JUAN_8_TANFASHI_PART1_ONLY_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   {
     sectionTitle: TANFASHI_SECTION_TITLE,
     id: "t0263-008-056",
@@ -139,4 +140,9 @@ export const T0263_JUAN_8_TANFASHI_PART1_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     anchorText: "尚未逮得，天人之鼻",
     note: "本段结语说明尚未得天人鼻，已自然得此瑞应，显持经功德殊胜。",
   },
+];
+
+export const T0263_JUAN_8_TANFASHI_PART1_MERIT_BENEFITS: FaliuMeritBenefit[] = [
+  ...T0263_JUAN_8_TANFASHI_PART1_ONLY_MERIT_BENEFITS,
+  ...T0263_JUAN_8_TANFASHI_REMAINDER_MERIT_BENEFITS,
 ];
