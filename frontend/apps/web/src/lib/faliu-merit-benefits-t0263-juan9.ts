@@ -1,9 +1,10 @@
 import type { FaliuMeritBenefit } from "./faliu-merit-benefits";
+import { T0263_JUAN_9_YAOWANG_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan9-yaowang";
 
 const CHANGBEIQINGMAN_SECTION_TITLE = "常被輕慢品第十九";
 const RULAISHENZU_SECTION_TITLE = "如來神足行品第二十";
 
-export const T0263_JUAN_9_MERIT_BENEFITS: FaliuMeritBenefit[] = [
+const T0263_JUAN_9_BASE_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   {
     sectionTitle: CHANGBEIQINGMAN_SECTION_TITLE,
     id: "t0263-009-001",
@@ -316,4 +317,9 @@ export const T0263_JUAN_9_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     anchorText: "聞如是像，經無等倫",
     note: "本品结尾赞此经无等伦，并劝灭后奉持此经者，于佛大道不疑。",
   },
+];
+
+export const T0263_JUAN_9_MERIT_BENEFITS: FaliuMeritBenefit[] = [
+  ...T0263_JUAN_9_BASE_MERIT_BENEFITS,
+  ...T0263_JUAN_9_YAOWANG_MERIT_BENEFITS,
 ];
