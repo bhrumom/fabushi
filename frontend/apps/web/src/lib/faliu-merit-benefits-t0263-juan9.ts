@@ -1,4 +1,5 @@
 import type { FaliuMeritBenefit } from "./faliu-merit-benefits";
+import { T0263_JUAN_9_MIAOHOU_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan9-miaohou";
 import { T0263_JUAN_9_YAOWANG_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan9-yaowang";
 
 const CHANGBEIQINGMAN_SECTION_TITLE = "常被輕慢品第十九";
@@ -322,4 +323,5 @@ const T0263_JUAN_9_BASE_MERIT_BENEFITS: FaliuMeritBenefit[] = [
 export const T0263_JUAN_9_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   ...T0263_JUAN_9_BASE_MERIT_BENEFITS,
   ...T0263_JUAN_9_YAOWANG_MERIT_BENEFITS,
+  ...T0263_JUAN_9_MIAOHOU_MERIT_BENEFITS,
 ];
