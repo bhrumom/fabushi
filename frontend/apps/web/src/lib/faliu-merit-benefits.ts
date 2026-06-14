@@ -8,6 +8,7 @@ export { T0264_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264";
 export { T0264_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan2";
 export { T0264_JUAN_2_FIREHOUSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan2-firehouse";
 export { T0264_JUAN_2_SLANDER_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan2-slander";
+export { T0264_JUAN_3_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import { T0263_JUAN_10_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan10";
@@ -19,6 +20,7 @@ import { T0264_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264";
 import { T0264_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan2";
 import { T0264_JUAN_2_FIREHOUSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan2-firehouse";
 import { T0264_JUAN_2_SLANDER_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan2-slander";
+import { T0264_JUAN_3_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3";
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
   const normalizedWork = work?.trim().toUpperCase();
@@ -44,6 +46,10 @@ export function getFaliuMeritBenefits(work: string | null | undefined, juan: str
       ...T0264_JUAN_2_FIREHOUSE_MERIT_BENEFITS,
       ...T0264_JUAN_2_SLANDER_MERIT_BENEFITS,
     ];
+  }
+
+  if (normalizedWork === "T0264" && normalizedJuan === "3") {
+    return T0264_JUAN_3_MERIT_BENEFITS;
   }
 
   return getBaseFaliuMeritBenefits(work, juan);
