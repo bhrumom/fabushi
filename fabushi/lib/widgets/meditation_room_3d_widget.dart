@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'meditation_room_painter.dart';
 import 'sutra_dialog.dart';
 import 'buddha_3d_widget.dart';
@@ -211,10 +210,9 @@ class _MeditationRoom3DWidgetState extends State<MeditationRoom3DWidget>
               },
             ),
           ),
-          if (kIsWeb)
-            const Center(
-              child: SizedBox(width: 400, height: 500, child: Buddha3DWidget()),
-            ),
+          const Center(
+            child: SizedBox(width: 400, height: 500, child: Buddha3DWidget()),
+          ),
           Positioned(
             top: 20,
             left: 0,
