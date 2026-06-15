@@ -8,6 +8,7 @@
   const hero = root.querySelector('[data-empty-state]');
   const menu = root.querySelector('[data-tool-menu]');
   const mode = root.querySelector('[data-current-mode]');
+  const modeBar = root.querySelector('[data-flashcard-mode-bar]');
   const sendLog = root.querySelector('[data-global-log]');
   const cardWrap = root.querySelector('[data-card-wrap]');
   const cardCount = root.querySelector('[data-card-count]');
@@ -18,6 +19,7 @@
   const regions = Array.from(root.querySelectorAll('[data-region]')).map((node) => node.getAttribute('data-region') || '').filter(Boolean);
 
   let activeTool = null;
+  let activeCardMode = 'mixed';
   let cards = [];
   let cardIndex = 0;
   let answerVisible = false;
@@ -38,23 +40,56 @@
     };
   }
 
+  function findCardMode(id) {
+    const selector = '[data-select-card-mode="' + id + '"]';
+    const node = root.querySelector(selector);
+    if (!node) return null;
+    return {
+      id,
+      title: node.getAttribute('data-card-mode-title') || '',
+      shortTitle: node.getAttribute('data-card-mode-short') || '',
+    };
+  }
+
+  function updateCardMode() {
+    root.querySelectorAll('[data-select-card-mode]').forEach((button) => {
+      const isActive = button.getAttribute('data-select-card-mode') === activeCardMode;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
   function updateMode() {
     const tool = activeTool ? findTool(activeTool) : null;
+    const cardMode = findCardMode(activeCardMode);
     if (mode) {
       mode.hidden = !tool;
       mode.textContent = tool ? tool.shortTitle + ' ×' : '';
+    }
+    if (modeBar) {
+      modeBar.hidden = activeTool !== 'flashcards';
     }
     root.querySelectorAll('[data-select-tool]').forEach((button) => {
       button.classList.toggle('is-active', button.getAttribute('data-select-tool') === activeTool);
     });
     if (input) {
-      input.placeholder = tool ? tool.action + '，也可以继续问一问' + brandName : inputPlaceholder;
+      const action = tool && activeTool === 'flashcards' && cardMode
+        ? '制作' + cardMode.title
+        : tool ? tool.action : '';
+      input.placeholder = tool ? action + '，也可以继续问一问' + brandName : inputPlaceholder;
     }
+    updateCardMode();
   }
 
   function setTool(id) {
     activeTool = id || null;
     updateMode();
+  }
+
+  function setCardMode(id) {
+    activeCardMode = id || 'mixed';
+    updateMode();
+    if (input) input.focus();
   }
 
   function setText(node, value) {
@@ -90,6 +125,7 @@
     cards = [];
     cardIndex = 0;
     answerVisible = false;
+    activeCardMode = 'mixed';
     setText(sendLog, '等待输入正文后生成全球法布施清单。');
     renderCard();
     setTool(null);
@@ -107,7 +143,7 @@
       .slice(0, 6);
   }
 
-  function makeCards(text) {
+  function makeCards(text, cardMode) {
     const made = [];
     splitSentences(text).forEach((sentence) => {
       const plain = sentence.replace(/[，、：,\s]/g, '');
@@ -116,8 +152,12 @@
       const cloze = term && sentence.includes(term)
         ? sentence.replace(term, '〔……〕')
         : sentence.slice(0, 8) + '〔……〕' + sentence.slice(Math.min(sentence.length, 14));
-      made.push({ id: makeId('card'), front: cloze, back: sentence, kind: '挖空', reviews: 0, due: '现在' });
-      made.push({ id: makeId('card'), front: '请背诵并解释：' + sentence.slice(0, 18) + '…', back: sentence, kind: '双向', reviews: 0, due: '现在' });
+      if (cardMode !== 'bidirectional') {
+        made.push({ id: makeId('card'), front: cloze, back: sentence, kind: '挖空', reviews: 0, due: '现在' });
+      }
+      if (cardMode !== 'cloze') {
+        made.push({ id: makeId('card'), front: '请背诵并解释：' + sentence.slice(0, 18) + '…', back: sentence, kind: '双向', reviews: 0, due: '现在' });
+      }
     });
     return made;
   }
@@ -136,7 +176,7 @@
     const card = cards[cardIndex];
     if (!card) {
       const empty = document.createElement('p');
-      empty.textContent = '输入正文并选择背诵闪卡后，这里会出现挖空卡和双向卡。';
+      empty.textContent = '输入正文并选择背诵闪卡后，可在输入框上方切换挖空卡、双向卡或混合制卡。';
       cardWrap.appendChild(empty);
       return;
     }
@@ -189,12 +229,13 @@
   }
 
   function buildDeck(text) {
-    const made = makeCards(text || defaultText);
+    const cardMode = findCardMode(activeCardMode) || { title: '混合制卡' };
+    const made = makeCards(text || defaultText, activeCardMode);
     cards = made.concat(cards);
     cardIndex = 0;
     answerVisible = false;
     renderCard();
-    addMessage('assistant', made.length ? '已制作 ' + made.length + ' 张背诵闪卡。' : '内容太短，请补充正文后再制卡。', '背诵闪卡');
+    addMessage('assistant', made.length ? '已按' + cardMode.title + '模式制作 ' + made.length + ' 张背诵闪卡。' : '内容太短，请补充正文后再制卡。', '背诵闪卡');
   }
 
   function submit() {
@@ -235,6 +276,12 @@
       setTool(button.getAttribute('data-select-tool') || null);
       if (menu) menu.hidden = true;
       if (input) input.focus();
+    });
+  });
+
+  root.querySelectorAll('[data-select-card-mode]').forEach((button) => {
+    button.addEventListener('click', () => {
+      setCardMode(button.getAttribute('data-select-card-mode') || 'mixed');
     });
   });
 

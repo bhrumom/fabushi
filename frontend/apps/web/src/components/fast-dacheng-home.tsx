@@ -3,6 +3,27 @@ import {
 } from "@fabushi/shared";
 import { siteHref } from "../lib/site-url";
 
+const flashcardModes = [
+  {
+    id: "mixed",
+    title: "混合制卡",
+    shortTitle: "混合",
+    description: "同时生成挖空卡和双向卡。",
+  },
+  {
+    id: "cloze",
+    title: "挖空卡",
+    shortTitle: "挖空",
+    description: "适合背诵关键句和关键词。",
+  },
+  {
+    id: "bidirectional",
+    title: "双向卡",
+    shortTitle: "双向",
+    description: "适合从提示回忆完整内容。",
+  },
+] as const;
+
 export function FastDachengHome() {
   const {
     brand,
@@ -92,6 +113,27 @@ export function FastDachengHome() {
                 <span>{item.icon}</span>
                 <strong>{item.title}</strong>
                 <small>{item.description}</small>
+              </button>
+            ))}
+          </div>
+          <div
+            className="fast-chips fast-mode-tabs"
+            data-flashcard-mode-bar
+            hidden
+            aria-label="闪卡制卡模式"
+            style={{ width: "min(820px, 100%)", margin: "0 auto 10px" }}
+          >
+            {flashcardModes.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                title={item.description}
+                data-select-card-mode={item.id}
+                data-card-mode-title={item.title}
+                data-card-mode-short={item.shortTitle}
+              >
+                <span>✦</span>
+                {item.title}
               </button>
             ))}
           </div>
