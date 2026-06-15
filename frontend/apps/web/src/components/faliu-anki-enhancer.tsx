@@ -7,10 +7,12 @@ import { FALIU_ANKI_DECK_MAP, type FaliuAnkiCard, type FaliuAnkiDeck } from "../
 const REVIEW_STORAGE_KEY = "fabushi:faliu-anki-review:v1";
 const MAX_FALLBACK_CARDS = 12;
 const READER_SELECTOR = 'section[aria-label="法流"] [class*="readerHtml"]';
+const ANKI_SLOT_SELECTOR = '[data-faliu-anki-slot="true"]';
 const HIGHLIGHT_NAME = "faliu-anki-source-highlight";
 const SKIP_TEXT_SELECTOR = ".lb,.noteAnchor,.gaijiInfo,#cbeta-copyright,script,style,[aria-hidden='true']";
 
 type ReviewGrade = "again" | "hard" | "good" | "easy";
+type CardFilter = "all" | "understanding" | "image";
 
 interface ReviewRecord {
   reviewed: number;
@@ -49,6 +51,10 @@ function getModal() {
 
 function getSidePanel() {
   return document.querySelector<HTMLElement>('section[aria-label="法流"] aside[class*="sidePanel"]');
+}
+
+function getCardHost() {
+  return document.querySelector<HTMLElement>(ANKI_SLOT_SELECTOR) ?? getSidePanel();
 }
 
 function getText(selector: string, root: ParentNode = document) {
@@ -315,6 +321,10 @@ function scrollToCardSource(card: FaliuAnkiCard) {
   return true;
 }
 
+function getCardType(card: FaliuAnkiCard) {
+  return card.type ?? (card.imagePrompt ? "image" : "understanding");
+}
+
 function buildFallbackDeck(context: ReaderContext): FaliuAnkiDeck {
   const lines = context.readerText
     .split(/[\n。！？!?；;]/)
@@ -335,6 +345,7 @@ function buildFallbackDeck(context: ReaderContext): FaliuAnkiDeck {
     const cue = line.slice(0, cueLength);
     cards.push({
       id: `${context.contentId}:auto-${cards.length + 1}`,
+      type: "recitation",
       front: `請背誦接下來的經文：${cue}……`,
       back: line,
       hint: `摘自第 ${context.juan} 卷正文`,
@@ -358,7 +369,7 @@ function buildFallbackDeck(context: ReaderContext): FaliuAnkiDeck {
 
 function getReaderContext(): ReaderContext | null {
   const modal = getModal();
-  const host = getSidePanel();
+  const host = getCardHost();
 
   if (!modal || !host) {
     return null;
@@ -409,6 +420,7 @@ export function FaliuAnkiEnhancer() {
   const [context, setContext] = useState<ReaderContext | null>(null);
   const [records, setRecords] = useState<Record<string, ReviewRecord>>({});
   const [activeIndex, setActiveIndex] = useState(0);
+  const [activeFilter, setActiveFilter] = useState<CardFilter>("all");
   const [isRevealed, setIsRevealed] = useState(false);
   const [sourceLookupFailed, setSourceLookupFailed] = useState(false);
 
@@ -439,17 +451,28 @@ export function FaliuAnkiEnhancer() {
 
   useEffect(() => {
     setActiveIndex(0);
+    setActiveFilter("all");
     setIsRevealed(false);
     setSourceLookupFailed(false);
   }, [deck?.contentId]);
 
   useEffect(() => {
+    setActiveIndex(0);
+    setIsRevealed(false);
     setSourceLookupFailed(false);
-  }, [activeIndex, deck?.contentId]);
+  }, [activeFilter]);
 
   useEffect(() => {
     return () => clearSourceMarks(document.querySelector<HTMLElement>(READER_SELECTOR));
   }, []);
+
+  const filteredCards = useMemo(() => {
+    if (!deck) {
+      return [];
+    }
+
+    return activeFilter === "all" ? deck.cards : deck.cards.filter((card) => getCardType(card) === activeFilter);
+  }, [activeFilter, deck]);
 
   const dueCards = useMemo(() => {
     if (!deck) {
@@ -457,9 +480,9 @@ export function FaliuAnkiEnhancer() {
     }
 
     const now = Date.now();
-    const due = deck.cards.filter((card) => !records[card.id] || records[card.id].due <= now);
-    return due.length > 0 ? due : deck.cards;
-  }, [deck, records]);
+    const due = filteredCards.filter((card) => !records[card.id] || records[card.id].due <= now);
+    return due.length > 0 ? due : filteredCards;
+  }, [deck, filteredCards, records]);
 
   if (!context || !deck) {
     return null;
@@ -468,6 +491,8 @@ export function FaliuAnkiEnhancer() {
   const activeCard = dueCards[activeIndex % Math.max(1, dueCards.length)];
   const finishedCount = deck.cards.filter((card) => records[card.id]?.reviewed).length;
   const isAiDeck = Boolean(FALIU_ANKI_DECK_MAP[context.contentId]);
+  const hasImageCards = deck.cards.some((card) => getCardType(card) === "image");
+  const hasUnderstandingCards = deck.cards.some((card) => getCardType(card) === "understanding");
 
   function review(grade: ReviewGrade) {
     if (!activeCard) {
@@ -497,8 +522,9 @@ export function FaliuAnkiEnhancer() {
   return createPortal(
     <section
       aria-label="经文背诵卡片"
+      data-faliu-anki-panel="true"
       style={{
-        marginTop: 16,
+        marginTop: context.host.matches(ANKI_SLOT_SELECTOR) ? 0 : 16,
         padding: 18,
         border: "1px solid rgba(232, 189, 107, 0.18)",
         borderRadius: 8,
@@ -507,7 +533,7 @@ export function FaliuAnkiEnhancer() {
     >
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
         <div>
-          <h4 style={{ margin: "0 0 6px", color: "#ffffff", fontSize: "1rem" }}>背诵卡片</h4>
+          <h4 style={{ margin: "0 0 6px", color: "#ffffff", fontSize: "1rem" }}>卡片</h4>
           <p style={{ margin: 0, color: "rgba(255, 255, 255, 0.56)", fontSize: "0.86rem", lineHeight: 1.55 }}>
             {isAiDeck ? "AI 精修卡片" : "临时摘句卡片，后续可由 AI 批量替换"} · {deck.cards.length} 张
           </p>
@@ -516,6 +542,37 @@ export function FaliuAnkiEnhancer() {
           {finishedCount}/{deck.cards.length}
         </span>
       </div>
+
+      {hasImageCards && hasUnderstandingCards ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 14 }}>
+          {[
+            ["all", `全部 ${deck.cards.length}`],
+            ["understanding", `理解 ${deck.cards.filter((card) => getCardType(card) === "understanding").length}`],
+            ["image", `图像 ${deck.cards.filter((card) => getCardType(card) === "image").length}`],
+          ].map(([filter, label]) => {
+            const isActive = activeFilter === filter;
+            return (
+              <button
+                key={filter}
+                type="button"
+                onClick={() => setActiveFilter(filter as CardFilter)}
+                style={{
+                  minHeight: 34,
+                  border: `1px solid ${isActive ? "rgba(111, 211, 255, 0.42)" : "rgba(255, 255, 255, 0.1)"}`,
+                  borderRadius: 8,
+                  background: isActive ? "rgba(111, 211, 255, 0.14)" : "rgba(255, 255, 255, 0.055)",
+                  color: "#ffffff",
+                  cursor: "pointer",
+                  fontSize: "0.82rem",
+                  fontWeight: 760,
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       {activeCard ? (
         <div style={{ marginTop: 16 }}>
@@ -531,6 +588,27 @@ export function FaliuAnkiEnhancer() {
               border: "1px solid rgba(255, 255, 255, 0.08)",
             }}
           >
+            {getCardType(activeCard) === "image" && activeCard.imagePrompt ? (
+              <div
+                aria-label="图像提示"
+                style={{
+                  padding: 13,
+                  borderRadius: 8,
+                  border: "1px solid rgba(111, 211, 255, 0.22)",
+                  background: "rgba(111, 211, 255, 0.08)",
+                }}
+              >
+                <strong style={{ display: "block", marginBottom: 6, color: "#bfeeff", fontSize: "0.86rem" }}>图像提示</strong>
+                <p style={{ margin: 0, color: "rgba(255, 255, 255, 0.86)", fontSize: "0.92rem", lineHeight: 1.62 }}>
+                  {activeCard.imagePrompt}
+                </p>
+                {activeCard.imageAlt ? (
+                  <small style={{ display: "block", marginTop: 8, color: "rgba(255, 255, 255, 0.48)", lineHeight: 1.5 }}>
+                    {activeCard.imageAlt}
+                  </small>
+                ) : null}
+              </div>
+            ) : null}
             <p style={{ margin: 0, color: "#ffffff", fontSize: "1.02rem", fontWeight: 760, lineHeight: 1.72 }}>
               {activeCard.front}
             </p>
@@ -622,7 +700,7 @@ export function FaliuAnkiEnhancer() {
         </div>
       ) : (
         <p style={{ margin: "14px 0 0", color: "rgba(255, 255, 255, 0.58)", lineHeight: 1.65 }}>
-          正文载入后会自动生成可练习的摘句卡；AI 批量卡片导入后会优先显示精修版本。
+          当前筛选下暂无卡片。
         </p>
       )}
     </section>,
