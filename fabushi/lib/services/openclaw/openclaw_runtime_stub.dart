@@ -13,6 +13,7 @@ class OpenClawRuntimeStatus {
   final int? port;
   final String? platformKey;
   final String? runtimePath;
+  final Map<String, dynamic>? desktopToolsStatus;
   final DateTime checkedAt;
 
   const OpenClawRuntimeStatus({
@@ -21,6 +22,7 @@ class OpenClawRuntimeStatus {
     this.port,
     this.platformKey,
     this.runtimePath,
+    this.desktopToolsStatus,
     required this.checkedAt,
   });
 
@@ -49,12 +51,18 @@ class OpenClawGatewayTarget {
   final String token;
   final String model;
   final String? modelOverride;
+  final Uri? desktopToolsUri;
+  final String? desktopToolsToken;
+  final Map<String, dynamic>? desktopToolsStatus;
 
   const OpenClawGatewayTarget({
     required this.baseUri,
     required this.token,
     required this.model,
     this.modelOverride,
+    this.desktopToolsUri,
+    this.desktopToolsToken,
+    this.desktopToolsStatus,
   });
 }
 

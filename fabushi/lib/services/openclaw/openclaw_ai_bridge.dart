@@ -89,7 +89,12 @@ class OpenClawAiBridge {
       type: 'step',
       text: '本机 OpenClaw 已接管首页 AI 对话',
       conversationId: effectiveConversationId,
-      raw: const {'title': '本机 OpenClaw', 'message': '正在处理请求'},
+      raw: {
+        'title': '本机 OpenClaw',
+        'message': '正在处理请求',
+        if (target.desktopToolsStatus != null)
+          'desktopTools': target.desktopToolsStatus,
+      },
     );
 
     final existing = await _store.get(effectiveConversationId);
@@ -189,6 +194,8 @@ class OpenClawAiBridge {
         'conversationId': effectiveConversationId,
         'provider': 'openclaw-local',
         'sawDone': sawDone,
+        if (target.desktopToolsStatus != null)
+          'desktopTools': target.desktopToolsStatus,
       },
     );
   }
