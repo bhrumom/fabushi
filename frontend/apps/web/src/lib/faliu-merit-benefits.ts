@@ -10,6 +10,7 @@ export { T0264_JUAN_2_FIREHOUSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0
 export { T0264_JUAN_2_SLANDER_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan2-slander";
 export { T0264_JUAN_3_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3";
 export { T0264_JUAN_3_XINJIE_VERSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-xinjie-verse";
+export { T0264_JUAN_3_YAOCAOYU_OPENING_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-opening";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import { T0263_JUAN_10_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan10";
@@ -23,6 +24,7 @@ import { T0264_JUAN_2_FIREHOUSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0
 import { T0264_JUAN_2_SLANDER_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan2-slander";
 import { T0264_JUAN_3_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3";
 import { T0264_JUAN_3_XINJIE_VERSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-xinjie-verse";
+import { T0264_JUAN_3_YAOCAOYU_OPENING_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-opening";
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
   const normalizedWork = work?.trim().toUpperCase();
@@ -54,6 +56,7 @@ export function getFaliuMeritBenefits(work: string | null | undefined, juan: str
     return [
       ...T0264_JUAN_3_MERIT_BENEFITS,
       ...T0264_JUAN_3_XINJIE_VERSE_MERIT_BENEFITS,
+      ...T0264_JUAN_3_YAOCAOYU_OPENING_MERIT_BENEFITS,
     ];
   }
 
