@@ -397,7 +397,7 @@ jobs:
 
       - name: Build macOS release app
         if: matrix.target == 'macos'
-        run: flutter build macos --release --no-pub
+        run: flutter build macos --release --no-pub --dart-define=DACHENG_DESKTOP_CONTROL=true
 
       - name: Sync macOS OpenClaw assets into release app
         if: matrix.target == 'macos'
