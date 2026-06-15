@@ -263,6 +263,7 @@ mkdir -p "$(dirname "$archive_path")" "$export_path"
 flutter build macos \
   --release \
   --no-pub \
+  --dart-define=DACHENG_DESKTOP_CONTROL=false \
   --config-only \
   --build-name "$version_name" \
   --build-number "$build_number"
