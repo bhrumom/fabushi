@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 app_path="${1:-}"
 if [ -z "$app_path" ]; then
