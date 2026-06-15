@@ -9,6 +9,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../app_settings.dart';
+import '../desktop_control/desktop_control_bridge.dart';
+import '../desktop_control/desktop_control_policy.dart';
 
 enum OpenClawRuntimeState {
   unsupported,
@@ -25,6 +27,7 @@ class OpenClawRuntimeStatus {
   final int? port;
   final String? platformKey;
   final String? runtimePath;
+  final Map<String, dynamic>? desktopToolsStatus;
   final DateTime checkedAt;
 
   const OpenClawRuntimeStatus({
@@ -33,6 +36,7 @@ class OpenClawRuntimeStatus {
     this.port,
     this.platformKey,
     this.runtimePath,
+    this.desktopToolsStatus,
     required this.checkedAt,
   });
 
@@ -61,12 +65,18 @@ class OpenClawGatewayTarget {
   final String token;
   final String model;
   final String? modelOverride;
+  final Uri? desktopToolsUri;
+  final String? desktopToolsToken;
+  final Map<String, dynamic>? desktopToolsStatus;
 
   const OpenClawGatewayTarget({
     required this.baseUri,
     required this.token,
     required this.model,
     this.modelOverride,
+    this.desktopToolsUri,
+    this.desktopToolsToken,
+    this.desktopToolsStatus,
   });
 }
 
@@ -87,6 +97,18 @@ class _OpenClawBundleSpec {
     required this.nodeExecutable,
     required this.cliEntrypoint,
     required this.gatewayArgs,
+  });
+}
+
+class _DesktopToolsLaunch {
+  final Uri? uri;
+  final String? token;
+  final Map<String, dynamic> statusJson;
+
+  const _DesktopToolsLaunch({
+    required this.uri,
+    required this.token,
+    required this.statusJson,
   });
 }
 
@@ -263,6 +285,7 @@ class OpenClawRuntime {
     final modelOverride = await AppSettings.getOpenClawModelOverride(
       defaultValue: spec.defaultModelOverride ?? '',
     );
+    final desktopTools = await _ensureDesktopTools();
 
     if (await _probe(port, token)) {
       return OpenClawGatewayTarget(
@@ -272,6 +295,9 @@ class OpenClawRuntime {
         modelOverride: modelOverride.trim().isEmpty
             ? null
             : modelOverride.trim(),
+        desktopToolsUri: desktopTools.uri,
+        desktopToolsToken: desktopTools.token,
+        desktopToolsStatus: desktopTools.statusJson,
       );
     }
 
@@ -281,6 +307,10 @@ class OpenClawRuntime {
       stateRoot: stateRoot,
       port: port,
       token: token,
+    );
+    final desktopToolsManifestPath = await _ensureDesktopToolsManifest(
+      stateRoot: stateRoot,
+      desktopTools: desktopTools,
     );
 
     final nodePath = p.join(runtimeDir.path, spec.nodeExecutable);
@@ -317,6 +347,12 @@ class OpenClawRuntime {
         'OPENCLAW_STATE_DIR': p.join(stateRoot.path, 'state'),
         'OPENCLAW_AGENT_DIR': p.join(stateRoot.path, 'agents'),
         'OPENCLAW_WORKSPACE': p.join(stateRoot.path, 'workspace'),
+        'DACHENG_DESKTOP_TOOLS_ENABLED': desktopTools.uri == null ? '0' : '1',
+        'DACHENG_DESKTOP_TOOLS_MANIFEST': desktopToolsManifestPath.path,
+        if (desktopTools.uri != null)
+          'DACHENG_DESKTOP_TOOLS_URL': desktopTools.uri.toString(),
+        if (desktopTools.token != null)
+          'DACHENG_DESKTOP_TOOLS_TOKEN': desktopTools.token!,
         'DACHENG_APP_RUNTIME': '1',
         if (authToken != null && authToken.isNotEmpty)
           'DACHENG_AUTH_TOKEN': authToken,
@@ -345,6 +381,7 @@ class OpenClawRuntime {
             port: port,
             platformKey: platformKey,
             runtimePath: runtimeDir.path,
+            desktopToolsStatus: desktopTools.statusJson,
             checkedAt: DateTime.now(),
           ),
         );
@@ -355,6 +392,9 @@ class OpenClawRuntime {
           modelOverride: modelOverride.trim().isEmpty
               ? null
               : modelOverride.trim(),
+          desktopToolsUri: desktopTools.uri,
+          desktopToolsToken: desktopTools.token,
+          desktopToolsStatus: desktopTools.statusJson,
         );
       }
 
@@ -559,6 +599,42 @@ class OpenClawRuntime {
     return configPath;
   }
 
+  Future<File> _ensureDesktopToolsManifest({
+    required Directory stateRoot,
+    required _DesktopToolsLaunch desktopTools,
+  }) async {
+    final configDir = Directory(p.join(stateRoot.path, 'config'));
+    await configDir.create(recursive: true);
+    final manifestPath = File(p.join(configDir.path, 'desktop_tools.json'));
+    final tools =
+        DesktopControlPolicy.supportedTools
+            .map(
+              (name) => {
+                'name': name,
+                'endpoint': '/v1/tools/execute',
+                'readOnly': DesktopControlPolicy.isReadOnly(name),
+                'requiresConfirmation':
+                    DesktopControlPolicy.requiresConfirmation(name),
+              },
+            )
+            .toList()
+          ..sort(
+            (a, b) => a['name'].toString().compareTo(b['name'].toString()),
+          );
+
+    await manifestPath.writeAsString(
+      const JsonEncoder.withIndent('  ').convert({
+        'version': 1,
+        'transport': 'http-loopback',
+        'baseUrl': desktopTools.uri?.toString(),
+        'auth': {'type': 'bearer', 'env': 'DACHENG_DESKTOP_TOOLS_TOKEN'},
+        'status': desktopTools.statusJson,
+        'tools': tools,
+      }),
+    );
+    return manifestPath;
+  }
+
   Future<Map<String, dynamic>> _mergeEmbeddedConfig(
     File configPath,
     Map<String, dynamic> defaults,
@@ -635,6 +711,27 @@ class OpenClawRuntime {
     final dir = Directory(p.join(support.path, 'openclaw_embedded'));
     await dir.create(recursive: true);
     return dir;
+  }
+
+  Future<_DesktopToolsLaunch> _ensureDesktopTools() async {
+    try {
+      final status = await DesktopControlBridge.instance.ensureStarted();
+      return _DesktopToolsLaunch(
+        uri: status.bridgeUri,
+        token: await DesktopControlBridge.instance.bridgeToken,
+        statusJson: status.toJson(),
+      );
+    } catch (error) {
+      return _DesktopToolsLaunch(
+        uri: null,
+        token: null,
+        statusJson: {
+          'enabledByBuild': false,
+          'bridgeRunning': false,
+          'message': error.toString(),
+        },
+      );
+    }
   }
 
   Future<Directory> _runtimeDir(

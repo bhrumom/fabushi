@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Dacheng Chrome Connector</title>
+    <style>
+      body {
+        color: #202124;
+        font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 24px;
+        max-width: 680px;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin: 16px 0 6px;
+      }
+      input {
+        box-sizing: border-box;
+        font: inherit;
+        padding: 8px;
+        width: 100%;
+      }
+      button {
+        font: inherit;
+        margin-top: 16px;
+        padding: 8px 12px;
+      }
+      #status {
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Dacheng Chrome Connector</h1>
+    <label for="bridgeUrl">Bridge URL</label>
+    <input id="bridgeUrl" placeholder="http://127.0.0.1:18790">
+    <label for="token">Bridge token</label>
+    <input id="token" type="password" autocomplete="off">
+    <button id="save">Save</button>
+    <p id="status"></p>
+    <script src="options.js"></script>
+  </body>
+</html>

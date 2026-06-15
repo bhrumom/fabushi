@@ -158,6 +158,10 @@ class AppSettings {
   static const String _openClawGatewayTokenKey = 'openclaw_gateway_token_v1';
   static const String _openClawModelKey = 'openclaw_model_v1';
   static const String _openClawModelOverrideKey = 'openclaw_model_override_v1';
+  static const String _desktopControlBridgePortKey =
+      'desktop_control_bridge_port_v1';
+  static const String _desktopControlBridgeTokenKey =
+      'desktop_control_bridge_token_v1';
 
   /// AI 后端模式：auto / embedded_openclaw / cloud_api。
   ///
@@ -224,5 +228,36 @@ class AppSettings {
   static Future<void> setOpenClawModelOverride(String modelOverride) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_openClawModelOverrideKey, modelOverride.trim());
+  }
+
+  static Future<int> getDesktopControlBridgePort({
+    int defaultValue = 18790,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getInt(_desktopControlBridgePortKey);
+    if (saved == null || saved < 1024 || saved > 65535) {
+      return defaultValue;
+    }
+    return saved;
+  }
+
+  static Future<void> setDesktopControlBridgePort(int port) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_desktopControlBridgePortKey, port.clamp(1024, 65535));
+  }
+
+  /// 生成并持久化桌面工具 loopback bearer token。
+  /// token 只在本机大乘 App、内置 OpenClaw 和 Chrome 扩展之间使用。
+  static Future<String> getDesktopControlBridgeToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString(_desktopControlBridgeTokenKey);
+    if (existing != null && existing.length >= 32) {
+      return existing;
+    }
+    final random = Random.secure();
+    final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+    final token = base64UrlEncode(bytes).replaceAll('=', '');
+    await prefs.setString(_desktopControlBridgeTokenKey, token);
+    return token;
   }
 }
