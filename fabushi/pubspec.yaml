@@ -183,6 +183,7 @@ flutter:
     - assets/sherpa_models/streaming-paraformer-zh-en/
     # 桌面端内置 OpenClaw runtime。Release 打包时由 scripts/build_openclaw_desktop_bundle.sh 填充。
     - assets/openclaw/
+    - assets/desktop_control/chrome_extension/
     # Android/iOS 使用 R2 上的 flutter_scene .model，不再打包 GLB 到 APK/IPA
   
   fonts:

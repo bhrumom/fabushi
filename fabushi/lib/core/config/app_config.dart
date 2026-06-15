@@ -50,6 +50,10 @@ class AppConfig {
     'DACHENG_AI_WEB_URL',
     defaultValue: '',
   );
+  static const bool desktopControlEnabled = bool.fromEnvironment(
+    'DACHENG_DESKTOP_CONTROL',
+    defaultValue: false,
+  );
   static const String defaultDachengAiWebUrl =
       'https://fabushi.ombhrum.com/app/ai';
 
