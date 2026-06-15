@@ -81,5 +81,9 @@
 	<string>此应用需要使用麦克风进行诵经录音和语音识别</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>此应用使用语音识别功能来辅助诵经学习</string>
+	<key>NSScreenCaptureDescription</key>
+	<string>此应用需要屏幕录制权限来为本机 AI 工具提供截图和窗口诊断</string>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>此应用需要辅助功能权限来在用户确认后执行点击、输入、快捷键和滚动</string>
 </dict>
 </plist>
