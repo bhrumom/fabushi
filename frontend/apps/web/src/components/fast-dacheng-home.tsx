@@ -116,7 +116,13 @@ export function FastDachengHome() {
               </button>
             ))}
           </div>
-          <div className="fast-chips fast-mode-tabs" data-flashcard-mode-bar hidden aria-label="闪卡制卡模式">
+          <div
+            className="fast-chips fast-mode-tabs"
+            data-flashcard-mode-bar
+            hidden
+            aria-label="闪卡制卡模式"
+            style={{ width: "min(820px, 100%)", margin: "0 auto 10px" }}
+          >
             {flashcardModes.map((item) => (
               <button
                 key={item.id}
