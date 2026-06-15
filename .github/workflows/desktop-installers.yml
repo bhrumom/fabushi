@@ -101,6 +101,7 @@ jobs:
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
           INPUT_PUBLISH_RELEASE: ${{ inputs.publish_release }}
           INPUT_UPLOAD_MACOS_APP_STORE: ${{ inputs.upload_macos_app_store }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -117,12 +118,32 @@ jobs:
             pubspec_build_number=0
           fi
 
+          highest_release_build_number="$pubspec_build_number"
+          if command -v gh >/dev/null 2>&1 && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+            release_tag_build_number="$(
+              gh api -H 'Accept: application/vnd.github+json'                 "/repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate --jq '.[].tag_name' 2>/dev/null |
+                awk -v highest="$highest_release_build_number" '
+                  /^v[0-9].*-mobile(\.|$)/ || /^desktop-v[0-9]/ {
+                    split($0, parts, "-")
+                    build = ($0 ~ /^desktop-v[0-9]/) ? parts[3] : parts[2]
+                    if (build ~ /^[0-9]+$/ && build + 0 > highest) {
+                      highest = build + 0
+                    }
+                  }
+                  END { print highest }
+                '
+            )"
+            if [[ "$release_tag_build_number" =~ ^[0-9]+$ ]] && [ "$release_tag_build_number" -gt "$highest_release_build_number" ]; then
+              highest_release_build_number="$release_tag_build_number"
+            fi
+          fi
+
           release_build_number="${GITHUB_RUN_NUMBER:-0}"
           if ! [[ "$release_build_number" =~ ^[0-9]+$ ]]; then
             release_build_number=0
           fi
-          if [ "$release_build_number" -le "$pubspec_build_number" ]; then
-            release_build_number=$((pubspec_build_number + 1))
+          if [ "$release_build_number" -le "$highest_release_build_number" ]; then
+            release_build_number=$((highest_release_build_number + 1))
           fi
 
           app_version="${version_name}+${release_build_number}"
@@ -169,6 +190,7 @@ jobs:
             echo "- Source SHA: \`$source_sha\`"
             echo "- App version: \`$app_version\`"
             echo "- Release build number: \`$release_build_number\`"
+            echo "- Highest existing mobile/desktop build number: \`$highest_release_build_number\`"
             echo "- Release tag: \`$release_tag\`"
             echo "- Publish release: \`$publish_release\`"
             echo "- Upload macOS App Store Connect build: \`$upload_macos_app_store\`"
