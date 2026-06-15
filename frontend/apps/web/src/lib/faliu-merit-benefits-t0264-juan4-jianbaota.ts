@@ -215,7 +215,7 @@ export const T0264_JUAN_4_JIANBAOTA_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     id: "t0264-004-097",
     category: "宣说法华",
     sectionTitle: JIANBAOTA_SECTION_TITLE,
-    text: "文殊師利言：「我於海中，唯常宣說《妙法華經》。" ,
+    text: "文殊師利言：「我於海中，唯常宣說《妙法華經》。",
     anchorText: "我於海中，唯常宣說《妙法華經》",
     note: "文殊师利在龙宫常宣说此经，成为海中教化的根本。",
   },
