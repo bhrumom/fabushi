@@ -12,6 +12,7 @@ export { T0264_JUAN_3_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3"
 export { T0264_JUAN_3_XINJIE_VERSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-xinjie-verse";
 export { T0264_JUAN_3_YAOCAOYU_OPENING_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-opening";
 export { T0264_JUAN_3_YAOCAOYU_VERSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-verse";
+export { T0264_JUAN_3_YAOCAOYU_REMAINDER_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-remainder";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import { T0263_JUAN_10_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan10";
@@ -27,6 +28,7 @@ import { T0264_JUAN_3_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3"
 import { T0264_JUAN_3_XINJIE_VERSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-xinjie-verse";
 import { T0264_JUAN_3_YAOCAOYU_OPENING_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-opening";
 import { T0264_JUAN_3_YAOCAOYU_VERSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-verse";
+import { T0264_JUAN_3_YAOCAOYU_REMAINDER_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-remainder";
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
   const normalizedWork = work?.trim().toUpperCase();
@@ -60,6 +62,7 @@ export function getFaliuMeritBenefits(work: string | null | undefined, juan: str
       ...T0264_JUAN_3_XINJIE_VERSE_MERIT_BENEFITS,
       ...T0264_JUAN_3_YAOCAOYU_OPENING_MERIT_BENEFITS,
       ...T0264_JUAN_3_YAOCAOYU_VERSE_MERIT_BENEFITS,
+      ...T0264_JUAN_3_YAOCAOYU_REMAINDER_MERIT_BENEFITS,
     ];
   }
 
