@@ -30,6 +30,7 @@ export { T0264_JUAN_6_SUIXI_GONGDE_MERIT_BENEFITS } from "./faliu-merit-benefits
 export { T0264_JUAN_6_FASHI_GONGDE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan6-fashi-gongde";
 export { T0264_JUAN_6_CHANGBUQING_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan6-changbuqing";
 export { T0264_JUAN_6_RULAI_SHENLI_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan6-rulai-shenli";
+export { T0264_JUAN_6_DHARANI_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan6-dharani";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import { T0263_JUAN_10_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan10";
@@ -63,6 +64,7 @@ import { T0264_JUAN_6_SUIXI_GONGDE_MERIT_BENEFITS } from "./faliu-merit-benefits
 import { T0264_JUAN_6_FASHI_GONGDE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan6-fashi-gongde";
 import { T0264_JUAN_6_CHANGBUQING_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan6-changbuqing";
 import { T0264_JUAN_6_RULAI_SHENLI_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan6-rulai-shenli";
+import { T0264_JUAN_6_DHARANI_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan6-dharani";
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
   const normalizedWork = work?.trim().toUpperCase();
@@ -129,6 +131,7 @@ export function getFaliuMeritBenefits(work: string | null | undefined, juan: str
       ...T0264_JUAN_6_FASHI_GONGDE_MERIT_BENEFITS,
       ...T0264_JUAN_6_CHANGBUQING_MERIT_BENEFITS,
       ...T0264_JUAN_6_RULAI_SHENLI_MERIT_BENEFITS,
+      ...T0264_JUAN_6_DHARANI_MERIT_BENEFITS,
     ];
   }
 
