@@ -12,6 +12,8 @@ const HOST_SELECTOR = '[data-faliu-merit-benefit-host="true"]';
 const HIGHLIGHT_NAME = "faliu-merit-benefit-highlight";
 const SKIP_TEXT_SELECTOR = ".lb,.noteAnchor,.gaijiInfo,#cbeta-copyright,script,style,[aria-hidden='true']";
 
+type StudyTab = "benefits" | "cards";
+
 interface IndexedCharacter {
   node: Text;
   offset: number;
@@ -361,9 +363,36 @@ function restorePanelChildren(panel: HTMLElement, host: HTMLElement) {
   }
 }
 
+function StudyTabButton({ tab, activeTab, onSelect, children }: { tab: StudyTab; activeTab: StudyTab; onSelect: (tab: StudyTab) => void; children: React.ReactNode }) {
+  const isActive = tab === activeTab;
+
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={isActive}
+      onClick={() => onSelect(tab)}
+      style={{
+        minHeight: 36,
+        border: `1px solid ${isActive ? "rgba(232, 189, 107, 0.48)" : "rgba(255, 255, 255, 0.12)"}`,
+        borderRadius: 8,
+        padding: "7px 10px",
+        background: isActive ? "rgba(232, 189, 107, 0.16)" : "rgba(255, 255, 255, 0.055)",
+        color: isActive ? "#ffffff" : "rgba(255, 255, 255, 0.68)",
+        cursor: "pointer",
+        fontSize: "0.85rem",
+        fontWeight: 780,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function MeritBenefitPanel({ benefits }: { benefits: FaliuMeritBenefit[] }) {
   const sections = useMemo(() => getBenefitSections(benefits), [benefits]);
   const hasSectionFilter = sections.length > 1;
+  const [activeTab, setActiveTab] = useState<StudyTab>("benefits");
   const [activeSectionKey, setActiveSectionKey] = useState<string | null>(null);
   const activeSection = sections.find((section) => section.key === activeSectionKey) ?? sections[0] ?? null;
   const visibleBenefits = hasSectionFilter && activeSectionKey !== ALL_SECTIONS_KEY && activeSection ? activeSection.benefits : benefits;
@@ -381,103 +410,122 @@ function MeritBenefitPanel({ benefits }: { benefits: FaliuMeritBenefit[] }) {
   }, [activeSectionKey, hasSectionFilter, sections]);
 
   return (
-    <div data-faliu-merit-benefits="true" style={{ display: "grid", gap: 16 }}>
+    <div data-faliu-study-panel="true" style={{ display: "grid", gap: 16 }}>
       <div>
-        <h4 style={{ margin: "0 0 8px", color: "#ffffff", fontSize: "1rem" }}>{PANEL_TITLE}</h4>
-        <p style={{ margin: 0, color: "rgba(255, 255, 255, 0.58)", fontSize: "0.9rem", lineHeight: 1.65 }}>
-          共 {benefits.length} 句。点击句子可跳到经文对应位置。
-        </p>
+        <div style={{ display: "flex", gap: 8 }} role="tablist" aria-label="法流学习面板">
+          <StudyTabButton tab="benefits" activeTab={activeTab} onSelect={setActiveTab}>
+            功德利益
+          </StudyTabButton>
+          <StudyTabButton tab="cards" activeTab={activeTab} onSelect={setActiveTab}>
+            卡片
+          </StudyTabButton>
+        </div>
+        {activeTab === "benefits" ? (
+          <p style={{ margin: "10px 0 0", color: "rgba(255, 255, 255, 0.58)", fontSize: "0.9rem", lineHeight: 1.65 }}>
+            共 {benefits.length} 句。点击句子可跳到经文对应位置。
+          </p>
+        ) : (
+          <p style={{ margin: "10px 0 0", color: "rgba(255, 255, 255, 0.58)", fontSize: "0.9rem", lineHeight: 1.65 }}>
+            练习理解卡与图像卡；每张卡都可定位原文。
+          </p>
+        )}
       </div>
 
-      {hasSectionFilter ? (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }} role="tablist" aria-label="按品查看功德利益">
-          {sections.map((section) => {
-            const isActive = section.key === activeSectionKey;
-            return (
+      <div style={{ display: activeTab === "cards" ? "block" : "none" }} data-faliu-anki-slot="true" />
+
+      {activeTab === "benefits" ? (
+        <>
+          {hasSectionFilter ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }} role="tablist" aria-label="按品查看功德利益">
+              {sections.map((section) => {
+                const isActive = section.key === activeSectionKey;
+                return (
+                  <button
+                    key={section.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setActiveSectionKey(section.key)}
+                    style={{
+                      minHeight: 34,
+                      maxWidth: "100%",
+                      border: `1px solid ${isActive ? "rgba(232, 189, 107, 0.48)" : "rgba(255, 255, 255, 0.12)"}`,
+                      borderRadius: 8,
+                      padding: "7px 10px",
+                      background: isActive ? "rgba(232, 189, 107, 0.16)" : "rgba(255, 255, 255, 0.055)",
+                      color: isActive ? "#ffffff" : "rgba(255, 255, 255, 0.68)",
+                      cursor: "pointer",
+                      fontSize: "0.82rem",
+                      fontWeight: 760,
+                      lineHeight: 1.25,
+                    }}
+                  >
+                    {section.title} · {section.benefits.length}
+                  </button>
+                );
+              })}
               <button
-                key={section.key}
                 type="button"
                 role="tab"
-                aria-selected={isActive}
-                onClick={() => setActiveSectionKey(section.key)}
+                aria-selected={activeSectionKey === ALL_SECTIONS_KEY}
+                onClick={() => setActiveSectionKey(ALL_SECTIONS_KEY)}
                 style={{
                   minHeight: 34,
-                  maxWidth: "100%",
-                  border: `1px solid ${isActive ? "rgba(232, 189, 107, 0.48)" : "rgba(255, 255, 255, 0.12)"}`,
+                  border: `1px solid ${activeSectionKey === ALL_SECTIONS_KEY ? "rgba(232, 189, 107, 0.48)" : "rgba(255, 255, 255, 0.12)"}`,
                   borderRadius: 8,
                   padding: "7px 10px",
-                  background: isActive ? "rgba(232, 189, 107, 0.16)" : "rgba(255, 255, 255, 0.055)",
-                  color: isActive ? "#ffffff" : "rgba(255, 255, 255, 0.68)",
+                  background: activeSectionKey === ALL_SECTIONS_KEY ? "rgba(232, 189, 107, 0.16)" : "rgba(255, 255, 255, 0.055)",
+                  color: activeSectionKey === ALL_SECTIONS_KEY ? "#ffffff" : "rgba(255, 255, 255, 0.68)",
                   cursor: "pointer",
                   fontSize: "0.82rem",
                   fontWeight: 760,
                   lineHeight: 1.25,
                 }}
               >
-                {section.title} · {section.benefits.length}
+                全部 · {benefits.length}
               </button>
-            );
-          })}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeSectionKey === ALL_SECTIONS_KEY}
-            onClick={() => setActiveSectionKey(ALL_SECTIONS_KEY)}
-            style={{
-              minHeight: 34,
-              border: `1px solid ${activeSectionKey === ALL_SECTIONS_KEY ? "rgba(232, 189, 107, 0.48)" : "rgba(255, 255, 255, 0.12)"}`,
-              borderRadius: 8,
-              padding: "7px 10px",
-              background: activeSectionKey === ALL_SECTIONS_KEY ? "rgba(232, 189, 107, 0.16)" : "rgba(255, 255, 255, 0.055)",
-              color: activeSectionKey === ALL_SECTIONS_KEY ? "#ffffff" : "rgba(255, 255, 255, 0.68)",
-              cursor: "pointer",
-              fontSize: "0.82rem",
-              fontWeight: 760,
-              lineHeight: 1.25,
-            }}
-          >
-            全部 · {benefits.length}
-          </button>
-        </div>
-      ) : sections[0] ? (
-        <div style={{ color: "rgba(255, 255, 255, 0.52)", fontSize: "0.82rem", lineHeight: 1.5 }}>
-          {sections[0].title}
-        </div>
-      ) : null}
+            </div>
+          ) : sections[0] ? (
+            <div style={{ color: "rgba(255, 255, 255, 0.52)", fontSize: "0.82rem", lineHeight: 1.5 }}>
+              {sections[0].title}
+            </div>
+          ) : null}
 
-      {Object.entries(groups).map(([category, items]) => (
-        <section key={category} style={{ display: "grid", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <strong style={{ color: "#e8bd6b", fontSize: "0.92rem" }}>{category}</strong>
-            <span style={{ color: "rgba(255, 255, 255, 0.45)", fontSize: "0.78rem" }}>{items.length}句</span>
-          </div>
+          {Object.entries(groups).map(([category, items]) => (
+            <section key={category} style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <strong style={{ color: "#e8bd6b", fontSize: "0.92rem" }}>{category}</strong>
+                <span style={{ color: "rgba(255, 255, 255, 0.45)", fontSize: "0.78rem" }}>{items.length}句</span>
+              </div>
 
-          {items.map((benefit) => (
-            <button
-              key={benefit.id}
-              type="button"
-              onClick={() => scrollToBenefit(benefit)}
-              style={{
-                width: "100%",
-                border: "1px solid rgba(232, 189, 107, 0.18)",
-                borderRadius: 10,
-                padding: "12px 13px",
-                background: "rgba(232, 189, 107, 0.07)",
-                color: "rgba(255, 255, 255, 0.86)",
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <span style={{ display: "block", lineHeight: 1.68, fontSize: "0.92rem" }}>{benefit.text}</span>
-              {benefit.note ? (
-                <small style={{ display: "block", marginTop: 8, color: "rgba(255, 255, 255, 0.5)", lineHeight: 1.55 }}>
-                  {benefit.note}
-                </small>
-              ) : null}
-            </button>
+              {items.map((benefit) => (
+                <button
+                  key={benefit.id}
+                  type="button"
+                  onClick={() => scrollToBenefit(benefit)}
+                  style={{
+                    width: "100%",
+                    border: "1px solid rgba(232, 189, 107, 0.18)",
+                    borderRadius: 10,
+                    padding: "12px 13px",
+                    background: "rgba(232, 189, 107, 0.07)",
+                    color: "rgba(255, 255, 255, 0.86)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <span style={{ display: "block", lineHeight: 1.68, fontSize: "0.92rem" }}>{benefit.text}</span>
+                  {benefit.note ? (
+                    <small style={{ display: "block", marginTop: 8, color: "rgba(255, 255, 255, 0.5)", lineHeight: 1.55 }}>
+                      {benefit.note}
+                    </small>
+                  ) : null}
+                </button>
+              ))}
+            </section>
           ))}
-        </section>
-      ))}
+        </>
+      ) : null}
     </div>
   );
 }
