@@ -6,6 +6,9 @@ import { FALIU_ANKI_DECK_MAP, type FaliuAnkiCard, type FaliuAnkiDeck } from "../
 
 const REVIEW_STORAGE_KEY = "fabushi:faliu-anki-review:v1";
 const MAX_FALLBACK_CARDS = 12;
+const READER_SELECTOR = 'section[aria-label="法流"] [class*="readerHtml"]';
+const HIGHLIGHT_NAME = "faliu-anki-source-highlight";
+const SKIP_TEXT_SELECTOR = ".lb,.noteAnchor,.gaijiInfo,#cbeta-copyright,script,style,[aria-hidden='true']";
 
 type ReviewGrade = "again" | "hard" | "good" | "easy";
 
@@ -23,6 +26,17 @@ interface ReaderContext {
   title: string;
   readerText: string;
   host: HTMLElement;
+}
+
+interface IndexedCharacter {
+  node: Text;
+  offset: number;
+  length: number;
+}
+
+interface TextMatch {
+  range: Range;
+  element: HTMLElement;
 }
 
 function buildContentId(work: string, juan: string) {
@@ -85,6 +99,220 @@ function writeReviewRecords(records: Record<string, ReviewRecord>) {
 
 function normalizeReaderLine(value: string) {
   return value.replace(/\s+/g, " ").replace(/[\u2460-\u2473]/g, "").trim();
+}
+
+function normalizeSearchText(value: string) {
+  return value.replace(/\s+/g, "").trim();
+}
+
+function shouldSkipTextNode(node: Node, root: HTMLElement) {
+  const parent = node.parentElement;
+
+  if (!parent || !root.contains(parent)) {
+    return true;
+  }
+
+  return Boolean(parent.closest(SKIP_TEXT_SELECTOR));
+}
+
+function buildVisibleTextIndex(root: HTMLElement) {
+  const characters: IndexedCharacter[] = [];
+  let text = "";
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      return shouldSkipTextNode(node, root) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  let node = walker.nextNode();
+
+  while (node) {
+    const value = node.textContent ?? "";
+    let offset = 0;
+
+    for (const character of value) {
+      if (!/\s/.test(character)) {
+        text += character;
+        characters.push({ node: node as Text, offset, length: character.length });
+      }
+
+      offset += character.length;
+    }
+
+    node = walker.nextNode();
+  }
+
+  return { text, characters };
+}
+
+function getCandidateAnchors(sourceText: string) {
+  const normalizedSource = normalizeSearchText(sourceText);
+  const segments = normalizedSource
+    .split(/[，。；：！？、,.!?;:]/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 4)
+    .sort((left, right) => right.length - left.length);
+
+  return Array.from(new Set([normalizedSource, ...segments]));
+}
+
+function getElementForRange(range: Range, reader: HTMLElement) {
+  const startElement = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement;
+  let current = startElement;
+
+  while (current && current !== reader) {
+    if (["P", "DIV", "LI", "SECTION", "ARTICLE"].includes(current.tagName)) {
+      return current;
+    }
+
+    current = current.parentElement;
+  }
+
+  return startElement ?? reader;
+}
+
+function findTextMatch(reader: HTMLElement, sourceText: string): TextMatch | null {
+  const { text, characters } = buildVisibleTextIndex(reader);
+
+  for (const candidate of getCandidateAnchors(sourceText)) {
+    const startIndex = text.indexOf(candidate);
+
+    if (startIndex < 0) {
+      continue;
+    }
+
+    const endIndex = startIndex + candidate.length - 1;
+    const start = characters[startIndex];
+    const end = characters[endIndex];
+
+    if (!start || !end) {
+      continue;
+    }
+
+    const range = document.createRange();
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset + end.length);
+
+    return {
+      range,
+      element: getElementForRange(range, reader),
+    };
+  }
+
+  return null;
+}
+
+function getScrollableParent(element: HTMLElement | null) {
+  let current = element?.parentElement ?? null;
+
+  while (current) {
+    const style = window.getComputedStyle(current);
+    const canScroll = /(auto|scroll)/.test(`${style.overflow}${style.overflowY}${style.overflowX}`);
+
+    if (canScroll && current.scrollHeight > current.clientHeight) {
+      return current;
+    }
+
+    current = current.parentElement;
+  }
+
+  return null;
+}
+
+function getHighlightsRegistry() {
+  const css = window.CSS as unknown as { highlights?: { delete: (name: string) => void; set: (name: string, value: unknown) => void } };
+  const HighlightConstructor = (window as unknown as { Highlight?: new (range: Range) => unknown }).Highlight;
+
+  if (!css.highlights || !HighlightConstructor) {
+    return null;
+  }
+
+  return { highlights: css.highlights, HighlightConstructor };
+}
+
+function ensureHighlightStyle() {
+  if (document.getElementById("faliu-anki-source-highlight-style")) {
+    return;
+  }
+
+  const style = document.createElement("style");
+  style.id = "faliu-anki-source-highlight-style";
+  style.textContent = `
+    ::highlight(${HIGHLIGHT_NAME}) {
+      background: rgba(111, 211, 255, 0.34);
+      color: inherit;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function clearSourceMarks(reader?: HTMLElement | null) {
+  const registry = typeof window !== "undefined" ? getHighlightsRegistry() : null;
+  registry?.highlights.delete(HIGHLIGHT_NAME);
+
+  reader?.querySelectorAll<HTMLElement>('[data-anki-source-highlight="true"]').forEach((node) => {
+    node.style.outline = "";
+    node.style.background = "";
+    node.style.borderRadius = "";
+    node.style.padding = "";
+    node.style.scrollMarginTop = "";
+    node.removeAttribute("data-anki-source-highlight");
+  });
+}
+
+function applySourceHighlight(match: TextMatch) {
+  const registry = getHighlightsRegistry();
+
+  if (registry) {
+    ensureHighlightStyle();
+    registry.highlights.set(HIGHLIGHT_NAME, new registry.HighlightConstructor(match.range));
+  }
+
+  match.element.dataset.ankiSourceHighlight = "true";
+  match.element.style.outline = "1px solid rgba(111, 211, 255, 0.72)";
+  match.element.style.background = "rgba(111, 211, 255, 0.08)";
+  match.element.style.borderRadius = "8px";
+  match.element.style.padding = "4px 6px";
+  match.element.style.scrollMarginTop = "24px";
+}
+
+function scrollToMatch(match: TextMatch) {
+  const scrollParent = getScrollableParent(match.element);
+  const rect = match.range.getBoundingClientRect();
+  const targetRect = rect.height > 0 ? rect : match.element.getBoundingClientRect();
+
+  if (scrollParent) {
+    const parentRect = scrollParent.getBoundingClientRect();
+    scrollParent.scrollTo({
+      top: scrollParent.scrollTop + targetRect.top - parentRect.top - 32,
+      behavior: "smooth",
+    });
+  } else {
+    match.element.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+
+function scrollToCardSource(card: FaliuAnkiCard) {
+  if (!card.sourceText) {
+    return false;
+  }
+
+  const reader = document.querySelector<HTMLElement>(READER_SELECTOR);
+
+  if (!reader) {
+    return false;
+  }
+
+  clearSourceMarks(reader);
+  const match = findTextMatch(reader, card.sourceText);
+
+  if (!match) {
+    return false;
+  }
+
+  applySourceHighlight(match);
+  scrollToMatch(match);
+  return true;
 }
 
 function buildFallbackDeck(context: ReaderContext): FaliuAnkiDeck {
@@ -182,6 +410,7 @@ export function FaliuAnkiEnhancer() {
   const [records, setRecords] = useState<Record<string, ReviewRecord>>({});
   const [activeIndex, setActiveIndex] = useState(0);
   const [isRevealed, setIsRevealed] = useState(false);
+  const [sourceLookupFailed, setSourceLookupFailed] = useState(false);
 
   useEffect(() => {
     setRecords(readReviewRecords());
@@ -211,7 +440,16 @@ export function FaliuAnkiEnhancer() {
   useEffect(() => {
     setActiveIndex(0);
     setIsRevealed(false);
+    setSourceLookupFailed(false);
   }, [deck?.contentId]);
+
+  useEffect(() => {
+    setSourceLookupFailed(false);
+  }, [activeIndex, deck?.contentId]);
+
+  useEffect(() => {
+    return () => clearSourceMarks(document.querySelector<HTMLElement>(READER_SELECTOR));
+  }, []);
 
   const dueCards = useMemo(() => {
     if (!deck) {
@@ -244,7 +482,16 @@ export function FaliuAnkiEnhancer() {
     setRecords(nextRecords);
     writeReviewRecords(nextRecords);
     setIsRevealed(false);
+    setSourceLookupFailed(false);
     setActiveIndex((current) => (dueCards.length <= 1 ? 0 : (current + 1) % dueCards.length));
+  }
+
+  function jumpToSource() {
+    if (!activeCard) {
+      return;
+    }
+
+    setSourceLookupFailed(!scrollToCardSource(activeCard));
   }
 
   return createPortal(
@@ -298,6 +545,33 @@ export function FaliuAnkiEnhancer() {
               </p>
             ) : null}
           </div>
+
+          {activeCard.sourceText ? (
+            <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+              <button
+                type="button"
+                onClick={jumpToSource}
+                style={{
+                  width: "100%",
+                  minHeight: 38,
+                  border: "1px solid rgba(111, 211, 255, 0.32)",
+                  borderRadius: 8,
+                  background: "rgba(111, 211, 255, 0.1)",
+                  color: "#ffffff",
+                  fontSize: "0.88rem",
+                  fontWeight: 760,
+                  cursor: "pointer",
+                }}
+              >
+                定位原文
+              </button>
+              {sourceLookupFailed ? (
+                <p style={{ margin: 0, color: "rgba(255, 255, 255, 0.5)", fontSize: "0.82rem", lineHeight: 1.5 }}>
+                  暂未在当前正文中匹配到这张卡的来源句。
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {!isRevealed ? (
             <button
