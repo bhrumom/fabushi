@@ -18,19 +18,16 @@ homebrew_deps=()
 
 find_macho_candidates() {
   local macos_dir="$app_path/Contents/MacOS"
-  local openclaw_root="$app_path/Contents/Frameworks/App.framework/Resources/flutter_assets/assets/openclaw"
+  local flutter_assets="$app_path/Contents/Frameworks/App.framework/Resources/flutter_assets"
 
   if [ -d "$macos_dir" ]; then
     find "$macos_dir" -type f -perm -111 -print0
   fi
   if [ -d "$frameworks_dir" ]; then
     find "$frameworks_dir" \
-      \( -path "$openclaw_root" -o -path "$openclaw_root/*" \) -prune -o \
+      \( -path "$flutter_assets" -o -path "$flutter_assets/*" \) -prune -o \
       -type f \( -name '*.dylib' -o -name '*.node' -o -path '*.framework/Versions/*/*' -o -perm -111 \) \
       -print0
-  fi
-  if [ -d "$openclaw_root" ]; then
-    find "$openclaw_root" -type f \( -name '*.dylib' -o -name '*.node' \) -print0
   fi
 }
 
