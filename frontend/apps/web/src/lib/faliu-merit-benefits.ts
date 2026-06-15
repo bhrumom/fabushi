@@ -14,6 +14,7 @@ export { T0264_JUAN_3_YAOCAOYU_OPENING_MERIT_BENEFITS } from "./faliu-merit-bene
 export { T0264_JUAN_3_YAOCAOYU_VERSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-verse";
 export { T0264_JUAN_3_YAOCAOYU_REMAINDER_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-remainder";
 export { T0264_JUAN_3_SHOUJI_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-shouji";
+export { T0264_JUAN_3_HUACHENG_OPENING_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-huacheng-opening";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import { T0263_JUAN_10_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan10";
@@ -31,6 +32,7 @@ import { T0264_JUAN_3_YAOCAOYU_OPENING_MERIT_BENEFITS } from "./faliu-merit-bene
 import { T0264_JUAN_3_YAOCAOYU_VERSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-verse";
 import { T0264_JUAN_3_YAOCAOYU_REMAINDER_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-yaocaoyu-remainder";
 import { T0264_JUAN_3_SHOUJI_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-shouji";
+import { T0264_JUAN_3_HUACHENG_OPENING_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan3-huacheng-opening";
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
   const normalizedWork = work?.trim().toUpperCase();
@@ -66,6 +68,7 @@ export function getFaliuMeritBenefits(work: string | null | undefined, juan: str
       ...T0264_JUAN_3_YAOCAOYU_VERSE_MERIT_BENEFITS,
       ...T0264_JUAN_3_YAOCAOYU_REMAINDER_MERIT_BENEFITS,
       ...T0264_JUAN_3_SHOUJI_MERIT_BENEFITS,
+      ...T0264_JUAN_3_HUACHENG_OPENING_MERIT_BENEFITS,
     ];
   }
 
