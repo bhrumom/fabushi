@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eo pipefail
+set -euo pipefail
 
 app_path="${1:-}"
 if [ -z "$app_path" ]; then
@@ -103,11 +103,9 @@ done < <(find "$app_path/Contents" -type f \( -perm -111 -o -name '*.dylib' -o -
 
 if [ "${#homebrew_deps[@]}" -eq 0 ]; then
   echo "No Homebrew dynamic library references found in $app_path."
-  exit 0
-fi
-
-index=0
-while [ "$index" -lt "${#homebrew_deps[@]}" ]; do
+else
+  index=0
+  while [ "$index" -lt "${#homebrew_deps[@]}" ]; do
   dep="${homebrew_deps[$index]}"
   if should_bundle_dep "$dep"; then
     dep_path="$(resolve_dep_path "$dep" || true)"
@@ -121,8 +119,9 @@ while [ "$index" -lt "${#homebrew_deps[@]}" ]; do
     done < <(collect_homebrew_deps "$dep_path")
   fi
 
-  index=$((index + 1))
-done
+    index=$((index + 1))
+  done
+fi
 
 for dep in "${homebrew_deps[@]}"; do
   if ! should_bundle_dep "$dep"; then
@@ -166,3 +165,50 @@ if [ -n "$remaining_refs" ]; then
   echo "$remaining_refs" >&2
   exit 1
 fi
+
+
+resolve_codesign_identity() {
+  local identity="${MACOS_CODESIGN_IDENTITY:-}"
+  if [ -z "$identity" ] && command -v security >/dev/null 2>&1; then
+    identity="$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+  fi
+  printf '%s\n' "$identity"
+}
+
+is_macho_file() {
+  local file="$1"
+  file "$file" 2>/dev/null | grep -q 'Mach-O'
+}
+
+sign_openclaw_native_runtime() {
+  local identity="$1"
+  local openclaw_root="$app_path/Contents/Frameworks/App.framework/Resources/flutter_assets/assets/openclaw"
+  local signed_count=0
+
+  if [ -z "$identity" ]; then
+    echo "No Developer ID identity is available; skipping OpenClaw native runtime signing."
+    return 0
+  fi
+  if [ ! -d "$openclaw_root" ]; then
+    echo "OpenClaw runtime assets were not found in $app_path; skipping native runtime signing."
+    return 0
+  fi
+
+  while IFS= read -r -d '' file; do
+    if ! is_macho_file "$file"; then
+      continue
+    fi
+    chmod u+w "$file" || true
+    codesign --force --timestamp --options runtime --sign "$identity" "$file"
+    signed_count=$((signed_count + 1))
+    echo "Signed OpenClaw native runtime file: $file"
+  done < <(
+    find "$openclaw_root" -type f \
+      \( -name '*.node' -o -name '*.dylib' -o -perm -111 \) \
+      -print0
+  )
+
+  echo "Signed $signed_count OpenClaw native runtime file(s)."
+}
+
+sign_openclaw_native_runtime "$(resolve_codesign_identity)"
