@@ -333,45 +333,40 @@ class AlipayService {
     }
   }
 
-  /// Web端支付宝支付
-  Future<Map<String, dynamic>> payWithAlipayWeb(String orderString) async {
+  /// Web/桌面端支付宝支付
+  Future<Map<String, dynamic>> payWithAlipayWeb(String paymentUrl) async {
     try {
-      if (kIsWeb) {
-        // Web端暂不支持支付宝支付
-        return {'success': false, 'message': 'Web端暂不支持支付宝支付'};
+      final uri = Uri.tryParse(paymentUrl);
+      if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+        return {'success': false, 'message': '支付宝网页支付链接无效'};
       }
 
-      // 桌面端使用APP支付
-      return await payWithAlipay(orderString);
+      return await launchAlipayWebPayment(paymentUrl);
     } catch (e) {
-      debugPrint('Web端支付宝支付失败: $e');
-      return {'success': false, 'message': 'Web端支付宝支付失败: $e'};
+      debugPrint('Web/桌面端支付宝支付失败: $e');
+      return {'success': false, 'message': 'Web/桌面端支付宝支付失败: $e'};
     }
   }
 
   /// 启动支付宝电脑网站支付
   Future<Map<String, dynamic>> launchAlipayWebPayment(String paymentUrl) async {
     try {
-      if (kIsWeb) {
-        // Web端直接打开支付URL
-        if (await canLaunchUrl(Uri.parse(paymentUrl))) {
-          await launchUrl(
-            Uri.parse(paymentUrl),
-            webOnlyWindowName: '_self', // 在当前窗口打开
-          );
-          return {'success': true, 'message': '正在跳转到支付宝支付页面...'};
-        } else {
-          return {'success': false, 'message': '无法打开支付宝支付页面'};
-        }
-      } else {
-        // 桌面端也使用URL启动
-        if (await canLaunchUrl(Uri.parse(paymentUrl))) {
-          await launchUrl(Uri.parse(paymentUrl));
-          return {'success': true, 'message': '正在打开支付宝支付页面...'};
-        } else {
-          return {'success': false, 'message': '无法打开支付宝支付页面'};
-        }
+      final uri = Uri.tryParse(paymentUrl);
+      if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+        return {'success': false, 'message': '支付宝网页支付链接无效'};
       }
+
+      if (!await canLaunchUrl(uri)) {
+        return {'success': false, 'message': '无法打开支付宝支付页面'};
+      }
+
+      if (kIsWeb) {
+        await launchUrl(uri, webOnlyWindowName: '_self');
+      } else {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+
+      return {'success': true, 'message': '正在打开支付宝支付页面...'};
     } catch (e) {
       debugPrint('启动支付宝Web支付失败: $e');
       return {'success': false, 'message': '启动支付宝Web支付失败: $e'};
