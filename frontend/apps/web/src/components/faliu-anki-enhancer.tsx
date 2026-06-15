@@ -30,7 +30,7 @@ function buildContentId(work: string, juan: string) {
 }
 
 function getModal() {
-  return document.querySelector<HTMLElement>('section[aria-label="法流"] div[class*="modal"]');
+  return document.querySelector<HTMLElement>('section[aria-label="法流"] div[class*="modal"][role="dialog"]');
 }
 
 function getSidePanel() {
@@ -47,6 +47,23 @@ function getSelectedJuan(modal: HTMLElement) {
     .find((item) => item.startsWith("卷次"));
 
   return metaText?.replace(/^卷次\s*/, "").trim() || "1";
+}
+
+function isSameContext(left: ReaderContext | null, right: ReaderContext | null) {
+  if (left === right) {
+    return true;
+  }
+
+  if (!left || !right) {
+    return false;
+  }
+
+  return (
+    left.contentId === right.contentId &&
+    left.title === right.title &&
+    left.readerText === right.readerText &&
+    left.host === right.host
+  );
 }
 
 function readReviewRecords(): Record<string, ReviewRecord> {
@@ -171,7 +188,10 @@ export function FaliuAnkiEnhancer() {
   }, []);
 
   useEffect(() => {
-    const syncContext = () => setContext(getReaderContext());
+    const syncContext = () => {
+      const nextContext = getReaderContext();
+      setContext((currentContext) => (isSameContext(currentContext, nextContext) ? currentContext : nextContext));
+    };
     const observer = new MutationObserver(() => window.setTimeout(syncContext, 80));
 
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
