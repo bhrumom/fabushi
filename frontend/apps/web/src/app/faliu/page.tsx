@@ -5,6 +5,7 @@ import { FaliuContentSearchEnhancer } from "../../components/faliu-content-searc
 import { FaliuCoverImageEnhancer } from "../../components/faliu-cover-image-enhancer";
 import { FaliuFullJuanEnhancer } from "../../components/faliu-full-juan-enhancer";
 import { FaliuMeritBenefitEnhancer } from "../../components/faliu-merit-benefit-enhancer";
+import { FaliuModalLayoutFix } from "../../components/faliu-modal-layout-fix";
 import { FaliuShell } from "../../components/faliu-shell";
 import { FaliuSynonymEnhancer } from "../../components/faliu-synonym-enhancer";
 import { FALIU_FEATURED_WORKS } from "../../lib/faliu-config";
@@ -166,6 +167,7 @@ export default async function FaliuPage() {
       />
 
       <FaliuFullJuanEnhancer />
+      <FaliuModalLayoutFix />
       <FaliuShell {...initialData} />
       <FaliuCoverImageEnhancer />
       <FaliuSynonymEnhancer />
