@@ -181,6 +181,11 @@ if [ -n "$remaining_refs" ]; then
   exit 1
 fi
 
+if [ -z "${MACOS_CERTIFICATE_P12_BASE64:-}" ] && [ -z "${MACOS_CODESIGN_IDENTITY:-}" ]; then
+  echo "Skipping OpenClaw native runtime signing because Developer ID signing is not configured."
+  exit 0
+fi
+
 identity="${MACOS_CODESIGN_IDENTITY:-}"
 if [ -z "$identity" ] && command -v security >/dev/null 2>&1; then
   identity="$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
