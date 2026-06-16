@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:universal_html/html.dart' as html;
 
 import '../features/auth/application/auth_model.dart';
 import 'globe_home_screen.dart';
@@ -101,6 +102,54 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
+/// Web /login route wrapper.
+///
+/// It reuses the existing Web login dialog instead of loading the App login page.
+class WebLoginRouteScreen extends StatefulWidget {
+  const WebLoginRouteScreen({super.key});
+
+  @override
+  State<WebLoginRouteScreen> createState() => _WebLoginRouteScreenState();
+}
+
+class _WebLoginRouteScreenState extends State<WebLoginRouteScreen> {
+  bool _dialogOpened = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_dialogOpened) return;
+    _dialogOpened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(_openLoginDialog());
+      }
+    });
+  }
+
+  Future<void> _openLoginDialog() async {
+    final success = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.66),
+      builder: (_) => const _WebLoginDialog(),
+    );
+
+    if (!mounted) return;
+    if (success == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('登录成功'), backgroundColor: Colors.green),
+      );
+    }
+
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const MainNavigationScreen();
+  }
+}
+
 class _TopLoginButton extends StatelessWidget {
   const _TopLoginButton({required this.label, required this.onPressed});
 
@@ -128,7 +177,7 @@ class _TopLoginButton extends StatelessWidget {
             label,
             maxLines: 1,
             softWrap: false,
-            style: TextStyle(fontWeight: FontWeight.w800),
+            style: const TextStyle(fontWeight: FontWeight.w800),
           ),
         ),
       ),
@@ -401,9 +450,30 @@ class _WebLoginDialogState extends State<_WebLoginDialog> {
     }
   }
 
-  void _openFullLogin() {
-    Navigator.of(context).pop();
-    unawaited(Navigator.of(context).pushNamed('/login'));
+  Future<void> _openAlipayLogin() async {
+    if (_loading) return;
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    final result = await context.read<AuthModel>().getAlipayLoginUrl(
+      platform: 'web',
+    );
+    if (!mounted) return;
+
+    final loginUrl = result['loginUrl'];
+    if (result['success'] == true && loginUrl is String && loginUrl.isNotEmpty) {
+      html.window.location.assign(loginUrl);
+      return;
+    }
+
+    setState(() {
+      _loading = false;
+      _error =
+          result['message'] as String? ?? result['error'] as String? ?? '获取支付宝登录链接失败';
+    });
   }
 
   @override
@@ -516,8 +586,8 @@ class _WebLoginDialogState extends State<_WebLoginDialog> {
               ),
               const SizedBox(height: 14),
               TextButton(
-                onPressed: _loading ? null : _openFullLogin,
-                child: const Text('使用支付宝/完整登录页'),
+                onPressed: _loading ? null : _openAlipayLogin,
+                child: const Text('使用支付宝登录'),
               ),
             ],
           ),
