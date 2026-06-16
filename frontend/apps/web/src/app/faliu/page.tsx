@@ -3,6 +3,7 @@ import { brand } from "@fabushi/shared";
 import { FaliuAnkiEnhancer } from "../../components/faliu-anki-enhancer";
 import { FaliuContentSearchEnhancer } from "../../components/faliu-content-search-enhancer";
 import { FaliuCoverImageEnhancer } from "../../components/faliu-cover-image-enhancer";
+import { FaliuFullJuanEnhancer } from "../../components/faliu-full-juan-enhancer";
 import { FaliuMeritBenefitEnhancer } from "../../components/faliu-merit-benefit-enhancer";
 import { FaliuShell } from "../../components/faliu-shell";
 import { FaliuSynonymEnhancer } from "../../components/faliu-synonym-enhancer";
@@ -164,6 +165,7 @@ export default async function FaliuPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
 
+      <FaliuFullJuanEnhancer />
       <FaliuShell {...initialData} />
       <FaliuCoverImageEnhancer />
       <FaliuSynonymEnhancer />
