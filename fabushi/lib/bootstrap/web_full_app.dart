@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
 import '../core/design_system/app_theme.dart';
 import '../features/auth/application/auth_model.dart';
-import '../features/auth/presentation/screens/douyin_login_screen.dart'
+import '../features/auth/presentation/screens/web_login_screen.dart'
     deferred as login;
 import '../l10n/app_localizations.dart';
 import '../models/file_transfer_model.dart'
@@ -63,7 +63,7 @@ class _DeferredWebLoginScreenState extends State<_DeferredWebLoginScreen> {
       future: _loader,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.done) {
-          return login.DouyinLoginScreen();
+          return login.WebLoginScreen();
         }
 
         return const Scaffold(
