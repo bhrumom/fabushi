@@ -4,12 +4,11 @@ import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
 import '../core/design_system/app_theme.dart';
 import '../features/auth/application/auth_model.dart';
-import '../features/auth/presentation/screens/douyin_login_screen.dart'
-    deferred as login;
 import '../l10n/app_localizations.dart';
 import '../models/file_transfer_model.dart'
     if (dart.library.html) '../models/file_transfer_model_web.dart';
 import '../models/settings_model.dart';
+import '../screens/main_navigation_screen_web.dart' deferred as web_login;
 import '../widgets/app_wrapper.dart';
 
 class WebFullApp extends StatelessWidget {
@@ -55,7 +54,7 @@ class _DeferredWebLoginScreen extends StatefulWidget {
 }
 
 class _DeferredWebLoginScreenState extends State<_DeferredWebLoginScreen> {
-  late final Future<void> _loader = login.loadLibrary();
+  late final Future<void> _loader = web_login.loadLibrary();
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +62,7 @@ class _DeferredWebLoginScreenState extends State<_DeferredWebLoginScreen> {
       future: _loader,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.done) {
-          return login.DouyinLoginScreen();
+          return web_login.WebLoginRouteScreen();
         }
 
         return const Scaffold(
