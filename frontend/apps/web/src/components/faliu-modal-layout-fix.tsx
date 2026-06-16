@@ -5,10 +5,18 @@ export function FaliuModalLayoutFix() {
       dangerouslySetInnerHTML={{
         __html: `
 section[aria-label="法流"] [role="dialog"][aria-modal="true"] {
+  box-sizing: border-box !important;
   display: flex !important;
   flex-direction: column !important;
   height: min(900px, calc(100svh - 36px)) !important;
   max-height: calc(100svh - 36px) !important;
+  overscroll-behavior: contain !important;
+}
+
+section[aria-label="法流"] [role="dialog"][aria-modal="true"] *,
+section[aria-label="法流"] [role="dialog"][aria-modal="true"] *::before,
+section[aria-label="法流"] [role="dialog"][aria-modal="true"] *::after {
+  box-sizing: border-box !important;
 }
 
 section[aria-label="法流"] [role="dialog"][aria-modal="true"] [class*="modalHeader"],
@@ -38,6 +46,20 @@ section[aria-label="法流"] [role="dialog"][aria-modal="true"] [class*="readerP
 section[aria-label="法流"] [role="dialog"][aria-modal="true"] [class*="sidePanel"] {
   min-height: 0 !important;
   overflow: auto !important;
+}
+
+@media (max-width: 1180px) {
+  section[aria-label="法流"] [role="dialog"][aria-modal="true"] [class*="modalBody"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-auto-rows: auto !important;
+    align-content: start !important;
+    overflow: auto !important;
+  }
+
+  section[aria-label="法流"] [role="dialog"][aria-modal="true"] [class*="readerPanel"],
+  section[aria-label="法流"] [role="dialog"][aria-modal="true"] [class*="sidePanel"] {
+    overflow: visible !important;
+  }
 }
 
 @media (max-width: 760px) {
