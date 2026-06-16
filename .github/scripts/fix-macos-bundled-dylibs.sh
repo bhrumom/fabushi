@@ -181,6 +181,11 @@ if [ -n "$remaining_refs" ]; then
   exit 1
 fi
 
+if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ]; then
+  echo "Skipping OpenClaw native runtime signing on pull_request because Developer ID certificate import is skipped."
+  exit 0
+fi
+
 if [ -z "${MACOS_CERTIFICATE_P12_BASE64:-}" ] && [ -z "${MACOS_CODESIGN_IDENTITY:-}" ]; then
   echo "Skipping OpenClaw native runtime signing because Developer ID signing is not configured."
   exit 0
