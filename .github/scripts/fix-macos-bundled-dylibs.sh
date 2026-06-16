@@ -181,5 +181,42 @@ if [ -n "$remaining_refs" ]; then
   exit 1
 fi
 
+identity="${MACOS_CODESIGN_IDENTITY:-}"
+if [ -z "$identity" ] && command -v security >/dev/null 2>&1; then
+  identity="$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+fi
 
-echo "OpenClaw native runtime signing is handled by the later app codesign step."
+if [ -z "$identity" ]; then
+  echo "Skipping OpenClaw native runtime signing because no Developer ID identity is available."
+  exit 0
+fi
+
+is_macho() {
+  local file="$1"
+  file -b "$file" 2>/dev/null | grep -Eq 'Mach-O'
+}
+
+sign_macho() {
+  local file="$1"
+  local options=(--force --timestamp --sign "$identity")
+  if [ -x "$file" ]; then
+    options+=(--options runtime)
+  fi
+  echo "Signing bundled native runtime: $file"
+  codesign "${options[@]}" "$file"
+}
+
+openclaw_assets="$app_path/Contents/Frameworks/App.framework/Resources/flutter_assets/assets/openclaw"
+if [ -d "$openclaw_assets" ]; then
+  while IFS= read -r -d '' file; do
+    if is_macho "$file"; then
+      sign_macho "$file"
+    fi
+  done < <(
+    find "$openclaw_assets" \
+      -type f \( -name '*.dylib' -o -name '*.node' -o -perm -111 \) \
+      -print0
+  )
+fi
+
+echo "OpenClaw native runtime signing complete."
