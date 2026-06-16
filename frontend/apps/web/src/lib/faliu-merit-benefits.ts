@@ -34,6 +34,7 @@ export { T0264_JUAN_6_DHARANI_MERIT_BENEFITS } from "./faliu-merit-benefits-t026
 export { T0264_JUAN_6_YAOWANG_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan6-yaowang";
 export { T0264_JUAN_7_MIAOYIN_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan7-miaoyin";
 export { T0264_JUAN_7_PUMEN_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan7-pumen";
+export { T0264_JUAN_7_MIAOZHUANGYAN_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan7-miaozhuangyan";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import { T0263_JUAN_10_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan10";
@@ -71,6 +72,7 @@ import { T0264_JUAN_6_DHARANI_MERIT_BENEFITS } from "./faliu-merit-benefits-t026
 import { T0264_JUAN_6_YAOWANG_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan6-yaowang";
 import { T0264_JUAN_7_MIAOYIN_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan7-miaoyin";
 import { T0264_JUAN_7_PUMEN_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan7-pumen";
+import { T0264_JUAN_7_MIAOZHUANGYAN_MERIT_BENEFITS } from "./faliu-merit-benefits-t0264-juan7-miaozhuangyan";
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
   const normalizedWork = work?.trim().toUpperCase();
@@ -146,6 +148,7 @@ export function getFaliuMeritBenefits(work: string | null | undefined, juan: str
     return [
       ...T0264_JUAN_7_MIAOYIN_MERIT_BENEFITS,
       ...T0264_JUAN_7_PUMEN_MERIT_BENEFITS,
+      ...T0264_JUAN_7_MIAOZHUANGYAN_MERIT_BENEFITS,
     ];
   }
 
