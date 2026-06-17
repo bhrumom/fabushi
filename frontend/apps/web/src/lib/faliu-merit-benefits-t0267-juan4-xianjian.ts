@@ -1,4 +1,5 @@
 import type { FaliuMeritBenefit } from "./faliu-merit-benefits";
+import { T0267_JUAN_4_ANYANG_FINAL_MERIT_BENEFITS } from "./faliu-merit-benefits-t0267-juan4-anyang-final";
 import { T0267_JUAN_4_ANYANG_WOMEN_MERIT_BENEFITS } from "./faliu-merit-benefits-t0267-juan4-anyang-women";
 
 export const T0267_JUAN_4_XIANJIAN_MERIT_BENEFITS: FaliuMeritBenefit[] = [
@@ -123,4 +124,5 @@ export const T0267_JUAN_4_XIANJIAN_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     occurrence: 1,
   },
   ...T0267_JUAN_4_ANYANG_WOMEN_MERIT_BENEFITS,
+  ...T0267_JUAN_4_ANYANG_FINAL_MERIT_BENEFITS,
 ];
