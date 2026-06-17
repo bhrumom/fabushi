@@ -113,7 +113,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// 刷新模型状态
   Future<void> _refreshModelStatus() async {
-    final newStatus = await LLMModelManager.instance.getAllModelStatus();
+    final newStatus = await _loadSetting<Map<LLMModelType, ModelStatus>?>(
+      '刷新模型状态',
+      LLMModelManager.instance.getAllModelStatus(),
+      _modelStatus,
+      timeout: const Duration(seconds: 8),
+    );
+    if (newStatus == null) return;
     if (mounted) {
       setState(() {
         _modelStatus = newStatus;
@@ -122,17 +128,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final defaultMuted = await AppSettings.getDefaultTtsMuted();
-    final fastMatchThreshold = await AppSettings.getFastMatchThreshold();
-    final matchThreshold = await AppSettings.getMatchThreshold();
-    final appVersionLabel = await AppBuildInfoService.instance
-        .getVersionLabel();
+    final values = await Future.wait<dynamic>([
+      _loadSetting<bool>(
+        '默认静音设置',
+        AppSettings.getDefaultTtsMuted(),
+        _defaultTtsMuted,
+      ),
+      _loadSetting<double>(
+        '快速匹配阈值',
+        AppSettings.getFastMatchThreshold(),
+        _fastMatchThreshold,
+      ),
+      _loadSetting<double>(
+        '普通匹配阈值',
+        AppSettings.getMatchThreshold(),
+        _matchThreshold,
+      ),
+      _loadSetting<String>(
+        '版本信息',
+        AppBuildInfoService.instance.getVersionLabel(),
+        _appVersionLabel,
+      ),
+      _loadSetting<String>(
+        'AI 后端模式',
+        AppSettings.getAiBackendModeName(),
+        _aiBackendModeName,
+      ),
+    ]);
 
-    // 加载 AI 模型相关设置
-    final deviceInfo = await DeviceCapabilityService.instance
-        .getDeviceCapabilityInfo();
-    final modelStatus = await LLMModelManager.instance.getAllModelStatus();
-    final savedModelName = await AppSettings.getSelectedModelName();
+    if (mounted) {
+      setState(() {
+        _defaultTtsMuted = values[0] as bool;
+        _fastMatchThreshold = values[1] as double;
+        _matchThreshold = values[2] as double;
+        _appVersionLabel = values[3] as String;
+        _aiBackendModeName = values[4] as String;
+        _isLoading = false;
+      });
+    }
+
+    unawaited(_loadModelSettings());
+    unawaited(_loadDesktopRuntimeSettings(probeOpenClaw: false));
+  }
+
+  Future<void> _loadModelSettings() async {
+    final values = await Future.wait<dynamic>([
+      _loadSetting<DeviceCapabilityInfo?>(
+        '设备能力信息',
+        DeviceCapabilityService.instance.getDeviceCapabilityInfo(),
+        _deviceInfo,
+        timeout: const Duration(seconds: 5),
+      ),
+      _loadSetting<Map<LLMModelType, ModelStatus>?>(
+        '模型状态',
+        LLMModelManager.instance.getAllModelStatus(),
+        _modelStatus,
+        timeout: const Duration(seconds: 8),
+      ),
+      _loadSetting<String?>('已选模型', AppSettings.getSelectedModelName(), null),
+    ]);
+
+    final savedModelName = values[2] as String?;
     LLMModelType? selectedModel;
     if (savedModelName != null) {
       try {
@@ -142,32 +198,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } catch (_) {}
     }
 
-    final aiBackendModeName = await AppSettings.getAiBackendModeName();
-    OpenClawRuntimeStatus? openClawStatus;
-    DesktopControlBridgeStatus? desktopControlStatus;
-    List<DesktopControlPendingConfirmation> desktopControlPending = const [];
-    if (AiBackendPolicy.isDesktopNative) {
-      openClawStatus = await OpenClawRuntime.instance.getStatus(probe: false);
-      desktopControlStatus = await DesktopControlBridge.instance.getStatus();
-      desktopControlPending = await DesktopControlBridge.instance
-          .pendingConfirmations();
+    if (mounted) {
+      setState(() {
+        _deviceInfo = values[0] as DeviceCapabilityInfo?;
+        _modelStatus = values[1] as Map<LLMModelType, ModelStatus>?;
+        _selectedModel = selectedModel;
+      });
     }
+  }
+
+  Future<void> _loadDesktopRuntimeSettings({
+    required bool probeOpenClaw,
+  }) async {
+    if (!AiBackendPolicy.isDesktopNative) return;
+    final values = await Future.wait<dynamic>([
+      _readOpenClawStatus(probe: probeOpenClaw),
+      _readDesktopControlStatus(),
+      _loadSetting<List<DesktopControlPendingConfirmation>>(
+        '桌面控制确认请求',
+        DesktopControlBridge.instance.pendingConfirmations(),
+        const [],
+      ),
+    ]);
 
     if (mounted) {
       setState(() {
-        _defaultTtsMuted = defaultMuted;
-        _fastMatchThreshold = fastMatchThreshold;
-        _matchThreshold = matchThreshold;
-        _appVersionLabel = appVersionLabel;
-        _deviceInfo = deviceInfo;
-        _modelStatus = modelStatus;
-        _selectedModel = selectedModel;
-        _aiBackendModeName = aiBackendModeName;
-        _openClawStatus = openClawStatus;
-        _desktopControlStatus = desktopControlStatus;
-        _desktopControlPending = desktopControlPending;
-        _isLoading = false;
+        _openClawStatus = values[0] as OpenClawRuntimeStatus;
+        _desktopControlStatus = values[1] as DesktopControlBridgeStatus;
+        _desktopControlPending =
+            values[2] as List<DesktopControlPendingConfirmation>;
       });
+    }
+  }
+
+  Future<OpenClawRuntimeStatus> _readOpenClawStatus({
+    required bool probe,
+  }) async {
+    try {
+      return await OpenClawRuntime.instance
+          .getStatus(probe: probe)
+          .timeout(const Duration(seconds: 8));
+    } catch (error) {
+      debugPrint('Settings: OpenClaw 状态检测失败: $error');
+      return OpenClawRuntimeStatus(
+        state: OpenClawRuntimeState.failed,
+        message: 'OpenClaw 状态检测失败：$error',
+        checkedAt: DateTime.now(),
+      );
+    }
+  }
+
+  Future<DesktopControlBridgeStatus> _readDesktopControlStatus({
+    bool startBridge = false,
+  }) async {
+    try {
+      final future = startBridge
+          ? DesktopControlBridge.instance.ensureStarted()
+          : DesktopControlBridge.instance.getStatus();
+      return await future.timeout(
+        startBridge ? const Duration(seconds: 15) : const Duration(seconds: 5),
+      );
+    } catch (error) {
+      debugPrint('Settings: 桌面控制状态检测失败: $error');
+      return DesktopControlBridgeStatus(
+        enabledByBuild: true,
+        supportedPlatform: AiBackendPolicy.isDesktopNative,
+        bridgeRunning: false,
+        platform: defaultTargetPlatform.name,
+        message: '桌面控制状态检测失败：$error',
+        screenRecordingGranted: false,
+        accessibilityGranted: false,
+        chrome: ChromeConnectorStatus.disconnected('Chrome 连接器状态未知'),
+      );
+    }
+  }
+
+  Future<T> _loadSetting<T>(
+    String label,
+    Future<T> future,
+    T fallback, {
+    Duration timeout = const Duration(seconds: 4),
+  }) async {
+    try {
+      return await future.timeout(timeout);
+    } catch (error) {
+      debugPrint('Settings: $label 加载失败: $error');
+      return fallback;
     }
   }
 
@@ -194,7 +310,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _refreshOpenClawStatus() async {
     if (!AiBackendPolicy.isDesktopNative) return;
-    final status = await OpenClawRuntime.instance.getStatus();
+    final status = await _readOpenClawStatus(probe: true);
     if (mounted) {
       setState(() => _openClawStatus = status);
     }
@@ -203,10 +319,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _refreshDesktopControlStatus({bool startBridge = false}) async {
     if (!AiBackendPolicy.isDesktopNative) return;
-    final status = startBridge
-        ? await DesktopControlBridge.instance.ensureStarted()
-        : await DesktopControlBridge.instance.getStatus();
-    final pending = await DesktopControlBridge.instance.pendingConfirmations();
+    final status = await _readDesktopControlStatus(startBridge: startBridge);
+    final pending = await _loadSetting<List<DesktopControlPendingConfirmation>>(
+      '桌面控制确认请求',
+      DesktopControlBridge.instance.pendingConfirmations(),
+      _desktopControlPending,
+    );
     if (mounted) {
       setState(() {
         _desktopControlStatus = status;
@@ -218,7 +336,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _restartOpenClawRuntime() async {
     if (!AiBackendPolicy.isDesktopNative || _isRestartingOpenClaw) return;
     setState(() => _isRestartingOpenClaw = true);
-    final status = await OpenClawRuntime.instance.restart();
+    final status = await _restartOpenClawRuntimeSafely();
     if (!mounted) return;
     setState(() {
       _openClawStatus = status;
@@ -233,18 +351,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<OpenClawRuntimeStatus> _restartOpenClawRuntimeSafely() async {
+    try {
+      return await OpenClawRuntime.instance.restart().timeout(
+        const Duration(seconds: 75),
+      );
+    } catch (error) {
+      debugPrint('Settings: OpenClaw 重启失败: $error');
+      return OpenClawRuntimeStatus(
+        state: OpenClawRuntimeState.failed,
+        message: 'OpenClaw 重启失败：$error',
+        checkedAt: DateTime.now(),
+      );
+    }
+  }
+
   Future<void> _prepareChromeConnectorInstall() async {
     if (!AiBackendPolicy.isDesktopNative || _isPreparingChromeConnector) return;
     setState(() => _isPreparingChromeConnector = true);
-    final path = await DesktopControlBridge.instance
-        .prepareChromeConnectorInstall();
-    await _refreshDesktopControlStatus();
+    String? path;
+    Object? installError;
+    try {
+      path = await DesktopControlBridge.instance
+          .prepareChromeConnectorInstall()
+          .timeout(const Duration(seconds: 20));
+      await _refreshDesktopControlStatus();
+    } catch (error) {
+      debugPrint('Settings: Chrome 连接器准备失败: $error');
+      installError = error;
+    }
     if (!mounted) return;
     setState(() => _isPreparingChromeConnector = false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(path == null ? '当前构建未启用 Chrome 连接器' : 'Chrome 连接器目录已打开'),
-        backgroundColor: path == null ? Colors.orange : Colors.green,
+        content: Text(
+          installError != null
+              ? 'Chrome 连接器准备失败：$installError'
+              : path == null
+              ? '当前构建未启用 Chrome 连接器'
+              : 'Chrome 连接器目录已打开',
+        ),
+        backgroundColor: installError != null
+            ? Colors.redAccent
+            : path == null
+            ? Colors.orange
+            : Colors.green,
       ),
     );
   }

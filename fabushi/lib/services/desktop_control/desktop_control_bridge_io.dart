@@ -567,14 +567,26 @@ class DesktopControlBridge {
   }
 
   Future<List<String>> _listAssets(String prefix) async {
+    final assets = <String>{};
+
     try {
       final raw = await rootBundle.loadString('AssetManifest.json');
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      return decoded.keys.where((key) => key.startsWith(prefix)).toList()
-        ..sort();
+      assets.addAll(decoded.keys.where((key) => key.startsWith(prefix)));
     } catch (_) {
-      return const [];
+      // Newer Flutter release builds may only include AssetManifest.bin.
     }
+
+    try {
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      assets.addAll(
+        manifest.listAssets().where((key) => key.startsWith(prefix)),
+      );
+    } catch (_) {
+      // Older Flutter builds or patched archives may still rely on JSON only.
+    }
+
+    return assets.toList()..sort();
   }
 
   void _notifyConfirmationChange() {
