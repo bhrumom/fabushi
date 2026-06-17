@@ -7,6 +7,8 @@ export function FaliuModalLayoutFix() {
 section[aria-label="法流"] [role="dialog"][aria-modal="true"] {
   display: flex !important;
   flex-direction: column !important;
+  height: calc(100svh - 36px) !important;
+  max-height: calc(100svh - 36px) !important;
 }
 
 section[aria-label="法流"] [role="dialog"][aria-modal="true"] [class*="modalHeader"],
@@ -25,13 +27,19 @@ section[aria-label="法流"] [role="dialog"][aria-modal="true"] [class*="modalTa
 }
 
 section[aria-label="法流"] [role="dialog"][aria-modal="true"] [class*="modalBody"] {
-  flex: 1 1 0 !important;
+  flex: 1 1 auto !important;
   min-height: 0 !important;
   height: auto !important;
   max-height: none !important;
+  overflow: hidden !important;
 }
 
 @media (max-width: 760px) {
+  section[aria-label="法流"] [role="dialog"][aria-modal="true"] {
+    height: 100svh !important;
+    max-height: 100svh !important;
+  }
+
   section[aria-label="法流"] [role="dialog"][aria-modal="true"] [class*="modalTabs"] {
     max-height: 104px !important;
   }
