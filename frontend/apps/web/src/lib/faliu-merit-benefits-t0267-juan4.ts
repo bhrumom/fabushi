@@ -1,4 +1,5 @@
 import type { FaliuMeritBenefit } from "./faliu-merit-benefits";
+import { T0267_JUAN_4_XIANJIAN_MERIT_BENEFITS } from "./faliu-merit-benefits-t0267-juan4-xianjian";
 
 export const T0267_JUAN_4_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   {
@@ -241,4 +242,5 @@ export const T0267_JUAN_4_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     note: "佛亲自说明诸菩萨能作此说，既乘佛神力，也由此经功德威力而得无碍。",
     occurrence: 1,
   },
+  ...T0267_JUAN_4_XIANJIAN_MERIT_BENEFITS,
 ];
