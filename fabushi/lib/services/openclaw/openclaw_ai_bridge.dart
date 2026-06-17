@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import '../dacheng_ai_service.dart';
+import '../diagnostic_log_service.dart';
 import '../local_ai_conversation_store.dart';
 import 'openclaw_runtime.dart';
 
@@ -24,6 +25,9 @@ class OpenClawAiBridge {
   final http.Client _httpClient;
   final LocalAiConversationStore _store;
   static final Uuid _uuid = Uuid();
+  static const Duration _requestTimeout = Duration(seconds: 45);
+  static const Duration _firstTokenTimeout = Duration(seconds: 120);
+  static const Duration _streamIdleTimeout = Duration(seconds: 90);
 
   Future<DachengAiChatResult> sendChat({
     required String message,
@@ -72,132 +76,278 @@ class OpenClawAiBridge {
     String? username,
     bool isMember = false,
   }) async* {
+    final requestId = _uuid.v4();
+    final totalWatch = Stopwatch()..start();
     final normalizedMessage = message.trim();
-    if (normalizedMessage.isEmpty) return;
+    if (normalizedMessage.isEmpty) {
+      _diag('chat.skip-empty', data: {'requestId': requestId});
+      return;
+    }
 
-    final target = await OpenClawRuntime.instance.ensureStarted(
-      authToken: token,
-      username: username,
-      isMember: isMember,
-    );
-    final effectiveConversationId =
-        (conversationId != null && conversationId.trim().isNotEmpty)
-        ? conversationId.trim()
-        : _newConversationId();
+    try {
+      _diag(
+        'chat.start',
+        data: {
+          'requestId': requestId,
+          'messageLength': normalizedMessage.length,
+          'conversationId': conversationId,
+          'hasToken': token != null && token.isNotEmpty,
+          'hasUsername': username != null && username.isNotEmpty,
+          'isMember': isMember,
+        },
+      );
 
-    yield DachengAiStreamEvent(
-      type: 'step',
-      text: '本机 OpenClaw 已接管首页 AI 对话',
-      conversationId: effectiveConversationId,
-      raw: {
-        'title': '本机 OpenClaw',
-        'message': '正在处理请求',
-        if (target.desktopToolsStatus != null)
-          'desktopTools': target.desktopToolsStatus,
-      },
-    );
+      final ensureWatch = Stopwatch()..start();
+      final target = await OpenClawRuntime.instance.ensureStarted(
+        authToken: token,
+        username: username,
+        isMember: isMember,
+      );
+      ensureWatch.stop();
+      _diag(
+        'chat.runtime-ready',
+        data: {
+          'requestId': requestId,
+          'elapsedMs': ensureWatch.elapsedMilliseconds,
+          'baseUri': target.baseUri.toString(),
+          'model': target.model,
+          'modelOverrideSet': target.modelOverride != null,
+          'desktopToolsUri': target.desktopToolsUri?.toString(),
+        },
+      );
 
-    final existing = await _store.get(effectiveConversationId);
-    final requestMessages = <Map<String, dynamic>>[
-      ...(existing?.messages ?? const <LocalAiConversationMessage>[])
-          .where((item) => item.content.trim().isNotEmpty)
-          .map(
-            (item) => {
-              'role': item.role == 'user' ? 'user' : 'assistant',
-              'content': item.content,
-            },
-          ),
-      {'role': 'user', 'content': normalizedMessage},
-    ];
+      final effectiveConversationId =
+          (conversationId != null && conversationId.trim().isNotEmpty)
+          ? conversationId.trim()
+          : _newConversationId();
 
-    final uri = target.baseUri.replace(path: '/v1/chat/completions');
-    final request = http.Request('POST', uri)
-      ..headers.addAll({
-        'Accept': 'text/event-stream',
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ${target.token}',
-        if (target.modelOverride != null)
-          'x-openclaw-model': target.modelOverride!,
-        'x-openclaw-session-key': 'dacheng:$effectiveConversationId',
-        'x-openclaw-message-channel': 'dacheng-desktop',
-      })
-      ..body = jsonEncode({
+      yield DachengAiStreamEvent(
+        type: 'step',
+        text: '本机 OpenClaw 已接管首页 AI 对话',
+        conversationId: effectiveConversationId,
+        raw: {
+          'title': '本机 OpenClaw',
+          'message': '正在处理请求',
+          if (target.desktopToolsStatus != null)
+            'desktopTools': target.desktopToolsStatus,
+        },
+      );
+
+      final existing = await _store.get(effectiveConversationId);
+      final requestMessages = <Map<String, dynamic>>[
+        ...(existing?.messages ?? const <LocalAiConversationMessage>[])
+            .where((item) => item.content.trim().isNotEmpty)
+            .map(
+              (item) => {
+                'role': item.role == 'user' ? 'user' : 'assistant',
+                'content': item.content,
+              },
+            ),
+        {'role': 'user', 'content': normalizedMessage},
+      ];
+
+      final uri = target.baseUri.replace(path: '/v1/chat/completions');
+      final body = jsonEncode({
         'model': target.model,
         'stream': true,
         'stream_options': {'include_usage': true},
         'user': 'dacheng:$effectiveConversationId',
         'messages': requestMessages,
       });
-
-    final response = await _httpClient
-        .send(request)
-        .timeout(const Duration(seconds: 45));
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      final body = await utf8.decodeStream(response.stream);
-      throw StateError(
-        body.trim().isEmpty
-            ? '本机 OpenClaw 请求失败 (${response.statusCode})'
-            : body,
+      final request = http.Request('POST', uri)
+        ..headers.addAll({
+          'Accept': 'text/event-stream',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${target.token}',
+          if (target.modelOverride != null)
+            'x-openclaw-model': target.modelOverride!,
+          'x-openclaw-session-key': 'dacheng:$effectiveConversationId',
+          'x-openclaw-message-channel': 'dacheng-desktop',
+        })
+        ..body = body;
+      _diag(
+        'chat.request',
+        data: {
+          'requestId': requestId,
+          'uri': uri.toString(),
+          'conversationId': effectiveConversationId,
+          'messageCount': requestMessages.length,
+          'bodyBytes': utf8.encode(body).length,
+        },
       );
-    }
 
-    var finalText = '';
-    DachengAiUsage? usage;
-    var sawDone = false;
-
-    await for (final line
-        in response.stream
-            .transform(utf8.decoder)
-            .transform(const LineSplitter())) {
-      if (!line.startsWith('data:')) continue;
-      final dataText = line.substring('data:'.length).trim();
-      if (dataText.isEmpty) continue;
-      if (dataText == '[DONE]') {
-        sawDone = true;
-        break;
+      final responseWatch = Stopwatch()..start();
+      final response = await _httpClient.send(request).timeout(_requestTimeout);
+      responseWatch.stop();
+      _diag(
+        'chat.response',
+        data: {
+          'requestId': requestId,
+          'statusCode': response.statusCode,
+          'elapsedMs': responseWatch.elapsedMilliseconds,
+          'contentType': response.headers['content-type'],
+        },
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final body = await utf8.decodeStream(response.stream);
+        _diag(
+          'chat.response-error',
+          data: {
+            'requestId': requestId,
+            'statusCode': response.statusCode,
+            'body': body,
+          },
+        );
+        throw StateError(
+          body.trim().isEmpty
+              ? '本机 OpenClaw 请求失败 (${response.statusCode})'
+              : body,
+        );
       }
 
-      final decoded = _safeDecodeMap(dataText);
-      if (decoded == null) continue;
+      var finalText = '';
+      DachengAiUsage? usage;
+      var sawDone = false;
+      var lineCount = 0;
+      var dataCount = 0;
+      var deltaCount = 0;
+      final streamWatch = Stopwatch()..start();
 
-      final usageJson = decoded['usage'];
-      if (usageJson is Map) {
-        usage = DachengAiUsage.fromJson(Map<String, dynamic>.from(usageJson));
+      final lines = response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(
+            _streamIdleTimeout,
+            onTimeout: (sink) {
+              sink.addError(
+                TimeoutException(
+                  'OpenClaw SSE stream idle for ${_streamIdleTimeout.inSeconds}s',
+                ),
+              );
+              sink.close();
+            },
+          );
+
+      await for (final line in lines) {
+        lineCount++;
+        if (finalText.isEmpty && streamWatch.elapsed > _firstTokenTimeout) {
+          throw TimeoutException(
+            'OpenClaw first token timeout after ${_firstTokenTimeout.inSeconds}s',
+          );
+        }
+        if (!line.startsWith('data:')) continue;
+        dataCount++;
+        if (dataCount == 1) {
+          _diag(
+            'chat.first-data',
+            data: {
+              'requestId': requestId,
+              'elapsedMs': streamWatch.elapsedMilliseconds,
+              'lineLength': line.length,
+            },
+          );
+        }
+        final dataText = line.substring('data:'.length).trim();
+        if (dataText.isEmpty) continue;
+        if (dataText == '[DONE]') {
+          sawDone = true;
+          _diag(
+            'chat.done-marker',
+            data: {
+              'requestId': requestId,
+              'elapsedMs': streamWatch.elapsedMilliseconds,
+              'lineCount': lineCount,
+              'dataCount': dataCount,
+              'deltaCount': deltaCount,
+            },
+          );
+          break;
+        }
+
+        final decoded = _safeDecodeMap(dataText, requestId: requestId);
+        if (decoded == null) continue;
+
+        final usageJson = decoded['usage'];
+        if (usageJson is Map) {
+          usage = DachengAiUsage.fromJson(Map<String, dynamic>.from(usageJson));
+        }
+
+        final deltaText = _deltaText(decoded);
+        if (deltaText.isEmpty) continue;
+        deltaCount++;
+        if (deltaCount == 1) {
+          _diag(
+            'chat.first-delta',
+            data: {
+              'requestId': requestId,
+              'elapsedMs': streamWatch.elapsedMilliseconds,
+              'deltaLength': deltaText.length,
+            },
+          );
+        }
+        finalText += deltaText;
+        yield DachengAiStreamEvent(
+          type: 'delta',
+          text: deltaText,
+          conversationId: effectiveConversationId,
+          raw: decoded,
+        );
       }
 
-      final deltaText = _deltaText(decoded);
-      if (deltaText.isEmpty) continue;
-      finalText += deltaText;
-      yield DachengAiStreamEvent(
-        type: 'delta',
-        text: deltaText,
-        conversationId: effectiveConversationId,
-        raw: decoded,
+      _diag(
+        'chat.stream-finished',
+        data: {
+          'requestId': requestId,
+          'elapsedMs': streamWatch.elapsedMilliseconds,
+          'totalElapsedMs': totalWatch.elapsedMilliseconds,
+          'lineCount': lineCount,
+          'dataCount': dataCount,
+          'deltaCount': deltaCount,
+          'finalLength': finalText.trim().length,
+          'sawDone': sawDone,
+        },
       );
-    }
 
-    if (finalText.trim().isNotEmpty) {
+      if (finalText.trim().isEmpty) {
+        _diag(
+          'chat.empty-result',
+          data: {'requestId': requestId, 'sawDone': sawDone},
+        );
+        throw StateError('本机 OpenClaw 返回空结果，请复制诊断日志排查');
+      }
+
       await _store.upsertTurn(
         conversationId: effectiveConversationId,
         userText: normalizedMessage,
         assistantText: finalText.trim(),
       );
-    }
 
-    yield DachengAiStreamEvent(
-      type: 'done',
-      text: finalText.trim(),
-      conversationId: effectiveConversationId,
-      usage: usage ?? _zeroUsage,
-      raw: {
-        'message': finalText.trim(),
-        'conversationId': effectiveConversationId,
-        'provider': 'openclaw-local',
-        'sawDone': sawDone,
-        if (target.desktopToolsStatus != null)
-          'desktopTools': target.desktopToolsStatus,
-      },
-    );
+      yield DachengAiStreamEvent(
+        type: 'done',
+        text: finalText.trim(),
+        conversationId: effectiveConversationId,
+        usage: usage ?? _zeroUsage,
+        raw: {
+          'message': finalText.trim(),
+          'conversationId': effectiveConversationId,
+          'provider': 'openclaw-local',
+          'sawDone': sawDone,
+          if (target.desktopToolsStatus != null)
+            'desktopTools': target.desktopToolsStatus,
+        },
+      );
+    } catch (error, stackTrace) {
+      _diag(
+        'chat.error',
+        data: {
+          'requestId': requestId,
+          'elapsedMs': totalWatch.elapsedMilliseconds,
+        },
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
   }
 
   Future<List<DachengConversationSummary>> listConversations() async {
@@ -248,12 +398,23 @@ class OpenClawAiBridge {
     return '';
   }
 
-  Map<String, dynamic>? _safeDecodeMap(String dataText) {
+  Map<String, dynamic>? _safeDecodeMap(String dataText, {String? requestId}) {
     try {
       final decoded = jsonDecode(dataText);
       if (decoded is Map<String, dynamic>) return decoded;
       if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {}
+    } catch (error) {
+      final logData = <String, Object?>{
+        'payloadLength': dataText.length,
+        'payloadPrefix': dataText.length > 160
+            ? dataText.substring(0, 160)
+            : dataText,
+      };
+      if (requestId != null) {
+        logData['requestId'] = requestId;
+      }
+      _diag('chat.decode-error', data: logData, error: error);
+    }
     return null;
   }
 
@@ -264,4 +425,21 @@ class OpenClawAiBridge {
     remainingTokens: 0,
     monthlyLimit: 0,
   );
+
+  void _diag(
+    String message, {
+    Map<String, Object?> data = const {},
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    unawaited(
+      DiagnosticLogService.instance.log(
+        'openclaw.chat',
+        message,
+        data: data,
+        error: error,
+        stackTrace: stackTrace,
+      ),
+    );
+  }
 }
