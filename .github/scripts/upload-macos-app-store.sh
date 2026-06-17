@@ -50,6 +50,115 @@ run_altool() {
   handle_altool_result "$action" "$exit_code" "$log_file"
 }
 
+is_macho_file() {
+  local file="$1"
+  file -b "$file" 2>/dev/null | grep -Eq 'Mach-O'
+}
+
+resolve_macos_app_store_signing_identity() {
+  local identity_hint="${MACOS_APP_STORE_SIGNING_CERTIFICATE:-}"
+  local identity=""
+
+  if command -v security >/dev/null 2>&1; then
+    if [ -n "$identity_hint" ]; then
+      identity="$(
+        security find-identity -v -p codesigning 2>/dev/null |
+          awk -F '"' -v hint="$identity_hint" 'index($2, hint) { print $2; exit }'
+      )"
+    fi
+
+    if [ -z "$identity" ]; then
+      identity="$(
+        security find-identity -v -p codesigning 2>/dev/null |
+          awk -F '"' '/Mac App Distribution|Apple Distribution/ { print $2; exit }'
+      )"
+    fi
+  fi
+
+  if [ -z "$identity" ]; then
+    identity="$identity_hint"
+  fi
+
+  printf '%s' "$identity"
+}
+
+prepare_openclaw_for_macos_app_store() {
+  local app_path="$1"
+  local platform="$2"
+  local openclaw_assets="$app_path/Contents/Frameworks/App.framework/Resources/flutter_assets/assets/openclaw/$platform"
+  local entitlements="$PWD/macos/Runner/OpenClawChild.entitlements"
+  local identity
+  local signing_report="$status_dir/MACOS_APP_STORE_OPENCLAW_SIGNING.txt"
+  local signed_count=0
+  local executable_count=0
+
+  if [ ! -d "$openclaw_assets" ]; then
+    echo "OpenClaw App Store signing skipped because assets are missing: $openclaw_assets" >&2
+    return 1
+  fi
+
+  if [ ! -f "$entitlements" ]; then
+    echo "Missing OpenClaw child process entitlements: $entitlements" >&2
+    return 1
+  fi
+
+  # App Store Connect rejects packages with bundled files that are only
+  # readable by root. Normalize the vendored npm/node payload before export.
+  chmod -R u+rwX,go+rX "$openclaw_assets"
+
+  identity="$(resolve_macos_app_store_signing_identity)"
+  if [ -z "$identity" ]; then
+    echo "Unable to resolve a macOS App Store signing identity for bundled OpenClaw executables." >&2
+    return 1
+  fi
+
+  {
+    echo "openclaw_assets=$openclaw_assets"
+    echo "entitlements=$entitlements"
+    echo "signing_identity=$identity"
+  } > "$signing_report"
+
+  while IFS= read -r -d '' file; do
+    if ! is_macho_file "$file"; then
+      continue
+    fi
+
+    options=(--force --sign "$identity")
+    if [ -x "$file" ]; then
+      options+=(--entitlements "$entitlements")
+      executable_count=$((executable_count + 1))
+    fi
+
+    echo "Signing OpenClaw App Store payload: $file"
+    {
+      echo ""
+      echo "file=$file"
+      echo "executable=$([ -x "$file" ] && echo true || echo false)"
+    } >> "$signing_report"
+    codesign "${options[@]}" "$file"
+    codesign --verify --strict --verbose=2 "$file"
+    codesign -dv --verbose=2 "$file" >> "$signing_report" 2>&1 || true
+    signed_count=$((signed_count + 1))
+  done < <(
+    find "$openclaw_assets" -depth \
+      -type f \( -name '*.dylib' -o -name '*.node' -o -perm -111 \) \
+      -print0
+  )
+
+  if [ "$signed_count" -eq 0 ] || [ "$executable_count" -eq 0 ]; then
+    echo "No signable OpenClaw Mach-O executables were found under $openclaw_assets." >&2
+    return 1
+  fi
+
+  {
+    echo ""
+    echo "signed_macho_files=$signed_count"
+    echo "executable_entitlements=$executable_count"
+  } >> "$signing_report"
+
+  echo "Prepared OpenClaw App Store payload at $openclaw_assets (signed Mach-O files=$signed_count, executable entitlements=$executable_count)."
+}
+
 trap 'exit_code=$?; if [ "$exit_code" -ne 0 ]; then write_status "failed" "macos_app_store_upload_failed_exit_${exit_code}"; fi' EXIT
 
 require_config() {
@@ -352,6 +461,7 @@ fi
 
 "$sync_openclaw_script" "$openclaw_platform" "$flutter_assets_path"
 "$assert_openclaw_script" "$archived_app_path" "$openclaw_platform"
+prepare_openclaw_for_macos_app_store "$archived_app_path" "$openclaw_platform"
 
 internal_only=false
 case "${MACOS_APP_STORE_INTERNAL_TESTING_ONLY:-false}" in
