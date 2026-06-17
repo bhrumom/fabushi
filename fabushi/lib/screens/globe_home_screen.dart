@@ -20,6 +20,7 @@ import '../services/ai_backend_policy.dart';
 import '../services/alipay_service.dart'
     if (dart.library.html) '../services/alipay_service_web.dart';
 import '../services/dacheng_ai_service.dart';
+import '../services/diagnostic_log_service.dart';
 import '../services/dharma_publish_service.dart';
 import '../services/inbound_share_service.dart';
 import 'dharma_publish_browser_screen.dart'
@@ -3530,6 +3531,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
     HapticFeedback.lightImpact();
     final requestSerial = ++_aiRequestSerial;
+    final requestWatch = Stopwatch()..start();
+    _diagHomeAi(
+      'send.start',
+      data: {
+        'requestSerial': requestSerial,
+        'messageLength': text.length,
+        'activeConversationId': _activeConversationId,
+      },
+    );
     final authModel = Provider.of<AuthModel?>(context, listen: false);
     await _aiStreamSubscription?.cancel();
     _aiStreamSubscription = null;
@@ -3540,12 +3550,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       _streamingAiText = '';
       _aiActivityText = '正在思考';
     });
+    _diagHomeAi('send.ui-thinking', data: {'requestSerial': requestSerial});
     _scrollHomeChatToBottom(force: true);
 
     try {
       final stepLines = <String>[];
       var finalText = '';
       String? latestConversationId = _activeConversationId;
+      var eventCount = 0;
+      var deltaCount = 0;
 
       await for (final event in _dachengAiService.sendChatStream(
         message: text,
@@ -3555,12 +3568,23 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         isMember: authModel?.hasPermission('premium') ?? false,
       )) {
         if (!mounted || requestSerial != _aiRequestSerial) return;
+        eventCount++;
 
         if (event.conversationId != null && event.conversationId!.isNotEmpty) {
           latestConversationId = event.conversationId;
         }
 
         if (event.isStep) {
+          _diagHomeAi(
+            'send.event-step',
+            data: {
+              'requestSerial': requestSerial,
+              'eventCount': eventCount,
+              'textLength': event.text.length,
+              'title': event.raw['title']?.toString(),
+              'message': event.raw['message']?.toString(),
+            },
+          );
           final visibleStep = _visibleAiStepLabel(event);
           if (visibleStep != null) {
             stepLines
@@ -3568,11 +3592,37 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               ..add(visibleStep);
           }
         } else if (event.isDelta) {
+          deltaCount++;
+          if (deltaCount == 1) {
+            _diagHomeAi(
+              'send.first-delta',
+              data: {
+                'requestSerial': requestSerial,
+                'elapsedMs': requestWatch.elapsedMilliseconds,
+                'deltaLength': event.text.length,
+              },
+            );
+          }
           finalText += event.text;
         } else if (event.isDone) {
+          _diagHomeAi(
+            'send.event-done',
+            data: {
+              'requestSerial': requestSerial,
+              'elapsedMs': requestWatch.elapsedMilliseconds,
+              'eventCount': eventCount,
+              'deltaCount': deltaCount,
+              'finalLength': finalText.length,
+              'rawMessageLength': event.raw['message']?.toString().length,
+            },
+          );
           latestConversationId = event.conversationId ?? latestConversationId;
           finalText = (event.raw['message'] ?? finalText).toString();
         } else if (event.isError) {
+          _diagHomeAi(
+            'send.event-error',
+            data: {'requestSerial': requestSerial, 'text': event.text},
+          );
           throw StateError(event.text.isEmpty ? '大乘 AI 生成失败' : event.text);
         }
 
@@ -3587,6 +3637,16 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       }
 
       if (!mounted || requestSerial != _aiRequestSerial) return;
+      _diagHomeAi(
+        'send.complete',
+        data: {
+          'requestSerial': requestSerial,
+          'elapsedMs': requestWatch.elapsedMilliseconds,
+          'finalLength': finalText.trim().length,
+          'deltaCount': deltaCount,
+          'eventCount': eventCount,
+        },
+      );
       setState(() {
         _activeConversationId = latestConversationId;
         if (finalText.trim().isNotEmpty) {
@@ -3600,8 +3660,17 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       });
       _scrollHomeChatToBottom(force: true);
       unawaited(_loadRemoteConversations());
-    } catch (e) {
+    } catch (e, stackTrace) {
       if (!mounted || requestSerial != _aiRequestSerial) return;
+      _diagHomeAi(
+        'send.failed',
+        data: {
+          'requestSerial': requestSerial,
+          'elapsedMs': requestWatch.elapsedMilliseconds,
+        },
+        error: e,
+        stackTrace: stackTrace,
+      );
       setState(() {
         _homeChatMessages.add(
           _HomeChatMessage(
@@ -3619,6 +3688,13 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   void _stopAiGeneration() {
+    _diagHomeAi(
+      'send.stop-requested',
+      data: {
+        'requestSerial': _aiRequestSerial,
+        'hasStreamingText': _streamingAiText.trim().isNotEmpty,
+      },
+    );
     _aiRequestSerial++;
     _aiStreamSubscription?.cancel();
     _aiStreamSubscription = null;
@@ -3650,6 +3726,23 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       return title.isNotEmpty ? title : message;
     }
     return null;
+  }
+
+  void _diagHomeAi(
+    String message, {
+    Map<String, Object?> data = const {},
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    unawaited(
+      DiagnosticLogService.instance.log(
+        'home.ai',
+        message,
+        data: data,
+        error: error,
+        stackTrace: stackTrace,
+      ),
+    );
   }
 
   void _scrollHomeChatToBottom({bool force = false}) {

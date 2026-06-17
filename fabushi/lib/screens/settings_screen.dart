@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'keep_alive_guide_screen.dart';
 import 'practice_privacy_screen.dart';
@@ -15,6 +16,7 @@ import '../services/llm_model_manager.dart';
 import '../services/device_capability_service.dart';
 import '../services/desktop_control/desktop_control_bridge.dart';
 import '../services/desktop_control/desktop_control_models.dart';
+import '../services/diagnostic_log_service.dart';
 import '../services/openclaw/openclaw_runtime.dart';
 import '../services/worker_config.dart';
 import '../widgets/model_selection_dialog.dart';
@@ -397,6 +399,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ? Colors.orange
             : Colors.green,
       ),
+    );
+  }
+
+  Future<void> _copyDiagnosticLogTail() async {
+    final path = await DiagnosticLogService.instance.logFilePath();
+    final tail = await DiagnosticLogService.instance.tail(maxLines: 400);
+    await Clipboard.setData(
+      ClipboardData(text: '诊断日志路径: ${path ?? '无持久化日志路径'}\n\n$tail'),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(path == null ? '已复制当前诊断日志内容' : '已复制诊断日志内容和路径'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  Future<void> _openDiagnosticLogLocation() async {
+    final path = await DiagnosticLogService.instance.logFilePath();
+    if (path == null || path.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('当前平台没有可打开的诊断日志文件'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final file = File(path);
+    try {
+      if (Platform.isMacOS) {
+        await Process.run('open', ['-R', path]);
+      } else if (Platform.isWindows) {
+        await Process.run('explorer.exe', ['/select,${file.path}']);
+      } else {
+        await Process.run('xdg-open', [file.parent.path]);
+      }
+    } catch (error) {
+      await Clipboard.setData(ClipboardData(text: path));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('打开日志位置失败，已复制路径：$error'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已打开诊断日志位置'), backgroundColor: Colors.green),
     );
   }
 
@@ -1011,6 +1068,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           )
                         : const Icon(Icons.extension_outlined, size: 18),
                     label: Text(_isPreparingChromeConnector ? '准备中' : '连接器'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _copyDiagnosticLogTail,
+                    icon: const Icon(Icons.content_copy_outlined, size: 18),
+                    label: const Text('复制日志'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _openDiagnosticLogLocation,
+                    icon: const Icon(Icons.folder_open_outlined, size: 18),
+                    label: const Text('日志位置'),
                   ),
                 ),
               ],
