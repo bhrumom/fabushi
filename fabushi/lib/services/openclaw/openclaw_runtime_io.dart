@@ -511,14 +511,47 @@ class OpenClawRuntime {
   }
 
   Future<List<String>> _listAssets(String prefix) async {
+    final assets = <String>{};
+
     try {
       final raw = await rootBundle.loadString('AssetManifest.json');
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      return decoded.keys.where((key) => key.startsWith(prefix)).toList()
-        ..sort();
+      assets.addAll(decoded.keys.where((key) => key.startsWith(prefix)));
     } catch (_) {
-      return const [];
+      // Newer Flutter release builds may only include AssetManifest.bin.
     }
+
+    try {
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      assets.addAll(
+        manifest.listAssets().where((key) => key.startsWith(prefix)),
+      );
+    } catch (_) {
+      // App Store archives patched after flutter build carry a JSON/index file.
+    }
+
+    try {
+      final raw = await rootBundle.loadString(
+        'assets/openclaw/asset_index.json',
+      );
+      final decoded = jsonDecode(raw);
+      final indexedAssets = decoded is Map
+          ? decoded['assets']
+          : decoded is List
+          ? decoded
+          : const [];
+      if (indexedAssets is List) {
+        assets.addAll(
+          indexedAssets
+              .map((item) => item.toString())
+              .where((key) => key.startsWith(prefix)),
+        );
+      }
+    } catch (_) {
+      // Older builds do not have an OpenClaw asset index.
+    }
+
+    return assets.toList()..sort();
   }
 
   Future<bool> _probe(int port, String token) async {
