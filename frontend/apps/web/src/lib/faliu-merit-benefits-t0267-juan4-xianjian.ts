@@ -1,4 +1,5 @@
 import type { FaliuMeritBenefit } from "./faliu-merit-benefits";
+import { T0267_JUAN_4_ANYANG_WOMEN_MERIT_BENEFITS } from "./faliu-merit-benefits-t0267-juan4-anyang-women";
 
 export const T0267_JUAN_4_XIANJIAN_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   {
@@ -121,4 +122,5 @@ export const T0267_JUAN_4_XIANJIAN_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     note: "佛赞叹闻经、读诵、受持、信解、为人演说者，能心不散乱、灭除想识、见佛，临终面见百千诸佛，并为一切诸佛护念。",
     occurrence: 1,
   },
+  ...T0267_JUAN_4_ANYANG_WOMEN_MERIT_BENEFITS,
 ];
