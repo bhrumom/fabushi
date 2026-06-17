@@ -332,6 +332,27 @@ if [ -x "$fix_bundled_dylibs_script" ]; then
   "$fix_bundled_dylibs_script" "$archived_app_path"
 fi
 
+case "$(uname -m)" in
+  arm64) openclaw_platform="macos-arm64" ;;
+  *) openclaw_platform="macos-x64" ;;
+esac
+
+flutter_assets_path="$archived_app_path/Contents/Frameworks/App.framework/Resources/flutter_assets"
+sync_openclaw_script="$PWD/../.github/scripts/sync-openclaw-build-assets-v2.sh"
+assert_openclaw_script="$PWD/../.github/scripts/assert-openclaw-bundle.sh"
+
+if [ ! -x "$sync_openclaw_script" ]; then
+  echo "Missing executable OpenClaw sync script: $sync_openclaw_script" >&2
+  exit 1
+fi
+if [ ! -x "$assert_openclaw_script" ]; then
+  echo "Missing executable OpenClaw assert script: $assert_openclaw_script" >&2
+  exit 1
+fi
+
+"$sync_openclaw_script" "$openclaw_platform" "$flutter_assets_path"
+"$assert_openclaw_script" "$archived_app_path" "$openclaw_platform"
+
 internal_only=false
 case "${MACOS_APP_STORE_INTERNAL_TESTING_ONLY:-false}" in
   true|TRUE|True|1|yes|YES) internal_only=true ;;
