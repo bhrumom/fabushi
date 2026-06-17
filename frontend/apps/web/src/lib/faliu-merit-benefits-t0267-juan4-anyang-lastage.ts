@@ -100,7 +100,7 @@ export const T0267_JUAN_4_ANYANG_LASTAGE_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   {
     id: "t0267-004-080",
     category: "疑者可悔",
-    text: "佛時答言：「於此眾中若生疑者，可即懺悔，所有餘罪受報輕微。",
+    text: "佛時答言：「於此眾中若生疑者，可即懺悔，所有餘罪受報輕微。」",
     anchorText: "若生疑者，可即懺悔，所有餘罪受報輕微",
     note: "佛对众中生疑者开示可以即时忏悔，余罪受报轻微。",
     occurrence: 1,
