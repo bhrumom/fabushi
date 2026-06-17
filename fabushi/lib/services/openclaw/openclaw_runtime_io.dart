@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../app_settings.dart';
+import '../diagnostic_log_service.dart';
 import '../desktop_control/desktop_control_bridge.dart';
 import '../desktop_control/desktop_control_policy.dart';
 
@@ -138,6 +139,10 @@ class OpenClawRuntime {
   Future<OpenClawRuntimeStatus> getStatus({bool probe = true}) async {
     final platformKey = _platformKey;
     final port = await AppSettings.getOpenClawGatewayPort();
+    _diag(
+      'status.start',
+      data: {'platformKey': platformKey, 'port': port, 'probe': probe},
+    );
 
     if (platformKey == null) {
       return _remember(
@@ -155,11 +160,33 @@ class OpenClawRuntime {
       final runtimeDir = await _runtimeDir(spec, platformKey);
       final nodePath = p.join(runtimeDir.path, spec.nodeExecutable);
       final cliPath = p.join(runtimeDir.path, spec.cliEntrypoint);
+      final nodeExists = await File(nodePath).exists();
+      final cliExists = await File(cliPath).exists();
+      _diag(
+        'status.paths',
+        data: {
+          'platformKey': platformKey,
+          'runtimeDir': runtimeDir.path,
+          'nodePath': nodePath,
+          'nodeExists': nodeExists,
+          'cliPath': cliPath,
+          'cliExists': cliExists,
+        },
+      );
 
-      if (!await File(nodePath).exists() || !await File(cliPath).exists()) {
+      if (!nodeExists || !cliExists) {
         final hasBundleAssets = await _hasRequiredBundleAssets(
           platformKey,
           spec,
+        );
+        _diag(
+          'status.bundle-assets',
+          data: {
+            'platformKey': platformKey,
+            'hasBundleAssets': hasBundleAssets,
+            'nodeAsset': 'assets/openclaw/$platformKey/${spec.nodeExecutable}',
+            'cliAsset': 'assets/openclaw/$platformKey/${spec.cliEntrypoint}',
+          },
         );
         return _remember(
           OpenClawRuntimeStatus(
@@ -209,6 +236,7 @@ class OpenClawRuntime {
         ),
       );
     } catch (error) {
+      _diag('status.error', error: error);
       return _remember(
         OpenClawRuntimeStatus(
           state: OpenClawRuntimeState.failed,
@@ -270,6 +298,7 @@ class OpenClawRuntime {
     bool isMember = false,
   }) async {
     final platformKey = _platformKey;
+    _diag('ensure-start.start', data: {'platformKey': platformKey});
     if (platformKey == null) {
       throw const OpenClawRuntimeException('当前平台不支持内置 OpenClaw Gateway');
     }
@@ -286,8 +315,20 @@ class OpenClawRuntime {
       defaultValue: spec.defaultModelOverride ?? '',
     );
     final desktopTools = await _ensureDesktopTools();
+    _diag(
+      'ensure-start.config',
+      data: {
+        'platformKey': platformKey,
+        'port': port,
+        'model': model,
+        'modelOverrideSet': modelOverride.trim().isNotEmpty,
+        'desktopToolsUri': desktopTools.uri?.toString(),
+        'desktopToolsStatus': desktopTools.statusJson,
+      },
+    );
 
-    if (await _probe(port, token)) {
+    if (await _probe(port, token, context: 'pre-start')) {
+      _diag('ensure-start.reuse-existing', data: {'port': port});
       return OpenClawGatewayTarget(
         baseUri: Uri.parse('http://127.0.0.1:$port'),
         token: token,
@@ -316,9 +357,11 @@ class OpenClawRuntime {
     final nodePath = p.join(runtimeDir.path, spec.nodeExecutable);
     final cliPath = p.join(runtimeDir.path, spec.cliEntrypoint);
     if (!await File(nodePath).exists()) {
+      _diag('ensure-start.missing-node', data: {'nodePath': nodePath});
       throw OpenClawRuntimeException('OpenClaw 内置 Node 不存在: $nodePath');
     }
     if (!await File(cliPath).exists()) {
+      _diag('ensure-start.missing-cli', data: {'cliPath': cliPath});
       throw OpenClawRuntimeException('OpenClaw CLI 入口不存在: $cliPath');
     }
 
@@ -337,6 +380,16 @@ class OpenClawRuntime {
       cliPath,
       ...spec.gatewayArgs.map((arg) => arg.replaceAll('{port}', '$port')),
     ];
+    _diag(
+      'process.starting',
+      data: {
+        'nodePath': nodePath,
+        'args': args,
+        'workingDirectory': runtimeDir.path,
+        'configPath': configPath.path,
+        'desktopToolsManifestPath': desktopToolsManifestPath.path,
+      },
+    );
 
     final env = Map<String, String>.from(Platform.environment)
       ..addAll({
@@ -370,10 +423,12 @@ class OpenClawRuntime {
       runInShell: false,
     );
     _captureLogs(_process!);
+    _diag('process.started', data: {'pid': _process!.pid, 'port': port});
 
     final deadline = DateTime.now().add(_startupTimeout);
     while (DateTime.now().isBefore(deadline)) {
-      if (await _probe(port, token)) {
+      if (await _probe(port, token, context: 'startup')) {
+        _diag('process.ready', data: {'pid': _process?.pid, 'port': port});
         _remember(
           OpenClawRuntimeStatus(
             state: OpenClawRuntimeState.running,
@@ -405,6 +460,13 @@ class OpenClawRuntime {
         );
         if (exited != -999999) {
           final logs = _recentLogs.take(12).join('\n');
+          _diag(
+            'process.exited-early',
+            data: {
+              'exitCode': exited,
+              'recentLogs': _recentLogs.take(12).toList(),
+            },
+          );
           throw OpenClawRuntimeException(
             'OpenClaw Gateway 提前退出，exitCode=$exited${logs.isEmpty ? '' : '\n$logs'}',
           );
@@ -414,6 +476,13 @@ class OpenClawRuntime {
     }
 
     final logs = _recentLogs.take(12).join('\n');
+    _diag(
+      'process.startup-timeout',
+      data: {
+        'timeoutSeconds': _startupTimeout.inSeconds,
+        'recentLogs': _recentLogs.take(12).toList(),
+      },
+    );
     throw OpenClawRuntimeException(
       'OpenClaw Gateway 启动超时${logs.isEmpty ? '' : '\n$logs'}',
     );
@@ -439,7 +508,7 @@ class OpenClawRuntime {
             .map((item) => item.toString())
             .toList();
 
-    return _OpenClawBundleSpec(
+    final spec = _OpenClawBundleSpec(
       version: (decoded['version'] ?? 'dev').toString(),
       defaultPort: _readInt(decoded['defaultPort']) ?? 18789,
       defaultModel: (decoded['defaultModel'] ?? 'openclaw/default').toString(),
@@ -450,6 +519,19 @@ class OpenClawRuntime {
           .toString(),
       gatewayArgs: gatewayArgs,
     );
+    _diag(
+      'manifest.loaded',
+      data: {
+        'platformKey': platformKey,
+        'version': spec.version,
+        'defaultPort': spec.defaultPort,
+        'defaultModel': spec.defaultModel,
+        'nodeExecutable': spec.nodeExecutable,
+        'cliEntrypoint': spec.cliEntrypoint,
+        'gatewayArgs': spec.gatewayArgs,
+      },
+    );
+    return spec;
   }
 
   Future<Directory> _prepareBundle(
@@ -464,19 +546,42 @@ class OpenClawRuntime {
     if (await marker.exists() &&
         await nodePath.exists() &&
         await cliPath.exists()) {
+      _diag(
+        'bundle.prepare.cached',
+        data: {
+          'platformKey': platformKey,
+          'runtimeDir': runtimeDir.path,
+          'marker': marker.path,
+        },
+      );
       return runtimeDir;
     }
 
     final prefix = 'assets/openclaw/$platformKey/';
     final assets = await _listAssets(prefix);
-    if (!assets.contains('$prefix${spec.nodeExecutable}') ||
-        !assets.contains('$prefix${spec.cliEntrypoint}')) {
+    final hasNodeAsset = assets.contains('$prefix${spec.nodeExecutable}');
+    final hasCliAsset = assets.contains('$prefix${spec.cliEntrypoint}');
+    _diag(
+      'bundle.prepare.assets',
+      data: {
+        'platformKey': platformKey,
+        'prefix': prefix,
+        'assetCount': assets.length,
+        'hasNodeAsset': hasNodeAsset,
+        'hasCliAsset': hasCliAsset,
+        'nodeAsset': '$prefix${spec.nodeExecutable}',
+        'cliAsset': '$prefix${spec.cliEntrypoint}',
+        'sample': assets.take(8).toList(),
+      },
+    );
+    if (!hasNodeAsset || !hasCliAsset) {
       throw OpenClawRuntimeException(
         '当前安装包没有内置 $platformKey 的 OpenClaw runtime。请在 release 构建中运行 scripts/build_openclaw_desktop_bundle.sh 后再打包。',
       );
     }
 
     if (await runtimeDir.exists()) {
+      _diag('bundle.prepare.remove-old', data: {'runtimeDir': runtimeDir.path});
       await runtimeDir.delete(recursive: true);
     }
     await runtimeDir.create(recursive: true);
@@ -497,6 +602,18 @@ class OpenClawRuntime {
       await Process.run('chmod', ['+x', nodePath.path]);
     }
     await marker.writeAsString(DateTime.now().toIso8601String());
+    _diag(
+      'bundle.prepare.complete',
+      data: {
+        'platformKey': platformKey,
+        'runtimeDir': runtimeDir.path,
+        'assetCount': assets.length,
+        'nodeExists': await nodePath.exists(),
+        'nodeSize': await nodePath.exists() ? await nodePath.length() : 0,
+        'cliExists': await cliPath.exists(),
+        'cliSize': await cliPath.exists() ? await cliPath.length() : 0,
+      },
+    );
     return runtimeDir;
   }
 
@@ -506,27 +623,50 @@ class OpenClawRuntime {
   ) async {
     final prefix = 'assets/openclaw/$platformKey/';
     final assets = await _listAssets(prefix);
-    return assets.contains('$prefix${spec.nodeExecutable}') &&
+    final hasRequired =
+        assets.contains('$prefix${spec.nodeExecutable}') &&
         assets.contains('$prefix${spec.cliEntrypoint}');
+    _diag(
+      'bundle.has-required-assets',
+      data: {
+        'platformKey': platformKey,
+        'assetCount': assets.length,
+        'hasRequired': hasRequired,
+      },
+    );
+    return hasRequired;
   }
 
   Future<List<String>> _listAssets(String prefix) async {
     final assets = <String>{};
+    var jsonCount = 0;
+    var binCount = 0;
+    var indexCount = 0;
+    final failures = <String>[];
 
     try {
       final raw = await rootBundle.loadString('AssetManifest.json');
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      assets.addAll(decoded.keys.where((key) => key.startsWith(prefix)));
-    } catch (_) {
+      final items = decoded.keys
+          .where((key) => key.startsWith(prefix))
+          .toList();
+      jsonCount = items.length;
+      assets.addAll(items);
+    } catch (error) {
+      failures.add('AssetManifest.json: $error');
       // Newer Flutter release builds may only include AssetManifest.bin.
     }
 
     try {
       final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-      assets.addAll(
-        manifest.listAssets().where((key) => key.startsWith(prefix)),
-      );
-    } catch (_) {
+      final items = manifest
+          .listAssets()
+          .where((key) => key.startsWith(prefix))
+          .toList();
+      binCount = items.length;
+      assets.addAll(items);
+    } catch (error) {
+      failures.add('AssetManifest.bin: $error');
       // App Store archives patched after flutter build carry a JSON/index file.
     }
 
@@ -541,20 +681,39 @@ class OpenClawRuntime {
           ? decoded
           : const [];
       if (indexedAssets is List) {
-        assets.addAll(
-          indexedAssets
-              .map((item) => item.toString())
-              .where((key) => key.startsWith(prefix)),
-        );
+        final items = indexedAssets
+            .map((item) => item.toString())
+            .where((key) => key.startsWith(prefix))
+            .toList();
+        indexCount = items.length;
+        assets.addAll(items);
       }
-    } catch (_) {
+    } catch (error) {
+      failures.add('asset_index.json: $error');
       // Older builds do not have an OpenClaw asset index.
     }
 
-    return assets.toList()..sort();
+    final sortedAssets = assets.toList()..sort();
+    _diag(
+      'asset.list',
+      data: {
+        'prefix': prefix,
+        'total': sortedAssets.length,
+        'jsonCount': jsonCount,
+        'binCount': binCount,
+        'indexCount': indexCount,
+        if (failures.isNotEmpty) 'failures': failures,
+        'sample': sortedAssets.take(8).toList(),
+      },
+    );
+    return sortedAssets;
   }
 
-  Future<bool> _probe(int port, String token) async {
+  Future<bool> _probe(
+    int port,
+    String token, {
+    String context = 'probe',
+  }) async {
     try {
       final modelsResponse = await http
           .get(
@@ -563,6 +722,14 @@ class OpenClawRuntime {
           )
           .timeout(_probeTimeout);
       if (modelsResponse.statusCode < 200 || modelsResponse.statusCode >= 300) {
+        _diag(
+          'probe.models-unhealthy',
+          data: {
+            'context': context,
+            'port': port,
+            'statusCode': modelsResponse.statusCode,
+          },
+        );
         return false;
       }
 
@@ -581,10 +748,27 @@ class OpenClawRuntime {
             body: '{}',
           )
           .timeout(_probeTimeout);
-      return chatResponse.statusCode != 401 &&
+      final healthy =
+          chatResponse.statusCode != 401 &&
           chatResponse.statusCode != 403 &&
           chatResponse.statusCode != 404;
-    } catch (_) {
+      _diag(
+        healthy ? 'probe.healthy' : 'probe.chat-unhealthy',
+        data: {
+          'context': context,
+          'port': port,
+          'chatStatusCode': chatResponse.statusCode,
+        },
+      );
+      return healthy;
+    } catch (error) {
+      if (context != 'startup') {
+        _diag(
+          'probe.error',
+          data: {'context': context, 'port': port},
+          error: error,
+        );
+      }
       return false;
     }
   }
@@ -629,6 +813,14 @@ class OpenClawRuntime {
     await configPath.writeAsString(
       const JsonEncoder.withIndent('  ').convert(merged),
     );
+    _diag(
+      'config.written',
+      data: {
+        'configPath': configPath.path,
+        'port': port,
+        'gatewayMode': _mutableMap(merged['gateway'])['mode'],
+      },
+    );
     return configPath;
   }
 
@@ -664,6 +856,13 @@ class OpenClawRuntime {
         'status': desktopTools.statusJson,
         'tools': tools,
       }),
+    );
+    _diag(
+      'desktop-tools.manifest-written',
+      data: {
+        'manifestPath': manifestPath.path,
+        'hasBaseUrl': desktopTools.uri != null,
+      },
     );
     return manifestPath;
   }
@@ -727,6 +926,7 @@ class OpenClawRuntime {
       if (kDebugMode) {
         debugPrint('[OpenClaw] $text');
       }
+      _diag('process.output', data: {'line': text});
     }
 
     process.stdout
@@ -749,12 +949,21 @@ class OpenClawRuntime {
   Future<_DesktopToolsLaunch> _ensureDesktopTools() async {
     try {
       final status = await DesktopControlBridge.instance.ensureStarted();
+      _diag(
+        'desktop-tools.started',
+        data: {
+          'bridgeRunning': status.bridgeRunning,
+          'bridgeUri': status.bridgeUri?.toString(),
+          'message': status.message,
+        },
+      );
       return _DesktopToolsLaunch(
         uri: status.bridgeUri,
         token: await DesktopControlBridge.instance.bridgeToken,
         statusJson: status.toJson(),
       );
     } catch (error) {
+      _diag('desktop-tools.error', error: error);
       return _DesktopToolsLaunch(
         uri: null,
         token: null,
@@ -803,6 +1012,23 @@ class OpenClawRuntime {
   }
 
   OpenClawRuntimeStatus? get lastStatus => _lastStatus;
+
+  void _diag(
+    String message, {
+    Map<String, Object?> data = const {},
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    unawaited(
+      DiagnosticLogService.instance.log(
+        'openclaw.runtime',
+        message,
+        data: data,
+        error: error,
+        stackTrace: stackTrace,
+      ),
+    );
+  }
 }
 
 int? _readInt(Object? value) {
