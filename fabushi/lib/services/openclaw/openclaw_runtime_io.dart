@@ -157,7 +157,7 @@ class OpenClawRuntime {
 
     try {
       final spec = await _loadSpec(platformKey);
-      final runtimeDir = await _runtimeDir(spec, platformKey);
+      final runtimeDir = await _runtimeDirForStatus(spec, platformKey);
       final nodePath = p.join(runtimeDir.path, spec.nodeExecutable);
       final cliPath = p.join(runtimeDir.path, spec.cliEntrypoint);
       final nodeExists = await File(nodePath).exists();
@@ -342,7 +342,7 @@ class OpenClawRuntime {
       );
     }
 
-    final runtimeDir = await _prepareBundle(spec, platformKey);
+    final runtimeDir = await _runtimeDirForLaunch(spec, platformKey);
     final stateRoot = await _stateRoot();
     final configPath = await _ensureConfigFile(
       stateRoot: stateRoot,
@@ -532,6 +532,123 @@ class OpenClawRuntime {
       },
     );
     return spec;
+  }
+
+  Future<Directory> _runtimeDirForStatus(
+    _OpenClawBundleSpec spec,
+    String platformKey,
+  ) async {
+    final bundledRuntimeDir = await _bundledMacOSRuntimeDir(spec, platformKey);
+    if (bundledRuntimeDir != null) return bundledRuntimeDir;
+    return _runtimeDir(spec, platformKey);
+  }
+
+  Future<Directory> _runtimeDirForLaunch(
+    _OpenClawBundleSpec spec,
+    String platformKey,
+  ) async {
+    final bundledRuntimeDir = await _bundledMacOSRuntimeDir(spec, platformKey);
+    if (bundledRuntimeDir != null) {
+      _diag(
+        'bundle.launch.bundled-runtime',
+        data: {'platformKey': platformKey, 'runtimeDir': bundledRuntimeDir.path},
+      );
+      return bundledRuntimeDir;
+    }
+
+    if (Platform.isMacOS && kReleaseMode) {
+      final hasBundleAssets = await _hasRequiredBundleAssets(platformKey, spec);
+      if (hasBundleAssets) {
+        throw OpenClawRuntimeException(
+          'macOS 沙盒要求从已签名的 App bundle 内启动 OpenClaw runtime，但未找到可执行的包内资源路径。请重新安装最新桌面版。',
+        );
+      }
+    }
+
+    return _prepareBundle(spec, platformKey);
+  }
+
+  Future<Directory?> _bundledMacOSRuntimeDir(
+    _OpenClawBundleSpec spec,
+    String platformKey,
+  ) async {
+    if (!Platform.isMacOS) return null;
+
+    final appBundle = _macOSAppBundleRoot();
+    if (appBundle == null) {
+      _diag('bundle.macos-app-root-missing');
+      return null;
+    }
+
+    final candidates = <Directory>[
+      Directory(
+        p.join(
+          appBundle.path,
+          'Contents',
+          'Frameworks',
+          'App.framework',
+          'Resources',
+          'flutter_assets',
+          'assets',
+          'openclaw',
+          platformKey,
+        ),
+      ),
+      Directory(
+        p.join(
+          appBundle.path,
+          'Contents',
+          'Frameworks',
+          'App.framework',
+          'Versions',
+          'A',
+          'Resources',
+          'flutter_assets',
+          'assets',
+          'openclaw',
+          platformKey,
+        ),
+      ),
+      Directory(
+        p.join(
+          appBundle.path,
+          'Contents',
+          'Resources',
+          'flutter_assets',
+          'assets',
+          'openclaw',
+          platformKey,
+        ),
+      ),
+    ];
+
+    for (final candidate in candidates) {
+      final nodePath = File(p.join(candidate.path, spec.nodeExecutable));
+      final cliPath = File(p.join(candidate.path, spec.cliEntrypoint));
+      if (await nodePath.exists() && await cliPath.exists()) {
+        return candidate;
+      }
+    }
+
+    _diag(
+      'bundle.macos-bundled-runtime-missing',
+      data: {
+        'platformKey': platformKey,
+        'appBundle': appBundle.path,
+        'candidates': candidates.map((item) => item.path).toList(),
+      },
+    );
+    return null;
+  }
+
+  Directory? _macOSAppBundleRoot() {
+    var dir = File(Platform.resolvedExecutable).absolute.parent;
+    while (true) {
+      if (dir.path.endsWith('.app')) return dir;
+      final parent = dir.parent;
+      if (parent.path == dir.path) return null;
+      dir = parent;
+    }
   }
 
   Future<Directory> _prepareBundle(
