@@ -96,6 +96,7 @@ jobs:
           flutter pub get -v 2>&1 | tee ../macos-e2e-logs/pub-get.log
           python3 - <<'PY' 2>&1 | tee ../macos-e2e-logs/macos-plugin-graph.log
           import json
+          import shutil
           from pathlib import Path
 
           deps_path = Path('.flutter-plugins-dependencies')
@@ -111,6 +112,16 @@ jobs:
               data['plugins']['macos'] = kept
               deps_path.write_text(json.dumps(data, indent=2) + '\n')
               print(f'Removed flutter_sound from macOS plugin graph: {removed}')
+
+          flutter_sound_link = Path(
+              'macos/Flutter/ephemeral/.symlinks/plugins/flutter_sound'
+          )
+          if flutter_sound_link.is_symlink() or flutter_sound_link.exists():
+              if flutter_sound_link.is_dir() and not flutter_sound_link.is_symlink():
+                  shutil.rmtree(flutter_sound_link)
+              else:
+                  flutter_sound_link.unlink()
+              print('Removed flutter_sound macOS plugin symlink')
 
           registrant_path = Path('macos/Flutter/GeneratedPluginRegistrant.swift')
           if registrant_path.exists():
