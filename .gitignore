@@ -18,6 +18,9 @@ frontend/apps/web/out/
 .dart_tool/
 .packages
 build/
+!fabushi/lib/packages/flutter_scene/build/
+!fabushi/lib/packages/flutter_scene/build/shaderbundles/
+!fabushi/lib/packages/flutter_scene/build/shaderbundles/base.shaderbundle
 .flutter-plugins
 .flutter-plugins-dependencies
 
