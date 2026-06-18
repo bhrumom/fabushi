@@ -94,6 +94,35 @@ jobs:
           set -o pipefail
           flutter config --enable-macos-desktop 2>&1 | tee ../macos-e2e-logs/flutter-config.log
           flutter pub get -v 2>&1 | tee ../macos-e2e-logs/pub-get.log
+          python3 - <<'PY' 2>&1 | tee ../macos-e2e-logs/macos-plugin-graph.log
+          import json
+          from pathlib import Path
+
+          deps_path = Path('.flutter-plugins-dependencies')
+          if deps_path.exists():
+              data = json.loads(deps_path.read_text())
+              macos_plugins = data.get('plugins', {}).get('macos', [])
+              kept = [
+                  plugin
+                  for plugin in macos_plugins
+                  if plugin.get('name') != 'flutter_sound'
+              ]
+              removed = len(macos_plugins) - len(kept)
+              data['plugins']['macos'] = kept
+              deps_path.write_text(json.dumps(data, indent=2) + '\n')
+              print(f'Removed flutter_sound from macOS plugin graph: {removed}')
+
+          registrant_path = Path('macos/Flutter/GeneratedPluginRegistrant.swift')
+          if registrant_path.exists():
+              text = registrant_path.read_text()
+              text = text.replace('import flutter_sound\n', '')
+              text = text.replace(
+                  '  FlutterSoundPlugin.register(with: registry.registrar(forPlugin: "FlutterSoundPlugin"))\n',
+                  '',
+              )
+              registrant_path.write_text(text)
+              print('Patched macOS GeneratedPluginRegistrant.swift')
+          PY
 
       - name: Run macOS desktop E2E suite
         shell: bash
