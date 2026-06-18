@@ -4164,8 +4164,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   Future<bool> _purchaseBuddhaAssetWithAlipay(String token) async {
     if (!_isNativeAndroid) {
-      _showBuddhaAssetMessage('请在 Android 手机端使用支付宝解锁', color: Colors.orange);
-      return false;
+      return _purchaseBuddhaAssetWithAlipayWeb(token);
     }
 
     if (mounted) setState(() => _isPurchasingBuddhaAsset = true);
@@ -4214,6 +4213,47 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         color: Colors.orange,
       );
       return false;
+    } finally {
+      if (mounted) setState(() => _isPurchasingBuddhaAsset = false);
+    }
+  }
+
+  Future<bool> _purchaseBuddhaAssetWithAlipayWeb(String token) async {
+    if (mounted) setState(() => _isPurchasingBuddhaAsset = true);
+    try {
+      final orderResult = await _membershipService.createAlipayWebOrder(
+        token,
+        AppConfig.zenBuddhaAssetProductId,
+      );
+      if (orderResult['success'] != true) {
+        _showBuddhaAssetMessage(
+          orderResult['message'] ?? '创建支付宝网页订单失败',
+          color: Colors.red,
+        );
+        return false;
+      }
+
+      final orderId = orderResult['orderId']?.toString();
+      final paymentUrl = orderResult['paymentUrl']?.toString();
+      if (orderId == null ||
+          orderId.isEmpty ||
+          paymentUrl == null ||
+          paymentUrl.isEmpty) {
+        _showBuddhaAssetMessage('支付宝网页支付参数不完整', color: Colors.red);
+        return false;
+      }
+
+      final launchResult = await _alipayService.payWithAlipayWeb(paymentUrl);
+      if (launchResult['success'] != true) {
+        _showBuddhaAssetMessage(
+          launchResult['message'] ?? '无法打开支付宝网页支付',
+          color: Colors.red,
+        );
+        return false;
+      }
+
+      _showBuddhaAssetMessage('已打开支付宝网页支付，请在浏览器完成付款', color: Colors.green);
+      return await _waitForBuddhaAssetAlipayUnlock(token, orderId);
     } finally {
       if (mounted) setState(() => _isPurchasingBuddhaAsset = false);
     }
