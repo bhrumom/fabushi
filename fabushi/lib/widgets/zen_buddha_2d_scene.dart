@@ -96,6 +96,10 @@ class ZenBuddha2DSceneState extends State<ZenBuddha2DScene>
     return RepaintBoundary(
       child: LayoutBuilder(
         builder: (context, constraints) {
+          double safeClamp(double value, double lower, double upper) {
+            return value.clamp(lower, math.max(lower, upper)).toDouble();
+          }
+
           final size = Size(constraints.maxWidth, constraints.maxHeight);
           final buddhaHeight = (size.height * 0.54).clamp(310.0, 570.0);
           final buddhaWidth = buddhaHeight * 0.75;
@@ -104,6 +108,32 @@ class ZenBuddha2DSceneState extends State<ZenBuddha2DScene>
           final buddhaTop = (size.height * 0.075 + floatOffset)
               .clamp(18.0, size.height * 0.25)
               .toDouble();
+          const bookWidth = 118.0;
+          const bookHeight = bookWidth * SutraBookButton.aspectRatioHeight;
+          final isWideDesktopScene =
+              size.width >= 720 && size.width / size.height > 1.18;
+          final bookLeft = isWideDesktopScene
+              ? safeClamp(
+                  size.width / 2 + buddhaWidth * 0.28,
+                  24.0,
+                  size.width - bookWidth - 24.0,
+                )
+              : safeClamp(
+                  (size.width - bookWidth) / 2,
+                  12.0,
+                  size.width - bookWidth - 12.0,
+                );
+          final bookTop = isWideDesktopScene
+              ? safeClamp(
+                  buddhaTop + buddhaHeight * 0.18,
+                  24.0,
+                  size.height - bookHeight - 132.0,
+                )
+              : safeClamp(
+                  size.height * 0.66,
+                  0.0,
+                  size.height - bookHeight - 16.0,
+                );
 
           return Stack(
             fit: StackFit.expand,
@@ -141,14 +171,12 @@ class ZenBuddha2DSceneState extends State<ZenBuddha2DScene>
               ),
               if (widget.showBook && widget.bookTitle != null)
                 Positioned(
-                  left: (size.width - 118) / 2,
-                  top: (size.height * 0.66)
-                      .clamp(0.0, size.height - 170)
-                      .toDouble(),
+                  left: bookLeft,
+                  top: bookTop,
                   child: SutraBookButton(
                     title: widget.bookTitle!,
-                    width: 118,
-                    height: 118 * SutraBookButton.aspectRatioHeight,
+                    width: bookWidth,
+                    height: bookHeight,
                     onTap: widget.onBookTap,
                   ),
                 ),

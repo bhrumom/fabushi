@@ -407,9 +407,26 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        double safeClamp(double value, double lower, double upper) {
+          return value.clamp(lower, math.max(lower, upper)).toDouble();
+        }
+
         final size = Size(constraints.maxWidth, constraints.maxHeight);
         final scene = _scene;
         final camera = _camera;
+        const bookWidth = 184.0;
+        final isWideDesktopScene =
+            size.width >= 720 && size.width / size.height > 1.18;
+        final bookLeft = isWideDesktopScene
+            ? safeClamp(size.width * 0.64, 24.0, size.width - bookWidth - 24.0)
+            : safeClamp(
+                (size.width - bookWidth) / 2,
+                16.0,
+                size.width - bookWidth - 16.0,
+              );
+        final bookTop = isWideDesktopScene
+            ? safeClamp(size.height * 0.22, 24.0, size.height - 220.0)
+            : safeClamp(size.height * 0.58, 0.0, size.height - 180.0);
 
         return Listener(
           onPointerDown: (event) {
@@ -473,10 +490,8 @@ class BuddhaModelScreenState extends State<BuddhaModelScreen>
                 ),
               if (widget.showBook && widget.bookTitle != null && !_isLoading)
                 Positioned(
-                  left: (size.width - 184) / 2,
-                  top: (size.height * 0.58)
-                      .clamp(0.0, size.height - 180)
-                      .toDouble(),
+                  left: bookLeft,
+                  top: bookTop,
                   child: _SutraBookButton(
                     title: widget.bookTitle!,
                     onTap: widget.onBookTap,
