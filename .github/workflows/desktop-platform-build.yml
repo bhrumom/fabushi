@@ -133,7 +133,7 @@ jobs:
               registrant_path.write_text(text)
               print('Patched macOS GeneratedPluginRegistrant.swift')
           PY
-          flutter build macos "--$BUILD_MODE" -v 2>&1 | tee ../desktop-build-logs/macos-build.log
+          flutter build macos "--$BUILD_MODE" --no-pub -v 2>&1 | tee ../desktop-build-logs/macos-build.log
           {
             echo "## macOS desktop build"
             echo ""
@@ -150,7 +150,7 @@ jobs:
         run: |
           set -euo pipefail
           set -o pipefail
-          flutter test integration_test/macos_desktop_e2e_test.dart \
+          flutter test --no-pub integration_test/macos_desktop_e2e_test.dart \
             -d macos \
             -r expanded \
             --dart-define=FABUSHI_E2E_OFFLINE=true \

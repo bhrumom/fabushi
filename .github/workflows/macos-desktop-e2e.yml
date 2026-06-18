@@ -140,7 +140,7 @@ jobs:
         run: |
           set -euo pipefail
           set -o pipefail
-          flutter test "$TEST_TARGET" \
+          flutter test --no-pub "$TEST_TARGET" \
             -d macos \
             -r expanded \
             --dart-define=FABUSHI_E2E_OFFLINE=true \
