@@ -34,6 +34,7 @@ class _PracticeEntryCardState extends State<PracticeEntryCard> {
         final pendingCount = _service.pendingSyncCount;
 
         return GestureDetector(
+          key: const ValueKey('dacheng.practice.entry_card.tap_target'),
           onTap: widget.onTap,
           child: Container(
             padding: const EdgeInsets.all(16),

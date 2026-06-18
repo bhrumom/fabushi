@@ -164,12 +164,16 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadGlobe();
-    _fetchInitialCount();
-    _onlineCounterService.startCountPolling('global_sending');
+    if (!AppConfig.enableE2EOfflineMode) {
+      _fetchInitialCount();
+      _onlineCounterService.startCountPolling('global_sending');
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _consumeInitialWebPrompt();
-      unawaited(_loadRemoteConversations());
-      unawaited(_refreshBuddhaAssetEntitlement());
+      if (!AppConfig.enableE2EOfflineMode) {
+        unawaited(_loadRemoteConversations());
+        unawaited(_refreshBuddhaAssetEntitlement());
+      }
     });
   }
 
@@ -470,13 +474,43 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 ),
               ),
             ),
-            const Text(
-              '大乘',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 25,
-                fontWeight: FontWeight.w800,
-              ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '大乘',
+                  key: ValueKey('dacheng.home.title'),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 25,
+                    fontWeight: FontWeight.w800,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Container(
+                  key: const ValueKey('dacheng.home.local_openclaw_badge'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(7),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  child: const Text(
+                    '本机 OpenClaw',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
             ),
             Align(
               alignment: Alignment.centerRight,
@@ -704,30 +738,35 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
             runSpacing: 14,
             children: [
               _QuickPromptPill(
+                key: const ValueKey('dacheng.home.quick.what_can_do'),
                 icon: Icons.auto_awesome,
                 iconColor: const Color(0xFF67AEFF),
                 label: '大乘能做什么',
                 onTap: () => _prefillPrompt('大乘如何帮助我做全球法布施？'),
               ),
               _QuickPromptPill(
+                key: const ValueKey('dacheng.home.quick.global_dharma'),
                 icon: Icons.public,
                 iconColor: const Color(0xFF4DDE7A),
                 label: '开始全球法布施',
                 onTap: () => _prefillPrompt('帮我整理一段适合全球法布施的善法文字'),
               ),
               _QuickPromptPill(
+                key: const ValueKey('dacheng.home.quick.ai_resources'),
                 icon: Icons.search_rounded,
                 iconColor: const Color(0xFFFF9F69),
                 label: 'AI找资源',
                 onTap: () => _prefillPrompt('帮我自动查找并下载可以分享的佛法资源'),
               ),
               _QuickPromptPill(
+                key: const ValueKey('dacheng.home.quick.practice_book'),
                 icon: Icons.menu_book_rounded,
                 iconColor: const Color(0xFFA979FF),
                 label: '加入功课本',
                 onTap: () => _prefillPrompt('找一份适合放进禅室功课本的经典或仪轨'),
               ),
               _QuickPromptPill(
+                key: const ValueKey('dacheng.home.quick.vow_copy'),
                 icon: Icons.volunteer_activism_rounded,
                 iconColor: const Color(0xFFFF7D8A),
                 label: '发愿文案',
@@ -1261,6 +1300,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
             children: [
               Builder(
                 builder: (buttonContext) => IconButton(
+                  key: const ValueKey('dacheng.home.composer.more'),
                   visualDensity: VisualDensity.compact,
                   tooltip: '更多入口',
                   icon: const Icon(Icons.add, color: Colors.white, size: 24),
@@ -1279,6 +1319,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               const SizedBox(width: 8),
               Expanded(
                 child: TextField(
+                  key: const ValueKey('dacheng.home.composer.input'),
                   controller: _chatInputController,
                   enabled:
                       !model.isPreparingSend &&
@@ -1341,6 +1382,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
     if (_isAiGenerating) {
       return IconButton(
+        key: const ValueKey('dacheng.home.composer.action'),
         tooltip: '停止生成',
         icon: const Icon(Icons.stop, color: Colors.white, size: 21),
         onPressed: _stopAiGeneration,
@@ -1353,6 +1395,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
     if (model.isTransferring && _isGlobalSendTimelineVisible) {
       return IconButton(
+        key: const ValueKey('dacheng.home.composer.action'),
         tooltip: '停止发送',
         icon: const Icon(Icons.stop, color: Colors.white, size: 21),
         onPressed: () => _stopSending(model),
@@ -1364,6 +1407,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
 
     return IconButton(
+      key: const ValueKey('dacheng.home.composer.action'),
       tooltip: _isDharmaComposerMode ? '开始法布施' : '发送问题',
       icon: Icon(
         Icons.arrow_upward,
@@ -1623,6 +1667,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                       child: ListView(
                         children: [
                           _RegionCheckTile(
+                            key: const ValueKey('dacheng.region.global'),
                             icon: Icons.public,
                             title: '全球',
                             subtitle: '全部国家发送',
@@ -1640,6 +1685,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                             },
                           ),
                           _RegionCheckTile(
+                            key: const ValueKey('dacheng.region.local_field'),
                             icon: Icons.wifi_tethering,
                             title: '本地场能',
                             subtitle: '通过本机热点向周围广播',
@@ -1649,6 +1695,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                             },
                           ),
                           _RegionCheckTile(
+                            key: const ValueKey(
+                              'dacheng.region.local_loopback',
+                            ),
                             icon: hasPremiumAccess
                                 ? Icons.sync_alt
                                 : Icons.lock_outline,
@@ -1690,6 +1739,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
+                        key: const ValueKey('dacheng.region.apply'),
                         onPressed: canApply
                             ? () async {
                                 final finalCodes = selectedCodes.toList();
@@ -1751,6 +1801,24 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       _streamingAiText = '';
     });
     _scrollHomeChatToBottom(force: true);
+
+    if (AppConfig.enableE2EOfflineMode) {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (!mounted || requestSerial != _aiRequestSerial) return;
+      setState(() {
+        _activeConversationId ??= 'e2e-local-openclaw';
+        _homeChatMessages.add(
+          _HomeChatMessage(
+            text: '本机 OpenClaw E2E 响应：$text',
+            isUser: false,
+          ),
+        );
+        _streamingAiText = '';
+        _isAiGenerating = false;
+      });
+      _scrollHomeChatToBottom(force: true);
+      return;
+    }
 
     try {
       final stepLines = <String>[];
@@ -2641,6 +2709,7 @@ class _RegionCheckTile extends StatelessWidget {
   final ValueChanged<bool> onChanged;
 
   const _RegionCheckTile({
+    super.key,
     required this.title,
     required this.subtitle,
     required this.selected,
@@ -2841,6 +2910,7 @@ class _QuickPromptPill extends StatelessWidget {
   final VoidCallback onTap;
 
   const _QuickPromptPill({
+    super.key,
     required this.icon,
     required this.iconColor,
     required this.label,

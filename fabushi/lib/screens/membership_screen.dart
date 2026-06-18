@@ -718,6 +718,7 @@ class _MembershipScreenState extends State<MembershipScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: const ValueKey('dacheng.membership.screen'),
       appBar: AppBar(
         title: const Text('会员中心'),
         backgroundColor: const Color(0xFF667eea),
@@ -749,6 +750,7 @@ class _MembershipScreenState extends State<MembershipScreen>
 
   Widget _buildLoginPrompt() {
     return Center(
+      key: const ValueKey('dacheng.membership.login_prompt'),
       child: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Card(
@@ -820,6 +822,7 @@ class _MembershipScreenState extends State<MembershipScreen>
         children: [
           // 当前会员状态卡片
           Card(
+            key: const ValueKey('dacheng.membership.status_card'),
             elevation: 4,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -908,6 +911,7 @@ class _MembershipScreenState extends State<MembershipScreen>
             final isRecommended = priceType == 'yearly';
 
             return Container(
+              key: ValueKey('dacheng.membership.plan.$priceType'),
               margin: const EdgeInsets.only(bottom: 16),
               child: Card(
                 elevation: isRecommended ? 8 : 4,
@@ -1008,6 +1012,9 @@ class _MembershipScreenState extends State<MembershipScreen>
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
+                              key: ValueKey(
+                                'dacheng.membership.buy.$priceType',
+                              ),
                               onPressed: _isLoading
                                   ? null
                                   : () => _purchaseMembership(priceType),
@@ -1167,6 +1174,7 @@ class _MembershipScreenState extends State<MembershipScreen>
   // 构建历史记录部分
   Widget _buildHistorySection() {
     return SizedBox(
+      key: const ValueKey('dacheng.membership.history'),
       height: 400,
       child: Card(
         elevation: 4,
@@ -1203,9 +1211,15 @@ class _MembershipScreenState extends State<MembershipScreen>
                       unselectedLabelColor: Colors.grey,
                       indicatorColor: const Color(0xFF667eea),
                       tabs: [
-                        const Tab(text: '购买记录'),
+                        const Tab(
+                          key: ValueKey('dacheng.membership.tab.purchases'),
+                          text: '购买记录',
+                        ),
                         if (!AppleIapService.isAppleIapPlatform)
-                          const Tab(text: '兑换记录'),
+                          const Tab(
+                            key: ValueKey('dacheng.membership.tab.redeems'),
+                            text: '兑换记录',
+                          ),
                       ],
                     ),
                     Expanded(

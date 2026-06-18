@@ -1,0 +1,276 @@
+name: Desktop platform builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Desktop platform to build.
+        required: true
+        default: macos
+        type: choice
+        options:
+          - macos
+          - windows
+          - linux
+          - all
+      build_mode:
+        description: Flutter desktop build mode.
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - debug
+      source_sha:
+        description: Commit SHA or ref to build. Leave empty to use the dispatched ref.
+        required: false
+        type: string
+      run_macos_e2e:
+        description: Also run the macOS desktop E2E suite after the macOS build.
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: desktop-platform-build-${{ inputs.platform }}-${{ inputs.source_sha || github.ref }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  FLUTTER_VERSION: '3.41.9'
+  SOURCE_REF: ${{ inputs.source_sha || github.sha }}
+  BUILD_MODE: ${{ inputs.build_mode }}
+
+jobs:
+  build-macos:
+    name: Build macOS desktop package
+    if: inputs.platform == 'macos' || inputs.platform == 'all'
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Prepare diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../desktop-build-logs
+          {
+            echo "## macOS runner"
+            date -u
+            sw_vers
+            xcodebuild -version
+            flutter --version
+            df -h
+          } | tee ../desktop-build-logs/macos-runner.txt
+
+      - name: Build macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          flutter config --enable-macos-desktop 2>&1 | tee ../desktop-build-logs/macos-flutter-config.log
+          flutter pub get -v 2>&1 | tee ../desktop-build-logs/macos-pub-get.log
+          flutter build macos "--$BUILD_MODE" -v 2>&1 | tee ../desktop-build-logs/macos-build.log
+          {
+            echo "## macOS desktop build"
+            echo ""
+            echo "- Source ref: $SOURCE_REF"
+            echo "- Build mode: $BUILD_MODE"
+            echo "- Artifact root: \`fabushi/build/macos/Build/Products\`"
+            echo ""
+            find build/macos/Build/Products -maxdepth 3 -type d -name '*.app' -print | sed 's/^/- `/' | sed 's/$/`/'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run macOS E2E after build
+        if: inputs.run_macos_e2e == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          flutter test integration_test/macos_desktop_e2e_test.dart \
+            -d macos \
+            -r expanded \
+            --dart-define=FABUSHI_E2E_OFFLINE=true \
+            -v 2>&1 | tee ../desktop-build-logs/macos-e2e.log
+
+      - name: Upload macOS build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-macos-${{ env.BUILD_MODE }}
+          path: fabushi/build/macos/Build/Products
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload macOS diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-macos-${{ env.BUILD_MODE }}-logs
+          path: desktop-build-logs
+          if-no-files-found: warn
+          retention-days: 14
+
+  build-windows:
+    name: Build Windows desktop package
+    if: inputs.platform == 'windows' || inputs.platform == 'all'
+    runs-on: windows-latest
+    timeout-minutes: 55
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Build Windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          mkdir -p ../desktop-build-logs
+          {
+            echo "## Windows runner"
+            date -u
+            flutter --version
+          } | tee ../desktop-build-logs/windows-runner.txt
+          flutter config --enable-windows-desktop 2>&1 | tee ../desktop-build-logs/windows-flutter-config.log
+          flutter pub get -v 2>&1 | tee ../desktop-build-logs/windows-pub-get.log
+          flutter build windows "--$BUILD_MODE" -v 2>&1 | tee ../desktop-build-logs/windows-build.log
+          {
+            echo "## Windows desktop build"
+            echo ""
+            echo "- Source ref: $SOURCE_REF"
+            echo "- Build mode: $BUILD_MODE"
+            echo "- Artifact root: \`fabushi/build/windows/x64/runner\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-windows-${{ env.BUILD_MODE }}
+          path: fabushi/build/windows/x64/runner
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Windows diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-windows-${{ env.BUILD_MODE }}-logs
+          path: desktop-build-logs
+          if-no-files-found: warn
+          retention-days: 14
+
+  build-linux:
+    name: Build Linux desktop package
+    if: inputs.platform == 'linux' || inputs.platform == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Install Linux desktop dependencies
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Build Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          mkdir -p ../desktop-build-logs
+          {
+            echo "## Linux runner"
+            date -u
+            lsb_release -a || true
+            flutter --version
+            df -h
+          } | tee ../desktop-build-logs/linux-runner.txt
+          flutter config --enable-linux-desktop 2>&1 | tee ../desktop-build-logs/linux-flutter-config.log
+          flutter pub get -v 2>&1 | tee ../desktop-build-logs/linux-pub-get.log
+          flutter build linux "--$BUILD_MODE" -v 2>&1 | tee ../desktop-build-logs/linux-build.log
+          {
+            echo "## Linux desktop build"
+            echo ""
+            echo "- Source ref: $SOURCE_REF"
+            echo "- Build mode: $BUILD_MODE"
+            echo "- Artifact root: \`fabushi/build/linux/x64\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Linux build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-linux-${{ env.BUILD_MODE }}
+          path: fabushi/build/linux/x64
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Linux diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-linux-${{ env.BUILD_MODE }}-logs
+          path: desktop-build-logs
+          if-no-files-found: warn
+          retention-days: 14

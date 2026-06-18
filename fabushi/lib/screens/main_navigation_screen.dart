@@ -129,6 +129,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     return SpaceBackground(
       child: Scaffold(
+        key: const ValueKey('dacheng.main.scaffold'),
         backgroundColor: Colors.transparent,
         body: IndexedStack(index: _currentIndex, children: _screens),
         bottomNavigationBar: Theme(
@@ -157,6 +158,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               ],
             ),
             child: NavigationBar(
+              key: const ValueKey('dacheng.nav.bar'),
               selectedIndex: _currentIndex,
               onDestinationSelected: (index) {
                 setState(() {
@@ -173,16 +175,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               height: 70,
               destinations: [
                 NavigationDestination(
+                  key: const ValueKey('dacheng.nav.home'),
                   icon: const Icon(Icons.public_outlined),
                   selectedIcon: const Icon(Icons.public),
                   label: l10n.navHome,
                 ),
                 NavigationDestination(
+                  key: const ValueKey('dacheng.nav.zen'),
                   icon: const Icon(Icons.self_improvement_outlined),
                   selectedIcon: const Icon(Icons.self_improvement),
                   label: l10n.navMeditationRoom,
                 ),
                 NavigationDestination(
+                  key: const ValueKey('dacheng.nav.profile'),
                   icon: const Icon(Icons.person_outline),
                   selectedIcon: const Icon(Icons.person),
                   label: l10n.navProfile,
