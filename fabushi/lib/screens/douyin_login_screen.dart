@@ -226,6 +226,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
               alipayUser['userId'] ?? '',
               alipayUser['nickname'],
               alipayUser['avatar'],
+              alipayUser['openId'] ?? alipayUser['open_id'],
             );
 
             if (registerResult && mounted) {
@@ -247,9 +248,18 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
           // 已有用户，直接使用token登录
           final token = loginResult['token'] as String?;
           final username = loginResult['username'] as String?;
+          final userJson = loginResult['user'];
 
           if (token != null && username != null) {
-            await authModel.loginWithToken(token, username);
+            await authModel.loginWithToken(
+              token,
+              username,
+              userJson: userJson is Map<String, dynamic>
+                  ? userJson
+                  : userJson is Map
+                  ? Map<String, dynamic>.from(userJson)
+                  : null,
+            );
             if (mounted) {
               Navigator.of(context).pop(true);
               ScaffoldMessenger.of(context).showSnackBar(
@@ -337,6 +347,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
 
     try {
       final alipayUserId = params['alipay_user_id'] as String?;
+      final alipayOpenId = params['alipay_open_id'] as String?;
       final alipayNickname = params['alipay_nickname'] as String?;
       final alipayAvatar = params['alipay_avatar'] as String?;
       final authCode = params['alipay_auth_code'] as String?;
@@ -345,6 +356,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         alipayUserId ?? authCode ?? '',
         alipayNickname,
         alipayAvatar,
+        alipayOpenId,
       );
 
       if (success && mounted) {
@@ -412,6 +424,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
       if (params.containsKey('alipay_auth_code')) {
         final authCode = params['alipay_auth_code']!;
         final alipayUserId = params['alipay_user_id'];
+        final alipayOpenId = params['alipay_open_id'];
         final alipayNickname = params['alipay_nickname'];
         final alipayAvatar = params['alipay_avatar'];
         final isNewUser = params['isNewUser'] == 'true';
@@ -434,6 +447,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
             alipayUserId ?? authCode,
             alipayNickname,
             alipayAvatar,
+            alipayOpenId,
           );
         }
 
