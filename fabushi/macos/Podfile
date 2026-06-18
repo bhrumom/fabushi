@@ -6,6 +6,8 @@ platform :osx, '10.15'
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
+require 'fileutils'
+
 project 'Runner', {
   'Debug' => :debug,
   'Profile' => :release,
@@ -29,9 +31,25 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 
 flutter_macos_podfile_setup
 
+def remove_unsupported_macos_plugin(plugin_name)
+  plugin_path = File.join(
+    File.dirname(File.realpath(__FILE__)),
+    'Flutter',
+    'ephemeral',
+    '.symlinks',
+    'plugins',
+    plugin_name
+  )
+  return unless File.exist?(plugin_path) || File.symlink?(plugin_path)
+
+  FileUtils.rm_rf(plugin_path)
+  Pod::UI.puts "Removed unsupported macOS plugin symlink: #{plugin_name}"
+end
+
 target 'Runner' do
   use_frameworks!
 
+  remove_unsupported_macos_plugin('flutter_sound')
   flutter_install_all_macos_pods File.dirname(File.realpath(__FILE__))
   
   target 'RunnerTests' do
