@@ -82,6 +82,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   /// 修行记录入口卡片
   Widget _buildPracticeStatsCard(BuildContext context) {
     return PracticeEntryCard(
+      key: const ValueKey('dacheng.profile.practice_entry'),
       onTap: () {
         Navigator.push(
           context,
@@ -441,6 +442,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   /// 会员卡片
   Widget _buildMembershipCard(BuildContext context, User user) {
     return Container(
+      key: const ValueKey('dacheng.profile.membership_card'),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -494,6 +496,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             ),
           ),
           TextButton(
+            key: const ValueKey('dacheng.profile.membership_upgrade'),
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const MembershipScreen()),

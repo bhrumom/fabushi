@@ -1,0 +1,141 @@
+name: macOS desktop E2E
+
+on:
+  pull_request:
+    paths:
+      - fabushi/lib/**
+      - fabushi/integration_test/**
+      - fabushi/macos/**
+      - fabushi/pubspec.yaml
+      - fabushi/pubspec.lock
+      - .github/workflows/macos-desktop-e2e.yml
+  push:
+    branches:
+      - main
+    paths:
+      - fabushi/lib/**
+      - fabushi/integration_test/**
+      - fabushi/macos/**
+      - fabushi/pubspec.yaml
+      - fabushi/pubspec.lock
+      - .github/workflows/macos-desktop-e2e.yml
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Commit SHA or ref to test. Leave empty to use the dispatched ref.
+        required: false
+        type: string
+      test_target:
+        description: Integration test target.
+        required: false
+        default: integration_test/macos_desktop_e2e_test.dart
+        type: string
+
+concurrency:
+  group: macos-desktop-e2e-${{ github.event.pull_request.number || inputs.source_sha || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  FLUTTER_VERSION: '3.41.9'
+  SOURCE_REF: ${{ inputs.source_sha || github.sha }}
+  TEST_TARGET: ${{ inputs.test_target || 'integration_test/macos_desktop_e2e_test.dart' }}
+
+jobs:
+  macos-e2e:
+    name: Run macOS desktop E2E
+    runs-on: macos-15
+    timeout-minutes: 55
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+            /.github/workflows/macos-desktop-e2e.yml
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Capture runner diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../macos-e2e-logs
+          {
+            echo "## macOS E2E runner"
+            date -u
+            sw_vers
+            xcodebuild -version
+            flutter --version
+            flutter doctor -v
+            df -h
+          } 2>&1 | tee ../macos-e2e-logs/runner-diagnostics.txt
+
+      - name: Get dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          flutter config --enable-macos-desktop 2>&1 | tee ../macos-e2e-logs/flutter-config.log
+          flutter pub get -v 2>&1 | tee ../macos-e2e-logs/pub-get.log
+
+      - name: Run macOS desktop E2E suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          flutter test "$TEST_TARGET" \
+            -d macos \
+            -r expanded \
+            --dart-define=FABUSHI_E2E_OFFLINE=true \
+            -v 2>&1 | tee ../macos-e2e-logs/macos-e2e.log
+
+      - name: Capture final screen
+        if: always()
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          mkdir -p macos-e2e-logs
+          screencapture -x macos-e2e-logs/final-screen.png || true
+
+      - name: Summarize E2E artifacts
+        if: always()
+        shell: bash
+        working-directory: .
+        run: |
+          {
+            echo "## macOS desktop E2E"
+            echo ""
+            echo "- Source ref: $SOURCE_REF"
+            echo "- Test target: $TEST_TARGET"
+            echo "- Offline E2E AI/OpenClaw mode: enabled"
+            echo ""
+            echo "### Diagnostics"
+            find macos-e2e-logs -maxdepth 1 -type f -print | sort | sed 's/^/- `/' | sed 's/$/`/'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload macOS E2E logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-desktop-e2e-logs
+          path: macos-e2e-logs
+          if-no-files-found: warn
+          retention-days: 14

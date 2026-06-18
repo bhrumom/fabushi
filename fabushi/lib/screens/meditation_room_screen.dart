@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
+import '../core/config/app_config.dart';
 import '../models/auth_model.dart';
 import '../models/meditation_practice_model.dart';
 import '../models/practice_book_model.dart';
@@ -114,8 +115,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     _initVolumeListener();
 
     // 获取在线人数
-    _fetchInitialCount();
-    _onlineCounterService.startCountPolling('zen_room');
+    if (!AppConfig.enableE2EOfflineMode) {
+      _fetchInitialCount();
+      _onlineCounterService.startCountPolling('zen_room');
+    }
 
     // 监听成就事件
     _achievementSubscription = _achievementSystem.achievementStream.listen((
@@ -1244,6 +1247,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     return Tooltip(
       message: locked ? '会员专享' : '${mode.shortLabel} 模式',
       child: GestureDetector(
+        key: ValueKey('dacheng.zen.render.${mode.shortLabel}'),
         onTap: () => _selectRenderMode(mode),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
@@ -1540,6 +1544,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
             children: [
               // 左侧：功课选择/查看按钮
               _buildSideButton(
+                key: const ValueKey('dacheng.zen.practice_button'),
                 icon: Icons.auto_stories,
                 isActive: _sessionManager.isPracticeLocked,
                 onTap: _showPracticeSelection,
@@ -1550,6 +1555,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
               // 中间：结束修行按钮
               Expanded(
                 child: GestureDetector(
+                  key: const ValueKey('dacheng.zen.start_end_button'),
                   onTap: () async {
                     if (_sessionManager.isInSession) {
                       await _endMeditation();
@@ -1613,6 +1619,7 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
               // 右侧：绕佛按钮
               _buildSideButton(
+                key: const ValueKey('dacheng.zen.circumambulate_button'),
                 icon: Icons.rotate_right,
                 isActive: _isCircumambulating,
                 onTap: _toggleCircumambulation,
@@ -1625,11 +1632,13 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
   }
 
   Widget _buildSideButton({
+    Key? key,
     required IconData icon,
     required bool isActive,
     required VoidCallback onTap,
   }) {
     return GestureDetector(
+      key: key,
       onTap: onTap,
       child: Container(
         width: 56,

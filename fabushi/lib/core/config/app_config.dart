@@ -46,6 +46,10 @@ class AppConfig {
     defaultValue: '',
   );
   static const String vpsAiBackendUrl = 'http://141.148.140.39';
+  static const bool enableE2EOfflineMode = bool.fromEnvironment(
+    'FABUSHI_E2E_OFFLINE',
+    defaultValue: false,
+  );
 
   static String get currentBackendUrl {
     if (configuredApiBaseUrl.isNotEmpty) {
