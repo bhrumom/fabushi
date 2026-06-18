@@ -1,15 +1,20 @@
 import type { Metadata } from "next";
 import { brand } from "@fabushi/shared";
+import { FaliuAnkiEnhancer } from "../../components/faliu-anki-enhancer";
 import { FaliuContentSearchEnhancer } from "../../components/faliu-content-search-enhancer";
+import { FaliuCoverImageEnhancer } from "../../components/faliu-cover-image-enhancer";
+import { FaliuFullJuanEnhancer } from "../../components/faliu-full-juan-enhancer";
 import { FaliuMeritBenefitEnhancer } from "../../components/faliu-merit-benefit-enhancer";
+import { FaliuModalLayoutFix } from "../../components/faliu-modal-layout-fix";
 import { FaliuShell } from "../../components/faliu-shell";
 import { FaliuSynonymEnhancer } from "../../components/faliu-synonym-enhancer";
 import { FALIU_FEATURED_WORKS } from "../../lib/faliu-config";
 import {
   buildCbetaContentId,
-  fetchAllWorks,
   fetchBatchStats,
+  fetchWorksPage,
   fetchWorkInfo,
+  workInfoToIndexItem,
   type CbetaWorkInfo,
   type ContentStats,
   type CbetaWorkIndexItem,
@@ -72,32 +77,57 @@ function sortFeaturedWorks(items: CbetaWorkIndexItem[]) {
     .sort((left, right) => FALIU_FEATURED_WORKS.indexOf(left.work) - FALIU_FEATURED_WORKS.indexOf(right.work));
 }
 
+function dedupeWorks(items: CbetaWorkIndexItem[]) {
+  const seen = new Set<string>();
+  const next: CbetaWorkIndexItem[] = [];
+
+  for (const item of items) {
+    if (seen.has(item.work)) {
+      continue;
+    }
+
+    seen.add(item.work);
+    next.push(item);
+  }
+
+  return next;
+}
+
 async function loadInitialFaliuData() {
   try {
-    const allWorks = await fetchAllWorks().catch(() => FALLBACK_FEATURED_WORKS);
-    const featuredWorks = sortFeaturedWorks(allWorks).slice(0, 12);
-    const fallbackWorks = featuredWorks.length > 0 ? featuredWorks : FALLBACK_FEATURED_WORKS;
-    const infoEntries = await Promise.all(
-      fallbackWorks.map(async (item) => {
-        const info = await fetchWorkInfo(item.work).catch(() => null);
-        return [item.work, info] as const;
-      }),
+    const [catalogPage, featuredInfoEntries] = await Promise.all([
+      fetchWorksPage(0).catch(() => null),
+      Promise.all(
+        FALIU_FEATURED_WORKS.map(async (work) => {
+          const info = await fetchWorkInfo(work).catch(() => null);
+          return [work, info] as const;
+        }),
+      ),
+    ]);
+    const featuredWorks = featuredInfoEntries.flatMap(([work, info]) =>
+      info ? [workInfoToIndexItem(info)] : FALLBACK_FEATURED_WORKS.filter((item) => item.work === work),
     );
+    const initialWorks = dedupeWorks([...sortFeaturedWorks(featuredWorks), ...FALLBACK_FEATURED_WORKS, ...(catalogPage?.works ?? [])]);
+    const infoEntries = featuredInfoEntries.filter((entry): entry is readonly [string, CbetaWorkInfo] => entry[1] !== null);
     const initialWorkInfo: Record<string, CbetaWorkInfo | null> = Object.fromEntries(infoEntries);
     const initialStats: Record<string, ContentStats> = await fetchBatchStats(
-      fallbackWorks.map((item) => buildCbetaContentId(item.work, item.juans[0] ?? "1")),
+      initialWorks.slice(0, 12).map((item) => buildCbetaContentId(item.work, item.juans[0] ?? "1")),
     ).catch(() => ({}));
 
     return {
-      initialWorks: fallbackWorks,
+      initialWorks,
       initialWorkInfo,
       initialStats,
+      initialNextWorksPage: catalogPage?.nextPage ?? 0,
+      initialHasMoreWorks: catalogPage?.hasMore ?? true,
     };
   } catch {
     return {
       initialWorks: FALLBACK_FEATURED_WORKS,
       initialWorkInfo: {},
       initialStats: {},
+      initialNextWorksPage: 0,
+      initialHasMoreWorks: true,
     };
   }
 }
@@ -136,10 +166,14 @@ export default async function FaliuPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
 
+      <FaliuFullJuanEnhancer />
+      <FaliuModalLayoutFix />
       <FaliuShell {...initialData} />
+      <FaliuCoverImageEnhancer />
       <FaliuSynonymEnhancer />
       <FaliuContentSearchEnhancer />
       <FaliuMeritBenefitEnhancer />
+      <FaliuAnkiEnhancer />
     </main>
   );
 }

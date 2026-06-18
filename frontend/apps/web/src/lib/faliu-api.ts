@@ -8,6 +8,7 @@ export interface CbetaWorkIndexItem {
 
 export interface CbetaWorkInfo {
   work: string;
+  canon?: string;
   category?: string;
   orig_category?: string;
   title: string;
@@ -17,8 +18,18 @@ export interface CbetaWorkInfo {
   time_from?: number | null;
   time_to?: number | null;
   juan?: number;
+  juan_list?: string;
   juan_start?: number;
   juan_end?: number;
+  vol?: string;
+}
+
+export interface CbetaWorksPage {
+  works: CbetaWorkIndexItem[];
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+  nextPage: number;
 }
 
 export interface CbetaTocNode {
@@ -63,6 +74,9 @@ export interface AppComment {
 
 const APP_API_ROOT = "https://api.ombhrum.com/api";
 const APP_PROXY_ROOT = "/api/app";
+export const CBETA_WORKS_PAGE_SIZE = 120;
+const CBETA_WORKS_DEFAULT_CANON = "T";
+const CBETA_WORKS_DEFAULT_CANON_END = 3000;
 const SIMPLIFIED_TO_TRADITIONAL: Record<string, string> = {
   万: "萬",
   与: "與",
@@ -709,8 +723,65 @@ export function buildCbetaContentId(work: string, juan: string) {
   return `cbeta:${work}:${juan}`;
 }
 
+function parseJuanList(value?: string) {
+  return (value ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function buildJuanRange(start?: number | null, end?: number | null, fallback?: number | null) {
+  if (start && end && end >= start) {
+    return Array.from({ length: end - start + 1 }, (_, index) => String(start + index));
+  }
+
+  if (fallback && fallback > 0) {
+    return Array.from({ length: fallback }, (_, index) => String(index + 1));
+  }
+
+  return ["1"];
+}
+
+export function workInfoToIndexItem(info: CbetaWorkInfo): CbetaWorkIndexItem {
+  const juans = parseJuanList(info.juan_list);
+
+  return {
+    work: info.work,
+    title: info.title,
+    juans: juans.length > 0 ? juans : buildJuanRange(info.juan_start, info.juan_end, info.juan),
+  };
+}
+
 export async function fetchAllWorks(): Promise<CbetaWorkIndexItem[]> {
-  return fetchJson<CbetaWorkIndexItem[]>(cbetaUrls("download/all-works.json"));
+  try {
+    return fetchJson<CbetaWorkIndexItem[]>(cbetaUrls("download/all-works.json"));
+  } catch {
+    const page = await fetchWorksPage(0);
+    return page.works;
+  }
+}
+
+export async function fetchWorksPage(
+  page = 0,
+  pageSize = CBETA_WORKS_PAGE_SIZE,
+  canon = CBETA_WORKS_DEFAULT_CANON,
+): Promise<CbetaWorksPage> {
+  const safePage = Math.max(0, Math.floor(page));
+  const safePageSize = Math.max(1, Math.floor(pageSize));
+  const workStart = safePage * safePageSize + 1;
+  const workEnd = Math.min(workStart + safePageSize - 1, CBETA_WORKS_DEFAULT_CANON_END);
+  const data = await fetchJson<{ num_found?: number; results?: CbetaWorkInfo[] }>(
+    cbetaUrls("works", { canon, work_start: workStart, work_end: workEnd }),
+  );
+  const works = (data.results ?? []).filter((item) => item.work && item.title).map(workInfoToIndexItem);
+
+  return {
+    works,
+    page: safePage,
+    pageSize: safePageSize,
+    hasMore: workEnd < CBETA_WORKS_DEFAULT_CANON_END,
+    nextPage: safePage + 1,
+  };
 }
 
 export async function searchWorksByTitle(query: string, start = 0, rows = 24): Promise<CbetaWorkInfo[]> {

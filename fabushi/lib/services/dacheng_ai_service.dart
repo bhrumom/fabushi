@@ -4,6 +4,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../core/config/app_config.dart';
+import 'ai_backend_policy.dart';
+import 'diagnostic_log_service.dart';
+import 'openclaw/openclaw_ai_bridge.dart';
 
 class DachengAiUsage {
   final int promptTokens;
@@ -179,11 +182,14 @@ class DachengAiService {
   DachengAiService({
     http.Client? httpClient,
     Future<String> Function()? baseUrl,
+    OpenClawAiBridge? openClawBridge,
   }) : _httpClient = httpClient ?? http.Client(),
-       _baseUrl = baseUrl ?? (() async => AppConfig.currentAiBackendUrl);
+       _baseUrl = baseUrl ?? (() async => AppConfig.currentAiBackendUrl),
+       _openClawBridge = openClawBridge ?? OpenClawAiBridge();
 
   final http.Client _httpClient;
   final Future<String> Function() _baseUrl;
+  final OpenClawAiBridge _openClawBridge;
 
   Future<DachengAiChatResult> sendChat({
     required String message,
@@ -192,6 +198,16 @@ class DachengAiService {
     String? username,
     bool isMember = false,
   }) async {
+    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw()) {
+      return _openClawBridge.sendChat(
+        message: message,
+        conversationId: conversationId,
+        token: token,
+        username: username,
+        isMember: isMember,
+      );
+    }
+
     final data = await _postJson(
       '/api/ai/chat',
       token: token,
@@ -213,7 +229,31 @@ class DachengAiService {
     String? username,
     bool isMember = false,
   }) async* {
+    final useEmbedded = await AiBackendPolicy.shouldUseEmbeddedOpenClaw();
+    _diag(
+      'stream.route',
+      data: {
+        'useEmbeddedOpenClaw': useEmbedded,
+        'messageLength': message.trim().length,
+        'conversationId': conversationId,
+      },
+    );
+    if (useEmbedded) {
+      yield* _openClawBridge.sendChatStream(
+        message: message,
+        conversationId: conversationId,
+        token: token,
+        username: username,
+        isMember: isMember,
+      );
+      return;
+    }
+
     final uri = await _buildUri('/api/ai/chat/stream');
+    _diag(
+      'cloud.stream.request',
+      data: {'uri': uri.toString(), 'conversationId': conversationId},
+    );
     final request = http.Request('POST', uri)
       ..headers.addAll(_headers(token))
       ..body = jsonEncode({
@@ -227,8 +267,19 @@ class DachengAiService {
     final response = await _httpClient
         .send(request)
         .timeout(AppConfig.requestTimeout);
+    _diag(
+      'cloud.stream.response',
+      data: {
+        'statusCode': response.statusCode,
+        'contentType': response.headers['content-type'],
+      },
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final body = await utf8.decodeStream(response.stream);
+      _diag(
+        'cloud.stream.response-error',
+        data: {'statusCode': response.statusCode, 'body': body},
+      );
       throw StateError(body.trim().isEmpty ? '请求失败' : body);
     }
 
@@ -294,6 +345,10 @@ class DachengAiService {
     String? token,
     String? username,
   }) async {
+    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw()) {
+      return _openClawBridge.listConversations();
+    }
+
     final data = await _getJson(
       '/api/ai/conversations',
       token: token,
@@ -314,6 +369,12 @@ class DachengAiService {
     required String conversationId,
     String? token,
   }) async {
+    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw()) {
+      return _openClawBridge.getConversationMessages(
+        conversationId: conversationId,
+      );
+    }
+
     final data = await _getJson(
       '/api/ai/conversations/$conversationId',
       token: token,
@@ -419,6 +480,23 @@ class DachengAiService {
       throw StateError(message.toString());
     }
     return decoded;
+  }
+
+  void _diag(
+    String message, {
+    Map<String, Object?> data = const {},
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    unawaited(
+      DiagnosticLogService.instance.log(
+        'dacheng.ai',
+        message,
+        data: data,
+        error: error,
+        stackTrace: stackTrace,
+      ),
+    );
   }
 }
 

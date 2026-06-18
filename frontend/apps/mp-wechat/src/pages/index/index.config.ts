@@ -1,3 +1,4 @@
 export default definePageConfig({
-  navigationBarTitleText: "法布施",
+  enableShareAppMessage: true,
+  navigationBarTitleText: "全球法布施",
 });

@@ -43,6 +43,12 @@ class WorkerConfig {
     // 用户反馈
     'submitFeedback': '/api/feedback',
 
+    // Agent 相关
+    'agentChat': '/api/agent/chat',
+    'agentRunEvents': '/api/agent/runs/:runId/events',
+    'agentRunCancel': '/api/agent/runs/:runId/cancel',
+    'agentMessageFeedback': '/api/agent/messages/:messageId/feedback',
+
     // 管理员相关
     'adminCheckStatus': '/api/admin/check-status',
     'adminCreateRedeemCode': '/api/admin/create-redeem-code',

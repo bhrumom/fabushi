@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import androidx.annotation.NonNull
@@ -20,8 +21,12 @@ class MainActivity : FlutterFragmentActivity() {
     private val CHANNEL = "com.fabushi.app/hotspot"
     private val DEVICE_INFO_CHANNEL = "com.ombhrum.fabushi/device_info"
     private val MEMORY_CHANNEL = "com.ombhrum.fabushi/memory"
+    private val INBOUND_SHARE_CHANNEL = "com.ombhrum.fabushi/inbound_share"
+    private val PLATFORM_PUBLISH_CHANNEL = "com.ombhrum.fabushi/platform_publish"
     
     private var memoryChannel: MethodChannel? = null
+    private var inboundShareChannel: MethodChannel? = null
+    private var pendingSharePayload: Map<String, Any?>? = null
     
     companion object {
         private const val TAG = "MainActivity"
@@ -37,6 +42,25 @@ class MainActivity : FlutterFragmentActivity() {
                 Log.i(TAG, "Native libraries loaded successfully")
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to load native libraries: ${e.message}")
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        pendingSharePayload = extractSharePayload(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val payload = extractSharePayload(intent)
+        if (payload != null) {
+            pendingSharePayload = payload
+            try {
+                inboundShareChannel?.invokeMethod("onIncomingShare", payload)
+            } catch (e: Exception) {
+                Log.w(TAG, "Notify Flutter incoming share failed: ${e.message}")
             }
         }
     }
@@ -96,7 +120,136 @@ class MainActivity : FlutterFragmentActivity() {
         
         // 内存管理 Method Channel
         memoryChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, MEMORY_CHANNEL)
+
+        // 外部分享入口：接收来自豆包、浏览器等应用的链接或文本
+        inboundShareChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, INBOUND_SHARE_CHANNEL)
+        inboundShareChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getInitialShare" -> result.success(pendingSharePayload ?: emptyMap<String, Any?>())
+                "clearInitialShare" -> {
+                    pendingSharePayload = null
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // 平台发布入口：把准备好的草稿交给 Android 分享/发布目标
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PLATFORM_PUBLISH_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "shareToPlatform" -> {
+                    val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+                    val response = shareToPlatform(
+                        packageName = args["packageName"]?.toString(),
+                        platformName = args["platformName"]?.toString() ?: "目标平台",
+                        title = args["title"]?.toString() ?: "",
+                        text = args["text"]?.toString() ?: "",
+                        url = args["url"]?.toString() ?: ""
+                    )
+                    result.success(response)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
+
+
+    private fun extractSharePayload(intent: Intent?): Map<String, Any?>? {
+        if (intent == null) return null
+        val action = intent.action ?: return null
+        if (action != Intent.ACTION_SEND &&
+            action != Intent.ACTION_SEND_MULTIPLE &&
+            action != Intent.ACTION_VIEW
+        ) {
+            return null
+        }
+
+        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+            ?: intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+            ?: intent.getStringExtra(Intent.EXTRA_HTML_TEXT)
+            ?: ""
+        val dataText = intent.data?.toString() ?: ""
+        val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT) ?: ""
+        val combinedText = listOf(sharedText, dataText)
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+            .trim()
+        val firstUrl = firstHttpUrl(combinedText)
+            ?: dataText.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+            ?: ""
+
+        if (combinedText.isBlank() && firstUrl.isBlank()) return null
+
+        return mapOf(
+            "text" to combinedText,
+            "url" to firstUrl,
+            "title" to subject,
+            "mimeType" to (intent.type ?: ""),
+            "sourcePackage" to (callingPackage ?: intent.getStringExtra(Intent.EXTRA_REFERRER_NAME) ?: ""),
+            "receivedAt" to System.currentTimeMillis().toString()
+        )
+    }
+
+    private fun firstHttpUrl(value: String): String? {
+        val match = Regex("https?://[^\\s]+", RegexOption.IGNORE_CASE).find(value) ?: return null
+        return match.value.trimEnd('，', '。', '、', ',', '.', ')', '）', ']', '】', '>', '》')
+    }
+
+    private fun shareToPlatform(
+        packageName: String?,
+        platformName: String,
+        title: String,
+        text: String,
+        url: String
+    ): Map<String, Any> {
+        if (text.isBlank() && url.isBlank()) {
+            return mapOf(
+                "success" to false,
+                "message" to "草稿内容为空，未拉起 $platformName"
+            )
+        }
+
+        val shareText = if (text.isBlank()) url else text
+        val targeted = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TEXT, shareText)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (!packageName.isNullOrBlank()) setPackage(packageName)
+        }
+
+        val pm = packageManager
+        val canOpenTarget = targeted.resolveActivity(pm) != null
+        return try {
+            if (canOpenTarget) {
+                startActivity(targeted)
+                mapOf(
+                    "success" to true,
+                    "message" to "已拉起 $platformName，草稿内容已注入系统分享入口"
+                )
+            } else {
+                val fallback = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, title)
+                    putExtra(Intent.EXTRA_TEXT, shareText)
+                }
+                val chooser = Intent.createChooser(fallback, "选择发布到 $platformName")
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(chooser)
+                mapOf(
+                    "success" to true,
+                    "message" to "未找到 $platformName 专用入口，已打开系统分享面板"
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Share to platform failed", e)
+            mapOf(
+                "success" to false,
+                "message" to "拉起 $platformName 失败：${e.message ?: "未知错误"}"
+            )
+        }
+    }
+
 
     private fun registerFlutterPlugins(flutterEngine: FlutterEngine) {
         // Skip ffmpeg_kit_flutter_new_audio on Android startup. Its native library can

@@ -4,6 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import Database from 'better-sqlite3';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -11,6 +13,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import pino from 'pino';
+import { z } from 'zod';
 
 dotenv.config();
 
@@ -102,6 +105,44 @@ db.exec(`
     file_path TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS agent_runs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    openclaw_run_id TEXT,
+    openclaw_session_key TEXT NOT NULL,
+    status TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    tool_call_count INTEGER NOT NULL DEFAULT 0,
+    cost_microusd INTEGER NOT NULL DEFAULT 0,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    failed_at TEXT,
+    error_code TEXT,
+    error_message TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_agent_runs_user_started
+    ON agent_runs (user_id, started_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_agent_runs_status_started
+    ON agent_runs (status, started_at DESC);
+
+  CREATE TABLE IF NOT EXISTS agent_message_feedback (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    rating TEXT NOT NULL,
+    reason TEXT,
+    comment TEXT,
+    created_at TEXT NOT NULL
+  );
 `);
 
 const statements = {
@@ -160,6 +201,36 @@ const statements = {
       @id, @userId, @title, @sourceName, @sourceUrl, @fileName, @filePath, @createdAt
     )
   `),
+  insertAgentRun: db.prepare(`
+    INSERT INTO agent_runs (
+      id, user_id, conversation_id, message_id, openclaw_run_id, openclaw_session_key,
+      status, mode, provider, model, started_at
+    )
+    VALUES (
+      @id, @userId, @conversationId, @messageId, @openClawRunId, @openClawSessionKey,
+      @status, @mode, @provider, @model, @startedAt
+    )
+  `),
+  getAgentRun: db.prepare(`
+    SELECT * FROM agent_runs WHERE id = ? AND user_id = ? LIMIT 1
+  `),
+  updateAgentRunStatus: db.prepare(`
+    UPDATE agent_runs
+    SET status = @status,
+      openclaw_run_id = COALESCE(@openClawRunId, openclaw_run_id),
+      input_tokens = COALESCE(@inputTokens, input_tokens),
+      output_tokens = COALESCE(@outputTokens, output_tokens),
+      tool_call_count = COALESCE(@toolCallCount, tool_call_count),
+      completed_at = @completedAt,
+      failed_at = @failedAt,
+      error_code = @errorCode,
+      error_message = @errorMessage
+    WHERE id = @id AND user_id = @userId
+  `),
+  insertAgentFeedback: db.prepare(`
+    INSERT INTO agent_message_feedback (id, message_id, user_id, rating, reason, comment, created_at)
+    VALUES (@id, @messageId, @userId, @rating, @reason, @comment, @createdAt)
+  `),
 };
 
 const deepseekApiKey = process.env.DEEPSEEK_API_KEY || '';
@@ -170,7 +241,18 @@ const fabushiApiBaseUrl = (process.env.FABUSHI_API_BASE_URL || 'http://141.148.1
 const memberMonthlyLimit = Number(process.env.MEMBER_MONTHLY_TOKEN_LIMIT || 1_000_000);
 const freeMonthlyLimit = Number(process.env.FREE_MONTHLY_TOKEN_LIMIT || 50_000);
 const maxResourceTextChars = Number(process.env.MAX_RESOURCE_TEXT_CHARS || 80_000);
+const enableLibreChatAgentChat = process.env.ENABLE_LIBRECHAT_AGENT_CHAT === 'true';
+const libreChatAgentsBaseUrl = (
+  process.env.LIBRECHAT_AGENTS_BASE_URL || 'http://127.0.0.1:3080/api/agents/v1'
+).replace(/\/+$/, '');
+const libreChatAgentApiKey = process.env.LIBRECHAT_AGENT_API_KEY || '';
+const libreChatAgentId = process.env.LIBRECHAT_AGENT_ID || '';
 const enableCodexSdkChat = process.env.ENABLE_CODEX_SDK_CHAT === 'true';
+const enableOpenClawAgentChat = process.env.ENABLE_OPENCLAW_AGENT_CHAT === 'true';
+const openClawGatewayUrl = (process.env.OPENCLAW_GATEWAY_URL || 'http://127.0.0.1:18789').replace(/\/+$/, '');
+const openClawGatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN || '';
+const openClawAgentId = process.env.OPENCLAW_AGENT_ID || 'fabushi-public-agent';
+const openClawRunsEndpoint = process.env.OPENCLAW_RUNS_ENDPOINT || '';
 const codexDeepSeekProviderId = 'deepseek-chat-completions';
 const codexResponsesBaseUrl = (
   process.env.CODEX_DEEPSEEK_RESPONSES_BASE_URL ||
@@ -195,6 +277,13 @@ function monthKey(date = new Date()) {
 
 function jsonResponse(res, status, payload) {
   res.status(status).json(payload);
+}
+
+function textToolResult(text, structuredContent = {}) {
+  return {
+    structuredContent,
+    content: [{ type: 'text', text }],
+  };
 }
 
 function sseHeaders(res) {
@@ -602,6 +691,170 @@ function responseUsage(usage = {}) {
   };
 }
 
+function createLibreChatAgentRuntime() {
+  if (!enableLibreChatAgentChat || !libreChatAgentApiKey || !libreChatAgentId) {
+    return {
+      enabled: false,
+      provider: 'librechat-agent',
+      reason: !enableLibreChatAgentChat
+        ? 'ENABLE_LIBRECHAT_AGENT_CHAT is not true'
+        : !libreChatAgentApiKey
+          ? 'LIBRECHAT_AGENT_API_KEY is not configured'
+          : 'LIBRECHAT_AGENT_ID is not configured',
+    };
+  }
+
+  return {
+    enabled: true,
+    provider: 'librechat-agent',
+    model: libreChatAgentId,
+    chatCompletionsUrl: `${libreChatAgentsBaseUrl}/chat/completions`,
+  };
+}
+
+function libreChatUsage(usage = {}) {
+  return {
+    promptTokens: Number(usage.prompt_tokens || usage.input_tokens || usage.promptTokens || 0),
+    completionTokens: Number(usage.completion_tokens || usage.output_tokens || usage.completionTokens || 0),
+    totalTokens: Number(usage.total_tokens || usage.totalTokens || 0),
+  };
+}
+
+async function callLibreChatAgent(messages) {
+  const runtime = createLibreChatAgentRuntime();
+  if (!runtime.enabled) {
+    const error = new Error(runtime.reason || 'LibreChat Agent chat is not enabled');
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const response = await fetch(runtime.chatCompletionsUrl, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${libreChatAgentApiKey}`,
+    },
+    body: JSON.stringify({
+      model: runtime.model,
+      messages,
+      temperature: 0.4,
+      stream: false,
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  const bodyText = await response.text();
+  let payload;
+  try {
+    payload = bodyText ? JSON.parse(bodyText) : {};
+  } catch {
+    payload = { error: bodyText };
+  }
+
+  if (!response.ok) {
+    const upstreamMessage = payload?.error?.message || payload?.message || bodyText || '';
+    const error = new Error(upstreamMessage || `LibreChat Agent request failed: ${response.status}`);
+    error.statusCode = response.status;
+    throw error;
+  }
+
+  const message = payload?.choices?.[0]?.message?.content?.trim();
+  if (!message) {
+    const error = new Error('LibreChat Agent returned an empty response');
+    error.statusCode = 502;
+    throw error;
+  }
+
+  return {
+    message,
+    usage: libreChatUsage(payload?.usage),
+  };
+}
+
+async function callLibreChatAgentStream(messages, callbacks = {}) {
+  const runtime = createLibreChatAgentRuntime();
+  if (!runtime.enabled) {
+    const error = new Error(runtime.reason || 'LibreChat Agent chat is not enabled');
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const response = await fetch(runtime.chatCompletionsUrl, {
+    method: 'POST',
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${libreChatAgentApiKey}`,
+    },
+    body: JSON.stringify({
+      model: runtime.model,
+      messages,
+      temperature: 0.4,
+      stream: true,
+    }),
+    signal: callbacks.signal || AbortSignal.timeout(180_000),
+  });
+
+  if (!response.ok) {
+    const bodyText = await response.text();
+    let payload;
+    try {
+      payload = bodyText ? JSON.parse(bodyText) : {};
+    } catch {
+      payload = { error: bodyText };
+    }
+    const upstreamMessage = payload?.error?.message || payload?.message || bodyText || '';
+    const error = new Error(upstreamMessage || `LibreChat Agent request failed: ${response.status}`);
+    error.statusCode = response.status;
+    throw error;
+  }
+
+  let buffer = '';
+  let message = '';
+  let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  const decoder = new TextDecoder();
+
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || '';
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice('data:'.length).trim();
+      if (!data || data === '[DONE]') continue;
+
+      let payload;
+      try {
+        payload = JSON.parse(data);
+      } catch {
+        continue;
+      }
+
+      const delta = payload?.choices?.[0]?.delta?.content || '';
+      if (delta) {
+        message += delta;
+        callbacks.onToken?.(delta);
+      }
+
+      if (payload?.usage) {
+        usage = libreChatUsage(payload.usage);
+      }
+    }
+  }
+
+  message = message.trim();
+  if (!message) {
+    const error = new Error('LibreChat Agent returned an empty response');
+    error.statusCode = 502;
+    throw error;
+  }
+
+  return { message, usage };
+}
+
 function isDeepSeekQuotaError(error) {
   const message = String(error?.message || error || '');
   return /额度|insufficient\s+balance|balance/i.test(message);
@@ -731,6 +984,206 @@ async function callCodexSdkDeepSeek(messages, callbacks = {}) {
       completionTokens: Number(turn.usage?.output_tokens || 0),
       totalTokens: Number((turn.usage?.input_tokens || 0) + (turn.usage?.output_tokens || 0)),
     },
+  };
+}
+
+const activeAgentRuns = new Map();
+
+function normalizeAgentMode(value) {
+  const mode = safeUserText(value || 'dharma_guide');
+  return /^[a-z][a-z0-9_:-]{0,48}$/i.test(mode) ? mode : 'dharma_guide';
+}
+
+function openClawSessionKey(user, conversationId) {
+  const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev';
+  return `fabushi:env:${env}:user:${user.userId}:conversation:${conversationId}`;
+}
+
+function createOpenClawRuntime() {
+  if (!enableOpenClawAgentChat || !openClawGatewayToken || !openClawGatewayUrl) {
+    return {
+      enabled: false,
+      provider: 'openclaw-gateway',
+      reason: !enableOpenClawAgentChat
+        ? 'ENABLE_OPENCLAW_AGENT_CHAT is not true'
+        : !openClawGatewayToken
+          ? 'OPENCLAW_GATEWAY_TOKEN is not configured'
+          : 'OPENCLAW_GATEWAY_URL is not configured',
+    };
+  }
+
+  return {
+    enabled: true,
+    provider: 'openclaw-gateway',
+    model: openClawAgentId,
+    runsUrl: openClawRunsEndpoint || `${openClawGatewayUrl}/v1/agents/${encodeURIComponent(openClawAgentId)}/runs`,
+  };
+}
+
+function extractOpenClawText(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  const candidates = [
+    payload.message,
+    payload.content,
+    payload.output_text,
+    payload.finalResponse,
+    payload.final_response,
+    payload.result?.message,
+    payload.result?.content,
+    payload.output?.message,
+    payload.output?.content,
+    payload.choices?.[0]?.message?.content,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return '';
+}
+
+function extractOpenClawUsage(payload) {
+  const usage = payload?.usage || payload?.result?.usage || {};
+  return {
+    promptTokens: Number(usage.input_tokens || usage.prompt_tokens || usage.promptTokens || 0),
+    completionTokens: Number(usage.output_tokens || usage.completion_tokens || usage.completionTokens || 0),
+    totalTokens: Number(usage.total_tokens || usage.totalTokens || 0),
+  };
+}
+
+async function callOpenClawAgent({ messages, user, conversationId, mode, signal }) {
+  const runtime = createOpenClawRuntime();
+  if (!runtime.enabled) {
+    const error = new Error(runtime.reason || 'OpenClaw Agent chat is not enabled');
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const sessionKey = openClawSessionKey(user, conversationId);
+  const response = await fetch(runtime.runsUrl, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${openClawGatewayToken}`,
+    },
+    body: JSON.stringify({
+      agentId: openClawAgentId,
+      sessionKey,
+      mode,
+      stream: false,
+      input: { messages },
+      messages,
+      metadata: {
+        app: 'fabushi',
+        userId: user.userId,
+        conversationId,
+        toolPolicy: 'public-user-read-mostly',
+      },
+    }),
+    signal: signal || AbortSignal.timeout(180_000),
+  });
+
+  const bodyText = await response.text();
+  let payload;
+  try {
+    payload = bodyText ? JSON.parse(bodyText) : {};
+  } catch {
+    payload = { message: bodyText };
+  }
+
+  if (!response.ok) {
+    const error = new Error(payload?.error?.message || payload?.message || `OpenClaw request failed: ${response.status}`);
+    error.statusCode = response.status;
+    throw error;
+  }
+
+  const message = extractOpenClawText(payload);
+  if (!message) {
+    const error = new Error('OpenClaw returned an empty response');
+    error.statusCode = 502;
+    throw error;
+  }
+
+  return {
+    message,
+    runId: payload.runId || payload.id || payload.result?.runId || null,
+    provider: runtime.provider,
+    model: runtime.model,
+    usage: extractOpenClawUsage(payload),
+  };
+}
+
+async function runAgentModel({ messages, user, conversationId, mode, callbacks = {}, signal }) {
+  const openClawRuntime = createOpenClawRuntime();
+  if (openClawRuntime.enabled && !callbacks.onToken) {
+    return await callOpenClawAgent({ messages, user, conversationId, mode, signal });
+  }
+
+  const codexRuntime = createCodexDeepSeekRuntime();
+  const libreChatRuntime = createLibreChatAgentRuntime();
+  let provider = libreChatRuntime.enabled
+    ? libreChatRuntime.provider
+    : codexRuntime.enabled
+      ? codexRuntime.provider
+      : 'deepseek';
+  let model = libreChatRuntime.enabled ? libreChatRuntime.model : deepseekModel;
+
+  try {
+    if (libreChatRuntime.enabled) {
+      const result = callbacks.onToken
+        ? await callLibreChatAgentStream(messages, { ...callbacks, signal })
+        : await callLibreChatAgent(messages);
+      return { ...result, provider, model };
+    }
+    if (codexRuntime.enabled) {
+      const result = await callCodexSdkDeepSeek(messages, { ...callbacks, signal });
+      return { ...result, provider, model };
+    }
+    const result = callbacks.onToken
+      ? await callDeepSeekStream(messages, { ...callbacks, signal })
+      : await callDeepSeek(messages);
+    return { ...result, provider, model };
+  } catch (error) {
+    if (!codexRuntime.enabled || isDeepSeekQuotaError(error)) throw error;
+    logger.warn({ error: String(error) }, 'Agent model failed, falling back to DeepSeek direct');
+    const result = callbacks.onToken
+      ? await callDeepSeekStream(messages, { ...callbacks, signal })
+      : await callDeepSeek(messages);
+    return { ...result, provider: 'deepseek', model: deepseekModel };
+  }
+}
+
+function updateAgentRunStatus(run, status, fields = {}) {
+  statements.updateAgentRunStatus.run({
+    id: run.id,
+    userId: run.user_id || run.userId,
+    status,
+    openClawRunId: fields.openClawRunId ?? null,
+    inputTokens: fields.inputTokens ?? null,
+    outputTokens: fields.outputTokens ?? null,
+    toolCallCount: fields.toolCallCount ?? null,
+    completedAt: status === 'completed' || status === 'cancelled' ? nowIso() : null,
+    failedAt: status === 'failed' ? nowIso() : null,
+    errorCode: fields.errorCode ?? null,
+    errorMessage: fields.errorMessage ?? null,
+  });
+}
+
+function buildAgentMessages(conversationId) {
+  const historyRows = statements.listMessages.all(conversationId).slice(-14);
+  return [{ role: 'system', content: systemPrompt }, ...normalizeMessages(historyRows)];
+}
+
+function agentUsagePayload(usage, user, budget) {
+  const promptTokens = usage.promptTokens || usage.inputTokens || 0;
+  const completionTokens = usage.completionTokens || usage.outputTokens || 0;
+  const totalTokens = usage.totalTokens || promptTokens + completionTokens;
+  const latestUsage = usageFor(user.userId);
+  return {
+    inputTokens: promptTokens,
+    outputTokens: completionTokens,
+    totalTokens,
+    monthlyLimit: budget.limit,
+    remainingTokens: Math.max(0, budget.limit - latestUsage.used),
   };
 }
 
@@ -882,18 +1335,291 @@ app.post(
 
 app.get('/health', (_req, res) => {
   const codexRuntime = createCodexDeepSeekRuntime();
+  const libreChatRuntime = createLibreChatAgentRuntime();
+  const openClawRuntime = createOpenClawRuntime();
   jsonResponse(res, 200, {
     status: 'ok',
     service: 'dacheng-ai-backend',
-    provider: 'deepseek',
-    model: deepseekModel,
+    provider: libreChatRuntime.enabled ? libreChatRuntime.provider : 'deepseek',
+    model: libreChatRuntime.enabled ? libreChatRuntime.model : deepseekModel,
+    libreChatAgentChatEnabled: libreChatRuntime.enabled,
+    libreChatAgentProvider: libreChatRuntime.provider,
+    libreChatAgentReason: libreChatRuntime.enabled ? undefined : libreChatRuntime.reason,
     codexSdkAvailable: true,
     codexSdkChatEnabled: codexRuntime.enabled,
     codexSdkProvider: codexRuntime.provider,
+    openClawAgentChatEnabled: openClawRuntime.enabled,
+    openClawAgentProvider: openClawRuntime.provider,
+    openClawAgentReason: openClawRuntime.enabled ? undefined : openClawRuntime.reason,
     cbetaApiRoot,
     timestamp: nowIso(),
   });
 });
+
+app.post(
+  '/api/agent/chat',
+  asyncHandler(async (req, res) => {
+    const message = safeUserText(req.body?.message);
+    if (!message) {
+      return jsonResponse(res, 400, { success: false, message: 'message is required' });
+    }
+
+    const user = await resolveUser(req, req.body || {});
+    const estimated = estimateTokens(message) + 600;
+    const budget = enforceTokenBudget(user, estimated);
+    const createdAt = nowIso();
+    const conversationId = safeUserText(req.body?.conversationId) || crypto.randomUUID();
+    const mode = normalizeAgentMode(req.body?.mode);
+    const stream = req.body?.stream === true;
+    let conversation = statements.getConversation.get(conversationId, user.userId);
+    const isNewConversation = !conversation;
+
+    if (isNewConversation) {
+      conversation = { id: conversationId, user_id: user.userId, title: titleFromMessage(message) };
+      statements.insertConversation.run({
+        id: conversationId,
+        userId: user.userId,
+        title: conversation.title,
+        provider: 'agent',
+        model: openClawAgentId,
+        createdAt,
+        updatedAt: createdAt,
+      });
+    }
+
+    const messageId = safeUserText(req.body?.messageId) || crypto.randomUUID();
+    statements.insertMessage.run({
+      id: messageId,
+      conversationId,
+      role: 'user',
+      content: message,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      createdAt,
+    });
+
+    const runId = `run_${crypto.randomUUID().replaceAll('-', '')}`;
+    const sessionKey = openClawSessionKey(user, conversationId);
+    const openClawRuntime = createOpenClawRuntime();
+    statements.insertAgentRun.run({
+      id: runId,
+      userId: user.userId,
+      conversationId,
+      messageId,
+      openClawRunId: null,
+      openClawSessionKey: sessionKey,
+      status: stream ? 'queued' : 'running',
+      mode,
+      provider: openClawRuntime.enabled ? openClawRuntime.provider : 'dacheng-ai-fallback',
+      model: openClawRuntime.enabled ? openClawAgentId : deepseekModel,
+      startedAt: createdAt,
+    });
+
+    if (stream) {
+      return jsonResponse(res, 200, {
+        success: true,
+        runId,
+        conversationId,
+        streamUrl: `/api/agent/runs/${runId}/events`,
+      });
+    }
+
+    const controller = new AbortController();
+    activeAgentRuns.set(runId, controller);
+    try {
+      const modelMessages = buildAgentMessages(conversationId);
+      const aiResult = await runAgentModel({
+        messages: modelMessages,
+        user,
+        conversationId,
+        mode,
+        signal: controller.signal,
+      });
+      const usage = {
+        promptTokens: aiResult.usage?.promptTokens || estimateTokens(JSON.stringify(modelMessages)),
+        completionTokens: aiResult.usage?.completionTokens || estimateTokens(aiResult.message),
+        totalTokens:
+          aiResult.usage?.totalTokens ||
+          estimateTokens(JSON.stringify(modelMessages)) + estimateTokens(aiResult.message),
+      };
+      recordUsage(user.userId, usage.totalTokens);
+      const answeredAt = nowIso();
+      const assistantMessageId = crypto.randomUUID();
+      statements.insertMessage.run({
+        id: assistantMessageId,
+        conversationId,
+        role: 'assistant',
+        content: aiResult.message,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        totalTokens: usage.totalTokens,
+        createdAt: answeredAt,
+      });
+      statements.updateConversation.run({
+        id: conversationId,
+        userId: user.userId,
+        title: isNewConversation ? titleFromMessage(message) : conversation.title,
+        updatedAt: answeredAt,
+      });
+      updateAgentRunStatus({ id: runId, user_id: user.userId }, 'completed', {
+        openClawRunId: aiResult.runId,
+        inputTokens: usage.promptTokens,
+        outputTokens: usage.completionTokens,
+      });
+      return jsonResponse(res, 200, {
+        success: true,
+        runId,
+        conversationId,
+        messageId: assistantMessageId,
+        provider: aiResult.provider,
+        model: aiResult.model,
+        message: aiResult.message,
+        usage: agentUsagePayload(usage, user, budget),
+      });
+    } catch (error) {
+      const status = error.name === 'AbortError' ? 'cancelled' : 'failed';
+      updateAgentRunStatus({ id: runId, user_id: user.userId }, status, {
+        errorCode: error.name || 'AGENT_RUN_FAILED',
+        errorMessage: publicAiErrorMessage(error),
+      });
+      if (status === 'cancelled') {
+        return jsonResponse(res, 499, { success: false, runId, status: 'cancelled' });
+      }
+      throw error;
+    } finally {
+      activeAgentRuns.delete(runId);
+    }
+  }),
+);
+
+app.get(
+  '/api/agent/runs/:runId/events',
+  asyncHandler(async (req, res) => {
+    const user = await resolveUser(req, {});
+    const run = statements.getAgentRun.get(req.params.runId, user.userId);
+    if (!run) {
+      return jsonResponse(res, 404, { success: false, message: 'run not found' });
+    }
+    if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
+      return jsonResponse(res, 409, { success: false, message: `run is already ${run.status}` });
+    }
+
+    sseHeaders(res);
+    const controller = new AbortController();
+    activeAgentRuns.set(run.id, controller);
+    updateAgentRunStatus(run, 'running');
+    writeSse(res, 'run.started', { runId: run.id, conversationId: run.conversation_id });
+
+    try {
+      const estimated = 600;
+      const budget = enforceTokenBudget(user, estimated);
+      let streamedText = '';
+      const modelMessages = buildAgentMessages(run.conversation_id);
+      const aiResult = await runAgentModel({
+        messages: modelMessages,
+        user,
+        conversationId: run.conversation_id,
+        mode: run.mode,
+        signal: controller.signal,
+        callbacks: {
+          onStep: (step) => writeSse(res, 'tool.call.completed', {
+            tool: 'agent.step',
+            displayName: step.title || 'Agent step',
+            summary: step.message || '',
+          }),
+          onToken: (delta) => {
+            streamedText += delta;
+            writeSse(res, 'assistant.delta', { text: delta });
+          },
+        },
+      });
+      const message = aiResult.message || streamedText.trim();
+      const usage = {
+        promptTokens: aiResult.usage?.promptTokens || estimateTokens(JSON.stringify(modelMessages)),
+        completionTokens: aiResult.usage?.completionTokens || estimateTokens(message),
+        totalTokens:
+          aiResult.usage?.totalTokens || estimateTokens(JSON.stringify(modelMessages)) + estimateTokens(message),
+      };
+      recordUsage(user.userId, usage.totalTokens);
+      const assistantMessageId = crypto.randomUUID();
+      const answeredAt = nowIso();
+      statements.insertMessage.run({
+        id: assistantMessageId,
+        conversationId: run.conversation_id,
+        role: 'assistant',
+        content: message,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        totalTokens: usage.totalTokens,
+        createdAt: answeredAt,
+      });
+      statements.updateConversation.run({
+        id: run.conversation_id,
+        userId: user.userId,
+        title: titleFromMessage(message),
+        updatedAt: answeredAt,
+      });
+      updateAgentRunStatus(run, 'completed', {
+        openClawRunId: aiResult.runId,
+        inputTokens: usage.promptTokens,
+        outputTokens: usage.completionTokens,
+      });
+      writeSse(res, 'assistant.message', { messageId: assistantMessageId, content: message });
+      writeSse(res, 'run.completed', { usage: agentUsagePayload(usage, user, budget) });
+      res.end();
+    } catch (error) {
+      const status = error.name === 'AbortError' ? 'cancelled' : 'failed';
+      updateAgentRunStatus(run, status, {
+        errorCode: error.name || 'AGENT_RUN_FAILED',
+        errorMessage: publicAiErrorMessage(error),
+      });
+      writeSse(res, status === 'cancelled' ? 'run.cancelled' : 'run.failed', {
+        runId: run.id,
+        message: publicAiErrorMessage(error),
+      });
+      res.end();
+    } finally {
+      activeAgentRuns.delete(run.id);
+    }
+  }),
+);
+
+app.post(
+  '/api/agent/runs/:runId/cancel',
+  asyncHandler(async (req, res) => {
+    const user = await resolveUser(req, req.body || {});
+    const run = statements.getAgentRun.get(req.params.runId, user.userId);
+    if (!run) {
+      return jsonResponse(res, 404, { success: false, message: 'run not found' });
+    }
+    const controller = activeAgentRuns.get(run.id);
+    if (controller) controller.abort();
+    updateAgentRunStatus(run, 'cancelled');
+    return jsonResponse(res, 200, { success: true, runId: run.id, status: 'cancelled' });
+  }),
+);
+
+app.post(
+  '/api/agent/messages/:messageId/feedback',
+  asyncHandler(async (req, res) => {
+    const user = await resolveUser(req, req.body || {});
+    const rating = safeUserText(req.body?.rating);
+    if (!['up', 'down'].includes(rating)) {
+      return jsonResponse(res, 400, { success: false, message: 'rating must be up or down' });
+    }
+    statements.insertAgentFeedback.run({
+      id: crypto.randomUUID(),
+      messageId: req.params.messageId,
+      userId: user.userId,
+      rating,
+      reason: safeUserText(req.body?.reason),
+      comment: safeUserText(req.body?.comment),
+      createdAt: nowIso(),
+    });
+    return jsonResponse(res, 200, { success: true });
+  }),
+);
 
 app.post(
   '/api/ai/chat',
@@ -939,6 +1665,7 @@ app.post(
       createdAt,
     });
 
+    const libreChatRuntime = createLibreChatAgentRuntime();
     const skillResult = await runResourceFinderSkill({ message, user });
     const skillContext = resourceContextMessage(skillResult);
     const historyRows = statements.listMessages.all(conversationId).slice(-14);
@@ -948,21 +1675,60 @@ app.post(
       ...normalizeMessages(historyRows),
     ];
 
+    const openClawRuntime = createOpenClawRuntime();
     const codexRuntime = createCodexDeepSeekRuntime();
-    let provider = 'deepseek';
+    let provider = openClawRuntime.enabled
+      ? openClawRuntime.provider
+      : libreChatRuntime.enabled
+        ? libreChatRuntime.provider
+        : 'deepseek';
+    let responseModel = openClawRuntime.enabled
+      ? openClawRuntime.model
+      : libreChatRuntime.enabled
+        ? libreChatRuntime.model
+        : deepseekModel;
     let aiResult;
     try {
-      if (codexRuntime.enabled) {
+      if (openClawRuntime.enabled) {
+        aiResult = await callOpenClawAgent({
+          messages: modelMessages,
+          user,
+          conversationId,
+          mode: normalizeAgentMode(req.body?.mode),
+        });
+        provider = aiResult.provider || provider;
+        responseModel = aiResult.model || responseModel;
+      } else if (libreChatRuntime.enabled) {
+        aiResult = await callLibreChatAgent(modelMessages);
+      } else if (codexRuntime.enabled) {
         provider = codexRuntime.provider;
         aiResult = await callCodexSdkDeepSeek(modelMessages);
       } else {
         aiResult = await callDeepSeek(modelMessages);
       }
     } catch (error) {
-      if (!codexRuntime.enabled || isDeepSeekQuotaError(error)) throw error;
-      logger.warn({ error: String(error) }, 'Codex SDK chat failed, falling back to DeepSeek direct');
-      provider = 'deepseek';
-      aiResult = await callDeepSeek(modelMessages);
+      if (libreChatRuntime.enabled) {
+        logger.warn({ error: String(error) }, 'LibreChat Agent chat failed, falling back to Codex SDK or DeepSeek direct');
+        provider = codexRuntime.enabled ? codexRuntime.provider : 'deepseek';
+        responseModel = deepseekModel;
+        if (codexRuntime.enabled) {
+          try {
+            aiResult = await callCodexSdkDeepSeek(modelMessages);
+          } catch (codexError) {
+            if (isDeepSeekQuotaError(codexError)) throw codexError;
+            logger.warn({ error: String(codexError) }, 'Codex SDK chat failed, falling back to DeepSeek direct');
+            provider = 'deepseek';
+            aiResult = await callDeepSeek(modelMessages);
+          }
+        } else {
+          aiResult = await callDeepSeek(modelMessages);
+        }
+      } else {
+        if (!codexRuntime.enabled || isDeepSeekQuotaError(error)) throw error;
+        logger.warn({ error: String(error) }, 'Codex SDK chat failed, falling back to DeepSeek direct');
+        provider = 'deepseek';
+        aiResult = await callDeepSeek(modelMessages);
+      }
     }
     const usage = {
       promptTokens: aiResult.usage.promptTokens || estimateTokens(JSON.stringify(modelMessages)),
@@ -997,7 +1763,7 @@ app.post(
       success: true,
       conversationId,
       provider,
-      model: deepseekModel,
+      model: responseModel,
       message: aiResult.message,
       usage: {
         ...usage,
@@ -1056,17 +1822,25 @@ app.post('/api/ai/chat/stream', async (req, res) => {
     });
 
     const codexRuntime = createCodexDeepSeekRuntime();
-    let provider = codexRuntime.enabled ? codexRuntime.provider : 'deepseek';
+    const libreChatRuntime = createLibreChatAgentRuntime();
+    const initialOpenClawRuntime = createOpenClawRuntime();
+    let provider = initialOpenClawRuntime.enabled
+      ? initialOpenClawRuntime.provider
+      : libreChatRuntime.enabled
+        ? libreChatRuntime.provider
+        : codexRuntime.enabled
+          ? codexRuntime.provider
+          : 'deepseek';
+    let responseModel = initialOpenClawRuntime.enabled
+      ? initialOpenClawRuntime.model
+      : libreChatRuntime.enabled
+        ? libreChatRuntime.model
+        : deepseekModel;
     writeSse(res, 'meta', {
       conversationId,
       provider,
-      model: deepseekModel,
+      model: responseModel,
     });
-    writeSse(res, 'step', {
-      title: '连接后端 AI',
-      message: '大乘后端已直连 VPS，并使用 DeepSeek OpenAI-compatible API。',
-    });
-
     const skillResult = await runResourceFinderSkill({
       message,
       user,
@@ -1081,8 +1855,23 @@ app.post('/api/ai/chat/stream', async (req, res) => {
     ];
 
     let aiResult;
+    const openClawRuntime = initialOpenClawRuntime;
     try {
-      if (codexRuntime.enabled) {
+      if (openClawRuntime.enabled) {
+        aiResult = await callOpenClawAgent({
+          messages: modelMessages,
+          user,
+          conversationId,
+          mode: normalizeAgentMode(req.body?.mode),
+        });
+        provider = aiResult.provider || provider;
+        responseModel = aiResult.model || responseModel;
+        writeSse(res, 'delta', { text: aiResult.message });
+      } else if (libreChatRuntime.enabled) {
+        aiResult = await callLibreChatAgentStream(modelMessages, {
+          onToken: (token) => writeSse(res, 'delta', { text: token }),
+        });
+      } else if (codexRuntime.enabled) {
         aiResult = await callCodexSdkDeepSeek(modelMessages, {
           onToken: (token) => writeSse(res, 'delta', { text: token }),
           onStep: (step) => writeSse(res, 'step', step),
@@ -1093,16 +1882,54 @@ app.post('/api/ai/chat/stream', async (req, res) => {
         });
       }
     } catch (error) {
-      if (!codexRuntime.enabled || isDeepSeekQuotaError(error)) throw error;
-      logger.warn({ error: String(error) }, 'Codex SDK streaming chat failed, falling back to DeepSeek direct');
-      provider = 'deepseek';
-      writeSse(res, 'step', {
-        title: 'Codex SDK 暂不可用',
-        message: '已自动回退为 DeepSeek 直连流式返回。',
-      });
-      aiResult = await callDeepSeekStream(modelMessages, {
-        onToken: (token) => writeSse(res, 'delta', { text: token }),
-      });
+      if (libreChatRuntime.enabled) {
+        logger.warn({ error: String(error) }, 'LibreChat Agent streaming chat failed, falling back to Codex SDK or DeepSeek direct');
+        provider = codexRuntime.enabled ? codexRuntime.provider : 'deepseek';
+        responseModel = deepseekModel;
+        writeSse(res, 'meta', {
+          conversationId,
+          provider,
+          model: responseModel,
+        });
+        if (codexRuntime.enabled) {
+          try {
+            aiResult = await callCodexSdkDeepSeek(modelMessages, {
+              onToken: (token) => writeSse(res, 'delta', { text: token }),
+              onStep: (step) => writeSse(res, 'step', step),
+            });
+          } catch (codexError) {
+            if (isDeepSeekQuotaError(codexError)) throw codexError;
+            logger.warn({ error: String(codexError) }, 'Codex SDK streaming chat failed, falling back to DeepSeek direct');
+            provider = 'deepseek';
+            responseModel = deepseekModel;
+            writeSse(res, 'meta', {
+              conversationId,
+              provider,
+              model: responseModel,
+            });
+            aiResult = await callDeepSeekStream(modelMessages, {
+              onToken: (token) => writeSse(res, 'delta', { text: token }),
+            });
+          }
+        } else {
+          aiResult = await callDeepSeekStream(modelMessages, {
+            onToken: (token) => writeSse(res, 'delta', { text: token }),
+          });
+        }
+      } else {
+        if (!codexRuntime.enabled || isDeepSeekQuotaError(error)) throw error;
+        logger.warn({ error: String(error) }, 'Codex SDK streaming chat failed, falling back to DeepSeek direct');
+        provider = 'deepseek';
+        responseModel = deepseekModel;
+        writeSse(res, 'meta', {
+          conversationId,
+          provider,
+          model: responseModel,
+        });
+        aiResult = await callDeepSeekStream(modelMessages, {
+          onToken: (token) => writeSse(res, 'delta', { text: token }),
+        });
+      }
     }
 
     const usage = {
@@ -1137,7 +1964,7 @@ app.post('/api/ai/chat/stream', async (req, res) => {
     writeSse(res, 'done', {
       conversationId,
       provider,
-      model: deepseekModel,
+      model: responseModel,
       message: aiResult.message,
       usage: {
         ...usage,
@@ -1566,6 +2393,8 @@ function extractResourceQuery(message) {
 function resourceContextMessage(skillResult) {
   if (!skillResult) return '';
   const lines = [
+    '本轮资源检索/下载已经由大乘 App 后端完成。',
+    '不要再次调用 search_dharma_resources、download_dharma_resource 或其他资源 MCP 工具；请直接基于以下结果回答用户。',
     `后端已调用 skill: ${skillResult.skillName}`,
     `执行目标: ${skillResult.query}`,
   ];
@@ -1845,6 +2674,200 @@ function persistDownloadedResource(user, content) {
   });
   return { id, fileName, filePath };
 }
+
+function createLibreChatMcpServer() {
+  const server = new McpServer({
+    name: 'dacheng-ai-tools',
+    version: '0.1.0',
+  });
+
+  server.registerTool(
+    'search_dharma_resources',
+    {
+      title: 'Search dharma resources',
+      description:
+        'Search for legally shareable Buddhist scripture, text, web, or audio resources that can be prepared for Fabushi sharing.',
+      inputSchema: {
+        query: z.string().min(2).max(200),
+        limit: z.number().int().min(1).max(12).optional(),
+      },
+      outputSchema: {
+        query: z.string(),
+        items: z.array(
+          z.object({
+            id: z.string(),
+            title: z.string(),
+            sourceName: z.string(),
+            url: z.string(),
+            snippet: z.string(),
+            resourceType: z.string(),
+            work: z.string().optional(),
+            juan: z.number().optional(),
+          }),
+        ),
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ query, limit }) => {
+      const items = await findResourceCandidates(query, limit ?? 8);
+      return textToolResult(`Found ${items.length} candidate resources for "${query}".`, {
+        query,
+        items,
+      });
+    },
+  );
+
+  server.registerTool(
+    'download_dharma_resource',
+    {
+      title: 'Download dharma resource',
+      description:
+        'Download and extract a selected resource. Use the url/work/juan returned by search_dharma_resources whenever possible.',
+      inputSchema: {
+        url: z.string().min(1).max(1000),
+        title: z.string().max(300).optional(),
+        sourceName: z.string().max(120).optional(),
+        work: z.string().max(40).optional(),
+        juan: z.number().int().min(1).optional(),
+        identifier: z.string().max(300).optional(),
+      },
+      outputSchema: {
+        title: z.string(),
+        sourceName: z.string(),
+        url: z.string(),
+        fileName: z.string(),
+        downloadId: z.string(),
+        contentText: z.string(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: true,
+      },
+    },
+    async (input) => {
+      const user = { userId: 'librechat:mcp' };
+      const cbeta = parseCbetaResource(input);
+      const internetArchive = parseInternetArchiveResource(input);
+      const content = cbeta
+        ? await downloadCbetaResource({ ...input, ...cbeta })
+        : internetArchive
+          ? await downloadInternetArchiveAudio({ ...input, ...internetArchive })
+          : await downloadWebResource(input);
+      const persisted = persistDownloadedResource(user, content);
+      const { binaryContent: _binaryContent, ...publicContent } = content;
+      return textToolResult(`Downloaded ${publicContent.title} as ${publicContent.fileName}.`, {
+        ...publicContent,
+        downloadId: persisted.id,
+      });
+    },
+  );
+
+  server.registerTool(
+    'prepare_dharma_share_text',
+    {
+      title: 'Prepare dharma sharing text',
+      description:
+        'Prepare a text payload for the Fabushi app to confirm and add to global dharma sharing. This returns a clientAction; it does not start sending.',
+      inputSchema: {
+        title: z.string().min(1).max(120),
+        text: z.string().min(1).max(20000),
+      },
+      outputSchema: {
+        clientAction: z.object({
+          type: z.literal('prepare_dharma_share_text'),
+          title: z.string(),
+          text: z.string(),
+        }),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ title, text }) =>
+      textToolResult(`Prepared "${title}" for user confirmation in the Fabushi app.`, {
+        clientAction: {
+          type: 'prepare_dharma_share_text',
+          title: safeUserText(title).slice(0, 120),
+          text: String(text || '').trim().slice(0, 20000),
+        },
+      }),
+  );
+
+  server.registerTool(
+    'prepare_practice_book_item',
+    {
+      title: 'Prepare practice book item',
+      description:
+        'Prepare a scripture, chant, or practice item for the Fabushi app practice book. This returns a clientAction; it does not mutate the app by itself.',
+      inputSchema: {
+        title: z.string().min(1).max(120),
+        sourceName: z.string().max(120).optional(),
+        text: z.string().min(1).max(20000),
+      },
+      outputSchema: {
+        clientAction: z.object({
+          type: z.literal('prepare_practice_book_item'),
+          title: z.string(),
+          sourceName: z.string(),
+          text: z.string(),
+        }),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ title, sourceName, text }) =>
+      textToolResult(`Prepared "${title}" for the Fabushi practice book confirmation flow.`, {
+        clientAction: {
+          type: 'prepare_practice_book_item',
+          title: safeUserText(title).slice(0, 120),
+          sourceName: safeUserText(sourceName || '大乘 AI').slice(0, 120),
+          text: String(text || '').trim().slice(0, 20000),
+        },
+      }),
+  );
+
+  return server;
+}
+
+async function handleMcpRequest(req, res) {
+  const server = createLibreChatMcpServer();
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+
+  res.on('close', () => {
+    transport.close();
+    server.close();
+  });
+
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
+}
+
+app.all('/mcp', async (req, res) => {
+  try {
+    await handleMcpRequest(req, res);
+  } catch (error) {
+    logger.error({ error: error.stack || String(error) }, 'MCP request failed');
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'MCP request failed',
+        message: publicAiErrorMessage(error),
+      });
+    }
+  }
+});
 
 app.post(
   '/api/resources/download',

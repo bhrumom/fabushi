@@ -175,6 +175,12 @@ jobs:
               fabushi/ios/*)
                 mark_app "mobile platform input changed: $path"
                 ;;
+              fabushi/macos/*|fabushi/linux/*|fabushi/windows/*)
+                mark_app "desktop platform input changed: $path"
+                ;;
+              fabushi/scripts/*)
+                mark_app "Flutter app release script changed: $path"
+                ;;
               fabushi/lib/*|fabushi/test/*|fabushi/integration_test/*|fabushi/assets/*|fabushi/fonts/*|fabushi/pubspec.yaml|fabushi/pubspec.lock|fabushi/analysis_options.yaml|fabushi/l10n.yaml)
                 mark_app "shared Flutter app input changed: $path"
                 mark_android "android build depends on shared Flutter app input: $path"

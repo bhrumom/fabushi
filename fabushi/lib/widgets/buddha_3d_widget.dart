@@ -1,27 +1,37 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+
+import '../screens/buddha_model_screen.dart';
 
 class Buddha3DWidget extends StatelessWidget {
-  const Buddha3DWidget({Key? key}) : super(key: key);
+  final bool autoRotate;
+  final bool isBurning;
+  final double incenseProgress;
+  final bool showBook;
+  final String? bookTitle;
+  final VoidCallback? onBookTap;
+  final bool isVisible;
+
+  const Buddha3DWidget({
+    super.key,
+    this.autoRotate = true,
+    this.isBurning = false,
+    this.incenseProgress = 0.0,
+    this.showBook = false,
+    this.bookTitle,
+    this.onBookTap,
+    this.isVisible = true,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb) {
-      return Center(child: Text('3D佛像仅在Web平台可用'));
-    } else {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.web, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              '3D佛像仅在Web平台可用',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-      );
-    }
+    return BuddhaModelScreen(
+      autoRotate: autoRotate,
+      isBurning: isBurning,
+      incenseProgress: incenseProgress,
+      showBook: showBook,
+      bookTitle: bookTitle,
+      onBookTap: onBookTap,
+      isVisible: isVisible,
+    );
   }
 }

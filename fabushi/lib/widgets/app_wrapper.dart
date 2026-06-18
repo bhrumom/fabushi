@@ -5,16 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/auth_model.dart';
-import '../screens/eula_screen.dart';
+import '../screens/eula_screen.dart' deferred as eula;
 import '../screens/main_navigation_screen.dart';
 import '../services/app_initializer.dart';
 import '../services/app_settings.dart';
-import '../services/app_update_service.dart';
+import '../services/app_update_service.dart' deferred as app_update;
 import '../services/error_report_service.dart';
-import '../services/eula_service.dart';
+import '../services/eula_service.dart' deferred as eula_service;
 import '../services/platform_service.dart';
-import '../widgets/app_update_dialog.dart';
-import '../widgets/model_selection_dialog.dart';
+import '../widgets/app_update_dialog.dart' deferred as app_update_dialog;
+import '../widgets/model_selection_dialog.dart' deferred as model_selection;
 import '../widgets/startup_splash_screen.dart';
 
 class AppWrapper extends StatefulWidget {
@@ -68,6 +68,11 @@ class _AppWrapperState extends State<AppWrapper> {
   }
 
   Future<void> _initializeApp() async {
+    if (kIsWeb) {
+      _initializeWebFirstPaint();
+      return;
+    }
+
     try {
       final authModel = Provider.of<AuthModel>(context, listen: false);
 
@@ -81,13 +86,12 @@ class _AppWrapperState extends State<AppWrapper> {
       _setStartupPhase('正在整理本地设置');
       _ensureBackgroundInitialization();
 
-      final needsEula = kIsWeb
-          ? false
-          : !await _guardStartupStep<bool>(
-              stage: 'check_eula_acceptance',
-              action: EulaService.isAccepted,
-              fallbackValue: true,
-            );
+      await eula_service.loadLibrary();
+      final needsEula = !await _guardStartupStep<bool>(
+        stage: 'check_eula_acceptance',
+        action: () => eula_service.EulaService.isAccepted(),
+        fallbackValue: true,
+      );
 
       bool needsModelSetup = false;
       if (_modelSetupUiEnabled) {
@@ -150,6 +154,63 @@ class _AppWrapperState extends State<AppWrapper> {
     }
   }
 
+  void _initializeWebFirstPaint() {
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+
+    setState(() {
+      _isInitialized = true;
+      _needsEula = false;
+      _needsModelSetup = false;
+      _startupPhase = '正在展开首页';
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_restoreWebStateAfterFirstFrame(authModel));
+    });
+  }
+
+  Future<void> _restoreWebStateAfterFirstFrame(AuthModel authModel) async {
+    try {
+      final loggedInFromUrl = await _processUrlHash(authModel);
+      if (!loggedInFromUrl) {
+        Future<void>.delayed(const Duration(milliseconds: 250), () {
+          if (!mounted) {
+            return;
+          }
+          unawaited(authModel.loadStoredAuth());
+        });
+      }
+
+      Future<void>.delayed(const Duration(milliseconds: 600), () {
+        if (!mounted) {
+          return;
+        }
+        unawaited(
+          _runStartupSideEffect(
+            stage: 'web_mark_first_launch_complete',
+            action: AppSettings.setFirstLaunchComplete,
+          ),
+        );
+        unawaited(
+          _runStartupSideEffect(
+            stage: 'web_mark_model_setup_complete',
+            action: () => AppSettings.setModelSetupComplete(true),
+          ),
+        );
+      });
+    } catch (error, stackTrace) {
+      await ErrorReportService.instance.recordError(
+        error,
+        stackTrace: stackTrace,
+        stage: 'web_post_first_frame_restore',
+        source: 'AppWrapper._restoreWebStateAfterFirstFrame',
+      );
+    }
+  }
+
   Future<T> _guardStartupStep<T>({
     required String stage,
     required Future<T> Function() action,
@@ -185,7 +246,7 @@ class _AppWrapperState extends State<AppWrapper> {
   }
 
   void _scheduleAppVersionCheck() {
-    if (_versionCheckScheduled) {
+    if (kIsWeb || _versionCheckScheduled) {
       return;
     }
     _versionCheckScheduled = true;
@@ -201,12 +262,15 @@ class _AppWrapperState extends State<AppWrapper> {
   }
 
   Future<void> _showAppUpdateDialogIfNeeded() async {
-    final decision = await AppUpdateService.instance.checkForUpdate();
+    await app_update.loadLibrary();
+    await app_update_dialog.loadLibrary();
+
+    final decision = await app_update.AppUpdateService.instance.checkForUpdate();
     if (!mounted || decision == null) {
       return;
     }
 
-    await AppUpdateService.instance.markPromptShown();
+    await app_update.AppUpdateService.instance.markPromptShown();
     if (!mounted) {
       return;
     }
@@ -215,23 +279,24 @@ class _AppWrapperState extends State<AppWrapper> {
       context: context,
       barrierDismissible: !decision.isForce,
       builder: (dialogContext) {
-        return AppUpdateDialog(
+        return app_update_dialog.AppUpdateDialog(
           decision: decision,
           onLaterPressed: decision.isForce
               ? null
               : () => Navigator.of(dialogContext).pop(),
           onSkipPressed: decision.canSkip
               ? () async {
-                  await AppUpdateService.instance.markSkippedVersion(decision);
+                  await app_update.AppUpdateService.instance.markSkippedVersion(
+                    decision,
+                  );
                   if (dialogContext.mounted) {
                     Navigator.of(dialogContext).pop();
                   }
                 }
               : null,
           onUpdatePressed: () async {
-            final launched = await AppUpdateService.instance.openUpdatePage(
-              decision,
-            );
+            final launched = await app_update.AppUpdateService.instance
+                .openUpdatePage(decision);
             if (!mounted) {
               return;
             }
@@ -262,7 +327,8 @@ class _AppWrapperState extends State<AppWrapper> {
   Future<void> _showEulaScreen() async {
     if (!mounted) return;
 
-    final accepted = await EulaScreen.checkAndShow(context);
+    await eula.loadLibrary();
+    final accepted = await eula.EulaScreen.checkAndShow(context);
 
     if (mounted) {
       setState(() => _needsEula = !accepted);
@@ -274,7 +340,8 @@ class _AppWrapperState extends State<AppWrapper> {
 
     if (!mounted) return;
 
-    final result = await ModelSelectionDialog.show(
+    await model_selection.loadLibrary();
+    final result = await model_selection.ModelSelectionDialog.show(
       context,
       isFirstLaunch: true,
     );

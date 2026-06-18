@@ -2,16 +2,22 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'keep_alive_guide_screen.dart';
 import 'practice_privacy_screen.dart';
 import '../core/constants/app_constants.dart';
 import '../services/api_client.dart';
+import '../services/ai_backend_policy.dart';
 import '../services/app_build_info_service.dart';
 import '../services/app_settings.dart';
 import '../services/llm_model_config.dart';
 import '../services/llm_model_manager.dart';
 import '../services/device_capability_service.dart';
+import '../services/desktop_control/desktop_control_bridge.dart';
+import '../services/desktop_control/desktop_control_models.dart';
+import '../services/diagnostic_log_service.dart';
+import '../services/openclaw/openclaw_runtime.dart';
 import '../services/worker_config.dart';
 import '../widgets/model_selection_dialog.dart';
 import '../models/auth_model.dart';
@@ -44,16 +50,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _downloadStage = '';
   bool _isDownloading = false;
 
+  // 桌面 AI / OpenClaw 设置
+  String _aiBackendModeName = 'auto';
+  OpenClawRuntimeStatus? _openClawStatus;
+  DesktopControlBridgeStatus? _desktopControlStatus;
+  List<DesktopControlPendingConfirmation> _desktopControlPending = const [];
+  bool _isRestartingOpenClaw = false;
+  bool _isPreparingChromeConnector = false;
+  StreamSubscription<void>? _desktopControlSubscription;
+
   @override
   void initState() {
     super.initState();
     _loadSettings();
     _subscribeToDownloadProgress();
+    _subscribeToDesktopControlConfirmations();
   }
 
   @override
   void dispose() {
     _downloadProgressSubscription?.cancel();
+    _desktopControlSubscription?.cancel();
     super.dispose();
   }
 
@@ -85,9 +102,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
   }
 
+  void _subscribeToDesktopControlConfirmations() {
+    _desktopControlSubscription = DesktopControlBridge
+        .instance
+        .confirmationsChanged
+        .listen((_) {
+          if (mounted) {
+            _refreshDesktopControlStatus();
+          }
+        });
+  }
+
   /// 刷新模型状态
   Future<void> _refreshModelStatus() async {
-    final newStatus = await LLMModelManager.instance.getAllModelStatus();
+    final newStatus = await _loadSetting<Map<LLMModelType, ModelStatus>?>(
+      '刷新模型状态',
+      LLMModelManager.instance.getAllModelStatus(),
+      _modelStatus,
+      timeout: const Duration(seconds: 8),
+    );
+    if (newStatus == null) return;
     if (mounted) {
       setState(() {
         _modelStatus = newStatus;
@@ -96,16 +130,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final defaultMuted = await AppSettings.getDefaultTtsMuted();
-    final fastMatchThreshold = await AppSettings.getFastMatchThreshold();
-    final matchThreshold = await AppSettings.getMatchThreshold();
-    final appVersionLabel = await AppBuildInfoService.instance.getVersionLabel();
+    final values = await Future.wait<dynamic>([
+      _loadSetting<bool>(
+        '默认静音设置',
+        AppSettings.getDefaultTtsMuted(),
+        _defaultTtsMuted,
+      ),
+      _loadSetting<double>(
+        '快速匹配阈值',
+        AppSettings.getFastMatchThreshold(),
+        _fastMatchThreshold,
+      ),
+      _loadSetting<double>(
+        '普通匹配阈值',
+        AppSettings.getMatchThreshold(),
+        _matchThreshold,
+      ),
+      _loadSetting<String>(
+        '版本信息',
+        AppBuildInfoService.instance.getVersionLabel(),
+        _appVersionLabel,
+      ),
+      _loadSetting<String>(
+        'AI 后端模式',
+        AppSettings.getAiBackendModeName(),
+        _aiBackendModeName,
+      ),
+    ]);
 
-    // 加载 AI 模型相关设置
-    final deviceInfo = await DeviceCapabilityService.instance
-        .getDeviceCapabilityInfo();
-    final modelStatus = await LLMModelManager.instance.getAllModelStatus();
-    final savedModelName = await AppSettings.getSelectedModelName();
+    if (mounted) {
+      setState(() {
+        _defaultTtsMuted = values[0] as bool;
+        _fastMatchThreshold = values[1] as double;
+        _matchThreshold = values[2] as double;
+        _appVersionLabel = values[3] as String;
+        _aiBackendModeName = values[4] as String;
+        _isLoading = false;
+      });
+    }
+
+    unawaited(_loadModelSettings());
+    unawaited(_loadDesktopRuntimeSettings(probeOpenClaw: false));
+  }
+
+  Future<void> _loadModelSettings() async {
+    final values = await Future.wait<dynamic>([
+      _loadSetting<DeviceCapabilityInfo?>(
+        '设备能力信息',
+        DeviceCapabilityService.instance.getDeviceCapabilityInfo(),
+        _deviceInfo,
+        timeout: const Duration(seconds: 5),
+      ),
+      _loadSetting<Map<LLMModelType, ModelStatus>?>(
+        '模型状态',
+        LLMModelManager.instance.getAllModelStatus(),
+        _modelStatus,
+        timeout: const Duration(seconds: 8),
+      ),
+      _loadSetting<String?>('已选模型', AppSettings.getSelectedModelName(), null),
+    ]);
+
+    final savedModelName = values[2] as String?;
     LLMModelType? selectedModel;
     if (savedModelName != null) {
       try {
@@ -117,15 +202,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (mounted) {
       setState(() {
-        _defaultTtsMuted = defaultMuted;
-        _fastMatchThreshold = fastMatchThreshold;
-        _matchThreshold = matchThreshold;
-        _appVersionLabel = appVersionLabel;
-        _deviceInfo = deviceInfo;
-        _modelStatus = modelStatus;
+        _deviceInfo = values[0] as DeviceCapabilityInfo?;
+        _modelStatus = values[1] as Map<LLMModelType, ModelStatus>?;
         _selectedModel = selectedModel;
-        _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadDesktopRuntimeSettings({
+    required bool probeOpenClaw,
+  }) async {
+    if (!AiBackendPolicy.isDesktopNative) return;
+    final values = await Future.wait<dynamic>([
+      _readOpenClawStatus(probe: probeOpenClaw),
+      _readDesktopControlStatus(),
+      _loadSetting<List<DesktopControlPendingConfirmation>>(
+        '桌面控制确认请求',
+        DesktopControlBridge.instance.pendingConfirmations(),
+        const [],
+      ),
+    ]);
+
+    if (mounted) {
+      setState(() {
+        _openClawStatus = values[0] as OpenClawRuntimeStatus;
+        _desktopControlStatus = values[1] as DesktopControlBridgeStatus;
+        _desktopControlPending =
+            values[2] as List<DesktopControlPendingConfirmation>;
+      });
+    }
+  }
+
+  Future<OpenClawRuntimeStatus> _readOpenClawStatus({
+    required bool probe,
+  }) async {
+    try {
+      return await OpenClawRuntime.instance
+          .getStatus(probe: probe)
+          .timeout(const Duration(seconds: 8));
+    } catch (error) {
+      debugPrint('Settings: OpenClaw 状态检测失败: $error');
+      return OpenClawRuntimeStatus(
+        state: OpenClawRuntimeState.failed,
+        message: 'OpenClaw 状态检测失败：$error',
+        checkedAt: DateTime.now(),
+      );
+    }
+  }
+
+  Future<DesktopControlBridgeStatus> _readDesktopControlStatus({
+    bool startBridge = false,
+  }) async {
+    try {
+      final future = startBridge
+          ? DesktopControlBridge.instance.ensureStarted()
+          : DesktopControlBridge.instance.getStatus();
+      return await future.timeout(
+        startBridge ? const Duration(seconds: 15) : const Duration(seconds: 5),
+      );
+    } catch (error) {
+      debugPrint('Settings: 桌面控制状态检测失败: $error');
+      return DesktopControlBridgeStatus(
+        enabledByBuild: true,
+        supportedPlatform: AiBackendPolicy.isDesktopNative,
+        bridgeRunning: false,
+        platform: defaultTargetPlatform.name,
+        message: '桌面控制状态检测失败：$error',
+        screenRecordingGranted: false,
+        accessibilityGranted: false,
+        chrome: ChromeConnectorStatus.disconnected('Chrome 连接器状态未知'),
+      );
+    }
+  }
+
+  Future<T> _loadSetting<T>(
+    String label,
+    Future<T> future,
+    T fallback, {
+    Duration timeout = const Duration(seconds: 4),
+  }) async {
+    try {
+      return await future.timeout(timeout);
+    } catch (error) {
+      debugPrint('Settings: $label 加载失败: $error');
+      return fallback;
     }
   }
 
@@ -142,6 +302,183 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _setMatchThreshold(double value) async {
     setState(() => _matchThreshold = value);
     await AppSettings.setMatchThreshold(value);
+  }
+
+  Future<void> _setAiBackendModeName(String? value) async {
+    if (value == null || value.isEmpty) return;
+    setState(() => _aiBackendModeName = value);
+    await AppSettings.setAiBackendModeName(value);
+  }
+
+  Future<void> _refreshOpenClawStatus() async {
+    if (!AiBackendPolicy.isDesktopNative) return;
+    final status = await _readOpenClawStatus(probe: true);
+    if (mounted) {
+      setState(() => _openClawStatus = status);
+    }
+    await _refreshDesktopControlStatus();
+  }
+
+  Future<void> _refreshDesktopControlStatus({bool startBridge = false}) async {
+    if (!AiBackendPolicy.isDesktopNative) return;
+    final status = await _readDesktopControlStatus(startBridge: startBridge);
+    final pending = await _loadSetting<List<DesktopControlPendingConfirmation>>(
+      '桌面控制确认请求',
+      DesktopControlBridge.instance.pendingConfirmations(),
+      _desktopControlPending,
+    );
+    if (mounted) {
+      setState(() {
+        _desktopControlStatus = status;
+        _desktopControlPending = pending;
+      });
+    }
+  }
+
+  Future<void> _restartOpenClawRuntime() async {
+    if (!AiBackendPolicy.isDesktopNative || _isRestartingOpenClaw) return;
+    setState(() => _isRestartingOpenClaw = true);
+    final status = await _restartOpenClawRuntimeSafely();
+    if (!mounted) return;
+    setState(() {
+      _openClawStatus = status;
+      _isRestartingOpenClaw = false;
+    });
+    unawaited(_refreshDesktopControlStatus());
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(status.isHealthy ? '本机 OpenClaw 已启动' : status.message),
+        backgroundColor: status.isHealthy ? Colors.green : Colors.redAccent,
+      ),
+    );
+  }
+
+  Future<OpenClawRuntimeStatus> _restartOpenClawRuntimeSafely() async {
+    try {
+      return await OpenClawRuntime.instance.restart().timeout(
+        const Duration(seconds: 75),
+      );
+    } catch (error) {
+      debugPrint('Settings: OpenClaw 重启失败: $error');
+      return OpenClawRuntimeStatus(
+        state: OpenClawRuntimeState.failed,
+        message: 'OpenClaw 重启失败：$error',
+        checkedAt: DateTime.now(),
+      );
+    }
+  }
+
+  Future<void> _prepareChromeConnectorInstall() async {
+    if (!AiBackendPolicy.isDesktopNative || _isPreparingChromeConnector) return;
+    setState(() => _isPreparingChromeConnector = true);
+    String? path;
+    Object? installError;
+    try {
+      path = await DesktopControlBridge.instance
+          .prepareChromeConnectorInstall()
+          .timeout(const Duration(seconds: 20));
+      await _refreshDesktopControlStatus();
+    } catch (error) {
+      debugPrint('Settings: Chrome 连接器准备失败: $error');
+      installError = error;
+    }
+    if (!mounted) return;
+    setState(() => _isPreparingChromeConnector = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          installError != null
+              ? 'Chrome 连接器准备失败：$installError'
+              : path == null
+              ? '当前构建未启用 Chrome 连接器'
+              : 'Chrome 连接器目录已打开',
+        ),
+        backgroundColor: installError != null
+            ? Colors.redAccent
+            : path == null
+            ? Colors.orange
+            : Colors.green,
+      ),
+    );
+  }
+
+  Future<void> _copyDiagnosticLogTail() async {
+    final path = await DiagnosticLogService.instance.logFilePath();
+    final tail = await DiagnosticLogService.instance.tail(maxLines: 400);
+    await Clipboard.setData(
+      ClipboardData(text: '诊断日志路径: ${path ?? '无持久化日志路径'}\n\n$tail'),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(path == null ? '已复制当前诊断日志内容' : '已复制诊断日志内容和路径'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  Future<void> _openDiagnosticLogLocation() async {
+    final path = await DiagnosticLogService.instance.logFilePath();
+    if (path == null || path.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('当前平台没有可打开的诊断日志文件'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final file = File(path);
+    try {
+      if (Platform.isMacOS) {
+        await Process.run('open', ['-R', path]);
+      } else if (Platform.isWindows) {
+        await Process.run('explorer.exe', ['/select,${file.path}']);
+      } else {
+        await Process.run('xdg-open', [file.parent.path]);
+      }
+    } catch (error) {
+      await Clipboard.setData(ClipboardData(text: path));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('打开日志位置失败，已复制路径：$error'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已打开诊断日志位置'), backgroundColor: Colors.green),
+    );
+  }
+
+  Future<void> _approveDesktopControlRequest(String id) async {
+    final item = await DesktopControlBridge.instance.approvePendingRequest(id);
+    await _refreshDesktopControlStatus();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(item == null ? '确认请求已失效' : '已允许该动作，工具可继续执行'),
+        backgroundColor: item == null ? Colors.orange : Colors.green,
+      ),
+    );
+  }
+
+  Future<void> _rejectDesktopControlRequest(String id) async {
+    final item = await DesktopControlBridge.instance.rejectPendingRequest(id);
+    await _refreshDesktopControlStatus();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(item == null ? '确认请求已失效' : '已拒绝该动作'),
+        backgroundColor: Colors.orange,
+      ),
+    );
   }
 
   String _feedbackPlatformLabel() {
@@ -237,7 +574,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             return AlertDialog(
               backgroundColor: const Color(0xFF1E1E1E),
-              title: const Text('提交问题反馈', style: TextStyle(color: Colors.white)),
+              title: const Text(
+                '提交问题反馈',
+                style: TextStyle(color: Colors.white),
+              ),
               content: SizedBox(
                 width: 420,
                 child: SingleChildScrollView(
@@ -252,7 +592,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 8),
                       Text(
                         '当前版本：$_appVersionLabel',
-                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       TextField(
@@ -420,6 +763,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   //
                   // // 读诵匹配阈值设置
                   // _buildRecitationThresholdSettings(),
+                  if (AiBackendPolicy.isDesktopNative) ...[
+                    _buildOpenClawSettingCard(),
+                    const SizedBox(height: 12),
+                  ],
 
                   // Android 后台保活设置（仅 Android 显示）
                   if (Platform.isAndroid)
@@ -503,6 +850,341 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildOpenClawSettingCard() {
+    final mode = aiBackendModeFromStorageName(_aiBackendModeName);
+    final status = _openClawStatus;
+    final desktopStatus = _desktopControlStatus;
+    final chromeStatus = desktopStatus?.chrome;
+    final statusColor = switch (status?.state) {
+      OpenClawRuntimeState.running => Colors.greenAccent,
+      OpenClawRuntimeState.starting => Colors.amberAccent,
+      OpenClawRuntimeState.notBundled => Colors.orangeAccent,
+      OpenClawRuntimeState.failed => Colors.redAccent,
+      OpenClawRuntimeState.unsupported => Colors.white38,
+      _ => Colors.white54,
+    };
+
+    return Card(
+      color: const Color(0xFF1E1E1E),
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.greenAccent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.hub_outlined,
+                    color: Colors.greenAccent,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '桌面 AI / OpenClaw',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        '桌面首页 AI 对话默认使用 App 内置本机 OpenClaw',
+                        style: TextStyle(color: Colors.white54, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<String>(
+              value: mode.storageName,
+              dropdownColor: const Color(0xFF2A2A2A),
+              decoration: InputDecoration(
+                labelText: 'AI 后端',
+                labelStyle: const TextStyle(color: Colors.white70),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.04),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              style: const TextStyle(color: Colors.white),
+              items: AiBackendMode.values
+                  .map(
+                    (item) => DropdownMenuItem<String>(
+                      value: item.storageName,
+                      child: Text('${item.label} · ${item.description}'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: _isRestartingOpenClaw ? null : _setAiBackendModeName,
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.circle, size: 10, color: statusColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      status == null
+                          ? '尚未检测本机 OpenClaw 状态'
+                          : '${status.label} · ${status.message}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildDesktopControlStatusRow(
+              icon: Icons.mouse_outlined,
+              title: '桌面控制',
+              message: desktopStatus == null
+                  ? '尚未检测桌面控制桥'
+                  : desktopStatus.message,
+              color: desktopStatus == null
+                  ? Colors.white38
+                  : !desktopStatus.enabledByBuild
+                  ? Colors.orangeAccent
+                  : desktopStatus.supportedPlatform &&
+                        desktopStatus.bridgeRunning
+                  ? Colors.greenAccent
+                  : Colors.amberAccent,
+            ),
+            const SizedBox(height: 8),
+            _buildDesktopControlStatusRow(
+              icon: Icons.security_outlined,
+              title: '权限',
+              message: desktopStatus == null
+                  ? '尚未检测权限'
+                  : '屏幕录制 ${desktopStatus.screenRecordingGranted ? '已授权' : '未授权'} · 辅助功能 ${desktopStatus.accessibilityGranted ? '已授权' : '未授权'}',
+              color:
+                  desktopStatus != null &&
+                      desktopStatus.screenRecordingGranted &&
+                      desktopStatus.accessibilityGranted
+                  ? Colors.greenAccent
+                  : Colors.orangeAccent,
+            ),
+            const SizedBox(height: 8),
+            _buildDesktopControlStatusRow(
+              icon: Icons.public,
+              title: 'Chrome 连接器',
+              message: chromeStatus?.message ?? '尚未检测 Chrome 连接器',
+              color: chromeStatus?.connected == true
+                  ? Colors.greenAccent
+                  : Colors.orangeAccent,
+            ),
+            if (_desktopControlPending.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _buildPendingDesktopConfirmations(),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isRestartingOpenClaw
+                        ? null
+                        : _refreshOpenClawStatus,
+                    icon: const Icon(
+                      Icons.health_and_safety_outlined,
+                      size: 18,
+                    ),
+                    label: const Text('检测'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _isRestartingOpenClaw
+                        ? null
+                        : _restartOpenClawRuntime,
+                    icon: _isRestartingOpenClaw
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.restart_alt, size: 18),
+                    label: Text(_isRestartingOpenClaw ? '启动中' : '重启本机 AI'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed:
+                        _isRestartingOpenClaw || _isPreparingChromeConnector
+                        ? null
+                        : () => _refreshDesktopControlStatus(startBridge: true),
+                    icon: const Icon(Icons.rule_folder_outlined, size: 18),
+                    label: const Text('工具诊断'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed:
+                        _isRestartingOpenClaw || _isPreparingChromeConnector
+                        ? null
+                        : _prepareChromeConnectorInstall,
+                    icon: _isPreparingChromeConnector
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.extension_outlined, size: 18),
+                    label: Text(_isPreparingChromeConnector ? '准备中' : '连接器'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _copyDiagnosticLogTail,
+                    icon: const Icon(Icons.content_copy_outlined, size: 18),
+                    label: const Text('复制日志'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _openDiagnosticLogLocation,
+                    icon: const Icon(Icons.folder_open_outlined, size: 18),
+                    label: const Text('日志位置'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopControlStatusRow({
+    required IconData icon,
+    required String title,
+    required String message,
+    required Color color,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingDesktopConfirmations() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.amberAccent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '待确认动作',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ..._desktopControlPending.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.summary,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _rejectDesktopControlRequest(item.id),
+                    child: const Text('拒绝'),
+                  ),
+                  FilledButton(
+                    onPressed: () => _approveDesktopControlRequest(item.id),
+                    child: const Text('允许'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

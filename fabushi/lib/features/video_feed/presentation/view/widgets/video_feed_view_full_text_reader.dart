@@ -1,13 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:lpinyin/lpinyin.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import '../../../../../core/config/app_config.dart';
 import '../../../../../models/sutra_table_of_contents.dart';
 import '../../../../../models/merit_benefit.dart';
 import '../../../../../services/merit_benefit_service.dart';
 import '../../../../../widgets/sutra_toc_bottom_sheet.dart';
-import '../../../../../screens/sutra_ai_page.dart';
 
 // ============================================================================
 // 第一性原理极致优化版本
@@ -928,15 +929,35 @@ class _VideoFeedViewFullTextReaderState
     );
   }
 
-  /// 打开AI问经页面
-  void _openAIPage() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            SutraAIPage(bookTitle: widget.bookTitle, fullText: widget.fullText),
-      ),
+  /// 打开 AI 问经 Web 入口
+  Future<void> _openAIPage() async {
+    final contextText = widget.fullText.length > 600
+        ? '${widget.fullText.substring(0, 600)}...'
+        : widget.fullText;
+    final uri = AppConfig.buildDachengAiWebUri(
+      bookTitle: widget.bookTitle,
+      context: contextText,
+      prompt: '请解释《${widget.bookTitle}》中这段内容，并整理适合法布施分享的摘要。',
     );
+    try {
+      final opened = await launchUrl(
+        uri,
+        mode: kIsWeb
+            ? LaunchMode.platformDefault
+            : LaunchMode.externalApplication,
+        webOnlyWindowName: kIsWeb ? '_self' : null,
+      );
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('暂时无法打开大乘 AI Web 入口')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('暂时无法打开大乘 AI Web 入口: $e')),
+      );
+    }
   }
 
   /// 构建底部工具栏（微信读书风格）

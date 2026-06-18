@@ -1,0 +1,137 @@
+.page {
+  min-height: 100vh;
+  padding: 28px 24px 48px;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(123, 31, 162, 0.22), transparent 32%),
+    radial-gradient(circle at 82% 4%, rgba(255, 215, 0, 0.1), transparent 28%),
+    linear-gradient(180deg, #0b0e14 0%, #101419 100%);
+}
+
+.title {
+  display: block;
+  color: #e8eaf6;
+  font-size: 44px;
+  font-weight: 800;
+}
+
+.subtitle,
+.status,
+.message,
+.resource-copy {
+  display: block;
+  color: rgba(232, 234, 246, 0.72);
+  font-size: 27px;
+  line-height: 1.62;
+}
+
+.subtitle {
+  margin-top: 14px;
+}
+
+.panel {
+  margin-top: 26px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.panel-title {
+  display: block;
+  color: #e8eaf6;
+  font-size: 31px;
+  font-weight: 750;
+  margin-bottom: 14px;
+}
+
+.textarea,
+.input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(11, 14, 20, 0.52);
+  color: #e8eaf6;
+  font-size: 28px;
+  padding: 18px;
+}
+
+.textarea {
+  min-height: 172px;
+}
+
+.input {
+  min-height: 76px;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.button {
+  flex: 1;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffd700;
+  color: #11151d;
+  font-size: 28px;
+  font-weight: 800;
+  border-radius: 8px;
+}
+
+.button.secondary {
+  background: rgba(232, 234, 246, 0.12);
+  color: #e8eaf6;
+}
+
+.prompt {
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #e8eaf6;
+  background: rgba(11, 14, 20, 0.42);
+  font-size: 26px;
+  line-height: 1.5;
+}
+
+.prompt + .prompt,
+.resource + .resource {
+  margin-top: 12px;
+}
+
+.message {
+  margin-top: 16px;
+  padding: 18px;
+  border-radius: 8px;
+  background: rgba(11, 14, 20, 0.42);
+  color: #e8eaf6;
+  white-space: pre-wrap;
+}
+
+.resource {
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(11, 14, 20, 0.42);
+}
+
+.resource-title {
+  display: block;
+  color: #e8eaf6;
+  font-size: 28px;
+  font-weight: 750;
+}
+
+.resource-copy {
+  margin-top: 8px;
+  font-size: 24px;
+}
+
+.status {
+  margin-top: 12px;
+  color: #ffd700;
+  font-size: 24px;
+}

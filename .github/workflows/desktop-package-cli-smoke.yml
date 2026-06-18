@@ -1,0 +1,118 @@
+name: Desktop package CLI smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: GitHub Release tag containing desktop packages. Use latest by default.
+        required: false
+        default: latest
+        type: string
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: desktop-package-cli-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-cli-smoke:
+    name: Smoke installed ${{ matrix.target }} package CLI
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows
+            os: windows-latest
+            pattern: '*windows-x64.zip'
+            cli: global_dharma_sharing_cli.exe
+          - target: macos
+            os: macos-latest
+            pattern: '*macos-*.zip'
+            cli: global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli
+          - target: linux
+            os: ubuntu-latest
+            pattern: '*linux-x64.tar.gz'
+            cli: global_dharma_sharing_cli
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout smoke scripts
+        uses: actions/checkout@v5
+
+      - name: Download release package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.release_tag || github.event.release.tag_name || 'latest' }}
+          ASSET_PATTERN: ${{ matrix.pattern }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/package"
+          if [ "$RELEASE_TAG" = "latest" ]; then
+            gh release download --repo "$GITHUB_REPOSITORY" --pattern "$ASSET_PATTERN" --dir "$RUNNER_TEMP/package" --clobber
+          else
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET_PATTERN" --dir "$RUNNER_TEMP/package" --clobber
+          fi
+          find "$RUNNER_TEMP/package" -maxdepth 1 -type f -print
+
+      - name: Install Linux package and smoke CLI
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/installed"
+          archive="$(find "$RUNNER_TEMP/package" -maxdepth 1 -name '*linux-x64.tar.gz' -print -quit)"
+          if [ -z "$archive" ]; then
+            echo "No Linux archive downloaded" >&2
+            exit 1
+          fi
+          tar -xzf "$archive" -C "$RUNNER_TEMP/installed"
+          cli="$RUNNER_TEMP/installed/${{ matrix.cli }}"
+          if [ ! -x "$cli" ]; then
+            echo "Installed package CLI not found or not executable: $cli" >&2
+            exit 1
+          fi
+          "$cli" doctor --json
+          "$cli" gateway-smoke --timeout-seconds 120 --json
+
+      - name: Install macOS package and smoke CLI
+        if: matrix.target == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/installed"
+          zip_path="$(find "$RUNNER_TEMP/package" -maxdepth 1 -name '*macos-*.zip' -print -quit)"
+          if [ -z "$zip_path" ]; then
+            echo "No macOS zip downloaded" >&2
+            exit 1
+          fi
+          ditto -x -k "$zip_path" "$RUNNER_TEMP/installed"
+          cli="$RUNNER_TEMP/installed/${{ matrix.cli }}"
+          if [ ! -x "$cli" ]; then
+            echo "Installed package CLI not found or not executable: $cli" >&2
+            find "$RUNNER_TEMP/installed" -maxdepth 5 -type f | sort | head -100
+            exit 1
+          fi
+          "$cli" doctor --json
+          "$cli" gateway-smoke --timeout-seconds 120 --json
+
+      - name: Install Windows package and smoke CLI
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path "$env:RUNNER_TEMP\package" -Filter "*windows-x64.zip" | Select-Object -First 1
+          if (-not $zip) { throw "No Windows zip downloaded" }
+          $installDir = Join-Path $env:RUNNER_TEMP "installed"
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath $installDir -Force
+          $cli = Join-Path $installDir "${{ matrix.cli }}"
+          if (-not (Test-Path $cli)) { throw "Installed package CLI not found: $cli" }
+          & $cli doctor --json
+          & $cli gateway-smoke --timeout-seconds 120 --json

@@ -169,23 +169,141 @@ jobs:
               print(f"::warning::Expected custom domain {expected} is not bound to this Pages project before deploy.")
           PY
 
-      - name: Deploy Flutter Web to Cloudflare Pages
+      - name: Deploy Flutter Web to Cloudflare
+        id: deploy_flutter_web
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT || secrets.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT || vars.CF_ACCOUNT }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
         run: |
           set -euo pipefail
+
+          set +e
           npx --yes wrangler@latest pages deploy build/web \
             --project-name "$CLOUDFLARE_PAGES_PROJECT" \
             --branch "$GITHUB_REF_NAME" \
-            --commit-hash "$GITHUB_SHA"
+            --commit-hash "$GITHUB_SHA" 2>&1 | tee /tmp/flutter-web-pages-deploy.log
+          pages_status="${PIPESTATUS[0]}"
+          set -e
+
+          if [ "$pages_status" -eq 0 ]; then
+            echo "target=cloudflare-pages" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! grep -Eqi 'Authentication error|permission|not authorized|forbidden|code: 10000' /tmp/flutter-web-pages-deploy.log; then
+            exit "$pages_status"
+          fi
+
+          echo "::warning::Cloudflare Pages deploy failed because the configured token cannot access Pages. Falling back to a Cloudflare Worker static-assets deploy."
+
+          cat > flutter-web-static-worker.js <<'EOF'
+          export default {
+            async fetch(request, env) {
+              const url = new URL(request.url);
+              const pathname = url.pathname;
+
+              let response = await env.ASSETS.fetch(request);
+              if (response.status === 404 && !pathname.startsWith('/api/') && !/\.[^/]+$/.test(pathname)) {
+                response = await env.ASSETS.fetch(new Request(new URL('/index.html', request.url), request));
+              }
+
+              const headers = new Headers(response.headers);
+              headers.set('Access-Control-Allow-Origin', '*');
+              headers.set('X-App-Version', '${GITHUB_SHA}');
+
+              if (pathname === '/' || pathname === '/index.html' || pathname === '/flutter_service_worker.js' || pathname === '/main.dart.js') {
+                headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+              } else if (/\.(js|css|png|jpg|jpeg|gif|svg|woff2?|json|wasm)$/i.test(pathname) && !headers.has('Cache-Control')) {
+                headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+              }
+
+              return new Response(request.method === 'HEAD' ? null : response.body, {
+                status: response.status,
+                statusText: response.statusText,
+                headers,
+              });
+            },
+          };
+          EOF
+
+          cat > wrangler.flutter-web-static.toml <<'EOF'
+          name = "fabushi-flutter-web-static-prod"
+          main = "flutter-web-static-worker.js"
+          compatibility_date = "2026-06-11"
+          workers_dev = true
+
+          [assets]
+          directory = "build/web"
+          EOF
+
+          fallback_worker_name="fabushi-flutter-web-static-prod"
+
+          npx --yes wrangler@latest deploy \
+            --config wrangler.flutter-web-static.toml
+
+          api_base="https://api.cloudflare.com/client/v4"
+          root_domain="ombhrum.com"
+          route_pattern="${EXPECTED_CUSTOM_DOMAIN}/*"
+
+          cloudflare_request() {
+            local method="$1"
+            local url="$2"
+            local body="${3:-}"
+
+            if [ -n "${body}" ]; then
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "${body}"
+            else
+              curl -fsS -X "${method}" "${url}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json"
+            fi
+          }
+
+          assert_cloudflare_success() {
+            local response="$1"
+            local context="$2"
+
+            if [ "$(jq -r '.success // false' <<< "${response}")" != "true" ]; then
+              echo "Cloudflare API request failed: ${context}" >&2
+              jq '.' <<< "${response}" >&2
+              exit 1
+            fi
+          }
+
+          zone_response="$(cloudflare_request GET "${api_base}/zones?name=${root_domain}&status=active")"
+          assert_cloudflare_success "${zone_response}" "resolve zone ${root_domain}"
+          zone_id="$(jq -r '.result[0].id // empty' <<< "${zone_response}")"
+
+          if [ -z "${zone_id}" ]; then
+            echo "Could not resolve Cloudflare zone id for ${root_domain}." >&2
+            exit 1
+          fi
+
+          routes_response="$(cloudflare_request GET "${api_base}/zones/${zone_id}/workers/routes")"
+          assert_cloudflare_success "${routes_response}" "list worker routes"
+          route_json="$(jq -c --arg pattern "${route_pattern}" '.result[]? | select(.pattern == $pattern)' <<< "${routes_response}" | head -n 1)"
+          route_body="$(jq -n --arg pattern "${route_pattern}" --arg script "${fallback_worker_name}" '{pattern: $pattern, script: $script}')"
+
+          if [ -z "${route_json}" ]; then
+            route_response="$(cloudflare_request POST "${api_base}/zones/${zone_id}/workers/routes" "${route_body}")"
+            assert_cloudflare_success "${route_response}" "create route ${route_pattern}"
+          else
+            route_id="$(jq -r '.id' <<< "${route_json}")"
+            route_response="$(cloudflare_request PUT "${api_base}/zones/${zone_id}/workers/routes/${route_id}" "${route_body}")"
+            assert_cloudflare_success "${route_response}" "update route ${route_pattern}"
+          fi
+
+          echo "target=cloudflare-worker-static-assets" >> "$GITHUB_OUTPUT"
 
       - name: Inspect custom domain after deploy
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
         run: |
           set -euo pipefail
           response_file="$(mktemp)"
@@ -229,6 +347,7 @@ jobs:
             echo ""
             echo "- Source SHA: $GITHUB_SHA"
             echo "- Trigger: $GITHUB_EVENT_NAME"
+            echo "- Cloudflare deploy target: ${{ steps.deploy_flutter_web.outputs.target }}"
             echo "- Cloudflare Pages project: $CLOUDFLARE_PAGES_PROJECT"
             echo "- Expected custom domain: $EXPECTED_CUSTOM_DOMAIN"
             echo "- Production URL: https://flutter.ombhrum.com"
