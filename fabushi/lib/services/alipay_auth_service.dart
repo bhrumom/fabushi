@@ -223,6 +223,7 @@ class AlipayAuthService {
   /// 支付宝一键注册（自动生成用户名和邮箱）
   Future<Map<String, dynamic>> alipayOneClickRegister({
     required String alipayUserId,
+    String? alipayOpenId,
     String? nickname,
     String? avatar,
   }) async {
@@ -233,6 +234,8 @@ class AlipayAuthService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'alipayUserId': alipayUserId,
+          if (alipayOpenId != null && alipayOpenId.isNotEmpty)
+            'alipayOpenId': alipayOpenId,
           'alipayNickname': nickname,
           'alipayAvatar': avatar,
           'oneClick': true,
