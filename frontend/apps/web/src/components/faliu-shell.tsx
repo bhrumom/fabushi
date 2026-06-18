@@ -6,11 +6,12 @@ import { LocalizedText } from "./localized-text";
 import { siteHref } from "../lib/site-url";
 import { CARD_LIMIT, FALIU_TABS, type FaliuTabKey } from "../lib/faliu-config";
 import {
+  CBETA_WORKS_PAGE_SIZE,
   buildCbetaContentId,
-  fetchAllWorks,
   fetchBatchStats,
   fetchComments,
   fetchJuanDetail,
+  fetchWorksPage,
   fetchWorkInfo,
   normalizeCbetaQuery,
   searchWorksByTitle,
@@ -27,6 +28,8 @@ export interface FaliuInitialData {
   initialWorkInfo?: Record<string, CbetaWorkInfo | null>;
   initialStats?: Record<string, ContentStats>;
   initialQuery?: string;
+  initialNextWorksPage?: number;
+  initialHasMoreWorks?: boolean;
 }
 
 interface WorkCardItem {
@@ -175,6 +178,8 @@ export function FaliuShell({
   initialWorkInfo = {},
   initialStats = {},
   initialQuery = "",
+  initialNextWorksPage = 0,
+  initialHasMoreWorks = true,
 }: FaliuInitialData) {
   const [activeTab, setActiveTab] = useState<FaliuTabKey>("all");
   const [works, setWorks] = useState<CbetaWorkIndexItem[]>(initialWorks);
@@ -182,12 +187,15 @@ export function FaliuShell({
   const [statsMap, setStatsMap] = useState<Record<string, ContentStats>>(initialStats);
   const [query, setQuery] = useState(initialQuery);
   const [visibleLimit, setVisibleLimit] = useState(CARD_LIMIT);
+  const [nextWorksPage, setNextWorksPage] = useState(initialNextWorksPage);
+  const [hasMoreCatalogWorks, setHasMoreCatalogWorks] = useState(initialHasMoreWorks);
   const [searchRevision, setSearchRevision] = useState(0);
   const [selected, setSelected] = useState<WorkCardItem | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<CbetaJuanDetail | null>(null);
   const [selectedComments, setSelectedComments] = useState<AppComment[]>([]);
   const [selectedJuan, setSelectedJuan] = useState("1");
   const [isBootLoading, setIsBootLoading] = useState(initialWorks.length === 0);
+  const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -207,42 +215,40 @@ export function FaliuShell({
     }
   }, [initialQuery]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadCatalogPage = useCallback(
+    async (page = nextWorksPage) => {
+      if (isCatalogLoading || !hasMoreCatalogWorks) {
+        return false;
+      }
 
-    async function bootstrap() {
       try {
-        if (works.length === 0) {
-          setIsBootLoading(true);
-        }
+        setIsCatalogLoading(true);
+        const result = await fetchWorksPage(page, CBETA_WORKS_PAGE_SIZE);
 
-        const allWorks = await fetchAllWorks();
-
-        if (cancelled) {
-          return;
-        }
-
-        setWorks((current) => dedupeWorks([...current, ...allWorks]));
+        setWorks((current) => dedupeWorks([...current, ...result.works]));
+        setNextWorksPage(result.nextPage);
+        setHasMoreCatalogWorks(result.hasMore);
         setError(null);
+        return result.works.length > 0;
       } catch (cause) {
-        if (cancelled || works.length > 0) {
-          return;
-        }
-
         const message = cause instanceof Error ? cause.message : "法流数据加载失败";
         setError(message);
+        return false;
       } finally {
-        if (!cancelled) {
-          setIsBootLoading(false);
-        }
+        setIsCatalogLoading(false);
+        setIsBootLoading(false);
       }
+    },
+    [hasMoreCatalogWorks, isCatalogLoading, nextWorksPage],
+  );
+
+  useEffect(() => {
+    if (works.length > 0) {
+      setIsBootLoading(false);
+      return;
     }
 
-    void bootstrap();
-
-    return () => {
-      cancelled = true;
-    };
+    void loadCatalogPage(0);
   }, []);
 
   const activeTabConfig = FALIU_TABS.find((item) => item.key === activeTab) ?? FALIU_TABS[0];
@@ -285,11 +291,23 @@ export function FaliuShell({
   }, [activeTab, activeTabConfig, deferredQuery, normalizedDeferredQuery, works]);
 
   const visibleWorks = useMemo(() => filteredWorks.slice(0, visibleLimit), [filteredWorks, visibleLimit]);
-  const hasMoreWorks = visibleLimit < filteredWorks.length;
+  const canLoadMoreCatalogWorks = hasMoreCatalogWorks && normalizedDeferredQuery.length < 2;
+  const hasMoreWorks = visibleLimit < filteredWorks.length || canLoadMoreCatalogWorks;
 
   const loadMoreWorks = useCallback(() => {
-    setVisibleLimit((current) => Math.min(current + CARD_LIMIT, filteredWorks.length));
-  }, [filteredWorks.length]);
+    if (visibleLimit < filteredWorks.length) {
+      setVisibleLimit((current) => Math.min(current + CARD_LIMIT, filteredWorks.length));
+      return;
+    }
+
+    if (canLoadMoreCatalogWorks) {
+      void loadCatalogPage().then((loaded) => {
+        if (loaded) {
+          setVisibleLimit((current) => current + CARD_LIMIT);
+        }
+      });
+    }
+  }, [canLoadMoreCatalogWorks, filteredWorks.length, loadCatalogPage, visibleLimit]);
 
   useEffect(() => {
     setVisibleLimit(CARD_LIMIT);
@@ -582,9 +600,15 @@ export function FaliuShell({
           </div>
         ) : null}
 
-        {!isBootLoading && visibleCards.length === 0 ? (
+        {!isBootLoading && visibleCards.length === 0 && !canLoadMoreCatalogWorks ? (
           <div className={styles.stateBox}>
             <LocalizedText zh="这一组暂时没有可展示的佛典。" en="No matching works are available yet." />
+          </div>
+        ) : null}
+
+        {!isBootLoading && visibleCards.length === 0 && canLoadMoreCatalogWorks ? (
+          <div className={styles.stateBox}>
+            <LocalizedText zh="正在继续接入这一组佛典..." en="Loading more works for this stream..." />
           </div>
         ) : null}
 
@@ -631,11 +655,17 @@ export function FaliuShell({
           </p>
         ) : null}
 
-        {visibleCards.length > 0 ? (
+        {isCatalogLoading ? (
+          <p className={styles.loadingLine}>
+            <LocalizedText zh="正在加载更多经文..." en="Loading more sutra works..." />
+          </p>
+        ) : null}
+
+        {visibleCards.length > 0 || hasMoreWorks ? (
           <div ref={loadMoreRef} className={styles.loadMoreRow}>
             {hasMoreWorks ? (
               <button type="button" onClick={loadMoreWorks}>
-                <LocalizedText zh="继续加载" en="Load more" />
+                <LocalizedText zh={visibleLimit < filteredWorks.length ? "继续加载" : "加载更多经文"} en="Load more" />
               </button>
             ) : (
               <span>

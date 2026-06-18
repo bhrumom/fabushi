@@ -4,6 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:global_dharma_sharing/core/config/app_config.dart';
 
 void main() {
+  group('AI backend configuration', () {
+    test('uses the Cloudflare DNS domain instead of the raw VPS IP', () {
+      expect(AppConfig.currentAiBackendUrl, 'https://ai.ombhrum.com');
+    });
+  });
+
   group('Buddha model remote configuration', () {
     test('keeps the native .model on the R2 remote path', () {
       expect(AppConfig.buddhaModelAssetPath, 'models/buddha_model.model');

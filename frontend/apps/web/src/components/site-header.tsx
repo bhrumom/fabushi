@@ -4,6 +4,11 @@ import { siteHref } from "../lib/site-url";
 
 const NAV_ITEMS = [
   {
+    href: "/app",
+    zh: "大乘 Web",
+    en: "Dacheng Web",
+  },
+  {
     href: "/faliu",
     zh: "法流",
     en: "Faloo",
@@ -30,7 +35,7 @@ export function SiteHeader() {
     <nav className="site-nav" aria-label="Main navigation / 主导航">
       <a className="site-wordmark" href={siteHref("/")}>
         <span>
-          <LocalizedText zh="大乘" en="Fabushi" />
+          <LocalizedText zh="大乘" en="Dacheng" />
         </span>
         <small>
           <LocalizedText zh="法布施" en="Dharma Sharing" />
@@ -46,8 +51,8 @@ export function SiteHeader() {
         </div>
         <div className="site-nav-actions">
           <LanguageSwitch />
-          <a className="nav-cta" href={siteHref("/download")}>
-            <LocalizedText zh="下载 App" en="Download App" />
+          <a className="nav-cta" href={siteHref("/app")}>
+            <LocalizedText zh="打开大乘" en="Open Dacheng" />
           </a>
         </div>
       </div>

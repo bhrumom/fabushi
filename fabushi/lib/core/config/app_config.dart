@@ -45,7 +45,17 @@ class AppConfig {
     'AI_BACKEND_URL',
     defaultValue: '',
   );
-  static const String vpsAiBackendUrl = 'http://141.148.140.39';
+  static const String vpsAiBackendUrl = 'https://ai.ombhrum.com';
+  static const String configuredDachengAiWebUrl = String.fromEnvironment(
+    'DACHENG_AI_WEB_URL',
+    defaultValue: '',
+  );
+  static const bool desktopControlEnabled = bool.fromEnvironment(
+    'DACHENG_DESKTOP_CONTROL',
+    defaultValue: false,
+  );
+  static const String defaultDachengAiWebUrl =
+      'https://fabushi.ombhrum.com/app/ai';
 
   static String get currentBackendUrl {
     if (configuredApiBaseUrl.isNotEmpty) {
@@ -74,6 +84,30 @@ class AppConfig {
       return configuredAiBackendUrl;
     }
     return vpsAiBackendUrl;
+  }
+
+  static String get dachengAiWebUrl {
+    if (configuredDachengAiWebUrl.isNotEmpty) {
+      return configuredDachengAiWebUrl;
+    }
+    return defaultDachengAiWebUrl;
+  }
+
+  static Uri buildDachengAiWebUri({
+    String? prompt,
+    String? bookTitle,
+    String? context,
+  }) {
+    final base = Uri.parse(dachengAiWebUrl);
+    final query = <String, String>{
+      ...base.queryParameters,
+      if (prompt != null && prompt.trim().isNotEmpty) 'prompt': prompt.trim(),
+      if (bookTitle != null && bookTitle.trim().isNotEmpty)
+        'book': bookTitle.trim(),
+      if (context != null && context.trim().isNotEmpty)
+        'context': context.trim(),
+    };
+    return base.replace(queryParameters: query.isEmpty ? null : query);
   }
 
   /// 大厂式 API 网关入口：客户端只允许构造自家后端的相对路径。
@@ -178,6 +212,14 @@ class AppConfig {
   static String get bindEmailUrl => buildBackendUrl('/api/auth/bind-email');
   static String get appVersionPolicyUrl =>
       buildBackendUrl('/api/app/version-policy');
+
+  static String get agentChatUrl => buildBackendUrl('/api/agent/chat');
+  static String agentRunEventsUrl(String runId) =>
+      buildBackendUrl('/api/agent/runs/$runId/events');
+  static String agentRunCancelUrl(String runId) =>
+      buildBackendUrl('/api/agent/runs/$runId/cancel');
+  static String agentMessageFeedbackUrl(String messageId) =>
+      buildBackendUrl('/api/agent/messages/$messageId/feedback');
 
   static String get alipayCreateOrderUrl =>
       buildBackendUrl('/api/alipay/create-order');

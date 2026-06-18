@@ -412,32 +412,62 @@ jobs:
           GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW: ${{ vars.GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW }}
         run: |
           set -euo pipefail
-          changes_not_sent_for_review="${GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW:-}"
+          raw_changes_not_sent_for_review="${GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW:-}"
           track="${GOOGLE_PLAY_TRACKS:-production}"
+          use_changes_not_sent_for_review=false
+          changes_not_sent_for_review=""
 
-          if [ -z "$changes_not_sent_for_review" ]; then
-            changes_not_sent_for_review=true
-          fi
-
-          case "$track:$changes_not_sent_for_review" in
-            production:true|production:TRUE|production:True|production:1|production:yes|production:YES)
-              changes_not_sent_for_review=true
+          case "$raw_changes_not_sent_for_review" in
+            ""|omit|OMIT|auto|AUTO|Auto)
+              use_changes_not_sent_for_review=false
+              changes_not_sent_for_review=""
               ;;
-            production:*)
-              echo "Google Play production uploads require changesNotSentForReview=true; forcing manual review handoff."
-              changes_not_sent_for_review=true
+            true|TRUE|True|1|yes|YES)
+              echo "GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW=true is no longer supported for this app because Google Play sends changes for review automatically; omitting changesNotSentForReview."
+              use_changes_not_sent_for_review=false
+              changes_not_sent_for_review=""
+              ;;
+            false|FALSE|False|0|no|NO)
+              use_changes_not_sent_for_review=true
+              changes_not_sent_for_review=false
+              ;;
+            *)
+              echo "Unsupported GOOGLE_PLAY_CHANGES_NOT_SENT_FOR_REVIEW value: $raw_changes_not_sent_for_review" >&2
+              exit 1
               ;;
           esac
 
+          echo "use_changes_not_sent_for_review=$use_changes_not_sent_for_review" >> "$GITHUB_OUTPUT"
           echo "changes_not_sent_for_review=$changes_not_sent_for_review" >> "$GITHUB_OUTPUT"
           {
             echo "## Google Play publish mode"
             echo ""
             echo "- Track: $track"
-            echo "- changesNotSentForReview: $changes_not_sent_for_review"
+            if [ "$use_changes_not_sent_for_review" = "true" ]; then
+              echo "- changesNotSentForReview: $changes_not_sent_for_review"
+            else
+              echo "- changesNotSentForReview: omitted; Play Console will use the app account review behavior"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Android app bundle to Google Play
+        if: steps.google-play-review.outputs.use_changes_not_sent_for_review != 'true'
+        uses: r0adkll/upload-google-play@v1.1.5
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.GOOGLE_PLAY_PACKAGE_NAME || 'com.ombhrum.fabushi' }}
+          GOOGLE_PLAY_TRACKS: ${{ vars.GOOGLE_PLAY_TRACKS || 'production' }}
+          GOOGLE_PLAY_RELEASE_STATUS: ${{ vars.GOOGLE_PLAY_RELEASE_STATUS || 'completed' }}
+        with:
+          serviceAccountJsonPlainText: ${{ env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.GOOGLE_PLAY_PACKAGE_NAME }}
+          releaseFiles: fabushi/build/app/outputs/bundle/release/app-release.aab
+          tracks: ${{ env.GOOGLE_PLAY_TRACKS }}
+          status: ${{ env.GOOGLE_PLAY_RELEASE_STATUS }}
+          releaseName: ${{ needs.resolve-cd-context.outputs.release_build_number }}-${{ needs.resolve-cd-context.outputs.source_sha }}
+
+      - name: Upload Android app bundle to Google Play with explicit review handoff
+        if: steps.google-play-review.outputs.use_changes_not_sent_for_review == 'true'
         uses: r0adkll/upload-google-play@v1.1.5
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
@@ -484,6 +514,7 @@ jobs:
       IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
       IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
       IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+      IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
       IOS_EXPORT_METHOD: ${{ vars.IOS_EXPORT_METHOD || 'app-store' }}
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
@@ -557,10 +588,15 @@ jobs:
           cert_path="$RUNNER_TEMP/ios_distribution.p12"
           profile_path="$RUNNER_TEMP/fabushi.mobileprovision"
           profile_plist="$RUNNER_TEMP/fabushi-profile.plist"
+          share_profile_path="$RUNNER_TEMP/fabushi-share-extension.mobileprovision"
+          share_profile_plist="$RUNNER_TEMP/fabushi-share-extension-profile.plist"
           keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
 
           printf '%s' "$IOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$cert_path"
           printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$profile_path"
+          if [ -n "${IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64:-}" ]; then
+            printf '%s' "$IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$share_profile_path"
+          fi
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
           security set-keychain-settings -lut 21600 "$keychain_path"
@@ -575,12 +611,70 @@ jobs:
           profile_name="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$profile_plist")"
           team_id="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$profile_plist")"
           profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")"
+          profile_app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$profile_plist")"
           cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
 
-          bundle_id="$(grep -m 1 'PRODUCT_BUNDLE_IDENTIFIER = ' ios/Runner.xcodeproj/project.pbxproj | sed -E 's/.*PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/\1/' | tr -d ' ')"
+          bundle_id="$(awk -F' = |;' '/PRODUCT_BUNDLE_IDENTIFIER = / { gsub(/[[:space:]]/, "", $2); if ($2 !~ /\.RunnerTests$/ && $2 !~ /\.ShareExtension$/) { print $2; exit } }' ios/Runner.xcodeproj/project.pbxproj)"
           if [ -z "$bundle_id" ]; then
             echo "Could not detect PRODUCT_BUNDLE_IDENTIFIER from ios/Runner.xcodeproj/project.pbxproj" >&2
             exit 1
+          fi
+          if [ "${profile_app_id#${team_id}.}" != "$bundle_id" ]; then
+            echo "Main provisioning profile application id '$profile_app_id' does not match bundle id '$bundle_id'." >&2
+            exit 1
+          fi
+
+          share_profile_name=""
+          share_bundle_id="$(awk -F' = |;' '/PRODUCT_BUNDLE_IDENTIFIER = / { gsub(/[[:space:]]/, "", $2); if ($2 ~ /\.ShareExtension$/) { print $2; exit } }' ios/Runner.xcodeproj/project.pbxproj)"
+          if [ -n "${IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64:-}" ]; then
+            if [ -z "$share_bundle_id" ]; then
+              echo "Share extension provisioning profile is configured, but no ShareExtension bundle id was found." >&2
+              exit 1
+            fi
+
+            security cms -D -i "$share_profile_path" > "$share_profile_plist"
+            share_profile_name="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$share_profile_plist")"
+            share_team_id="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$share_profile_plist")"
+            share_profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$share_profile_plist")"
+            share_profile_app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$share_profile_plist")"
+            cp "$share_profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$share_profile_uuid.mobileprovision"
+
+            if [ "$share_team_id" != "$team_id" ]; then
+              echo "Share extension provisioning profile team '$share_team_id' does not match main app team '$team_id'." >&2
+              exit 1
+            fi
+            if [ "${share_profile_app_id#${team_id}.}" != "$share_bundle_id" ]; then
+              echo "Share extension provisioning profile application id '$share_profile_app_id' does not match bundle id '$share_bundle_id'." >&2
+              exit 1
+            fi
+
+            required_app_group="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' ios/Runner/Runner.entitlements 2>/dev/null || true)"
+            if [ -n "$required_app_group" ]; then
+              if ! /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' "$profile_plist" 2>/dev/null | grep -Fq "$required_app_group"; then
+                echo "Main provisioning profile does not include required App Group '$required_app_group'." >&2
+                exit 1
+              fi
+              if ! /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' "$share_profile_plist" 2>/dev/null | grep -Fq "$required_app_group"; then
+                echo "Share extension provisioning profile does not include required App Group '$required_app_group'." >&2
+                exit 1
+              fi
+            fi
+          fi
+
+          provisioning_profile_entries="$(
+            cat <<EOF
+              <key>${bundle_id}</key>
+              <string>${profile_name}</string>
+          EOF
+          )"
+          if [ -n "$share_profile_name" ]; then
+            provisioning_profile_entries="$(
+              cat <<EOF
+          ${provisioning_profile_entries}
+              <key>${share_bundle_id}</key>
+              <string>${share_profile_name}</string>
+          EOF
+            )"
           fi
 
           cat > ios/ExportOptions.plist <<EOF
@@ -598,8 +692,7 @@ jobs:
             <string>${team_id}</string>
             <key>provisioningProfiles</key>
             <dict>
-              <key>${bundle_id}</key>
-              <string>${profile_name}</string>
+          ${provisioning_profile_entries}
             </dict>
             <key>stripSwiftSymbols</key>
             <true/>
@@ -613,10 +706,101 @@ jobs:
           PROVISIONING_PROFILE_SPECIFIER=${profile_name}
           EOF
 
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_IDENTITY = "Apple Development";/CODE_SIGN_IDENTITY = "Apple Distribution";/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = \"\";/PROVISIONING_PROFILE_SPECIFIER = \"${profile_name}\";/g" ios/Runner.xcodeproj/project.pbxproj
+          python3 - "$team_id" "$bundle_id" "$profile_name" "$share_bundle_id" "$share_profile_name" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          team_id, main_bundle_id, main_profile_name, share_bundle_id, share_profile_name = sys.argv[1:]
+          profile_by_bundle = {main_bundle_id: main_profile_name}
+          if share_bundle_id and share_profile_name:
+              profile_by_bundle[share_bundle_id] = share_profile_name
+
+          project_path = Path('ios/Runner.xcodeproj/project.pbxproj')
+          project_text = project_path.read_text().replace(
+              '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";',
+              '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";',
+          )
+          lines = project_text.splitlines()
+          output = []
+          i = 0
+          while i < len(lines):
+              line = lines[i]
+              if 'buildSettings = {' not in line:
+                  output.append(line)
+                  i += 1
+                  continue
+
+              block = [line]
+              i += 1
+              while i < len(lines):
+                  block.append(lines[i])
+                  if lines[i].strip() == '};':
+                      i += 1
+                      break
+                  i += 1
+
+              block_text = '\n'.join(block)
+              match = re.search(r'PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);', block_text)
+              bundle_id = match.group(1).strip() if match else ''
+              profile_name = profile_by_bundle.get(bundle_id)
+              if not profile_name:
+                  output.extend(block)
+                  continue
+
+              updated = []
+              saw_profile_specifier = False
+              for block_line in block:
+                  stripped = block_line.strip()
+                  if stripped.startswith('CODE_SIGN_IDENTITY = '):
+                      block_line = re.sub(r'CODE_SIGN_IDENTITY = .*;', 'CODE_SIGN_IDENTITY = "Apple Distribution";', block_line)
+                  elif stripped.startswith('CODE_SIGN_STYLE = '):
+                      block_line = re.sub(r'CODE_SIGN_STYLE = .*;', 'CODE_SIGN_STYLE = Manual;', block_line)
+                  elif stripped.startswith('DEVELOPMENT_TEAM = '):
+                      block_line = re.sub(r'DEVELOPMENT_TEAM = .*;', f'DEVELOPMENT_TEAM = {team_id};', block_line)
+                  elif stripped.startswith('PROVISIONING_PROFILE_SPECIFIER = '):
+                      block_line = re.sub(r'PROVISIONING_PROFILE_SPECIFIER = .*;', f'PROVISIONING_PROFILE_SPECIFIER = "{profile_name}";', block_line)
+                      saw_profile_specifier = True
+
+                  updated.append(block_line)
+
+              if not saw_profile_specifier:
+                  insert_at = next(
+                      (index + 1 for index, updated_line in enumerate(updated)
+                       if updated_line.strip().startswith('PRODUCT_BUNDLE_IDENTIFIER = ')),
+                      len(updated) - 1,
+                  )
+                  updated.insert(insert_at, f'\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "{profile_name}";')
+
+              output.extend(updated)
+
+          project_path.write_text('\n'.join(output) + '\n')
+          PY
+
+      - name: Disable unsigned iOS Share Extension for release IPA
+        if: steps.ios-signing.outputs.configured == 'true' && env.IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 == ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 is not configured; building release IPA without the ShareExtension target."
+          /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.application-groups' ios/Runner/Runner.entitlements 2>/dev/null || true
+          python3 - <<'PY'
+          from pathlib import Path
+
+          project_path = Path('ios/Runner.xcodeproj/project.pbxproj')
+          lines = project_path.read_text().splitlines()
+          remove_fragments = (
+              'F0FF0000000000000000000F /* Embed App Extensions */',
+              'F0FF00000000000000000002 /* PBXTargetDependency */',
+              'F0FF0000000000000000000C /* ShareExtension */',
+              'F0FF00000000000000000010 /* ShareExtension.appex */',
+          )
+          kept = [
+              line for line in lines
+              if not any(fragment in line for fragment in remove_fragments)
+          ]
+          project_path.write_text('\n'.join(kept) + '\n')
+          PY
 
       - name: Build signed iOS IPA
         if: steps.ios-signing.outputs.configured == 'true'
