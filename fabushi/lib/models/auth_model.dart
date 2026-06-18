@@ -659,8 +659,9 @@ class AuthModel extends ChangeNotifier {
   Future<bool> alipayOneClickRegister(
     String alipayUserId,
     String? nickname,
-    String? avatar,
-  ) async {
+    String? avatar, [
+    String? alipayOpenId,
+  ]) async {
     _setLoading(true);
     _clearError();
 
@@ -669,6 +670,7 @@ class AuthModel extends ChangeNotifier {
 
       final result = await _alipayAuthService.alipayOneClickRegister(
         alipayUserId: alipayUserId,
+        alipayOpenId: alipayOpenId,
         nickname: nickname,
         avatar: avatar,
       );
@@ -682,21 +684,24 @@ class AuthModel extends ChangeNotifier {
         final username = result['username'];
         final email = result['email'];
         final userJson = result['user'];
-        final trialExpiry = DateTime.now().add(const Duration(days: 3));
+        final isNewUser = result['isNewUser'] == true;
+        final trialExpiry = isNewUser
+            ? DateTime.now().add(const Duration(days: 3))
+            : null;
         final bootstrapUser = userJson is Map
             ? _buildBootstrapUser(
                 _token!,
                 username,
                 userJson: Map<String, dynamic>.from(userJson),
                 fallbackEmail: email ?? '',
-                fallbackMembershipType: 'trial',
+                fallbackMembershipType: isNewUser ? 'trial' : null,
                 fallbackMembershipExpiry: trialExpiry,
               )
             : _buildBootstrapUser(
                 _token!,
                 username,
                 fallbackEmail: email ?? '',
-                fallbackMembershipType: 'trial',
+                fallbackMembershipType: isNewUser ? 'trial' : null,
                 fallbackMembershipExpiry: trialExpiry,
               );
 
@@ -1063,10 +1068,8 @@ class AuthModel extends ChangeNotifier {
         username,
         userJson: userJson,
         fallbackUser: _currentUser,
-        fallbackMembershipType: _currentUser?.membershipType ?? 'trial',
-        fallbackMembershipExpiry:
-            _currentUser?.membershipExpiry ??
-            DateTime.now().add(const Duration(days: 3)),
+        fallbackMembershipType: _currentUser?.membershipType,
+        fallbackMembershipExpiry: _currentUser?.membershipExpiry,
       );
 
       await _authService.setAuth(token, _buildStoredUserModel(bootstrapUser));
