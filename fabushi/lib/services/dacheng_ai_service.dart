@@ -198,7 +198,7 @@ class DachengAiService {
     String? username,
     bool isMember = false,
   }) async {
-    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw()) {
+    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
       return _openClawBridge.sendChat(
         message: message,
         conversationId: conversationId,
@@ -229,7 +229,9 @@ class DachengAiService {
     String? username,
     bool isMember = false,
   }) async* {
-    final useEmbedded = await AiBackendPolicy.shouldUseEmbeddedOpenClaw();
+    final useEmbedded = await AiBackendPolicy.shouldUseEmbeddedOpenClaw(
+      isMember: isMember,
+    );
     _diag(
       'stream.route',
       data: {
@@ -344,8 +346,9 @@ class DachengAiService {
   Future<List<DachengConversationSummary>> listConversations({
     String? token,
     String? username,
+    bool isMember = false,
   }) async {
-    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw()) {
+    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
       return _openClawBridge.listConversations();
     }
 
@@ -368,8 +371,9 @@ class DachengAiService {
   Future<List<DachengConversationMessage>> getConversationMessages({
     required String conversationId,
     String? token,
+    bool isMember = false,
   }) async {
-    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw()) {
+    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
       return _openClawBridge.getConversationMessages(
         conversationId: conversationId,
       );
