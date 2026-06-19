@@ -520,10 +520,60 @@ jobs:
       - name: Add Pub cache to PATH
         run: echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
 
-      - name: Limit Patrol Playwright install to Chromium
+      - name: Use system Chrome for Patrol Playwright
         shell: bash
         run: |
           set -euo pipefail
+          google-chrome --version
+
+          web_runner_dir="$(find "$PUB_CACHE/hosted" -path '*/patrol-*/web_runner' -type d | sort -V | tail -n 1)"
+          if [ -z "$web_runner_dir" ]; then
+            echo "Unable to locate Patrol web_runner in $PUB_CACHE/hosted" >&2
+            exit 1
+          fi
+
+          python3 - "$web_runner_dir" <<'PY'
+          import sys
+          from pathlib import Path
+
+          web_runner = Path(sys.argv[1])
+          setup_path = web_runner / "tests" / "setup.ts"
+          setup_text = setup_path.read_text()
+          setup_text = setup_text.replace(
+              '  const locale = process.env.PATROL_WEB_LOCALE || undefined\n\n'
+              '  const browser = await chromium.launch({\n'
+              '    args: browserArgs,\n'
+              '  })\n',
+              '  const locale = process.env.PATROL_WEB_LOCALE || undefined\n'
+              '  const browserChannel = process.env.PATROL_WEB_BROWSER_CHANNEL || undefined\n\n'
+              '  const browser = await chromium.launch({\n'
+              '    channel: browserChannel as any,\n'
+              '    args: browserArgs,\n'
+              '  })\n',
+          )
+          setup_path.write_text(setup_text)
+
+          config_path = web_runner / "playwright.config.ts"
+          config_text = config_path.read_text()
+          config_text = config_text.replace(
+              'const browserArgs = process.env.PATROL_WEB_BROWSER_ARGS\n'
+              '  ? (JSON.parse(process.env.PATROL_WEB_BROWSER_ARGS) as string[])\n'
+              '  : undefined\n\n'
+              'export default defineConfig({\n',
+              'const browserArgs = process.env.PATROL_WEB_BROWSER_ARGS\n'
+              '  ? (JSON.parse(process.env.PATROL_WEB_BROWSER_ARGS) as string[])\n'
+              '  : undefined\n'
+              'const browserChannel = process.env.PATROL_WEB_BROWSER_CHANNEL || undefined\n\n'
+              'export default defineConfig({\n',
+          )
+          config_text = config_text.replace(
+              '    launchOptions: browserArgs ? { args: browserArgs } : undefined,\n',
+              '    channel: browserChannel as any,\n'
+              '    launchOptions: browserArgs ? { args: browserArgs } : undefined,\n',
+          )
+          config_path.write_text(config_text)
+          PY
+
           real_npx="$(command -v npx)"
           wrapper_dir="$RUNNER_TEMP/patrol-npx"
           mkdir -p "$wrapper_dir"
@@ -531,11 +581,13 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
           if [ "${1:-}" = "playwright" ] && [ "${2:-}" = "install" ] && [ "$#" -eq 2 ]; then
-            exec "$PATROL_REAL_NPX" playwright install chromium
+            echo "Skipping Playwright browser install; Patrol uses system Chrome."
+            exit 0
           fi
           exec "$PATROL_REAL_NPX" "$@"
           EOF
           chmod +x "$wrapper_dir/npx"
+          echo "PATROL_WEB_BROWSER_CHANNEL=chrome" >> "$GITHUB_ENV"
           echo "PATROL_REAL_NPX=$real_npx" >> "$GITHUB_ENV"
           echo "$wrapper_dir" >> "$GITHUB_PATH"
 
