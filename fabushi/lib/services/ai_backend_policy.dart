@@ -36,9 +36,9 @@ extension AiBackendModeX on AiBackendMode {
   String get description {
     switch (this) {
       case AiBackendMode.auto:
-        return '会员使用云端 API 计费；桌面端非会员使用内置 OpenClaw';
+        return '桌面端使用内置 OpenClaw，移动端使用云端 API';
       case AiBackendMode.embeddedOpenClaw:
-        return '强制使用随 App 打包的本机 OpenClaw Gateway（仅非会员调试）';
+        return '强制使用随 App 打包的本机 OpenClaw Gateway';
       case AiBackendMode.cloudApi:
         return '跳过本机 OpenClaw，直接使用现有大乘 AI API';
     }
@@ -55,7 +55,12 @@ AiBackendMode aiBackendModeFromStorageName(String? value) {
 class AiBackendPolicy {
   AiBackendPolicy._();
 
+  @visibleForTesting
+  static bool? debugIsDesktopNativeOverride;
+
   static bool get isDesktopNative {
+    final debugOverride = debugIsDesktopNativeOverride;
+    if (debugOverride != null) return debugOverride;
     if (kIsWeb) return false;
     return defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows ||
@@ -69,7 +74,6 @@ class AiBackendPolicy {
 
   static Future<bool> shouldUseEmbeddedOpenClaw({bool isMember = false}) async {
     if (!isDesktopNative) return false;
-    if (isMember) return false;
 
     final mode = await loadMode();
     switch (mode) {
@@ -83,7 +87,6 @@ class AiBackendPolicy {
 
   static Future<String> activeBackendLabel({bool isMember = false}) async {
     if (!isDesktopNative) return '云端 API';
-    if (isMember) return '云端 API';
     final mode = await loadMode();
     if (mode == AiBackendMode.cloudApi) return '云端 API';
     return '本机 OpenClaw';

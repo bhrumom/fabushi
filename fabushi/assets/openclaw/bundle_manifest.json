@@ -2,7 +2,7 @@
   "schema": 1,
   "version": "openclaw-embedded-2026.06.2",
   "defaultPort": 18789,
-  "defaultModel": "openclaw/default",
+  "defaultModel": "deepseek/deepseek-chat",
   "defaultModelOverride": "",
   "gatewayArgs": [
     "gateway",

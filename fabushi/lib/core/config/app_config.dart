@@ -54,6 +54,10 @@ class AppConfig {
     'DACHENG_DESKTOP_CONTROL',
     defaultValue: false,
   );
+  static const String configuredOpenClawDeepSeekApiKey = String.fromEnvironment(
+    'DACHENG_OPENCLAW_DEEPSEEK_API_KEY',
+    defaultValue: '',
+  );
   static const String defaultDachengAiWebUrl =
       'https://fabushi.ombhrum.com/app/ai';
 

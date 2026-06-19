@@ -32,7 +32,7 @@ class AppSettings {
   }
 
   // 设置后端URL - 已移除，不再支持用户自定义后端URL
-  @deprecated
+  @Deprecated('Backend URL is managed through AppConfig.')
   static Future<void> setBackendUrl(String url) async {
     // 此方法已废弃，不再执行任何操作
     // 所有后端URL配置都通过 unified_config.dart 统一管理
@@ -206,7 +206,7 @@ class AppSettings {
   }
 
   static Future<String> getOpenClawModel({
-    String defaultValue = 'openclaw/default',
+    String defaultValue = 'deepseek/deepseek-chat',
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getString(_openClawModelKey)?.trim();
