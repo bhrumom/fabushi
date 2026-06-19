@@ -258,6 +258,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       final summaries = await _dachengAiService.listConversations(
         token: authModel?.authToken,
         username: authModel?.currentUser?.username,
+        isMember: authModel?.hasPermission('premium') ?? false,
       );
       if (!mounted || summaries.isEmpty) return;
       setState(() {
@@ -512,7 +513,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
       child: SizedBox(
-        height: 52,
+        height: 56,
         child: Stack(
           alignment: Alignment.center,
           children: [
@@ -582,8 +583,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   Widget _buildAiBackendBadge() {
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
     return FutureBuilder<String>(
-      future: AiBackendPolicy.activeBackendLabel(),
+      future: AiBackendPolicy.activeBackendLabel(
+        isMember: authModel?.hasPermission('premium') ?? false,
+      ),
       builder: (context, snapshot) {
         final label = snapshot.data ?? '本机 OpenClaw';
         final isLocal = label.contains('OpenClaw');
@@ -1883,6 +1887,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         final remoteMessages = await _dachengAiService.getConversationMessages(
           conversationId: conversationId,
           token: authModel?.authToken,
+          isMember: authModel?.hasPermission('premium') ?? false,
         );
         messages = remoteMessages
             .map(

@@ -49,6 +49,10 @@ DerivedData/
 fabushi/build_output.txt
 fabushi/build_output_full.txt
 fabushi/flutter_logs_capture.txt
+fabushi/playwright-report/
+fabushi/test-results/
+fabushi/test_bundle.dart
+fabushi/patrol_test/test_bundle.dart
 tf_swift_cache/
 
 # 敏感信息与本地变量
