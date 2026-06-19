@@ -114,7 +114,7 @@ class ZenBuddha2DSceneState extends State<ZenBuddha2DScene>
               size.width >= 720 && size.width / size.height > 1.18;
           final bookLeft = isWideDesktopScene
               ? safeClamp(
-                  size.width / 2 + buddhaWidth * 0.28,
+                  size.width / 2 + buddhaWidth * 0.5 + 16.0,
                   24.0,
                   size.width - bookWidth - 24.0,
                 )
