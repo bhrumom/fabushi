@@ -22,6 +22,8 @@ class OpenClawAiBridge {
     : _httpClient = httpClient ?? http.Client(),
       _store = store ?? LocalAiConversationStore.instance;
 
+  static const String _gatewayChatModel = 'openclaw/dacheng';
+
   final http.Client _httpClient;
   final LocalAiConversationStore _store;
   static final Uuid _uuid = Uuid();
@@ -39,6 +41,7 @@ class OpenClawAiBridge {
     String? latestConversationId = conversationId;
     String finalMessage = '';
     DachengAiUsage? usage;
+    String model = 'deepseek/deepseek-chat';
 
     await for (final event in sendChatStream(
       message: message,
@@ -55,6 +58,7 @@ class OpenClawAiBridge {
       } else if (event.isDone) {
         finalMessage = (event.raw['message'] ?? finalMessage).toString();
         usage = event.usage;
+        model = (event.raw['model'] ?? model).toString();
       } else if (event.isError) {
         throw StateError(event.text);
       }
@@ -64,7 +68,7 @@ class OpenClawAiBridge {
       conversationId: latestConversationId ?? _newConversationId(),
       message: finalMessage,
       provider: 'openclaw-local',
-      model: 'openclaw/default',
+      model: model,
       usage: usage ?? _zeroUsage,
     );
   }
@@ -148,7 +152,7 @@ class OpenClawAiBridge {
 
       final uri = target.baseUri.replace(path: '/v1/chat/completions');
       final body = jsonEncode({
-        'model': target.model,
+        'model': _gatewayChatModel,
         'stream': true,
         'stream_options': {'include_usage': true},
         'user': 'dacheng:$effectiveConversationId',
@@ -331,6 +335,7 @@ class OpenClawAiBridge {
           'message': finalText.trim(),
           'conversationId': effectiveConversationId,
           'provider': 'openclaw-local',
+          'model': target.model,
           'sawDone': sawDone,
           if (target.desktopToolsStatus != null)
             'desktopTools': target.desktopToolsStatus,

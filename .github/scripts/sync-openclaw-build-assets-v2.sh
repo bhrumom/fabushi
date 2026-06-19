@@ -106,7 +106,7 @@ output = {
     "schema": 1,
     "version": source.get("version") or "openclaw-embedded-2026.06.2",
     "defaultPort": source.get("defaultPort", 18789),
-    "defaultModel": source.get("defaultModel", "openclaw/default"),
+    "defaultModel": source.get("defaultModel", "deepseek/deepseek-chat"),
     "defaultModelOverride": source.get("defaultModelOverride", ""),
     "gatewayArgs": source.get("gatewayArgs") or ["gateway", "--port", "{port}", "--force"],
     "assets": items,

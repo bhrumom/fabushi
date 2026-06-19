@@ -13,17 +13,21 @@ void main() {
   });
 
   tearDown(() {
+    AiBackendPolicy.debugIsDesktopNativeOverride = null;
     debugDefaultTargetPlatformOverride = null;
   });
 
-  test('routes desktop members to cloud API in auto mode', () async {
+  test('routes desktop members to embedded OpenClaw in auto mode', () async {
     await AppSettings.setAiBackendModeName(AiBackendMode.auto.storageName);
 
     expect(
       await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: true),
-      isFalse,
+      isTrue,
     );
-    expect(await AiBackendPolicy.activeBackendLabel(isMember: true), '云端 API');
+    expect(
+      await AiBackendPolicy.activeBackendLabel(isMember: true),
+      '本机 OpenClaw',
+    );
   });
 
   test('keeps non-member desktop auto mode on embedded OpenClaw', () async {
@@ -39,14 +43,24 @@ void main() {
     );
   });
 
-  test('does not allow members to force embedded OpenClaw', () async {
+  test('allows members to force embedded OpenClaw', () async {
     await AppSettings.setAiBackendModeName(
       AiBackendMode.embeddedOpenClaw.storageName,
     );
 
     expect(
       await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: true),
+      isTrue,
+    );
+  });
+
+  test('respects cloud API override for members', () async {
+    await AppSettings.setAiBackendModeName(AiBackendMode.cloudApi.storageName);
+
+    expect(
+      await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: true),
       isFalse,
     );
+    expect(await AiBackendPolicy.activeBackendLabel(isMember: true), '云端 API');
   });
 }

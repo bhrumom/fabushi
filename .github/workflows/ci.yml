@@ -36,7 +36,6 @@ jobs:
     outputs:
       app_changed: ${{ steps.classify.outputs.app_changed }}
       android_changed: ${{ steps.classify.outputs.android_changed }}
-      ai_backend_changed: ${{ steps.classify.outputs.ai_backend_changed }}
       worker_changed: ${{ steps.classify.outputs.worker_changed }}
       frontend_changed: ${{ steps.classify.outputs.frontend_changed }}
       workflow_guard_changed: ${{ steps.classify.outputs.workflow_guard_changed }}
@@ -65,10 +64,6 @@ jobs:
             /fabushi/web/**
             !/fabushi/web/assets/built_in/**
             /fabushi/e2e/**
-            /ai-backend/package.json
-            /ai-backend/package-lock.json
-            /ai-backend/src/**
-            /ai-backend/test/**
             /frontend/**
 
       - name: Resolve diff range
@@ -136,14 +131,12 @@ jobs:
 
           app_changed=false
           android_changed=false
-          ai_backend_changed=false
           worker_changed=false
           frontend_changed=false
           workflow_guard_changed=false
 
           app_reasons=()
           android_reasons=()
-          ai_backend_reasons=()
           worker_reasons=()
           frontend_reasons=()
           guard_reasons=()
@@ -156,11 +149,6 @@ jobs:
           mark_android() {
             android_changed=true
             android_reasons+=("$1")
-          }
-
-          mark_ai_backend() {
-            ai_backend_changed=true
-            ai_backend_reasons+=("$1")
           }
 
           mark_worker() {
@@ -202,9 +190,6 @@ jobs:
                 mark_worker "worker or deploy gate input changed: $path"
                 mark_guard "workflow guardrails cover worker/deploy path: $path"
                 ;;
-              ai-backend/*)
-                mark_ai_backend "AI backend input changed: $path"
-                ;;
               frontend/*)
                 mark_frontend "frontend workspace input changed: $path"
                 ;;
@@ -218,7 +203,6 @@ jobs:
           {
             echo "app_changed=$app_changed"
             echo "android_changed=$android_changed"
-            echo "ai_backend_changed=$ai_backend_changed"
             echo "worker_changed=$worker_changed"
             echo "frontend_changed=$frontend_changed"
             echo "workflow_guard_changed=$workflow_guard_changed"
@@ -229,7 +213,6 @@ jobs:
             echo ""
             echo "- App changed: $app_changed"
             echo "- Android build changed: $android_changed"
-            echo "- AI backend changed: $ai_backend_changed"
             echo "- Worker or deploy runtime changed: $worker_changed"
             echo "- Frontend changed: $frontend_changed"
             echo "- Workflow guardrails changed: $workflow_guard_changed"
@@ -241,9 +224,6 @@ jobs:
             fi
             if [ "${#android_reasons[@]}" -gt 0 ]; then
               printf '%s\n' "${android_reasons[@]}" | awk '!seen[$0]++ { printf "- Android: `%s`\n", $0 }'
-            fi
-            if [ "${#ai_backend_reasons[@]}" -gt 0 ]; then
-              printf '%s\n' "${ai_backend_reasons[@]}" | awk '!seen[$0]++ { printf "- AI backend: `%s`\n", $0 }'
             fi
             if [ "${#worker_reasons[@]}" -gt 0 ]; then
               printf '%s\n' "${worker_reasons[@]}" | awk '!seen[$0]++ { printf "- Worker/CD: `%s`\n", $0 }'
@@ -386,42 +366,6 @@ jobs:
 
       - name: Run Flutter tests
         run: flutter test
-
-  ai-backend-checks:
-    name: AI backend checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: detect-changes
-    if: needs.detect-changes.outputs.ai_backend_changed == 'true'
-    defaults:
-      run:
-        working-directory: ai-backend
-    steps:
-      - name: Checkout AI backend files
-        uses: actions/checkout@v5
-        with:
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /ai-backend/package.json
-            /ai-backend/package-lock.json
-            /ai-backend/src/**
-            /ai-backend/test/**
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: ai-backend/package-lock.json
-
-      - name: Install AI backend dependencies
-        run: npm ci
-
-      - name: Check AI backend syntax
-        run: npm run check
-
-      - name: Run AI backend tests
-        run: npm test
 
   mobile-release-simulation:
     name: Release simulation - mobile web build
@@ -576,14 +520,14 @@ jobs:
       - name: Add Pub cache to PATH
         run: echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
 
-      - name: Run Patrol member AI cloud route test
+      - name: Run Patrol member AI local OpenClaw route test
         env:
           PATROL_ANALYTICS_ENABLED: 'false'
         run: |
           set -euo pipefail
           patrol test \
             -d chrome \
-            -t patrol_test/member_ai_cloud_route_test.dart \
+            -t patrol_test/member_ai_local_openclaw_route_test.dart \
             --web-headless=true \
             --dart-define=DACHENG_DESKTOP_CONTROL=true
 
@@ -900,7 +844,6 @@ jobs:
     needs:
       - detect-changes
       - fast-checks
-      - ai-backend-checks
       - module-checks
       - contract-checks
       - release-simulation
@@ -913,7 +856,6 @@ jobs:
           for pair in \
             "Detect changes:${{ needs.detect-changes.result }}" \
             "Fast checks:${{ needs.fast-checks.result }}" \
-            "AI backend checks:${{ needs.ai-backend-checks.result }}" \
             "Module checks:${{ needs.module-checks.result }}" \
             "Contract checks:${{ needs.contract-checks.result }}" \
             "Release simulation:${{ needs.release-simulation.result }}"
@@ -934,7 +876,6 @@ jobs:
     needs:
       - detect-changes
       - fast-checks
-      - ai-backend-checks
       - mobile-release-simulation
       - android-gradle-bootstrap
       - patrol-member-ai
