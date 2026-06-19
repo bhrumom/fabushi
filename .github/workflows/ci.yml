@@ -36,6 +36,7 @@ jobs:
     outputs:
       app_changed: ${{ steps.classify.outputs.app_changed }}
       android_changed: ${{ steps.classify.outputs.android_changed }}
+      ai_backend_changed: ${{ steps.classify.outputs.ai_backend_changed }}
       worker_changed: ${{ steps.classify.outputs.worker_changed }}
       frontend_changed: ${{ steps.classify.outputs.frontend_changed }}
       workflow_guard_changed: ${{ steps.classify.outputs.workflow_guard_changed }}
@@ -55,6 +56,7 @@ jobs:
             /fabushi/lib/**
             /fabushi/test/**
             /fabushi/integration_test/**
+            /fabushi/patrol_test/**
             /fabushi/assets/**
             !/fabushi/assets/built_in/**
             /fabushi/fonts/**
@@ -63,6 +65,10 @@ jobs:
             /fabushi/web/**
             !/fabushi/web/assets/built_in/**
             /fabushi/e2e/**
+            /ai-backend/package.json
+            /ai-backend/package-lock.json
+            /ai-backend/src/**
+            /ai-backend/test/**
             /frontend/**
 
       - name: Resolve diff range
@@ -130,12 +136,14 @@ jobs:
 
           app_changed=false
           android_changed=false
+          ai_backend_changed=false
           worker_changed=false
           frontend_changed=false
           workflow_guard_changed=false
 
           app_reasons=()
           android_reasons=()
+          ai_backend_reasons=()
           worker_reasons=()
           frontend_reasons=()
           guard_reasons=()
@@ -148,6 +156,11 @@ jobs:
           mark_android() {
             android_changed=true
             android_reasons+=("$1")
+          }
+
+          mark_ai_backend() {
+            ai_backend_changed=true
+            ai_backend_reasons+=("$1")
           }
 
           mark_worker() {
@@ -181,13 +194,16 @@ jobs:
               fabushi/scripts/*)
                 mark_app "Flutter app release script changed: $path"
                 ;;
-              fabushi/lib/*|fabushi/test/*|fabushi/integration_test/*|fabushi/assets/*|fabushi/fonts/*|fabushi/pubspec.yaml|fabushi/pubspec.lock|fabushi/analysis_options.yaml|fabushi/l10n.yaml)
+              fabushi/lib/*|fabushi/test/*|fabushi/integration_test/*|fabushi/patrol_test/*|fabushi/assets/*|fabushi/fonts/*|fabushi/pubspec.yaml|fabushi/pubspec.lock|fabushi/analysis_options.yaml|fabushi/l10n.yaml)
                 mark_app "shared Flutter app input changed: $path"
                 mark_android "android build depends on shared Flutter app input: $path"
                 ;;
               fabushi/web/*|fabushi/e2e/*)
                 mark_worker "worker or deploy gate input changed: $path"
                 mark_guard "workflow guardrails cover worker/deploy path: $path"
+                ;;
+              ai-backend/*)
+                mark_ai_backend "AI backend input changed: $path"
                 ;;
               frontend/*)
                 mark_frontend "frontend workspace input changed: $path"
@@ -202,6 +218,7 @@ jobs:
           {
             echo "app_changed=$app_changed"
             echo "android_changed=$android_changed"
+            echo "ai_backend_changed=$ai_backend_changed"
             echo "worker_changed=$worker_changed"
             echo "frontend_changed=$frontend_changed"
             echo "workflow_guard_changed=$workflow_guard_changed"
@@ -212,6 +229,7 @@ jobs:
             echo ""
             echo "- App changed: $app_changed"
             echo "- Android build changed: $android_changed"
+            echo "- AI backend changed: $ai_backend_changed"
             echo "- Worker or deploy runtime changed: $worker_changed"
             echo "- Frontend changed: $frontend_changed"
             echo "- Workflow guardrails changed: $workflow_guard_changed"
@@ -223,6 +241,9 @@ jobs:
             fi
             if [ "${#android_reasons[@]}" -gt 0 ]; then
               printf '%s\n' "${android_reasons[@]}" | awk '!seen[$0]++ { printf "- Android: `%s`\n", $0 }'
+            fi
+            if [ "${#ai_backend_reasons[@]}" -gt 0 ]; then
+              printf '%s\n' "${ai_backend_reasons[@]}" | awk '!seen[$0]++ { printf "- AI backend: `%s`\n", $0 }'
             fi
             if [ "${#worker_reasons[@]}" -gt 0 ]; then
               printf '%s\n' "${worker_reasons[@]}" | awk '!seen[$0]++ { printf "- Worker/CD: `%s`\n", $0 }'
@@ -264,6 +285,7 @@ jobs:
             /fabushi/lib/**
             /fabushi/test/**
             /fabushi/integration_test/**
+            /fabushi/patrol_test/**
             /fabushi/assets/**
             !/fabushi/assets/built_in/**
             /fabushi/fonts/**
@@ -320,7 +342,7 @@ jobs:
         run: |
           set -euo pipefail
           targets=()
-          for path in lib test integration_test; do
+          for path in lib test integration_test patrol_test; do
             if [ -e "$path" ]; then
               targets+=("$path")
             fi
@@ -364,6 +386,42 @@ jobs:
 
       - name: Run Flutter tests
         run: flutter test
+
+  ai-backend-checks:
+    name: AI backend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: detect-changes
+    if: needs.detect-changes.outputs.ai_backend_changed == 'true'
+    defaults:
+      run:
+        working-directory: ai-backend
+    steps:
+      - name: Checkout AI backend files
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /ai-backend/package.json
+            /ai-backend/package-lock.json
+            /ai-backend/src/**
+            /ai-backend/test/**
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ai-backend/package-lock.json
+
+      - name: Install AI backend dependencies
+        run: npm ci
+
+      - name: Check AI backend syntax
+        run: npm run check
+
+      - name: Run AI backend tests
+        run: npm test
 
   mobile-release-simulation:
     name: Release simulation - mobile web build
@@ -474,6 +532,60 @@ jobs:
         run: |
           set -euo pipefail
           flutter build apk --debug --config-only
+
+  patrol-member-ai:
+    name: Release simulation - Patrol member AI
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: detect-changes
+    if: needs.detect-changes.outputs.app_changed == 'true'
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout app files
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Node.js for Patrol Web
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Enable Flutter web
+        run: flutter config --enable-web
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Install Patrol CLI
+        run: dart pub global activate patrol_cli
+
+      - name: Add Pub cache to PATH
+        run: echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: Run Patrol member AI cloud route test
+        env:
+          PATROL_ANALYTICS_ENABLED: 'false'
+        run: |
+          set -euo pipefail
+          patrol test \
+            -d chrome \
+            -t patrol_test/member_ai_cloud_route_test.dart \
+            --web-headless=true \
+            --dart-define=DACHENG_DESKTOP_CONTROL=true
 
   worker-module-checks:
     name: Module checks - Worker
@@ -756,6 +868,7 @@ jobs:
       - detect-changes
       - mobile-release-simulation
       - android-gradle-bootstrap
+      - patrol-member-ai
       - worker-release-simulation
       - e2e-release-simulation
     if: always()
@@ -768,6 +881,7 @@ jobs:
             "Detect changes:${{ needs.detect-changes.result }}" \
             "Mobile release simulation:${{ needs.mobile-release-simulation.result }}" \
             "Android Gradle bootstrap:${{ needs.android-gradle-bootstrap.result }}" \
+            "Patrol member AI:${{ needs.patrol-member-ai.result }}" \
             "Worker dry-run:${{ needs.worker-release-simulation.result }}" \
             "E2E release simulation:${{ needs.e2e-release-simulation.result }}"
           do
@@ -786,6 +900,7 @@ jobs:
     needs:
       - detect-changes
       - fast-checks
+      - ai-backend-checks
       - module-checks
       - contract-checks
       - release-simulation
@@ -798,6 +913,7 @@ jobs:
           for pair in \
             "Detect changes:${{ needs.detect-changes.result }}" \
             "Fast checks:${{ needs.fast-checks.result }}" \
+            "AI backend checks:${{ needs.ai-backend-checks.result }}" \
             "Module checks:${{ needs.module-checks.result }}" \
             "Contract checks:${{ needs.contract-checks.result }}" \
             "Release simulation:${{ needs.release-simulation.result }}"
@@ -818,8 +934,10 @@ jobs:
     needs:
       - detect-changes
       - fast-checks
+      - ai-backend-checks
       - mobile-release-simulation
       - android-gradle-bootstrap
+      - patrol-member-ai
       - worker-module-checks
       - worker-contract-checks
       - worker-release-simulation
