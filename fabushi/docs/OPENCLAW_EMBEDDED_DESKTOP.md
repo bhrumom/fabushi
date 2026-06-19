@@ -12,13 +12,19 @@
     -> 桌面端: OpenClawAiBridge
        -> OpenClawRuntime 自动释放 assets/openclaw/<platform>
        -> 启动 127.0.0.1:18789 OpenClaw Gateway
-       -> POST /v1/chat/completions model=openclaw/default
+       -> POST /v1/chat/completions model=deepseek/deepseek-chat
     -> 移动端/Web: 原有 ai.ombhrum.com API
 ```
 
 ## 为什么要内置 runtime
 
-OpenClaw 官方 Gateway 运行在单个本地端口上，默认 loopback 绑定，并通过同一端口承载 WebSocket、HTTP API、Control UI 与 OpenAI-compatible `/v1/chat/completions` 等接口。桌面 App 作为可信本机客户端可以持有 Gateway token，但 token 只保存在本机 SharedPreferences 中，不暴露到移动端。
+OpenClaw 官方 Gateway 运行在单个本地端口上，默认 loopback 绑定，并通过同一端口承载 WebSocket、HTTP API、Control UI 与 OpenAI-compatible `/v1/chat/completions` 等接口。桌面 App 作为可信本机客户端可以持有 Gateway token，但 token 只保存在本机 SharedPreferences 中，不暴露到移动端。本机 OpenClaw 默认模型为 `deepseek/deepseek-chat`，由 App 启动 Gateway 时通过 `DEEPSEEK_API_KEY` 环境变量交给 OpenClaw 使用。
+
+## WorkBuddy 式随包安装
+
+参考 WorkBuddy 桌面包的做法，运行时不要求用户单独安装。WorkBuddy 把 CLI 与 Node runtime 放进 `.app/Contents/Resources`，随 DMG 一起交付；用户只看到正常安装 App。大乘桌面版采用同一个产品原则：CI/打包机在 release 构建时把 OpenClaw 与 Node runtime vendored 到 Flutter assets，最终它们位于 `.app/Contents/Frameworks/App.framework/Resources/flutter_assets/assets/openclaw/...`。App 首次启动时只在应用内部从已签名的 bundle 资源释放到用户级 Application Support 目录，然后启动本机 Gateway。
+
+会员和非会员在桌面端都走这条本机 OpenClaw 链路。会员身份只作为本机 OpenClaw 会话上下文传入，不作为切换云端 API 的条件。
 
 ## Release 打包步骤
 

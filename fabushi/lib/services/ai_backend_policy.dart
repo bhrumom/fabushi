@@ -55,7 +55,12 @@ AiBackendMode aiBackendModeFromStorageName(String? value) {
 class AiBackendPolicy {
   AiBackendPolicy._();
 
+  @visibleForTesting
+  static bool? debugIsDesktopNativeOverride;
+
   static bool get isDesktopNative {
+    final debugOverride = debugIsDesktopNativeOverride;
+    if (debugOverride != null) return debugOverride;
     if (kIsWeb) return false;
     return defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows ||
@@ -67,7 +72,7 @@ class AiBackendPolicy {
     return aiBackendModeFromStorageName(name);
   }
 
-  static Future<bool> shouldUseEmbeddedOpenClaw() async {
+  static Future<bool> shouldUseEmbeddedOpenClaw({bool isMember = false}) async {
     if (!isDesktopNative) return false;
 
     final mode = await loadMode();
@@ -80,7 +85,7 @@ class AiBackendPolicy {
     }
   }
 
-  static Future<String> activeBackendLabel() async {
+  static Future<String> activeBackendLabel({bool isMember = false}) async {
     if (!isDesktopNative) return '云端 API';
     final mode = await loadMode();
     if (mode == AiBackendMode.cloudApi) return '云端 API';

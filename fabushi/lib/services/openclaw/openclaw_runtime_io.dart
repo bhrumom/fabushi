@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/config/app_config.dart';
 import '../app_settings.dart';
 import '../diagnostic_log_service.dart';
 import '../desktop_control/desktop_control_bridge.dart';
@@ -348,6 +349,7 @@ class OpenClawRuntime {
       stateRoot: stateRoot,
       port: port,
       token: token,
+      model: model,
     );
     final desktopToolsManifestPath = await _ensureDesktopToolsManifest(
       stateRoot: stateRoot,
@@ -391,6 +393,10 @@ class OpenClawRuntime {
       },
     );
 
+    final deepSeekApiKey = _resolveDeepSeekApiKey();
+    final deepSeekEnv = deepSeekApiKey == null
+        ? null
+        : <String, String>{'DEEPSEEK_API_KEY': deepSeekApiKey};
     final env = Map<String, String>.from(Platform.environment)
       ..addAll({
         'OPENCLAW_GATEWAY_PORT': '$port',
@@ -412,6 +418,7 @@ class OpenClawRuntime {
         if (username != null && username.isNotEmpty)
           'DACHENG_USERNAME': username,
         'DACHENG_IS_MEMBER': isMember ? '1' : '0',
+        ...?deepSeekEnv,
       });
 
     _process = await Process.start(
@@ -511,7 +518,8 @@ class OpenClawRuntime {
     final spec = _OpenClawBundleSpec(
       version: (decoded['version'] ?? 'dev').toString(),
       defaultPort: _readInt(decoded['defaultPort']) ?? 18789,
-      defaultModel: (decoded['defaultModel'] ?? 'openclaw/default').toString(),
+      defaultModel: (decoded['defaultModel'] ?? 'deepseek/deepseek-chat')
+          .toString(),
       defaultModelOverride: decoded['defaultModelOverride']?.toString(),
       nodeExecutable: (platform['nodeExecutable'] ?? 'node/bin/node')
           .toString(),
@@ -551,7 +559,10 @@ class OpenClawRuntime {
     if (bundledRuntimeDir != null) {
       _diag(
         'bundle.launch.bundled-runtime',
-        data: {'platformKey': platformKey, 'runtimeDir': bundledRuntimeDir.path},
+        data: {
+          'platformKey': platformKey,
+          'runtimeDir': bundledRuntimeDir.path,
+        },
       );
       return bundledRuntimeDir;
     }
@@ -894,6 +905,7 @@ class OpenClawRuntime {
     required Directory stateRoot,
     required int port,
     required String token,
+    required String model,
   }) async {
     final configDir = Directory(p.join(stateRoot.path, 'config'));
     await configDir.create(recursive: true);
@@ -915,9 +927,17 @@ class OpenClawRuntime {
         },
       },
       'agents': {
-        'defaults': {'workspace': workspace.path},
+        'defaults': {
+          'workspace': workspace.path,
+          'model': {'primary': model},
+        },
         'list': [
-          {'id': 'dacheng', 'default': true, 'workspace': workspace.path},
+          {
+            'id': 'dacheng',
+            'default': true,
+            'workspace': workspace.path,
+            'model': {'primary': model},
+          },
         ],
       },
     };
@@ -939,6 +959,18 @@ class OpenClawRuntime {
       },
     );
     return configPath;
+  }
+
+  String? _resolveDeepSeekApiKey() {
+    for (final value in [
+      Platform.environment['DACHENG_OPENCLAW_DEEPSEEK_API_KEY'],
+      Platform.environment['DEEPSEEK_API_KEY'],
+      AppConfig.configuredOpenClawDeepSeekApiKey,
+    ]) {
+      final text = value?.trim();
+      if (text != null && text.isNotEmpty) return text;
+    }
+    return null;
   }
 
   Future<File> _ensureDesktopToolsManifest({
@@ -1019,8 +1051,12 @@ class OpenClawRuntime {
 
     final agents = _mutableMap(current['agents']);
     final defaultAgents = _mutableMap(defaults['agents']);
-    agents['defaults'] ??= defaultAgents['defaults'];
-    agents['list'] ??= defaultAgents['list'];
+    final agentDefaults = _mutableMap(agents['defaults']);
+    final defaultAgentDefaults = _mutableMap(defaultAgents['defaults']);
+    agentDefaults['workspace'] = defaultAgentDefaults['workspace'];
+    agentDefaults['model'] = defaultAgentDefaults['model'];
+    agents['defaults'] = agentDefaults;
+    agents['list'] = defaultAgents['list'];
     current['agents'] = agents;
 
     return current;
