@@ -2,16 +2,21 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' show Abi;
 import 'dart:io';
+import 'package:archive/archive_io.dart';
+import 'package:convert/convert.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/config/app_config.dart';
 import '../app_settings.dart';
 import '../diagnostic_log_service.dart';
 import '../desktop_control/desktop_control_bridge.dart';
 import '../desktop_control/desktop_control_policy.dart';
+import 'openclaw_port_resolver.dart';
 
 enum OpenClawRuntimeState {
   unsupported,
@@ -89,6 +94,7 @@ class _OpenClawBundleSpec {
   final String nodeExecutable;
   final String cliEntrypoint;
   final List<String> gatewayArgs;
+  final bool downloaded;
 
   const _OpenClawBundleSpec({
     required this.version,
@@ -98,7 +104,58 @@ class _OpenClawBundleSpec {
     required this.nodeExecutable,
     required this.cliEntrypoint,
     required this.gatewayArgs,
+    this.downloaded = false,
   });
+
+  Map<String, dynamic> toJson() => {
+    'schema': 1,
+    'version': version,
+    'defaultPort': defaultPort,
+    'defaultModel': defaultModel,
+    if (defaultModelOverride != null)
+      'defaultModelOverride': defaultModelOverride,
+    'nodeExecutable': nodeExecutable,
+    'cliEntrypoint': cliEntrypoint,
+    'gatewayArgs': gatewayArgs,
+    'downloaded': downloaded,
+  };
+}
+
+class _OpenClawRuntimeRelease {
+  final String version;
+  final Uri archiveUri;
+  final String sha256Hex;
+  final int size;
+  final int defaultPort;
+  final String defaultModel;
+  final String? defaultModelOverride;
+  final String nodeExecutable;
+  final String cliEntrypoint;
+  final List<String> gatewayArgs;
+
+  const _OpenClawRuntimeRelease({
+    required this.version,
+    required this.archiveUri,
+    required this.sha256Hex,
+    required this.size,
+    required this.defaultPort,
+    required this.defaultModel,
+    this.defaultModelOverride,
+    required this.nodeExecutable,
+    required this.cliEntrypoint,
+    required this.gatewayArgs,
+  });
+
+  _OpenClawBundleSpec toBundleSpec() => _OpenClawBundleSpec(
+    version: version,
+    defaultPort: defaultPort,
+    defaultModel: defaultModel,
+    defaultModelOverride: defaultModelOverride,
+    nodeExecutable: nodeExecutable,
+    cliEntrypoint: cliEntrypoint,
+    gatewayArgs: gatewayArgs,
+    downloaded: true,
+  );
 }
 
 class _DesktopToolsLaunch {
@@ -128,13 +185,23 @@ class OpenClawRuntime {
   static final OpenClawRuntime instance = OpenClawRuntime._();
 
   static const String _manifestAsset = 'assets/openclaw/bundle_manifest.json';
-  static const Duration _startupTimeout = Duration(seconds: 45);
+  static const String _runtimeDirOverrideDefine = String.fromEnvironment(
+    'DACHENG_OPENCLAW_RUNTIME_DIR',
+  );
+  static const String _defaultGatewayModel =
+      AppSettings.defaultOpenClawGatewayModel;
+  static const String _defaultDeepSeekModel =
+      AppSettings.defaultOpenClawDeepSeekModel;
+  static const String _backendDeepSeekProviderId = 'dacheng-deepseek-proxy';
+  static const Duration _startupTimeout = Duration(seconds: 120);
   static const Duration _probeTimeout = Duration(seconds: 3);
 
   Process? _process;
   Future<OpenClawGatewayTarget>? _starting;
+  String _processAuthToken = '';
   OpenClawRuntimeStatus? _lastStatus;
   final List<String> _recentLogs = <String>[];
+  final OpenClawPortResolver _portResolver = const OpenClawPortResolver();
 
   Future<OpenClawRuntimeStatus> getStatus({bool probe = true}) async {
     final platformKey = _platformKey;
@@ -156,8 +223,15 @@ class OpenClawRuntime {
     }
 
     try {
-      final spec = await _loadSpec(platformKey);
-      final runtimeDir = await _runtimeDir(spec, platformKey);
+      final spec = await _loadSpec(platformKey, checkUpdates: false);
+      final overrideRuntimeDir = await _runtimeDirOverride(spec, platformKey);
+      final bundledRuntimeDir = overrideRuntimeDir == null
+          ? await _bundledRuntimeDir(spec, platformKey)
+          : null;
+      final runtimeDir =
+          overrideRuntimeDir ??
+          bundledRuntimeDir ??
+          await _runtimeDir(spec, platformKey);
       final nodePath = p.join(runtimeDir.path, spec.nodeExecutable);
       final cliPath = p.join(runtimeDir.path, spec.cliEntrypoint);
       final nodeExists = await File(nodePath).exists();
@@ -171,6 +245,9 @@ class OpenClawRuntime {
           'nodeExists': nodeExists,
           'cliPath': cliPath,
           'cliExists': cliExists,
+          'runtimeSource': overrideRuntimeDir != null
+              ? 'override'
+              : (bundledRuntimeDir == null ? 'cache' : 'bundle'),
         },
       );
 
@@ -283,6 +360,7 @@ class OpenClawRuntime {
   Future<void> stop() async {
     final process = _process;
     _process = null;
+    _processAuthToken = '';
     if (process == null) return;
     process.kill();
     try {
@@ -303,14 +381,22 @@ class OpenClawRuntime {
       throw const OpenClawRuntimeException('当前平台不支持内置 OpenClaw Gateway');
     }
 
-    final spec = await _loadSpec(platformKey);
-    final port = await AppSettings.getOpenClawGatewayPort(
+    final spec = await _loadSpec(platformKey, checkUpdates: true);
+    final requestedPort = await AppSettings.getOpenClawGatewayPort(
       defaultValue: spec.defaultPort,
     );
     final token = await AppSettings.getOpenClawGatewayToken();
-    final model = await AppSettings.getOpenClawModel(
+    final savedModel = await AppSettings.getOpenClawModel(
       defaultValue: spec.defaultModel,
     );
+    final model = _gatewayChatModel(savedModel);
+    final requestedAuthToken = authToken?.trim() ?? '';
+    final backendDeepSeekModel = _backendDeepSeekModelRef(
+      await AppSettings.getOpenClawDeepSeekModel(
+        defaultValue: _defaultDeepSeekModelFor(spec.defaultModel),
+      ),
+    );
+    final deepSeekProxyBaseUrl = _deepSeekProxyBaseUrl();
     final modelOverride = await AppSettings.getOpenClawModelOverride(
       defaultValue: spec.defaultModelOverride ?? '',
     );
@@ -319,18 +405,25 @@ class OpenClawRuntime {
       'ensure-start.config',
       data: {
         'platformKey': platformKey,
-        'port': port,
+        'requestedPort': requestedPort,
         'model': model,
+        'rawModel': savedModel,
+        'backendDeepSeekModel': backendDeepSeekModel,
+        'deepSeekProxyBaseUrl': deepSeekProxyBaseUrl,
+        'hasAuthToken': requestedAuthToken.isNotEmpty,
         'modelOverrideSet': modelOverride.trim().isNotEmpty,
         'desktopToolsUri': desktopTools.uri?.toString(),
         'desktopToolsStatus': desktopTools.statusJson,
       },
     );
 
-    if (await _probe(port, token, context: 'pre-start')) {
-      _diag('ensure-start.reuse-existing', data: {'port': port});
+    final canReuseStartedProcess =
+        _process != null && _processAuthToken == requestedAuthToken;
+    if (canReuseStartedProcess &&
+        await _probe(requestedPort, token, context: 'pre-start')) {
+      _diag('ensure-start.reuse-existing', data: {'port': requestedPort});
       return OpenClawGatewayTarget(
-        baseUri: Uri.parse('http://127.0.0.1:$port'),
+        baseUri: Uri.parse('http://127.0.0.1:$requestedPort'),
         token: token,
         model: model,
         modelOverride: modelOverride.trim().isEmpty
@@ -340,14 +433,54 @@ class OpenClawRuntime {
         desktopToolsToken: desktopTools.token,
         desktopToolsStatus: desktopTools.statusJson,
       );
+    } else if (_process != null) {
+      _diag(
+        'ensure-start.restart-auth-changed',
+        data: {
+          'hasPreviousAuthToken': _processAuthToken.isNotEmpty,
+          'hasRequestedAuthToken': requestedAuthToken.isNotEmpty,
+        },
+      );
+      await stop();
     }
 
     final runtimeDir = await _prepareBundle(spec, platformKey);
     final stateRoot = await _stateRoot();
+    if (_process != null) {
+      _diag(
+        'process.stop-stale-before-start',
+        data: {'requestedPort': requestedPort},
+      );
+      await stop();
+    }
+    final portCandidate = await _portResolver.resolve(requestedPort);
+    final port = portCandidate.port;
+    if (portCandidate.isFallback) {
+      await AppSettings.setOpenClawGatewayPort(port);
+      _diag(
+        'ensure-start.fallback-port',
+        data: {
+          'requestedPort': requestedPort,
+          'selectedPort': port,
+          if (portCandidate.reason != null) 'reason': portCandidate.reason,
+        },
+      );
+    } else {
+      _diag(
+        'ensure-start.port-bindable',
+        data: {'requestedPort': requestedPort, 'selectedPort': port},
+      );
+    }
     final configPath = await _ensureConfigFile(
       stateRoot: stateRoot,
       port: port,
       token: token,
+      backendDeepSeekModel: backendDeepSeekModel,
+      deepSeekProxyBaseUrl: deepSeekProxyBaseUrl,
+    );
+    await _ensureAgentModelConfig(
+      stateRoot: stateRoot,
+      deepSeekProxyBaseUrl: deepSeekProxyBaseUrl,
     );
     final desktopToolsManifestPath = await _ensureDesktopToolsManifest(
       stateRoot: stateRoot,
@@ -380,6 +513,7 @@ class OpenClawRuntime {
       cliPath,
       ...spec.gatewayArgs.map((arg) => arg.replaceAll('{port}', '$port')),
     ];
+    _recentLogs.clear();
     _diag(
       'process.starting',
       data: {
@@ -388,6 +522,8 @@ class OpenClawRuntime {
         'workingDirectory': runtimeDir.path,
         'configPath': configPath.path,
         'desktopToolsManifestPath': desktopToolsManifestPath.path,
+        'requestedPort': requestedPort,
+        'selectedPort': port,
       },
     );
 
@@ -407,11 +543,14 @@ class OpenClawRuntime {
         if (desktopTools.token != null)
           'DACHENG_DESKTOP_TOOLS_TOKEN': desktopTools.token!,
         'DACHENG_APP_RUNTIME': '1',
-        if (authToken != null && authToken.isNotEmpty)
-          'DACHENG_AUTH_TOKEN': authToken,
+        'DACHENG_AUTH_TOKEN': (authToken != null && authToken.isNotEmpty)
+            ? authToken
+            : token,
         if (username != null && username.isNotEmpty)
           'DACHENG_USERNAME': username,
         'DACHENG_IS_MEMBER': isMember ? '1' : '0',
+        'DACHENG_OPENCLAW_PROXY_TOKEN': 'dacheng-openclaw-proxy',
+        'OPENCLAW_DISABLE_BONJOUR': '1',
       });
 
     _process = await Process.start(
@@ -422,6 +561,7 @@ class OpenClawRuntime {
       mode: ProcessStartMode.normal,
       runInShell: false,
     );
+    _processAuthToken = requestedAuthToken;
     _captureLogs(_process!);
     _diag('process.started', data: {'pid': _process!.pid, 'port': port});
 
@@ -488,7 +628,10 @@ class OpenClawRuntime {
     );
   }
 
-  Future<_OpenClawBundleSpec> _loadSpec(String platformKey) async {
+  Future<_OpenClawBundleSpec> _loadSpec(
+    String platformKey, {
+    bool checkUpdates = false,
+  }) async {
     final raw = await rootBundle.loadString(_manifestAsset);
     final decoded = jsonDecode(raw) as Map<String, dynamic>;
     final platforms = Map<String, dynamic>.from(
@@ -531,13 +674,531 @@ class OpenClawRuntime {
         'gatewayArgs': spec.gatewayArgs,
       },
     );
+    var effectiveSpec =
+        await _loadActiveDownloadedSpec(platformKey, fallbackSpec: spec) ??
+        spec;
+    if (checkUpdates) {
+      effectiveSpec =
+          await _maybeInstallRuntimeUpdate(
+            platformKey: platformKey,
+            currentSpec: effectiveSpec,
+          ) ??
+          effectiveSpec;
+    }
+    return effectiveSpec;
+  }
+
+  Future<_OpenClawBundleSpec?> _loadActiveDownloadedSpec(
+    String platformKey, {
+    required _OpenClawBundleSpec fallbackSpec,
+  }) async {
+    final saved = await AppSettings.getOpenClawActiveRuntimeSpec();
+    if (saved == null) return null;
+    final spec = _specFromJson(saved, downloaded: true);
+    if (spec == null) {
+      await AppSettings.clearOpenClawActiveRuntimeSpec();
+      return null;
+    }
+    final runtimeDir = await _cachedRuntimeDirIfComplete(spec, platformKey);
+    if (runtimeDir == null) {
+      await AppSettings.clearOpenClawActiveRuntimeSpec();
+      _diag(
+        'runtime-update.active-missing',
+        data: {'platformKey': platformKey, 'version': spec.version},
+      );
+      return null;
+    }
+    _diag(
+      'runtime-update.active-loaded',
+      data: {
+        'platformKey': platformKey,
+        'version': spec.version,
+        'runtimeDir': runtimeDir.path,
+        'bundledVersion': fallbackSpec.version,
+      },
+    );
     return spec;
+  }
+
+  _OpenClawBundleSpec? _specFromJson(
+    Map<String, dynamic> json, {
+    required bool downloaded,
+  }) {
+    final version = json['version']?.toString().trim() ?? '';
+    final nodeExecutable = json['nodeExecutable']?.toString().trim() ?? '';
+    final cliEntrypoint = json['cliEntrypoint']?.toString().trim() ?? '';
+    if (version.isEmpty || nodeExecutable.isEmpty || cliEntrypoint.isEmpty) {
+      return null;
+    }
+    return _OpenClawBundleSpec(
+      version: version,
+      defaultPort: _readInt(json['defaultPort']) ?? 18789,
+      defaultModel: (json['defaultModel'] ?? _defaultGatewayModel).toString(),
+      defaultModelOverride: json['defaultModelOverride']?.toString(),
+      nodeExecutable: nodeExecutable,
+      cliEntrypoint: cliEntrypoint,
+      gatewayArgs:
+          (json['gatewayArgs'] as List? ??
+                  const ['gateway', '--port', '{port}', '--force'])
+              .map((item) => item.toString())
+              .toList(),
+      downloaded: downloaded,
+    );
+  }
+
+  Future<_OpenClawBundleSpec?> _maybeInstallRuntimeUpdate({
+    required String platformKey,
+    required _OpenClawBundleSpec currentSpec,
+  }) async {
+    if (_configuredRuntimeDirOverride(platformKey) != null) {
+      _diag('runtime-update.skip-override', data: {'platformKey': platformKey});
+      return null;
+    }
+
+    try {
+      final release = await _fetchRuntimeRelease(
+        platformKey: platformKey,
+        currentVersion: currentSpec.version,
+      );
+      if (release == null || release.version == currentSpec.version) {
+        return null;
+      }
+
+      final releaseSpec = release.toBundleSpec();
+      final cached = await _cachedRuntimeDirIfComplete(
+        releaseSpec,
+        platformKey,
+      );
+      if (cached != null) {
+        await AppSettings.setOpenClawActiveRuntimeSpec(releaseSpec.toJson());
+        _diag(
+          'runtime-update.use-cached',
+          data: {
+            'platformKey': platformKey,
+            'version': release.version,
+            'runtimeDir': cached.path,
+          },
+        );
+        return releaseSpec;
+      }
+
+      return await _downloadAndInstallRuntimeUpdate(
+        release: release,
+        platformKey: platformKey,
+      );
+    } catch (error, stackTrace) {
+      _diag(
+        'runtime-update.failed',
+        data: {
+          'platformKey': platformKey,
+          'currentVersion': currentSpec.version,
+          'error': error.toString(),
+        },
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
+  Future<_OpenClawRuntimeRelease?> _fetchRuntimeRelease({
+    required String platformKey,
+    required String currentVersion,
+  }) async {
+    final baseUrl = AppConfig.currentAiBackendUrl.replaceFirst(
+      RegExp(r'/+$'),
+      '',
+    );
+    final uri = Uri.parse('$baseUrl/api/openclaw/runtime/manifest').replace(
+      queryParameters: {
+        'platform': platformKey,
+        'currentVersion': currentVersion,
+        'appVersion': AppConfig.appVersion,
+      },
+    );
+    final response = await http
+        .get(uri, headers: {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      _diag(
+        'runtime-update.manifest-http',
+        data: {'statusCode': response.statusCode, 'uri': uri.toString()},
+      );
+      return null;
+    }
+    final decoded = _decodeJsonOrNull(response.body);
+    if (decoded is! Map) return null;
+    final payload = Map<String, dynamic>.from(decoded);
+    if (payload['updateAvailable'] != true) {
+      _diag(
+        'runtime-update.none',
+        data: {
+          'platformKey': platformKey,
+          'reason': payload['reason']?.toString(),
+          'currentVersion': currentVersion,
+          'latestVersion': payload['latestVersion']?.toString(),
+        },
+      );
+      return null;
+    }
+    final latest = payload['latest'];
+    if (latest is! Map) return null;
+    return _releaseFromJson(Map<String, dynamic>.from(latest));
+  }
+
+  _OpenClawRuntimeRelease? _releaseFromJson(Map<String, dynamic> json) {
+    final version = json['version']?.toString().trim() ?? '';
+    final archiveUrl = json['archiveUrl']?.toString().trim() ?? '';
+    final sha256Hex = json['sha256']?.toString().trim().toLowerCase() ?? '';
+    final archiveUri = Uri.tryParse(archiveUrl);
+    final gatewayArgs =
+        (json['gatewayArgs'] as List? ??
+                const ['gateway', '--port', '{port}', '--force'])
+            .map((item) => item.toString())
+            .toList();
+    if (version.isEmpty ||
+        archiveUri == null ||
+        !archiveUri.hasScheme ||
+        !RegExp(r'^[a-f0-9]{64}$').hasMatch(sha256Hex)) {
+      _diag(
+        'runtime-update.invalid-release',
+        data: {
+          'version': version,
+          'archiveUrlSet': archiveUrl.isNotEmpty,
+          'sha256Length': sha256Hex.length,
+        },
+      );
+      return null;
+    }
+    return _OpenClawRuntimeRelease(
+      version: version,
+      archiveUri: archiveUri,
+      sha256Hex: sha256Hex,
+      size: _readInt(json['size']) ?? 0,
+      defaultPort: _readInt(json['defaultPort']) ?? 18789,
+      defaultModel: (json['defaultModel'] ?? _defaultGatewayModel).toString(),
+      defaultModelOverride: json['defaultModelOverride']?.toString(),
+      nodeExecutable: (json['nodeExecutable'] ?? 'node/bin/node').toString(),
+      cliEntrypoint: (json['cliEntrypoint'] ?? 'openclaw/openclaw.mjs')
+          .toString(),
+      gatewayArgs: gatewayArgs,
+    );
+  }
+
+  Future<_OpenClawBundleSpec> _downloadAndInstallRuntimeUpdate({
+    required _OpenClawRuntimeRelease release,
+    required String platformKey,
+  }) async {
+    final spec = release.toBundleSpec();
+    final runtimeDir = await _runtimeDir(spec, platformKey);
+    final support = await getApplicationSupportDirectory();
+    final downloadDir = Directory(p.join(support.path, 'openclaw_downloads'));
+    await downloadDir.create(recursive: true);
+    final archivePath = p.join(
+      downloadDir.path,
+      '${_safePathPart(release.version)}-$platformKey${_archiveExtension(release.archiveUri)}',
+    );
+    final archiveFile = File(archivePath);
+    final digest = await _downloadRuntimeArchive(release, archiveFile);
+    if (digest != release.sha256Hex) {
+      await _deleteFileIfExists(archiveFile);
+      throw OpenClawRuntimeException(
+        'OpenClaw runtime 校验失败: expected=${release.sha256Hex}, actual=$digest',
+      );
+    }
+
+    final extractDir = Directory(
+      p.join(
+        downloadDir.path,
+        '${_safePathPart(release.version)}-$platformKey-extract',
+      ),
+    );
+    final stagingDir = Directory(
+      p.join(
+        downloadDir.path,
+        '${_safePathPart(release.version)}-$platformKey-stage',
+      ),
+    );
+    if (await extractDir.exists()) await extractDir.delete(recursive: true);
+    if (await stagingDir.exists()) await stagingDir.delete(recursive: true);
+    await extractDir.create(recursive: true);
+    await _extractRuntimeArchive(archiveFile, extractDir);
+
+    final extractedRoot = await _findExtractedRuntimeRoot(
+      extractDir: extractDir,
+      spec: spec,
+    );
+    if (extractedRoot == null) {
+      throw OpenClawRuntimeException('下载的 OpenClaw runtime 不包含必要的 node/cli 文件');
+    }
+
+    await runtimeDir.parent.create(recursive: true);
+    if (await runtimeDir.exists()) await runtimeDir.delete(recursive: true);
+    await _moveOrCopyRuntimeDirectory(extractedRoot, stagingDir);
+    await stagingDir.rename(runtimeDir.path);
+    final marker = File(p.join(runtimeDir.path, '.bundle_ready'));
+    await marker.writeAsString(
+      const JsonEncoder.withIndent('  ').convert({
+        'installedAt': DateTime.now().toIso8601String(),
+        'version': release.version,
+        'platform': platformKey,
+        'sha256': digest,
+        'source': release.archiveUri.toString(),
+      }),
+    );
+    await _repairRuntimeLaunchMetadata(
+      runtimeDir: runtimeDir,
+      nodePath: File(p.join(runtimeDir.path, spec.nodeExecutable)),
+      platformKey: platformKey,
+      cached: false,
+    );
+    await AppSettings.setOpenClawActiveRuntimeSpec(spec.toJson());
+    await _deleteDirectoryIfExists(extractDir);
+    await _deleteFileIfExists(archiveFile);
+    _diag(
+      'runtime-update.installed',
+      data: {
+        'platformKey': platformKey,
+        'version': release.version,
+        'runtimeDir': runtimeDir.path,
+        'size': release.size,
+      },
+    );
+    return spec;
+  }
+
+  Future<String> _downloadRuntimeArchive(
+    _OpenClawRuntimeRelease release,
+    File destination,
+  ) async {
+    final client = http.Client();
+    IOSink? output;
+    try {
+      final request = http.Request('GET', release.archiveUri)
+        ..headers['Accept'] = 'application/octet-stream';
+      final response = await client
+          .send(request)
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw OpenClawRuntimeException(
+          'OpenClaw runtime 下载失败 (${response.statusCode})',
+        );
+      }
+      await destination.parent.create(recursive: true);
+      output = destination.openWrite();
+      final digestSink = AccumulatorSink<Digest>();
+      final hashSink = sha256.startChunkedConversion(digestSink);
+      var bytes = 0;
+      await for (final chunk in response.stream.timeout(
+        const Duration(minutes: 5),
+      )) {
+        bytes += chunk.length;
+        hashSink.add(chunk);
+        output.add(chunk);
+      }
+      await output.flush();
+      await output.close();
+      output = null;
+      hashSink.close();
+      final digest = digestSink.events.single.toString();
+      _diag(
+        'runtime-update.downloaded',
+        data: {
+          'archiveUri': release.archiveUri.toString(),
+          'bytes': bytes,
+          'sha256': digest,
+        },
+      );
+      return digest;
+    } finally {
+      await output?.close().catchError((_) {});
+      client.close();
+    }
+  }
+
+  Future<void> _extractRuntimeArchive(
+    File archiveFile,
+    Directory destination,
+  ) async {
+    final lowerPath = archiveFile.path.toLowerCase();
+    if (Platform.isMacOS && lowerPath.endsWith('.zip')) {
+      try {
+        final result = await Process.run('/usr/bin/ditto', [
+          '-x',
+          '-k',
+          archiveFile.path,
+          destination.path,
+        ]).timeout(const Duration(minutes: 5));
+        _diag(
+          'runtime-update.extract-native',
+          data: {
+            'archivePath': archiveFile.path,
+            'destination': destination.path,
+            'exitCode': result.exitCode,
+            if ((result.stderr as Object).toString().isNotEmpty)
+              'stderr': _previewProcessOutput(result.stderr),
+          },
+        );
+        if (result.exitCode == 0) return;
+      } catch (error, stackTrace) {
+        _diag(
+          'runtime-update.extract-native-failed',
+          data: {
+            'archivePath': archiveFile.path,
+            'destination': destination.path,
+            'error': error.toString(),
+          },
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+
+    await extractFileToDisk(archiveFile.path, destination.path);
+    _diag(
+      'runtime-update.extract-dart',
+      data: {'archivePath': archiveFile.path, 'destination': destination.path},
+    );
+  }
+
+  Future<Directory?> _findExtractedRuntimeRoot({
+    required Directory extractDir,
+    required _OpenClawBundleSpec spec,
+  }) async {
+    final direct = await _runtimeRootIfComplete(extractDir, spec);
+    if (direct != null) return direct;
+    await for (final entity in extractDir.list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final nested = await _runtimeRootIfComplete(entity, spec);
+      if (nested != null) return nested;
+    }
+    return null;
+  }
+
+  Future<Directory?> _runtimeRootIfComplete(
+    Directory dir,
+    _OpenClawBundleSpec spec,
+  ) async {
+    final nodePath = File(p.join(dir.path, spec.nodeExecutable));
+    final cliPath = File(p.join(dir.path, spec.cliEntrypoint));
+    if (await nodePath.exists() && await cliPath.exists()) return dir;
+    return null;
+  }
+
+  Future<Directory?> _cachedRuntimeDirIfComplete(
+    _OpenClawBundleSpec spec,
+    String platformKey,
+  ) async {
+    final runtimeDir = await _runtimeDir(spec, platformKey);
+    final marker = File(p.join(runtimeDir.path, '.bundle_ready'));
+    final nodePath = File(p.join(runtimeDir.path, spec.nodeExecutable));
+    final cliPath = File(p.join(runtimeDir.path, spec.cliEntrypoint));
+    if (await marker.exists() &&
+        await nodePath.exists() &&
+        await cliPath.exists()) {
+      return runtimeDir;
+    }
+    return null;
+  }
+
+  String _safePathPart(String value) {
+    final safe = value.replaceAll(RegExp(r'[^A-Za-z0-9_.-]+'), '-');
+    return safe.isEmpty ? 'runtime' : safe;
+  }
+
+  String _archiveExtension(Uri uri) {
+    final lower = uri.path.toLowerCase();
+    if (lower.endsWith('.tar.gz')) return '.tar.gz';
+    if (lower.endsWith('.tgz')) return '.tgz';
+    if (lower.endsWith('.tar')) return '.tar';
+    return '.zip';
+  }
+
+  Future<void> _deleteFileIfExists(File file) async {
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
+  Future<void> _deleteDirectoryIfExists(Directory dir) async {
+    try {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } catch (_) {}
   }
 
   Future<Directory> _prepareBundle(
     _OpenClawBundleSpec spec,
     String platformKey,
   ) async {
+    final overrideRuntimeDir = await _runtimeDirOverride(spec, platformKey);
+    if (overrideRuntimeDir != null) {
+      final nodePath = File(
+        p.join(overrideRuntimeDir.path, spec.nodeExecutable),
+      );
+      await _repairRuntimeLaunchMetadata(
+        runtimeDir: overrideRuntimeDir,
+        nodePath: nodePath,
+        platformKey: platformKey,
+        cached: true,
+      );
+      _diag(
+        'bundle.launch.override-runtime',
+        data: {
+          'platformKey': platformKey,
+          'runtimeDir': overrideRuntimeDir.path,
+        },
+      );
+      return overrideRuntimeDir;
+    }
+
+    if (spec.downloaded) {
+      final downloadedRuntimeDir = await _cachedRuntimeDirIfComplete(
+        spec,
+        platformKey,
+      );
+      if (downloadedRuntimeDir != null) {
+        await _repairRuntimeLaunchMetadata(
+          runtimeDir: downloadedRuntimeDir,
+          nodePath: File(
+            p.join(downloadedRuntimeDir.path, spec.nodeExecutable),
+          ),
+          platformKey: platformKey,
+          cached: true,
+        );
+        _diag(
+          'bundle.launch.downloaded-runtime',
+          data: {
+            'platformKey': platformKey,
+            'version': spec.version,
+            'runtimeDir': downloadedRuntimeDir.path,
+          },
+        );
+        return downloadedRuntimeDir;
+      }
+      await AppSettings.clearOpenClawActiveRuntimeSpec();
+      throw OpenClawRuntimeException(
+        '已下载的 OpenClaw runtime 不完整，已回退到内置版本，请重新启动。',
+      );
+    }
+
+    final bundledRuntimeDir = await _bundledRuntimeDir(spec, platformKey);
+    if (bundledRuntimeDir != null) {
+      _diag(
+        'bundle.launch.bundled-runtime',
+        data: {
+          'platformKey': platformKey,
+          'runtimeDir': bundledRuntimeDir.path,
+        },
+      );
+      return bundledRuntimeDir;
+    }
+
+    if (Platform.isMacOS) {
+      throw OpenClawRuntimeException(
+        '当前安装包没有可执行的 $platformKey OpenClaw runtime。请先运行 scripts/build_openclaw_desktop_bundle.sh $platformKey，再通过 flutter run 启动。',
+      );
+    }
+
     final runtimeDir = await _runtimeDir(spec, platformKey);
     final marker = File(p.join(runtimeDir.path, '.bundle_ready'));
     final nodePath = File(p.join(runtimeDir.path, spec.nodeExecutable));
@@ -546,12 +1207,57 @@ class OpenClawRuntime {
     if (await marker.exists() &&
         await nodePath.exists() &&
         await cliPath.exists()) {
+      await _repairRuntimeLaunchMetadata(
+        runtimeDir: runtimeDir,
+        nodePath: nodePath,
+        platformKey: platformKey,
+        cached: true,
+      );
       _diag(
         'bundle.prepare.cached',
         data: {
           'platformKey': platformKey,
           'runtimeDir': runtimeDir.path,
           'marker': marker.path,
+        },
+      );
+      return runtimeDir;
+    }
+
+    final legacyRuntimeDir = await _legacyRuntimeDir(spec, platformKey);
+    if (legacyRuntimeDir.path != runtimeDir.path &&
+        await File(
+          p.join(legacyRuntimeDir.path, spec.nodeExecutable),
+        ).exists() &&
+        await File(
+          p.join(legacyRuntimeDir.path, spec.cliEntrypoint),
+        ).exists()) {
+      _diag(
+        'bundle.prepare.migrate-legacy',
+        data: {
+          'platformKey': platformKey,
+          'from': legacyRuntimeDir.path,
+          'to': runtimeDir.path,
+        },
+      );
+      if (await runtimeDir.exists()) {
+        await runtimeDir.delete(recursive: true);
+      }
+      await _copyRuntimeDirectory(legacyRuntimeDir, runtimeDir);
+      await _repairRuntimeLaunchMetadata(
+        runtimeDir: runtimeDir,
+        nodePath: nodePath,
+        platformKey: platformKey,
+        cached: false,
+      );
+      await marker.writeAsString(DateTime.now().toIso8601String());
+      _diag(
+        'bundle.prepare.migrate-complete',
+        data: {
+          'platformKey': platformKey,
+          'runtimeDir': runtimeDir.path,
+          'nodeExists': await nodePath.exists(),
+          'cliExists': await cliPath.exists(),
         },
       );
       return runtimeDir;
@@ -598,9 +1304,12 @@ class OpenClawRuntime {
       );
     }
 
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['+x', nodePath.path]);
-    }
+    await _repairRuntimeLaunchMetadata(
+      runtimeDir: runtimeDir,
+      nodePath: nodePath,
+      platformKey: platformKey,
+      cached: false,
+    );
     await marker.writeAsString(DateTime.now().toIso8601String());
     _diag(
       'bundle.prepare.complete',
@@ -615,6 +1324,82 @@ class OpenClawRuntime {
       },
     );
     return runtimeDir;
+  }
+
+  Future<void> _copyRuntimeDirectory(
+    Directory source,
+    Directory destination,
+  ) async {
+    await destination.create(recursive: true);
+    await for (final entity in source.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      final relative = p.relative(entity.path, from: source.path);
+      if (relative == '.') continue;
+      final target = p.join(destination.path, relative);
+      if (entity is Directory) {
+        await Directory(target).create(recursive: true);
+      } else if (entity is File) {
+        final targetFile = File(target);
+        await targetFile.parent.create(recursive: true);
+        await entity.openRead().pipe(targetFile.openWrite());
+      }
+    }
+  }
+
+  Future<void> _moveOrCopyRuntimeDirectory(
+    Directory source,
+    Directory destination,
+  ) async {
+    if (await destination.exists()) {
+      await destination.delete(recursive: true);
+    }
+    await destination.parent.create(recursive: true);
+    try {
+      await source.rename(destination.path);
+      return;
+    } on FileSystemException {
+      await _copyRuntimeDirectory(source, destination);
+    }
+  }
+
+  Future<void> _repairRuntimeLaunchMetadata({
+    required Directory runtimeDir,
+    required File nodePath,
+    required String platformKey,
+    required bool cached,
+  }) async {
+    if (Platform.isWindows) return;
+
+    final chmodResult = await Process.run('/bin/chmod', ['+x', nodePath.path]);
+    ProcessResult? xattrResult;
+    if (Platform.isMacOS) {
+      // Files created by a quarantined app can inherit the quarantine xattr.
+      // macOS then rejects Process.start with "Operation not permitted".
+      xattrResult = await Process.run('/usr/bin/xattr', [
+        '-dr',
+        'com.apple.quarantine',
+        runtimeDir.path,
+      ]);
+    }
+
+    _diag(
+      'bundle.prepare.launch-metadata',
+      data: {
+        'platformKey': platformKey,
+        'runtimeDir': runtimeDir.path,
+        'nodePath': nodePath.path,
+        'cached': cached,
+        'chmodExitCode': chmodResult.exitCode,
+        if ((chmodResult.stderr as Object).toString().isNotEmpty)
+          'chmodStderr': _previewProcessOutput(chmodResult.stderr),
+        if (xattrResult != null) 'xattrExitCode': xattrResult.exitCode,
+        if (xattrResult != null &&
+            (xattrResult.stderr as Object).toString().isNotEmpty)
+          'xattrStderr': _previewProcessOutput(xattrResult.stderr),
+      },
+    );
   }
 
   Future<bool> _hasRequiredBundleAssets(
@@ -715,37 +1500,59 @@ class OpenClawRuntime {
     String context = 'probe',
   }) async {
     try {
+      final healthResponse = await http
+          .get(
+            Uri.parse('http://127.0.0.1:$port/health'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(_probeTimeout);
+      final healthPayload = _decodeJsonOrNull(healthResponse.body);
+      if (healthResponse.statusCode < 200 ||
+          healthResponse.statusCode >= 300 ||
+          !_looksLikeHealthPayload(healthPayload)) {
+        _diag(
+          'probe.health-unhealthy',
+          data: {
+            'context': context,
+            'port': port,
+            'statusCode': healthResponse.statusCode,
+            'contentType': healthResponse.headers['content-type'],
+            'bodyPreview': _previewBody(healthResponse.body),
+          },
+        );
+        return false;
+      }
+
       final modelsResponse = await http
           .get(
             Uri.parse('http://127.0.0.1:$port/v1/models'),
             headers: {'Authorization': 'Bearer $token'},
           )
           .timeout(_probeTimeout);
-      if (modelsResponse.statusCode < 200 || modelsResponse.statusCode >= 300) {
+      final modelsPayload = _decodeJsonOrNull(modelsResponse.body);
+      if (modelsResponse.statusCode < 200 ||
+          modelsResponse.statusCode >= 300 ||
+          !_looksLikeModelsPayload(modelsPayload)) {
         _diag(
           'probe.models-unhealthy',
           data: {
             'context': context,
             'port': port,
             'statusCode': modelsResponse.statusCode,
+            'contentType': modelsResponse.headers['content-type'],
+            'bodyPreview': _previewBody(modelsResponse.body),
           },
         );
         return false;
       }
 
       // `/v1/models` can be healthy while `/v1/chat/completions` is disabled
-      // by an old config. The home screen uses chat completions, so treat 404
-      // or auth failures as an unhealthy embedded runtime and restart it with
-      // the repaired config below. A 4xx validation error is acceptable here:
-      // it proves the OpenAI-compatible chat route is wired.
+      // by an old config. Use GET so the probe only checks route wiring and
+      // never starts a real model request.
       final chatResponse = await http
-          .post(
+          .get(
             Uri.parse('http://127.0.0.1:$port/v1/chat/completions'),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-            body: '{}',
+            headers: {'Authorization': 'Bearer $token'},
           )
           .timeout(_probeTimeout);
       final healthy =
@@ -777,6 +1584,8 @@ class OpenClawRuntime {
     required Directory stateRoot,
     required int port,
     required String token,
+    required String backendDeepSeekModel,
+    required String deepSeekProxyBaseUrl,
   }) async {
     final configDir = Directory(p.join(stateRoot.path, 'config'));
     await configDir.create(recursive: true);
@@ -797,10 +1606,72 @@ class OpenClawRuntime {
           },
         },
       },
+      'models': {
+        'mode': 'merge',
+        'providers': {
+          _backendDeepSeekProviderId: {
+            'baseUrl': deepSeekProxyBaseUrl,
+            'api': 'openai-completions',
+            'apiKey': 'DACHENG_OPENCLAW_PROXY_TOKEN',
+            'authHeader': true,
+            'headers': {'x-dacheng-auth-token': 'DACHENG_AUTH_TOKEN'},
+            'models': [
+              {
+                'id': 'deepseek-chat',
+                'name': 'DeepSeek Chat',
+                'contextWindow': 131072,
+                'maxTokens': 8192,
+                'input': ['text'],
+                'compat': {
+                  'requiresStringContent': true,
+                  'strictMessageKeys': true,
+                },
+              },
+              {
+                'id': 'deepseek-reasoner',
+                'name': 'DeepSeek Reasoner',
+                'contextWindow': 131072,
+                'maxTokens': 8192,
+                'reasoning': true,
+                'input': ['text'],
+                'compat': {
+                  'requiresStringContent': true,
+                  'strictMessageKeys': true,
+                },
+              },
+            ],
+          },
+        },
+      },
+      'plugins': {
+        'enabled': false,
+        'allow': <String>[],
+        'deny': <String>[],
+        'load': {'paths': <String>[]},
+        'slots': {'memory': 'none'},
+        'entries': <String, dynamic>{
+          'memory-core': {'enabled': false},
+          'bonjour': {'enabled': false},
+          'browser': {'enabled': false},
+          'canvas': {'enabled': false},
+          'device-pair': {'enabled': false},
+          'file-transfer': {'enabled': false},
+          'phone-control': {'enabled': false},
+          'talk-voice': {'enabled': false},
+        },
+      },
       'agents': {
-        'defaults': {'workspace': workspace.path},
+        'defaults': {
+          'workspace': workspace.path,
+          'model': {'primary': backendDeepSeekModel},
+        },
         'list': [
-          {'id': 'dacheng', 'default': true, 'workspace': workspace.path},
+          {
+            'id': 'dacheng',
+            'default': true,
+            'workspace': workspace.path,
+            'model': {'primary': backendDeepSeekModel},
+          },
         ],
       },
     };
@@ -819,6 +1690,8 @@ class OpenClawRuntime {
         'configPath': configPath.path,
         'port': port,
         'gatewayMode': _mutableMap(merged['gateway'])['mode'],
+        'backendDeepSeekModel': backendDeepSeekModel,
+        'deepSeekProxyBaseUrl': deepSeekProxyBaseUrl,
       },
     );
     return configPath;
@@ -867,6 +1740,57 @@ class OpenClawRuntime {
     return manifestPath;
   }
 
+  Future<File> _ensureAgentModelConfig({
+    required Directory stateRoot,
+    required String deepSeekProxyBaseUrl,
+  }) async {
+    final agentDir = Directory(
+      p.join(stateRoot.path, 'state', 'agents', 'dacheng', 'agent'),
+    );
+    await agentDir.create(recursive: true);
+    final modelsPath = File(p.join(agentDir.path, 'models.json'));
+    final providerConfig = <String, dynamic>{
+      'baseUrl': deepSeekProxyBaseUrl,
+      'api': 'openai-completions',
+      'apiKey': 'DACHENG_OPENCLAW_PROXY_TOKEN',
+      'authHeader': true,
+      'headers': {'x-dacheng-auth-token': 'DACHENG_AUTH_TOKEN'},
+      'models': [
+        {
+          'id': 'deepseek-chat',
+          'name': 'DeepSeek Chat',
+          'contextWindow': 131072,
+          'maxTokens': 8192,
+          'input': ['text'],
+          'compat': {'requiresStringContent': true, 'strictMessageKeys': true},
+        },
+        {
+          'id': 'deepseek-reasoner',
+          'name': 'DeepSeek Reasoner',
+          'contextWindow': 131072,
+          'maxTokens': 8192,
+          'reasoning': true,
+          'input': ['text'],
+          'compat': {'requiresStringContent': true, 'strictMessageKeys': true},
+        },
+      ],
+    };
+    await modelsPath.writeAsString(
+      const JsonEncoder.withIndent('  ').convert({
+        'providers': {_backendDeepSeekProviderId: providerConfig},
+      }),
+    );
+    _diag(
+      'agent-models.written',
+      data: {
+        'modelsPath': modelsPath.path,
+        'provider': _backendDeepSeekProviderId,
+        'deepSeekProxyBaseUrl': deepSeekProxyBaseUrl,
+      },
+    );
+    return modelsPath;
+  }
+
   Future<Map<String, dynamic>> _mergeEmbeddedConfig(
     File configPath,
     Map<String, dynamic> defaults,
@@ -900,13 +1824,123 @@ class OpenClawRuntime {
     gateway['http'] = gatewayHttp;
     current['gateway'] = gateway;
 
+    final env = _mutableMap(current['env']);
+    env.remove('DEEPSEEK_API_KEY');
+    if (env.isEmpty) {
+      current.remove('env');
+    } else {
+      current['env'] = env;
+    }
+
+    final defaultModels = _mutableMap(defaults['models']);
+    final models = _mutableMap(current['models']);
+    models['mode'] ??= defaultModels['mode'];
+    final providers = _mutableMap(models['providers']);
+    final defaultProviders = _mutableMap(defaultModels['providers']);
+    providers.remove('deepseek');
+    providers.remove('dacheng-deepseek');
+    providers.remove(_backendDeepSeekProviderId);
+    for (final entry in defaultProviders.entries) {
+      providers[entry.key] = entry.value is Map
+          ? Map<String, dynamic>.from(entry.value as Map)
+          : entry.value;
+    }
+    models['providers'] = providers;
+    current['models'] = models;
+
+    final defaultPlugins = _mutableMap(defaults['plugins']);
+    final plugins = _mutableMap(current['plugins']);
+    plugins['enabled'] = false;
+    plugins['allow'] = <String>[];
+    plugins['deny'] = <String>[];
+    plugins['load'] = Map<String, dynamic>.from(
+      _mutableMap(defaultPlugins['load']),
+    );
+    plugins['slots'] = Map<String, dynamic>.from(
+      _mutableMap(defaultPlugins['slots']),
+    );
+    final entries = _mutableMap(plugins['entries']);
+    final defaultEntries = _mutableMap(defaultPlugins['entries']);
+    for (final entry in defaultEntries.entries) {
+      entries[entry.key] = entry.value is Map
+          ? Map<String, dynamic>.from(entry.value as Map)
+          : entry.value;
+    }
+    plugins['entries'] = entries;
+    current['plugins'] = plugins;
+
     final agents = _mutableMap(current['agents']);
     final defaultAgents = _mutableMap(defaults['agents']);
-    agents['defaults'] ??= defaultAgents['defaults'];
-    agents['list'] ??= defaultAgents['list'];
+    final defaultAgentDefaults = _mutableMap(defaultAgents['defaults']);
+    final agentDefaults = _mutableMap(agents['defaults']);
+    agentDefaults['workspace'] = defaultAgentDefaults['workspace'];
+    agentDefaults['model'] = defaultAgentDefaults['model'];
+    agents['defaults'] = agentDefaults;
+
+    final defaultList = (defaultAgents['list'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    final defaultDacheng = defaultList.isNotEmpty
+        ? defaultList.first
+        : <String, dynamic>{
+            'id': 'dacheng',
+            'default': true,
+            'workspace': agentDefaults['workspace'],
+            'model': agentDefaults['model'],
+          };
+    final list = (agents['list'] as List? ?? const [])
+        .map((item) => item is Map ? Map<String, dynamic>.from(item) : item)
+        .toList();
+    var foundDacheng = false;
+    for (var i = 0; i < list.length; i++) {
+      final item = list[i];
+      if (item is! Map<String, dynamic>) continue;
+      if (item['id'] != 'dacheng') continue;
+      foundDacheng = true;
+      item['default'] = true;
+      item['workspace'] = defaultDacheng['workspace'];
+      item['model'] = defaultDacheng['model'];
+      list[i] = item;
+    }
+    if (!foundDacheng) {
+      list.add(defaultDacheng);
+    }
+    agents['list'] = list.isEmpty ? defaultList : list;
     current['agents'] = agents;
 
     return current;
+  }
+
+  String _gatewayChatModel(String model) {
+    final trimmed = model.trim();
+    if (trimmed == 'openclaw' || trimmed.startsWith('openclaw/')) {
+      return trimmed;
+    }
+    return _defaultGatewayModel;
+  }
+
+  String _defaultDeepSeekModelFor(String model) {
+    final trimmed = model.trim();
+    if (trimmed.startsWith('deepseek/')) return trimmed;
+    return _defaultDeepSeekModel;
+  }
+
+  String _backendDeepSeekModelRef(String model) {
+    final trimmed = model.trim().isEmpty ? _defaultDeepSeekModel : model.trim();
+    final modelId = trimmed.contains('/')
+        ? trimmed.split('/').last.trim()
+        : trimmed;
+    final normalizedModelId = modelId.isEmpty ? 'deepseek-chat' : modelId;
+    return '$_backendDeepSeekProviderId/$normalizedModelId';
+  }
+
+  String _deepSeekProxyBaseUrl() {
+    final baseUrl = AppConfig.currentAiBackendUrl.replaceFirst(
+      RegExp(r'/+$'),
+      '',
+    );
+    return '$baseUrl/api/openclaw/deepseek/v1';
   }
 
   Map<String, dynamic> _mutableMap(Object? value) {
@@ -981,6 +2015,112 @@ class OpenClawRuntime {
     String platformKey,
   ) async {
     final support = await getApplicationSupportDirectory();
+    final runtimeBase = Platform.isMacOS
+        ? Directory(
+            p.join(
+              support.parent.path,
+              '${p.basename(support.path)}.openclaw_runtime',
+            ),
+          )
+        : Directory(p.join(support.path, 'openclaw_embedded'));
+    return Directory(
+      p.join(runtimeBase.path, 'runtime', spec.version, platformKey),
+    );
+  }
+
+  Future<Directory?> _bundledRuntimeDir(
+    _OpenClawBundleSpec spec,
+    String platformKey,
+  ) async {
+    if (!Platform.isMacOS) return null;
+
+    final contentsDir = Directory(
+      p.dirname(p.dirname(Platform.resolvedExecutable)),
+    );
+    final candidates = <Directory>[
+      Directory(
+        p.join(
+          contentsDir.path,
+          'Frameworks',
+          'App.framework',
+          'Resources',
+          'flutter_assets',
+          'assets',
+          'openclaw',
+          platformKey,
+        ),
+      ),
+      Directory(
+        p.join(
+          contentsDir.path,
+          'Frameworks',
+          'App.framework',
+          'Versions',
+          'A',
+          'Resources',
+          'flutter_assets',
+          'assets',
+          'openclaw',
+          platformKey,
+        ),
+      ),
+    ];
+
+    for (final dir in candidates) {
+      final nodePath = File(p.join(dir.path, spec.nodeExecutable));
+      final cliPath = File(p.join(dir.path, spec.cliEntrypoint));
+      if (await nodePath.exists() && await cliPath.exists()) {
+        return dir;
+      }
+    }
+    return null;
+  }
+
+  Future<Directory?> _runtimeDirOverride(
+    _OpenClawBundleSpec spec,
+    String platformKey,
+  ) async {
+    final raw = _configuredRuntimeDirOverride(platformKey);
+    if (raw == null) return null;
+
+    final dir = Directory(raw);
+    final nodePath = File(p.join(dir.path, spec.nodeExecutable));
+    final cliPath = File(p.join(dir.path, spec.cliEntrypoint));
+    final nodeExists = await nodePath.exists();
+    final cliExists = await cliPath.exists();
+    _diag(
+      'bundle.override.paths',
+      data: {
+        'platformKey': platformKey,
+        'runtimeDir': dir.path,
+        'nodePath': nodePath.path,
+        'nodeExists': nodeExists,
+        'cliPath': cliPath.path,
+        'cliExists': cliExists,
+      },
+    );
+
+    if (!nodeExists || !cliExists) {
+      throw OpenClawRuntimeException(
+        'DACHENG_OPENCLAW_RUNTIME_DIR 指向的 OpenClaw runtime 不完整: ${dir.path}',
+      );
+    }
+    return dir;
+  }
+
+  String? _configuredRuntimeDirOverride(String platformKey) {
+    final raw = _runtimeDirOverrideDefine.trim().isNotEmpty
+        ? _runtimeDirOverrideDefine.trim()
+        : Platform.environment['DACHENG_OPENCLAW_RUNTIME_DIR']?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    return p.normalize(raw.replaceAll('{platform}', platformKey));
+  }
+
+  Future<Directory> _legacyRuntimeDir(
+    _OpenClawBundleSpec spec,
+    String platformKey,
+  ) async {
+    final support = await getApplicationSupportDirectory();
     return Directory(
       p.join(
         support.path,
@@ -1036,4 +2176,37 @@ int? _readInt(Object? value) {
   if (value is num) return value.toInt();
   if (value is String) return int.tryParse(value);
   return null;
+}
+
+Object? _decodeJsonOrNull(String body) {
+  try {
+    return jsonDecode(body);
+  } catch (_) {
+    return null;
+  }
+}
+
+bool _looksLikeHealthPayload(Object? payload) {
+  if (payload is! Map) return false;
+  if (payload['ok'] == true) return true;
+  final status = payload['status']?.toString().toLowerCase();
+  return status == 'live' || status == 'ok' || status == 'healthy';
+}
+
+bool _looksLikeModelsPayload(Object? payload) {
+  if (payload is List) return true;
+  if (payload is! Map) return false;
+  return payload['data'] is List ||
+      payload['models'] is List ||
+      payload['object'] == 'list';
+}
+
+String _previewBody(String body) {
+  final trimmed = body.trim();
+  return trimmed.length <= 80 ? trimmed : trimmed.substring(0, 80);
+}
+
+String _previewProcessOutput(Object? output) {
+  final text = output?.toString().trim() ?? '';
+  return text.length <= 200 ? text : text.substring(0, 200);
 }

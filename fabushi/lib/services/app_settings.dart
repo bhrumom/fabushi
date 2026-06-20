@@ -158,10 +158,16 @@ class AppSettings {
   static const String _openClawGatewayTokenKey = 'openclaw_gateway_token_v1';
   static const String _openClawModelKey = 'openclaw_model_v1';
   static const String _openClawModelOverrideKey = 'openclaw_model_override_v1';
+  static const String _openClawDeepSeekModelKey = 'openclaw_deepseek_model_v1';
+  static const String _openClawActiveRuntimeSpecKey =
+      'openclaw_active_runtime_spec_v1';
   static const String _desktopControlBridgePortKey =
       'desktop_control_bridge_port_v1';
   static const String _desktopControlBridgeTokenKey =
       'desktop_control_bridge_token_v1';
+
+  static const String defaultOpenClawGatewayModel = 'openclaw/default';
+  static const String defaultOpenClawDeepSeekModel = 'deepseek/deepseek-chat';
 
   /// AI 后端模式：auto / embedded_openclaw / cloud_api。
   ///
@@ -206,7 +212,7 @@ class AppSettings {
   }
 
   static Future<String> getOpenClawModel({
-    String defaultValue = 'openclaw/default',
+    String defaultValue = defaultOpenClawGatewayModel,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getString(_openClawModelKey)?.trim();
@@ -228,6 +234,45 @@ class AppSettings {
   static Future<void> setOpenClawModelOverride(String modelOverride) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_openClawModelOverrideKey, modelOverride.trim());
+  }
+
+  static Future<String> getOpenClawDeepSeekModel({
+    String defaultValue = defaultOpenClawDeepSeekModel,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_openClawDeepSeekModelKey)?.trim();
+    return value == null || value.isEmpty ? defaultValue : value;
+  }
+
+  static Future<void> setOpenClawDeepSeekModel(String model) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_openClawDeepSeekModelKey, model.trim());
+  }
+
+  static Future<Map<String, dynamic>?> getOpenClawActiveRuntimeSpec() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_openClawActiveRuntimeSpecKey);
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {
+      await prefs.remove(_openClawActiveRuntimeSpecKey);
+    }
+    return null;
+  }
+
+  static Future<void> setOpenClawActiveRuntimeSpec(
+    Map<String, dynamic> spec,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_openClawActiveRuntimeSpecKey, jsonEncode(spec));
+  }
+
+  static Future<void> clearOpenClawActiveRuntimeSpec() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_openClawActiveRuntimeSpecKey);
   }
 
   static Future<int> getDesktopControlBridgePort({
