@@ -37,6 +37,7 @@ dependencies:
   file_picker: ^10.3.3
   path: ^1.8.3
   archive: ^4.0.7
+  convert: ^3.1.2
   csv: ^6.0.0
   image: ^4.5.4
 
@@ -91,10 +92,9 @@ dependencies:
   workmanager: ^0.6.0  # 后台任务恢复（应用被杀后自动重启）
 
   # 语音识别与录音
-  # - 移动端使用 Sherpa-ONNX + flutter_sound
+  # - 移动端使用 Sherpa-ONNX + record 音频流
   # - macOS 使用 record 包 + 原生 Speech 框架
   sherpa_onnx: ^1.12.20       # Sherpa-ONNX 离线语音识别（iOS/Android）
-  flutter_sound: ^9.16.3      # 音频流捕获和录音（iOS/Android）
   record: ^6.1.0              # 音频录制（macOS/iOS/Android）
   audio_session: ^0.1.21      # 音频会话管理（iOS 需要）
 
@@ -191,8 +191,9 @@ flutter:
     - assets/earth_texture.jpg
     - assets/ip_data/
     - assets/sherpa_models/streaming-paraformer-zh-en/
-    # 桌面端内置 OpenClaw runtime。Release 打包时由 scripts/build_openclaw_desktop_bundle.sh 填充。
-    - assets/openclaw/
+    # OpenClaw manifest is always available; large desktop runtimes are
+    # injected by release/test scripts or supplied via DACHENG_OPENCLAW_RUNTIME_DIR.
+    - assets/openclaw/bundle_manifest.json
     - assets/desktop_control/chrome_extension/
     # Android/iOS 使用 R2 上的 flutter_scene .model，不再打包 GLB 到 APK/IPA
   

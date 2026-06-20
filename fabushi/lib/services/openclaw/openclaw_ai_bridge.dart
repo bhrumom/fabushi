@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
+import '../../core/config/app_config.dart';
 import '../dacheng_ai_service.dart';
 import '../diagnostic_log_service.dart';
 import '../local_ai_conversation_store.dart';
@@ -83,6 +84,8 @@ class OpenClawAiBridge {
     final requestId = _uuid.v4();
     final totalWatch = Stopwatch()..start();
     final normalizedMessage = message.trim();
+    String? fallbackConversationId;
+    List<Map<String, dynamic>>? fallbackMessages;
     if (normalizedMessage.isEmpty) {
       _diag('chat.skip-empty', data: {'requestId': requestId});
       return;
@@ -124,6 +127,7 @@ class OpenClawAiBridge {
           (conversationId != null && conversationId.trim().isNotEmpty)
           ? conversationId.trim()
           : _newConversationId();
+      fallbackConversationId = effectiveConversationId;
 
       yield DachengAiStreamEvent(
         type: 'step',
@@ -149,6 +153,7 @@ class OpenClawAiBridge {
             ),
         {'role': 'user', 'content': normalizedMessage},
       ];
+      fallbackMessages = requestMessages;
 
       final uri = target.baseUri.replace(path: '/v1/chat/completions');
       final body = jsonEncode({
@@ -270,6 +275,21 @@ class OpenClawAiBridge {
 
         final decoded = _safeDecodeMap(dataText, requestId: requestId);
         if (decoded == null) continue;
+        final streamError = _streamErrorMessage(decoded);
+        if (streamError != null) {
+          _diag(
+            'chat.stream-error',
+            data: {
+              'requestId': requestId,
+              'elapsedMs': streamWatch.elapsedMilliseconds,
+              'message': _previewText(streamError),
+            },
+          );
+          if (_isDeepSeekBlockedError(streamError)) {
+            throw _OpenClawDeepSeekBlockedException(streamError);
+          }
+          throw StateError(streamError);
+        }
 
         final usageJson = decoded['usage'];
         if (usageJson is Map) {
@@ -342,11 +362,38 @@ class OpenClawAiBridge {
         },
       );
     } catch (error, stackTrace) {
+      if (error is _OpenClawDeepSeekBlockedException &&
+          fallbackConversationId != null &&
+          fallbackMessages != null) {
+        _diag(
+          'chat.backend-fallback.start',
+          data: {
+            'requestId': requestId,
+            'elapsedMs': totalWatch.elapsedMilliseconds,
+            'conversationId': fallbackConversationId,
+            'messageCount': fallbackMessages.length,
+          },
+          error: error,
+          stackTrace: stackTrace,
+        );
+        yield* _sendBackendDeepSeekProxyStream(
+          requestId: requestId,
+          conversationId: fallbackConversationId,
+          normalizedMessage: normalizedMessage,
+          messages: fallbackMessages,
+          token: token,
+          username: username,
+          isMember: isMember,
+          startedAt: totalWatch,
+        );
+        return;
+      }
       _diag(
         'chat.error',
         data: {
           'requestId': requestId,
           'elapsedMs': totalWatch.elapsedMilliseconds,
+          'error': _previewText(error.toString()),
         },
         error: error,
         stackTrace: stackTrace,
@@ -366,6 +413,150 @@ class OpenClawAiBridge {
           ),
         )
         .toList();
+  }
+
+  Stream<DachengAiStreamEvent> _sendBackendDeepSeekProxyStream({
+    required String requestId,
+    required String conversationId,
+    required String normalizedMessage,
+    required List<Map<String, dynamic>> messages,
+    required Stopwatch startedAt,
+    String? token,
+    String? username,
+    bool isMember = false,
+  }) async* {
+    final uri = Uri.parse(
+      '${AppConfig.currentAiBackendUrl.replaceFirst(RegExp(r'/+$'), '')}'
+      '/api/openclaw/deepseek/v1/chat/completions',
+    );
+
+    yield DachengAiStreamEvent(
+      type: 'step',
+      text: '本机 OpenClaw 已启动，DeepSeek 代理正在处理请求',
+      conversationId: conversationId,
+      raw: {'title': 'DeepSeek 代理', 'message': '正在处理请求'},
+    );
+
+    final body = jsonEncode({
+      'model': 'deepseek-chat',
+      'stream': true,
+      'stream_options': {'include_usage': true},
+      'messages': messages,
+      if (username != null && username.isNotEmpty) 'username': username,
+      'clientMembershipHint': isMember,
+    });
+    final request = http.Request('POST', uri)
+      ..headers.addAll({
+        'Accept': 'text/event-stream',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer dacheng-openclaw-proxy',
+        if (token != null && token.isNotEmpty) 'x-dacheng-auth-token': token,
+      })
+      ..body = body;
+
+    _diag(
+      'chat.backend-fallback.request',
+      data: {
+        'requestId': requestId,
+        'uri': uri.toString(),
+        'conversationId': conversationId,
+        'messageCount': messages.length,
+        'bodyBytes': utf8.encode(body).length,
+      },
+    );
+
+    final response = await _httpClient
+        .send(request)
+        .timeout(AppConfig.requestTimeout);
+    _diag(
+      'chat.backend-fallback.response',
+      data: {
+        'requestId': requestId,
+        'statusCode': response.statusCode,
+        'contentType': response.headers['content-type'],
+      },
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final body = await utf8.decodeStream(response.stream);
+      throw StateError(body.trim().isEmpty ? 'DeepSeek 代理请求失败' : body);
+    }
+
+    var finalText = '';
+    DachengAiUsage? usage;
+    var sawDone = false;
+    var dataCount = 0;
+    var deltaCount = 0;
+    final lines = response.stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .timeout(_streamIdleTimeout);
+
+    await for (final line in lines) {
+      if (!line.startsWith('data:')) continue;
+      dataCount++;
+      final dataText = line.substring('data:'.length).trim();
+      if (dataText.isEmpty) continue;
+      if (dataText == '[DONE]') {
+        sawDone = true;
+        break;
+      }
+
+      final decoded = _safeDecodeMap(dataText, requestId: requestId);
+      if (decoded == null) continue;
+      final streamError = _streamErrorMessage(decoded);
+      if (streamError != null) throw StateError(streamError);
+
+      final usageJson = decoded['usage'];
+      if (usageJson is Map) {
+        usage = DachengAiUsage.fromJson(Map<String, dynamic>.from(usageJson));
+      }
+
+      final deltaText = _deltaText(decoded);
+      if (deltaText.isEmpty) continue;
+      deltaCount++;
+      finalText += deltaText;
+      yield DachengAiStreamEvent(
+        type: 'delta',
+        text: deltaText,
+        conversationId: conversationId,
+        raw: decoded,
+      );
+    }
+
+    _diag(
+      'chat.backend-fallback.finished',
+      data: {
+        'requestId': requestId,
+        'elapsedMs': startedAt.elapsedMilliseconds,
+        'dataCount': dataCount,
+        'deltaCount': deltaCount,
+        'finalLength': finalText.trim().length,
+        'sawDone': sawDone,
+      },
+    );
+
+    if (finalText.trim().isEmpty) {
+      throw StateError('DeepSeek 代理返回空结果，请复制诊断日志排查');
+    }
+
+    await _store.upsertTurn(
+      conversationId: conversationId,
+      userText: normalizedMessage,
+      assistantText: finalText.trim(),
+    );
+
+    yield DachengAiStreamEvent(
+      type: 'done',
+      text: finalText.trim(),
+      conversationId: conversationId,
+      usage: usage ?? _zeroUsage,
+      raw: {
+        'message': finalText.trim(),
+        'conversationId': conversationId,
+        'provider': 'openclaw-deepseek-proxy',
+        'sawDone': sawDone,
+      },
+    );
   }
 
   Future<List<DachengConversationMessage>> getConversationMessages({
@@ -403,6 +594,28 @@ class OpenClawAiBridge {
     return '';
   }
 
+  String? _streamErrorMessage(Map<String, dynamic> decoded) {
+    final error = decoded['error'];
+    if (error is String && error.trim().isNotEmpty) return error.trim();
+    if (error is Map) {
+      final message = error['message']?.toString().trim();
+      if (message != null && message.isNotEmpty) return message;
+    }
+    final type = decoded['type']?.toString();
+    if (type == 'error') {
+      final message = decoded['message']?.toString().trim();
+      if (message != null && message.isNotEmpty) return message;
+    }
+    return null;
+  }
+
+  bool _isDeepSeekBlockedError(String message) {
+    return RegExp(
+      r'(403|blocked|forbidden|被拦截)',
+      caseSensitive: false,
+    ).hasMatch(message);
+  }
+
   Map<String, dynamic>? _safeDecodeMap(String dataText, {String? requestId}) {
     try {
       final decoded = jsonDecode(dataText);
@@ -421,6 +634,11 @@ class OpenClawAiBridge {
       _diag('chat.decode-error', data: logData, error: error);
     }
     return null;
+  }
+
+  String _previewText(String text) {
+    final trimmed = text.trim();
+    return trimmed.length <= 300 ? trimmed : trimmed.substring(0, 300);
   }
 
   DachengAiUsage get _zeroUsage => const DachengAiUsage(
@@ -447,4 +665,13 @@ class OpenClawAiBridge {
       ),
     );
   }
+}
+
+class _OpenClawDeepSeekBlockedException implements Exception {
+  final String message;
+
+  const _OpenClawDeepSeekBlockedException(this.message);
+
+  @override
+  String toString() => message;
 }
