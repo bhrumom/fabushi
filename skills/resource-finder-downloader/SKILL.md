@@ -26,7 +26,7 @@ node skills/resource-finder-downloader/scripts/find_and_download_resource.mjs "é
 
 Options:
 
-- `--backend <url>`: Override the Dacheng AI backend. Defaults to `DACHENG_AI_BACKEND_URL` or `http://141.148.140.39`.
+- `--backend <url>`: Override the Dacheng AI backend. Defaults to `DACHENG_AI_BACKEND_URL` or `https://ai.ombhrum.com`.
 - `--limit <n>`: Search result count. Defaults to `8`.
 - `--pick <n>`: Download the nth result, 1-based. Defaults to `1`.
 - `--output <dir>`: Output directory. Defaults to the current directory.

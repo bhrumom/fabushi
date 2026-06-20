@@ -905,7 +905,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       SizedBox(height: 2),
                       Text(
-                        '桌面首页 AI 对话默认使用 App 内置本机 OpenClaw',
+                        '桌面首页 AI 对话使用本机 OpenClaw，经云端代理计量',
                         style: TextStyle(color: Colors.white54, fontSize: 13),
                       ),
                     ],
@@ -915,7 +915,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
-              value: mode.storageName,
+              initialValue: mode.storageName,
               dropdownColor: const Color(0xFF2A2A2A),
               decoration: InputDecoration(
                 labelText: 'AI 后端',
@@ -936,6 +936,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   )
                   .toList(),
               onChanged: _isRestartingOpenClaw ? null : _setAiBackendModeName,
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.verified_user_outlined, color: Colors.white70),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'DeepSeek API Key 由大乘后端托管；本机 OpenClaw 使用会员登录凭证请求代理并计量 token。',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             Container(

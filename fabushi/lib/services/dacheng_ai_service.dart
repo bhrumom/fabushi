@@ -25,11 +25,24 @@ class DachengAiUsage {
 
   factory DachengAiUsage.fromJson(Map<String, dynamic> json) {
     return DachengAiUsage(
-      promptTokens: _readInt(json['promptTokens']),
-      completionTokens: _readInt(json['completionTokens']),
-      totalTokens: _readInt(json['totalTokens']),
-      remainingTokens: _readInt(json['remainingTokens']),
-      monthlyLimit: _readInt(json['monthlyLimit']),
+      promptTokens: _readAnyInt(json, const [
+        'promptTokens',
+        'prompt_tokens',
+        'inputTokens',
+        'input_tokens',
+      ]),
+      completionTokens: _readAnyInt(json, const [
+        'completionTokens',
+        'completion_tokens',
+        'outputTokens',
+        'output_tokens',
+      ]),
+      totalTokens: _readAnyInt(json, const ['totalTokens', 'total_tokens']),
+      remainingTokens: _readAnyInt(json, const [
+        'remainingTokens',
+        'remaining_tokens',
+      ]),
+      monthlyLimit: _readAnyInt(json, const ['monthlyLimit', 'monthly_limit']),
     );
   }
 }
@@ -198,7 +211,7 @@ class DachengAiService {
     String? username,
     bool isMember = false,
   }) async {
-    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw()) {
+    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
       return _openClawBridge.sendChat(
         message: message,
         conversationId: conversationId,
@@ -229,7 +242,9 @@ class DachengAiService {
     String? username,
     bool isMember = false,
   }) async* {
-    final useEmbedded = await AiBackendPolicy.shouldUseEmbeddedOpenClaw();
+    final useEmbedded = await AiBackendPolicy.shouldUseEmbeddedOpenClaw(
+      isMember: isMember,
+    );
     _diag(
       'stream.route',
       data: {
@@ -344,8 +359,9 @@ class DachengAiService {
   Future<List<DachengConversationSummary>> listConversations({
     String? token,
     String? username,
+    bool isMember = false,
   }) async {
-    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw()) {
+    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
       return _openClawBridge.listConversations();
     }
 
@@ -368,8 +384,9 @@ class DachengAiService {
   Future<List<DachengConversationMessage>> getConversationMessages({
     required String conversationId,
     String? token,
+    bool isMember = false,
   }) async {
-    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw()) {
+    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
       return _openClawBridge.getConversationMessages(
         conversationId: conversationId,
       );
@@ -506,7 +523,13 @@ Map<String, dynamic> _readMap(Object? value) {
   return const {};
 }
 
-int _readInt(Object? value) => _readOptionalInt(value) ?? 0;
+int _readAnyInt(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final value = _readOptionalInt(json[key]);
+    if (value != null) return value;
+  }
+  return 0;
+}
 
 int? _readOptionalInt(Object? value) {
   if (value is int) return value;
