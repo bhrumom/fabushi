@@ -225,6 +225,19 @@ class _MembershipScreenState extends State<MembershipScreen>
       return;
     }
 
+    await authModel.refreshUserInfo();
+    final token = authModel.authToken;
+    if (!authModel.isLoggedIn || token == null || token.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('登录已过期，请重新登录后购买会员'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
@@ -252,7 +265,7 @@ class _MembershipScreenState extends State<MembershipScreen>
         return; // Apple IAP 通过回调处理结果，直接返回
       } else if (paymentMethod == 'stripe') {
         result = await _membershipService.createPaymentSession(
-          authModel.authToken!,
+          token,
           priceType,
         );
 
@@ -276,7 +289,7 @@ class _MembershipScreenState extends State<MembershipScreen>
         if (kIsWeb || _isDesktopPlatform()) {
           // Web和桌面端使用电脑网站支付
           result = await _membershipService.createAlipayWebOrder(
-            authModel.authToken!,
+            token,
             priceType,
           );
 
@@ -289,14 +302,11 @@ class _MembershipScreenState extends State<MembershipScreen>
           }
         } else {
           // 手机端使用支付宝APP支付
-          result = await _membershipService.createAlipayOrder(
-            authModel.authToken!,
-            priceType,
-          );
+          result = await _membershipService.createAlipayOrder(token, priceType);
 
           if (result['success'] == true) {
             // 调用支付宝APP支付
-            await _processAlipayAppPayment(result, authModel.authToken!);
+            await _processAlipayAppPayment(result, token);
           }
         }
       } else {
@@ -304,9 +314,14 @@ class _MembershipScreenState extends State<MembershipScreen>
       }
 
       if (result['success'] != true && mounted) {
+        final isAuthFailure =
+            result['statusCode'] == 401 ||
+            result['errorKey'] == 'INVALID_TOKEN';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result['message'] ?? '购买失败'),
+            content: Text(
+              isAuthFailure ? '登录已过期，请重新登录后购买会员' : result['message'] ?? '购买失败',
+            ),
             backgroundColor: Colors.red,
           ),
         );

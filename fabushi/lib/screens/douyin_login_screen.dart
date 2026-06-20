@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -55,8 +54,11 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     if (kIsWeb) {
       _platformService.listenToMessages((event) {
         final data = event.data;
-        if (data is Map && data.containsKey('alipay_auth_code')) {
-          _handleAlipayCallback(data['alipay_auth_code']);
+        if (data is Map &&
+            (data.containsKey('alipay_auth_code') ||
+                data.containsKey('auth_code') ||
+                data.containsKey('token'))) {
+          _handleAlipayCallback(Map<String, dynamic>.from(data));
         }
       });
     } else {
@@ -343,20 +345,9 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
   }
 
   Future<void> _handleAlipayCallback(Map<String, dynamic> params) async {
-    final authModel = Provider.of<AuthModel>(context, listen: false);
-
     try {
-      final alipayUserId = params['alipay_user_id'] as String?;
-      final alipayOpenId = params['alipay_open_id'] as String?;
-      final alipayNickname = params['alipay_nickname'] as String?;
-      final alipayAvatar = params['alipay_avatar'] as String?;
-      final authCode = params['alipay_auth_code'] as String?;
-
-      final success = await authModel.alipayOneClickRegister(
-        alipayUserId ?? authCode ?? '',
-        alipayNickname,
-        alipayAvatar,
-        alipayOpenId,
+      final success = await _completeAlipayLoginFromParams(
+        params.map((key, value) => MapEntry(key, value?.toString() ?? '')),
       );
 
       if (success && mounted) {
@@ -378,6 +369,114 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     }
   }
 
+  Map<String, String> _parseAlipayCallbackParams(String url) {
+    final decodedUrl = url.replaceAll('&amp;', '&');
+    final params = <String, String>{};
+
+    void addAll(Map<String, String> values) {
+      for (final entry in values.entries) {
+        if (entry.key.isNotEmpty && entry.value.isNotEmpty) {
+          params[entry.key] = entry.value;
+        }
+      }
+    }
+
+    void parseQueryLike(String value) {
+      var query = value.trim();
+      if (query.isEmpty) return;
+
+      final questionIndex = query.indexOf('?');
+      if (questionIndex >= 0) {
+        query = query.substring(questionIndex + 1);
+      }
+
+      final hashIndex = query.indexOf('#');
+      if (hashIndex >= 0) {
+        final beforeHash = query.substring(0, hashIndex);
+        final afterHash = query.substring(hashIndex + 1);
+        parseQueryLike(beforeHash);
+        parseQueryLike(afterHash);
+        return;
+      }
+
+      if (!query.contains('=')) return;
+      try {
+        addAll(Uri.splitQueryString(query));
+      } catch (_) {
+        for (final param in query.split('&')) {
+          final separator = param.indexOf('=');
+          if (separator <= 0) continue;
+          params[param.substring(0, separator)] = Uri.decodeComponent(
+            param.substring(separator + 1),
+          );
+        }
+      }
+    }
+
+    final uri = Uri.tryParse(decodedUrl);
+    if (uri != null) {
+      addAll(uri.queryParameters);
+      parseQueryLike(uri.fragment);
+    }
+
+    parseQueryLike(
+      decodedUrl
+          .replaceFirst('com.ombhrum.fabushi://', '')
+          .replaceFirst('globaldharma://', '')
+          .replaceFirst('fabushi://', ''),
+    );
+
+    return params;
+  }
+
+  Future<bool> _completeAlipayLoginFromParams(
+    Map<String, String> params,
+  ) async {
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    final token = params['token'];
+    final username = params['username'];
+    final authCode = params['alipay_auth_code'] ?? params['auth_code'];
+    final state = params['state'];
+    final alipayUserId = params['alipay_user_id'] ?? params['user_id'];
+    final alipayOpenId = params['alipay_open_id'] ?? params['open_id'];
+    final alipayNickname = params['alipay_nickname'] ?? params['nick_name'];
+    final alipayAvatar = params['alipay_avatar'] ?? params['avatar'];
+
+    if (token != null && token.isNotEmpty) {
+      await authModel.loginWithToken(
+        token,
+        username?.isNotEmpty == true
+            ? username!
+            : alipayUserId?.isNotEmpty == true
+            ? alipayUserId!
+            : 'alipay_user',
+      );
+      return authModel.isLoggedIn;
+    }
+
+    if (authCode != null && authCode.isNotEmpty) {
+      final success = await authModel.alipayLogin(authCode, state: state);
+      if (success) return true;
+    }
+
+    final isNewUser =
+        params['isNewUser'] == 'true' ||
+        params['is_new_user'] == 'true' ||
+        params['needsRegistration'] == 'true' ||
+        params['needs_registration'] == 'true';
+
+    if (isNewUser && alipayUserId != null && alipayUserId.isNotEmpty) {
+      return authModel.alipayOneClickRegister(
+        alipayUserId,
+        alipayNickname,
+        alipayAvatar,
+        alipayOpenId,
+      );
+    }
+
+    return false;
+  }
+
   Future<void> _handleDeepLinkAlipayCallback(String url) async {
     debugPrint('收到深度链接支付宝回调: $url');
 
@@ -390,23 +489,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     }
 
     try {
-      String decodedUrl = url.replaceAll('&amp;', '&');
-      Map<String, String> params = {};
-
-      String urlWithoutScheme = decodedUrl
-          .replaceFirst('com.ombhrum.fabushi://', '')
-          .replaceFirst('globaldharma://', '')
-          .replaceFirst('fabushi://', '');
-
-      final queryParams = urlWithoutScheme.split('&');
-      for (final param in queryParams) {
-        if (param.contains('=')) {
-          final keyValue = param.split('=');
-          if (keyValue.length == 2) {
-            params[keyValue[0]] = Uri.decodeComponent(keyValue[1]);
-          }
-        }
-      }
+      final params = _parseAlipayCallbackParams(url);
 
       if (params.containsKey('error')) {
         final errorMessage = params['error_message'] ?? '支付宝登录失败';
@@ -421,37 +504,13 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         return;
       }
 
-      if (params.containsKey('alipay_auth_code')) {
-        final authCode = params['alipay_auth_code']!;
-        final alipayUserId = params['alipay_user_id'];
-        final alipayOpenId = params['alipay_open_id'];
-        final alipayNickname = params['alipay_nickname'];
-        final alipayAvatar = params['alipay_avatar'];
-        final isNewUser = params['isNewUser'] == 'true';
-        final token = params['token'];
-        final username = params['username'];
-
-        final authModel = Provider.of<AuthModel>(context, listen: false);
-        bool success = false;
-
-        if (!isNewUser && token != null && username != null) {
-          try {
-            await authModel.loginWithToken(token, username);
-            success = true;
-          } catch (e) {
-            debugPrint('使用token登录失败: $e');
-            success = false;
-          }
-        } else {
-          success = await authModel.alipayOneClickRegister(
-            alipayUserId ?? authCode,
-            alipayNickname,
-            alipayAvatar,
-            alipayOpenId,
-          );
-        }
+      if (params.containsKey('alipay_auth_code') ||
+          params.containsKey('auth_code') ||
+          params.containsKey('token')) {
+        final success = await _completeAlipayLoginFromParams(params);
 
         if (success && mounted) {
+          final authModel = Provider.of<AuthModel>(context, listen: false);
           Navigator.of(context).pop(true);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -460,6 +519,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
             ),
           );
         } else if (mounted) {
+          final authModel = Provider.of<AuthModel>(context, listen: false);
           final error = authModel.error ?? '';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
