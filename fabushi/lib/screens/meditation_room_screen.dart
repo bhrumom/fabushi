@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -975,6 +977,10 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
     return Positioned.fill(
       child: LayoutBuilder(
         builder: (context, constraints) {
+          double safeClamp(double value, double lower, double upper) {
+            return value.clamp(lower, math.max(lower, upper)).toDouble();
+          }
+
           final size = Size(constraints.maxWidth, constraints.maxHeight);
           final title = practice?.title ?? '选择功课';
           final opensSelection =
@@ -993,7 +999,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
           final centerX = size.width / 2;
           final incenseLeft = centerX - incenseWidth / 2;
-          final bookLeft = centerX - bookWidth / 2;
+          final isWideDesktopScene =
+              size.width >= 720 && size.width / size.height > 1.18;
 
           // Anchor to the bottom of the screen, just above the bottom menu bar
           final bottomBarHeight = 160.0 * baseScale;
@@ -1001,7 +1008,27 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
 
           // Stack components vertically: Book -> Gap -> Incense -> Altar Base
           final incenseTop = altarBaseY - incenseHeight;
-          final bookTop = incenseTop - bookHeight - 16 * baseScale;
+          final buddhaHeight = (size.height * 0.54).clamp(310.0, 570.0);
+          final buddhaWidth = buddhaHeight * 0.75;
+          final buddhaRight = centerX + buddhaWidth / 2;
+          final bookLeft = isWideDesktopScene
+              ? safeClamp(
+                  buddhaRight + 28 * baseScale,
+                  16.0,
+                  size.width - bookWidth - 24.0,
+                )
+              : safeClamp(
+                  centerX - bookWidth / 2,
+                  12.0,
+                  size.width - bookWidth - 12.0,
+                );
+          final bookTop = isWideDesktopScene
+              ? safeClamp(
+                  altarBaseY - bookHeight - 8 * baseScale,
+                  24.0,
+                  size.height - bookHeight - 132.0,
+                )
+              : incenseTop - bookHeight - 16 * baseScale;
 
           // Side offerings (Fruit & Lamps)
           final lampWidth = 76.0 * baseScale;
@@ -1040,7 +1067,8 @@ class MeditationRoomScreenState extends State<MeditationRoomScreen>
                 ),
               ),
 
-              // Center Top: Sutra Book
+              // Sutra book stays outside the Buddha on desktop while retaining
+              // the original centered altar placement on narrow native screens.
               Positioned(
                 left: bookLeft,
                 top: bookTop,
