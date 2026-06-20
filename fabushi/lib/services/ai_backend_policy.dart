@@ -36,7 +36,7 @@ extension AiBackendModeX on AiBackendMode {
   String get description {
     switch (this) {
       case AiBackendMode.auto:
-        return '桌面端使用内置 OpenClaw，移动端使用云端 API';
+        return '桌面端使用内置 OpenClaw，并通过云端代理计量';
       case AiBackendMode.embeddedOpenClaw:
         return '强制使用随 App 打包的本机 OpenClaw Gateway';
       case AiBackendMode.cloudApi:
