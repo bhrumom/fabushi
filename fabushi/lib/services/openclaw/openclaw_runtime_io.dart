@@ -674,18 +674,76 @@ class OpenClawRuntime {
         'gatewayArgs': spec.gatewayArgs,
       },
     );
-    var effectiveSpec =
-        await _loadActiveDownloadedSpec(platformKey, fallbackSpec: spec) ??
-        spec;
-    if (checkUpdates) {
+    final allowDownloadedRuntime = await _allowDownloadedRuntime(platformKey);
+    var effectiveSpec = spec;
+    if (allowDownloadedRuntime) {
+      effectiveSpec =
+          await _loadActiveDownloadedSpec(platformKey, fallbackSpec: spec) ??
+          spec;
+    } else {
+      await _clearActiveDownloadedRuntimeSpec(
+        platformKey: platformKey,
+        reason: 'macos-sandbox',
+      );
+    }
+    if (checkUpdates && allowDownloadedRuntime) {
       effectiveSpec =
           await _maybeInstallRuntimeUpdate(
             platformKey: platformKey,
             currentSpec: effectiveSpec,
           ) ??
           effectiveSpec;
+    } else if (checkUpdates) {
+      _diag(
+        'runtime-update.skip-disabled',
+        data: {'platformKey': platformKey, 'reason': 'macos-sandbox'},
+      );
     }
     return effectiveSpec;
+  }
+
+  Future<bool> _allowDownloadedRuntime(String platformKey) async {
+    if (!Platform.isMacOS) return true;
+
+    final support = await getApplicationSupportDirectory();
+    final sandboxContainerId =
+        Platform.environment['APP_SANDBOX_CONTAINER_ID']?.trim() ?? '';
+    final pathLooksSandboxed = p
+        .split(p.normalize(support.path))
+        .contains('Containers');
+    final sandboxed = sandboxContainerId.isNotEmpty || pathLooksSandboxed;
+    if (!sandboxed) return true;
+
+    // App Store/TestFlight sandboxed apps cannot reliably execute downloaded
+    // Mach-O payloads. Use the bundled runtime that was signed with inherited
+    // sandbox entitlements during packaging.
+    _diag(
+      'runtime-update.disabled-macos-sandbox',
+      data: {
+        'platformKey': platformKey,
+        'supportPath': support.path,
+        'hasSandboxContainerId': sandboxContainerId.isNotEmpty,
+      },
+    );
+    return false;
+  }
+
+  Future<void> _clearActiveDownloadedRuntimeSpec({
+    required String platformKey,
+    required String reason,
+  }) async {
+    final saved = await AppSettings.getOpenClawActiveRuntimeSpec();
+    if (saved == null) return;
+    await AppSettings.clearOpenClawActiveRuntimeSpec();
+    _diag(
+      'runtime-update.active-cleared',
+      data: {
+        'platformKey': platformKey,
+        'reason': reason,
+        'version': saved['version']?.toString(),
+        'downloaded': saved['downloaded'] == true,
+      },
+    );
   }
 
   Future<_OpenClawBundleSpec?> _loadActiveDownloadedSpec(
@@ -1380,6 +1438,11 @@ class OpenClawRuntime {
       xattrResult = await Process.run('/usr/bin/xattr', [
         '-dr',
         'com.apple.quarantine',
+        runtimeDir.path,
+      ]);
+      await Process.run('/usr/bin/xattr', [
+        '-dr',
+        'com.apple.provenance',
         runtimeDir.path,
       ]);
     }
