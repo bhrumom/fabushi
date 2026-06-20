@@ -598,12 +598,12 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  Future<bool> alipayLogin(String authCode) async {
+  Future<bool> alipayLogin(String authCode, {String? state}) async {
     _setLoading(true);
     _clearError();
 
     try {
-      final result = await _alipayAuthService.alipayLogin(authCode, null);
+      final result = await _alipayAuthService.alipayLogin(authCode, state);
 
       if (result['success'] == true) {
         _token = result['token'];
