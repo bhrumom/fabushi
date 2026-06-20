@@ -70,6 +70,8 @@ export { T0269_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0269";
 export { T0270_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0270";
 export { T0270_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0270-juan2";
 export { T0271_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0271";
+export { T0271_JUAN_1_EXTERNAL_PATH_MERIT_BENEFITS } from "./faliu-merit-benefits-t0271-juan1-external-path";
+export { T0271_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0271-juan2";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import { T0263_JUAN_10_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan10";
@@ -143,6 +145,8 @@ import { T0269_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0269";
 import { T0270_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0270";
 import { T0270_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0270-juan2";
 import { T0271_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0271";
+import { T0271_JUAN_1_EXTERNAL_PATH_MERIT_BENEFITS } from "./faliu-merit-benefits-t0271-juan1-external-path";
+import { T0271_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0271-juan2";
 
 const overrideMeritBenefits = {
   "T0263:10": [
@@ -243,7 +247,11 @@ const overrideMeritBenefits = {
   "T0269:1": T0269_JUAN_1_MERIT_BENEFITS,
   "T0270:1": T0270_JUAN_1_MERIT_BENEFITS,
   "T0270:2": T0270_JUAN_2_MERIT_BENEFITS,
-  "T0271:1": T0271_JUAN_1_MERIT_BENEFITS,
+  "T0271:1": [
+    ...T0271_JUAN_1_MERIT_BENEFITS,
+    ...T0271_JUAN_1_EXTERNAL_PATH_MERIT_BENEFITS,
+  ],
+  "T0271:2": T0271_JUAN_2_MERIT_BENEFITS,
 };
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
