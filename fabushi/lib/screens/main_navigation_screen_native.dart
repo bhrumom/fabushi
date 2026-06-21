@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'globe_home_screen.dart';
 import 'meditation_room_screen.dart';
 import 'my_profile_screen.dart';
+import 'openclaw_workbench_screen.dart';
 import '../core/design_system/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/space_background.dart';
@@ -18,7 +19,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   bool _isGlobeReady = false;
 
   // 追踪哪些页面已被激活
-  final List<bool> _activatedScreens = [true, false, false];
+  final List<bool> _activatedScreens = [true, false, false, false];
 
   // 用于通知各主页面的可见性变化
   final GlobalKey<MeditationRoomScreenState> _meditationKey = GlobalKey();
@@ -41,8 +42,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final tab = Uri.base.queryParameters['tab']?.toLowerCase();
     final initialIndex = switch (tab) {
       'home' => 0,
-      'meditation' || 'meditation-room' || 'zen' => 1,
-      'profile' || 'me' || 'mine' => 2,
+      'assistant' || 'openclaw' || 'workbench' => 1,
+      'meditation' || 'meditation-room' || 'zen' => 2,
+      'profile' || 'me' || 'mine' => 3,
       _ => 0,
     };
     _currentIndex = initialIndex;
@@ -51,7 +53,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   /// 更新禅室页面可见性状态
   void _updateMeditationRoomVisibility() {
-    final isZenRoomVisible = _currentIndex == 1 && _activatedScreens[1];
+    final isZenRoomVisible = _currentIndex == 2 && _activatedScreens[2];
     // 使用 GlobalKey 通知禅室页面可见性变化
     _meditationKey.currentState?.setVisible(isZenRoomVisible);
   }
@@ -93,21 +95,31 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       ),
     );
 
-    // 1: 禅室 (佛像3D)
+    // 1: 助理 (OpenClaw)
     screens.add(
       TickerMode(
         enabled: _currentIndex == 1,
         child: _activatedScreens[1]
+            ? const OpenClawWorkbenchScreen()
+            : const Center(child: CircularProgressIndicator()),
+      ),
+    );
+
+    // 2: 禅室 (佛像3D)
+    screens.add(
+      TickerMode(
+        enabled: _currentIndex == 2,
+        child: _activatedScreens[2]
             ? MeditationRoomScreen(key: _meditationKey)
             : const Center(child: CircularProgressIndicator()),
       ),
     );
 
-    // 2: 我的
+    // 3: 我的
     screens.add(
       TickerMode(
-        enabled: _currentIndex == 2,
-        child: _activatedScreens[2]
+        enabled: _currentIndex == 3,
+        child: _activatedScreens[3]
             ? const MyProfileScreen()
             : const Center(child: CircularProgressIndicator()),
       ),
@@ -169,6 +181,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   icon: const Icon(Icons.public_outlined),
                   selectedIcon: const Icon(Icons.public),
                   label: l10n.navHome,
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.smart_toy_outlined),
+                  selectedIcon: const Icon(Icons.smart_toy),
+                  label: '助理',
                 ),
                 NavigationDestination(
                   icon: const Icon(Icons.self_improvement_outlined),
