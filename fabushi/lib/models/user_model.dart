@@ -8,6 +8,15 @@ int? _parseOptionalInt(dynamic value) {
   return int.tryParse(value.toString());
 }
 
+String? _firstNonEmptyString(Iterable<dynamic> values) {
+  for (final value in values) {
+    if (value == null) continue;
+    final text = value.toString().trim();
+    if (text.isNotEmpty) return text;
+  }
+  return null;
+}
+
 class UserModel {
   final String username;
   final int? userNo;
@@ -68,7 +77,10 @@ class UserModel {
           json['username_changed_at'] as String?,
       wechatOpenid: json['wechatOpenid'] as String?,
       wechatNickname: json['wechatNickname'] as String?,
-      wechatHeadimgurl: json['wechatHeadimgurl'] as String?,
+      wechatHeadimgurl: _firstNonEmptyString([
+        json['wechatHeadimgurl'],
+        json['wechat_headimgurl'],
+      ]),
       wechatBoundAt: json['wechatBoundAt'] as String?,
       alipayUserId:
           (json['alipayProviderSubject'] ??
@@ -76,10 +88,21 @@ class UserModel {
                   json['alipayUserId'])
               as String?,
       alipayNickname: json['alipayNickname'] as String?,
-      alipayAvatar: json['alipayAvatar'] as String?,
+      alipayAvatar: _firstNonEmptyString([
+        json['alipayAvatar'],
+        json['alipay_avatar'],
+      ]),
       alipayBoundAt: json['alipayBoundAt'] as String?,
       nickname: json['nickname'] as String?,
-      avatar: json['avatar'] as String?,
+      avatar: _firstNonEmptyString([
+        json['avatar'],
+        json['avatarUrl'],
+        json['avatar_url'],
+        json['alipayAvatar'],
+        json['alipay_avatar'],
+        json['wechatHeadimgurl'],
+        json['wechat_headimgurl'],
+      ]),
       phoneNumber: (json['phoneNumber'] ?? json['phone_number']) as String?,
       firebaseUid: (json['firebaseUid'] ?? json['firebase_uid']) as String?,
       mainPractice: json['mainPractice'] is Map
