@@ -24,14 +24,17 @@ class HttpService {
   }
 
   // 获取认证头
-  static Future<Map<String, String>> _getHeaders({bool useAuth = false}) async {
+  static Future<Map<String, String>> _getHeaders({
+    bool useAuth = false,
+    String? authToken,
+  }) async {
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
 
     if (useAuth) {
-      final token = await _getStoredToken();
+      final token = authToken ?? await _getStoredToken();
       if (token != null) {
         headers['Authorization'] = 'Bearer $token';
         print(
@@ -208,9 +211,10 @@ class HttpService {
   static Future<http.Response> delete(
     String url, {
     bool useAuth = false,
+    String? authToken,
   }) async {
     try {
-      final headers = await _getHeaders(useAuth: useAuth);
+      final headers = await _getHeaders(useAuth: useAuth, authToken: authToken);
 
       return await _retryRequest(
         () => _client
@@ -358,7 +362,9 @@ class HttpService {
       }
       return '未知错误';
     } catch (e) {
-      return response.body.trim().isNotEmpty ? response.body.trim() : '服务器响应格式错误';
+      return response.body.trim().isNotEmpty
+          ? response.body.trim()
+          : '服务器响应格式错误';
     }
   }
 

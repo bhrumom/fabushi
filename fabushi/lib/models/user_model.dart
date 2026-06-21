@@ -57,16 +57,24 @@ class UserModel {
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
       username: json['username'] as String,
-      userNo: _parseOptionalInt(json['userNo'] ?? json['user_no'] ?? json['id']),
+      userNo: _parseOptionalInt(
+        json['userNo'] ?? json['user_no'] ?? json['id'],
+      ),
       email: json['email'] as String?,
       emailVerified: json['emailVerified'] as bool? ?? false,
       createdAt: json['createdAt'] as String,
-      usernameChangedAt: json['usernameChangedAt'] as String? ?? json['username_changed_at'] as String?,
+      usernameChangedAt:
+          json['usernameChangedAt'] as String? ??
+          json['username_changed_at'] as String?,
       wechatOpenid: json['wechatOpenid'] as String?,
       wechatNickname: json['wechatNickname'] as String?,
       wechatHeadimgurl: json['wechatHeadimgurl'] as String?,
       wechatBoundAt: json['wechatBoundAt'] as String?,
-      alipayUserId: json['alipayUserId'] as String?,
+      alipayUserId:
+          (json['alipayProviderSubject'] ??
+                  json['alipay_provider_subject'] ??
+                  json['alipayUserId'])
+              as String?,
       alipayNickname: json['alipayNickname'] as String?,
       alipayAvatar: json['alipayAvatar'] as String?,
       alipayBoundAt: json['alipayBoundAt'] as String?,
