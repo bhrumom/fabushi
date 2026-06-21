@@ -34,6 +34,14 @@ class DesktopControlBridge {
 
   Future<DesktopControlBridgeStatus> ensureStarted() => getStatus();
 
+  Future<Map<String, dynamic>> requestScreenRecordingPermission() async {
+    return {'requested': false, 'message': '当前平台不支持系统级电脑控制'};
+  }
+
+  Future<Map<String, dynamic>> requestAccessibilityPermission() async {
+    return {'trusted': false, 'message': '当前平台不支持系统级电脑控制'};
+  }
+
   Future<DesktopControlToolResult> executeTool(
     String toolName,
     Map<String, dynamic> arguments, {
