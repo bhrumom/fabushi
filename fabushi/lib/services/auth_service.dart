@@ -92,7 +92,11 @@ class AuthService {
       wechatNickname: user['wechatNickname'] as String?,
       wechatHeadimgurl: user['wechatHeadimgurl'] as String?,
       wechatBoundAt: user['wechatBoundAt'] as String?,
-      alipayUserId: user['alipayUserId'] as String?,
+      alipayUserId:
+          (user['alipayProviderSubject'] ??
+                  user['alipay_provider_subject'] ??
+                  user['alipayUserId'])
+              as String?,
       alipayNickname: user['alipayNickname'] as String?,
       alipayAvatar: user['alipayAvatar'] as String?,
       alipayBoundAt: user['alipayBoundAt'] as String?,
@@ -241,7 +245,12 @@ class AuthService {
           _optionalString(data['wechatBoundAt'] ?? data['wechat_bound_at']) ??
           fallbackUser?.wechatBoundAt,
       alipayUserId:
-          _optionalString(data['alipayUserId'] ?? data['alipay_user_id']) ??
+          _optionalString(
+            data['alipayProviderSubject'] ??
+                data['alipay_provider_subject'] ??
+                data['alipayUserId'] ??
+                data['alipay_user_id'],
+          ) ??
           fallbackUser?.alipayUserId,
       alipayNickname:
           _optionalString(data['alipayNickname'] ?? data['alipay_nickname']) ??
@@ -638,18 +647,28 @@ class AuthService {
 
   Future<Map<String, dynamic>> deleteAccount() async {
     if (_currentToken == null) {
+      await _loadStoredAuth();
+    }
+
+    final activeToken = _currentToken;
+    if (activeToken == null || activeToken.isEmpty) {
       return {'success': false, 'error': '未登录'};
     }
+
     try {
       final response = await HttpService.delete(
         AppConfig.deleteAccountUrl,
         useAuth: true,
+        authToken: activeToken,
       );
       if (response.statusCode == 200 || response.statusCode == 204) {
         return {'success': true, 'message': '注销成功'};
       }
 
-      return _failureFromResponse(response, '注销失败 (HTTP ${response.statusCode})');
+      return _failureFromResponse(
+        response,
+        '注销失败 (HTTP ${response.statusCode})',
+      );
     } catch (e) {
       print('注销账户请求失败: $e');
       return {'success': false, 'error': '网络错误，请检查网络连接'};
@@ -702,11 +721,19 @@ class AuthService {
 
           final userInfo = UserModel(
             username: data['username'] ?? userJson?['username'] ?? '',
-            userNo: _parseOptionalInt(userJson?['userNo'] ?? userJson?['user_no'] ?? userJson?['id'] ?? data['userNo'] ?? data['userId']),
+            userNo: _parseOptionalInt(
+              userJson?['userNo'] ??
+                  userJson?['user_no'] ??
+                  userJson?['id'] ??
+                  data['userNo'] ??
+                  data['userId'],
+            ),
             email: userJson?['email'] ?? email ?? '',
             emailVerified: true,
             createdAt: DateTime.now().toIso8601String(),
-            usernameChangedAt: userJson?['usernameChangedAt'] ?? userJson?['username_changed_at'],
+            usernameChangedAt:
+                userJson?['usernameChangedAt'] ??
+                userJson?['username_changed_at'],
             membership: MembershipInfo(
               type: userJson?['membership']?['type'] ?? 'trial',
               isActive: true,
@@ -760,11 +787,19 @@ class AuthService {
 
           final userInfo = UserModel(
             username: data['username'] ?? userJson?['username'] ?? '',
-            userNo: _parseOptionalInt(userJson?['userNo'] ?? userJson?['user_no'] ?? userJson?['id'] ?? data['userNo'] ?? data['userId']),
+            userNo: _parseOptionalInt(
+              userJson?['userNo'] ??
+                  userJson?['user_no'] ??
+                  userJson?['id'] ??
+                  data['userNo'] ??
+                  data['userId'],
+            ),
             email: userJson?['email'] ?? '',
             emailVerified: true,
             createdAt: DateTime.now().toIso8601String(),
-            usernameChangedAt: userJson?['usernameChangedAt'] ?? userJson?['username_changed_at'],
+            usernameChangedAt:
+                userJson?['usernameChangedAt'] ??
+                userJson?['username_changed_at'],
             membership: MembershipInfo(
               type: userJson?['membership']?['type'] ?? 'trial',
               isActive: true,

@@ -265,7 +265,8 @@ class _AppWrapperState extends State<AppWrapper> {
     await app_update.loadLibrary();
     await app_update_dialog.loadLibrary();
 
-    final decision = await app_update.AppUpdateService.instance.checkForUpdate();
+    final decision = await app_update.AppUpdateService.instance
+        .checkForUpdate();
     if (!mounted || decision == null) {
       return;
     }
@@ -579,7 +580,9 @@ class _AppWrapperState extends State<AppWrapper> {
           if (params['alipay_auth_code'] != null &&
               params['needs_binding'] == 'true') {
             final authCode = params['alipay_auth_code']!;
-            final userId = params['alipay_user_id'];
+            final providerSubject =
+                params['alipay_provider_subject'] ?? params['alipay_user_id'];
+            final subjectType = params['alipay_subject_type'];
             final nickname = params['alipay_nickname'] ?? '';
             final avatar = params['alipay_avatar'] ?? '';
 
@@ -588,7 +591,9 @@ class _AppWrapperState extends State<AppWrapper> {
                 '/alipay-binding',
                 arguments: {
                   'alipayAuthCode': authCode,
-                  'alipayUserId': userId,
+                  'alipayProviderSubject': providerSubject,
+                  'alipaySubjectType': subjectType,
+                  'alipayUserId': providerSubject,
                   'alipayNickname': nickname,
                   'alipayAvatar': avatar,
                 },
@@ -604,7 +609,35 @@ class _AppWrapperState extends State<AppWrapper> {
           final loginMethod = params['login_method'] ?? 'traditional';
 
           if (token != null && username != null) {
-            await authModel.setTokenDirectly(token, username);
+            final userNo = params['user_no'];
+            final alipayNickname = params['alipay_nickname'];
+            final alipayAvatar = params['alipay_avatar'];
+            final alipayProviderSubject =
+                params['alipay_provider_subject'] ?? params['alipay_user_id'];
+            final alipaySubjectType = params['alipay_subject_type'];
+            await authModel.setTokenDirectly(
+              token,
+              username,
+              userJson: {
+                'username': username,
+                if (userNo != null && userNo.isNotEmpty) 'userNo': userNo,
+                if (alipayProviderSubject != null &&
+                    alipayProviderSubject.isNotEmpty) ...{
+                  'alipayProviderSubject': alipayProviderSubject,
+                  'alipayUserId': alipayProviderSubject,
+                },
+                if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
+                  'alipaySubjectType': alipaySubjectType,
+                if (alipayNickname != null && alipayNickname.isNotEmpty) ...{
+                  'nickname': alipayNickname,
+                  'alipayNickname': alipayNickname,
+                },
+                if (alipayAvatar != null && alipayAvatar.isNotEmpty) ...{
+                  'avatar': alipayAvatar,
+                  'alipayAvatar': alipayAvatar,
+                },
+              },
+            );
             _platformService.replaceHistoryState('/');
 
             String welcomeMessage = '登录成功！欢迎 $username';

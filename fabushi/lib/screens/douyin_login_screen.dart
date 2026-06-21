@@ -38,6 +38,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
   StreamSubscription? _urlSubscription;
   final PlatformService _platformService = PlatformServiceFactory.create();
   bool _isAlipayWebLoginOpen = false;
+  String? _pendingAlipayState;
 
   @override
   void initState() {
@@ -123,6 +124,11 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
   bool get _isMobile {
     if (kIsWeb) return false;
     return Platform.isIOS || Platform.isAndroid;
+  }
+
+  bool get _shouldUseEmbeddedAlipayWebLogin {
+    if (kIsWeb) return false;
+    return Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
   }
 
   Future<void> _handleAlipayLogin() async {
@@ -223,12 +229,19 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
           // 新用户需要注册
           final alipayUser = loginResult['alipayUser'];
           if (alipayUser != null) {
+            final alipayProviderSubject =
+                alipayUser['providerSubject'] ??
+                alipayUser['provider_subject'] ??
+                alipayUser['userId'] ??
+                '';
+            final alipaySubjectType =
+                alipayUser['subjectType'] ?? alipayUser['subject_type'];
             // 自动一键注册
             final registerResult = await authModel.alipayOneClickRegister(
-              alipayUser['userId'] ?? '',
+              alipayProviderSubject,
               alipayUser['nickname'],
               alipayUser['avatar'],
-              alipayUser['openId'] ?? alipayUser['open_id'],
+              alipaySubjectType,
             );
 
             if (registerResult && mounted) {
@@ -304,11 +317,13 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     }
 
     final result = await authModel.getAlipayLoginUrl(platform: platform);
+    if (!mounted) return;
 
     if (result['success'] == true && result['loginUrl'] != null) {
       final loginUrl = result['loginUrl'] as String;
+      _pendingAlipayState = result['state']?.toString();
 
-      if (_isMobile) {
+      if (_shouldUseEmbeddedAlipayWebLogin) {
         debugPrint('使用内置 WebView 打开支付宝网页授权');
         _isAlipayWebLoginOpen = true;
         final callbackUrl = await Navigator.of(context).push<String>(
@@ -324,6 +339,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
           debugPrint('内置 WebView 捕获到 deep link: $callbackUrl');
           await _handleDeepLinkAlipayCallback(callbackUrl);
         } else {
+          _pendingAlipayState = null;
           setState(() => _isLoading = false);
         }
       } else {
@@ -332,9 +348,18 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } else if (kIsWeb) {
           _platformService.openUrl(loginUrl, '_self');
+        } else {
+          _pendingAlipayState = null;
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _errorMessage = '无法打开支付宝登录页面';
+            });
+          }
         }
       }
     } else {
+      _pendingAlipayState = null;
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -344,11 +369,40 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     }
   }
 
+  bool _isExpectedAlipayCallback(Map<String, String> params) {
+    final callbackState = params['state'];
+    final pendingState = _pendingAlipayState;
+    if (pendingState == null || pendingState.isEmpty) {
+      debugPrint('忽略支付宝回调：当前没有待处理的登录请求');
+      return false;
+    }
+    if (callbackState == null || callbackState.isEmpty) {
+      debugPrint('忽略支付宝回调：缺少state');
+      return false;
+    }
+    if (callbackState != pendingState) {
+      debugPrint('忽略支付宝回调：state不匹配');
+      return false;
+    }
+    return true;
+  }
+
+  void _clearPendingAlipayState() {
+    _pendingAlipayState = null;
+  }
+
   Future<void> _handleAlipayCallback(Map<String, dynamic> params) async {
     try {
-      final success = await _completeAlipayLoginFromParams(
-        params.map((key, value) => MapEntry(key, value?.toString() ?? '')),
+      final normalizedParams = params.map(
+        (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
       );
+      if (!_isExpectedAlipayCallback(normalizedParams)) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+      _clearPendingAlipayState();
+
+      final success = await _completeAlipayLoginFromParams(normalizedParams);
 
       if (success && mounted) {
         Navigator.of(context).pop(true);
@@ -436,26 +490,50 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     final token = params['token'];
     final username = params['username'];
     final authCode = params['alipay_auth_code'] ?? params['auth_code'];
-    final state = params['state'];
-    final alipayUserId = params['alipay_user_id'] ?? params['user_id'];
-    final alipayOpenId = params['alipay_open_id'] ?? params['open_id'];
+    final alipayProviderSubject =
+        params['alipay_provider_subject'] ??
+        params['provider_subject'] ??
+        params['alipay_user_id'] ??
+        params['user_id'];
+    final alipaySubjectType =
+        params['alipay_subject_type'] ?? params['subject_type'];
     final alipayNickname = params['alipay_nickname'] ?? params['nick_name'];
     final alipayAvatar = params['alipay_avatar'] ?? params['avatar'];
+    final userNo = params['user_no'] ?? params['userNo'];
 
     if (token != null && token.isNotEmpty) {
       await authModel.loginWithToken(
         token,
         username?.isNotEmpty == true
             ? username!
-            : alipayUserId?.isNotEmpty == true
-            ? alipayUserId!
+            : alipayProviderSubject?.isNotEmpty == true
+            ? alipayProviderSubject!
             : 'alipay_user',
+        userJson: {
+          if (username != null && username.isNotEmpty) 'username': username,
+          if (userNo != null && userNo.isNotEmpty) 'userNo': userNo,
+          if (alipayProviderSubject != null &&
+              alipayProviderSubject.isNotEmpty) ...{
+            'alipayProviderSubject': alipayProviderSubject,
+            'alipayUserId': alipayProviderSubject,
+          },
+          if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
+            'alipaySubjectType': alipaySubjectType,
+          if (alipayNickname != null && alipayNickname.isNotEmpty) ...{
+            'nickname': alipayNickname,
+            'alipayNickname': alipayNickname,
+          },
+          if (alipayAvatar != null && alipayAvatar.isNotEmpty) ...{
+            'avatar': alipayAvatar,
+            'alipayAvatar': alipayAvatar,
+          },
+        },
       );
       return authModel.isLoggedIn;
     }
 
     if (authCode != null && authCode.isNotEmpty) {
-      final success = await authModel.alipayLogin(authCode, state: state);
+      final success = await authModel.alipayLogin(authCode);
       if (success) return true;
     }
 
@@ -465,12 +543,14 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         params['needsRegistration'] == 'true' ||
         params['needs_registration'] == 'true';
 
-    if (isNewUser && alipayUserId != null && alipayUserId.isNotEmpty) {
+    if (isNewUser &&
+        alipayProviderSubject != null &&
+        alipayProviderSubject.isNotEmpty) {
       return authModel.alipayOneClickRegister(
-        alipayUserId,
+        alipayProviderSubject,
         alipayNickname,
         alipayAvatar,
-        alipayOpenId,
+        alipaySubjectType,
       );
     }
 
@@ -480,7 +560,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
   Future<void> _handleDeepLinkAlipayCallback(String url) async {
     debugPrint('收到深度链接支付宝回调: $url');
 
-    if (_isMobile && _isAlipayWebLoginOpen && mounted) {
+    if (_shouldUseEmbeddedAlipayWebLogin && _isAlipayWebLoginOpen && mounted) {
       _isAlipayWebLoginOpen = false;
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
@@ -490,6 +570,17 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
 
     try {
       final params = _parseAlipayCallbackParams(url);
+
+      if (params.containsKey('error') ||
+          params.containsKey('alipay_auth_code') ||
+          params.containsKey('auth_code') ||
+          params.containsKey('token')) {
+        if (!_isExpectedAlipayCallback(params)) {
+          if (mounted) setState(() => _isLoading = false);
+          return;
+        }
+        _clearPendingAlipayState();
+      }
 
       if (params.containsKey('error')) {
         final errorMessage = params['error_message'] ?? '支付宝登录失败';
