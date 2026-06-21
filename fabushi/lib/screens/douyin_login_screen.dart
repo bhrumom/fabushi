@@ -128,7 +128,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
 
   bool get _shouldUseEmbeddedAlipayWebLogin {
     if (kIsWeb) return false;
-    return Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
+    return Platform.isIOS || Platform.isAndroid;
   }
 
   Future<void> _handleAlipayLogin() async {
