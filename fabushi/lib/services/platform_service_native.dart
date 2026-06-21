@@ -24,6 +24,9 @@ abstract class PlatformService {
 
 /// 非Web平台服务实现
 class NativePlatformService implements PlatformService {
+  static final Set<String> _handledInitialLinks = <String>{};
+  static final Set<String> _dispatchedLinks = <String>{};
+
   MethodChannel? _channel;
   Function(dynamic)? _messageHandler;
   late final AppLinks _appLinks;
@@ -72,7 +75,7 @@ class NativePlatformService implements PlatformService {
       final uri = await _appLinks.getInitialLink();
       if (uri != null) {
         debugPrint('NativePlatformService: 检测到初始深度链接: $uri');
-        _handleDeepLink(uri.toString());
+        _handleDeepLink(uri.toString(), isInitialLink: true);
       }
     } catch (e) {
       debugPrint('NativePlatformService: 检查初始链接失败: $e');
@@ -80,13 +83,27 @@ class NativePlatformService implements PlatformService {
   }
 
   // 处理深度链接
-  void _handleDeepLink(String url) {
+  void _handleDeepLink(String url, {bool isInitialLink = false}) {
     debugPrint('NativePlatformService: 处理深度链接URL: $url');
 
     // Tobias SDK 在 Android 上回调到 pubspec 里声明的 url_scheme。
     if (url.startsWith('com.ombhrum.fabushi://') ||
         url.startsWith('globaldharma://') ||
         url.startsWith('fabushi://')) {
+      if (isInitialLink && !_handledInitialLinks.add(url)) {
+        debugPrint('NativePlatformService: 忽略已处理过的初始深度链接');
+        return;
+      }
+
+      if (!_dispatchedLinks.add(url)) {
+        debugPrint('NativePlatformService: 忽略重复深度链接');
+        return;
+      }
+
+      if (_dispatchedLinks.length > 20) {
+        _dispatchedLinks.remove(_dispatchedLinks.first);
+      }
+
       if (_messageHandler != null) {
         _messageHandler!(url);
       }

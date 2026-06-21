@@ -43,8 +43,21 @@ class _AlipayWebLoginScreenState extends State<AlipayWebLoginScreen> {
             setState(() => _errorMessage = error.description);
           },
         ),
-      )
-      ..loadRequest(Uri.parse(widget.loginUrl));
+      );
+
+    _loadLoginUrlWithFreshWebViewSession();
+  }
+
+  Future<void> _loadLoginUrlWithFreshWebViewSession() async {
+    try {
+      await WebViewCookieManager().clearCookies();
+      await _controller.clearLocalStorage();
+    } catch (e) {
+      debugPrint('清理支付宝网页登录缓存失败: $e');
+    }
+
+    if (!mounted) return;
+    await _controller.loadRequest(Uri.parse(widget.loginUrl));
   }
 
   NavigationDecision _handleNavigationRequest(NavigationRequest request) {
