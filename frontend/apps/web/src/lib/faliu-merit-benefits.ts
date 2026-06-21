@@ -75,6 +75,7 @@ export { T0271_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0271-juan2"
 export { T0271_JUAN_3_MERIT_BENEFITS } from "./faliu-merit-benefits-t0271-juan3";
 export { T0271_JUAN_3_RECAP_UPHOLDING_MERITS } from "./faliu-merit-benefits-t0271-juan3-recap-upholding-merits";
 export { T0272_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0272";
+export { T0272_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0272-juan2";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import { T0263_JUAN_10_MERIT_BENEFITS } from "./faliu-merit-benefits-t0263-juan10";
@@ -153,6 +154,7 @@ import { T0271_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0271-juan2"
 import { T0271_JUAN_3_MERIT_BENEFITS } from "./faliu-merit-benefits-t0271-juan3";
 import { T0271_JUAN_3_RECAP_UPHOLDING_MERITS } from "./faliu-merit-benefits-t0271-juan3-recap-upholding-merits";
 import { T0272_JUAN_1_MERIT_BENEFITS } from "./faliu-merit-benefits-t0272";
+import { T0272_JUAN_2_MERIT_BENEFITS } from "./faliu-merit-benefits-t0272-juan2";
 
 const overrideMeritBenefits = {
   "T0263:10": [
@@ -263,6 +265,7 @@ const overrideMeritBenefits = {
     ...T0271_JUAN_3_RECAP_UPHOLDING_MERITS,
   ],
   "T0272:1": T0272_JUAN_1_MERIT_BENEFITS,
+  "T0272:2": T0272_JUAN_2_MERIT_BENEFITS,
 };
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
