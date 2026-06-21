@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "openclaw-embedded-2026.06.2",
+  "version": "openclaw-embedded-2026.06.3",
   "defaultPort": 18789,
   "defaultModel": "openclaw/default",
   "defaultModelOverride": "",
@@ -9,6 +9,15 @@
     "--port",
     "{port}",
     "--force"
+  ],
+  "bundledPlugins": [
+    {
+      "id": "openclaw-weixin",
+      "package": "@tencent-weixin/openclaw-weixin",
+      "version": "2.4.3",
+      "path": "plugins/openclaw-weixin",
+      "channel": "openclaw-weixin"
+    }
   ],
   "platforms": {
     "macos-arm64": {

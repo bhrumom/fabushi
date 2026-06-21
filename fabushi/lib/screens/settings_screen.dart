@@ -52,10 +52,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // 桌面 AI / OpenClaw 设置
   String _aiBackendModeName = 'auto';
+  String _openClawRemoteGatewayUrl = '';
   OpenClawRuntimeStatus? _openClawStatus;
   DesktopControlBridgeStatus? _desktopControlStatus;
   List<DesktopControlPendingConfirmation> _desktopControlPending = const [];
   bool _isRestartingOpenClaw = false;
+  bool _isRunningOpenClawCli = false;
   bool _isPreparingChromeConnector = false;
   StreamSubscription<void>? _desktopControlSubscription;
 
@@ -156,6 +158,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         AppSettings.getAiBackendModeName(),
         _aiBackendModeName,
       ),
+      _loadSetting<String>(
+        'OpenClaw 远程入口',
+        AppSettings.getOpenClawRemoteGatewayUrl(),
+        _openClawRemoteGatewayUrl,
+      ),
     ]);
 
     if (mounted) {
@@ -165,6 +172,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _matchThreshold = values[2] as double;
         _appVersionLabel = values[3] as String;
         _aiBackendModeName = values[4] as String;
+        _openClawRemoteGatewayUrl = values[5] as String;
         _isLoading = false;
       });
     }
@@ -308,6 +316,163 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (value == null || value.isEmpty) return;
     setState(() => _aiBackendModeName = value);
     await AppSettings.setAiBackendModeName(value);
+  }
+
+  Future<void> _editOpenClawRemoteGatewayUrl() async {
+    final controller = TextEditingController(text: _openClawRemoteGatewayUrl);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('远程入口'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'wss://...',
+            helperText: '移动端远程扫码需要公网 HTTPS/Tailscale Serve/Funnel 入口',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null) return;
+    await AppSettings.setOpenClawRemoteGatewayUrl(value);
+    if (!mounted) return;
+    setState(() => _openClawRemoteGatewayUrl = value.trim());
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('已保存远程入口，重启本机 AI 后生效'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  Future<void> _runOpenClawCliAction(
+    String label,
+    Future<OpenClawCliResult> Function() action,
+  ) async {
+    if (!AiBackendPolicy.isDesktopNative || _isRunningOpenClawCli) return;
+    setState(() => _isRunningOpenClawCli = true);
+    OpenClawCliResult? result;
+    Object? error;
+    try {
+      result = await action();
+    } catch (err) {
+      error = err;
+      debugPrint('Settings: $label 失败: $err');
+    }
+    if (!mounted) return;
+    setState(() => _isRunningOpenClawCli = false);
+    if (result != null) {
+      await _showOpenClawCliResult(label, result);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$label 失败：$error'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+    unawaited(_loadDesktopRuntimeSettings(probeOpenClaw: true));
+  }
+
+  Future<void> _showOpenClawCliResult(
+    String title,
+    OpenClawCliResult result,
+  ) async {
+    final output = [
+      result.command,
+      'exitCode=${result.exitCode}${result.timedOut ? ' · timed out' : ''}',
+      if (result.combinedOutput.trim().isNotEmpty) '',
+      if (result.combinedOutput.trim().isNotEmpty) result.combinedOutput,
+    ].join('\n');
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              output,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: output));
+              Navigator.of(context).pop();
+            },
+            child: const Text('复制'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _createOpenClawMobilePairingCode() async {
+    if (_openClawRemoteGatewayUrl.trim().isEmpty) {
+      await _editOpenClawRemoteGatewayUrl();
+      if (_openClawRemoteGatewayUrl.trim().isEmpty) return;
+    }
+    await _runOpenClawCliAction(
+      '移动端配对码',
+      () => OpenClawRuntime.instance.createMobilePairingCode(remote: true),
+    );
+  }
+
+  Future<void> _installOpenClawWeChatPlugin() {
+    return _runOpenClawCliAction(
+      '安装微信插件',
+      OpenClawRuntime.instance.installWeChatPlugin,
+    );
+  }
+
+  Future<void> _loginOpenClawWeChat() {
+    return _runOpenClawCliAction(
+      '微信扫码登录',
+      OpenClawRuntime.instance.loginWeChat,
+    );
+  }
+
+  Future<void> _inspectOpenClawChannels() {
+    return _runOpenClawCliAction(
+      'OpenClaw 渠道状态',
+      OpenClawRuntime.instance.inspectChannels,
+    );
+  }
+
+  Future<void> _requestDesktopPermission({
+    required bool screenRecording,
+  }) async {
+    final result = screenRecording
+        ? await DesktopControlBridge.instance.requestScreenRecordingPermission()
+        : await DesktopControlBridge.instance.requestAccessibilityPermission();
+    await _refreshDesktopControlStatus(startBridge: true);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message']?.toString() ?? '已打开系统权限请求'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   Future<void> _refreshOpenClawStatus() async {
@@ -858,6 +1023,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final status = _openClawStatus;
     final desktopStatus = _desktopControlStatus;
     final chromeStatus = desktopStatus?.chrome;
+    final remoteGatewayConfigured = _openClawRemoteGatewayUrl.trim().isNotEmpty;
     final statusColor = switch (status?.state) {
       OpenClawRuntimeState.running => Colors.greenAccent,
       OpenClawRuntimeState.starting => Colors.amberAccent,
@@ -1019,6 +1185,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 8),
             _buildDesktopControlStatusRow(
+              icon: Icons.qr_code_2_outlined,
+              title: '远程入口',
+              message: remoteGatewayConfigured
+                  ? _openClawRemoteGatewayUrl
+                  : '未配置公网 wss:// 或 Tailscale Serve/Funnel 入口',
+              color: remoteGatewayConfigured
+                  ? Colors.greenAccent
+                  : Colors.orangeAccent,
+            ),
+            const SizedBox(height: 8),
+            _buildDesktopControlStatusRow(
               icon: Icons.public,
               title: 'Chrome 连接器',
               message: chromeStatus?.message ?? '尚未检测 Chrome 连接器',
@@ -1035,7 +1212,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _isRestartingOpenClaw
+                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
                         ? null
                         : _refreshOpenClawStatus,
                     icon: const Icon(
@@ -1048,7 +1225,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: _isRestartingOpenClaw
+                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
                         ? null
                         : _restartOpenClawRuntime,
                     icon: _isRestartingOpenClaw
@@ -1069,7 +1246,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed:
-                        _isRestartingOpenClaw || _isPreparingChromeConnector
+                        _isRestartingOpenClaw ||
+                            _isRunningOpenClawCli ||
+                            _isPreparingChromeConnector
                         ? null
                         : () => _refreshDesktopControlStatus(startBridge: true),
                     icon: const Icon(Icons.rule_folder_outlined, size: 18),
@@ -1080,7 +1259,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed:
-                        _isRestartingOpenClaw || _isPreparingChromeConnector
+                        _isRestartingOpenClaw ||
+                            _isRunningOpenClawCli ||
+                            _isPreparingChromeConnector
                         ? null
                         : _prepareChromeConnectorInstall,
                     icon: _isPreparingChromeConnector
@@ -1091,6 +1272,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           )
                         : const Icon(Icons.extension_outlined, size: 18),
                     label: Text(_isPreparingChromeConnector ? '准备中' : '连接器'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
+                        ? null
+                        : _editOpenClawRemoteGatewayUrl,
+                    icon: const Icon(Icons.travel_explore_outlined, size: 18),
+                    label: const Text('远程入口'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
+                        ? null
+                        : _createOpenClawMobilePairingCode,
+                    icon: _isRunningOpenClawCli
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.qr_code_2_outlined, size: 18),
+                    label: const Text('移动配对'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
+                        ? null
+                        : _installOpenClawWeChatPlugin,
+                    icon: const Icon(Icons.install_desktop_outlined, size: 18),
+                    label: const Text('微信插件'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
+                        ? null
+                        : _loginOpenClawWeChat,
+                    icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                    label: const Text('微信登录'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
+                        ? null
+                        : _inspectOpenClawChannels,
+                    icon: const Icon(Icons.forum_outlined, size: 18),
+                    label: const Text('渠道状态'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
+                        ? null
+                        : () => _requestDesktopPermission(
+                            screenRecording:
+                                desktopStatus?.screenRecordingGranted != true,
+                          ),
+                    icon: const Icon(
+                      Icons.admin_panel_settings_outlined,
+                      size: 18,
+                    ),
+                    label: const Text('系统权限'),
                   ),
                 ),
               ],

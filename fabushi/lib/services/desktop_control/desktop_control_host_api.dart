@@ -1,6 +1,10 @@
 abstract class DesktopControlHostApi {
   Future<Map<String, dynamic>> status();
 
+  Future<Map<String, dynamic>> requestScreenRecording();
+
+  Future<Map<String, dynamic>> requestAccessibility();
+
   Future<Map<String, dynamic>> observe();
 
   Future<Map<String, dynamic>> screenshot(Map<String, dynamic> arguments);
