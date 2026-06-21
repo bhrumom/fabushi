@@ -1927,14 +1927,7 @@ class OpenClawRuntime {
       },
       'tools': {
         'profile': 'full',
-        'toolSearch': {'enabled': true, 'mode': 'directory'},
-        'fs': {'workspaceOnly': false},
-        'exec': {
-          'host': 'gateway',
-          'mode': 'full',
-          'security': 'full',
-          'ask': 'off',
-        },
+        'exec': {'host': 'gateway', 'security': 'full', 'ask': 'off'},
       },
       'plugins': {
         'enabled': true,
@@ -2472,6 +2465,13 @@ export default {
 
     final defaultTools = _mutableMap(defaults['tools']);
     final tools = _mutableMap(current['tools']);
+    tools.remove('toolSearch');
+    tools.remove('fs');
+    final execTools = _mutableMap(tools['exec']);
+    execTools.remove('mode');
+    if (execTools.isNotEmpty) {
+      tools['exec'] = execTools;
+    }
     tools.addAll(defaultTools);
     current['tools'] = tools;
 

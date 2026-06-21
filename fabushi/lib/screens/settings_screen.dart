@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'keep_alive_guide_screen.dart';
+import 'openclaw_workbench_screen.dart';
 import 'practice_privacy_screen.dart';
 import '../core/constants/app_constants.dart';
 import '../services/api_client.dart';
@@ -1207,175 +1208,113 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 12),
               _buildPendingDesktopConfirmations(),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Row(
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
-                        ? null
-                        : _refreshOpenClawStatus,
-                    icon: const Icon(
-                      Icons.health_and_safety_outlined,
-                      size: 18,
-                    ),
-                    label: const Text('检测'),
-                  ),
-                ),
-                const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
-                        ? null
-                        : _restartOpenClawRuntime,
-                    icon: _isRestartingOpenClaw
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.restart_alt, size: 18),
-                    label: Text(_isRestartingOpenClaw ? '启动中' : '重启本机 AI'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed:
-                        _isRestartingOpenClaw ||
-                            _isRunningOpenClawCli ||
-                            _isPreparingChromeConnector
-                        ? null
-                        : () => _refreshDesktopControlStatus(startBridge: true),
-                    icon: const Icon(Icons.rule_folder_outlined, size: 18),
-                    label: const Text('工具诊断'),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const OpenClawWorkbenchScreen(),
+                      ),
+                    ),
+                    icon: const Icon(Icons.smart_toy_outlined, size: 18),
+                    label: const Text('打开助理工作台'),
                   ),
                 ),
                 const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed:
-                        _isRestartingOpenClaw ||
-                            _isRunningOpenClawCli ||
-                            _isPreparingChromeConnector
-                        ? null
-                        : _prepareChromeConnectorInstall,
-                    icon: _isPreparingChromeConnector
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.extension_outlined, size: 18),
-                    label: Text(_isPreparingChromeConnector ? '准备中' : '连接器'),
-                  ),
+                OutlinedButton.icon(
+                  onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
+                      ? null
+                      : _refreshOpenClawStatus,
+                  icon: const Icon(Icons.health_and_safety_outlined, size: 18),
+                  label: const Text('检测'),
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
-                        ? null
-                        : _editOpenClawRemoteGatewayUrl,
-                    icon: const Icon(Icons.travel_explore_outlined, size: 18),
-                    label: const Text('远程入口'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
-                        ? null
-                        : _createOpenClawMobilePairingCode,
-                    icon: _isRunningOpenClawCli
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.qr_code_2_outlined, size: 18),
-                    label: const Text('移动配对'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
-                        ? null
-                        : _installOpenClawWeChatPlugin,
-                    icon: const Icon(Icons.install_desktop_outlined, size: 18),
-                    label: const Text('微信插件'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
-                        ? null
-                        : _loginOpenClawWeChat,
-                    icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                    label: const Text('微信登录'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
-                        ? null
-                        : _inspectOpenClawChannels,
-                    icon: const Icon(Icons.forum_outlined, size: 18),
-                    label: const Text('渠道状态'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
-                        ? null
-                        : () => _requestDesktopPermission(
+                const SizedBox(width: 8),
+                PopupMenuButton<String>(
+                  tooltip: '高级操作',
+                  enabled:
+                      !_isRestartingOpenClaw &&
+                      !_isRunningOpenClawCli &&
+                      !_isPreparingChromeConnector,
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'restart':
+                        unawaited(_restartOpenClawRuntime());
+                        break;
+                      case 'tools':
+                        unawaited(
+                          _refreshDesktopControlStatus(startBridge: true),
+                        );
+                        break;
+                      case 'connector':
+                        unawaited(_prepareChromeConnectorInstall());
+                        break;
+                      case 'remote':
+                        unawaited(_editOpenClawRemoteGatewayUrl());
+                        break;
+                      case 'mobile':
+                        unawaited(_createOpenClawMobilePairingCode());
+                        break;
+                      case 'wechatPlugin':
+                        unawaited(_installOpenClawWeChatPlugin());
+                        break;
+                      case 'wechatLogin':
+                        unawaited(_loginOpenClawWeChat());
+                        break;
+                      case 'channels':
+                        unawaited(_inspectOpenClawChannels());
+                        break;
+                      case 'permissions':
+                        unawaited(
+                          _requestDesktopPermission(
                             screenRecording:
                                 desktopStatus?.screenRecordingGranted != true,
                           ),
-                    icon: const Icon(
-                      Icons.admin_panel_settings_outlined,
-                      size: 18,
+                        );
+                        break;
+                      case 'copyLog':
+                        unawaited(_copyDiagnosticLogTail());
+                        break;
+                      case 'openLog':
+                        unawaited(_openDiagnosticLogLocation());
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'restart',
+                      child: Text(_isRestartingOpenClaw ? '启动中' : '重启本机 AI'),
                     ),
-                    label: const Text('系统权限'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _copyDiagnosticLogTail,
-                    icon: const Icon(Icons.content_copy_outlined, size: 18),
-                    label: const Text('复制日志'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _openDiagnosticLogLocation,
-                    icon: const Icon(Icons.folder_open_outlined, size: 18),
-                    label: const Text('日志位置'),
+                    const PopupMenuItem(value: 'tools', child: Text('工具诊断')),
+                    PopupMenuItem(
+                      value: 'connector',
+                      child: Text(_isPreparingChromeConnector ? '准备中' : '连接器'),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(value: 'remote', child: Text('远程入口')),
+                    const PopupMenuItem(value: 'mobile', child: Text('移动配对')),
+                    const PopupMenuItem(
+                      value: 'wechatPlugin',
+                      child: Text('微信插件'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'wechatLogin',
+                      child: Text('微信登录'),
+                    ),
+                    const PopupMenuItem(value: 'channels', child: Text('渠道状态')),
+                    const PopupMenuItem(
+                      value: 'permissions',
+                      child: Text('系统权限'),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(value: 'copyLog', child: Text('复制日志')),
+                    const PopupMenuItem(value: 'openLog', child: Text('日志位置')),
+                  ],
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: Icon(Icons.more_horiz, color: Colors.white70),
                   ),
                 ),
               ],
