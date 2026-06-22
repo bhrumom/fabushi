@@ -41,6 +41,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final tab = Uri.base.queryParameters['tab']?.toLowerCase();
     final initialIndex = switch (tab) {
       'home' => 0,
+      'assistant' || 'openclaw' || 'workbench' => 0,
       'meditation' || 'meditation-room' || 'zen' => 1,
       'profile' || 'me' || 'mine' => 2,
       _ => 0,

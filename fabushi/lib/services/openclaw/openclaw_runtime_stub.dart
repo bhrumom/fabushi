@@ -66,6 +66,31 @@ class OpenClawGatewayTarget {
   });
 }
 
+class OpenClawCliResult {
+  final List<String> args;
+  final int exitCode;
+  final String stdout;
+  final String stderr;
+  final bool timedOut;
+
+  const OpenClawCliResult({
+    required this.args,
+    required this.exitCode,
+    required this.stdout,
+    required this.stderr,
+    this.timedOut = false,
+  });
+
+  bool get succeeded => exitCode == 0 && !timedOut;
+
+  String get command => 'openclaw ${args.join(' ')}';
+
+  String get combinedOutput => [
+    if (stdout.trim().isNotEmpty) stdout.trimRight(),
+    if (stderr.trim().isNotEmpty) stderr.trimRight(),
+  ].join('\n');
+}
+
 class OpenClawRuntime {
   OpenClawRuntime._();
 
@@ -90,4 +115,30 @@ class OpenClawRuntime {
   Future<OpenClawRuntimeStatus> restart() => getStatus();
 
   Future<void> stop() async {}
+
+  Future<OpenClawCliResult> createMobilePairingCode({
+    bool remote = true,
+  }) async {
+    throw StateError('当前平台不支持内置 OpenClaw Gateway');
+  }
+
+  Future<OpenClawCliResult> loginWeChat() async {
+    throw StateError('当前平台不支持内置 OpenClaw Gateway');
+  }
+
+  Future<OpenClawCliResult> inspectChannels() async {
+    throw StateError('当前平台不支持内置 OpenClaw Gateway');
+  }
+
+  Future<OpenClawCliResult> installWeChatPlugin() async {
+    throw StateError('当前平台不支持内置 OpenClaw Gateway');
+  }
+
+  Future<OpenClawCliResult> runCli(
+    List<String> args, {
+    Duration timeout = const Duration(seconds: 45),
+    bool ensureGateway = true,
+  }) async {
+    throw StateError('当前平台不支持内置 OpenClaw Gateway');
+  }
 }

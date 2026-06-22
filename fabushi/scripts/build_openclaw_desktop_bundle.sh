@@ -15,6 +15,9 @@ set -euo pipefail
 
 PLATFORM="${1:-}"
 OPENCLAW_VERSION="${OPENCLAW_VERSION:-2026.6.1}"
+OPENCLAW_WEIXIN_VERSION="${OPENCLAW_WEIXIN_VERSION:-2.4.3}"
+OPENCLAW_WEIXIN_PACKAGE="${OPENCLAW_WEIXIN_PACKAGE:-@tencent-weixin/openclaw-weixin@$OPENCLAW_WEIXIN_VERSION}"
+OPENCLAW_BUNDLE_WEIXIN="${OPENCLAW_BUNDLE_WEIXIN:-1}"
 NODE_VERSION="${NODE_VERSION:-24.2.0}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="$ROOT_DIR/assets/openclaw/$PLATFORM"
@@ -72,6 +75,27 @@ else
   "${NPM_CMD[@]}" install --omit=dev --ignore-scripts=false
 fi
 popd >/dev/null
+
+if [[ "$OPENCLAW_BUNDLE_WEIXIN" != "0" ]]; then
+  echo "==> Packing OpenClaw WeChat plugin: $OPENCLAW_WEIXIN_PACKAGE"
+  npm pack "$OPENCLAW_WEIXIN_PACKAGE" --pack-destination "$WORK_DIR" >/dev/null
+  WEIXIN_TGZ="$(find "$WORK_DIR" -maxdepth 1 -name '*openclaw-weixin*.tgz' | sort | tail -n 1)"
+  if [[ -z "$WEIXIN_TGZ" ]]; then
+    echo "failed to locate packed openclaw-weixin tarball" >&2
+    exit 1
+  fi
+  mkdir -p "$OUT_DIR/plugins/openclaw-weixin"
+  tar -xzf "$WEIXIN_TGZ" -C "$OUT_DIR/plugins/openclaw-weixin" --strip-components=1
+
+  echo "==> Installing production dependencies into bundled WeChat plugin"
+  pushd "$OUT_DIR/plugins/openclaw-weixin" >/dev/null
+  if [[ -f package-lock.json ]]; then
+    "${NPM_CMD[@]}" ci --omit=dev
+  else
+    "${NPM_CMD[@]}" install --omit=dev --ignore-scripts=false
+  fi
+  popd >/dev/null
+fi
 
 if [[ "$PLATFORM" != windows-* ]]; then
   chmod +x "$NODE_BIN"

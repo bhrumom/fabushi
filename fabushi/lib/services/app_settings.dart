@@ -159,6 +159,8 @@ class AppSettings {
   static const String _openClawModelKey = 'openclaw_model_v1';
   static const String _openClawModelOverrideKey = 'openclaw_model_override_v1';
   static const String _openClawDeepSeekModelKey = 'openclaw_deepseek_model_v1';
+  static const String _openClawRemoteGatewayUrlKey =
+      'openclaw_remote_gateway_url_v1';
   static const String _openClawActiveRuntimeSpecKey =
       'openclaw_active_runtime_spec_v1';
   static const String _desktopControlBridgePortKey =
@@ -247,6 +249,21 @@ class AppSettings {
   static Future<void> setOpenClawDeepSeekModel(String model) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_openClawDeepSeekModelKey, model.trim());
+  }
+
+  static Future<String> getOpenClawRemoteGatewayUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_openClawRemoteGatewayUrlKey)?.trim() ?? '';
+  }
+
+  static Future<void> setOpenClawRemoteGatewayUrl(String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) {
+      await prefs.remove(_openClawRemoteGatewayUrlKey);
+      return;
+    }
+    await prefs.setString(_openClawRemoteGatewayUrlKey, trimmed);
   }
 
   static Future<Map<String, dynamic>?> getOpenClawActiveRuntimeSpec() async {

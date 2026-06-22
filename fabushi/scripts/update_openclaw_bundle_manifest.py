@@ -17,14 +17,28 @@ def main() -> int:
     else:
         data = {"schema": 1, "platforms": {}}
     data["schema"] = 1
-    data.setdefault("version", "openclaw-embedded-2026.06.2")
+    data.setdefault("version", "openclaw-embedded-2026.06.3")
     if data["version"] == "openclaw-embedded-2026.06":
-        data["version"] = "openclaw-embedded-2026.06.2"
+        data["version"] = "openclaw-embedded-2026.06.3"
+    if data["version"] == "openclaw-embedded-2026.06.2":
+        data["version"] = "openclaw-embedded-2026.06.3"
     data.setdefault("defaultPort", 18789)
     if data.get("defaultModel") in (None, "", "openclaw/default"):
         data["defaultModel"] = "deepseek/deepseek-chat"
     data.setdefault("defaultModelOverride", "")
     data["gatewayArgs"] = ["gateway", "--port", "{port}", "--force"]
+    data.setdefault(
+        "bundledPlugins",
+        [
+            {
+                "id": "openclaw-weixin",
+                "package": "@tencent-weixin/openclaw-weixin",
+                "version": "2.4.3",
+                "path": "plugins/openclaw-weixin",
+                "channel": "openclaw-weixin",
+            }
+        ],
+    )
     platforms = data.setdefault("platforms", {})
     platforms[platform] = {
         "nodeExecutable": "node/node.exe" if platform.startswith("windows-") else "node/bin/node",
