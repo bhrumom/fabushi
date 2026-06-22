@@ -1864,7 +1864,84 @@ class OpenClawRuntime {
     );
     final remoteUrl = remoteGatewayUrl.trim();
 
-    final config = <String, dynamic>{
+    final config = _buildEmbeddedConfig(
+      stateRoot: stateRoot,
+      port: port,
+      token: token,
+      backendDeepSeekModel: backendDeepSeekModel,
+      deepSeekProxyBaseUrl: deepSeekProxyBaseUrl,
+      remoteGatewayUrl: remoteUrl,
+      pluginLoadPaths: pluginLoadPaths,
+      hasWeChatPlugin: hasWeChatPlugin,
+    );
+
+    // Repair older embedded configs in-place. OpenClaw 2026.6 requires
+    // gateway.mode=local, and the home screen requires the OpenAI-compatible
+    // chat endpoint. Preserve unrelated user edits while fixing the fields
+    // needed for the app-owned embedded gateway to start reliably.
+    final merged = await _mergeEmbeddedConfig(configPath, config);
+    await configPath.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(merged),
+    );
+    _diag(
+      'config.written',
+      data: {
+        'configPath': configPath.path,
+        'port': port,
+        'gatewayMode': _mutableMap(merged['gateway'])['mode'],
+        'backendDeepSeekModel': backendDeepSeekModel,
+        'deepSeekProxyBaseUrl': deepSeekProxyBaseUrl,
+        'remoteGatewayUrlSet': remoteUrl.isNotEmpty,
+        'pluginLoadPaths': pluginLoadPaths,
+        'hasWeChatPlugin': hasWeChatPlugin,
+      },
+    );
+    return configPath;
+  }
+
+  @visibleForTesting
+  Map<String, dynamic> buildEmbeddedConfigForTest({
+    required Directory stateRoot,
+    required int port,
+    required String token,
+    required String backendDeepSeekModel,
+    required String deepSeekProxyBaseUrl,
+    String remoteGatewayUrl = '',
+    List<String> pluginLoadPaths = const [],
+    bool hasWeChatPlugin = false,
+  }) {
+    return _buildEmbeddedConfig(
+      stateRoot: stateRoot,
+      port: port,
+      token: token,
+      backendDeepSeekModel: backendDeepSeekModel,
+      deepSeekProxyBaseUrl: deepSeekProxyBaseUrl,
+      remoteGatewayUrl: remoteGatewayUrl,
+      pluginLoadPaths: pluginLoadPaths,
+      hasWeChatPlugin: hasWeChatPlugin,
+    );
+  }
+
+  Map<String, dynamic> _buildEmbeddedConfig({
+    required Directory stateRoot,
+    required int port,
+    required String token,
+    required String backendDeepSeekModel,
+    required String deepSeekProxyBaseUrl,
+    required String remoteGatewayUrl,
+    required List<String> pluginLoadPaths,
+    required bool hasWeChatPlugin,
+  }) {
+    final workspace = p.join(stateRoot.path, 'workspace');
+    final remoteUrl = remoteGatewayUrl.trim();
+    final desktopToolAllowList = DesktopControlPolicy.supportedTools.toList()
+      ..sort();
+    final canvasHostConfig = <String, dynamic>{
+      'enabled': true,
+      'root': p.join(stateRoot.path, 'canvas'),
+    };
+
+    return <String, dynamic>{
       'gateway': {
         'mode': 'local',
         'port': port,
@@ -1921,12 +1998,9 @@ class OpenClawRuntime {
         'headless': false,
         'ssrfPolicy': {'dangerouslyAllowPrivateNetwork': true},
       },
-      'canvas': {
-        'enabled': true,
-        'host': {'enabled': true, 'root': p.join(stateRoot.path, 'canvas')},
-      },
       'tools': {
         'profile': 'full',
+        'alsoAllow': desktopToolAllowList,
         'exec': {'host': 'gateway', 'security': 'full', 'ask': 'off'},
       },
       'plugins': {
@@ -1938,7 +2012,10 @@ class OpenClawRuntime {
           'memory-core': {'enabled': true},
           'bonjour': {'enabled': false},
           'browser': {'enabled': true},
-          'canvas': {'enabled': true},
+          'canvas': {
+            'enabled': true,
+            'config': {'host': canvasHostConfig},
+          },
           'device-pair': {'enabled': true},
           'file-transfer': {'enabled': true},
           'phone-control': {'enabled': true},
@@ -1959,42 +2036,19 @@ class OpenClawRuntime {
       },
       'agents': {
         'defaults': {
-          'workspace': workspace.path,
+          'workspace': workspace,
           'model': {'primary': backendDeepSeekModel},
         },
         'list': [
           {
             'id': 'dacheng',
             'default': true,
-            'workspace': workspace.path,
+            'workspace': workspace,
             'model': {'primary': backendDeepSeekModel},
           },
         ],
       },
     };
-
-    // Repair older embedded configs in-place. OpenClaw 2026.6 requires
-    // gateway.mode=local, and the home screen requires the OpenAI-compatible
-    // chat endpoint. Preserve unrelated user edits while fixing the fields
-    // needed for the app-owned embedded gateway to start reliably.
-    final merged = await _mergeEmbeddedConfig(configPath, config);
-    await configPath.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(merged),
-    );
-    _diag(
-      'config.written',
-      data: {
-        'configPath': configPath.path,
-        'port': port,
-        'gatewayMode': _mutableMap(merged['gateway'])['mode'],
-        'backendDeepSeekModel': backendDeepSeekModel,
-        'deepSeekProxyBaseUrl': deepSeekProxyBaseUrl,
-        'remoteGatewayUrlSet': remoteUrl.isNotEmpty,
-        'pluginLoadPaths': pluginLoadPaths,
-        'hasWeChatPlugin': hasWeChatPlugin,
-      },
-    );
-    return configPath;
   }
 
   Future<File> _ensureDesktopToolsManifest({
@@ -2458,21 +2512,30 @@ export default {
     browser.addAll(defaultBrowser);
     current['browser'] = browser;
 
-    final defaultCanvas = _mutableMap(defaults['canvas']);
-    final canvas = _mutableMap(current['canvas']);
-    canvas.addAll(defaultCanvas);
-    current['canvas'] = canvas;
+    // OpenClaw 2026.6 rejects root-level canvas/canvasHost. Canvas is now
+    // configured through plugins.entries.canvas.config.host.
+    current.remove('canvas');
+    current.remove('canvasHost');
 
     final defaultTools = _mutableMap(defaults['tools']);
     final tools = _mutableMap(current['tools']);
     tools.remove('toolSearch');
     tools.remove('fs');
+    final alsoAllow = _mergeStringLists(
+      tools['alsoAllow'],
+      defaultTools['alsoAllow'],
+    );
     final execTools = _mutableMap(tools['exec']);
     execTools.remove('mode');
     if (execTools.isNotEmpty) {
       tools['exec'] = execTools;
     }
     tools.addAll(defaultTools);
+    if (alsoAllow.isEmpty) {
+      tools.remove('alsoAllow');
+    } else {
+      tools['alsoAllow'] = alsoAllow;
+    }
     current['tools'] = tools;
 
     final defaultPlugins = _mutableMap(defaults['plugins']);
@@ -2576,6 +2639,14 @@ export default {
     current['agents'] = agents;
 
     return current;
+  }
+
+  @visibleForTesting
+  Future<Map<String, dynamic>> mergeEmbeddedConfigForTest(
+    File configPath,
+    Map<String, dynamic> defaults,
+  ) {
+    return _mergeEmbeddedConfig(configPath, defaults);
   }
 
   String _gatewayChatModel(String model) {
