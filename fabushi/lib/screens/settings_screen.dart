@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'keep_alive_guide_screen.dart';
-import 'openclaw_workbench_screen.dart';
 import 'practice_privacy_screen.dart';
 import '../core/constants/app_constants.dart';
 import '../services/api_client.dart';
@@ -61,6 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isRunningOpenClawCli = false;
   bool _isPreparingChromeConnector = false;
   StreamSubscription<void>? _desktopControlSubscription;
+  String _settingsCategory = 'system';
 
   @override
   void initState() {
@@ -906,116 +906,326 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('设置'),
-        backgroundColor: const Color(0xFF121212),
-        foregroundColor: Colors.white,
-      ),
-      backgroundColor: const Color(0xFF121212),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // TODO: 临时隐藏，后续需要再开启
-                  // // AI 模型设置
-                  // _buildModelSettingCard(),
-                  //
-                  // // TTS 默认静音设置
-                  // _buildTtsMuteSettingItem(),
-                  //
-                  // // 读诵匹配阈值设置
-                  // _buildRecitationThresholdSettings(),
-                  if (AiBackendPolicy.isDesktopNative) ...[
-                    _buildOpenClawSettingCard(),
-                    const SizedBox(height: 12),
-                  ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final desktop = constraints.maxWidth >= 900;
+        return Scaffold(
+          appBar: desktop
+              ? null
+              : AppBar(
+                  title: const Text('设置'),
+                  backgroundColor: const Color(0xFF121212),
+                  foregroundColor: Colors.white,
+                ),
+          backgroundColor: desktop
+              ? const Color(0xFFEDEEEE)
+              : const Color(0xFF121212),
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : desktop
+              ? _buildSettingsDesktopLayout()
+              : _buildSettingsMobileList(),
+        );
+      },
+    );
+  }
 
-                  // Android 后台保活设置（仅 Android 显示）
-                  if (Platform.isAndroid)
-                    _buildSettingItem(
-                      context,
-                      icon: Icons.battery_saver,
-                      iconColor: Colors.green,
-                      title: '后台保活设置',
-                      subtitle: '防止应用被系统清理',
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const KeepAliveGuideScreen(),
-                        ),
-                      ),
-                    ),
-
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.refresh,
-                    iconColor: Colors.cyan,
-                    title: '刷新数据',
-                    subtitle: '重新同步账户信息',
-                    onTap: () async {
-                      final authModel = Provider.of<AuthModel>(
-                        context,
-                        listen: false,
-                      );
-                      await authModel.refreshUserInfo();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('数据已刷新'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      }
-                    },
-                  ),
-
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.visibility_outlined,
-                    iconColor: Colors.purpleAccent,
-                    title: '修行隐私',
-                    subtitle: '控制修行排行榜与公开记录的展示范围',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const PracticePrivacyScreen(),
-                      ),
-                    ),
-                  ),
-
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.help_outline,
-                    iconColor: Colors.orange,
-                    title: '帮助与反馈',
-                    subtitle: '提交问题或建议，发送到支持邮箱',
-                    onTap: _showFeedbackDialog,
-                  ),
-
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.info_outline,
-                    iconColor: Colors.blue,
-                    title: '关于',
-                    subtitle: '版本 $_appVersionLabel',
-                    onTap: () => showAboutDialog(
-                      context: context,
-                      applicationName: AppConstants.appName,
-                      applicationVersion: _appVersionLabel,
-                      children: [const Text('传播佛法，利益众生')],
-                    ),
-                  ),
-
-                  _buildDeleteAccountItem(context),
-
-                  _buildLogoutItem(context),
-                ],
+  Widget _buildSettingsMobileList() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (AiBackendPolicy.isDesktopNative) ...[
+            _buildOpenClawSettingCard(),
+            const SizedBox(height: 12),
+          ],
+          if (Platform.isAndroid)
+            _buildSettingItem(
+              context,
+              icon: Icons.battery_saver,
+              iconColor: Colors.green,
+              title: '后台保活设置',
+              subtitle: '防止应用被系统清理',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const KeepAliveGuideScreen()),
               ),
             ),
+          _buildSettingItem(
+            context,
+            icon: Icons.refresh,
+            iconColor: Colors.cyan,
+            title: '刷新数据',
+            subtitle: '重新同步账户信息',
+            onTap: _refreshAccountData,
+          ),
+          _buildSettingItem(
+            context,
+            icon: Icons.visibility_outlined,
+            iconColor: Colors.purpleAccent,
+            title: '修行隐私',
+            subtitle: '控制修行排行榜与公开记录的展示范围',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PracticePrivacyScreen()),
+            ),
+          ),
+          _buildSettingItem(
+            context,
+            icon: Icons.help_outline,
+            iconColor: Colors.orange,
+            title: '帮助与反馈',
+            subtitle: '提交问题或建议，发送到支持邮箱',
+            onTap: _showFeedbackDialog,
+          ),
+          _buildSettingItem(
+            context,
+            icon: Icons.info_outline,
+            iconColor: Colors.blue,
+            title: '关于',
+            subtitle: '版本 $_appVersionLabel',
+            onTap: _showAbout,
+          ),
+          _buildDeleteAccountItem(context),
+          _buildLogoutItem(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsDesktopLayout() {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1160),
+        child: Container(
+          margin: const EdgeInsets.all(30),
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 24,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              _buildSettingsCategorySidebar(),
+              Expanded(child: _buildSettingsCategoryContent()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsCategorySidebar() {
+    final categories = [
+      ('account', Icons.person_outline, '账户管理'),
+      ('system', Icons.settings_outlined, '系统设置'),
+      ('agent', Icons.extension_outlined, '智能体设置'),
+      ('memory', Icons.psychology_outlined, '记忆'),
+      ('model', Icons.view_in_ar_outlined, '模型'),
+      ('data', Icons.storage_outlined, '数据管理'),
+      ('security', Icons.shield_outlined, '安全中心'),
+      ('help', Icons.help_outline, '帮助与反馈'),
+    ];
+
+    return Container(
+      width: 250,
+      color: const Color(0xFFF0F1F0),
+      padding: const EdgeInsets.fromLTRB(12, 34, 12, 20),
+      child: Column(
+        children: [
+          for (final item in categories)
+            _SettingsCategoryTile(
+              icon: item.$2,
+              label: item.$3,
+              selected: _settingsCategory == item.$1,
+              onTap: () => setState(() => _settingsCategory = item.$1),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsCategoryContent() {
+    final title = switch (_settingsCategory) {
+      'account' => '账户管理',
+      'agent' => '智能体设置',
+      'memory' => '记忆',
+      'model' => '模型',
+      'data' => '数据管理',
+      'security' => '安全中心',
+      'help' => '帮助与反馈',
+      _ => '设置',
+    };
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(36, 34, 36, 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF202124),
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: '关闭',
+                onPressed: () => Navigator.maybePop(context),
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ),
+          const Divider(height: 28),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(children: _settingsCategoryWidgets()),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _settingsCategoryWidgets() {
+    switch (_settingsCategory) {
+      case 'account':
+        return [
+          _SettingsLightRow(
+            icon: Icons.refresh,
+            title: '刷新数据',
+            subtitle: '重新同步账户信息。',
+            onTap: _refreshAccountData,
+          ),
+          _SettingsLightRow(
+            icon: Icons.info_outline,
+            title: '关于',
+            subtitle: '版本 $_appVersionLabel',
+            onTap: _showAbout,
+          ),
+          _buildLogoutItem(context),
+        ];
+      case 'agent':
+        return [
+          if (AiBackendPolicy.isDesktopNative) _buildOpenClawSettingCard(),
+          _SettingsLightRow(
+            icon: Icons.auto_awesome,
+            title: '技能自动更新',
+            subtitle: '保持已安装技能为最新版。',
+            trailing: Switch(value: true, onChanged: (_) {}),
+          ),
+        ];
+      case 'memory':
+        return [
+          _SettingsLightRow(
+            icon: Icons.history,
+            title: '对话记忆',
+            subtitle: '管理本机对话上下文和项目空间。',
+            onTap: _copyDiagnosticLogTail,
+          ),
+          _SettingsLightRow(
+            icon: Icons.article_outlined,
+            title: '诊断日志',
+            subtitle: '复制或打开 OpenClaw 和桌面控制日志。',
+            onTap: _openDiagnosticLogLocation,
+          ),
+        ];
+      case 'model':
+        return [_buildModelSettingCard()];
+      case 'data':
+        return [
+          _buildTtsMuteSettingItem(),
+          _buildRecitationThresholdSettings(),
+        ];
+      case 'security':
+        return [
+          _SettingsLightRow(
+            icon: Icons.visibility_outlined,
+            title: '修行隐私',
+            subtitle: '控制修行排行榜与公开记录的展示范围。',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PracticePrivacyScreen()),
+            ),
+          ),
+          _buildDeleteAccountItem(context),
+        ];
+      case 'help':
+        return [
+          _SettingsLightRow(
+            icon: Icons.help_outline,
+            title: '帮助与反馈',
+            subtitle: '提交问题或建议，发送到支持邮箱。',
+            onTap: _showFeedbackDialog,
+          ),
+          _SettingsLightRow(
+            icon: Icons.info_outline,
+            title: '关于',
+            subtitle: '版本 $_appVersionLabel',
+            onTap: _showAbout,
+          ),
+        ];
+      default:
+        return [
+          _SettingsLightRow(
+            icon: Icons.language,
+            title: '显示语言',
+            subtitle: '设置应用程序界面的显示语言。',
+            trailing: const Text('中文(简体)'),
+          ),
+          _SettingsLightRow(
+            icon: Icons.keyboard_return,
+            title: '发送消息',
+            subtitle: '设置聊天输入框中发送消息的快捷键。',
+            trailing: const Text('Enter'),
+          ),
+          _SettingsLightRow(
+            icon: Icons.open_in_full,
+            title: '桌面窗口',
+            subtitle: '已允许调整大小、最大化和系统全屏。',
+          ),
+          if (Platform.isAndroid)
+            _SettingsLightRow(
+              icon: Icons.battery_saver,
+              title: '后台保活设置',
+              subtitle: '防止应用被系统清理。',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const KeepAliveGuideScreen()),
+              ),
+            ),
+        ];
+    }
+  }
+
+  Future<void> _refreshAccountData() async {
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    await authModel.refreshUserInfo();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('数据已刷新'), backgroundColor: Colors.green),
+    );
+  }
+
+  void _showAbout() {
+    showAboutDialog(
+      context: context,
+      applicationName: AppConstants.appName,
+      applicationVersion: _appVersionLabel,
+      children: [const Text('传播佛法，利益众生')],
     );
   }
 
@@ -1212,24 +1422,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Row(
               children: [
                 Expanded(
-                  child: FilledButton.icon(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const OpenClawWorkbenchScreen(),
-                      ),
+                  child: OutlinedButton.icon(
+                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
+                        ? null
+                        : _refreshOpenClawStatus,
+                    icon: const Icon(
+                      Icons.health_and_safety_outlined,
+                      size: 18,
                     ),
-                    icon: const Icon(Icons.smart_toy_outlined, size: 18),
-                    label: const Text('打开助理工作台'),
+                    label: const Text('检测'),
                   ),
                 ),
                 const SizedBox(width: 10),
-                OutlinedButton.icon(
+                FilledButton.icon(
                   onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
                       ? null
-                      : _refreshOpenClawStatus,
-                  icon: const Icon(Icons.health_and_safety_outlined, size: 18),
-                  label: const Text('检测'),
+                      : () => unawaited(_restartOpenClawRuntime()),
+                  icon: const Icon(Icons.restart_alt, size: 18),
+                  label: Text(_isRestartingOpenClaw ? '启动中' : '重启本机 AI'),
                 ),
                 const SizedBox(width: 8),
                 PopupMenuButton<String>(
@@ -1283,10 +1493,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     }
                   },
                   itemBuilder: (context) => [
-                    PopupMenuItem(
-                      value: 'restart',
-                      child: Text(_isRestartingOpenClaw ? '启动中' : '重启本机 AI'),
-                    ),
                     const PopupMenuItem(value: 'tools', child: Text('工具诊断')),
                     PopupMenuItem(
                       value: 'connector',
@@ -2094,6 +2300,130 @@ class _SettingsScreenState extends State<SettingsScreen> {
             }
           }
         },
+      ),
+    );
+  }
+}
+
+class _SettingsCategoryTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SettingsCategoryTile({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        height: 42,
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFE0E0DF) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: const Color(0xFF26282B), size: 20),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF26282B),
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsLightRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  const _SettingsLightRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 76),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF6F6F5),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: const Color(0xFF303236), size: 22),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFF252729),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFF73777A),
+                        fontSize: 13,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 16),
+                DefaultTextStyle(
+                  style: const TextStyle(
+                    color: Color(0xFF303236),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  child: trailing!,
+                ),
+              ] else if (onTap != null)
+                const Icon(Icons.chevron_right, color: Color(0xFF9EA1A3)),
+            ],
+          ),
+        ),
       ),
     );
   }

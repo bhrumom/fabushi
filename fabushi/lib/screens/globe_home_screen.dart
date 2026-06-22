@@ -19,10 +19,14 @@ import '../models/file_transfer_model.dart'
 import '../services/ai_backend_policy.dart';
 import '../services/alipay_service.dart'
     if (dart.library.html) '../services/alipay_service_web.dart';
+import '../services/app_settings.dart';
 import '../services/dacheng_ai_service.dart';
+import '../services/desktop_control/desktop_control_bridge.dart';
+import '../services/desktop_control/desktop_control_models.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/dharma_publish_service.dart';
 import '../services/inbound_share_service.dart';
+import '../services/openclaw/openclaw_runtime.dart';
 import 'dharma_publish_browser_screen.dart'
     if (dart.library.html) 'dharma_publish_browser_screen_web.dart';
 import '../widgets/earth_globe_widget.dart';
@@ -111,6 +115,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   final _membershipService = MembershipService();
   final _alipayService = AlipayService();
   final _appleIapService = AppleIapService();
+  bool _isOpenClawPanelLoading = false;
+  bool _isRunningOpenClawAction = false;
+  bool _isRestartingOpenClaw = false;
+  bool _isPreparingChromeConnector = false;
+  String _openClawRemoteGatewayUrl = '';
+  String _openClawModeLabel = '自动';
+  String _openClawPermissionLabel = '默认权限';
+  OpenClawRuntimeStatus? _openClawStatus;
+  DesktopControlBridgeStatus? _desktopControlStatus;
   bool? _buddhaAssetUnlocked;
   bool _isPurchasingBuddhaAsset = false;
   DateTime? _sendStartedAt;
@@ -227,6 +240,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       unawaited(_loadRemoteConversations());
       unawaited(_refreshBuddhaAssetEntitlement());
       unawaited(_consumeInitialShare());
+      unawaited(_loadOpenClawHomeStatus(probeOpenClaw: false));
     });
   }
 
@@ -258,6 +272,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       final summaries = await _dachengAiService.listConversations(
         token: authModel?.authToken,
         username: authModel?.currentUser?.username,
+        isMember: authModel?.hasPermission('premium') ?? false,
       );
       if (!mounted || summaries.isEmpty) return;
       setState(() {
@@ -457,26 +472,345 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           SafeArea(
             child: Consumer<FileTransferModel>(
               builder: (context, model, _) {
-                return Column(
-                  children: [
-                    _buildTopBar(authModel),
-                    Expanded(child: _buildHomeBody(context, model, authModel)),
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        widget.composerLeftInset ?? 18,
-                        8,
-                        18,
-                        16,
-                      ),
-                      child: _buildChatComposer(context, model),
-                    ),
-                  ],
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final useDesktopWorkbench =
+                        _isNativeMacOrWindows && constraints.maxWidth >= 920;
+                    if (useDesktopWorkbench) {
+                      return _buildDesktopHomeShell(context, model, authModel);
+                    }
+
+                    return Column(
+                      children: [
+                        _buildTopBar(authModel),
+                        Expanded(
+                          child: _buildHomeBody(context, model, authModel),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            widget.composerLeftInset ?? 18,
+                            8,
+                            18,
+                            16,
+                          ),
+                          child: _buildChatComposer(context, model),
+                        ),
+                      ],
+                    );
+                  },
                 );
               },
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDesktopHomeShell(
+    BuildContext context,
+    FileTransferModel model,
+    AuthModel? authModel,
+  ) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: Color(0xFFF7F8F7)),
+      child: Row(
+        children: [
+          _buildConversationSidebar(model, embedded: true),
+          Expanded(
+            child: Column(
+              children: [
+                _buildDesktopTopBar(),
+                Expanded(
+                  child: _buildDesktopWorkspace(context, model, authModel),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(34, 8, 34, 26),
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 960),
+                      child: _buildDesktopChatComposer(context, model),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopTopBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 18, 24, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FilledButton.icon(
+            onPressed: _createOpenClawHomeMobilePairingCode,
+            icon: const Icon(Icons.rocket_launch, size: 18),
+            label: const Text('来连接移动端'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF202124),
+              side: const BorderSide(color: Color(0xFFE5E5E1)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopWorkspace(
+    BuildContext context,
+    FileTransferModel model,
+    AuthModel? authModel,
+  ) {
+    final showChat =
+        _homeChatMessages.isNotEmpty ||
+        _isAiGenerating ||
+        _shouldShowGlobalSendProcess(model);
+
+    if (showChat) {
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 980),
+          child: _buildChatTimeline(model, light: true),
+        ),
+      );
+    }
+
+    return _buildDesktopIntroPanel(authModel);
+  }
+
+  Widget _buildDesktopIntroPanel(AuthModel? authModel) {
+    final displayName = authModel?.currentUser?.displayName.trim() ?? '';
+    final greeting = displayName.isEmpty ? '大乘' : 'Hi, $displayName';
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 620;
+        return Stack(
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 960),
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(32, compact ? 24 : 54, 32, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        greeting,
+                        style: TextStyle(
+                          color: const Color(0xFF17181A),
+                          fontSize: compact ? 42 : 50,
+                          fontWeight: FontWeight.w900,
+                          height: 1.02,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '你的本地 OpenClaw 超能力',
+                        style: TextStyle(
+                          color: const Color(0xFF17181A),
+                          fontSize: compact ? 35 : 44,
+                          fontWeight: FontWeight.w900,
+                          height: 1.06,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _DesktopModeChip(
+                            icon: Icons.coffee_outlined,
+                            label: '日常办公',
+                            selected: _openClawModeLabel == '自动',
+                            onTap: () =>
+                                setState(() => _openClawModeLabel = '自动'),
+                          ),
+                          _DesktopModeChip(
+                            icon: Icons.code,
+                            label: '代码开发',
+                            selected: _openClawModeLabel == '本机全能',
+                            onTap: () =>
+                                setState(() => _openClawModeLabel = '本机全能'),
+                          ),
+                          _DesktopModeChip(
+                            icon: Icons.palette_outlined,
+                            label: '设计创意',
+                            selected: _openClawModeLabel == '远程接管',
+                            onTap: () =>
+                                setState(() => _openClawModeLabel = '远程接管'),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: compact ? 36 : 64),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 12,
+                        children: [
+                          _DesktopPromptPill(
+                            icon: Icons.description_outlined,
+                            label: '文档处理',
+                            onTap: () => _prefillPrompt('帮我把这份文档整理成清晰摘要和行动清单'),
+                          ),
+                          _DesktopPromptPill(
+                            icon: Icons.public_outlined,
+                            label: '全球法布施',
+                            onTap: () => _prefillPrompt('帮我策划一次全球法布施发布任务'),
+                          ),
+                          _DesktopPromptPill(
+                            icon: Icons.chat_bubble_outline,
+                            label: '微信远程',
+                            onTap: () => _prefillPrompt('帮我检查微信和移动端远程控制是否可用'),
+                          ),
+                          _DesktopPromptPill(
+                            icon: Icons.apps_outlined,
+                            label: '更多',
+                            onTap: () =>
+                                _prefillPrompt('帮我列出当前可用的专家、技能、连接器和自动化能力'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      _buildDesktopStatusStrip(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 52,
+              top: compact ? 60 : 124,
+              child: _buildDesktopRemoteNotice(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDesktopRemoteNotice() {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 286),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEFF7F4),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE3EFEB)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF00C49A),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.rocket_launch,
+                    color: Colors.white,
+                    size: 14,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    '远程通知',
+                    style: TextStyle(
+                      color: Color(0xFF303437),
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: _refreshOpenClawHomeStatus,
+                  child: const Icon(
+                    Icons.refresh,
+                    size: 16,
+                    color: Color(0xFF777777),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _openClawRemoteGatewayUrl.trim().isEmpty
+                  ? '配置公网入口后，移动端或微信发来的任务会唤醒这台电脑。'
+                  : '移动端或微信已可通过远程入口唤醒本机 OpenClaw。',
+              style: const TextStyle(
+                color: Color(0xFF4C5555),
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: _createOpenClawHomeMobilePairingCode,
+                child: const Text('查看配对'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopStatusStrip() {
+    final openClawHealthy = _openClawStatus?.isHealthy == true;
+    final bridgeReady = _desktopControlStatus?.bridgeRunning == true;
+    final remoteReady = _openClawRemoteGatewayUrl.trim().isNotEmpty;
+    final chromeReady = _desktopControlStatus?.chrome.connected == true;
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _DesktopStatusPill(
+          icon: Icons.hub_outlined,
+          label: _isOpenClawPanelLoading
+              ? 'OpenClaw 检测中'
+              : openClawHealthy
+              ? 'OpenClaw 运行中'
+              : _openClawStatus?.label ?? 'OpenClaw 未检测',
+          active: openClawHealthy,
+          onTap: _refreshOpenClawHomeStatus,
+        ),
+        _DesktopStatusPill(
+          icon: Icons.desktop_mac_outlined,
+          label: bridgeReady ? '桌面工具已连接' : '桌面工具待启动',
+          active: bridgeReady,
+          onTap: _startDesktopBridgeFromHome,
+        ),
+        _DesktopStatusPill(
+          icon: Icons.chat_bubble_outline,
+          label: remoteReady ? '微信/移动端待命' : '远程未配置',
+          active: remoteReady,
+          onTap: _createOpenClawHomeMobilePairingCode,
+        ),
+        _DesktopStatusPill(
+          icon: Icons.public,
+          label: chromeReady ? 'Chrome 已连接' : 'Chrome 连接器',
+          active: chromeReady,
+          onTap: _prepareHomeChromeConnector,
+        ),
+      ],
     );
   }
 
@@ -512,7 +846,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
       child: SizedBox(
-        height: 52,
+        height: 56,
         child: Stack(
           alignment: Alignment.center,
           children: [
@@ -582,8 +916,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   Widget _buildAiBackendBadge() {
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
     return FutureBuilder<String>(
-      future: AiBackendPolicy.activeBackendLabel(),
+      future: AiBackendPolicy.activeBackendLabel(
+        isMember: authModel?.hasPermission('premium') ?? false,
+      ),
       builder: (context, snapshot) {
         final label = snapshot.data ?? '本机 OpenClaw';
         final isLocal = label.contains('OpenClaw');
@@ -640,105 +977,328 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final drawerWidth = (MediaQuery.sizeOf(context).width * 0.78)
         .clamp(292.0, 360.0)
         .toDouble();
-    final currentTitle = _conversationTitleFrom(_homeChatMessages);
 
     return Drawer(
       width: drawerWidth,
       backgroundColor: const Color(0xFF1E2024),
+      child: Consumer<FileTransferModel>(
+        builder: (context, model, _) {
+          return _buildConversationSidebar(model, embedded: false);
+        },
+      ),
+    );
+  }
+
+  Widget _buildConversationSidebar(
+    FileTransferModel model, {
+    required bool embedded,
+  }) {
+    final currentTitle = _conversationTitleFrom(_homeChatMessages);
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
+    final displayName = authModel?.currentUser?.displayName.trim() ?? '';
+    final userName = displayName.isNotEmpty
+        ? displayName
+        : authModel?.currentUser?.username ?? '大乘用户';
+    final background = embedded
+        ? const Color(0xFFEDEEEE)
+        : const Color(0xFF1E2024);
+    final primaryText = embedded ? const Color(0xFF202124) : Colors.white;
+    final secondaryText = embedded ? const Color(0xFF8D9295) : Colors.white54;
+    final buttonBackground = embedded
+        ? const Color(0xFFDCDDDB)
+        : const Color(0xFF30343A);
+    final isBusy = _isAiGenerating;
+
+    return Container(
+      width: embedded ? 286 : null,
+      decoration: BoxDecoration(
+        color: background,
+        border: embedded
+            ? const Border(right: BorderSide(color: Color(0xFFE0E1E0)))
+            : null,
+      ),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-          child: Consumer<FileTransferModel>(
-            builder: (context, model, _) {
-              final isBusy = _isAiGenerating;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          padding: EdgeInsets.fromLTRB(
+            embedded ? 16 : 18,
+            18,
+            embedded ? 16 : 18,
+            18,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '大乘',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: '关闭',
-                        onPressed: () => Navigator.maybePop(context),
-                        icon: const Icon(Icons.close, color: Colors.white70),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: isBusy
-                          ? null
-                          : () => _startNewConversation(model),
-                      icon: const Icon(Icons.add_comment_outlined, size: 20),
-                      label: const Text('开启新对话'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF30343A),
-                        disabledBackgroundColor: Colors.white.withValues(
-                          alpha: 0.08,
-                        ),
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  const _DrawerSectionLabel('今天'),
-                  if (_homeChatMessages.isNotEmpty) ...[
-                    _ConversationTile(
-                      title: currentTitle,
-                      selected: true,
-                      running: _shouldShowGlobalSendProcess(model),
-                      onTap: () => Navigator.maybePop(context),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
                   Expanded(
-                    child: _conversationHistory.isEmpty
-                        ? const Center(
-                            child: Text(
-                              '没有更多内容啦',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: _conversationHistory.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final conversation = _conversationHistory[index];
-                              return _ConversationTile(
-                                title: conversation.title,
-                                selected: false,
-                                running: conversation.isGlobalSendRunning,
-                                onTap: isBusy
-                                    ? null
-                                    : () => _openConversation(conversation),
-                              );
-                            },
-                          ),
+                    child: Text(
+                      '大乘',
+                      style: TextStyle(
+                        color: primaryText,
+                        fontSize: embedded ? 18 : 24,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '搜索',
+                    onPressed: () => _prefillPrompt('搜索当前对话、本机文件和项目资料：'),
+                    icon: Icon(Icons.search, color: secondaryText),
+                  ),
+                  IconButton(
+                    tooltip: embedded ? '检测' : '关闭',
+                    onPressed: embedded
+                        ? _refreshOpenClawHomeStatus
+                        : () => Navigator.maybePop(context),
+                    icon: Icon(
+                      embedded ? Icons.filter_alt_outlined : Icons.close,
+                      color: secondaryText,
+                    ),
                   ),
                 ],
-              );
-            },
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: isBusy ? null : () => _startNewConversation(model),
+                  icon: const Icon(Icons.add_comment_outlined, size: 20),
+                  label: const Text('新建任务'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: buttonBackground,
+                    disabledBackgroundColor: embedded
+                        ? const Color(0xFFE4E5E3)
+                        : Colors.white.withValues(alpha: 0.08),
+                    foregroundColor: primaryText,
+                    minimumSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              _buildSidebarActionTile(
+                icon: Icons.smart_toy_outlined,
+                label: '助理',
+                embedded: embedded,
+                onTap: () => _prefillPrompt('让本机 OpenClaw 助理接手：'),
+              ),
+              _buildSidebarActionTile(
+                icon: Icons.account_tree_outlined,
+                label: '项目',
+                embedded: embedded,
+                onTap: () => _prefillPrompt('新建一个本机 OpenClaw 项目，目标是：'),
+              ),
+              _buildSidebarActionTile(
+                icon: Icons.hub_outlined,
+                label: '专家',
+                trailing: '技能·连接器',
+                embedded: embedded,
+                onTap: () => _prefillPrompt('召唤适合当前任务的专家和技能：'),
+              ),
+              _buildSidebarActionTile(
+                icon: Icons.alarm_on_outlined,
+                label: '自动化',
+                embedded: embedded,
+                onTap: () => _prefillPrompt('创建一个 OpenClaw 自动化任务：'),
+              ),
+              _buildSidebarActionTile(
+                icon: Icons.apps_outlined,
+                label: '更多',
+                trailing: '资料库·灵感',
+                embedded: embedded,
+                onTap: () => _prefillPrompt('帮我列出可用的资料库、灵感、技能和连接器'),
+              ),
+              const SizedBox(height: 22),
+              _DrawerSectionLabel('任务', light: embedded),
+              if (_homeChatMessages.isNotEmpty) ...[
+                _ConversationTile(
+                  title: currentTitle,
+                  selected: true,
+                  running: _shouldShowGlobalSendProcess(model),
+                  light: embedded,
+                  onTap: () {
+                    if (!embedded) Navigator.maybePop(context);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+              Expanded(
+                child: _conversationHistory.isEmpty
+                    ? Center(
+                        child: Text(
+                          '没有更多内容啦',
+                          style: TextStyle(
+                            color: secondaryText,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        itemCount: _conversationHistory.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final conversation = _conversationHistory[index];
+                          return _ConversationTile(
+                            title: conversation.title,
+                            selected: false,
+                            running: conversation.isGlobalSendRunning,
+                            light: embedded,
+                            onTap: isBusy
+                                ? null
+                                : () => _openConversation(conversation),
+                          );
+                        },
+                      ),
+              ),
+              const SizedBox(height: 14),
+              _DrawerSectionLabel('空间', light: embedded),
+              _buildSidebarSpaceTile(
+                icon: Icons.folder_outlined,
+                title: '本机电脑',
+                subtitle: '浏览器、文件、桌面',
+                embedded: embedded,
+                onTap: _startDesktopBridgeFromHome,
+              ),
+              _buildSidebarSpaceTile(
+                icon: Icons.chat_bubble_outline,
+                title: '微信远程',
+                subtitle: _openClawRemoteGatewayUrl.trim().isEmpty
+                    ? '待配置'
+                    : '已配置',
+                embedded: embedded,
+                onTap: _createOpenClawHomeMobilePairingCode,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Color(0xFF00B894),
+                    child: Icon(Icons.self_improvement, color: Colors.white),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      userName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: primaryText,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '移动端配对',
+                    onPressed: _isRunningOpenClawAction
+                        ? null
+                        : _createOpenClawHomeMobilePairingCode,
+                    icon: Icon(Icons.qr_code_2_outlined, color: secondaryText),
+                  ),
+                ],
+              ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebarActionTile({
+    required IconData icon,
+    required String label,
+    required bool embedded,
+    required VoidCallback onTap,
+    String? trailing,
+  }) {
+    final foreground = embedded ? const Color(0xFF252729) : Colors.white70;
+    final muted = embedded ? const Color(0xFF9EA1A3) : Colors.white38;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 40),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, color: foreground, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            if (trailing != null)
+              Text(
+                trailing,
+                style: TextStyle(
+                  color: muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebarSpaceTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool embedded,
+    required VoidCallback onTap,
+  }) {
+    final foreground = embedded ? const Color(0xFF303236) : Colors.white70;
+    final muted = embedded ? const Color(0xFF8D9295) : Colors.white38;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, color: foreground, size: 19),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -919,7 +1479,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
-  Widget _buildChatTimeline(FileTransferModel model) {
+  Widget _buildChatTimeline(FileTransferModel model, {bool light = false}) {
     final hasSendingProcess = _shouldShowGlobalSendProcess(model);
 
     return ListView(
@@ -928,7 +1488,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
       children: [
         for (final message in _homeChatMessages) ...[
-          _buildChatBubble(message),
+          _buildChatBubble(message, light: light),
           const SizedBox(height: 18),
         ],
         if (_isAiGenerating)
@@ -950,6 +1510,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     ],
                     _buildChatBubble(
                       _HomeChatMessage(text: _streamingAiText, isUser: false),
+                      light: light,
                     ),
                   ],
                 ),
@@ -959,8 +1520,14 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
-  Widget _buildChatBubble(_HomeChatMessage message) {
-    final bubbleColor = message.isUser
+  Widget _buildChatBubble(_HomeChatMessage message, {bool light = false}) {
+    final bubbleColor = light
+        ? message.isUser
+              ? const Color(0xFF1B1B1D)
+              : message.isError
+              ? const Color(0xFFFFE8E8)
+              : Colors.white.withValues(alpha: 0.82)
+        : message.isUser
         ? const Color(0xFF1B1B1D)
         : message.isError
         ? Colors.red.withValues(alpha: 0.20)
@@ -978,39 +1545,64 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     return Align(
       alignment: alignment,
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 430),
+        constraints: BoxConstraints(maxWidth: light ? 680 : 430),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-        decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
-        child: _buildChatBubbleBody(message),
+        decoration: BoxDecoration(
+          color: bubbleColor,
+          borderRadius: radius,
+          border: light && !message.isUser
+              ? Border.all(
+                  color: message.isError
+                      ? const Color(0xFFFFC9C9)
+                      : const Color(0xFFE9ECEC),
+                )
+              : null,
+          boxShadow: light && !message.isUser
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ]
+              : null,
+        ),
+        child: _buildChatBubbleBody(message, light: light),
       ),
     );
   }
 
-  Widget _buildChatBubbleBody(_HomeChatMessage message) {
+  Widget _buildChatBubbleBody(_HomeChatMessage message, {bool light = false}) {
     switch (message.messageType) {
       case _HomeChatMessageType.contentPreview:
         final content = message.content;
-        if (content == null) return _MarkdownChatText(message.text);
+        if (content == null) {
+          return _MarkdownChatText(message.text, light: light);
+        }
         return _buildContentPreviewMessage(content);
       case _HomeChatMessageType.choice:
         return _buildInlineChoiceMessage(message);
       case _HomeChatMessageType.flashcardPreview:
         final deck = message.deck;
-        if (deck == null) return _MarkdownChatText(message.text);
+        if (deck == null) return _MarkdownChatText(message.text, light: light);
         return _buildFlashcardDeckPreview(deck);
       case _HomeChatMessageType.text:
         if (message.isUser || message.isError) {
           return Text(
             message.text,
             style: TextStyle(
-              color: message.isError ? Colors.red[100] : Colors.white,
+              color: message.isError
+                  ? light
+                        ? const Color(0xFF9D1C1C)
+                        : Colors.red[100]
+                  : Colors.white,
               fontSize: 17,
               height: 1.42,
               fontWeight: message.isUser ? FontWeight.w700 : FontWeight.w500,
             ),
           );
         }
-        return _MarkdownChatText(message.text);
+        return _MarkdownChatText(message.text, light: light);
     }
   }
 
@@ -1883,6 +2475,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         final remoteMessages = await _dachengAiService.getConversationMessages(
           conversationId: conversationId,
           token: authModel?.authToken,
+          isMember: authModel?.hasPermission('premium') ?? false,
         );
         messages = remoteMessages
             .map(
@@ -2181,6 +2774,228 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
+  Widget _buildDesktopChatComposer(
+    BuildContext context,
+    FileTransferModel model,
+  ) {
+    final isBusy =
+        model.isPreparingSend ||
+        _isPublishingDraft ||
+        _isPreparingFlashcardContent ||
+        _isFlashcardGenerating ||
+        (_isDharmaComposerMode && model.isTransferring);
+    final inputText = _chatInputController.text.trim();
+    final hasFlashcardContext =
+        (_activeFlashcardContent?.text.trim().isNotEmpty ?? false);
+    final canSubmit = _isFlashcardComposerMode
+        ? !_isPreparingFlashcardContent &&
+              !_isFlashcardGenerating &&
+              (inputText.isNotEmpty || hasFlashcardContext)
+        : _isDharmaComposerMode
+        ? _dharmaComposerTarget == DharmaComposerTarget.platform
+              ? (inputText.isNotEmpty || model.hasFiles) &&
+                    _selectedPublishPlatforms.isNotEmpty
+              : (inputText.isNotEmpty || model.hasFiles)
+        : inputText.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE4E5E4)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x11000000),
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _chatInputController,
+            enabled:
+                !model.isPreparingSend &&
+                !_isPreparingFlashcardContent &&
+                !_isFlashcardGenerating &&
+                (!model.isTransferring || !_isDharmaComposerMode),
+            minLines: 2,
+            maxLines: 5,
+            textInputAction: TextInputAction.newline,
+            style: const TextStyle(
+              color: Color(0xFF202124),
+              fontSize: 15,
+              height: 1.35,
+            ),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              hintText: '今天帮你做些什么？  @ 引用对话文件，/ 调用技能与指令',
+              hintStyle: TextStyle(color: Color(0xFF9AA0A6), fontSize: 15),
+              contentPadding: EdgeInsets.fromLTRB(18, 16, 18, 10),
+            ),
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) {
+              if (canSubmit) _submitComposer(model);
+            },
+          ),
+          const Divider(height: 1, color: Color(0xFFEDEDEB)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _DesktopComposerButton(
+                        icon: Icons.auto_fix_high_outlined,
+                        label: 'Craft',
+                        onTap: () => _prefillPrompt('帮我把这个任务重写成更清晰的执行指令：'),
+                      ),
+                      _buildDesktopModeMenu(),
+                      _buildDesktopSkillsMenu(),
+                      _buildDesktopConnectMenu(),
+                      _buildDesktopPermissionMenu(),
+                      _DesktopComposerButton(
+                        icon: Icons.folder_outlined,
+                        label: '选择工作空间',
+                        onTap: () => _prefillPrompt('把当前目录作为工作空间，帮我规划接下来的操作'),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: '添加',
+                  onPressed: isBusy
+                      ? null
+                      : () => _openSendContentMenu(context, model),
+                  icon: const Icon(Icons.add, color: Color(0xFF34363A)),
+                ),
+                IconButton(
+                  tooltip: '工具',
+                  onPressed: () => _prefillPrompt('帮我查找并安装适合当前任务的技能'),
+                  icon: const Icon(
+                    Icons.auto_awesome_outlined,
+                    color: Color(0xFF34363A),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '语音输入',
+                  onPressed: () => _prefillPrompt('请根据我的语音输入整理任务：'),
+                  icon: const Icon(Icons.mic_none, color: Color(0xFF34363A)),
+                ),
+                IconButton(
+                  tooltip: _isAiGenerating ? '停止' : '发送',
+                  onPressed: _isAiGenerating
+                      ? _stopAiGeneration
+                      : canSubmit
+                      ? () => _submitComposer(model)
+                      : null,
+                  icon: Icon(_isAiGenerating ? Icons.stop : Icons.arrow_upward),
+                  style: IconButton.styleFrom(
+                    backgroundColor: canSubmit || _isAiGenerating
+                        ? const Color(0xFF9EA0A3)
+                        : const Color(0xFFD6D6D2),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopModeMenu() {
+    return PopupMenuButton<String>(
+      tooltip: '模型模式',
+      onSelected: (value) => setState(() => _openClawModeLabel = value),
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: '自动', child: Text('自动')),
+        PopupMenuItem(value: '本机全能', child: Text('本机全能')),
+        PopupMenuItem(value: '远程接管', child: Text('远程接管')),
+        PopupMenuItem(value: '微信待命', child: Text('微信待命')),
+      ],
+      child: _DesktopComposerButton(
+        icon: Icons.psychology_alt_outlined,
+        label: _openClawModeLabel,
+      ),
+    );
+  }
+
+  Widget _buildDesktopSkillsMenu() {
+    return PopupMenuButton<String>(
+      tooltip: '技能',
+      onSelected: _handleDesktopSkillSelection,
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'find', child: Text('find-skills')),
+        PopupMenuItem(value: 'publish', child: Text('media-auto-publisher')),
+        PopupMenuItem(
+          value: 'wechat-draft',
+          child: Text('wechat-draft-publisher'),
+        ),
+        PopupMenuItem(value: 'browser', child: Text('Web Access')),
+        PopupMenuItem(value: 'doc', child: Text('PDF / Word / Excel')),
+        PopupMenuDivider(),
+        PopupMenuItem(value: 'import', child: Text('导入技能')),
+      ],
+      child: const _DesktopComposerButton(
+        icon: Icons.handyman_outlined,
+        label: '技能',
+      ),
+    );
+  }
+
+  Widget _buildDesktopConnectMenu() {
+    return PopupMenuButton<String>(
+      tooltip: '连应用',
+      onSelected: _handleDesktopConnectorSelection,
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'wechat', child: Text('微信')),
+        PopupMenuItem(value: 'wechatPlugin', child: Text('安装微信插件')),
+        PopupMenuItem(value: 'mobile', child: Text('移动端')),
+        PopupMenuItem(value: 'chrome', child: Text('Chrome')),
+        PopupMenuItem(value: 'desktop', child: Text('本机桌面')),
+        PopupMenuItem(value: 'remote', child: Text('远程入口')),
+        PopupMenuItem(value: 'permissions', child: Text('系统权限')),
+        PopupMenuDivider(),
+        PopupMenuItem(value: 'restart', child: Text('重启本机 AI')),
+        PopupMenuItem(value: 'channels', child: Text('渠道状态')),
+        PopupMenuItem(value: 'log', child: Text('复制诊断日志')),
+      ],
+      child: const _DesktopComposerButton(
+        icon: Icons.link_outlined,
+        label: '连应用',
+      ),
+    );
+  }
+
+  Widget _buildDesktopPermissionMenu() {
+    return PopupMenuButton<String>(
+      tooltip: '权限',
+      onSelected: (value) {
+        setState(() => _openClawPermissionLabel = value);
+        if (value == '完全访问权限') {
+          unawaited(_loadOpenClawHomeStatus(probeOpenClaw: true));
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: '默认权限', child: Text('默认权限')),
+        PopupMenuItem(value: '完全访问权限', child: Text('完全访问权限')),
+      ],
+      child: _DesktopComposerButton(
+        icon: Icons.verified_user_outlined,
+        label: _openClawPermissionLabel,
+      ),
+    );
+  }
+
   Widget _buildComposerActionButton(
     FileTransferModel model, {
     required bool canSubmit,
@@ -2396,6 +3211,69 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       return selected;
     }
     return false;
+  }
+
+  void _handleDesktopSkillSelection(String value) {
+    switch (value) {
+      case 'find':
+        _prefillPrompt('帮我查找并安装适合当前任务的 OpenClaw 技能');
+        break;
+      case 'publish':
+        _prefillPrompt('使用 media-auto-publisher 发布这篇内容');
+        break;
+      case 'wechat-draft':
+        _prefillPrompt('使用 wechat-draft-publisher 上传微信公众号草稿');
+        break;
+      case 'browser':
+        _prefillPrompt('使用浏览器自动化打开网页、截图并提取信息');
+        break;
+      case 'doc':
+        _prefillPrompt('帮我处理 PDF/Word/Excel 文件并生成结果');
+        break;
+      case 'import':
+        _prefillPrompt('帮我导入一个 OpenClaw 技能');
+        break;
+    }
+  }
+
+  void _handleDesktopConnectorSelection(String value) {
+    switch (value) {
+      case 'wechat':
+        unawaited(_loginOpenClawHomeWeChat());
+        break;
+      case 'wechatPlugin':
+        unawaited(_installOpenClawHomeWeChatPlugin());
+        break;
+      case 'mobile':
+        unawaited(_createOpenClawHomeMobilePairingCode());
+        break;
+      case 'chrome':
+        unawaited(_prepareHomeChromeConnector());
+        break;
+      case 'desktop':
+        unawaited(_startDesktopBridgeFromHome());
+        break;
+      case 'remote':
+        unawaited(_editOpenClawHomeRemoteGatewayUrl());
+        break;
+      case 'permissions':
+        unawaited(
+          _requestHomeDesktopPermission(
+            screenRecording:
+                _desktopControlStatus?.screenRecordingGranted != true,
+          ),
+        );
+        break;
+      case 'restart':
+        unawaited(_restartOpenClawFromHome());
+        break;
+      case 'channels':
+        unawaited(_inspectOpenClawHomeChannels());
+        break;
+      case 'log':
+        unawaited(_copyDiagnosticLogTailFromHome());
+        break;
+    }
   }
 
   void _submitComposer(FileTransferModel model) {
@@ -3760,6 +4638,271 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     });
   }
 
+  Future<void> _loadOpenClawHomeStatus({required bool probeOpenClaw}) async {
+    if (!AiBackendPolicy.isDesktopNative) return;
+    if (mounted) setState(() => _isOpenClawPanelLoading = true);
+    try {
+      final values = await Future.wait<dynamic>([
+        AppSettings.getOpenClawRemoteGatewayUrl(),
+        OpenClawRuntime.instance
+            .getStatus(probe: probeOpenClaw)
+            .timeout(const Duration(seconds: 8)),
+        DesktopControlBridge.instance.getStatus().timeout(
+          const Duration(seconds: 5),
+        ),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _openClawRemoteGatewayUrl = (values[0] as String).trim();
+        _openClawStatus = values[1] as OpenClawRuntimeStatus;
+        _desktopControlStatus = values[2] as DesktopControlBridgeStatus;
+        _isOpenClawPanelLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _openClawStatus = OpenClawRuntimeStatus(
+          state: OpenClawRuntimeState.failed,
+          message: 'OpenClaw 状态检测失败：$error',
+          checkedAt: DateTime.now(),
+        );
+        _isOpenClawPanelLoading = false;
+      });
+    }
+  }
+
+  Future<void> _refreshOpenClawHomeStatus() {
+    return _loadOpenClawHomeStatus(probeOpenClaw: true);
+  }
+
+  Future<void> _restartOpenClawFromHome() async {
+    if (!AiBackendPolicy.isDesktopNative || _isRestartingOpenClaw) return;
+    setState(() => _isRestartingOpenClaw = true);
+    OpenClawRuntimeStatus status;
+    try {
+      status = await OpenClawRuntime.instance.restart().timeout(
+        const Duration(seconds: 75),
+      );
+    } catch (error) {
+      status = OpenClawRuntimeStatus(
+        state: OpenClawRuntimeState.failed,
+        message: 'OpenClaw 重启失败：$error',
+        checkedAt: DateTime.now(),
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      _openClawStatus = status;
+      _isRestartingOpenClaw = false;
+    });
+    unawaited(_loadOpenClawHomeStatus(probeOpenClaw: true));
+    _showHomeSnack(
+      status.isHealthy ? '本机 OpenClaw 已启动' : status.message,
+      ok: status.isHealthy,
+    );
+  }
+
+  Future<void> _runOpenClawHomeCliAction(
+    String label,
+    Future<OpenClawCliResult> Function() action,
+  ) async {
+    if (!AiBackendPolicy.isDesktopNative || _isRunningOpenClawAction) return;
+    setState(() => _isRunningOpenClawAction = true);
+    OpenClawCliResult? result;
+    Object? error;
+    try {
+      result = await action();
+    } catch (err) {
+      error = err;
+      debugPrint('首页 OpenClaw $label 失败: $err');
+    }
+    if (!mounted) return;
+    setState(() => _isRunningOpenClawAction = false);
+    if (result == null) {
+      _showHomeSnack('$label 失败：$error', ok: false);
+      return;
+    }
+    await _showOpenClawCliResult(label, result);
+    unawaited(_loadOpenClawHomeStatus(probeOpenClaw: true));
+  }
+
+  Future<void> _showOpenClawCliResult(
+    String title,
+    OpenClawCliResult result,
+  ) async {
+    final output = [
+      result.command,
+      'exitCode=${result.exitCode}${result.timedOut ? ' · timed out' : ''}',
+      if (result.combinedOutput.trim().isNotEmpty) '',
+      if (result.combinedOutput.trim().isNotEmpty) result.combinedOutput,
+    ].join('\n');
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 620,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              output,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: output));
+              Navigator.of(context).pop();
+            },
+            child: const Text('复制'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editOpenClawHomeRemoteGatewayUrl() async {
+    final controller = TextEditingController(text: _openClawRemoteGatewayUrl);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('远程入口'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'wss://...',
+            helperText: '移动端、微信、小程序从公网远程连接这台电脑',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null) return;
+    await AppSettings.setOpenClawRemoteGatewayUrl(value.trim());
+    if (!mounted) return;
+    setState(() => _openClawRemoteGatewayUrl = value.trim());
+    _showHomeSnack('已保存远程入口，重启本机 AI 后生效');
+  }
+
+  Future<void> _createOpenClawHomeMobilePairingCode() async {
+    if (_openClawRemoteGatewayUrl.trim().isEmpty) {
+      await _editOpenClawHomeRemoteGatewayUrl();
+      if (_openClawRemoteGatewayUrl.trim().isEmpty) return;
+    }
+    await _runOpenClawHomeCliAction(
+      '移动端配对码',
+      () => OpenClawRuntime.instance.createMobilePairingCode(remote: true),
+    );
+  }
+
+  Future<void> _installOpenClawHomeWeChatPlugin() {
+    return _runOpenClawHomeCliAction(
+      '安装微信插件',
+      OpenClawRuntime.instance.installWeChatPlugin,
+    );
+  }
+
+  Future<void> _loginOpenClawHomeWeChat() {
+    return _runOpenClawHomeCliAction(
+      '微信扫码登录',
+      OpenClawRuntime.instance.loginWeChat,
+    );
+  }
+
+  Future<void> _inspectOpenClawHomeChannels() {
+    return _runOpenClawHomeCliAction(
+      'OpenClaw 渠道状态',
+      OpenClawRuntime.instance.inspectChannels,
+    );
+  }
+
+  Future<void> _prepareHomeChromeConnector() async {
+    if (!AiBackendPolicy.isDesktopNative || _isPreparingChromeConnector) {
+      return;
+    }
+    setState(() => _isPreparingChromeConnector = true);
+    String? path;
+    Object? error;
+    try {
+      path = await DesktopControlBridge.instance
+          .prepareChromeConnectorInstall()
+          .timeout(const Duration(seconds: 20));
+    } catch (err) {
+      error = err;
+    }
+    if (!mounted) return;
+    setState(() => _isPreparingChromeConnector = false);
+    unawaited(_loadOpenClawHomeStatus(probeOpenClaw: true));
+    _showHomeSnack(
+      error != null
+          ? 'Chrome 连接器准备失败：$error'
+          : path == null
+          ? '当前构建未启用 Chrome 连接器'
+          : 'Chrome 连接器目录已打开',
+      ok: error == null,
+    );
+  }
+
+  Future<void> _startDesktopBridgeFromHome() async {
+    try {
+      final status = await DesktopControlBridge.instance.ensureStarted();
+      if (!mounted) return;
+      setState(() => _desktopControlStatus = status);
+      _showHomeSnack(status.message, ok: status.desktopControlAvailable);
+    } catch (error) {
+      if (!mounted) return;
+      _showHomeSnack('桌面工具启动失败：$error', ok: false);
+    }
+  }
+
+  Future<void> _requestHomeDesktopPermission({
+    required bool screenRecording,
+  }) async {
+    final result = screenRecording
+        ? await DesktopControlBridge.instance.requestScreenRecordingPermission()
+        : await DesktopControlBridge.instance.requestAccessibilityPermission();
+    await _loadOpenClawHomeStatus(probeOpenClaw: true);
+    if (!mounted) return;
+    _showHomeSnack(result['message']?.toString() ?? '已打开系统权限请求');
+  }
+
+  Future<void> _copyDiagnosticLogTailFromHome() async {
+    final path = await DiagnosticLogService.instance.logFilePath();
+    final tail = await DiagnosticLogService.instance.tail(maxLines: 400);
+    await Clipboard.setData(
+      ClipboardData(text: '诊断日志路径: ${path ?? '无持久化日志路径'}\n\n$tail'),
+    );
+    if (!mounted) return;
+    _showHomeSnack(path == null ? '已复制当前诊断日志内容' : '已复制诊断日志内容和路径');
+  }
+
+  void _showHomeSnack(String text, {bool ok = true}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: ok ? Colors.green : Colors.redAccent,
+      ),
+    );
+  }
+
   Future<void> _setLocalLoopbackEnabled(
     FileTransferModel model,
     bool enabled,
@@ -4858,13 +6001,17 @@ class _AiActivityLabel extends StatelessWidget {
 
 class _MarkdownChatText extends StatelessWidget {
   final String data;
+  final bool light;
 
-  const _MarkdownChatText(this.data);
+  const _MarkdownChatText(this.data, {this.light = false});
 
   @override
   Widget build(BuildContext context) {
-    const baseStyle = TextStyle(
-      color: Colors.white,
+    final baseColor = light ? const Color(0xFF23272B) : Colors.white;
+    final mutedColor = light ? const Color(0xFF5E666B) : Colors.white70;
+    final codeColor = light ? const Color(0xFF123B59) : const Color(0xFFE9F4FF);
+    final baseStyle = TextStyle(
+      color: baseColor,
       fontSize: 17,
       height: 1.46,
       fontWeight: FontWeight.w500,
@@ -4881,9 +6028,11 @@ class _MarkdownChatText extends StatelessWidget {
         h1: baseStyle.copyWith(fontSize: 22, fontWeight: FontWeight.w800),
         h2: baseStyle.copyWith(fontSize: 20, fontWeight: FontWeight.w800),
         h3: baseStyle.copyWith(fontSize: 18, fontWeight: FontWeight.w800),
-        blockquote: baseStyle.copyWith(color: Colors.white70),
+        blockquote: baseStyle.copyWith(color: mutedColor),
         blockquoteDecoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
+          color: light
+              ? const Color(0xFFF2F5F5)
+              : Colors.white.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(8),
           border: Border(
             left: BorderSide(
@@ -4893,14 +6042,20 @@ class _MarkdownChatText extends StatelessWidget {
           ),
         ),
         code: baseStyle.copyWith(
-          color: const Color(0xFFE9F4FF),
+          color: codeColor,
           fontFamily: 'monospace',
           fontSize: 15,
         ),
         codeblockDecoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.24),
+          color: light
+              ? const Color(0xFFF3F5F6)
+              : Colors.black.withValues(alpha: 0.24),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(
+            color: light
+                ? const Color(0xFFE1E5E6)
+                : Colors.white.withValues(alpha: 0.08),
+          ),
         ),
         listBullet: baseStyle,
         a: baseStyle.copyWith(
@@ -4915,7 +6070,11 @@ class _MarkdownChatText extends StatelessWidget {
         ),
         horizontalRuleDecoration: BoxDecoration(
           border: Border(
-            top: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+            top: BorderSide(
+              color: light
+                  ? const Color(0xFFE1E5E6)
+                  : Colors.white.withValues(alpha: 0.14),
+            ),
           ),
         ),
       ),
@@ -5125,8 +6284,9 @@ class _HomeConversation {
 
 class _DrawerSectionLabel extends StatelessWidget {
   final String label;
+  final bool light;
 
-  const _DrawerSectionLabel(this.label);
+  const _DrawerSectionLabel(this.label, {this.light = false});
 
   @override
   Widget build(BuildContext context) {
@@ -5134,8 +6294,8 @@ class _DrawerSectionLabel extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 10),
       child: Text(
         label,
-        style: const TextStyle(
-          color: Colors.white38,
+        style: TextStyle(
+          color: light ? const Color(0xFF9EA1A3) : Colors.white38,
           fontSize: 16,
           fontWeight: FontWeight.w800,
         ),
@@ -5148,17 +6308,25 @@ class _ConversationTile extends StatelessWidget {
   final String title;
   final bool selected;
   final bool running;
+  final bool light;
   final VoidCallback? onTap;
 
   const _ConversationTile({
     required this.title,
     required this.selected,
     this.running = false,
+    this.light = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final foreground = light ? const Color(0xFF202124) : Colors.white;
+    final muted = light ? const Color(0xFF6E7377) : Colors.white70;
+    final selectedColor = light
+        ? const Color(0xFFDCDDDB)
+        : Colors.white.withValues(alpha: 0.08);
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -5166,9 +6334,7 @@ class _ConversationTile extends StatelessWidget {
         constraints: const BoxConstraints(minHeight: 56),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: selected
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.transparent,
+          color: selected ? selectedColor : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -5184,15 +6350,15 @@ class _ConversationTile extends StatelessWidget {
                   )
                 : Icon(
                     selected ? Icons.chat_bubble : Icons.history,
-                    color: Colors.white70,
+                    color: muted,
                     size: 18,
                   ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: foreground,
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
                 ),
@@ -5252,6 +6418,196 @@ class _QuickPromptPill extends StatelessWidget {
                 fontSize: labelSize,
                 fontWeight: FontWeight.w800,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopModeChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _DesktopModeChip({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF2F3033) : const Color(0xFFE7E7E5),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: selected ? Colors.white : const Color(0xFF4E5356),
+              size: 19,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : const Color(0xFF4E5356),
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopPromptPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _DesktopPromptPill({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E3E2)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: const Color(0xFF4E5356), size: 19),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF303236),
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopStatusPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _DesktopStatusPill({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFFE4F7EF) : const Color(0xFFE9EAEA),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: active ? const Color(0xFFB6E8D5) : const Color(0xFFDCDDDB),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: active ? const Color(0xFF00A37E) : const Color(0xFF6E7377),
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: active
+                    ? const Color(0xFF047B62)
+                    : const Color(0xFF5F6368),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopComposerButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  const _DesktopComposerButton({
+    required this.icon,
+    required this.label,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(9),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: const Color(0xFF34363A), size: 18),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF34363A),
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(width: 3),
+            const Icon(
+              Icons.keyboard_arrow_down,
+              color: Color(0xFF70757A),
+              size: 16,
             ),
           ],
         ),
