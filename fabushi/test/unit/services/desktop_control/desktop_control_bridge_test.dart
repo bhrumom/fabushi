@@ -128,6 +128,40 @@ void main() {
     expect(result.errorCode, 'disabled_by_build');
   });
 
+  test('desktop permission requests delegate to the host API', () async {
+    final host = _FakeDesktopControlHostApi();
+    final bridge = DesktopControlBridge.test(
+      hostApi: host,
+      enabledByBuild: () => true,
+      platformProvider: () => 'macos',
+      random: Random(7),
+    );
+
+    final screen = await bridge.requestScreenRecordingPermission();
+    final accessibility = await bridge.requestAccessibilityPermission();
+
+    expect(screen['requested'], isTrue);
+    expect(accessibility['trusted'], isTrue);
+    expect(host.calls, ['requestScreenRecording', 'requestAccessibility']);
+  });
+
+  test('desktop permission requests honor unsupported platforms', () async {
+    final host = _FakeDesktopControlHostApi();
+    final bridge = DesktopControlBridge.test(
+      hostApi: host,
+      enabledByBuild: () => true,
+      platformProvider: () => 'android',
+      random: Random(8),
+    );
+
+    final screen = await bridge.requestScreenRecordingPermission();
+    final accessibility = await bridge.requestAccessibilityPermission();
+
+    expect(screen['requested'], isFalse);
+    expect(accessibility['trusted'], isFalse);
+    expect(host.calls, isEmpty);
+  });
+
   test('tool policy exposes the expected migration surface', () {
     expect(
       DesktopControlPolicy.supportedTools,
@@ -160,6 +194,18 @@ class _FakeDesktopControlHostApi implements DesktopControlHostApi {
     'screenRecordingGranted': true,
     'accessibilityGranted': true,
   };
+
+  @override
+  Future<Map<String, dynamic>> requestScreenRecording() async {
+    calls.add('requestScreenRecording');
+    return {'requested': true};
+  }
+
+  @override
+  Future<Map<String, dynamic>> requestAccessibility() async {
+    calls.add('requestAccessibility');
+    return {'trusted': true};
+  }
 
   @override
   Future<Map<String, dynamic>> observe() async {

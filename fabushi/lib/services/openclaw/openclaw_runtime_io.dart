@@ -86,6 +86,50 @@ class OpenClawGatewayTarget {
   });
 }
 
+class OpenClawCliResult {
+  final List<String> args;
+  final int exitCode;
+  final String stdout;
+  final String stderr;
+  final bool timedOut;
+
+  const OpenClawCliResult({
+    required this.args,
+    required this.exitCode,
+    required this.stdout,
+    required this.stderr,
+    this.timedOut = false,
+  });
+
+  bool get succeeded => exitCode == 0 && !timedOut;
+
+  String get command => 'openclaw ${args.join(' ')}';
+
+  String get combinedOutput {
+    final parts = <String>[
+      if (stdout.trim().isNotEmpty) stdout.trimRight(),
+      if (stderr.trim().isNotEmpty) stderr.trimRight(),
+    ];
+    return parts.join('\n');
+  }
+
+  OpenClawCliResult append(OpenClawCliResult next) {
+    return OpenClawCliResult(
+      args: [...args, '&&', ...next.args],
+      exitCode: next.exitCode,
+      stdout: [
+        if (stdout.trim().isNotEmpty) stdout.trimRight(),
+        if (next.stdout.trim().isNotEmpty) next.stdout.trimRight(),
+      ].join('\n'),
+      stderr: [
+        if (stderr.trim().isNotEmpty) stderr.trimRight(),
+        if (next.stderr.trim().isNotEmpty) next.stderr.trimRight(),
+      ].join('\n'),
+      timedOut: timedOut || next.timedOut,
+    );
+  }
+}
+
 class _OpenClawBundleSpec {
   final String version;
   final int defaultPort;
@@ -170,6 +214,28 @@ class _DesktopToolsLaunch {
   });
 }
 
+class _OpenClawCliLaunch {
+  final _OpenClawBundleSpec spec;
+  final Directory runtimeDir;
+  final Directory stateRoot;
+  final File configPath;
+  final String nodePath;
+  final String cliPath;
+  final int port;
+  final String token;
+
+  const _OpenClawCliLaunch({
+    required this.spec,
+    required this.runtimeDir,
+    required this.stateRoot,
+    required this.configPath,
+    required this.nodePath,
+    required this.cliPath,
+    required this.port,
+    required this.token,
+  });
+}
+
 class OpenClawRuntimeException implements Exception {
   final String message;
 
@@ -193,8 +259,12 @@ class OpenClawRuntime {
   static const String _defaultDeepSeekModel =
       AppSettings.defaultOpenClawDeepSeekModel;
   static const String _backendDeepSeekProviderId = 'dacheng-deepseek-proxy';
+  static const String _desktopToolsPluginId = 'dacheng-desktop-tools';
+  static const String _weChatPluginId = 'openclaw-weixin';
+  static const String _weChatPluginPackage = '@tencent-weixin/openclaw-weixin';
   static const Duration _startupTimeout = Duration(seconds: 120);
   static const Duration _probeTimeout = Duration(seconds: 3);
+  static const Duration _cliDefaultTimeout = Duration(seconds: 45);
 
   Process? _process;
   Future<OpenClawGatewayTarget>? _starting;
@@ -370,6 +440,125 @@ class OpenClawRuntime {
     }
   }
 
+  Future<OpenClawCliResult> createMobilePairingCode({bool remote = true}) {
+    return runCli([
+      'qr',
+      if (remote) '--remote',
+      '--json',
+    ], timeout: const Duration(seconds: 30));
+  }
+
+  Future<OpenClawCliResult> loginWeChat() {
+    return runCli([
+      'channels',
+      'login',
+      '--channel',
+      _weChatPluginId,
+    ], timeout: const Duration(minutes: 3));
+  }
+
+  Future<OpenClawCliResult> inspectChannels() {
+    return runCli([
+      'channels',
+      'status',
+      '--probe',
+    ], timeout: const Duration(seconds: 40));
+  }
+
+  Future<OpenClawCliResult> installWeChatPlugin() async {
+    final install = await runCli(
+      ['plugins', 'install', _weChatPluginPackage, '--force'],
+      timeout: const Duration(minutes: 3),
+      ensureGateway: false,
+    );
+    if (!install.succeeded) return install;
+    final enable = await runCli(
+      ['config', 'set', 'plugins.entries.$_weChatPluginId.enabled', 'true'],
+      timeout: const Duration(seconds: 30),
+      ensureGateway: false,
+    );
+    return install.append(enable);
+  }
+
+  Future<OpenClawCliResult> runCli(
+    List<String> args, {
+    Duration timeout = _cliDefaultTimeout,
+    bool ensureGateway = true,
+  }) async {
+    if (args.isEmpty) {
+      throw const OpenClawRuntimeException('OpenClaw CLI 参数不能为空');
+    }
+    final launch = await _prepareCliLaunch(ensureGateway: ensureGateway);
+    final processArgs = <String>[launch.cliPath, ...args];
+    _diag(
+      'cli.start',
+      data: {
+        'args': args,
+        'runtimeDir': launch.runtimeDir.path,
+        'configPath': launch.configPath.path,
+        'timeoutSeconds': timeout.inSeconds,
+      },
+    );
+
+    final process = await Process.start(
+      launch.nodePath,
+      processArgs,
+      workingDirectory: launch.runtimeDir.path,
+      environment: _buildOpenClawEnvironment(
+        runtimeDir: launch.runtimeDir,
+        stateRoot: launch.stateRoot,
+        configPath: launch.configPath,
+        port: launch.port,
+        token: launch.token,
+      ),
+      mode: ProcessStartMode.normal,
+      runInShell: false,
+    );
+    final stdoutBuffer = StringBuffer();
+    final stderrBuffer = StringBuffer();
+    final stdoutSub = process.stdout
+        .transform(utf8.decoder)
+        .listen((chunk) => _appendBounded(stdoutBuffer, chunk));
+    final stderrSub = process.stderr
+        .transform(utf8.decoder)
+        .listen((chunk) => _appendBounded(stderrBuffer, chunk));
+
+    var timedOut = false;
+    int exitCode;
+    try {
+      exitCode = await process.exitCode.timeout(timeout);
+    } on TimeoutException {
+      timedOut = true;
+      process.kill();
+      exitCode = await process.exitCode.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => -1,
+      );
+    } finally {
+      await stdoutSub.cancel();
+      await stderrSub.cancel();
+    }
+
+    final result = OpenClawCliResult(
+      args: args,
+      exitCode: exitCode,
+      stdout: stdoutBuffer.toString(),
+      stderr: stderrBuffer.toString(),
+      timedOut: timedOut,
+    );
+    _diag(
+      result.succeeded ? 'cli.complete' : 'cli.failed',
+      data: {
+        'args': args,
+        'exitCode': exitCode,
+        'timedOut': timedOut,
+        'stdoutPreview': _previewProcessOutput(result.stdout),
+        'stderrPreview': _previewProcessOutput(result.stderr),
+      },
+    );
+    return result;
+  }
+
   Future<OpenClawGatewayTarget> _ensureStartedInternal({
     String? authToken,
     String? username,
@@ -400,6 +589,7 @@ class OpenClawRuntime {
     final modelOverride = await AppSettings.getOpenClawModelOverride(
       defaultValue: spec.defaultModelOverride ?? '',
     );
+    final remoteGatewayUrl = await AppSettings.getOpenClawRemoteGatewayUrl();
     final desktopTools = await _ensureDesktopTools();
     _diag(
       'ensure-start.config',
@@ -412,6 +602,7 @@ class OpenClawRuntime {
         'deepSeekProxyBaseUrl': deepSeekProxyBaseUrl,
         'hasAuthToken': requestedAuthToken.isNotEmpty,
         'modelOverrideSet': modelOverride.trim().isNotEmpty,
+        'remoteGatewayUrlSet': remoteGatewayUrl.trim().isNotEmpty,
         'desktopToolsUri': desktopTools.uri?.toString(),
         'desktopToolsStatus': desktopTools.statusJson,
       },
@@ -446,6 +637,9 @@ class OpenClawRuntime {
 
     final runtimeDir = await _prepareBundle(spec, platformKey);
     final stateRoot = await _stateRoot();
+    final desktopToolsPluginDir = await _ensureDesktopToolsPlugin(
+      stateRoot: stateRoot,
+    );
     if (_process != null) {
       _diag(
         'process.stop-stale-before-start',
@@ -472,11 +666,14 @@ class OpenClawRuntime {
       );
     }
     final configPath = await _ensureConfigFile(
+      runtimeDir: runtimeDir,
       stateRoot: stateRoot,
       port: port,
       token: token,
       backendDeepSeekModel: backendDeepSeekModel,
       deepSeekProxyBaseUrl: deepSeekProxyBaseUrl,
+      remoteGatewayUrl: remoteGatewayUrl,
+      extraPluginLoadPaths: [desktopToolsPluginDir.path],
     );
     await _ensureAgentModelConfig(
       stateRoot: stateRoot,
@@ -521,37 +718,36 @@ class OpenClawRuntime {
         'args': args,
         'workingDirectory': runtimeDir.path,
         'configPath': configPath.path,
+        'desktopToolsPluginPath': desktopToolsPluginDir.path,
         'desktopToolsManifestPath': desktopToolsManifestPath.path,
         'requestedPort': requestedPort,
         'selectedPort': port,
       },
     );
 
-    final env = Map<String, String>.from(Platform.environment)
-      ..addAll({
-        'OPENCLAW_GATEWAY_PORT': '$port',
-        'OPENCLAW_GATEWAY_BIND': 'loopback',
-        'OPENCLAW_GATEWAY_TOKEN': token,
-        'OPENCLAW_CONFIG_PATH': configPath.path,
-        'OPENCLAW_STATE_DIR': p.join(stateRoot.path, 'state'),
-        'OPENCLAW_AGENT_DIR': p.join(stateRoot.path, 'agents'),
-        'OPENCLAW_WORKSPACE': p.join(stateRoot.path, 'workspace'),
-        'DACHENG_DESKTOP_TOOLS_ENABLED': desktopTools.uri == null ? '0' : '1',
-        'DACHENG_DESKTOP_TOOLS_MANIFEST': desktopToolsManifestPath.path,
-        if (desktopTools.uri != null)
-          'DACHENG_DESKTOP_TOOLS_URL': desktopTools.uri.toString(),
-        if (desktopTools.token != null)
-          'DACHENG_DESKTOP_TOOLS_TOKEN': desktopTools.token!,
-        'DACHENG_APP_RUNTIME': '1',
-        'DACHENG_AUTH_TOKEN': (authToken != null && authToken.isNotEmpty)
-            ? authToken
-            : token,
-        if (username != null && username.isNotEmpty)
-          'DACHENG_USERNAME': username,
-        'DACHENG_IS_MEMBER': isMember ? '1' : '0',
-        'DACHENG_OPENCLAW_PROXY_TOKEN': 'dacheng-openclaw-proxy',
-        'OPENCLAW_DISABLE_BONJOUR': '1',
-      });
+    final env =
+        _buildOpenClawEnvironment(
+          runtimeDir: runtimeDir,
+          stateRoot: stateRoot,
+          configPath: configPath,
+          port: port,
+          token: token,
+        )..addAll({
+          'DACHENG_DESKTOP_TOOLS_ENABLED': desktopTools.uri == null ? '0' : '1',
+          'DACHENG_DESKTOP_TOOLS_MANIFEST': desktopToolsManifestPath.path,
+          if (desktopTools.uri != null)
+            'DACHENG_DESKTOP_TOOLS_URL': desktopTools.uri.toString(),
+          if (desktopTools.token != null)
+            'DACHENG_DESKTOP_TOOLS_TOKEN': desktopTools.token!,
+          'DACHENG_APP_RUNTIME': '1',
+          'DACHENG_AUTH_TOKEN': (authToken != null && authToken.isNotEmpty)
+              ? authToken
+              : token,
+          if (username != null && username.isNotEmpty)
+            'DACHENG_USERNAME': username,
+          'DACHENG_IS_MEMBER': isMember ? '1' : '0',
+          'DACHENG_OPENCLAW_PROXY_TOKEN': 'dacheng-openclaw-proxy',
+        });
 
     _process = await Process.start(
       nodePath,
@@ -1644,17 +1840,29 @@ class OpenClawRuntime {
   }
 
   Future<File> _ensureConfigFile({
+    required Directory runtimeDir,
     required Directory stateRoot,
     required int port,
     required String token,
     required String backendDeepSeekModel,
     required String deepSeekProxyBaseUrl,
+    required String remoteGatewayUrl,
+    List<String> extraPluginLoadPaths = const [],
   }) async {
     final configDir = Directory(p.join(stateRoot.path, 'config'));
     await configDir.create(recursive: true);
     final workspace = Directory(p.join(stateRoot.path, 'workspace'));
     await workspace.create(recursive: true);
     final configPath = File(p.join(configDir.path, 'openclaw.json'));
+    final bundledPluginLoadPaths = await _bundledPluginLoadPaths(runtimeDir);
+    final pluginLoadPaths = _mergeStringLists(
+      extraPluginLoadPaths,
+      bundledPluginLoadPaths,
+    );
+    final hasWeChatPlugin = pluginLoadPaths.any(
+      (path) => p.basename(path) == _weChatPluginId,
+    );
+    final remoteUrl = remoteGatewayUrl.trim();
 
     final config = <String, dynamic>{
       'gateway': {
@@ -1662,6 +1870,7 @@ class OpenClawRuntime {
         'port': port,
         'bind': 'loopback',
         'auth': {'mode': 'token', 'token': token},
+        if (remoteUrl.isNotEmpty) 'remote': {'enabled': true, 'url': remoteUrl},
         'http': {
           'endpoints': {
             'chatCompletions': {'enabled': true},
@@ -1706,22 +1915,47 @@ class OpenClawRuntime {
           },
         },
       },
+      'browser': {
+        'enabled': true,
+        'defaultProfile': 'openclaw',
+        'headless': false,
+        'ssrfPolicy': {'dangerouslyAllowPrivateNetwork': true},
+      },
+      'canvas': {
+        'enabled': true,
+        'host': {'enabled': true, 'root': p.join(stateRoot.path, 'canvas')},
+      },
+      'tools': {
+        'profile': 'full',
+        'exec': {'host': 'gateway', 'security': 'full', 'ask': 'off'},
+      },
       'plugins': {
-        'enabled': false,
-        'allow': <String>[],
+        'enabled': true,
         'deny': <String>[],
-        'load': {'paths': <String>[]},
-        'slots': {'memory': 'none'},
+        'load': {'paths': pluginLoadPaths},
+        'slots': {'memory': 'memory-core'},
         'entries': <String, dynamic>{
-          'memory-core': {'enabled': false},
+          'memory-core': {'enabled': true},
           'bonjour': {'enabled': false},
-          'browser': {'enabled': false},
-          'canvas': {'enabled': false},
-          'device-pair': {'enabled': false},
-          'file-transfer': {'enabled': false},
-          'phone-control': {'enabled': false},
-          'talk-voice': {'enabled': false},
+          'browser': {'enabled': true},
+          'canvas': {'enabled': true},
+          'device-pair': {'enabled': true},
+          'file-transfer': {'enabled': true},
+          'phone-control': {'enabled': true},
+          'talk-voice': {'enabled': true},
+          _desktopToolsPluginId: {'enabled': true},
+          if (hasWeChatPlugin) _weChatPluginId: {'enabled': true},
         },
+      },
+      'channels': {
+        'defaults': {'groupPolicy': 'allowlist'},
+        if (hasWeChatPlugin)
+          _weChatPluginId: {
+            'enabled': true,
+            'dmPolicy': 'pairing',
+            'allowFrom': <String>[],
+            'accounts': <String, dynamic>{},
+          },
       },
       'agents': {
         'defaults': {
@@ -1755,6 +1989,9 @@ class OpenClawRuntime {
         'gatewayMode': _mutableMap(merged['gateway'])['mode'],
         'backendDeepSeekModel': backendDeepSeekModel,
         'deepSeekProxyBaseUrl': deepSeekProxyBaseUrl,
+        'remoteGatewayUrlSet': remoteUrl.isNotEmpty,
+        'pluginLoadPaths': pluginLoadPaths,
+        'hasWeChatPlugin': hasWeChatPlugin,
       },
     );
     return configPath;
@@ -1854,6 +2091,298 @@ class OpenClawRuntime {
     return modelsPath;
   }
 
+  Future<_OpenClawCliLaunch> _prepareCliLaunch({
+    required bool ensureGateway,
+  }) async {
+    if (ensureGateway) {
+      await ensureStarted();
+    }
+    final platformKey = _platformKey;
+    if (platformKey == null) {
+      throw const OpenClawRuntimeException('当前平台不支持内置 OpenClaw Gateway');
+    }
+    final spec = await _loadSpec(platformKey, checkUpdates: false);
+    final runtimeDir = await _prepareBundle(spec, platformKey);
+    final stateRoot = await _stateRoot();
+    final desktopToolsPluginDir = await _ensureDesktopToolsPlugin(
+      stateRoot: stateRoot,
+    );
+    final port = await AppSettings.getOpenClawGatewayPort(
+      defaultValue: spec.defaultPort,
+    );
+    final token = await AppSettings.getOpenClawGatewayToken();
+    final backendDeepSeekModel = _backendDeepSeekModelRef(
+      await AppSettings.getOpenClawDeepSeekModel(
+        defaultValue: _defaultDeepSeekModelFor(spec.defaultModel),
+      ),
+    );
+    final configPath = await _ensureConfigFile(
+      runtimeDir: runtimeDir,
+      stateRoot: stateRoot,
+      port: port,
+      token: token,
+      backendDeepSeekModel: backendDeepSeekModel,
+      deepSeekProxyBaseUrl: _deepSeekProxyBaseUrl(),
+      remoteGatewayUrl: await AppSettings.getOpenClawRemoteGatewayUrl(),
+      extraPluginLoadPaths: [desktopToolsPluginDir.path],
+    );
+    final nodePath = p.join(runtimeDir.path, spec.nodeExecutable);
+    final cliPath = p.join(runtimeDir.path, spec.cliEntrypoint);
+    if (!await File(nodePath).exists()) {
+      throw OpenClawRuntimeException('OpenClaw 内置 Node 不存在: $nodePath');
+    }
+    if (!await File(cliPath).exists()) {
+      throw OpenClawRuntimeException('OpenClaw CLI 入口不存在: $cliPath');
+    }
+    return _OpenClawCliLaunch(
+      spec: spec,
+      runtimeDir: runtimeDir,
+      stateRoot: stateRoot,
+      configPath: configPath,
+      nodePath: nodePath,
+      cliPath: cliPath,
+      port: port,
+      token: token,
+    );
+  }
+
+  Map<String, String> _buildOpenClawEnvironment({
+    required Directory runtimeDir,
+    required Directory stateRoot,
+    required File configPath,
+    required int port,
+    required String token,
+  }) {
+    final nodeBinDir = Platform.isWindows
+        ? p.join(runtimeDir.path, 'node')
+        : p.join(runtimeDir.path, 'node', 'bin');
+    final pathKey = Platform.isWindows ? 'Path' : 'PATH';
+    final currentPath =
+        Platform.environment[pathKey] ?? Platform.environment['PATH'] ?? '';
+    final separator = Platform.isWindows ? ';' : ':';
+    final pathValue = currentPath.isEmpty
+        ? nodeBinDir
+        : '$nodeBinDir$separator$currentPath';
+    final env = Map<String, String>.from(Platform.environment)
+      ..addAll({
+        'OPENCLAW_GATEWAY_PORT': '$port',
+        'OPENCLAW_GATEWAY_BIND': 'loopback',
+        'OPENCLAW_GATEWAY_TOKEN': token,
+        'OPENCLAW_CONFIG_PATH': configPath.path,
+        'OPENCLAW_STATE_DIR': p.join(stateRoot.path, 'state'),
+        'OPENCLAW_AGENT_DIR': p.join(stateRoot.path, 'agents'),
+        'OPENCLAW_WORKSPACE': p.join(stateRoot.path, 'workspace'),
+        'OPENCLAW_DISABLE_BONJOUR': '1',
+        pathKey: pathValue,
+        if (pathKey != 'PATH') 'PATH': pathValue,
+      });
+    return env;
+  }
+
+  Future<List<String>> _bundledPluginLoadPaths(Directory runtimeDir) async {
+    final paths = <String>[];
+    final weChatPluginDir = Directory(
+      p.join(runtimeDir.path, 'plugins', _weChatPluginId),
+    );
+    if (await File(
+      p.join(weChatPluginDir.path, 'openclaw.plugin.json'),
+    ).exists()) {
+      paths.add(weChatPluginDir.path);
+    }
+    return paths;
+  }
+
+  Future<Directory> _ensureDesktopToolsPlugin({
+    required Directory stateRoot,
+  }) async {
+    final dir = Directory(
+      p.join(stateRoot.path, 'plugins', _desktopToolsPluginId),
+    );
+    await dir.create(recursive: true);
+    final tools = DesktopControlPolicy.supportedTools.toList()..sort();
+    await File(p.join(dir.path, 'package.json')).writeAsString(
+      const JsonEncoder.withIndent('  ').convert({
+        'name': '@dacheng/openclaw-desktop-tools',
+        'version': '1.0.0',
+        'type': 'module',
+        'openclaw': {
+          'extensions': ['./index.mjs'],
+        },
+      }),
+    );
+    await File(p.join(dir.path, 'openclaw.plugin.json')).writeAsString(
+      const JsonEncoder.withIndent('  ').convert({
+        'id': _desktopToolsPluginId,
+        'name': 'Dacheng Desktop Tools',
+        'description':
+            'Expose Fabushi desktop and Chrome control bridge tools to embedded OpenClaw.',
+        'activation': {'onStartup': true},
+        'contracts': {'tools': tools},
+        'configSchema': {
+          'type': 'object',
+          'additionalProperties': false,
+          'properties': <String, dynamic>{},
+        },
+      }),
+    );
+    await File(
+      p.join(dir.path, 'index.mjs'),
+    ).writeAsString(_desktopToolsPluginSource(tools));
+    _diag(
+      'desktop-tools.plugin-written',
+      data: {'pluginDir': dir.path, 'tools': tools},
+    );
+    return dir;
+  }
+
+  String _desktopToolsPluginSource(List<String> tools) {
+    final toolsJson = jsonEncode(tools);
+    return '''
+const tools = $toolsJson;
+
+const descriptions = {
+  "desktop.observe": "Observe the active desktop application and visible windows.",
+  "desktop.screenshot": "Capture a screenshot of the local desktop.",
+  "desktop.windows": "List visible desktop windows.",
+  "desktop.click": "Click a local desktop coordinate after user confirmation.",
+  "desktop.type": "Type text into the focused local desktop app after user confirmation.",
+  "desktop.hotkey": "Send a keyboard shortcut to the local desktop after user confirmation.",
+  "desktop.scroll": "Scroll the local desktop after user confirmation.",
+  "chrome.tabs": "List tabs from the paired Chrome connector.",
+  "chrome.navigate": "Navigate the active or selected Chrome tab after user confirmation.",
+  "chrome.dom_snapshot": "Read a structured DOM snapshot from the paired Chrome connector.",
+  "chrome.screenshot": "Capture a screenshot from the paired Chrome connector.",
+  "chrome.click": "Click an element or point in the paired Chrome tab after user confirmation.",
+  "chrome.type": "Type into an element in the paired Chrome tab after user confirmation."
+};
+
+const parameterSchemas = {
+  "desktop.click": {
+    type: "object",
+    additionalProperties: true,
+    properties: {
+      x: { type: "number" },
+      y: { type: "number" },
+      button: { type: "string", enum: ["left", "right"] }
+    },
+    required: ["x", "y"]
+  },
+  "desktop.type": {
+    type: "object",
+    additionalProperties: true,
+    properties: { text: { type: "string" } },
+    required: ["text"]
+  },
+  "desktop.hotkey": {
+    type: "object",
+    additionalProperties: true,
+    properties: {
+      key: { type: "string" },
+      keys: { type: "array", items: { type: "string" } }
+    }
+  },
+  "chrome.navigate": {
+    type: "object",
+    additionalProperties: true,
+    properties: { url: { type: "string" }, tabId: { type: "integer" } },
+    required: ["url"]
+  },
+  "chrome.click": {
+    type: "object",
+    additionalProperties: true,
+    properties: {
+      selector: { type: "string" },
+      x: { type: "number" },
+      y: { type: "number" },
+      tabId: { type: "integer" }
+    }
+  },
+  "chrome.type": {
+    type: "object",
+    additionalProperties: true,
+    properties: {
+      selector: { type: "string" },
+      x: { type: "number" },
+      y: { type: "number" },
+      text: { type: "string" },
+      tabId: { type: "integer" }
+    },
+    required: ["text"]
+  }
+};
+
+const defaultSchema = {
+  type: "object",
+  additionalProperties: true,
+  properties: {}
+};
+
+function toolResultText(value) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+async function callBridge(toolName, args) {
+  if (process.env.DACHENG_DESKTOP_TOOLS_ENABLED !== "1") {
+    return {
+      isError: true,
+      content: [{ type: "text", text: "Fabushi desktop tools bridge is not running." }]
+    };
+  }
+  const rawBaseUrl = process.env.DACHENG_DESKTOP_TOOLS_URL || "";
+  const baseUrl = rawBaseUrl.endsWith("/") ? rawBaseUrl.slice(0, -1) : rawBaseUrl;
+  const token = process.env.DACHENG_DESKTOP_TOOLS_TOKEN || "";
+  if (!baseUrl || !token) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: "Fabushi desktop tools bridge URL/token is missing." }]
+    };
+  }
+  const response = await fetch(`\${baseUrl}/v1/tools/execute`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer \${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ tool: toolName, arguments: args || {} })
+  });
+  const payload = await response.json().catch(() => ({}));
+  const ok = response.ok && payload && payload.ok !== false;
+  const data = payload && Object.prototype.hasOwnProperty.call(payload, "data")
+    ? payload.data
+    : payload;
+  return {
+    isError: !ok,
+    content: [{ type: "text", text: toolResultText(data) }],
+    details: data
+  };
+}
+
+export default {
+  id: "dacheng-desktop-tools",
+  name: "Dacheng Desktop Tools",
+  description: "Expose Fabushi desktop and Chrome control tools to embedded OpenClaw.",
+  configSchema: { type: "object", additionalProperties: false, properties: {} },
+  register(api) {
+    for (const name of tools) {
+      api.registerTool({
+        name,
+        label: name,
+        description: descriptions[name] || `Run \${name} through the Fabushi desktop bridge.`,
+        parameters: parameterSchemas[name] || defaultSchema,
+        async execute(_toolCallId, args) {
+          return await callBridge(name, args);
+        }
+      });
+    }
+  }
+};
+''';
+  }
+
   Future<Map<String, dynamic>> _mergeEmbeddedConfig(
     File configPath,
     Map<String, dynamic> defaults,
@@ -1878,6 +2407,19 @@ class OpenClawRuntime {
     gateway['port'] = defaultGateway['port'];
     gateway['bind'] = defaultGateway['bind'];
     gateway['auth'] = Map<String, dynamic>.from(defaultGateway['auth'] as Map);
+    if (defaultGateway.containsKey('remote')) {
+      gateway['remote'] = {
+        ..._mutableMap(gateway['remote']),
+        ..._mutableMap(defaultGateway['remote']),
+      };
+    } else {
+      final remote = _mutableMap(gateway['remote'])..remove('url');
+      if (remote.isEmpty) {
+        gateway.remove('remote');
+      } else {
+        gateway['remote'] = remote;
+      }
+    }
 
     final gatewayHttp = _mutableMap(gateway['http']);
     final endpoints = _mutableMap(gatewayHttp['endpoints']);
@@ -1911,26 +2453,87 @@ class OpenClawRuntime {
     models['providers'] = providers;
     current['models'] = models;
 
+    final defaultBrowser = _mutableMap(defaults['browser']);
+    final browser = _mutableMap(current['browser']);
+    browser.addAll(defaultBrowser);
+    current['browser'] = browser;
+
+    final defaultCanvas = _mutableMap(defaults['canvas']);
+    final canvas = _mutableMap(current['canvas']);
+    canvas.addAll(defaultCanvas);
+    current['canvas'] = canvas;
+
+    final defaultTools = _mutableMap(defaults['tools']);
+    final tools = _mutableMap(current['tools']);
+    tools.remove('toolSearch');
+    tools.remove('fs');
+    final execTools = _mutableMap(tools['exec']);
+    execTools.remove('mode');
+    if (execTools.isNotEmpty) {
+      tools['exec'] = execTools;
+    }
+    tools.addAll(defaultTools);
+    current['tools'] = tools;
+
     final defaultPlugins = _mutableMap(defaults['plugins']);
     final plugins = _mutableMap(current['plugins']);
-    plugins['enabled'] = false;
-    plugins['allow'] = <String>[];
-    plugins['deny'] = <String>[];
-    plugins['load'] = Map<String, dynamic>.from(
-      _mutableMap(defaultPlugins['load']),
-    );
-    plugins['slots'] = Map<String, dynamic>.from(
-      _mutableMap(defaultPlugins['slots']),
-    );
-    final entries = _mutableMap(plugins['entries']);
+    plugins['enabled'] = true;
     final defaultEntries = _mutableMap(defaultPlugins['entries']);
+    final requiredPluginIds = defaultEntries.keys.toSet();
+    final allowList = _stringList(plugins['allow']);
+    if (allowList.isEmpty) {
+      plugins.remove('allow');
+    } else {
+      plugins['allow'] = _mergeStringLists(allowList, requiredPluginIds);
+    }
+    final denyList = _stringList(
+      plugins['deny'],
+    ).where((item) => !requiredPluginIds.contains(item)).toList();
+    if (denyList.isEmpty) {
+      plugins.remove('deny');
+    } else {
+      plugins['deny'] = denyList;
+    }
+    final defaultLoad = _mutableMap(defaultPlugins['load']);
+    final load = _mutableMap(plugins['load']);
+    load['paths'] = _mergeStringLists(load['paths'], defaultLoad['paths']);
+    plugins['load'] = load;
+    final slots = _mutableMap(plugins['slots']);
+    slots.addAll(_mutableMap(defaultPlugins['slots']));
+    plugins['slots'] = slots;
+    final entries = _mutableMap(plugins['entries']);
     for (final entry in defaultEntries.entries) {
-      entries[entry.key] = entry.value is Map
-          ? Map<String, dynamic>.from(entry.value as Map)
-          : entry.value;
+      final currentEntry = _mutableMap(entries[entry.key]);
+      currentEntry.addAll(
+        entry.value is Map
+            ? Map<String, dynamic>.from(entry.value as Map)
+            : {'enabled': true},
+      );
+      entries[entry.key] = currentEntry;
     }
     plugins['entries'] = entries;
     current['plugins'] = plugins;
+
+    final defaultChannels = _mutableMap(defaults['channels']);
+    final channels = _mutableMap(current['channels']);
+    final defaultChannelDefaults = _mutableMap(defaultChannels['defaults']);
+    if (defaultChannelDefaults.isNotEmpty) {
+      channels['defaults'] = {
+        ..._mutableMap(channels['defaults']),
+        ...defaultChannelDefaults,
+      };
+    }
+    for (final entry in defaultChannels.entries) {
+      if (entry.key == 'defaults') continue;
+      final currentChannel = _mutableMap(channels[entry.key]);
+      currentChannel.addAll(
+        entry.value is Map
+            ? Map<String, dynamic>.from(entry.value as Map)
+            : <String, dynamic>{},
+      );
+      channels[entry.key] = currentChannel;
+    }
+    current['channels'] = channels;
 
     final agents = _mutableMap(current['agents']);
     final defaultAgents = _mutableMap(defaults['agents']);
@@ -2010,6 +2613,30 @@ class OpenClawRuntime {
     if (value is Map<String, dynamic>) return Map<String, dynamic>.from(value);
     if (value is Map) return Map<String, dynamic>.from(value);
     return <String, dynamic>{};
+  }
+
+  List<String> _stringList(Object? value) {
+    if (value is! Iterable) return <String>[];
+    return value
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  List<String> _mergeStringLists(Object? first, Object? second) {
+    final merged = <String>{};
+    merged.addAll(_stringList(first));
+    merged.addAll(_stringList(second));
+    return merged.toList();
+  }
+
+  void _appendBounded(StringBuffer buffer, String chunk) {
+    const maxChars = 120000;
+    if (chunk.isEmpty || buffer.length >= maxChars) return;
+    final remaining = maxChars - buffer.length;
+    buffer.write(
+      chunk.length <= remaining ? chunk : chunk.substring(0, remaining),
+    );
   }
 
   void _captureLogs(Process process) {

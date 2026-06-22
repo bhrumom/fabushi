@@ -27,6 +27,16 @@ class MethodChannelDesktopControlHostApi implements DesktopControlHostApi {
   Future<Map<String, dynamic>> status() => _invoke('status');
 
   @override
+  Future<Map<String, dynamic>> requestScreenRecording() {
+    return _invoke('requestScreenRecording');
+  }
+
+  @override
+  Future<Map<String, dynamic>> requestAccessibility() {
+    return _invoke('requestAccessibility');
+  }
+
+  @override
   Future<Map<String, dynamic>> observe() => _invoke('observe');
 
   @override
@@ -79,7 +89,14 @@ class DesktopControlBridge {
   }) : _hostApi = hostApi ?? MethodChannelDesktopControlHostApi(),
        _confirmations = confirmations ?? DesktopControlConfirmationStore(),
        _enabledByBuild =
-           enabledByBuild ?? (() => AppConfig.desktopControlEnabled),
+           enabledByBuild ??
+           (() {
+             final platform = (platformProvider ?? _detectPlatform)();
+             return AppConfig.desktopControlEnabled ||
+                 platform == 'macos' ||
+                 platform == 'windows' ||
+                 platform == 'linux';
+           }),
        _platformProvider = platformProvider ?? _detectPlatform,
        _random = random ?? Random.secure();
 
@@ -180,6 +197,28 @@ class DesktopControlBridge {
           ? '桌面控制桥已在本机 loopback 运行'
           : '当前 $platform 暂不支持系统级电脑控制',
     );
+  }
+
+  Future<Map<String, dynamic>> requestScreenRecordingPermission() async {
+    if (!_enabledByBuild()) {
+      return {'requested': false, 'message': '当前构建已禁用桌面控制和 Chrome 连接器'};
+    }
+    final platform = _platformProvider();
+    if (!_platformSupportsSystemControl(platform)) {
+      return {'requested': false, 'message': '当前 $platform 暂不支持系统级电脑控制'};
+    }
+    return _hostApi.requestScreenRecording();
+  }
+
+  Future<Map<String, dynamic>> requestAccessibilityPermission() async {
+    if (!_enabledByBuild()) {
+      return {'trusted': false, 'message': '当前构建已禁用桌面控制和 Chrome 连接器'};
+    }
+    final platform = _platformProvider();
+    if (!_platformSupportsSystemControl(platform)) {
+      return {'trusted': false, 'message': '当前 $platform 暂不支持系统级电脑控制'};
+    }
+    return _hostApi.requestAccessibility();
   }
 
   Future<DesktopControlToolResult> executeTool(
