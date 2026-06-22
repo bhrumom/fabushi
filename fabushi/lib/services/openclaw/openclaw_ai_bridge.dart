@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
@@ -31,6 +32,9 @@ class OpenClawAiBridge {
   static const Duration _requestTimeout = Duration(seconds: 45);
   static const Duration _firstTokenTimeout = Duration(seconds: 120);
   static const Duration _streamIdleTimeout = Duration(seconds: 90);
+  static const String _desktopToolSystemPrompt = '''
+你是大乘桌面端内置 OpenClaw 助理。用户要求打开浏览器、访问网页、点击页面、输入文本、读取本机桌面或操作 Chrome 时，要优先调用可用的 browser、chrome 或 desktop 工具实际执行，不要只给操作教程。涉及本机桌面或 Chrome 写操作时，大乘会弹出确认，请发起工具调用并等待用户确认。
+''';
 
   Future<DachengAiChatResult> sendChat({
     required String message,
@@ -84,6 +88,9 @@ class OpenClawAiBridge {
     final requestId = _uuid.v4();
     final totalWatch = Stopwatch()..start();
     final normalizedMessage = message.trim();
+    final requiresLocalToolExecution = _requiresLocalToolExecution(
+      normalizedMessage,
+    );
     String? fallbackConversationId;
     List<Map<String, dynamic>>? fallbackMessages;
     if (normalizedMessage.isEmpty) {
@@ -142,18 +149,23 @@ class OpenClawAiBridge {
       );
 
       final existing = await _store.get(effectiveConversationId);
+      final historyMessages =
+          (existing?.messages ?? const <LocalAiConversationMessage>[])
+              .where((item) => item.content.trim().isNotEmpty)
+              .map(
+                (item) => {
+                  'role': item.role == 'user' ? 'user' : 'assistant',
+                  'content': item.content,
+                },
+              )
+              .toList();
+      final userMessage = {'role': 'user', 'content': normalizedMessage};
       final requestMessages = <Map<String, dynamic>>[
-        ...(existing?.messages ?? const <LocalAiConversationMessage>[])
-            .where((item) => item.content.trim().isNotEmpty)
-            .map(
-              (item) => {
-                'role': item.role == 'user' ? 'user' : 'assistant',
-                'content': item.content,
-              },
-            ),
-        {'role': 'user', 'content': normalizedMessage},
+        {'role': 'system', 'content': _desktopToolSystemPrompt.trim()},
+        ...historyMessages,
+        userMessage,
       ];
-      fallbackMessages = requestMessages;
+      fallbackMessages = [...historyMessages, userMessage];
 
       final uri = target.baseUri.replace(path: '/v1/chat/completions');
       final body = jsonEncode({
@@ -182,6 +194,7 @@ class OpenClawAiBridge {
           'conversationId': effectiveConversationId,
           'messageCount': requestMessages.length,
           'bodyBytes': utf8.encode(body).length,
+          'requiresLocalToolExecution': requiresLocalToolExecution,
         },
       );
 
@@ -364,7 +377,8 @@ class OpenClawAiBridge {
     } catch (error, stackTrace) {
       if (error is _OpenClawDeepSeekBlockedException &&
           fallbackConversationId != null &&
-          fallbackMessages != null) {
+          fallbackMessages != null &&
+          !requiresLocalToolExecution) {
         _diag(
           'chat.backend-fallback.start',
           data: {
@@ -387,6 +401,19 @@ class OpenClawAiBridge {
           startedAt: totalWatch,
         );
         return;
+      }
+      if (error is _OpenClawDeepSeekBlockedException &&
+          requiresLocalToolExecution) {
+        _diag(
+          'chat.backend-fallback.skipped-local-tool-request',
+          data: {
+            'requestId': requestId,
+            'elapsedMs': totalWatch.elapsedMilliseconds,
+          },
+          error: error,
+          stackTrace: stackTrace,
+        );
+        throw StateError('本机 OpenClaw 工具调用失败，未降级为纯文本模型：${error.message}');
       }
       _diag(
         'chat.error',
@@ -614,6 +641,26 @@ class OpenClawAiBridge {
       r'(403|blocked|forbidden|被拦截)',
       caseSensitive: false,
     ).hasMatch(message);
+  }
+
+  @visibleForTesting
+  bool requiresLocalToolExecutionForTest(String message) {
+    return _requiresLocalToolExecution(message);
+  }
+
+  bool _requiresLocalToolExecution(String message) {
+    final text = message.trim().toLowerCase();
+    if (text.isEmpty) return false;
+    final hasUrl = RegExp(r'https?://|www\.').hasMatch(text);
+    final hasAction = RegExp(
+      r'(open|visit|navigate|go to|click|tap|type|input|screenshot|browser|chrome|desktop|打开|访问|浏览器|网页|点击|点按|输入|截图|屏幕|桌面|chrome)',
+      caseSensitive: false,
+    ).hasMatch(text);
+    if (hasUrl && hasAction) return true;
+    return RegExp(
+      r'(打开浏览器|访问网页|打开网页|点击页面|操作浏览器|操作chrome|操作桌面|本机.*点击|桌面.*点击|浏览器.*点击)',
+      caseSensitive: false,
+    ).hasMatch(text);
   }
 
   Map<String, dynamic>? _safeDecodeMap(String dataText, {String? requestId}) {
