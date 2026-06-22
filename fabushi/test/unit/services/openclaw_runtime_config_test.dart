@@ -134,6 +134,32 @@ void main() {
       expect(canvas['enabled'], isTrue);
       expect(_map(_map(canvas['config'])['host'])['root'], endsWith('/canvas'));
     });
+
+    test('disables inherited Node compile cache for embedded runtime', () {
+      final stateRoot = Directory.systemTemp.createTempSync(
+        'openclaw-env-test-',
+      );
+      final runtimeDir = Directory('${stateRoot.path}/runtime')
+        ..createSync(recursive: true);
+      final configPath = File('${stateRoot.path}/openclaw.json');
+      addTearDown(() async {
+        if (await stateRoot.exists()) {
+          await stateRoot.delete(recursive: true);
+        }
+      });
+
+      final env = OpenClawRuntime.instance.buildOpenClawEnvironmentForTest(
+        runtimeDir: runtimeDir,
+        stateRoot: stateRoot,
+        configPath: configPath,
+        port: 18791,
+        token: 'test-token',
+      );
+
+      expect(env['NODE_DISABLE_COMPILE_CACHE'], '1');
+      expect(env.containsKey('NODE_COMPILE_CACHE'), isFalse);
+      expect(env['OPENCLAW_CONFIG_PATH'], configPath.path);
+    });
   });
 }
 

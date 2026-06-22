@@ -2218,6 +2218,7 @@ class OpenClawRuntime {
         ? nodeBinDir
         : '$nodeBinDir$separator$currentPath';
     final env = Map<String, String>.from(Platform.environment)
+      ..remove('NODE_COMPILE_CACHE')
       ..addAll({
         'OPENCLAW_GATEWAY_PORT': '$port',
         'OPENCLAW_GATEWAY_BIND': 'loopback',
@@ -2227,10 +2228,28 @@ class OpenClawRuntime {
         'OPENCLAW_AGENT_DIR': p.join(stateRoot.path, 'agents'),
         'OPENCLAW_WORKSPACE': p.join(stateRoot.path, 'workspace'),
         'OPENCLAW_DISABLE_BONJOUR': '1',
+        'NODE_DISABLE_COMPILE_CACHE': '1',
         pathKey: pathValue,
         if (pathKey != 'PATH') 'PATH': pathValue,
       });
     return env;
+  }
+
+  @visibleForTesting
+  Map<String, String> buildOpenClawEnvironmentForTest({
+    required Directory runtimeDir,
+    required Directory stateRoot,
+    required File configPath,
+    required int port,
+    required String token,
+  }) {
+    return _buildOpenClawEnvironment(
+      runtimeDir: runtimeDir,
+      stateRoot: stateRoot,
+      configPath: configPath,
+      port: port,
+      token: token,
+    );
   }
 
   Future<List<String>> _bundledPluginLoadPaths(Directory runtimeDir) async {
