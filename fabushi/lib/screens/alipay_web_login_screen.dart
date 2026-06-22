@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -21,13 +23,15 @@ class _AlipayWebLoginScreenState extends State<AlipayWebLoginScreen> {
   int _progress = 0;
   String? _errorMessage;
 
+  bool get _canSetOpaqueWebViewBackground =>
+      kIsWeb || defaultTargetPlatform != TargetPlatform.macOS;
+
   @override
   void initState() {
     super.initState();
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0xFF0F0F0F))
       ..setUserAgent(_desktopUserAgent)
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -44,6 +48,9 @@ class _AlipayWebLoginScreenState extends State<AlipayWebLoginScreen> {
           },
         ),
       );
+    if (_canSetOpaqueWebViewBackground) {
+      _controller.setBackgroundColor(const Color(0xFF0F0F0F));
+    }
 
     _loadLoginUrlWithFreshWebViewSession();
   }
