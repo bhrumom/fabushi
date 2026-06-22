@@ -124,6 +124,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   String _openClawPermissionLabel = '默认权限';
   OpenClawRuntimeStatus? _openClawStatus;
   DesktopControlBridgeStatus? _desktopControlStatus;
+  List<DesktopControlPendingConfirmation> _desktopControlPending = const [];
   bool? _buddhaAssetUnlocked;
   bool _isPurchasingBuddhaAsset = false;
   DateTime? _sendStartedAt;
@@ -777,6 +778,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final bridgeReady = _desktopControlStatus?.bridgeRunning == true;
     final remoteReady = _openClawRemoteGatewayUrl.trim().isNotEmpty;
     final chromeReady = _desktopControlStatus?.chrome.connected == true;
+    final pending = _desktopControlPending.isEmpty
+        ? null
+        : _desktopControlPending.first;
 
     return Wrap(
       spacing: 8,
@@ -810,6 +814,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           active: chromeReady,
           onTap: _prepareHomeChromeConnector,
         ),
+        if (pending != null)
+          _DesktopPendingActionPill(
+            summary: pending.summary,
+            onApprove: () => _approveHomeDesktopControlRequest(pending.id),
+            onReject: () => _rejectHomeDesktopControlRequest(pending.id),
+          ),
       ],
     );
   }
@@ -4650,12 +4660,17 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         DesktopControlBridge.instance.getStatus().timeout(
           const Duration(seconds: 5),
         ),
+        DesktopControlBridge.instance.pendingConfirmations().timeout(
+          const Duration(seconds: 5),
+        ),
       ]);
       if (!mounted) return;
       setState(() {
         _openClawRemoteGatewayUrl = (values[0] as String).trim();
         _openClawStatus = values[1] as OpenClawRuntimeStatus;
         _desktopControlStatus = values[2] as DesktopControlBridgeStatus;
+        _desktopControlPending =
+            values[3] as List<DesktopControlPendingConfirmation>;
         _isOpenClawPanelLoading = false;
       });
     } catch (error) {
@@ -4666,6 +4681,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           message: 'OpenClaw 状态检测失败：$error',
           checkedAt: DateTime.now(),
         );
+        _desktopControlPending = const [];
         _isOpenClawPanelLoading = false;
       });
     }
@@ -4863,13 +4879,36 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   Future<void> _startDesktopBridgeFromHome() async {
     try {
       final status = await DesktopControlBridge.instance.ensureStarted();
+      final pending = await DesktopControlBridge.instance
+          .pendingConfirmations()
+          .timeout(const Duration(seconds: 5));
       if (!mounted) return;
-      setState(() => _desktopControlStatus = status);
+      setState(() {
+        _desktopControlStatus = status;
+        _desktopControlPending = pending;
+      });
       _showHomeSnack(status.message, ok: status.desktopControlAvailable);
     } catch (error) {
       if (!mounted) return;
       _showHomeSnack('桌面工具启动失败：$error', ok: false);
     }
+  }
+
+  Future<void> _approveHomeDesktopControlRequest(String id) async {
+    final item = await DesktopControlBridge.instance.approvePendingRequest(id);
+    await _loadOpenClawHomeStatus(probeOpenClaw: true);
+    if (!mounted) return;
+    _showHomeSnack(
+      item == null ? '确认请求已失效' : '已允许该动作，工具可继续执行',
+      ok: item != null,
+    );
+  }
+
+  Future<void> _rejectHomeDesktopControlRequest(String id) async {
+    final item = await DesktopControlBridge.instance.rejectPendingRequest(id);
+    await _loadOpenClawHomeStatus(probeOpenClaw: true);
+    if (!mounted) return;
+    _showHomeSnack(item == null ? '确认请求已失效' : '已拒绝该动作', ok: false);
   }
 
   Future<void> _requestHomeDesktopPermission({
@@ -6567,6 +6606,88 @@ class _DesktopStatusPill extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _DesktopPendingActionPill extends StatelessWidget {
+  final String summary;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  const _DesktopPendingActionPill({
+    required this.summary,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 360),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7E1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFFFD988)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.touch_app_outlined,
+            color: Color(0xFF9A5A00),
+            size: 16,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              summary,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF7A4700),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: onReject,
+            borderRadius: BorderRadius.circular(999),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: Text(
+                '拒绝',
+                style: TextStyle(
+                  color: Color(0xFF8A4B00),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          InkWell(
+            onTap: onApprove,
+            borderRadius: BorderRadius.circular(999),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF00A37E),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Text(
+                '允许',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
