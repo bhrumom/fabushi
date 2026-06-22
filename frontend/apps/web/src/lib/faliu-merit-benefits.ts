@@ -80,6 +80,7 @@ export * from "./faliu-merit-benefits-t0272-juan3";
 export * from "./faliu-merit-benefits-t0272-juan4";
 export * from "./faliu-merit-benefits-t0272-juan5";
 export * from "./faliu-merit-benefits-t0272-juan6";
+export * from "./faliu-merit-benefits-t0272-juan7";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import * as t0263Juan10 from "./faliu-merit-benefits-t0263-juan10";
@@ -163,6 +164,7 @@ import * as t0272Juan3 from "./faliu-merit-benefits-t0272-juan3";
 import * as t0272Juan4 from "./faliu-merit-benefits-t0272-juan4";
 import * as t0272Juan5 from "./faliu-merit-benefits-t0272-juan5";
 import * as t0272Juan6 from "./faliu-merit-benefits-t0272-juan6";
+import * as t0272Juan7 from "./faliu-merit-benefits-t0272-juan7";
 
 const overrideMeritBenefits = {
   "T0263:10": [
@@ -278,6 +280,7 @@ const overrideMeritBenefits = {
   "T0272:4": t0272Juan4.T0272_JUAN_4_MERIT_BENEFITS,
   "T0272:5": t0272Juan5.T0272_JUAN_5_MERIT_BENEFITS,
   "T0272:6": t0272Juan6.T0272_JUAN_6_MERIT_BENEFITS,
+  "T0272:7": t0272Juan7.T0272_JUAN_7_MERIT_BENEFITS,
 };
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
