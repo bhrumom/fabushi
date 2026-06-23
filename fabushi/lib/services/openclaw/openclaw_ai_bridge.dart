@@ -25,6 +25,8 @@ class OpenClawAiBridge {
     : _httpClient = httpClient ?? http.Client(),
       _store = store ?? LocalAiConversationStore.instance;
 
+  static const String _gatewayChatModel = 'openclaw/dacheng';
+
   final http.Client _httpClient;
   final LocalAiConversationStore _store;
   static final Uuid _uuid = Uuid();
@@ -32,7 +34,7 @@ class OpenClawAiBridge {
   static const Duration _firstTokenTimeout = Duration(seconds: 120);
   static const Duration _streamIdleTimeout = Duration(seconds: 90);
   static const String _desktopToolSystemPrompt = '''
-你是大乘桌面端内置 OpenClaw 助理。你有权限读取并编辑用户的本地文件和外部内容。用户要求打开浏览器、访问网页、执行本地命令时，要优先调用可用工具。当用户要求进行“全球法布施”（向平台发布内容）或“制作闪卡”时，请使用对应的 MCP 服务器和可用工具（如 media-auto-publisher、wechat-draft-publisher）来完成。如果找不到适合的工具，请尝试通过系统或 MCP 查找并安装相应的技能。涉及本机桌面或文件修改时，请直接发起工具调用。
+临近大乘桌面端内置 OpenClaw 助理。你有权限读取并编辑用户的本地文件和外部内容。用户要求打开浏览器、访问网页、点击页面、输入文本、读取本机桌面、操作 Chrome 或执行本地命令时，要优先调用可用的 browser、chrome、desktop 或命令行工具实际执行，不要只给操作教程。当用户要求进行“全球法布施”（向平台发布内容）或“制作闪卡”时，请使用对应的 MCP 服务器和可用工具（如 media-auto-publisher、wechat-draft-publisher）来完成。如果找不到适合的工具，请尝试通过系统或 MCP 查找并安装相应的技能。涉及本机桌面或 Chrome 写操作，或者文件修改时，大乘会弹出确认，请发起工具调用并等待用户确认。
 ''';
 
   Future<DachengAiChatResult> sendChat({
@@ -47,6 +49,7 @@ class OpenClawAiBridge {
     String? latestConversationId = conversationId;
     String finalMessage = '';
     DachengAiUsage? usage;
+    String model = 'deepseek/deepseek-chat';
 
     await for (final event in sendChatStream(
       message: message,
@@ -65,6 +68,7 @@ class OpenClawAiBridge {
       } else if (event.isDone) {
         finalMessage = (event.raw['message'] ?? finalMessage).toString();
         usage = event.usage;
+        model = (event.raw['model'] ?? model).toString();
       } else if (event.isError) {
         throw StateError(event.text);
       }
@@ -74,7 +78,7 @@ class OpenClawAiBridge {
       conversationId: latestConversationId ?? _newConversationId(),
       message: finalMessage,
       provider: 'openclaw-local',
-      model: 'openclaw/default',
+      model: model,
       usage: usage ?? _zeroUsage,
     );
   }
@@ -213,6 +217,7 @@ class OpenClawAiBridge {
         ...historyMessages,
         userMessage,
       ];
+      fallbackMessages = [...historyMessages, userMessage];
 
       final uri = target.baseUri.replace(path: '/v1/chat/completions');
       final selectedModelOverride =
@@ -220,7 +225,7 @@ class OpenClawAiBridge {
           _openClawDeepSeekModelRef(target.modelOverride) ??
           target.modelOverride;
       final body = jsonEncode({
-        'model': target.model,
+        'model': _gatewayChatModel,
         'stream': true,
         'stream_options': {'include_usage': true},
         'user': 'dacheng:$effectiveConversationId',
@@ -429,6 +434,7 @@ class OpenClawAiBridge {
           'message': finalText.trim(),
           'conversationId': effectiveConversationId,
           'provider': 'openclaw-local',
+          'model': target.model,
           'sawDone': sawDone,
           if (target.desktopToolsStatus != null)
             'desktopTools': target.desktopToolsStatus,

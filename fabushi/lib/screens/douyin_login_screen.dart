@@ -55,7 +55,10 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     if (kIsWeb) {
       _platformService.listenToMessages((event) {
         final data = event.data;
-        if (data is Map && data.containsKey('alipay_auth_code')) {
+        if (data is Map &&
+            (data.containsKey('alipay_auth_code') ||
+                data.containsKey('auth_code') ||
+                data.containsKey('token'))) {
           _handleAlipayCallback(Map<String, dynamic>.from(data));
         }
       });
@@ -124,6 +127,11 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
 
   /// 检测是否为移动端（iOS/Android）
   bool get _isMobile {
+    if (kIsWeb) return false;
+    return Platform.isIOS || Platform.isAndroid;
+  }
+
+  bool get _shouldUseEmbeddedAlipayWebLogin {
     if (kIsWeb) return false;
     return Platform.isIOS || Platform.isAndroid;
   }
@@ -389,8 +397,6 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
   }
 
   Future<void> _handleAlipayCallback(Map<String, dynamic> params) async {
-    final authModel = Provider.of<AuthModel>(context, listen: false);
-
     try {
       final normalizedParams = params.map(
         (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
@@ -401,20 +407,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
       }
       _clearPendingAlipayState();
 
-      final alipayProviderSubject =
-          (params['alipay_provider_subject'] ?? params['alipay_user_id'])
-              as String?;
-      final alipaySubjectType = params['alipay_subject_type'] as String?;
-      final alipayNickname = params['alipay_nickname'] as String?;
-      final alipayAvatar = params['alipay_avatar'] as String?;
-      final authCode = params['alipay_auth_code'] as String?;
-
-      final success = await authModel.alipayOneClickRegister(
-        alipayProviderSubject ?? authCode ?? '',
-        alipayNickname,
-        alipayAvatar,
-        alipaySubjectType,
-      );
+      final success = await _completeAlipayLoginFromParams(normalizedParams);
 
       if (success && mounted) {
         Navigator.of(context).pop(true);
@@ -435,10 +428,144 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     }
   }
 
+  Map<String, String> _parseAlipayCallbackParams(String url) {
+    final decodedUrl = url.replaceAll('&amp;', '&');
+    final params = <String, String>{};
+
+    void addAll(Map<String, String> values) {
+      for (final entry in values.entries) {
+        if (entry.key.isNotEmpty && entry.value.isNotEmpty) {
+          params[entry.key] = entry.value;
+        }
+      }
+    }
+
+    void parseQueryLike(String value) {
+      var query = value.trim();
+      if (query.isEmpty) return;
+
+      final questionIndex = query.indexOf('?');
+      if (questionIndex >= 0) {
+        query = query.substring(questionIndex + 1);
+      }
+
+      final hashIndex = query.indexOf('#');
+      if (hashIndex >= 0) {
+        final beforeHash = query.substring(0, hashIndex);
+        final afterHash = query.substring(hashIndex + 1);
+        parseQueryLike(beforeHash);
+        parseQueryLike(afterHash);
+        return;
+      }
+
+      if (!query.contains('=')) return;
+      try {
+        addAll(Uri.splitQueryString(query));
+      } catch (_) {
+        for (final param in query.split('&')) {
+          final separator = param.indexOf('=');
+          if (separator <= 0) continue;
+          params[param.substring(0, separator)] = Uri.decodeComponent(
+            param.substring(separator + 1),
+          );
+        }
+      }
+    }
+
+    final uri = Uri.tryParse(decodedUrl);
+    if (uri != null) {
+      addAll(uri.queryParameters);
+      parseQueryLike(uri.fragment);
+    }
+
+    parseQueryLike(
+      decodedUrl
+          .replaceFirst('com.ombhrum.fabushi://', '')
+          .replaceFirst('globaldharma://', '')
+          .replaceFirst('fabushi://', ''),
+    );
+
+    return params;
+  }
+
+  Future<bool> _completeAlipayLoginFromParams(
+    Map<String, String> params,
+  ) async {
+    final authModel = Provider.of<AuthModel>(context, listen: false);
+    final token = params['token'];
+    final username = params['username'];
+    final authCode = params['alipay_auth_code'] ?? params['auth_code'];
+    final alipayProviderSubject =
+        params['alipay_provider_subject'] ??
+        params['provider_subject'] ??
+        params['alipay_user_id'] ??
+        params['user_id'];
+    final alipaySubjectType =
+        params['alipay_subject_type'] ?? params['subject_type'];
+    final alipayNickname = params['alipay_nickname'] ?? params['nick_name'];
+    final alipayAvatar = params['alipay_avatar'] ?? params['avatar'];
+    final userNo = params['user_no'] ?? params['userNo'];
+
+    if (token != null && token.isNotEmpty) {
+      await authModel.loginWithToken(
+        token,
+        username?.isNotEmpty == true
+            ? username!
+            : alipayProviderSubject?.isNotEmpty == true
+            ? alipayProviderSubject!
+            : 'alipay_user',
+        userJson: {
+          if (username != null && username.isNotEmpty) 'username': username,
+          if (userNo != null && userNo.isNotEmpty) 'userNo': userNo,
+          if (alipayProviderSubject != null &&
+              alipayProviderSubject.isNotEmpty) ...{
+            'alipayProviderSubject': alipayProviderSubject,
+            'alipayUserId': alipayProviderSubject,
+          },
+          if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
+            'alipaySubjectType': alipaySubjectType,
+          if (alipayNickname != null && alipayNickname.isNotEmpty) ...{
+            'nickname': alipayNickname,
+            'alipayNickname': alipayNickname,
+          },
+          if (alipayAvatar != null && alipayAvatar.isNotEmpty) ...{
+            'avatar': alipayAvatar,
+            'alipayAvatar': alipayAvatar,
+          },
+        },
+      );
+      return authModel.isLoggedIn;
+    }
+
+    if (authCode != null && authCode.isNotEmpty) {
+      final success = await authModel.alipayLogin(authCode);
+      if (success) return true;
+    }
+
+    final isNewUser =
+        params['isNewUser'] == 'true' ||
+        params['is_new_user'] == 'true' ||
+        params['needsRegistration'] == 'true' ||
+        params['needs_registration'] == 'true';
+
+    if (isNewUser &&
+        alipayProviderSubject != null &&
+        alipayProviderSubject.isNotEmpty) {
+      return authModel.alipayOneClickRegister(
+        alipayProviderSubject,
+        alipayNickname,
+        alipayAvatar,
+        alipaySubjectType,
+      );
+    }
+
+    return false;
+  }
+
   Future<void> _handleDeepLinkAlipayCallback(String url) async {
     debugPrint('收到深度链接支付宝回调: $url');
 
-    if (_isMobile && _isAlipayWebLoginOpen && mounted) {
+    if (_shouldUseEmbeddedAlipayWebLogin && _isAlipayWebLoginOpen && mounted) {
       _isAlipayWebLoginOpen = false;
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
@@ -447,22 +574,25 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     }
 
     try {
-      String decodedUrl = url.replaceAll('&amp;', '&');
-      Map<String, String> params = {};
+      final params = _parseAlipayCallbackParams(url);
 
-      String urlWithoutScheme = decodedUrl
-          .replaceFirst('com.ombhrum.fabushi://', '')
-          .replaceFirst('globaldharma://', '')
-          .replaceFirst('fabushi://', '');
-
-      final queryParams = urlWithoutScheme.split('&');
       for (final param in queryParams) {
         final separatorIndex = param.indexOf('=');
         if (separatorIndex > 0) {
           final key = param.substring(0, separatorIndex);
           final value = param.substring(separatorIndex + 1);
           params[key] = Uri.decodeComponent(value);
+=======
+      if (params.containsKey('error') ||
+          params.containsKey('alipay_auth_code') ||
+          params.containsKey('auth_code') ||
+          params.containsKey('token')) {
+        if (!_isExpectedAlipayCallback(params)) {
+          if (mounted) setState(() => _isLoading = false);
+          return;
+>>>>>>> origin/main
         }
+        _clearPendingAlipayState();
       }
 
       if (params.containsKey('error') ||
@@ -487,62 +617,13 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         return;
       }
 
-      if (params.containsKey('alipay_auth_code')) {
-        final authCode = params['alipay_auth_code']!;
-        final alipayProviderSubject =
-            params['alipay_provider_subject'] ?? params['alipay_user_id'];
-        final alipaySubjectType = params['alipay_subject_type'];
-        final alipayNickname = params['alipay_nickname'];
-        final alipayAvatar = params['alipay_avatar'];
-        final isNewUser = params['isNewUser'] == 'true';
-        final token = params['token'];
-        final username = params['username'];
-        final userNo = params['user_no'];
-
-        if (!mounted) return;
-        final authModel = Provider.of<AuthModel>(context, listen: false);
-        bool success = false;
-
-        if (!isNewUser && token != null && username != null) {
-          try {
-            await authModel.loginWithToken(
-              token,
-              username,
-              userJson: {
-                'username': username,
-                if (userNo != null && userNo.isNotEmpty) 'userNo': userNo,
-                if (alipayProviderSubject != null &&
-                    alipayProviderSubject.isNotEmpty) ...{
-                  'alipayProviderSubject': alipayProviderSubject,
-                  'alipayUserId': alipayProviderSubject,
-                },
-                if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
-                  'alipaySubjectType': alipaySubjectType,
-                if (alipayNickname != null && alipayNickname.isNotEmpty) ...{
-                  'nickname': alipayNickname,
-                  'alipayNickname': alipayNickname,
-                },
-                if (alipayAvatar != null && alipayAvatar.isNotEmpty) ...{
-                  'avatar': alipayAvatar,
-                  'alipayAvatar': alipayAvatar,
-                },
-              },
-            );
-            success = true;
-          } catch (e) {
-            debugPrint('使用token登录失败: $e');
-            success = false;
-          }
-        } else {
-          success = await authModel.alipayOneClickRegister(
-            alipayProviderSubject ?? authCode,
-            alipayNickname,
-            alipayAvatar,
-            alipaySubjectType,
-          );
-        }
+      if (params.containsKey('alipay_auth_code') ||
+          params.containsKey('auth_code') ||
+          params.containsKey('token')) {
+        final success = await _completeAlipayLoginFromParams(params);
 
         if (success && mounted) {
+          final authModel = Provider.of<AuthModel>(context, listen: false);
           Navigator.of(context).pop(true);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -551,6 +632,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
             ),
           );
         } else if (mounted) {
+          final authModel = Provider.of<AuthModel>(context, listen: false);
           final error = authModel.error ?? '';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

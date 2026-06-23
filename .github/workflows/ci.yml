@@ -472,9 +472,6 @@ jobs:
       - name: Validate Android Gradle bootstrap
         shell: bash
         env:
-          GRADLE_OPTS: -Xmx4g -Dfile.encoding=UTF-8
-        run: |
-          set -euo pipefail
           flutter build apk --debug --config-only
 
   desktop-patrol-smoke:
@@ -534,6 +531,131 @@ jobs:
           patrol test \
             -d macos \
             -t patrol_test/openclaw_gateway_smoke_test.dart \
+            --dart-define=DACHENG_DESKTOP_CONTROL=true
+
+  patrol-member-ai:
+    name: Release simulation - Patrol member AI
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: detect-changes
+    if: needs.detect-changes.outputs.app_changed == 'true'
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout app files
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+
+      - name: Set up Node.js for Patrol Web
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Enable Flutter web
+        run: flutter config --enable-web
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Install Patrol CLI
+        run: dart pub global activate patrol_cli
+
+      - name: Add Pub cache to PATH
+        run: echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: Use system Chrome for Patrol Playwright
+        shell: bash
+        run: |
+          set -euo pipefail
+          google-chrome --version
+
+          web_runner_dir="$(find "$PUB_CACHE/hosted" -path '*/patrol-*/web_runner' -type d | sort -V | tail -n 1)"
+          if [ -z "$web_runner_dir" ]; then
+            echo "Unable to locate Patrol web_runner in $PUB_CACHE/hosted" >&2
+            exit 1
+          fi
+
+          python3 - "$web_runner_dir" <<'PY'
+          import sys
+          from pathlib import Path
+
+          web_runner = Path(sys.argv[1])
+          setup_path = web_runner / "tests" / "setup.ts"
+          setup_text = setup_path.read_text()
+          setup_text = setup_text.replace(
+              '  const locale = process.env.PATROL_WEB_LOCALE || undefined\n\n'
+              '  const browser = await chromium.launch({\n'
+              '    args: browserArgs,\n'
+              '  })\n',
+              '  const locale = process.env.PATROL_WEB_LOCALE || undefined\n'
+              '  const browserChannel = process.env.PATROL_WEB_BROWSER_CHANNEL || undefined\n\n'
+              '  const browser = await chromium.launch({\n'
+              '    channel: browserChannel as any,\n'
+              '    args: browserArgs,\n'
+              '  })\n',
+          )
+          setup_path.write_text(setup_text)
+
+          config_path = web_runner / "playwright.config.ts"
+          config_text = config_path.read_text()
+          config_text = config_text.replace(
+              'const browserArgs = process.env.PATROL_WEB_BROWSER_ARGS\n'
+              '  ? (JSON.parse(process.env.PATROL_WEB_BROWSER_ARGS) as string[])\n'
+              '  : undefined\n\n'
+              'export default defineConfig({\n',
+              'const browserArgs = process.env.PATROL_WEB_BROWSER_ARGS\n'
+              '  ? (JSON.parse(process.env.PATROL_WEB_BROWSER_ARGS) as string[])\n'
+              '  : undefined\n'
+              'const browserChannel = process.env.PATROL_WEB_BROWSER_CHANNEL || undefined\n\n'
+              'export default defineConfig({\n',
+          )
+          config_text = config_text.replace(
+              '    launchOptions: browserArgs ? { args: browserArgs } : undefined,\n',
+              '    channel: browserChannel as any,\n'
+              '    launchOptions: browserArgs ? { args: browserArgs } : undefined,\n',
+          )
+          config_path.write_text(config_text)
+          PY
+
+          real_npx="$(command -v npx)"
+          wrapper_dir="$RUNNER_TEMP/patrol-npx"
+          mkdir -p "$wrapper_dir"
+          cat > "$wrapper_dir/npx" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [ "${1:-}" = "playwright" ] && [ "${2:-}" = "install" ] && [ "$#" -eq 2 ]; then
+            echo "Skipping Playwright browser install; Patrol uses system Chrome."
+            exit 0
+          fi
+          exec "$PATROL_REAL_NPX" "$@"
+          EOF
+          chmod +x "$wrapper_dir/npx"
+          echo "PATROL_WEB_BROWSER_CHANNEL=chrome" >> "$GITHUB_ENV"
+          echo "PATROL_REAL_NPX=$real_npx" >> "$GITHUB_ENV"
+          echo "$wrapper_dir" >> "$GITHUB_PATH"
+
+      - name: Run Patrol member AI local OpenClaw route test
+        env:
+          PATROL_ANALYTICS_ENABLED: 'false'
+        run: |
+          set -euo pipefail
+          patrol test \
+            -d chrome \
+            -t patrol_test/member_ai_local_openclaw_route_test.dart \
+            --web-headless=true \
             --dart-define=DACHENG_DESKTOP_CONTROL=true
 
   worker-module-checks:
@@ -818,6 +940,7 @@ jobs:
       - mobile-release-simulation
       - android-gradle-bootstrap
       - desktop-patrol-smoke
+      - patrol-member-ai
       - worker-release-simulation
       - e2e-release-simulation
     if: always()
@@ -831,6 +954,7 @@ jobs:
             "Mobile release simulation:${{ needs.mobile-release-simulation.result }}" \
             "Android Gradle bootstrap:${{ needs.android-gradle-bootstrap.result }}" \
             "macOS Patrol smoke:${{ needs.desktop-patrol-smoke.result }}" \
+            "Patrol member AI:${{ needs.patrol-member-ai.result }}" \
             "Worker dry-run:${{ needs.worker-release-simulation.result }}" \
             "E2E release simulation:${{ needs.e2e-release-simulation.result }}"
           do
@@ -884,6 +1008,7 @@ jobs:
       - mobile-release-simulation
       - android-gradle-bootstrap
       - desktop-patrol-smoke
+      - patrol-member-ai
       - worker-module-checks
       - worker-contract-checks
       - worker-release-simulation

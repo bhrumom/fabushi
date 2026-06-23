@@ -563,49 +563,58 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final bool isEmpty = _homeChatMessages.isEmpty && !_forceGlobeMode;
 
     return DecoratedBox(
-      decoration: const BoxDecoration(color: Color(0xFF0D0D0D)),
-      child: Column(
+      decoration: const BoxDecoration(color: Color(0xFFF7F8F7)),
+      child: Row(
         children: [
-          _buildDesktopTopBar(),
-          if (isEmpty)
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 800),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        '我们应该在 fabushi 中构建什么？',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.w600,
+          _buildConversationSidebar(model, embedded: true),
+          Expanded(
+            child: Column(
+              children: [
+                _buildDesktopTopBar(),
+                if (isEmpty)
+                  Expanded(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 800),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              '我们应该在 fabushi 中构建什么？',
+                              style: TextStyle(
+                                color: Color(0xFF17181A),
+                                fontSize: 32,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 32),
+                            _buildDesktopChatComposer(context, model),
+                            const SizedBox(
+                              height: 100,
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 32),
-                      _buildDesktopChatComposer(context, model),
-                      const SizedBox(
-                        height: 100,
-                      ), // Visual offset to not perfectly center it vertically
-                    ],
+                    ),
+                  )
+                else ...[
+                  Expanded(
+                    child: _buildDesktopWorkspace(context, model, authModel),
                   ),
-                ),
-              ),
-            )
-          else ...[
-            Expanded(child: _buildDesktopWorkspace(context, model, authModel)),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(34, 8, 34, 26),
-              child: Align(
-                alignment: Alignment.center,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 800),
-                  child: _buildDesktopChatComposer(context, model),
-                ),
-              ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(34, 8, 34, 26),
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 960),
+                        child: _buildDesktopChatComposer(context, model),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -3512,7 +3521,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       r'^(请|帮我|我要|开始|进行|自动|去|把|将)*全球?法布施(一下|吧|。|！|!)*$',
     ).hasMatch(compact);
   }
-
   void _submitComposer(FileTransferModel model) {
     if (_isFlashcardComposerMode) {
       unawaited(_startFlashcardGeneration(model));
@@ -7214,12 +7222,18 @@ class _MessageFileChip extends StatelessWidget {
 class _DesktopComposerButton extends StatelessWidget {
   final IconData icon;
   final String label;
+  final VoidCallback? onTap;
 
-  const _DesktopComposerButton({required this.icon, required this.label});
+  const _DesktopComposerButton({
+    required this.icon,
+    required this.label,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
+      onTap: onTap,
       borderRadius: BorderRadius.circular(9),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),

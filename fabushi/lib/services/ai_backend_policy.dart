@@ -55,7 +55,12 @@ AiBackendMode aiBackendModeFromStorageName(String? value) {
 class AiBackendPolicy {
   AiBackendPolicy._();
 
+  @visibleForTesting
+  static bool? debugIsDesktopNativeOverride;
+
   static bool get isDesktopNative {
+    final debugOverride = debugIsDesktopNativeOverride;
+    if (debugOverride != null) return debugOverride;
     if (kIsWeb) return false;
     return defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows ||

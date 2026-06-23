@@ -398,7 +398,6 @@ function clientContextMessage(client) {
   }
   return lines.length > 1 ? lines.join('\n') : '';
 }
-
 function unwrapPayload(payload) {
   if (!payload || typeof payload !== 'object') return {};
   return payload.data && typeof payload.data === 'object' ? payload.data : payload;
@@ -1535,7 +1534,6 @@ function openClawBlockedFallbackText(messages) {
 
   return '模型服务拦截了这次回复，未能生成结果。请换一种更具体、更短的表述后重试。';
 }
-
 function usageWithFallback(usage, messages, text) {
   const promptTokens = Number(usage?.promptTokens || usage?.inputTokens || 0);
   const completionTokens = Number(usage?.completionTokens || usage?.outputTokens || 0);
@@ -1610,9 +1608,6 @@ app.post(
       try {
         result = await callDeepSeek(messages, { model, maxCompletionTokens });
       } catch (error) {
-        if (isDeepSeekBlockedError(error)) {
-          const fallbackMessage = openClawBlockedFallbackText(messages);
-          const usage = usageWithFallback(null, messages, fallbackMessage);
           recordUsage(user.userId, usage.totalTokens);
           res.json({
             id,
@@ -1630,6 +1625,8 @@ app.post(
           });
           return;
         }
+=======
+>>>>>>> origin/main
         if (!shouldRetryWithCompactedOpenClawMessages(error, messages, compactedMessages)) {
           throw error;
         }
@@ -2092,7 +2089,6 @@ app.get('/api/ai/models', (_req, res) => {
     })),
   });
 });
-
 app.get(
   '/api/ai/quota',
   asyncHandler(async (req, res) => {

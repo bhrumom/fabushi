@@ -1017,7 +1017,6 @@ class OpenClawRuntime {
         .map((match) => int.tryParse(match.group(0) ?? '') ?? 0)
         .toList(growable: false);
   }
-
   _OpenClawBundleSpec? _specFromJson(
     Map<String, dynamic> json, {
     required bool downloaded,
@@ -2917,6 +2916,16 @@ export default {
           platformKey,
         ),
       ),
+      Directory(
+        p.join(
+          contentsDir.path,
+          'Resources',
+          'flutter_assets',
+          'assets',
+          'openclaw',
+          platformKey,
+        ),
+      ),
     ];
 
     for (final dir in candidates) {
@@ -2926,6 +2935,14 @@ export default {
         return dir;
       }
     }
+    _diag(
+      'bundle.macos-bundled-runtime-missing',
+      data: {
+        'platformKey': platformKey,
+        'contentsDir': contentsDir.path,
+        'candidates': candidates.map((item) => item.path).toList(),
+      },
+    );
     return null;
   }
 

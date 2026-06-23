@@ -41,7 +41,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   void _applyInitialTabFromUrl() {
-    // Temporarily disabled to force Profile tab for screenshot
+    final tab = Uri.base.queryParameters['tab']?.toLowerCase();
+    final initialIndex = switch (tab) {
+      'home' => 0,
+      'assistant' || 'openclaw' || 'workbench' => 0,
+      'meditation' || 'meditation-room' || 'zen' => 1,
+      'profile' || 'me' || 'mine' => 2,
+      _ => 0,
+    };
+    _currentIndex = initialIndex;
+    _activatedScreens[initialIndex] = true;
   }
 
   /// 更新禅室页面可见性状态
