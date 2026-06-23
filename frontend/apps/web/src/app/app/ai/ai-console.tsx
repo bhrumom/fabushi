@@ -26,6 +26,7 @@ import {
   User,
 } from "lucide-react";
 import { siteHref } from "../../../lib/site-url";
+import { GlobalNetworkGlobe } from "../../../components/global-network-globe";
 import styles from "./ai-console.module.css";
 
 interface ChatMessage {
@@ -76,6 +77,12 @@ export function AiConsole({ quickPrompts }: { quickPrompts: readonly string[] })
   const [resources, setResources] = useState<ResourceWithPreview[]>([]);
   const [resourceStatus, setResourceStatus] = useState("输入关键词后搜索资源");
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [dharmaShareProgress, setDharmaShareProgress] = useState<{
+    isActive: boolean;
+    title: string;
+    logs: string[];
+    completed: boolean;
+  } | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
 
   const canSubmit = input.trim().length > 0 && !isStreaming;
@@ -172,9 +179,51 @@ export function AiConsole({ quickPrompts }: { quickPrompts: readonly string[] })
     setIsStreaming(false);
   }
 
+  async function runGlobalDharmaShare(title: string, text: string) {
+    setDharmaShareProgress({
+      isActive: true,
+      title,
+      logs: ["正在初始化全球节点传输...", "正在读取正文：" + title],
+      completed: false,
+    });
+
+    const regions = [
+      "✓ 亚洲（东亚/东南亚/南亚地区节点） · 已连接",
+      "✓ 北美（美国/加拿大主干网节点） · 已连接",
+      "✓ 欧洲（西欧/中欧传输中继） · 已连接",
+      "✓ 大洋洲（澳洲/新西兰覆盖节点） · 已连接",
+      "✓ 南美与非洲（全球边缘互联节点） · 已连接",
+    ];
+
+    for (const region of regions) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      setDharmaShareProgress((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          logs: [...prev.logs, region],
+        };
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    setDharmaShareProgress((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        logs: [
+          ...prev.logs,
+          "🎉 全球法布施功德圆满：已成功将该佛典资源分发至全球所有节点！",
+        ],
+        completed: true,
+      };
+    });
+  }
+
   async function submitChat(customPrompt?: string) {
     const rawText = (customPrompt ?? input).trim();
     if (!rawText || isStreaming) return;
+    setDharmaShareProgress(null);
     const finalPrompt = contextText.trim() ? `${contextText.trim()}\n\n问题：${rawText}` : rawText;
     const userMessage: ChatMessage = { id: createId(), role: "user", content: rawText };
     const assistantId = createId();
@@ -249,6 +298,12 @@ export function AiConsole({ quickPrompts }: { quickPrompts: readonly string[] })
                   item.id === assistantId ? { ...item, content: finalText } : item,
                 ),
               );
+              if (event.raw && event.raw.clientAction) {
+                const action = event.raw.clientAction as { type: string; title: string; text: string };
+                if (action.type === "prepare_dharma_share_text") {
+                  void runGlobalDharmaShare(action.title, action.text);
+                }
+              }
             } else if (event.type === "error") {
               throw new Error(payloadText(event) || "大乘 AI 生成失败");
             }
@@ -266,6 +321,12 @@ export function AiConsole({ quickPrompts }: { quickPrompts: readonly string[] })
                 item.id === assistantId ? { ...item, content: finalText } : item,
               ),
             );
+            if (event.raw && event.raw.clientAction) {
+              const action = event.raw.clientAction as { type: string; title: string; text: string };
+              if (action.type === "prepare_dharma_share_text") {
+                void runGlobalDharmaShare(action.title, action.text);
+              }
+            }
           }
         }
       }
@@ -469,6 +530,35 @@ export function AiConsole({ quickPrompts }: { quickPrompts: readonly string[] })
                 {steps.slice(-5).map((step) => (
                   <div key={step}>· {step}</div>
                 ))}
+              </div>
+            )}
+            {dharmaShareProgress && dharmaShareProgress.isActive && (
+              <div className={styles.dharmaShareProgressCard}>
+                <div className={styles.dharmaShareHeader}>
+                  <div className={styles.dharmaShareSpinner}>
+                    <div className={styles.wheel} />
+                  </div>
+                  <div>
+                    <h3>全球法布施分发进度：{dharmaShareProgress.title}</h3>
+                    <p>{dharmaShareProgress.completed ? "🎉 全球同步完成（功德无量）" : "🌐 全球边缘节点传输中..."}</p>
+                  </div>
+                </div>
+                <div className={styles.dharmaShareGlobeWrapper}>
+                  <GlobalNetworkGlobe />
+                </div>
+                <div className={styles.dharmaShareLogs}>
+                  {dharmaShareProgress.logs.map((log, logIndex) => (
+                    <div
+                      key={logIndex}
+                      className={[
+                        styles.dharmaShareLogLine,
+                        log.startsWith("🎉") ? styles.successLog : "",
+                      ].join(" ")}
+                    >
+                      {log}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
