@@ -1,8 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:global_dharma_sharing/models/auth_model.dart' as auth_model;
 import 'package:global_dharma_sharing/models/user_model.dart';
 import 'package:global_dharma_sharing/services/auth_service.dart';
 
 void main() {
+  group('AuthModel.User.fromJson', () {
+    test('uses Alipay avatar when the generic avatar field is missing', () {
+      final user = auth_model.User.fromJson({
+        'username': 'alipay_user',
+        'email': '',
+        'alipayAvatar': 'https://example.com/alipay.png',
+      });
+
+      expect(user.avatar, 'https://example.com/alipay.png');
+    });
+  });
+
   group('AuthService.buildLoginUser', () {
     test(
       'tolerates partial user payloads from a successful login response',
@@ -40,6 +53,20 @@ void main() {
       expect(user.username, 'student_user');
       expect(user.userNo, 618273941);
       expect(user.email, 'student@example.com');
+    });
+
+    test('normalizes Alipay avatar into the generic avatar field', () {
+      final user = AuthService.buildLoginUser({
+        'token': 'token-alipay',
+        'user': {
+          'username': 'alipay_user',
+          'alipayAvatar': 'https://example.com/alipay.png',
+        },
+      }, requestedIdentifier: 'alipay_user');
+
+      expect(user.alipayAvatar, 'https://example.com/alipay.png');
+      expect(user.avatar, 'https://example.com/alipay.png');
+      expect(user.avatarUrl, 'https://example.com/alipay.png');
     });
 
     test(
@@ -109,6 +136,18 @@ void main() {
       expect(user.email, 'new@example.com');
       expect(user.membership.type, 'paid');
       expect(user.membership.expiresAt, '2099-02-01T00:00:00.000Z');
+    });
+
+    test('uses provider avatar fallback when refresh payload omits avatar', () {
+      final user = AuthService.buildRefreshedUser({
+        'username': 'alipay_user',
+        'email': '',
+        'alipay_avatar': 'https://example.com/alipay-refresh.png',
+      });
+
+      expect(user.alipayAvatar, 'https://example.com/alipay-refresh.png');
+      expect(user.avatar, 'https://example.com/alipay-refresh.png');
+      expect(user.avatarUrl, 'https://example.com/alipay-refresh.png');
     });
   });
 }

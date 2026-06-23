@@ -47,6 +47,15 @@ class User {
     return int.tryParse(value.toString());
   }
 
+  static String? _firstNonEmptyString(Iterable<dynamic> values) {
+    for (final value in values) {
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return null;
+  }
+
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       username: json['username'] ?? '',
@@ -64,7 +73,15 @@ class User {
           json['alipay_provider_subject'] ??
           json['alipayUserId'],
       nickname: json['nickname'],
-      avatar: json['avatar'],
+      avatar: _firstNonEmptyString([
+        json['avatar'],
+        json['avatarUrl'],
+        json['avatar_url'],
+        json['alipayAvatar'],
+        json['alipay_avatar'],
+        json['wechatHeadimgurl'],
+        json['wechat_headimgurl'],
+      ]),
       phoneNumber: json['phoneNumber'],
       firebaseUid: json['firebaseUid'],
       usernameChangedAt:
@@ -202,6 +219,7 @@ class AuthModel extends ChangeNotifier {
     String? fallbackEmail,
     String? fallbackPhoneNumber,
     String? fallbackFirebaseUid,
+    String? fallbackAvatar,
     String? fallbackMembershipType,
     DateTime? fallbackMembershipExpiry,
   }) {
@@ -213,6 +231,7 @@ class AuthModel extends ChangeNotifier {
         fallbackEmail: fallbackEmail ?? fallbackUser?.email,
         fallbackPhoneNumber: fallbackPhoneNumber ?? fallbackUser?.phoneNumber,
         fallbackFirebaseUid: fallbackFirebaseUid ?? fallbackUser?.firebaseUid,
+        fallbackAvatar: fallbackAvatar ?? fallbackUser?.avatar,
         fallbackMembershipType:
             fallbackMembershipType ?? fallbackUser?.membershipType,
         fallbackMembershipExpiry:
@@ -266,6 +285,7 @@ class AuthModel extends ChangeNotifier {
     String? fallbackEmail,
     String? fallbackPhoneNumber,
     String? fallbackFirebaseUid,
+    String? fallbackAvatar,
     String? fallbackMembershipType,
     DateTime? fallbackMembershipExpiry,
   }) {
@@ -293,7 +313,17 @@ class AuthModel extends ChangeNotifier {
           userJson['alipayUserId'] ??
           userJson['alipay_user_id'],
       nickname: userJson['nickname'],
-      avatar: userJson['avatar'],
+      avatar:
+          User._firstNonEmptyString([
+            userJson['avatar'],
+            userJson['avatarUrl'],
+            userJson['avatar_url'],
+            userJson['alipayAvatar'],
+            userJson['alipay_avatar'],
+            userJson['wechatHeadimgurl'],
+            userJson['wechat_headimgurl'],
+          ]) ??
+          fallbackAvatar,
       phoneNumber:
           userJson['phoneNumber'] ??
           userJson['phone_number'] ??
@@ -1002,6 +1032,7 @@ class AuthModel extends ChangeNotifier {
               fallbackMembershipExpiry: DateTime.now().add(
                 const Duration(days: 3),
               ),
+              fallbackAvatar: alipayUser?['avatar'],
             );
           } else {
             _currentUser = User(
