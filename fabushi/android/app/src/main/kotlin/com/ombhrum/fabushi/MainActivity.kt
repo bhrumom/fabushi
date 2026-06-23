@@ -266,7 +266,6 @@ class MainActivity : FlutterFragmentActivity() {
         registerPlugin(flutterEngine, "flutter_inappwebview_android") { com.pichillilorenzo.flutter_inappwebview_android.InAppWebViewFlutterPlugin() }
         registerPlugin(flutterEngine, "flutter_local_notifications") { com.dexterous.flutterlocalnotifications.FlutterLocalNotificationsPlugin() }
         registerPlugin(flutterEngine, "flutter_plugin_android_lifecycle") { io.flutter.plugins.flutter_plugin_android_lifecycle.FlutterAndroidLifecyclePlugin() }
-        registerPlugin(flutterEngine, "flutter_sound") { xyz.canardoux.fluttersound.FlutterSound() }
         registerPlugin(flutterEngine, "flutter_tts") { com.eyedeadevelopment.fluttertts.FlutterTtsPlugin() }
         registerPlugin(flutterEngine, "flutter_volume_controller") { com.yosemiteyss.flutter_volume_controller.FlutterVolumeControllerPlugin() }
         registerPlugin(flutterEngine, "geolocator_android") { com.baseflow.geolocator.GeolocatorPlugin() }
