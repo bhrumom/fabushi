@@ -54,10 +54,8 @@ print(cli)
 PY_PATHS
 )"
 
-node_rel="$(printf '%s
-' "$paths_text" | sed -n '1p' | tr -d '')"
-cli_rel="$(printf '%s
-' "$paths_text" | sed -n '2p' | tr -d '')"
+node_rel="$(printf '%s\n' "$paths_text" | sed -n '1p' | tr -d '\r')"
+cli_rel="$(printf '%s\n' "$paths_text" | sed -n '2p' | tr -d '\r')"
 node_path="$platform_root/$node_rel"
 cli_path="$platform_root/$cli_rel"
 
@@ -72,6 +70,14 @@ fi
 if [ ! -f "$cli_path" ]; then
   echo "Missing bundled OpenClaw CLI: $cli_path" >&2
   exit 1
+fi
+
+if [[ "$platform" == macos-* ]]; then
+  if ! node_version="$("$node_path" --version 2>&1)"; then
+    echo "Bundled macOS Node failed to execute from the app bundle: $node_path" >&2
+    echo "$node_version" >&2
+    exit 1
+  fi
 fi
 
 node_count="$(find "$platform_root/node" -type f | wc -l | tr -d ' ')"

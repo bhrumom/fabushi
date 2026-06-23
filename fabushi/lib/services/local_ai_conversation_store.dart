@@ -129,7 +129,7 @@ class LocalAiConversationStore {
   }
 
   Future<LocalAiConversationRecord?> get(String id) async {
-    final items = await list();
+    final items = (await list()).toList(growable: true);
     for (final item in items) {
       if (item.id == id) return item;
     }
@@ -144,7 +144,7 @@ class LocalAiConversationStore {
     String? projectId,
   }) async {
     final now = DateTime.now();
-    final items = await list();
+    final items = (await list()).toList(growable: true);
     final index = items.indexWhere((item) => item.id == conversationId);
     final existing = index >= 0 ? items[index] : null;
     

@@ -99,7 +99,6 @@ class OpenClawRuntimeException implements Exception {
   @override
   String toString() => message;
 }
-
 class OpenClawRuntime {
   OpenClawRuntime._();
 

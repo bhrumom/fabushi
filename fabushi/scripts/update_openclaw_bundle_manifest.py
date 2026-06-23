@@ -23,7 +23,8 @@ def main() -> int:
     if data["version"] == "openclaw-embedded-2026.06.2":
         data["version"] = "openclaw-embedded-2026.06.3"
     data.setdefault("defaultPort", 18789)
-    data.setdefault("defaultModel", "openclaw/default")
+    if data.get("defaultModel") in (None, "", "openclaw/default"):
+        data["defaultModel"] = "deepseek/deepseek-chat"
     data.setdefault("defaultModelOverride", "")
     data["gatewayArgs"] = ["gateway", "--port", "{port}", "--force"]
     data.setdefault(
