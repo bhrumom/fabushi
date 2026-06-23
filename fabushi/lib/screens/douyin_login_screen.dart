@@ -123,15 +123,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     }
   }
 
-  // ==================== 支付宝登录逻辑 ====================
-
-  /// 检测是否为移动端（iOS/Android）
   bool get _isMobile {
-    if (kIsWeb) return false;
-    return Platform.isIOS || Platform.isAndroid;
-  }
-
-  bool get _shouldUseEmbeddedAlipayWebLogin {
     if (kIsWeb) return false;
     return Platform.isIOS || Platform.isAndroid;
   }
@@ -576,27 +568,10 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     try {
       final params = _parseAlipayCallbackParams(url);
 
-      for (final param in queryParams) {
-        final separatorIndex = param.indexOf('=');
-        if (separatorIndex > 0) {
-          final key = param.substring(0, separatorIndex);
-          final value = param.substring(separatorIndex + 1);
-          params[key] = Uri.decodeComponent(value);
-=======
       if (params.containsKey('error') ||
           params.containsKey('alipay_auth_code') ||
           params.containsKey('auth_code') ||
           params.containsKey('token')) {
-        if (!_isExpectedAlipayCallback(params)) {
-          if (mounted) setState(() => _isLoading = false);
-          return;
->>>>>>> origin/main
-        }
-        _clearPendingAlipayState();
-      }
-
-      if (params.containsKey('error') ||
-          params.containsKey('alipay_auth_code')) {
         if (!_isExpectedAlipayCallback(params)) {
           if (mounted) setState(() => _isLoading = false);
           return;
