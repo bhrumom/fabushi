@@ -563,58 +563,60 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final bool isEmpty = _homeChatMessages.isEmpty && !_forceGlobeMode;
 
     return DecoratedBox(
-      decoration: const BoxDecoration(color: Color(0xFFF7F8F7)),
-      child: Row(
+      decoration: const BoxDecoration(color: Colors.transparent),
+      child: Column(
         children: [
-          _buildConversationSidebar(model, embedded: true),
-          Expanded(
-            child: Column(
-              children: [
-                _buildDesktopTopBar(),
-                if (isEmpty)
-                  Expanded(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 800),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              '我们应该在 fabushi 中构建什么？',
-                              style: TextStyle(
-                                color: Color(0xFF17181A),
-                                fontSize: 32,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 32),
-                            _buildDesktopChatComposer(context, model),
-                            const SizedBox(
-                              height: 100,
-                            ),
-                          ],
+          _buildDesktopTopBar(),
+          if (isEmpty)
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 800),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '海纳法流，普布十方',
+                        style: TextStyle(
+                          color: Color(0xFFE8BD6B),
+                          fontSize: 32,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.5,
                         ),
                       ),
-                    ),
-                  )
-                else ...[
-                  Expanded(
-                    child: _buildDesktopWorkspace(context, model, authModel),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(34, 8, 34, 26),
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 960),
-                        child: _buildDesktopChatComposer(context, model),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '您可以通过随心输入来查找资源、下载并启动全球法布施',
+                        style: TextStyle(
+                          color: Color(0xFF8A99AD),
+                          fontSize: 16,
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 32),
+                      _buildDesktopChatComposer(context, model),
+                      const SizedBox(
+                        height: 100,
+                      ),
+                    ],
                   ),
-                ],
-              ],
+                ),
+              ),
+            )
+          else ...[
+            Expanded(
+              child: _buildDesktopWorkspace(context, model, authModel),
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(34, 8, 34, 26),
+              child: Align(
+                alignment: Alignment.center,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 960),
+                  child: _buildDesktopChatComposer(context, model),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1086,14 +1088,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final userName = displayName.isNotEmpty
         ? displayName
         : authModel?.currentUser?.username ?? '大乘用户';
-    final background = embedded
-        ? const Color(0xFFEDEEEE)
-        : const Color(0xFF1E2024);
-    final primaryText = embedded ? const Color(0xFF202124) : Colors.white;
-    final secondaryText = embedded ? const Color(0xFF8D9295) : Colors.white54;
-    final buttonBackground = embedded
-        ? const Color(0xFFDCDDDB)
-        : const Color(0xFF30343A);
+    final background = const Color(0xFF1E2024);
+    final primaryText = Colors.white;
+    final secondaryText = Colors.white54;
+    final buttonBackground = const Color(0xFF30343A);
     final isBusy = _isAiGenerating;
 
     return Container(
@@ -1101,7 +1099,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       decoration: BoxDecoration(
         color: background,
         border: embedded
-            ? const Border(right: BorderSide(color: Color(0xFFE0E1E0)))
+            ? const Border(right: BorderSide(color: Color(0xFF2D3139)))
             : null,
       ),
       child: SafeArea(
@@ -1153,9 +1151,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   label: const Text('新建任务'),
                   style: FilledButton.styleFrom(
                     backgroundColor: buttonBackground,
-                    disabledBackgroundColor: embedded
-                        ? const Color(0xFFE4E5E3)
-                        : Colors.white.withValues(alpha: 0.08),
+                    disabledBackgroundColor: Colors.white.withValues(alpha: 0.08),
                     foregroundColor: primaryText,
                     minimumSize: const Size.fromHeight(44),
                     shape: RoundedRectangleBorder(
@@ -1168,43 +1164,43 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               _buildSidebarActionTile(
                 icon: Icons.smart_toy_outlined,
                 label: '助理',
-                embedded: embedded,
+                embedded: false,
                 onTap: () => _prefillPrompt('让本机 OpenClaw 助理接手：'),
               ),
               _buildSidebarActionTile(
                 icon: Icons.account_tree_outlined,
                 label: '项目',
-                embedded: embedded,
+                embedded: false,
                 onTap: () => _prefillPrompt('新建一个本机 OpenClaw 项目，目标是：'),
               ),
               _buildSidebarActionTile(
                 icon: Icons.hub_outlined,
                 label: '专家',
                 trailing: '技能·连接器',
-                embedded: embedded,
-                onTap: () => _prefillPrompt('召唤适合当前任务的专家和技能：'),
+                embedded: false,
+                onTap: () => _prefillPrompt('召唤适合当前任务的专家 and 技能：'),
               ),
               _buildSidebarActionTile(
                 icon: Icons.alarm_on_outlined,
                 label: '自动化',
-                embedded: embedded,
+                embedded: false,
                 onTap: () => _prefillPrompt('创建一个 OpenClaw 自动化任务：'),
               ),
               _buildSidebarActionTile(
                 icon: Icons.apps_outlined,
                 label: '更多',
                 trailing: '资料库·灵感',
-                embedded: embedded,
+                embedded: false,
                 onTap: () => _prefillPrompt('帮我列出可用的资料库、灵感、技能和连接器'),
               ),
               const SizedBox(height: 22),
-              _DrawerSectionLabel('任务', light: embedded),
+              _DrawerSectionLabel('任务', light: false),
               if (_homeChatMessages.isNotEmpty) ...[
                 _ConversationTile(
                   title: currentTitle,
                   selected: true,
                   running: _shouldShowGlobalSendProcess(model),
-                  light: embedded,
+                  light: false,
                   onTap: () {
                     if (!embedded) Navigator.maybePop(context);
                   },
@@ -1232,7 +1228,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                             title: conversation.title,
                             selected: false,
                             running: conversation.isGlobalSendRunning,
-                            light: embedded,
+                            light: false,
                             onTap: isBusy
                                 ? null
                                 : () => _openConversation(conversation),
@@ -1241,12 +1237,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                       ),
               ),
               const SizedBox(height: 14),
-              _DrawerSectionLabel('空间', light: embedded),
+              _DrawerSectionLabel('空间', light: false),
               _buildSidebarSpaceTile(
                 icon: Icons.folder_outlined,
                 title: '本机电脑',
                 subtitle: '浏览器、文件、桌面',
-                embedded: embedded,
+                embedded: false,
                 onTap: _startDesktopBridgeFromHome,
               ),
               _buildSidebarSpaceTile(
@@ -1255,7 +1251,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 subtitle: _openClawRemoteGatewayUrl.trim().isEmpty
                     ? '待配置'
                     : '已配置',
-                embedded: embedded,
+                embedded: false,
                 onTap: _createOpenClawHomeMobilePairingCode,
               ),
               const SizedBox(height: 12),
@@ -7227,6 +7223,7 @@ class _DesktopComposerButton extends StatelessWidget {
   const _DesktopComposerButton({
     required this.icon,
     required this.label,
+    // ignore: unused_element_parameter
     this.onTap,
   });
 
