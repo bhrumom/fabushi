@@ -90,7 +90,10 @@ class AuthService {
           (user['usernameChangedAt'] ?? user['username_changed_at']) as String?,
       wechatOpenid: user['wechatOpenid'] as String?,
       wechatNickname: user['wechatNickname'] as String?,
-      wechatHeadimgurl: user['wechatHeadimgurl'] as String?,
+      wechatHeadimgurl: _firstNonEmptyString([
+        user['wechatHeadimgurl'],
+        user['wechat_headimgurl'],
+      ]),
       wechatBoundAt: user['wechatBoundAt'] as String?,
       alipayUserId:
           (user['alipayProviderSubject'] ??
@@ -98,10 +101,21 @@ class AuthService {
                   user['alipayUserId'])
               as String?,
       alipayNickname: user['alipayNickname'] as String?,
-      alipayAvatar: user['alipayAvatar'] as String?,
+      alipayAvatar: _firstNonEmptyString([
+        user['alipayAvatar'],
+        user['alipay_avatar'],
+      ]),
       alipayBoundAt: user['alipayBoundAt'] as String?,
       nickname: user['nickname'] as String?,
-      avatar: user['avatar'] as String?,
+      avatar: _firstNonEmptyString([
+        user['avatar'],
+        user['avatarUrl'],
+        user['avatar_url'],
+        user['alipayAvatar'],
+        user['alipay_avatar'],
+        user['wechatHeadimgurl'],
+        user['wechat_headimgurl'],
+      ]),
       phoneNumber: (user['phoneNumber'] ?? user['phone_number']) as String?,
       firebaseUid: (user['firebaseUid'] ?? user['firebase_uid']) as String?,
       mainPractice: user['mainPractice'] is Map
@@ -116,6 +130,14 @@ class AuthService {
   static String? _optionalString(dynamic value) {
     if (value == null) return null;
     return value.toString();
+  }
+
+  static String? _firstNonEmptyString(Iterable<dynamic> values) {
+    for (final value in values) {
+      final text = _optionalString(value)?.trim();
+      if (text != null && text.isNotEmpty) return text;
+    }
+    return null;
   }
 
   static bool _parseBool(dynamic value, {required bool fallback}) {
@@ -237,9 +259,10 @@ class AuthService {
           _optionalString(data['wechatNickname'] ?? data['wechat_nickname']) ??
           fallbackUser?.wechatNickname,
       wechatHeadimgurl:
-          _optionalString(
-            data['wechatHeadimgurl'] ?? data['wechat_headimgurl'],
-          ) ??
+          _firstNonEmptyString([
+            data['wechatHeadimgurl'],
+            data['wechat_headimgurl'],
+          ]) ??
           fallbackUser?.wechatHeadimgurl,
       wechatBoundAt:
           _optionalString(data['wechatBoundAt'] ?? data['wechat_bound_at']) ??
@@ -256,15 +279,23 @@ class AuthService {
           _optionalString(data['alipayNickname'] ?? data['alipay_nickname']) ??
           fallbackUser?.alipayNickname,
       alipayAvatar:
-          _optionalString(data['alipayAvatar'] ?? data['alipay_avatar']) ??
+          _firstNonEmptyString([data['alipayAvatar'], data['alipay_avatar']]) ??
           fallbackUser?.alipayAvatar,
       alipayBoundAt:
           _optionalString(data['alipayBoundAt'] ?? data['alipay_bound_at']) ??
           fallbackUser?.alipayBoundAt,
       nickname: _optionalString(data['nickname']) ?? fallbackUser?.nickname,
       avatar:
-          _optionalString(data['avatar'] ?? data['avatarUrl']) ??
-          fallbackUser?.avatar,
+          _firstNonEmptyString([
+            data['avatar'],
+            data['avatarUrl'],
+            data['avatar_url'],
+            data['alipayAvatar'],
+            data['alipay_avatar'],
+            data['wechatHeadimgurl'],
+            data['wechat_headimgurl'],
+          ]) ??
+          fallbackUser?.avatarUrl,
       phoneNumber:
           _optionalString(data['phoneNumber'] ?? data['phone_number']) ??
           fallbackUser?.phoneNumber,
