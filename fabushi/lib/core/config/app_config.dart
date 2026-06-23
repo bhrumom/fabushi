@@ -214,6 +214,7 @@ class AppConfig {
       buildBackendUrl('/api/app/version-policy');
 
   static String get agentChatUrl => buildBackendUrl('/api/agent/chat');
+  static String get aiQuotaUrl => buildBackendUrl('/api/ai/quota');
   static String agentRunEventsUrl(String runId) =>
       buildBackendUrl('/api/agent/runs/$runId/events');
   static String agentRunCancelUrl(String runId) =>

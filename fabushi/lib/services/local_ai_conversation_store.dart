@@ -1,6 +1,8 @@
 import 'dart:convert';
-
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'workspace_service.dart';
 
 class LocalAiConversationMessage {
   final String role;
@@ -35,24 +37,28 @@ class LocalAiConversationRecord {
   final String title;
   final DateTime updatedAt;
   final List<LocalAiConversationMessage> messages;
+  final String? projectId; // Can be a project name or folder path
 
   const LocalAiConversationRecord({
     required this.id,
     required this.title,
     required this.updatedAt,
     required this.messages,
+    this.projectId,
   });
 
   LocalAiConversationRecord copyWith({
     String? title,
     DateTime? updatedAt,
     List<LocalAiConversationMessage>? messages,
+    String? projectId,
   }) {
     return LocalAiConversationRecord(
       id: id,
       title: title ?? this.title,
       updatedAt: updatedAt ?? this.updatedAt,
       messages: messages ?? this.messages,
+      projectId: projectId ?? this.projectId,
     );
   }
 
@@ -61,6 +67,7 @@ class LocalAiConversationRecord {
     'title': title,
     'updatedAt': updatedAt.toIso8601String(),
     'messages': messages.map((message) => message.toJson()).toList(),
+    'projectId': projectId,
   };
 
   factory LocalAiConversationRecord.fromJson(Map<String, dynamic> json) {
@@ -81,6 +88,7 @@ class LocalAiConversationRecord {
                 )
                 .toList()
           : const [],
+      projectId: json['projectId']?.toString(),
     );
   }
 }
@@ -89,36 +97,39 @@ class LocalAiConversationStore {
   LocalAiConversationStore._();
 
   static final LocalAiConversationStore instance = LocalAiConversationStore._();
-  static const String _storageKey = 'openclaw_local_conversations_v1';
-  static const int _maxConversations = 80;
-  static const int _maxMessagesPerConversation = 80;
 
+  /// Loads all chat records from disk
   Future<List<LocalAiConversationRecord>> list() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storageKey);
-    if (raw == null || raw.trim().isEmpty) return const [];
+    if (kIsWeb) return const []; // Fallback for web
+    
+    final chatsPath = await WorkspaceService.instance.getChatsPath();
+    final dir = Directory(chatsPath);
+    if (!await dir.exists()) return const [];
 
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! List) return const [];
-      final items = decoded
-          .whereType<Map>()
-          .map(
-            (item) => LocalAiConversationRecord.fromJson(
-              Map<String, dynamic>.from(item),
-            ),
-          )
-          .where((item) => item.id.isNotEmpty)
-          .toList();
-      items.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return items;
-    } catch (_) {
-      return const [];
+    final List<LocalAiConversationRecord> records = [];
+
+    // Crawl through date folders (e.g., 2026-06-23)
+    final dateDirs = dir.listSync().whereType<Directory>();
+    for (final dateDir in dateDirs) {
+      final files = dateDir.listSync().whereType<File>().where((f) => f.path.endsWith('.json'));
+      for (final file in files) {
+        try {
+          final content = await file.readAsString();
+          final json = jsonDecode(content);
+          records.add(LocalAiConversationRecord.fromJson(json));
+        } catch (e) {
+          debugPrint('Error reading chat file: ${file.path} - $e');
+        }
+      }
     }
+
+    // Sort descending by updatedAt
+    records.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return records;
   }
 
   Future<LocalAiConversationRecord?> get(String id) async {
-    final items = (await list()).toList(growable: true);
+    final items = await list();
     for (final item in items) {
       if (item.id == id) return item;
     }
@@ -130,11 +141,13 @@ class LocalAiConversationStore {
     required String userText,
     required String assistantText,
     String? title,
+    String? projectId,
   }) async {
     final now = DateTime.now();
-    final items = (await list()).toList(growable: true);
+    final items = await list();
     final index = items.indexWhere((item) => item.id == conversationId);
     final existing = index >= 0 ? items[index] : null;
+    
     final messages = <LocalAiConversationMessage>[
       ...?existing?.messages,
       LocalAiConversationMessage(
@@ -149,54 +162,63 @@ class LocalAiConversationStore {
       ),
     ];
 
-    final trimmedMessages = messages.length > _maxMessagesPerConversation
-        ? messages.sublist(messages.length - _maxMessagesPerConversation)
-        : messages;
+    String recordTitle = title ?? existing?.title ?? _generateTitle(userText);
 
-    final next = LocalAiConversationRecord(
+    final record = LocalAiConversationRecord(
       id: conversationId,
-      title: title ?? existing?.title ?? _titleFrom(userText),
+      title: recordTitle,
       updatedAt: now,
-      messages: trimmedMessages,
+      messages: messages,
+      projectId: projectId ?? existing?.projectId,
     );
 
-    if (index >= 0) {
-      items[index] = next;
-    } else {
-      items.insert(0, next);
-    }
+    await _saveRecord(record);
+  }
 
-    items.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    final trimmed = items.length > _maxConversations
-        ? items.sublist(0, _maxConversations)
-        : items;
-    await _save(trimmed);
+  Future<void> _saveRecord(LocalAiConversationRecord record) async {
+    if (kIsWeb) return;
+    
+    // Save under the date folder of the record's initial creation time
+    // For simplicity, we use the first message's creation date, or today
+    final date = record.messages.isNotEmpty ? record.messages.first.createdAt : DateTime.now();
+    final dateDir = await WorkspaceService.instance.getDailyChatsPath(date);
+    
+    final file = File(p.join(dateDir, 'chat_${record.id}.json'));
+    await file.writeAsString(jsonEncode(record.toJson()), flush: true);
   }
 
   Future<void> delete(String id) async {
-    final items = await list();
-    items.removeWhere((item) => item.id == id);
-    await _save(items);
+    if (kIsWeb) return;
+    
+    final chatsPath = await WorkspaceService.instance.getChatsPath();
+    final dir = Directory(chatsPath);
+    if (!await dir.exists()) return;
+
+    final dateDirs = dir.listSync().whereType<Directory>();
+    for (final dateDir in dateDirs) {
+      final file = File(p.join(dateDir.path, 'chat_$id.json'));
+      if (await file.exists()) {
+        await file.delete();
+        break; // Assuming IDs are unique globally
+      }
+    }
   }
 
-  Future<void> clear() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_storageKey);
+  Future<void> updateTitle(String id, String newTitle) async {
+    final record = await get(id);
+    if (record != null) {
+      final updated = record.copyWith(title: newTitle, updatedAt: DateTime.now());
+      await _saveRecord(updated);
+    }
   }
 
-  Future<void> _save(List<LocalAiConversationRecord> items) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _storageKey,
-      jsonEncode(items.map((item) => item.toJson()).toList()),
-    );
-  }
-
-  String _titleFrom(String text) {
-    final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-    if (normalized.isEmpty) return '新对话';
-    return normalized.length <= 22
-        ? normalized
-        : '${normalized.substring(0, 22)}…';
+  String _generateTitle(String userText) {
+    if (userText.isEmpty) return '新对话';
+    final lines = userText.split('\n');
+    var firstLine = lines.first.trim();
+    if (firstLine.length > 20) {
+      firstLine = '${firstLine.substring(0, 18)}...';
+    }
+    return firstLine.isEmpty ? '新对话' : firstLine;
   }
 }

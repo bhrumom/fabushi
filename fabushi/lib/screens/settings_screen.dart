@@ -20,10 +20,13 @@ import '../services/diagnostic_log_service.dart';
 import '../services/openclaw/openclaw_runtime.dart';
 import '../services/worker_config.dart';
 import '../widgets/model_selection_dialog.dart';
+import '../widgets/settings/codex_profile_dashboard.dart';
 import '../models/auth_model.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+  final VoidCallback? onClose;
+
+  const SettingsScreen({Key? key, this.onClose}) : super(key: key);
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -1002,7 +1005,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           margin: const EdgeInsets.all(30),
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: const Color(0xFF111111), // Dark container background
             borderRadius: BorderRadius.circular(16),
             boxShadow: const [
               BoxShadow(
@@ -1024,30 +1027,140 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildSettingsCategorySidebar() {
-    final categories = [
-      ('account', Icons.person_outline, '账户管理'),
-      ('system', Icons.settings_outlined, '系统设置'),
-      ('agent', Icons.extension_outlined, '智能体设置'),
-      ('memory', Icons.psychology_outlined, '记忆'),
-      ('model', Icons.view_in_ar_outlined, '模型'),
-      ('data', Icons.storage_outlined, '数据管理'),
-      ('security', Icons.shield_outlined, '安全中心'),
-      ('help', Icons.help_outline, '帮助与反馈'),
-    ];
-
     return Container(
       width: 250,
-      color: const Color(0xFFF0F1F0),
+      color: const Color(0xFF1E1E1E), // Dark theme matching Codex
       padding: const EdgeInsets.fromLTRB(12, 34, 12, 20),
-      child: Column(
+      child: ListView(
         children: [
-          for (final item in categories)
-            _SettingsCategoryTile(
-              icon: item.$2,
-              label: item.$3,
-              selected: _settingsCategory == item.$1,
-              onTap: () => setState(() => _settingsCategory = item.$1),
+          Padding(
+            padding: const EdgeInsets.only(left: 12, bottom: 8, top: 8),
+            child: Text(
+              '个人',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.5),
+                fontSize: 12,
+              ),
             ),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.settings_outlined,
+            label: '常规',
+            selected: _settingsCategory == 'system',
+            onTap: () => setState(() => _settingsCategory = 'system'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.person_outline,
+            label: '个人资料',
+            selected: _settingsCategory == 'account',
+            onTap: () => setState(() => _settingsCategory = 'account'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.light_mode_outlined,
+            label: '外观',
+            selected: _settingsCategory == 'appearance',
+            onTap: () => setState(() => _settingsCategory = 'appearance'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.tune_outlined,
+            label: '配置',
+            selected: _settingsCategory == 'config',
+            onTap: () => setState(() => _settingsCategory = 'config'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.color_lens_outlined,
+            label: '个性化',
+            selected: _settingsCategory == 'personalization',
+            onTap: () => setState(() => _settingsCategory = 'personalization'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.pets_outlined,
+            label: 'Pets',
+            selected: _settingsCategory == 'pets',
+            onTap: () => setState(() => _settingsCategory = 'pets'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.keyboard_outlined,
+            label: '键盘快捷键',
+            selected: _settingsCategory == 'shortcuts',
+            onTap: () => setState(() => _settingsCategory = 'shortcuts'),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.only(left: 12, bottom: 8, top: 24),
+            child: Text(
+              '集成',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.5),
+                fontSize: 12,
+              ),
+            ),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.camera_alt_outlined,
+            label: '应用快照',
+            selected: _settingsCategory == 'snapshots',
+            onTap: () => setState(() => _settingsCategory = 'snapshots'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.integration_instructions_outlined,
+            label: 'MCP 服务器',
+            selected: _settingsCategory == 'mcp',
+            onTap: () => setState(() => _settingsCategory = 'mcp'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.language_outlined,
+            label: '浏览器',
+            selected: _settingsCategory == 'browser',
+            onTap: () => setState(() => _settingsCategory = 'browser'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.computer_outlined,
+            label: '电脑操控',
+            selected: _settingsCategory == 'desktop',
+            onTap: () => setState(() => _settingsCategory = 'desktop'),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.only(left: 12, bottom: 8, top: 24),
+            child: Text(
+              '编码',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.5),
+                fontSize: 12,
+              ),
+            ),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.anchor_outlined,
+            label: '钩子',
+            selected: _settingsCategory == 'hooks',
+            onTap: () => setState(() => _settingsCategory = 'hooks'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.link_outlined,
+            label: '连接',
+            selected: _settingsCategory == 'connection',
+            onTap: () => setState(() => _settingsCategory = 'connection'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.code_outlined,
+            label: 'Git',
+            selected: _settingsCategory == 'git',
+            onTap: () => setState(() => _settingsCategory = 'git'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.monitor_outlined,
+            label: '环境',
+            selected: _settingsCategory == 'environment',
+            onTap: () => setState(() => _settingsCategory = 'environment'),
+          ),
+          _SettingsCategoryTile(
+            icon: Icons.account_tree_outlined,
+            label: '工作树',
+            selected: _settingsCategory == 'worktree',
+            onTap: () => setState(() => _settingsCategory = 'worktree'),
+          ),
         ],
       ),
     );
@@ -1055,18 +1168,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildSettingsCategoryContent() {
     final title = switch (_settingsCategory) {
-      'account' => '账户管理',
-      'agent' => '智能体设置',
-      'memory' => '记忆',
-      'model' => '模型',
-      'data' => '数据管理',
-      'security' => '安全中心',
-      'help' => '帮助与反馈',
+      'system' => '常规',
+      'account' => '个人资料',
+      'appearance' => '外观',
+      'config' => '配置',
+      'personalization' => '个性化',
+      'pets' => 'Pets',
+      'shortcuts' => '键盘快捷键',
+      'snapshots' => '应用快照',
+      'mcp' => 'MCP 服务器',
+      'browser' => '浏览器',
+      'desktop' => '电脑操控',
+      'hooks' => '钩子',
+      'connection' => '连接',
+      'git' => 'Git',
+      'environment' => '环境',
+      'worktree' => '工作树',
       _ => '设置',
     };
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(36, 34, 36, 28),
+    return Container(
+      color: const Color(0xFF1E1E1E),
+      padding: const EdgeInsets.fromLTRB(40, 40, 40, 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1076,23 +1199,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Text(
                   title,
                   style: const TextStyle(
-                    color: Color(0xFF202124),
+                    color: Colors.white,
                     fontSize: 24,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
               IconButton(
                 tooltip: '关闭',
-                onPressed: () => Navigator.maybePop(context),
-                icon: const Icon(Icons.close),
+                onPressed: () {
+                  if (widget.onClose != null) {
+                    widget.onClose!();
+                  } else {
+                    Navigator.maybePop(context);
+                  }
+                },
+                icon: const Icon(Icons.close, color: Colors.white54),
               ),
             ],
           ),
-          const Divider(height: 28),
+          const SizedBox(height: 32),
           Expanded(
             child: SingleChildScrollView(
-              child: Column(children: _settingsCategoryWidgets()),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: _settingsCategoryWidgets(),
+              ),
             ),
           ),
         ],
@@ -1101,114 +1233,221 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   List<Widget> _settingsCategoryWidgets() {
-    switch (_settingsCategory) {
-      case 'account':
-        return [
-          _SettingsLightRow(
-            icon: Icons.refresh,
-            title: '刷新数据',
-            subtitle: '重新同步账户信息。',
-            onTap: _refreshAccountData,
-          ),
-          _SettingsLightRow(
-            icon: Icons.info_outline,
-            title: '关于',
-            subtitle: '版本 $_appVersionLabel',
-            onTap: _showAbout,
-          ),
-          _buildLogoutItem(context),
-        ];
-      case 'agent':
-        return [
-          if (AiBackendPolicy.isDesktopNative) _buildOpenClawSettingCard(),
-          _SettingsLightRow(
-            icon: Icons.auto_awesome,
-            title: '技能自动更新',
-            subtitle: '保持已安装技能为最新版。',
-            trailing: Switch(value: true, onChanged: (_) {}),
-          ),
-        ];
-      case 'memory':
-        return [
-          _SettingsLightRow(
-            icon: Icons.history,
-            title: '对话记忆',
-            subtitle: '管理本机对话上下文和项目空间。',
-            onTap: _copyDiagnosticLogTail,
-          ),
-          _SettingsLightRow(
-            icon: Icons.article_outlined,
-            title: '诊断日志',
-            subtitle: '复制或打开 OpenClaw 和桌面控制日志。',
-            onTap: _openDiagnosticLogLocation,
-          ),
-        ];
-      case 'model':
-        return [_buildModelSettingCard()];
-      case 'data':
-        return [
-          _buildTtsMuteSettingItem(),
-          _buildRecitationThresholdSettings(),
-        ];
-      case 'security':
-        return [
-          _SettingsLightRow(
-            icon: Icons.visibility_outlined,
-            title: '修行隐私',
-            subtitle: '控制修行排行榜与公开记录的展示范围。',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PracticePrivacyScreen()),
+    if (_settingsCategory == 'system') {
+      return [
+        _buildSettingsSectionTitle('工作模式'),
+        const Text(
+          '选择 Codex 显示多少技术细节',
+          style: TextStyle(color: Colors.white54, fontSize: 13),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(child: _buildWorkModeCard('适用于编程', '更具技术性的回复和控制', true)),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildWorkModeCard('适用于日常工作', '同样强大，技术细节更少', false),
             ),
-          ),
-          _buildDeleteAccountItem(context),
-        ];
-      case 'help':
-        return [
-          _SettingsLightRow(
-            icon: Icons.help_outline,
-            title: '帮助与反馈',
-            subtitle: '提交问题或建议，发送到支持邮箱。',
-            onTap: _showFeedbackDialog,
-          ),
-          _SettingsLightRow(
-            icon: Icons.info_outline,
-            title: '关于',
-            subtitle: '版本 $_appVersionLabel',
-            onTap: _showAbout,
-          ),
-        ];
-      default:
-        return [
-          _SettingsLightRow(
-            icon: Icons.language,
-            title: '显示语言',
-            subtitle: '设置应用程序界面的显示语言。',
-            trailing: const Text('中文(简体)'),
-          ),
-          _SettingsLightRow(
-            icon: Icons.keyboard_return,
-            title: '发送消息',
-            subtitle: '设置聊天输入框中发送消息的快捷键。',
-            trailing: const Text('Enter'),
-          ),
-          _SettingsLightRow(
-            icon: Icons.open_in_full,
-            title: '桌面窗口',
-            subtitle: '已允许调整大小、最大化和系统全屏。',
-          ),
-          if (Platform.isAndroid)
-            _SettingsLightRow(
-              icon: Icons.battery_saver,
-              title: '后台保活设置',
-              subtitle: '防止应用被系统清理。',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const KeepAliveGuideScreen()),
-              ),
-            ),
-        ];
+          ],
+        ),
+        const SizedBox(height: 32),
+
+        _buildSettingsSectionTitle('权限'),
+        _buildSettingsSwitchRow(
+          '默认权限',
+          '默认情况下，Codex 可以读取并编辑其工作区中的文件。必要时，它可以请求额外的访问权限',
+          true,
+          (_) {},
+        ),
+        _buildSettingsSwitchRow(
+          '自动审核',
+          'Codex 可以读取和编辑其工作区中的文件。Codex 会自动审核额外的访问权限请求。自动审核可能会出错。',
+          true,
+          (_) {},
+        ),
+        _buildSettingsSwitchRow(
+          '完全访问权限',
+          '当 Codex 以完全访问权限运行时，无需你批准，即可编辑你的电脑上的任何文件并运行联网命令。',
+          true,
+          (_) {},
+        ),
+        const SizedBox(height: 32),
+
+        _buildSettingsSectionTitle('常规'),
+        _buildSettingsDropdownRow('默认打开目标', '默认打开文件和文件夹的位置', 'Default app'),
+        _buildSettingsDropdownRow('语言', '应用 UI 语言', '自动检测'),
+        _buildSettingsSwitchRow('在菜单栏中显示', '', true, (_) {}),
+        const SizedBox(height: 40),
+      ];
     }
+
+    if (_settingsCategory == 'account') {
+      return const [CodexProfileDashboard()];
+    }
+
+    // For other categories, we can return placeholders for now
+    return const [
+      Center(
+        child: Text('此页面正在建设中', style: TextStyle(color: Colors.white54)),
+      ),
+    ];
+  }
+
+  Widget _buildSettingsSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorkModeCard(String title, String subtitle, bool selected) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: selected ? Colors.white.withOpacity(0.1) : Colors.transparent,
+        border: Border.all(
+          color: selected ? Colors.blueAccent : Colors.white24,
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.terminal, color: Colors.white70, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          Radio<bool>(
+            value: true,
+            groupValue: selected,
+            onChanged: (_) {},
+            activeColor: Colors.blueAccent,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsSwitchRow(
+    String title,
+    String subtitle,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12.0),
+      child: Row(
+        crossAxisAlignment: subtitle.isNotEmpty
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: Colors.blueAccent,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsDropdownRow(
+    String title,
+    String subtitle,
+    String currentValue,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12.0),
+      child: Row(
+        crossAxisAlignment: subtitle.isNotEmpty
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white24),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  currentValue,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.keyboard_arrow_down,
+                  color: Colors.white54,
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _refreshAccountData() async {
@@ -2328,19 +2567,20 @@ class _SettingsCategoryTile extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFE0E0DF) : Colors.transparent,
+          color: selected ? const Color(0xFF2B2D31) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
-            Icon(icon, color: const Color(0xFF26282B), size: 20),
+            Icon(icon,
+                color: selected ? Colors.white : Colors.white54, size: 20),
             const SizedBox(width: 12),
             Text(
               label,
-              style: const TextStyle(
-                color: Color(0xFF26282B),
+              style: TextStyle(
+                color: selected ? Colors.white : Colors.white70,
                 fontSize: 15,
-                fontWeight: FontWeight.w800,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
           ],

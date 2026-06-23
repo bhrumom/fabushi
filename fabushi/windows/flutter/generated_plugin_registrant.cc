@@ -12,7 +12,6 @@
 #include <firebase_auth/firebase_auth_plugin_c_api.h>
 #include <firebase_core/firebase_core_plugin_c_api.h>
 #include <flutter_inappwebview_windows/flutter_inappwebview_windows_plugin_c_api.h>
-#include <taudio/taudio_plugin_c_api.h>
 #include <flutter_tts/flutter_tts_plugin.h>
 #include <flutter_volume_controller/flutter_volume_controller_plugin_c_api.h>
 #include <geolocator_windows/geolocator_windows.h>
@@ -36,8 +35,6 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("FirebaseCorePluginCApi"));
   FlutterInappwebviewWindowsPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterInappwebviewWindowsPluginCApi"));
-  TaudioPluginCApiRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("TaudioPluginCApi"));
   FlutterTtsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterTtsPlugin"));
   FlutterVolumeControllerPluginCApiRegisterWithRegistrar(

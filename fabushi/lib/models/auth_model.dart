@@ -59,7 +59,10 @@ class User {
           ? DateTime.parse(json['membershipExpiry'])
           : null,
       isAdmin: json['isAdmin'] ?? false,
-      alipayUserId: json['alipayUserId'],
+      alipayUserId:
+          json['alipayProviderSubject'] ??
+          json['alipay_provider_subject'] ??
+          json['alipayUserId'],
       nickname: json['nickname'],
       avatar: json['avatar'],
       phoneNumber: json['phoneNumber'],
@@ -284,7 +287,11 @@ class AuthModel extends ChangeNotifier {
       membershipType: membershipType,
       membershipExpiry: membershipExpiry,
       isAdmin: isAdmin,
-      alipayUserId: userJson['alipayUserId'] ?? userJson['alipay_user_id'],
+      alipayUserId:
+          userJson['alipayProviderSubject'] ??
+          userJson['alipay_provider_subject'] ??
+          userJson['alipayUserId'] ??
+          userJson['alipay_user_id'],
       nickname: userJson['nickname'],
       avatar: userJson['avatar'],
       phoneNumber:
@@ -657,20 +664,22 @@ class AuthModel extends ChangeNotifier {
   }
 
   Future<bool> alipayOneClickRegister(
-    String alipayUserId,
+    String alipayProviderSubject,
     String? nickname,
     String? avatar, [
-    String? alipayOpenId,
+    String? alipaySubjectType,
   ]) async {
     _setLoading(true);
     _clearError();
 
     try {
-      debugPrint('支付宝一键注册开始: alipayUserId=$alipayUserId');
+      debugPrint(
+        '支付宝一键注册开始: providerSubject=$alipayProviderSubject, subjectType=$alipaySubjectType',
+      );
 
       final result = await _alipayAuthService.alipayOneClickRegister(
-        alipayUserId: alipayUserId,
-        alipayOpenId: alipayOpenId,
+        alipayProviderSubject: alipayProviderSubject,
+        alipaySubjectType: alipaySubjectType,
         nickname: nickname,
         avatar: avatar,
       );
@@ -947,14 +956,22 @@ class AuthModel extends ChangeNotifier {
             ? username
             : (alipayUser?['nick_name'] ??
                   '支付宝用户_${DateTime.now().millisecondsSinceEpoch}');
+        final alipayProviderSubject =
+            alipayUser?['providerSubject'] ??
+            alipayUser?['provider_subject'] ??
+            alipayUser?['user_id'] ??
+            authCode;
+        final alipaySubjectType =
+            alipayUser?['subjectType'] ?? alipayUser?['subject_type'];
         final autoEmail = email.isNotEmpty
             ? email
-            : '${alipayUser?['user_id'] ?? authCode}@alipay.user';
+            : '$alipayProviderSubject@alipay.user';
 
         debugPrint('支付宝新用户自动注册: username=$autoUsername, email=$autoEmail');
 
         final result = await _alipayAuthService.alipayRegister(
-          alipayUserId: alipayUser?['user_id'] ?? authCode,
+          alipayProviderSubject: alipayProviderSubject,
+          alipaySubjectType: alipaySubjectType,
           username: autoUsername,
           password: '',
           email: autoEmail,

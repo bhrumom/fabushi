@@ -27,11 +27,6 @@ list(APPEND FLUTTER_FFI_PLUGIN_LIST
 
 set(PLUGIN_BUNDLED_LIBRARIES)
 
-add_subdirectory(flutter/ephemeral/.plugin_symlinks/flutter_sound/windows plugins/flutter_sound)
-target_link_libraries(${BINARY_NAME} PRIVATE taudio_plugin)
-list(APPEND PLUGIN_BUNDLED_LIBRARIES $<TARGET_FILE:taudio_plugin>)
-list(APPEND PLUGIN_BUNDLED_LIBRARIES ${taudio_bundled_libraries})
-
 foreach(plugin ${FLUTTER_PLUGIN_LIST})
   add_subdirectory(flutter/ephemeral/.plugin_symlinks/${plugin}/windows plugins/${plugin})
   target_link_libraries(${BINARY_NAME} PRIVATE ${plugin}_plugin)
