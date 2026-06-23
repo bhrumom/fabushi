@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -39,6 +38,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
   StreamSubscription? _urlSubscription;
   final PlatformService _platformService = PlatformServiceFactory.create();
   bool _isAlipayWebLoginOpen = false;
+  String? _pendingAlipayState;
 
   @override
   void initState() {
@@ -56,7 +56,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
       _platformService.listenToMessages((event) {
         final data = event.data;
         if (data is Map && data.containsKey('alipay_auth_code')) {
-          _handleAlipayCallback(data['alipay_auth_code']);
+          _handleAlipayCallback(Map<String, dynamic>.from(data));
         }
       });
     } else {
@@ -84,6 +84,11 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
       _passwordController.text.isNotEmpty &&
       _agreedToTerms &&
       !_isLoading;
+
+  bool get _shouldUseEmbeddedAlipayWebLogin {
+    if (kIsWeb) return false;
+    return Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
+  }
 
   // ==================== 账号密码登录逻辑 ====================
 
@@ -221,12 +226,19 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
           // 新用户需要注册
           final alipayUser = loginResult['alipayUser'];
           if (alipayUser != null) {
+            final alipayProviderSubject =
+                alipayUser['providerSubject'] ??
+                alipayUser['provider_subject'] ??
+                alipayUser['userId'] ??
+                '';
+            final alipaySubjectType =
+                alipayUser['subjectType'] ?? alipayUser['subject_type'];
             // 自动一键注册
             final registerResult = await authModel.alipayOneClickRegister(
-              alipayUser['userId'] ?? '',
+              alipayProviderSubject,
               alipayUser['nickname'],
               alipayUser['avatar'],
-              alipayUser['openId'] ?? alipayUser['open_id'],
+              alipaySubjectType,
             );
 
             if (registerResult && mounted) {
@@ -302,11 +314,13 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     }
 
     final result = await authModel.getAlipayLoginUrl(platform: platform);
+    if (!mounted) return;
 
     if (result['success'] == true && result['loginUrl'] != null) {
       final loginUrl = result['loginUrl'] as String;
+      _pendingAlipayState = result['state']?.toString();
 
-      if (_isMobile) {
+      if (_shouldUseEmbeddedAlipayWebLogin) {
         debugPrint('使用内置 WebView 打开支付宝网页授权');
         _isAlipayWebLoginOpen = true;
         final callbackUrl = await Navigator.of(context).push<String>(
@@ -322,6 +336,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
           debugPrint('内置 WebView 捕获到 deep link: $callbackUrl');
           await _handleDeepLinkAlipayCallback(callbackUrl);
         } else {
+          _pendingAlipayState = null;
           setState(() => _isLoading = false);
         }
       } else {
@@ -330,9 +345,18 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } else if (kIsWeb) {
           _platformService.openUrl(loginUrl, '_self');
+        } else {
+          _pendingAlipayState = null;
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _errorMessage = '无法打开支付宝登录页面';
+            });
+          }
         }
       }
     } else {
+      _pendingAlipayState = null;
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -342,21 +366,54 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     }
   }
 
+  bool _isExpectedAlipayCallback(Map<String, String> params) {
+    final callbackState = params['state'];
+    final pendingState = _pendingAlipayState;
+    if (pendingState == null || pendingState.isEmpty) {
+      debugPrint('忽略支付宝回调：当前没有待处理的登录请求');
+      return false;
+    }
+    if (callbackState == null || callbackState.isEmpty) {
+      debugPrint('忽略支付宝回调：缺少state');
+      return false;
+    }
+    if (callbackState != pendingState) {
+      debugPrint('忽略支付宝回调：state不匹配');
+      return false;
+    }
+    return true;
+  }
+
+  void _clearPendingAlipayState() {
+    _pendingAlipayState = null;
+  }
+
   Future<void> _handleAlipayCallback(Map<String, dynamic> params) async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
 
     try {
-      final alipayUserId = params['alipay_user_id'] as String?;
-      final alipayOpenId = params['alipay_open_id'] as String?;
+      final normalizedParams = params.map(
+        (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
+      );
+      if (!_isExpectedAlipayCallback(normalizedParams)) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+      _clearPendingAlipayState();
+
+      final alipayProviderSubject =
+          (params['alipay_provider_subject'] ?? params['alipay_user_id'])
+              as String?;
+      final alipaySubjectType = params['alipay_subject_type'] as String?;
       final alipayNickname = params['alipay_nickname'] as String?;
       final alipayAvatar = params['alipay_avatar'] as String?;
       final authCode = params['alipay_auth_code'] as String?;
 
       final success = await authModel.alipayOneClickRegister(
-        alipayUserId ?? authCode ?? '',
+        alipayProviderSubject ?? authCode ?? '',
         alipayNickname,
         alipayAvatar,
-        alipayOpenId,
+        alipaySubjectType,
       );
 
       if (success && mounted) {
@@ -400,12 +457,21 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
 
       final queryParams = urlWithoutScheme.split('&');
       for (final param in queryParams) {
-        if (param.contains('=')) {
-          final keyValue = param.split('=');
-          if (keyValue.length == 2) {
-            params[keyValue[0]] = Uri.decodeComponent(keyValue[1]);
-          }
+        final separatorIndex = param.indexOf('=');
+        if (separatorIndex > 0) {
+          final key = param.substring(0, separatorIndex);
+          final value = param.substring(separatorIndex + 1);
+          params[key] = Uri.decodeComponent(value);
         }
+      }
+
+      if (params.containsKey('error') ||
+          params.containsKey('alipay_auth_code')) {
+        if (!_isExpectedAlipayCallback(params)) {
+          if (mounted) setState(() => _isLoading = false);
+          return;
+        }
+        _clearPendingAlipayState();
       }
 
       if (params.containsKey('error')) {
@@ -423,20 +489,45 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
 
       if (params.containsKey('alipay_auth_code')) {
         final authCode = params['alipay_auth_code']!;
-        final alipayUserId = params['alipay_user_id'];
-        final alipayOpenId = params['alipay_open_id'];
+        final alipayProviderSubject =
+            params['alipay_provider_subject'] ?? params['alipay_user_id'];
+        final alipaySubjectType = params['alipay_subject_type'];
         final alipayNickname = params['alipay_nickname'];
         final alipayAvatar = params['alipay_avatar'];
         final isNewUser = params['isNewUser'] == 'true';
         final token = params['token'];
         final username = params['username'];
+        final userNo = params['user_no'];
 
+        if (!mounted) return;
         final authModel = Provider.of<AuthModel>(context, listen: false);
         bool success = false;
 
         if (!isNewUser && token != null && username != null) {
           try {
-            await authModel.loginWithToken(token, username);
+            await authModel.loginWithToken(
+              token,
+              username,
+              userJson: {
+                'username': username,
+                if (userNo != null && userNo.isNotEmpty) 'userNo': userNo,
+                if (alipayProviderSubject != null &&
+                    alipayProviderSubject.isNotEmpty) ...{
+                  'alipayProviderSubject': alipayProviderSubject,
+                  'alipayUserId': alipayProviderSubject,
+                },
+                if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
+                  'alipaySubjectType': alipaySubjectType,
+                if (alipayNickname != null && alipayNickname.isNotEmpty) ...{
+                  'nickname': alipayNickname,
+                  'alipayNickname': alipayNickname,
+                },
+                if (alipayAvatar != null && alipayAvatar.isNotEmpty) ...{
+                  'avatar': alipayAvatar,
+                  'alipayAvatar': alipayAvatar,
+                },
+              },
+            );
             success = true;
           } catch (e) {
             debugPrint('使用token登录失败: $e');
@@ -444,10 +535,10 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
           }
         } else {
           success = await authModel.alipayOneClickRegister(
-            alipayUserId ?? authCode,
+            alipayProviderSubject ?? authCode,
             alipayNickname,
             alipayAvatar,
-            alipayOpenId,
+            alipaySubjectType,
           );
         }
 

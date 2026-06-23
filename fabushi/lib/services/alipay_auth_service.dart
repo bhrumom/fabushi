@@ -185,9 +185,10 @@ class AlipayAuthService {
 
   /// 支付宝账号注册（新用户）
   Future<Map<String, dynamic>> alipayRegister({
-    required String alipayUserId,
+    required String alipayProviderSubject,
     required String username,
     required String password,
+    String? alipaySubjectType,
     String? nickname,
     String? avatar,
     String? email,
@@ -198,7 +199,9 @@ class AlipayAuthService {
         Uri.parse('$url/api/auth/alipay/register'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'alipayUserId': alipayUserId,
+          'alipayProviderSubject': alipayProviderSubject,
+          if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
+            'alipaySubjectType': alipaySubjectType,
           'username': username,
           'password': password,
           'nickname': nickname,
@@ -222,8 +225,8 @@ class AlipayAuthService {
 
   /// 支付宝一键注册（自动生成用户名和邮箱）
   Future<Map<String, dynamic>> alipayOneClickRegister({
-    required String alipayUserId,
-    String? alipayOpenId,
+    required String alipayProviderSubject,
+    String? alipaySubjectType,
     String? nickname,
     String? avatar,
   }) async {
@@ -233,9 +236,9 @@ class AlipayAuthService {
         Uri.parse('$url/api/auth/alipay/register'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'alipayUserId': alipayUserId,
-          if (alipayOpenId != null && alipayOpenId.isNotEmpty)
-            'alipayOpenId': alipayOpenId,
+          'alipayProviderSubject': alipayProviderSubject,
+          if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
+            'alipaySubjectType': alipaySubjectType,
           'alipayNickname': nickname,
           'alipayAvatar': avatar,
           'oneClick': true,

@@ -109,6 +109,21 @@ class DachengConversationMessage {
   }
 }
 
+class DachengAiModelSummary {
+  final String id;
+  final String label;
+
+  const DachengAiModelSummary({required this.id, required this.label});
+
+  factory DachengAiModelSummary.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] ?? '').toString();
+    return DachengAiModelSummary(
+      id: id,
+      label: (json['label'] ?? id).toString(),
+    );
+  }
+}
+
 class DharmaResourceSearchResult {
   final String id;
   final String title;
@@ -207,6 +222,8 @@ class DachengAiService {
   Future<DachengAiChatResult> sendChat({
     required String message,
     String? conversationId,
+    String? model,
+    Map<String, dynamic>? client,
     String? token,
     String? username,
     bool isMember = false,
@@ -215,6 +232,8 @@ class DachengAiService {
       return _openClawBridge.sendChat(
         message: message,
         conversationId: conversationId,
+        model: model,
+        client: client,
         token: token,
         username: username,
         isMember: isMember,
@@ -228,6 +247,8 @@ class DachengAiService {
         'message': message,
         if (conversationId != null && conversationId.isNotEmpty)
           'conversationId': conversationId,
+        if (model != null && model.isNotEmpty) 'model': model,
+        if (client != null && client.isNotEmpty) 'client': client,
         if (username != null && username.isNotEmpty) 'username': username,
         'clientMembershipHint': isMember,
       },
@@ -238,6 +259,8 @@ class DachengAiService {
   Stream<DachengAiStreamEvent> sendChatStream({
     required String message,
     String? conversationId,
+    String? model,
+    Map<String, dynamic>? client,
     String? token,
     String? username,
     bool isMember = false,
@@ -251,12 +274,16 @@ class DachengAiService {
         'useEmbeddedOpenClaw': useEmbedded,
         'messageLength': message.trim().length,
         'conversationId': conversationId,
+        'model': model,
+        'hasClientContext': client != null && client.isNotEmpty,
       },
     );
     if (useEmbedded) {
       yield* _openClawBridge.sendChatStream(
         message: message,
         conversationId: conversationId,
+        model: model,
+        client: client,
         token: token,
         username: username,
         isMember: isMember,
@@ -275,6 +302,8 @@ class DachengAiService {
         'message': message,
         if (conversationId != null && conversationId.isNotEmpty)
           'conversationId': conversationId,
+        if (model != null && model.isNotEmpty) 'model': model,
+        if (client != null && client.isNotEmpty) 'client': client,
         if (username != null && username.isNotEmpty) 'username': username,
         'clientMembershipHint': isMember,
       });
@@ -402,6 +431,17 @@ class DachengAiService {
         .whereType<Map>()
         .map((item) => DachengConversationMessage.fromJson(Map.from(item)))
         .where((item) => item.content.trim().isNotEmpty)
+        .toList();
+  }
+
+  Future<List<DachengAiModelSummary>> listModels({String? token}) async {
+    final data = await _getJson('/api/ai/models', token: token);
+    final items = data['models'];
+    if (items is! List) return const [];
+    return items
+        .whereType<Map>()
+        .map((item) => DachengAiModelSummary.fromJson(Map.from(item)))
+        .where((item) => item.id.trim().isNotEmpty)
         .toList();
   }
 

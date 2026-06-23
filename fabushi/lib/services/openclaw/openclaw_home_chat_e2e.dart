@@ -7,7 +7,9 @@ import 'package:flutter/foundation.dart';
 import 'openclaw_ai_bridge.dart';
 
 Future<void> maybeRunOpenClawHomeChatE2E() async {
-  if (kIsWeb || !Platform.isWindows) return;
+  if (kIsWeb || !(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+    return;
+  }
   if (Platform.environment['DACHENG_E2E_OPENCLAW_CHAT'] != '1') return;
 
   final resultDir = Platform.environment['DACHENG_E2E_OPENCLAW_RESULT_DIR'];
@@ -17,7 +19,9 @@ Future<void> maybeRunOpenClawHomeChatE2E() async {
 }
 
 Future<void> _runOpenClawHomeChatE2E(String resultDir) async {
-  final output = File('$resultDir${Platform.pathSeparator}openclaw-home-chat-result.json');
+  final output = File(
+    '$resultDir${Platform.pathSeparator}openclaw-home-chat-result.json',
+  );
   await output.parent.create(recursive: true);
   final prompt = Platform.environment['DACHENG_E2E_OPENCLAW_PROMPT']?.trim();
   final message = prompt == null || prompt.isEmpty ? '请用一句话回复：南无阿弥陀佛' : prompt;
@@ -26,9 +30,10 @@ Future<void> _runOpenClawHomeChatE2E(String resultDir) async {
   try {
     final chunks = <String>[];
     var conversationId = '';
-    await for (final event in bridge
-        .sendChatStream(message: message, username: 'github-actions-e2e')
-        .timeout(const Duration(seconds: 150))) {
+    await for (final event
+        in bridge
+            .sendChatStream(message: message, username: 'github-actions-e2e')
+            .timeout(const Duration(seconds: 150))) {
       if (event.conversationId != null) {
         conversationId = event.conversationId!;
       }
@@ -49,7 +54,9 @@ Future<void> _runOpenClawHomeChatE2E(String resultDir) async {
       jsonEncode({
         'ok': true,
         'conversationId': conversationId,
-        'responsePreview': response.length > 240 ? response.substring(0, 240) : response,
+        'responsePreview': response.length > 240
+            ? response.substring(0, 240)
+            : response,
       }),
       flush: true,
     );

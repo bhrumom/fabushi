@@ -25,6 +25,7 @@ import just_audio
 import network_info_plus
 import package_info_plus
 import path_provider_foundation
+import patrol
 import record_macos
 import rive_common
 import screen_retriever_macos
@@ -57,6 +58,7 @@ func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   NetworkInfoPlusPlugin.register(with: registry.registrar(forPlugin: "NetworkInfoPlusPlugin"))
   FPPPackageInfoPlusPlugin.register(with: registry.registrar(forPlugin: "FPPPackageInfoPlusPlugin"))
   PathProviderPlugin.register(with: registry.registrar(forPlugin: "PathProviderPlugin"))
+  PatrolPlugin.register(with: registry.registrar(forPlugin: "PatrolPlugin"))
   RecordMacOsPlugin.register(with: registry.registrar(forPlugin: "RecordMacOsPlugin"))
   RivePlugin.register(with: registry.registrar(forPlugin: "RivePlugin"))
   ScreenRetrieverMacosPlugin.register(with: registry.registrar(forPlugin: "ScreenRetrieverMacosPlugin"))

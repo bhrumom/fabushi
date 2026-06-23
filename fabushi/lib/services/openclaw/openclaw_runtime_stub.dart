@@ -91,6 +91,15 @@ class OpenClawCliResult {
   ].join('\n');
 }
 
+class OpenClawRuntimeException implements Exception {
+  final String message;
+
+  const OpenClawRuntimeException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class OpenClawRuntime {
   OpenClawRuntime._();
 
@@ -109,7 +118,7 @@ class OpenClawRuntime {
     String? username,
     bool isMember = false,
   }) async {
-    throw StateError('当前平台不支持内置 OpenClaw Gateway');
+    throw const OpenClawRuntimeException('当前平台不支持内置 OpenClaw Gateway');
   }
 
   Future<OpenClawRuntimeStatus> restart() => getStatus();
@@ -140,5 +149,35 @@ class OpenClawRuntime {
     bool ensureGateway = true,
   }) async {
     throw StateError('当前平台不支持内置 OpenClaw Gateway');
+  }
+
+  Map<String, dynamic> buildEmbeddedConfigForTest({
+    required Object stateRoot,
+    required int port,
+    required String token,
+    required String backendDeepSeekModel,
+    required String deepSeekProxyBaseUrl,
+    String remoteGatewayUrl = '',
+    List<String> pluginLoadPaths = const [],
+    bool hasWeChatPlugin = false,
+  }) {
+    return <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> mergeEmbeddedConfigForTest(
+    Object configPath,
+    Map<String, dynamic> defaults,
+  ) async {
+    return defaults;
+  }
+
+  Map<String, String> buildOpenClawEnvironmentForTest({
+    required Object runtimeDir,
+    required Object stateRoot,
+    required Object configPath,
+    required int port,
+    required String token,
+  }) {
+    return <String, String>{};
   }
 }

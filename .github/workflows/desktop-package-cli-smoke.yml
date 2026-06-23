@@ -78,6 +78,7 @@ jobs:
             echo "Installed package CLI not found or not executable: $cli" >&2
             exit 1
           fi
+          ./.github/scripts/assert-openclaw-bundle.sh "$RUNNER_TEMP/installed" linux-x64
           "$cli" doctor --json
           "$cli" gateway-smoke --timeout-seconds 120 --json
 
@@ -87,9 +88,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/installed"
-          zip_path="$(find "$RUNNER_TEMP/package" -maxdepth 1 -name '*macos-*.zip' -print -quit)"
+          case "$(uname -m)" in
+            arm64)
+              macos_arch="arm64"
+              openclaw_platform="macos-arm64"
+              ;;
+            *)
+              macos_arch="x64"
+              openclaw_platform="macos-x64"
+              ;;
+          esac
+          zip_path="$(find "$RUNNER_TEMP/package" -maxdepth 1 -name "*macos-$macos_arch.zip" -print -quit)"
           if [ -z "$zip_path" ]; then
-            echo "No macOS zip downloaded" >&2
+            echo "No macOS $macos_arch zip downloaded" >&2
+            find "$RUNNER_TEMP/package" -maxdepth 1 -type f -print
             exit 1
           fi
           ditto -x -k "$zip_path" "$RUNNER_TEMP/installed"
@@ -99,6 +111,7 @@ jobs:
             find "$RUNNER_TEMP/installed" -maxdepth 5 -type f | sort | head -100
             exit 1
           fi
+          ./.github/scripts/assert-openclaw-bundle.sh "$RUNNER_TEMP/installed/global_dharma_sharing.app" "$openclaw_platform"
           "$cli" doctor --json
           "$cli" gateway-smoke --timeout-seconds 120 --json
 
