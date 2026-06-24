@@ -2,12 +2,9 @@ import { LanguageSwitch } from "./language-switch";
 import { LocalizedText } from "./localized-text";
 import { siteHref } from "../lib/site-url";
 
+const FLUTTER_WEB_URL = "https://flutter.ombhrum.com";
+
 const NAV_ITEMS = [
-  {
-    href: "/app",
-    zh: "大乘 Web",
-    en: "Dacheng Web",
-  },
   {
     href: "/faliu",
     zh: "法流",
@@ -51,7 +48,7 @@ export function SiteHeader() {
         </div>
         <div className="site-nav-actions">
           <LanguageSwitch />
-          <a className="nav-cta" href={siteHref("/app")}>
+          <a className="nav-cta" href={FLUTTER_WEB_URL}>
             <LocalizedText zh="打开大乘" en="Open Dacheng" />
           </a>
         </div>
