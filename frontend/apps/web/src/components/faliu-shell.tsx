@@ -202,6 +202,7 @@ export function FaliuShell({
   const mainPaneRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const catalogRequestRef = useRef<Promise<boolean> | null>(null);
+  const loadMoreIntersectingRef = useRef(false);
 
   const deferredQuery = useDeferredValue(query.trim());
   const normalizedDeferredQuery = useMemo(() => normalizeCbetaQuery(deferredQuery), [deferredQuery]);
@@ -300,7 +301,6 @@ export function FaliuShell({
   const visibleWorks = useMemo(() => filteredWorks.slice(0, visibleLimit), [filteredWorks, visibleLimit]);
   const canLoadMoreCatalogWorks = hasMoreCatalogWorks && normalizedDeferredQuery.length < 2;
   const hasMoreWorks = visibleLimit < filteredWorks.length || canLoadMoreCatalogWorks;
-  const canAutoRevealMoreWorks = visibleLimit < filteredWorks.length;
 
   const loadMoreWorks = useCallback(() => {
     if (isCatalogLoading) {
@@ -323,22 +323,33 @@ export function FaliuShell({
 
   useEffect(() => {
     setVisibleLimit(CARD_LIMIT);
+    loadMoreIntersectingRef.current = false;
   }, [activeTab, normalizedDeferredQuery]);
 
   useEffect(() => {
     const target = loadMoreRef.current;
     const rootElement = mainPaneRef.current;
 
-    if (!target || !canAutoRevealMoreWorks || isCatalogLoading) {
+    if (!target || !hasMoreWorks || isCatalogLoading) {
       return;
     }
 
     const root = rootElement && rootElement.scrollHeight > rootElement.clientHeight ? rootElement : null;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          loadMoreWorks();
+        const isIntersecting = entries.some((entry) => entry.isIntersecting);
+
+        if (!isIntersecting) {
+          loadMoreIntersectingRef.current = false;
+          return;
         }
+
+        if (loadMoreIntersectingRef.current) {
+          return;
+        }
+
+        loadMoreIntersectingRef.current = true;
+        loadMoreWorks();
       },
       {
         root,
@@ -351,7 +362,7 @@ export function FaliuShell({
     return () => {
       observer.disconnect();
     };
-  }, [canAutoRevealMoreWorks, isCatalogLoading, loadMoreWorks, visibleWorks.length]);
+  }, [hasMoreWorks, isCatalogLoading, loadMoreWorks, visibleWorks.length]);
 
   useEffect(() => {
     let cancelled = false;
