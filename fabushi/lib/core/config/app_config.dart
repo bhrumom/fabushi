@@ -45,7 +45,7 @@ class AppConfig {
     'AI_BACKEND_URL',
     defaultValue: '',
   );
-  static const String vpsAiBackendUrl = 'https://ai.ombhrum.com';
+  static const String defaultAiBackendUrl = primaryBackendUrl;
   static const String configuredDachengAiWebUrl = String.fromEnvironment(
     'DACHENG_AI_WEB_URL',
     defaultValue: '',
@@ -87,7 +87,7 @@ class AppConfig {
     if (configuredAiBackendUrl.isNotEmpty) {
       return configuredAiBackendUrl;
     }
-    return vpsAiBackendUrl;
+    return defaultAiBackendUrl;
   }
 
   static String get dachengAiWebUrl {
@@ -218,6 +218,7 @@ class AppConfig {
       buildBackendUrl('/api/app/version-policy');
 
   static String get agentChatUrl => buildBackendUrl('/api/agent/chat');
+  static String get aiQuotaUrl => buildBackendUrl('/api/ai/quota');
   static String agentRunEventsUrl(String runId) =>
       buildBackendUrl('/api/agent/runs/$runId/events');
   static String agentRunCancelUrl(String runId) =>

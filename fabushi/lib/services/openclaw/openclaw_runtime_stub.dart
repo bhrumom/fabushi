@@ -91,6 +91,14 @@ class OpenClawCliResult {
   ].join('\n');
 }
 
+class OpenClawRuntimeException implements Exception {
+  final String message;
+
+  const OpenClawRuntimeException(this.message);
+
+  @override
+  String toString() => message;
+}
 class OpenClawRuntime {
   OpenClawRuntime._();
 
@@ -109,7 +117,7 @@ class OpenClawRuntime {
     String? username,
     bool isMember = false,
   }) async {
-    throw StateError('当前平台不支持内置 OpenClaw Gateway');
+    throw const OpenClawRuntimeException('当前平台不支持内置 OpenClaw Gateway');
   }
 
   Future<OpenClawRuntimeStatus> restart() => getStatus();

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../core/config/app_config.dart';
 import '../core/constants/country_servers.dart' as country_catalog;
 import '../features/auth/application/auth_model.dart';
@@ -32,12 +33,14 @@ import 'dharma_publish_browser_screen.dart'
 import '../widgets/earth_globe_widget.dart';
 import '../widgets/home_world_2d_widget.dart';
 import '../widgets/scene_render_mode.dart';
+import '../widgets/codex_desktop_chat_input.dart';
 import 'leaderboard_screen.dart';
 import '../core/design_system/app_theme.dart';
 import '../services/apple_iap_service.dart'
     if (dart.library.html) '../services/apple_iap_service_web.dart';
 import '../services/membership_service.dart';
 import '../services/online_counter_service.dart';
+import '../services/project_service.dart';
 import '../widgets/auto_start_guide_dialog.dart';
 import 'membership_screen.dart'
     if (dart.library.html) 'membership_screen_web.dart';
@@ -130,6 +133,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   DateTime? _sendStartedAt;
   String _activeSendTitle = '';
   String _activeSendRegion = '';
+  String _selectedDesktopModelId = 'deepseek-chat';
+  LocalProject? _selectedDesktopProject;
+  List<CodexDesktopModelOption> _desktopModelOptions =
+      CodexDesktopChatInput.defaultModelOptions;
 
   void setVisible(bool visible) {
     if (_isVisible == visible) return;
@@ -142,13 +149,23 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
   }
 
+  bool _forceGlobeMode = false;
+  void setGlobeMode(bool isGlobeMode) {
+    if (_forceGlobeMode != isGlobeMode) {
+      setState(() {
+        _forceGlobeMode = isGlobeMode;
+      });
+    }
+  }
+
+  // ignore: unused_element
   bool get _canUseThreeDNow {
     final authModel = Provider.of<AuthModel?>(context, listen: false);
     return SceneRenderAccess.canUseThreeDFor(authModel);
   }
 
   bool get _isThreeDActiveNow {
-    return _renderMode == SceneRenderMode.threeD && _canUseThreeDNow;
+    return _renderMode == SceneRenderMode.threeD;
   }
 
   void _syncActiveSceneVisibility() {
@@ -203,11 +220,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   void _toggleSceneRenderMode() {
-    if (_renderMode == SceneRenderMode.twoD && !_canUseThreeDNow) {
-      showThreeDMemberPrompt(context);
-      return;
-    }
-
     setState(() {
       _renderMode = _renderMode == SceneRenderMode.twoD
           ? SceneRenderMode.threeD
@@ -232,6 +244,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     WidgetsBinding.instance.addObserver(this);
     _loadGlobe();
     _fetchInitialCount();
+    unawaited(_loadDesktopModelOptions());
     InboundShareService.instance.start();
     _incomingShareSubscription = InboundShareService.instance.incomingShares
         .listen((payload) => unawaited(_handleIncomingShare(payload)));
@@ -265,6 +278,40 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     } catch (e) {
       debugPrint('获取初始在线人数失败: $e');
     }
+  }
+
+  Future<void> _loadDesktopModelOptions() async {
+    try {
+      final authModel = Provider.of<AuthModel?>(context, listen: false);
+      final models = await _dachengAiService.listModels(
+        token: authModel?.authToken,
+      );
+      if (!mounted || models.isEmpty) return;
+      final options = models.map(_desktopModelOptionFromBackend).toList();
+      setState(() {
+        _desktopModelOptions = options;
+        if (!options.any((option) => option.id == _selectedDesktopModelId)) {
+          _selectedDesktopModelId = options.first.id;
+        }
+      });
+    } catch (e) {
+      debugPrint('加载 DeepSeek 模型列表失败，使用默认模型: $e');
+    }
+  }
+
+  CodexDesktopModelOption _desktopModelOptionFromBackend(
+    DachengAiModelSummary model,
+  ) {
+    final id = model.id.trim();
+    final lower = id.toLowerCase();
+    final isReasoner = lower.contains('reasoner') || lower.contains('r1');
+    return CodexDesktopModelOption(
+      id: id,
+      label: model.label.trim().isEmpty ? id : model.label.trim(),
+      shortLabel: isReasoner ? 'Reasoner' : 'Chat',
+      subtitle: isReasoner ? '推理、规划与复杂项目任务' : '通用对话、写作与工具调用',
+      icon: isReasoner ? Icons.psychology_alt_outlined : Icons.bolt_outlined,
+    );
   }
 
   Future<void> _loadRemoteConversations() async {
@@ -513,31 +560,63 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     FileTransferModel model,
     AuthModel? authModel,
   ) {
+    final bool isEmpty = _homeChatMessages.isEmpty && !_forceGlobeMode;
+
     return DecoratedBox(
-      decoration: const BoxDecoration(color: Color(0xFFF7F8F7)),
-      child: Row(
+      decoration: const BoxDecoration(color: Colors.transparent),
+      child: Column(
         children: [
-          _buildConversationSidebar(model, embedded: true),
-          Expanded(
-            child: Column(
-              children: [
-                _buildDesktopTopBar(),
-                Expanded(
-                  child: _buildDesktopWorkspace(context, model, authModel),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(34, 8, 34, 26),
-                  child: Align(
-                    alignment: Alignment.center,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 960),
-                      child: _buildDesktopChatComposer(context, model),
-                    ),
+          _buildDesktopTopBar(),
+          if (isEmpty)
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 800),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '海纳法流，普布十方',
+                        style: TextStyle(
+                          color: Color(0xFFE8BD6B),
+                          fontSize: 32,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '您可以通过随心输入来查找资源、下载并启动全球法布施',
+                        style: TextStyle(
+                          color: Color(0xFF8A99AD),
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      _buildDesktopChatComposer(context, model),
+                      const SizedBox(
+                        height: 100,
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
+            )
+          else ...[
+            Expanded(
+              child: _buildDesktopWorkspace(context, model, authModel),
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(34, 8, 34, 26),
+              child: Align(
+                alignment: Alignment.center,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 960),
+                  child: _buildDesktopChatComposer(context, model),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1009,14 +1088,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final userName = displayName.isNotEmpty
         ? displayName
         : authModel?.currentUser?.username ?? '大乘用户';
-    final background = embedded
-        ? const Color(0xFFEDEEEE)
-        : const Color(0xFF1E2024);
-    final primaryText = embedded ? const Color(0xFF202124) : Colors.white;
-    final secondaryText = embedded ? const Color(0xFF8D9295) : Colors.white54;
-    final buttonBackground = embedded
-        ? const Color(0xFFDCDDDB)
-        : const Color(0xFF30343A);
+    final background = const Color(0xFF1E2024);
+    final primaryText = Colors.white;
+    final secondaryText = Colors.white54;
+    final buttonBackground = const Color(0xFF30343A);
     final isBusy = _isAiGenerating;
 
     return Container(
@@ -1024,7 +1099,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       decoration: BoxDecoration(
         color: background,
         border: embedded
-            ? const Border(right: BorderSide(color: Color(0xFFE0E1E0)))
+            ? const Border(right: BorderSide(color: Color(0xFF2D3139)))
             : null,
       ),
       child: SafeArea(
@@ -1076,9 +1151,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   label: const Text('新建任务'),
                   style: FilledButton.styleFrom(
                     backgroundColor: buttonBackground,
-                    disabledBackgroundColor: embedded
-                        ? const Color(0xFFE4E5E3)
-                        : Colors.white.withValues(alpha: 0.08),
+                    disabledBackgroundColor: Colors.white.withValues(alpha: 0.08),
                     foregroundColor: primaryText,
                     minimumSize: const Size.fromHeight(44),
                     shape: RoundedRectangleBorder(
@@ -1091,43 +1164,43 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               _buildSidebarActionTile(
                 icon: Icons.smart_toy_outlined,
                 label: '助理',
-                embedded: embedded,
+                embedded: false,
                 onTap: () => _prefillPrompt('让本机 OpenClaw 助理接手：'),
               ),
               _buildSidebarActionTile(
                 icon: Icons.account_tree_outlined,
                 label: '项目',
-                embedded: embedded,
+                embedded: false,
                 onTap: () => _prefillPrompt('新建一个本机 OpenClaw 项目，目标是：'),
               ),
               _buildSidebarActionTile(
                 icon: Icons.hub_outlined,
                 label: '专家',
                 trailing: '技能·连接器',
-                embedded: embedded,
-                onTap: () => _prefillPrompt('召唤适合当前任务的专家和技能：'),
+                embedded: false,
+                onTap: () => _prefillPrompt('召唤适合当前任务的专家 and 技能：'),
               ),
               _buildSidebarActionTile(
                 icon: Icons.alarm_on_outlined,
                 label: '自动化',
-                embedded: embedded,
+                embedded: false,
                 onTap: () => _prefillPrompt('创建一个 OpenClaw 自动化任务：'),
               ),
               _buildSidebarActionTile(
                 icon: Icons.apps_outlined,
                 label: '更多',
                 trailing: '资料库·灵感',
-                embedded: embedded,
+                embedded: false,
                 onTap: () => _prefillPrompt('帮我列出可用的资料库、灵感、技能和连接器'),
               ),
               const SizedBox(height: 22),
-              _DrawerSectionLabel('任务', light: embedded),
+              _DrawerSectionLabel('任务', light: false),
               if (_homeChatMessages.isNotEmpty) ...[
                 _ConversationTile(
                   title: currentTitle,
                   selected: true,
                   running: _shouldShowGlobalSendProcess(model),
-                  light: embedded,
+                  light: false,
                   onTap: () {
                     if (!embedded) Navigator.maybePop(context);
                   },
@@ -1155,7 +1228,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                             title: conversation.title,
                             selected: false,
                             running: conversation.isGlobalSendRunning,
-                            light: embedded,
+                            light: false,
                             onTap: isBusy
                                 ? null
                                 : () => _openConversation(conversation),
@@ -1164,12 +1237,12 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                       ),
               ),
               const SizedBox(height: 14),
-              _DrawerSectionLabel('空间', light: embedded),
+              _DrawerSectionLabel('空间', light: false),
               _buildSidebarSpaceTile(
                 icon: Icons.folder_outlined,
                 title: '本机电脑',
                 subtitle: '浏览器、文件、桌面',
-                embedded: embedded,
+                embedded: false,
                 onTap: _startDesktopBridgeFromHome,
               ),
               _buildSidebarSpaceTile(
@@ -1178,7 +1251,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 subtitle: _openClawRemoteGatewayUrl.trim().isEmpty
                     ? '待配置'
                     : '已配置',
-                embedded: embedded,
+                embedded: false,
                 onTap: _createOpenClawHomeMobilePairingCode,
               ),
               const SizedBox(height: 12),
@@ -1498,7 +1571,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
       children: [
         for (final message in _homeChatMessages) ...[
-          _buildChatBubble(message, light: light),
+          _buildChatBubble(message, model: model, light: light),
           const SizedBox(height: 18),
         ],
         if (_isAiGenerating)
@@ -1520,6 +1593,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                     ],
                     _buildChatBubble(
                       _HomeChatMessage(text: _streamingAiText, isUser: false),
+                      model: model,
                       light: light,
                     ),
                   ],
@@ -1530,7 +1604,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
-  Widget _buildChatBubble(_HomeChatMessage message, {bool light = false}) {
+  Widget _buildChatBubble(
+    _HomeChatMessage message, {
+    required FileTransferModel model,
+    bool light = false,
+  }) {
     final bubbleColor = light
         ? message.isUser
               ? const Color(0xFF1B1B1D)
@@ -1577,7 +1655,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 ]
               : null,
         ),
-        child: _buildChatBubbleBody(message, light: light),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildChatBubbleBody(message, light: light),
+            _buildMessageFileLinks(message, light: light),
+            _buildMessageActionBar(message, model: model, light: light),
+          ],
+        ),
       ),
     );
   }
@@ -1613,6 +1699,202 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
           );
         }
         return _MarkdownChatText(message.text, light: light);
+    }
+  }
+
+  Widget _buildMessageActionBar(
+    _HomeChatMessage message, {
+    required FileTransferModel model,
+    bool light = false,
+  }) {
+    final text = _messageActionText(message).trim();
+    if (text.isEmpty) return const SizedBox.shrink();
+    final canGlobalDharma =
+        !message.isUser &&
+        !message.isError &&
+        message.messageType != _HomeChatMessageType.choice;
+    final canResend = message.isUser && !message.isError;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          _MessageActionButton(
+            icon: Icons.copy_rounded,
+            label: '复制',
+            light: light,
+            onTap: () => _copyMessageText(text),
+          ),
+          _MessageActionButton(
+            icon: Icons.edit_outlined,
+            label: '修改',
+            light: light,
+            onTap: () => _editMessageText(text),
+          ),
+          if (canResend)
+            _MessageActionButton(
+              icon: Icons.refresh_rounded,
+              label: '重发',
+              light: light,
+              onTap: () => _resendMessageText(text, model),
+            ),
+          if (canGlobalDharma)
+            _MessageActionButton(
+              icon: Icons.public,
+              label: '全球法布施',
+              light: light,
+              accent: true,
+              onTap: () => unawaited(_sendMessageTextGlobally(text, model)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageFileLinks(
+    _HomeChatMessage message, {
+    bool light = false,
+  }) {
+    final refs = _extractMessageFileRefs(_messageActionText(message));
+    if (refs.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: refs
+            .take(6)
+            .map(
+              (ref) => _MessageFileChip(
+                ref: ref,
+                light: light,
+                onOpen: () => unawaited(_openMessageFileRef(ref)),
+                onCopy: () => _copyMessageText(ref.target),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  String _messageActionText(_HomeChatMessage message) {
+    if (message.content != null) {
+      final contentText = message.content!.text.trim();
+      if (contentText.isNotEmpty) return contentText;
+    }
+    return message.text;
+  }
+
+  void _copyMessageText(String text) {
+    unawaited(Clipboard.setData(ClipboardData(text: text)));
+    _showHomeSnack('已复制', ok: true);
+  }
+
+  void _editMessageText(String text) {
+    _chatInputController.text = text;
+    _chatInputController.selection = TextSelection.collapsed(
+      offset: _chatInputController.text.length,
+    );
+    setState(() {
+      _isDharmaComposerMode = false;
+      _isFlashcardComposerMode = false;
+      _showMaterialGallery = false;
+    });
+  }
+
+  void _resendMessageText(String text, FileTransferModel model) {
+    _editMessageText(text);
+    _submitComposer(model);
+  }
+
+  Future<void> _sendMessageTextGlobally(
+    String text,
+    FileTransferModel model,
+  ) async {
+    if (text.trim().isEmpty) return;
+    try {
+      await model.addTextContentForSending(
+        title: 'AI 回复',
+        text: text.trim(),
+        sourceKind: 'AI 回复',
+        replaceExisting: true,
+      );
+      if (!mounted) return;
+      _activateDharmaMode(model, target: DharmaComposerTarget.global);
+      _startSending(model);
+    } catch (e) {
+      if (!mounted) return;
+      _showHomeSnack('准备全球法布施失败：$e', ok: false);
+    }
+  }
+
+  List<_MessageFileRef> _extractMessageFileRefs(String text) {
+    final refs = <_MessageFileRef>[];
+    final seen = <String>{};
+
+    void addRef(String target, {String? label}) {
+      final normalized = target.trim().replaceAll(RegExp(r'[),.，。；;]+$'), '');
+      if (normalized.isEmpty || seen.contains(normalized)) return;
+      final uri = Uri.tryParse(normalized);
+      final isRemote =
+          uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+      final isLocal =
+          normalized.startsWith('/') || normalized.startsWith('file://');
+      if (!isRemote && !isLocal) return;
+      seen.add(normalized);
+      refs.add(
+        _MessageFileRef(
+          label: (label == null || label.trim().isEmpty)
+              ? _fileLabelFromTarget(normalized)
+              : label.trim(),
+          target: normalized,
+          isRemote: isRemote,
+        ),
+      );
+    }
+
+    final markdownLink = RegExp(r'\[([^\]]+)\]\(([^)]+)\)');
+    for (final match in markdownLink.allMatches(text)) {
+      addRef(match.group(2) ?? '', label: match.group(1));
+    }
+
+    final urlPattern = RegExp(r'https?://[^\s<>"\]]+');
+    for (final match in urlPattern.allMatches(text)) {
+      addRef(match.group(0) ?? '');
+    }
+
+    final pathPattern = RegExp(
+      r'(?:file://)?/(?:[^\s<>"|]+/)*[^\s<>"|]+\.[A-Za-z0-9]{1,8}',
+    );
+    for (final match in pathPattern.allMatches(text)) {
+      addRef(match.group(0) ?? '');
+    }
+
+    return refs;
+  }
+
+  String _fileLabelFromTarget(String target) {
+    final clean = target.split('?').first.replaceFirst(RegExp(r'/$'), '');
+    final lastSlash = clean.lastIndexOf('/');
+    final name = lastSlash >= 0 ? clean.substring(lastSlash + 1) : clean;
+    return name.isEmpty ? target : Uri.decodeComponent(name);
+  }
+
+  Future<void> _openMessageFileRef(_MessageFileRef ref) async {
+    final target = ref.target;
+    final uri = target.startsWith('/')
+        ? Uri.file(target)
+        : Uri.tryParse(target);
+    if (uri == null) {
+      _copyMessageText(target);
+      return;
+    }
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened) {
+      _copyMessageText(target);
+      _showHomeSnack('无法打开，已复制地址', ok: false);
     }
   }
 
@@ -2808,120 +3090,28 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
               : (inputText.isNotEmpty || model.hasFiles)
         : inputText.isNotEmpty;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE4E5E4)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x11000000),
-            blurRadius: 20,
-            offset: Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _chatInputController,
-            enabled:
-                !model.isPreparingSend &&
-                !_isPreparingFlashcardContent &&
-                !_isFlashcardGenerating &&
-                (!model.isTransferring || !_isDharmaComposerMode),
-            minLines: 2,
-            maxLines: 5,
-            textInputAction: TextInputAction.newline,
-            style: const TextStyle(
-              color: Color(0xFF202124),
-              fontSize: 15,
-              height: 1.35,
-            ),
-            decoration: const InputDecoration(
-              border: InputBorder.none,
-              hintText: '今天帮你做些什么？  @ 引用对话文件，/ 调用技能与指令',
-              hintStyle: TextStyle(color: Color(0xFF9AA0A6), fontSize: 15),
-              contentPadding: EdgeInsets.fromLTRB(18, 16, 18, 10),
-            ),
-            onChanged: (_) => setState(() {}),
-            onSubmitted: (_) {
-              if (canSubmit) _submitComposer(model);
-            },
-          ),
-          const Divider(height: 1, color: Color(0xFFEDEDEB)),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      _DesktopComposerButton(
-                        icon: Icons.auto_fix_high_outlined,
-                        label: 'Craft',
-                        onTap: () => _prefillPrompt('帮我把这个任务重写成更清晰的执行指令：'),
-                      ),
-                      _buildDesktopModeMenu(),
-                      _buildDesktopSkillsMenu(),
-                      _buildDesktopConnectMenu(),
-                      _buildDesktopPermissionMenu(),
-                      _DesktopComposerButton(
-                        icon: Icons.folder_outlined,
-                        label: '选择工作空间',
-                        onTap: () => _prefillPrompt('把当前目录作为工作空间，帮我规划接下来的操作'),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: '添加',
-                  onPressed: isBusy
-                      ? null
-                      : () => _openSendContentMenu(context, model),
-                  icon: const Icon(Icons.add, color: Color(0xFF34363A)),
-                ),
-                IconButton(
-                  tooltip: '工具',
-                  onPressed: () => _prefillPrompt('帮我查找并安装适合当前任务的技能'),
-                  icon: const Icon(
-                    Icons.auto_awesome_outlined,
-                    color: Color(0xFF34363A),
-                  ),
-                ),
-                IconButton(
-                  tooltip: '语音输入',
-                  onPressed: () => _prefillPrompt('请根据我的语音输入整理任务：'),
-                  icon: const Icon(Icons.mic_none, color: Color(0xFF34363A)),
-                ),
-                IconButton(
-                  tooltip: _isAiGenerating ? '停止' : '发送',
-                  onPressed: _isAiGenerating
-                      ? _stopAiGeneration
-                      : canSubmit
-                      ? () => _submitComposer(model)
-                      : null,
-                  icon: Icon(_isAiGenerating ? Icons.stop : Icons.arrow_upward),
-                  style: IconButton.styleFrom(
-                    backgroundColor: canSubmit || _isAiGenerating
-                        ? const Color(0xFF9EA0A3)
-                        : const Color(0xFFD6D6D2),
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return CodexDesktopChatInput(
+      controller: _chatInputController,
+      isBusy: isBusy,
+      canSubmit: canSubmit,
+      onTextChanged: () => setState(() {}),
+      onAddActionSelected: (action) => _handleSendMenuAction(model, action),
+      modelOptions: _desktopModelOptions,
+      selectedModelId: _selectedDesktopModelId,
+      onModelChanged: (modelId) {
+        setState(() => _selectedDesktopModelId = modelId);
+      },
+      selectedProject: _selectedDesktopProject,
+      onProjectChanged: (project) {
+        setState(() => _selectedDesktopProject = project);
+      },
+      onSubmit: () {
+        _submitComposer(model);
+      },
     );
   }
 
+  // ignore: unused_element
   Widget _buildDesktopModeMenu() {
     return PopupMenuButton<String>(
       tooltip: '模型模式',
@@ -2939,6 +3129,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
+  // ignore: unused_element
   Widget _buildDesktopSkillsMenu() {
     return PopupMenuButton<String>(
       tooltip: '技能',
@@ -2962,6 +3153,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
+  // ignore: unused_element
   Widget _buildDesktopConnectMenu() {
     return PopupMenuButton<String>(
       tooltip: '连应用',
@@ -2986,6 +3178,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
+  // ignore: unused_element
   Widget _buildDesktopPermissionMenu() {
     return PopupMenuButton<String>(
       tooltip: '权限',
@@ -3286,11 +3479,78 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
   }
 
+  Map<String, dynamic> _desktopAiClientContext() {
+    final project = _selectedDesktopProject;
+    return {
+      'surface': 'fabushi_desktop_home',
+      'selectedModel': _selectedDesktopModelId,
+      if (project != null)
+        'project': {
+          'name': project.name,
+          'path': project.path,
+          'isExternal': project.isExternal,
+        },
+    };
+  }
+
+  bool _looksLikeGlobalDharmaIntent(String text) {
+    final compact = text.replaceAll(RegExp(r'\s+'), '');
+    if (compact.isEmpty) return false;
+    if (compact.contains('全球法布施') || compact.contains('全局法布施')) {
+      return true;
+    }
+    if (!compact.contains('法布施')) return false;
+    return compact.contains('开始') ||
+        compact.contains('进行') ||
+        compact.contains('发送') ||
+        compact.contains('传播') ||
+        compact.contains('分享') ||
+        compact.contains('发出去') ||
+        compact.contains('自动');
+  }
+
+  bool _isBareGlobalDharmaCommand(String text) {
+    final compact = text.replaceAll(RegExp(r'\s+'), '');
+    if (compact.length > 18) return false;
+    if (RegExp(r'https?://').hasMatch(text)) return false;
+    return RegExp(
+      r'^(请|帮我|我要|开始|进行|自动|去|把|将)*全球?法布施(一下|吧|。|！|!)*$',
+    ).hasMatch(compact);
+  }
   void _submitComposer(FileTransferModel model) {
     if (_isFlashcardComposerMode) {
       unawaited(_startFlashcardGeneration(model));
       return;
     }
+
+    final inputText = _chatInputController.text.trim();
+    final isUrl = Uri.tryParse(inputText)?.hasAbsolutePath ?? false;
+
+    if (!_isDharmaComposerMode && _looksLikeGlobalDharmaIntent(inputText)) {
+      _activateDharmaMode(model, target: DharmaComposerTarget.global);
+      if (_isBareGlobalDharmaCommand(inputText) && !model.hasFiles) {
+        _chatInputController.clear();
+        setState(() {
+          _showMaterialGallery = true;
+          _homeChatMessages.add(
+            _HomeChatMessage(
+              text: '已打开全球法布施。请输入要发送的文字/链接，或点 + 添加素材。',
+              isUser: false,
+            ),
+          );
+        });
+        _scrollHomeChatToBottom(force: true);
+        return;
+      }
+      _startSending(model);
+      return;
+    }
+
+    if (isUrl && !_isDharmaComposerMode) {
+      unawaited(_handleUrlToDharmaMaterial(inputText, model));
+      return;
+    }
+
     if (_isDharmaComposerMode) {
       if (_dharmaComposerTarget == DharmaComposerTarget.platform) {
         unawaited(_startPlatformPublish(model));
@@ -3299,6 +3559,83 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       }
     } else {
       unawaited(_sendAiChatFromComposer());
+    }
+  }
+
+  Future<void> _handleUrlToDharmaMaterial(
+    String url,
+    FileTransferModel model,
+  ) async {
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
+    _chatInputController.clear();
+
+    setState(() {
+      _homeChatMessages.add(
+        _HomeChatMessage(text: '提取并发布此链接: $url', isUser: true),
+      );
+      _isAiGenerating = true;
+      _streamingAiText = '';
+      _aiActivityText = '正在抓取链接内容作为法布施素材...';
+    });
+    _scrollHomeChatToBottom(force: true);
+
+    try {
+      var finalText = '';
+      final prompt =
+          '请读取此网页的内容，并为其生成一段适合用于全球法布施的正能量摘要素材，直接输出文字不要包含多余的对话和解释：$url';
+
+      await for (final event in _dachengAiService.sendChatStream(
+        message: prompt,
+        conversationId: _activeConversationId,
+        model: _selectedDesktopModelId,
+        client: _desktopAiClientContext(),
+        token: authModel?.authToken,
+        username: authModel?.currentUser?.username,
+        isMember: authModel?.hasPermission('premium') ?? false,
+      )) {
+        if (!mounted) return;
+
+        if (event.isDelta) {
+          finalText += event.text;
+          setState(() {
+            _streamingAiText = finalText;
+            _aiActivityText = '正在生成法布施素材...';
+          });
+          _scrollHomeChatToBottom();
+        } else if (event.isDone) {
+          break;
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _homeChatMessages.add(_HomeChatMessage(text: finalText, isUser: false));
+        _streamingAiText = '';
+        _isAiGenerating = false;
+        _aiActivityText = '';
+      });
+
+      // Transform text into Dharma material and send globally
+      _chatInputController.text = finalText;
+      _activateDharmaMode(model, target: DharmaComposerTarget.global);
+
+      // Auto-start sending
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _startSending(model);
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isAiGenerating = false;
+        _aiActivityText = '';
+        _homeChatMessages.add(
+          _HomeChatMessage(text: '链接读取失败: $e', isUser: false),
+        );
+      });
+      _scrollHomeChatToBottom(force: true);
     }
   }
 
@@ -4169,6 +4506,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       final authModel = Provider.of<AuthModel?>(context, listen: false);
       final result = await _dachengAiService.sendChat(
         message: prompt,
+        model: _selectedDesktopModelId,
+        client: _desktopAiClientContext(),
         token: authModel?.authToken,
         username: authModel?.currentUser?.username,
         isMember: authModel?.hasPermission('premium') ?? false,
@@ -4451,6 +4790,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       await for (final event in _dachengAiService.sendChatStream(
         message: text,
         conversationId: _activeConversationId,
+        model: _selectedDesktopModelId,
+        client: _desktopAiClientContext(),
         token: authModel?.authToken,
         username: authModel?.currentUser?.username,
         isMember: authModel?.hasPermission('premium') ?? false,
@@ -4562,7 +4903,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       setState(() {
         _homeChatMessages.add(
           _HomeChatMessage(
-            text: '大乘 AI 生成失败: $e',
+            text: '大乘 AI 生成失败: ${_friendlyErrorMessage(e)}',
             isUser: false,
             isError: true,
           ),
@@ -4573,6 +4914,19 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       });
       _scrollHomeChatToBottom(force: true);
     }
+  }
+
+  String _friendlyErrorMessage(Object error) {
+    final text = error.toString().trim();
+    const badStatePrefix = 'Bad state: ';
+    const exceptionPrefix = 'Exception: ';
+    if (text.startsWith(badStatePrefix)) {
+      return text.substring(badStatePrefix.length).trim();
+    }
+    if (text.startsWith(exceptionPrefix)) {
+      return text.substring(exceptionPrefix.length).trim();
+    }
+    return text.isEmpty ? '请求失败，请稍后重试。' : text;
   }
 
   void _stopAiGeneration() {
@@ -6060,6 +6414,24 @@ class _MarkdownChatText extends StatelessWidget {
       data: data,
       selectable: true,
       softLineBreak: true,
+      onTapLink: (text, href, title) async {
+        final target = href?.trim();
+        if (target == null || target.isEmpty) return;
+        final uri = target.startsWith('/')
+            ? Uri.file(target)
+            : Uri.tryParse(target);
+        if (uri == null) {
+          await Clipboard.setData(ClipboardData(text: target));
+          return;
+        }
+        final opened = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (!opened) {
+          await Clipboard.setData(ClipboardData(text: target));
+        }
+      },
       styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
         p: baseStyle,
         strong: baseStyle.copyWith(fontWeight: FontWeight.w800),
@@ -6693,6 +7065,169 @@ class _DesktopPendingActionPill extends StatelessWidget {
   }
 }
 
+class _MessageActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool light;
+  final bool accent;
+  final VoidCallback onTap;
+
+  const _MessageActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.light = false,
+    this.accent = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = accent
+        ? AppTheme.primaryColor
+        : light
+        ? const Color(0xFF4E5356)
+        : Colors.white70;
+    final background = accent
+        ? AppTheme.primaryColor.withValues(alpha: light ? 0.12 : 0.18)
+        : light
+        ? const Color(0xFFF1F3F3)
+        : Colors.white.withValues(alpha: 0.08);
+
+    return Tooltip(
+      message: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: accent
+                  ? AppTheme.primaryColor.withValues(alpha: 0.28)
+                  : Colors.white.withValues(alpha: light ? 0.0 : 0.08),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: foreground, size: 15),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MessageFileRef {
+  final String label;
+  final String target;
+  final bool isRemote;
+
+  const _MessageFileRef({
+    required this.label,
+    required this.target,
+    required this.isRemote,
+  });
+}
+
+class _MessageFileChip extends StatelessWidget {
+  final _MessageFileRef ref;
+  final bool light;
+  final VoidCallback onOpen;
+  final VoidCallback onCopy;
+
+  const _MessageFileChip({
+    required this.ref,
+    required this.onOpen,
+    required this.onCopy,
+    this.light = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = light ? const Color(0xFF303236) : Colors.white;
+    final muted = light ? const Color(0xFF6E7377) : Colors.white60;
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 310),
+      height: 36,
+      decoration: BoxDecoration(
+        color: light
+            ? const Color(0xFFF3F5F5)
+            : Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: light
+              ? const Color(0xFFE1E5E6)
+              : Colors.white.withValues(alpha: 0.10),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: onOpen,
+            borderRadius: BorderRadius.circular(999),
+            child: Padding(
+              padding: const EdgeInsets.only(left: 10, right: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    ref.isRemote
+                        ? Icons.cloud_download_outlined
+                        : Icons.insert_drive_file_outlined,
+                    color: foreground,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      ref.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Container(width: 1, height: 18, color: muted.withValues(alpha: 0.3)),
+          Tooltip(
+            message: '复制地址',
+            child: InkWell(
+              onTap: onCopy,
+              borderRadius: BorderRadius.circular(999),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                child: Icon(Icons.copy_rounded, color: muted, size: 14),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DesktopComposerButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -6701,6 +7236,7 @@ class _DesktopComposerButton extends StatelessWidget {
   const _DesktopComposerButton({
     required this.icon,
     required this.label,
+    // ignore: unused_element_parameter
     this.onTap,
   });
 

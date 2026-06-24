@@ -12,8 +12,9 @@ import '../widgets/language_selector_sheet.dart';
 import '../widgets/practice_entry_card.dart';
 import '../services/meditation_session_manager.dart';
 import 'practice_record_screen.dart';
+import '../widgets/settings/codex_profile_dashboard.dart';
 
-/// 抖音风格个人中心页面
+/// 个人中心页面
 class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key});
 
@@ -35,44 +36,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             PracticeStatsService().setAuthToken(authModel.authToken);
           }
 
-          return NestedScrollView(
-            headerSliverBuilder: (context, innerBoxIsScrolled) {
-              return [
-                _buildSliverAppBar(context, user, authModel),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      children: [
-                        if (user != null) ...[
-                          const SizedBox(height: 20),
-                          _buildPracticeStatsCard(context),
-                          const SizedBox(height: 20),
-                          _buildMembershipCard(context, user),
-                          const SizedBox(height: 20),
-                          _buildFeatureGrid(context),
-                        ] else ...[
-                          const SizedBox(height: 20),
-                          _buildGuestCard(context),
-                          const SizedBox(height: 20),
-                          _buildLoginButton(context),
-                        ],
-                        const SizedBox(height: 40), // Space before tabs
-                      ],
-                    ),
-                  ),
-                ),
-                // Removed SliverPersistentHeader for TabBar
-              ];
-            },
-            body: user != null
-                ? const SizedBox.shrink()
-                : const Center(
-                    child: Text(
-                      '请先登录',
-                      style: TextStyle(color: Colors.white54),
-                    ),
-                  ),
+          return const Padding(
+            padding: EdgeInsets.all(24.0),
+            child: CodexProfileDashboard(),
           );
         },
       ),

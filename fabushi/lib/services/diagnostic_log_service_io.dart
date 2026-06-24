@@ -68,7 +68,10 @@ class DiagnosticLogService {
     if (lowerKey.contains('token') ||
         lowerKey.contains('password') ||
         lowerKey.contains('authorization') ||
-        lowerKey.contains('auth')) {
+        lowerKey.contains('auth') ||
+        lowerKey == 'apikey' ||
+        lowerKey.contains('api_key') ||
+        lowerKey.contains('secret')) {
       return '<redacted>';
     }
     if (value is Map) {

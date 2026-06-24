@@ -55,6 +55,8 @@ void main() {
 class _RecordingOpenClawBridge extends OpenClawAiBridge {
   int callCount = 0;
   String? lastMessage;
+  String? lastModel;
+  Map<String, dynamic>? lastClient;
   String? lastToken;
   String? lastUsername;
   bool? lastIsMember;
@@ -63,12 +65,16 @@ class _RecordingOpenClawBridge extends OpenClawAiBridge {
   Future<DachengAiChatResult> sendChat({
     required String message,
     String? conversationId,
+    String? model,
+    Map<String, dynamic>? client,
     String? token,
     String? username,
     bool isMember = false,
   }) async {
     callCount++;
     lastMessage = message;
+    lastModel = model;
+    lastClient = client;
     lastToken = token;
     lastUsername = username;
     lastIsMember = isMember;
