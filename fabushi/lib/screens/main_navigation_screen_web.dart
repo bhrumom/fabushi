@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:universal_html/html.dart' as html;
 
 import '../features/auth/application/auth_model.dart';
+import '../widgets/sidebar/dacheng_chat_sidebar.dart';
 import 'globe_home_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -16,6 +17,7 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   bool _profileMenuOpen = false;
+  bool _sidebarOpen = false;
 
   Future<void> _openLogin() async {
     final success = await showDialog<bool>(
@@ -39,6 +41,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     setState(() => _profileMenuOpen = false);
   }
 
+  void _closeSidebar() {
+    if (!_sidebarOpen) return;
+    setState(() => _sidebarOpen = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final authModel = context.watch<AuthModel?>();
@@ -56,14 +63,41 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             composerLeftInset: compact ? 84 : 88,
           ),
         ),
-        if (_profileMenuOpen)
+        Positioned(
+          left: 18,
+          top: 18,
+          child: SafeArea(
+            child: _SidebarOpenButton(
+              onPressed: () => setState(() => _sidebarOpen = true),
+            ),
+          ),
+        ),
+        if (_profileMenuOpen || _sidebarOpen)
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
-              onTap: _closeProfileMenu,
-              child: const SizedBox.expand(),
+              onTap: () {
+                _closeProfileMenu();
+                _closeSidebar();
+              },
+              child: ColoredBox(
+                color: _sidebarOpen
+                    ? Colors.black.withValues(alpha: 0.42)
+                    : Colors.transparent,
+              ),
             ),
           ),
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          left: _sidebarOpen ? 0 : -420,
+          top: 0,
+          bottom: 0,
+          child: DachengChatSidebar(
+            onNewChat: _closeSidebar,
+            onClose: _closeSidebar,
+          ),
+        ),
         if (_profileMenuOpen)
           Positioned(
             left: 18,
@@ -102,9 +136,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-/// Web /login route wrapper.
-///
-/// It reuses the existing Web login dialog instead of loading the App login page.
 class WebLoginRouteScreen extends StatefulWidget {
   const WebLoginRouteScreen({super.key});
 
@@ -147,6 +178,25 @@ class _WebLoginRouteScreenState extends State<WebLoginRouteScreen> {
   @override
   Widget build(BuildContext context) {
     return const MainNavigationScreen();
+  }
+}
+
+class _SidebarOpenButton extends StatelessWidget {
+  const _SidebarOpenButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xCC222A30),
+      shape: const CircleBorder(),
+      child: IconButton(
+        tooltip: '打开侧边栏',
+        onPressed: onPressed,
+        icon: const Icon(Icons.menu_rounded, color: Colors.white, size: 28),
+      ),
+    );
   }
 }
 
