@@ -3,11 +3,6 @@ import { siteHref } from "../lib/site-url";
 
 const FOOTER_LINKS = [
   {
-    href: "/app",
-    zh: "大乘 Web",
-    en: "Dacheng Web",
-  },
-  {
     href: "/download",
     zh: "下载 App",
     en: "Download App",
