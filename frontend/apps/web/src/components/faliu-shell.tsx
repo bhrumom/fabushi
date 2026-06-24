@@ -201,6 +201,7 @@ export function FaliuShell({
   const [error, setError] = useState<string | null>(null);
   const mainPaneRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const catalogRequestRef = useRef<Promise<boolean> | null>(null);
 
   const deferredQuery = useDeferredValue(query.trim());
   const normalizedDeferredQuery = useMemo(() => normalizeCbetaQuery(deferredQuery), [deferredQuery]);
@@ -217,29 +218,35 @@ export function FaliuShell({
 
   const loadCatalogPage = useCallback(
     async (page = nextWorksPage) => {
-      if (isCatalogLoading || !hasMoreCatalogWorks) {
+      if (catalogRequestRef.current || !hasMoreCatalogWorks) {
         return false;
       }
 
-      try {
-        setIsCatalogLoading(true);
-        const result = await fetchWorksPage(page, CBETA_WORKS_PAGE_SIZE);
+      const request = (async () => {
+        try {
+          setIsCatalogLoading(true);
+          const result = await fetchWorksPage(page, CBETA_WORKS_PAGE_SIZE);
 
-        setWorks((current) => dedupeWorks([...current, ...result.works]));
-        setNextWorksPage(result.nextPage);
-        setHasMoreCatalogWorks(result.hasMore);
-        setError(null);
-        return result.works.length > 0;
-      } catch (cause) {
-        const message = cause instanceof Error ? cause.message : "法流数据加载失败";
-        setError(message);
-        return false;
-      } finally {
-        setIsCatalogLoading(false);
-        setIsBootLoading(false);
-      }
+          setWorks((current) => dedupeWorks([...current, ...result.works]));
+          setNextWorksPage(result.nextPage);
+          setHasMoreCatalogWorks(result.hasMore);
+          setError(null);
+          return result.works.length > 0;
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : "法流数据加载失败";
+          setError(message);
+          return false;
+        } finally {
+          setIsCatalogLoading(false);
+          setIsBootLoading(false);
+          catalogRequestRef.current = null;
+        }
+      })();
+
+      catalogRequestRef.current = request;
+      return request;
     },
-    [hasMoreCatalogWorks, isCatalogLoading, nextWorksPage],
+    [hasMoreCatalogWorks, nextWorksPage],
   );
 
   useEffect(() => {
@@ -295,6 +302,10 @@ export function FaliuShell({
   const hasMoreWorks = visibleLimit < filteredWorks.length || canLoadMoreCatalogWorks;
 
   const loadMoreWorks = useCallback(() => {
+    if (isCatalogLoading) {
+      return;
+    }
+
     if (visibleLimit < filteredWorks.length) {
       setVisibleLimit((current) => Math.min(current + CARD_LIMIT, filteredWorks.length));
       return;
@@ -307,7 +318,7 @@ export function FaliuShell({
         }
       });
     }
-  }, [canLoadMoreCatalogWorks, filteredWorks.length, loadCatalogPage, visibleLimit]);
+  }, [canLoadMoreCatalogWorks, filteredWorks.length, isCatalogLoading, loadCatalogPage, visibleLimit]);
 
   useEffect(() => {
     setVisibleLimit(CARD_LIMIT);
@@ -317,7 +328,7 @@ export function FaliuShell({
     const target = loadMoreRef.current;
     const rootElement = mainPaneRef.current;
 
-    if (!target || !hasMoreWorks) {
+    if (!target || !hasMoreWorks || isCatalogLoading) {
       return;
     }
 
@@ -339,7 +350,7 @@ export function FaliuShell({
     return () => {
       observer.disconnect();
     };
-  }, [hasMoreWorks, loadMoreWorks, visibleWorks.length]);
+  }, [hasMoreWorks, isCatalogLoading, loadMoreWorks, visibleWorks.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -664,8 +675,11 @@ export function FaliuShell({
         {visibleCards.length > 0 || hasMoreWorks ? (
           <div ref={loadMoreRef} className={styles.loadMoreRow}>
             {hasMoreWorks ? (
-              <button type="button" onClick={loadMoreWorks}>
-                <LocalizedText zh={visibleLimit < filteredWorks.length ? "继续加载" : "加载更多经文"} en="Load more" />
+              <button type="button" onClick={loadMoreWorks} disabled={isCatalogLoading}>
+                <LocalizedText
+                  zh={isCatalogLoading ? "正在加载" : visibleLimit < filteredWorks.length ? "继续加载" : "加载更多经文"}
+                  en={isCatalogLoading ? "Loading" : "Load more"}
+                />
               </button>
             ) : (
               <span>
