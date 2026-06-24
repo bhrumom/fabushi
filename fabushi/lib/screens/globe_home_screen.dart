@@ -4903,7 +4903,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       setState(() {
         _homeChatMessages.add(
           _HomeChatMessage(
-            text: '大乘 AI 生成失败: $e',
+            text: '大乘 AI 生成失败: ${_friendlyErrorMessage(e)}',
             isUser: false,
             isError: true,
           ),
@@ -4914,6 +4914,19 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       });
       _scrollHomeChatToBottom(force: true);
     }
+  }
+
+  String _friendlyErrorMessage(Object error) {
+    final text = error.toString().trim();
+    const badStatePrefix = 'Bad state: ';
+    const exceptionPrefix = 'Exception: ';
+    if (text.startsWith(badStatePrefix)) {
+      return text.substring(badStatePrefix.length).trim();
+    }
+    if (text.startsWith(exceptionPrefix)) {
+      return text.substring(exceptionPrefix.length).trim();
+    }
+    return text.isEmpty ? '请求失败，请稍后重试。' : text;
   }
 
   void _stopAiGeneration() {
