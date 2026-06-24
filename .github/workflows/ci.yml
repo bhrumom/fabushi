@@ -525,10 +525,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          export DEVELOPER_DIR=/Applications/Xcode_16.4.app/Contents/Developer
+          sudo xcode-select -s "$DEVELOPER_DIR"
           xcodebuild -version
-          echo "CC=$(xcrun --find cc)" >> "$GITHUB_ENV"
-          echo "CXX=$(xcrun --find c++)" >> "$GITHUB_ENV"
+          {
+            echo "DEVELOPER_DIR=$DEVELOPER_DIR"
+            echo "CC=$(xcrun --find clang)"
+            echo "CXX=$(xcrun --find clang++)"
+          } >> "$GITHUB_ENV"
+          xcrun --find clang
+          xcrun --find clang++
 
       - name: Enable macOS desktop
         run: flutter config --enable-macos-desktop
@@ -551,9 +557,15 @@ jobs:
         env:
           DACHENG_SYNC_OPENCLAW_RUNTIME: '1'
           COMPILER_INDEX_STORE_ENABLE: 'NO'
+          CLANG_ENABLE_EXPLICIT_MODULES: 'NO'
+          SWIFT_ENABLE_EXPLICIT_MODULES: 'NO'
           PATROL_ANALYTICS_ENABLED: 'false'
         run: |
           set -euo pipefail
+          rm -rf .dart_tool/native_assets_builder .dart_tool/native_assets build/native_assets build/macos_integ
+          printf 'DEVELOPER_DIR=%s\nCC=%s\nCXX=%s\n' "$DEVELOPER_DIR" "$CC" "$CXX"
+          test -x "$CC"
+          test -x "$CXX"
           patrol --verbose test \
             -d macos \
             -t patrol_test/openclaw_gateway_smoke_test.dart \
