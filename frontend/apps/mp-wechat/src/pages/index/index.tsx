@@ -1,123 +1,178 @@
 import { useState } from "react";
 import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
+import { aiQuickPrompts } from "@fabushi/shared";
 import {
-  aiQuickPrompts,
-  appExperienceStats,
-  brand,
-  dharmaFeedItems,
-  globalDharmaActions,
-  miniProgramFlutterParity,
-} from "@fabushi/shared";
+  dachengAiEndpoints,
+  getDachengAiApiBaseUrl,
+  type DachengAiChatResponse,
+} from "@fabushi/api-client";
 import "./index.scss";
 
-export default function IndexPage() {
-  const [draft, setDraft] = useState<string>(aiQuickPrompts[0]);
+const AI_BASE = getDachengAiApiBaseUrl();
 
-  function switchTo(url: string) {
-    Taro.switchTab({ url });
+type ChatMessage = {
+  id: string;
+  role: "assistant" | "user";
+  text: string;
+};
+
+const suggestions = [
+  { icon: "✦", label: "大乘能做什么", prompt: aiQuickPrompts[0] },
+  { icon: "◉", label: "开始全球法布施", prompt: "帮我写一段适合公开分享的佛法发愿文。" },
+  { icon: "⌕", label: "AI找资源", prompt: "请帮我找适合初学者阅读的佛经资源。" },
+  { icon: "▣", label: "加入功课本", prompt: "帮我整理一份今天可以完成的简短功课。" },
+  { icon: "♡", label: "发愿文案", prompt: "请帮我润色一段慈悲、简洁的发愿文案。" },
+];
+
+export default function IndexPage() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: "welcome",
+      role: "assistant",
+      text: "你好，我是大乘。你可以问经文、找资源，或让我帮你整理可分享的善法内容。",
+    },
+  ]);
+
+  function startPrompt(prompt: string) {
+    setDraft(prompt);
   }
 
-  function copyDraft() {
-    Taro.setClipboardData({
-      data: draft,
-      success: () => Taro.showToast({ title: "已复制", icon: "success" }),
-    });
+  function startNewChat() {
+    setMessages([]);
+    setDraft("");
+    setSidebarOpen(false);
+  }
+
+  async function sendMessage() {
+    const text = draft.trim();
+    if (!text || loading) return;
+
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      text,
+    };
+    setMessages((current) => [...current, userMessage]);
+    setDraft("");
+    setLoading(true);
+
+    try {
+      const response = await Taro.request<DachengAiChatResponse>({
+        url: `${AI_BASE}${dachengAiEndpoints.chat}`,
+        method: "POST",
+        header: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        data: {
+          message: text,
+          clientMembershipHint: false,
+        },
+        timeout: 60000,
+      });
+
+      if (response.statusCode < 200 || response.statusCode >= 300 || response.data.success === false) {
+        throw new Error(response.data.message || `请求失败 ${response.statusCode}`);
+      }
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          text: response.data.message || "AI 暂未返回内容。",
+        },
+      ]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          text: error instanceof Error ? error.message : "大乘 AI 暂不可用，请稍后再试。",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <View className="page">
-      <View className="hero">
-        <Text className="eyebrow">{brand.englishName}</Text>
-        <Text className="title">全球法布施</Text>
-        <Text className="subtitle">
-          复用 Flutter App 的首页信息架构与视觉 token，用微信原生组件承接发送、问经和共修入口。
-        </Text>
-      </View>
-
-      <View className="globe">
-        <View className="orbit orbit-a" />
-        <View className="orbit orbit-b" />
-        <View className="beam beam-a" />
-        <View className="beam beam-b" />
-        <View className="node node-cn" />
-        <View className="node node-us" />
-        <View className="node node-sg" />
-        <View className="node node-eu" />
-        <View className="globe-core">
-          <Text className="globe-value">64</Text>
-          <Text className="globe-label">在线国家</Text>
+    <View className="chat-page">
+      <View className="topbar">
+        <Button className="menu-button" onClick={() => setSidebarOpen(true)}>
+          ☰
+        </Button>
+        <Text className="brand">大乘</Text>
+        <View className="user-pill">
+          <Text>bhrum108</Text>
         </View>
       </View>
 
-      <View className="stats">
-        {appExperienceStats.map((item) => (
-          <View className="stat" key={item.label}>
-            <Text className="stat-value">{item.value}</Text>
-            <Text className="stat-label">
-              {item.label} · {item.unit}
-            </Text>
-          </View>
-        ))}
+      <View className="chat-main">
+        <View className="intro">
+          <Text className="greeting">Hi, bhrum108</Text>
+          <Text className="subtitle">把可分享的善法资源，带到全球</Text>
+        </View>
+
+        <View className="suggestions">
+          {suggestions.map((item) => (
+            <Button className="suggestion" key={item.label} onClick={() => startPrompt(item.prompt)}>
+              <Text className="suggestion-icon">{item.icon}</Text>
+              <Text>{item.label}</Text>
+            </Button>
+          ))}
+        </View>
+
+        <View className="messages">
+          {messages.map((message) => (
+            <View className={`message ${message.role}`} key={message.id}>
+              <Text>{message.text}</Text>
+            </View>
+          ))}
+          {loading && (
+            <View className="message assistant">
+              <Text>正在生成...</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       <View className="composer">
-        <Text className="section-title">法布施输入</Text>
+        <Button className="add-button">＋</Button>
         <Input
-          className="input"
+          className="chat-input"
           value={draft}
-          maxlength={120}
+          placeholder="问问大乘"
+          confirmType="send"
           onInput={(event) => setDraft(event.detail.value)}
+          onConfirm={sendMessage}
         />
-        <View className="actions">
-          <Button className="primary" onClick={() => switchTo("/pages/ai/index")}>
-            AI 润色
-          </Button>
-          <Button className="secondary" onClick={copyDraft}>
-            复制发愿
+        <Button className="send-button" loading={loading} onClick={sendMessage}>
+          ↑
+        </Button>
+      </View>
+
+      {sidebarOpen && <View className="scrim" onClick={() => setSidebarOpen(false)} />}
+      <View className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+        <View className="sidebar-header">
+          <Text className="sidebar-title">大乘</Text>
+          <Button className="close-button" onClick={() => setSidebarOpen(false)}>
+            ×
           </Button>
         </View>
-      </View>
-
-      <View className="section action-grid">
-        {globalDharmaActions.map((item, index) => (
-          <View className="action-card" key={item.label}>
-            <Text className="action-index">0{index + 1}</Text>
-            <Text className="card-title">{item.label}</Text>
-            <Text className="card-copy">{item.detail}</Text>
-          </View>
-        ))}
-      </View>
-
-      <View className="section">
-        <Text className="section-title">AI 快捷任务</Text>
-        {aiQuickPrompts.slice(0, 3).map((prompt) => (
-          <View className="prompt" key={prompt}>
-            <Text>{prompt}</Text>
-          </View>
-        ))}
-      </View>
-
-      <View className="section">
-        <Text className="section-title">Flutter 复用映射</Text>
-        {miniProgramFlutterParity.slice(0, 3).map((item) => (
-          <View className="parity" key={item.flutter}>
-            <Text className="card-title">{item.title}</Text>
-            <Text className="card-copy">{item.reused}</Text>
-          </View>
-        ))}
-      </View>
-
-      <View className="section">
-        <Text className="section-title">今日法流</Text>
-        {dharmaFeedItems.map((item) => (
-          <View className="feed" key={item.title}>
-            <Text className="card-title">{item.title}</Text>
-            <Text className="card-copy">
-              {item.tag} · {item.readTime}
-            </Text>
-          </View>
-        ))}
+        <Button className="new-chat" onClick={startNewChat}>
+          <Text className="new-chat-icon">⊞</Text>
+          <Text>开启新对话</Text>
+        </Button>
+        <Text className="today">今天</Text>
+        <View className="empty">
+          <Text>没有更多内容啦</Text>
+        </View>
       </View>
     </View>
   );
