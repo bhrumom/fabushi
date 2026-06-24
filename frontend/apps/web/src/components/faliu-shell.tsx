@@ -300,6 +300,7 @@ export function FaliuShell({
   const visibleWorks = useMemo(() => filteredWorks.slice(0, visibleLimit), [filteredWorks, visibleLimit]);
   const canLoadMoreCatalogWorks = hasMoreCatalogWorks && normalizedDeferredQuery.length < 2;
   const hasMoreWorks = visibleLimit < filteredWorks.length || canLoadMoreCatalogWorks;
+  const canAutoRevealMoreWorks = visibleLimit < filteredWorks.length;
 
   const loadMoreWorks = useCallback(() => {
     if (isCatalogLoading) {
@@ -328,7 +329,7 @@ export function FaliuShell({
     const target = loadMoreRef.current;
     const rootElement = mainPaneRef.current;
 
-    if (!target || !hasMoreWorks || isCatalogLoading) {
+    if (!target || !canAutoRevealMoreWorks || isCatalogLoading) {
       return;
     }
 
@@ -350,7 +351,7 @@ export function FaliuShell({
     return () => {
       observer.disconnect();
     };
-  }, [hasMoreWorks, isCatalogLoading, loadMoreWorks, visibleWorks.length]);
+  }, [canAutoRevealMoreWorks, isCatalogLoading, loadMoreWorks, visibleWorks.length]);
 
   useEffect(() => {
     let cancelled = false;
