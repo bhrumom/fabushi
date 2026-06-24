@@ -508,6 +508,19 @@ jobs:
         with:
           node-version: 24
 
+      - name: Prepare macOS runner disk
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h
+          rm -rf "$HOME/Library/Developer/Xcode/DerivedData"
+          rm -rf "$HOME/Library/Caches/CocoaPods"
+          rm -rf "$HOME/Library/Android/sdk"
+          sudo rm -rf "/Applications/Android Studio.app"
+          xcrun simctl delete unavailable || true
+          brew cleanup --prune=all || true
+          df -h
+
       - name: Enable macOS desktop
         run: flutter config --enable-macos-desktop
 
@@ -528,10 +541,11 @@ jobs:
       - name: Run Patrol OpenClaw smoke test
         env:
           DACHENG_SYNC_OPENCLAW_RUNTIME: '1'
+          COMPILER_INDEX_STORE_ENABLE: 'NO'
           PATROL_ANALYTICS_ENABLED: 'false'
         run: |
           set -euo pipefail
-          patrol test \
+          patrol --verbose test \
             -d macos \
             -t patrol_test/openclaw_gateway_smoke_test.dart \
             --dart-define=DACHENG_DESKTOP_CONTROL=true
