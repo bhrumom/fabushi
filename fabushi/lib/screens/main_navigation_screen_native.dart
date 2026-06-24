@@ -6,6 +6,9 @@ import '../core/design_system/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/space_background.dart';
 
+import '../widgets/sidebar/codex_sidebar.dart';
+import 'settings_screen.dart';
+
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -14,11 +17,11 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 0;
+  int _currentIndex = 3;
   bool _isGlobeReady = false;
 
   // 追踪哪些页面已被激活
-  final List<bool> _activatedScreens = [true, false, false];
+  final List<bool> _activatedScreens = [false, false, false, true, false];
 
   // 用于通知各主页面的可见性变化
   final GlobalKey<MeditationRoomScreenState> _meditationKey = GlobalKey();
@@ -52,14 +55,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   /// 更新禅室页面可见性状态
   void _updateMeditationRoomVisibility() {
-    final isZenRoomVisible = _currentIndex == 1 && _activatedScreens[1];
+    final isZenRoomVisible = _currentIndex == 2 && _activatedScreens[2];
     // 使用 GlobalKey 通知禅室页面可见性变化
     _meditationKey.currentState?.setVisible(isZenRoomVisible);
   }
 
   /// 更新地球页面可见性状态
   void _updateGlobeVisibility() {
-    final isGlobeVisible = _currentIndex == 0;
+    final isGlobeVisible = _currentIndex == 0 || _currentIndex == 1;
     _globeKey.currentState?.setVisible(isGlobeVisible);
   }
 
@@ -75,10 +78,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   List<Widget> get _screens {
     final screens = <Widget>[];
 
-    // 0: 首页 (地球)
+    // 0: 首页 (聊天视图)
     screens.add(
       TickerMode(
-        enabled: _currentIndex == 0,
+        enabled: _currentIndex == 0 || _currentIndex == 1,
         child: _isGlobeReady
             ? GlobeHomeScreen(key: _globeKey)
             : const Center(
@@ -87,29 +90,44 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   children: [
                     CircularProgressIndicator(),
                     SizedBox(height: 16),
-                    Text('正在加载地球组件...'),
+                    Text('正在加载组件...'),
                   ],
                 ),
               ),
       ),
     );
+    
+    // 1: 地球视图 (目前和首页复用 GlobeHomeScreen)
+    screens.add(const SizedBox.shrink()); 
 
-    // 1: 禅室 (佛像3D)
+    // 2: 禅室 (佛像3D)
     screens.add(
       TickerMode(
-        enabled: _currentIndex == 1,
-        child: _activatedScreens[1]
+        enabled: _currentIndex == 2,
+        child: _activatedScreens[2]
             ? MeditationRoomScreen(key: _meditationKey)
             : const Center(child: CircularProgressIndicator()),
       ),
     );
 
-    // 2: 我的
+    // 3: 我的 (个人资料)
     screens.add(
       TickerMode(
-        enabled: _currentIndex == 2,
-        child: _activatedScreens[2]
+        enabled: _currentIndex == 3,
+        child: _activatedScreens[3]
             ? const MyProfileScreen()
+            : const Center(child: CircularProgressIndicator()),
+      ),
+    );
+
+    // 4: 设置
+    screens.add(
+      TickerMode(
+        enabled: _currentIndex == 4,
+        child: _activatedScreens[4]
+            ? SettingsScreen(
+                onClose: () => setState(() => _currentIndex = 0),
+              )
             : const Center(child: CircularProgressIndicator()),
       ),
     );
@@ -119,38 +137,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
-
     return SpaceBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: IndexedStack(index: _currentIndex, children: _screens),
-        bottomNavigationBar: Theme(
-          data: Theme.of(context).copyWith(
-            navigationBarTheme: NavigationBarThemeData(
-              backgroundColor: Colors.transparent,
-              indicatorColor: AppTheme.primaryColor.withOpacity(0.3),
-              iconTheme: WidgetStateProperty.all(
-                const IconThemeData(color: Colors.white),
-              ),
-              labelTextStyle: WidgetStateProperty.all(
-                const TextStyle(color: Colors.white),
-              ),
-            ),
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0x1AFFFFFF), // Glass effect
-              border: const Border(top: BorderSide(color: Color(0x26FFFFFF))),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            child: NavigationBar(
+        body: Row(
+          children: [
+            CodexSidebar(
               selectedIndex: _currentIndex,
               onDestinationSelected: (index) {
                 setState(() {
@@ -161,29 +153,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   }
                 });
                 _notifyScreenVisibility();
+                
+                if (index == 0) {
+                  _globeKey.currentState?.setGlobeMode(false);
+                } else if (index == 1) {
+                  _globeKey.currentState?.setGlobeMode(true);
+                }
               },
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              height: 70,
-              destinations: [
-                NavigationDestination(
-                  icon: const Icon(Icons.public_outlined),
-                  selectedIcon: const Icon(Icons.public),
-                  label: l10n.navHome,
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.self_improvement_outlined),
-                  selectedIcon: const Icon(Icons.self_improvement),
-                  label: l10n.navMeditationRoom,
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.person_outline),
-                  selectedIcon: const Icon(Icons.person),
-                  label: l10n.navProfile,
-                ),
-              ],
             ),
-          ),
+            Expanded(
+              child: IndexedStack(
+                // 当 currentIndex 为 1 (地球视图) 时，复用 0 的 GlobeHomeScreen
+                index: _currentIndex == 1 ? 0 : _currentIndex, 
+                children: _screens,
+              ),
+            ),
+          ],
         ),
       ),
     );

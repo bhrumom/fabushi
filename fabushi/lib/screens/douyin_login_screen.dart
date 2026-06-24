@@ -88,6 +88,11 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
       _agreedToTerms &&
       !_isLoading;
 
+  bool get _shouldUseEmbeddedAlipayWebLogin {
+    if (kIsWeb) return false;
+    return Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
+  }
+
   // ==================== 账号密码登录逻辑 ====================
 
   Future<void> _passwordLogin() async {
@@ -118,15 +123,7 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     }
   }
 
-  // ==================== 支付宝登录逻辑 ====================
-
-  /// 检测是否为移动端（iOS/Android）
   bool get _isMobile {
-    if (kIsWeb) return false;
-    return Platform.isIOS || Platform.isAndroid;
-  }
-
-  bool get _shouldUseEmbeddedAlipayWebLogin {
     if (kIsWeb) return false;
     return Platform.isIOS || Platform.isAndroid;
   }

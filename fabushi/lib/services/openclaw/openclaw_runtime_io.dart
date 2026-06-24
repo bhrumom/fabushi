@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' show Abi;
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:archive/archive_io.dart';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
@@ -808,6 +809,17 @@ class OpenClawRuntime {
           );
         }
       }
+      if (_recentLogsContainRuntimeModuleFailure()) {
+        final logs = _recentLogs.take(12).join('\n');
+        _diag(
+          'process.runtime-module-failure',
+          data: {'recentLogs': _recentLogs.take(12).toList()},
+        );
+        await stop();
+        throw OpenClawRuntimeException(
+          'OpenClaw runtime 模块缓存异常${logs.isEmpty ? '' : '\n$logs'}',
+        );
+      }
       await Future<void>.delayed(const Duration(milliseconds: 450));
     }
 
@@ -962,6 +974,19 @@ class OpenClawRuntime {
       );
       return null;
     }
+    if (_isRuntimeVersionNewer(fallbackSpec.version, spec.version)) {
+      await AppSettings.clearOpenClawActiveRuntimeSpec();
+      _diag(
+        'runtime-update.active-cleared',
+        data: {
+          'platformKey': platformKey,
+          'reason': 'bundled-newer',
+          'version': spec.version,
+          'bundledVersion': fallbackSpec.version,
+        },
+      );
+      return null;
+    }
     _diag(
       'runtime-update.active-loaded',
       data: {
@@ -974,6 +999,24 @@ class OpenClawRuntime {
     return spec;
   }
 
+  bool _isRuntimeVersionNewer(String candidate, String current) {
+    final candidateRank = _runtimeVersionRank(candidate);
+    final currentRank = _runtimeVersionRank(current);
+    final length = math.max(candidateRank.length, currentRank.length);
+    for (var i = 0; i < length; i++) {
+      final a = i < candidateRank.length ? candidateRank[i] : 0;
+      final b = i < currentRank.length ? currentRank[i] : 0;
+      if (a != b) return a > b;
+    }
+    return false;
+  }
+
+  List<int> _runtimeVersionRank(String version) {
+    return RegExp(r'\d+')
+        .allMatches(version)
+        .map((match) => int.tryParse(match.group(0) ?? '') ?? 0)
+        .toList(growable: false);
+  }
   _OpenClawBundleSpec? _specFromJson(
     Map<String, dynamic> json, {
     required bool downloaded,
@@ -1815,6 +1858,7 @@ class OpenClawRuntime {
           )
           .timeout(_probeTimeout);
       final healthy =
+          chatResponse.statusCode < 500 &&
           chatResponse.statusCode != 401 &&
           chatResponse.statusCode != 403 &&
           chatResponse.statusCode != 404;
@@ -1879,6 +1923,25 @@ class OpenClawRuntime {
     // gateway.mode=local, and the home screen requires the OpenAI-compatible
     // chat endpoint. Preserve unrelated user edits while fixing the fields
     // needed for the app-owned embedded gateway to start reliably.
+    try {
+      final mcpConfigPath = File(
+        p.join(
+          Platform.environment['HOME'] ?? '',
+          '.gemini',
+          'config',
+          'mcp_config.json',
+        ),
+      );
+      if (await mcpConfigPath.exists()) {
+        final mcpConfig = jsonDecode(await mcpConfigPath.readAsString());
+        if (mcpConfig is Map && mcpConfig.containsKey('mcpServers')) {
+          config['mcpServers'] = mcpConfig['mcpServers'];
+        }
+      }
+    } catch (e) {
+      _diag('mcp.config-error', data: {'error': e.toString()});
+    }
+
     final merged = await _mergeEmbeddedConfig(configPath, config);
     await configPath.writeAsString(
       const JsonEncoder.withIndent('  ').convert(merged),
@@ -2751,6 +2814,15 @@ export default {
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen(addLog, onError: (_) {});
+  }
+
+  bool _recentLogsContainRuntimeModuleFailure() {
+    return _recentLogs.any((line) {
+      final lower = line.toLowerCase();
+      return lower.contains('err_vm_module_link_failure') ||
+          lower.contains('is not in cache') ||
+          lower.contains('request for') && lower.contains('.js');
+    });
   }
 
   Future<Directory> _stateRoot() async {

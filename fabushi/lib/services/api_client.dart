@@ -374,4 +374,11 @@ class ApiClient implements ApiRequester {
       token: token,
     );
   }
+
+  Future<Map<String, dynamic>> getAiQuota(String token) {
+    // Note: This endpoint is defined in AppConfig.aiQuotaUrl
+    // ApiClient already prepends base URL if it's not absolute, 
+    // but we can just pass the path. We will pass the parsed path.
+    return get(Uri.parse(AppConfig.aiQuotaUrl).path, token: token);
+  }
 }

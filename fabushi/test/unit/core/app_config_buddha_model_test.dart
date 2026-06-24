@@ -5,8 +5,8 @@ import 'package:global_dharma_sharing/core/config/app_config.dart';
 
 void main() {
   group('AI backend configuration', () {
-    test('uses the Cloudflare DNS domain instead of the raw VPS IP', () {
-      expect(AppConfig.currentAiBackendUrl, 'https://ai.ombhrum.com');
+    test('uses the first-party Worker domain instead of the raw VPS IP', () {
+      expect(AppConfig.currentAiBackendUrl, 'https://api.ombhrum.com');
     });
   });
 

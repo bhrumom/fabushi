@@ -9,6 +9,7 @@ import '../../core/config/app_config.dart';
 import '../dacheng_ai_service.dart';
 import '../diagnostic_log_service.dart';
 import '../local_ai_conversation_store.dart';
+import 'openclaw_local_action_executor.dart';
 import 'openclaw_runtime.dart';
 
 /// 将现有大乘首页 AI 对话适配到本机 OpenClaw Gateway。
@@ -33,12 +34,14 @@ class OpenClawAiBridge {
   static const Duration _firstTokenTimeout = Duration(seconds: 120);
   static const Duration _streamIdleTimeout = Duration(seconds: 90);
   static const String _desktopToolSystemPrompt = '''
-你是大乘桌面端内置 OpenClaw 助理。用户要求打开浏览器、访问网页、点击页面、输入文本、读取本机桌面或操作 Chrome 时，要优先调用可用的 browser、chrome 或 desktop 工具实际执行，不要只给操作教程。涉及本机桌面或 Chrome 写操作时，大乘会弹出确认，请发起工具调用并等待用户确认。
+临近大乘桌面端内置 OpenClaw 助理。你有权限读取并编辑用户的本地文件和外部内容。用户要求打开浏览器、访问网页、点击页面、输入文本、读取本机桌面、操作 Chrome 或执行本地命令时，要优先调用可用的 browser、chrome、desktop 或命令行工具实际执行，不要只给操作教程。当用户要求进行“全球法布施”（向平台发布内容）或“制作闪卡”时，请使用对应的 MCP 服务器和可用工具（如 media-auto-publisher、wechat-draft-publisher）来完成。如果找不到适合的工具，请尝试通过系统或 MCP 查找并安装相应的技能。涉及本机桌面或 Chrome 写操作，或者文件修改时，大乘会弹出确认，请发起工具调用并等待用户确认。
 ''';
 
   Future<DachengAiChatResult> sendChat({
     required String message,
     String? conversationId,
+    String? model,
+    Map<String, dynamic>? client,
     String? token,
     String? username,
     bool isMember = false,
@@ -51,6 +54,8 @@ class OpenClawAiBridge {
     await for (final event in sendChatStream(
       message: message,
       conversationId: conversationId,
+      model: model,
+      client: client,
       token: token,
       username: username,
       isMember: isMember,
@@ -81,6 +86,8 @@ class OpenClawAiBridge {
   Stream<DachengAiStreamEvent> sendChatStream({
     required String message,
     String? conversationId,
+    String? model,
+    Map<String, dynamic>? client,
     String? token,
     String? username,
     bool isMember = false,
@@ -108,8 +115,68 @@ class OpenClawAiBridge {
           'hasToken': token != null && token.isNotEmpty,
           'hasUsername': username != null && username.isNotEmpty,
           'isMember': isMember,
+          'model': model,
+          'hasClientContext': client != null && client.isNotEmpty,
         },
       );
+
+      final effectiveConversationId =
+          (conversationId != null && conversationId.trim().isNotEmpty)
+          ? conversationId.trim()
+          : _newConversationId();
+      fallbackConversationId = effectiveConversationId;
+      final existing = await _store.get(effectiveConversationId);
+      final historyMessages =
+          (existing?.messages ?? const <LocalAiConversationMessage>[])
+              .where((item) => item.content.trim().isNotEmpty)
+              .map(
+                (item) => {
+                  'role': item.role == 'user' ? 'user' : 'assistant',
+                  'content': item.content,
+                },
+              )
+              .toList();
+      final userMessage = {'role': 'user', 'content': normalizedMessage};
+      final clientContext = _clientContextSystemPrompt(client);
+      fallbackMessages = [
+        if (clientContext.isNotEmpty)
+          {'role': 'system', 'content': clientContext},
+        ...historyMessages,
+        userMessage,
+      ];
+
+      final localAction = await OpenClawLocalActionExecutor.instance.tryExecute(
+        message: normalizedMessage,
+        client: client,
+      );
+      if (localAction != null) {
+        _diag(
+          'chat.local-action.completed',
+          data: {
+            'requestId': requestId,
+            'elapsedMs': totalWatch.elapsedMilliseconds,
+            ...localAction.raw,
+          },
+        );
+        await _store.upsertTurn(
+          conversationId: effectiveConversationId,
+          userText: normalizedMessage,
+          assistantText: localAction.message,
+        );
+        yield DachengAiStreamEvent(
+          type: 'done',
+          text: localAction.message,
+          conversationId: effectiveConversationId,
+          usage: _zeroUsage,
+          raw: {
+            'message': localAction.message,
+            'conversationId': effectiveConversationId,
+            'provider': 'openclaw-local-action',
+            ...localAction.raw,
+          },
+        );
+        return;
+      }
 
       final ensureWatch = Stopwatch()..start();
       final target = await OpenClawRuntime.instance.ensureStarted(
@@ -126,15 +193,10 @@ class OpenClawAiBridge {
           'baseUri': target.baseUri.toString(),
           'model': target.model,
           'modelOverrideSet': target.modelOverride != null,
+          'selectedModelOverride': _openClawDeepSeekModelRef(model),
           'desktopToolsUri': target.desktopToolsUri?.toString(),
         },
       );
-
-      final effectiveConversationId =
-          (conversationId != null && conversationId.trim().isNotEmpty)
-          ? conversationId.trim()
-          : _newConversationId();
-      fallbackConversationId = effectiveConversationId;
 
       yield DachengAiStreamEvent(
         type: 'step',
@@ -148,26 +210,20 @@ class OpenClawAiBridge {
         },
       );
 
-      final existing = await _store.get(effectiveConversationId);
-      final historyMessages =
-          (existing?.messages ?? const <LocalAiConversationMessage>[])
-              .where((item) => item.content.trim().isNotEmpty)
-              .map(
-                (item) => {
-                  'role': item.role == 'user' ? 'user' : 'assistant',
-                  'content': item.content,
-                },
-              )
-              .toList();
-      final userMessage = {'role': 'user', 'content': normalizedMessage};
       final requestMessages = <Map<String, dynamic>>[
         {'role': 'system', 'content': _desktopToolSystemPrompt.trim()},
+        if (clientContext.isNotEmpty)
+          {'role': 'system', 'content': clientContext},
         ...historyMessages,
         userMessage,
       ];
       fallbackMessages = [...historyMessages, userMessage];
 
       final uri = target.baseUri.replace(path: '/v1/chat/completions');
+      final selectedModelOverride =
+          _openClawDeepSeekModelRef(model) ??
+          _openClawDeepSeekModelRef(target.modelOverride) ??
+          target.modelOverride;
       final body = jsonEncode({
         'model': _gatewayChatModel,
         'stream': true,
@@ -175,16 +231,18 @@ class OpenClawAiBridge {
         'user': 'dacheng:$effectiveConversationId',
         'messages': requestMessages,
       });
+      final headers = {
+        'Accept': 'text/event-stream',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${target.token}',
+        'x-openclaw-session-key': 'dacheng:$effectiveConversationId',
+        'x-openclaw-message-channel': 'dacheng-desktop',
+      };
+      if (selectedModelOverride != null) {
+        headers['x-openclaw-model'] = selectedModelOverride;
+      }
       final request = http.Request('POST', uri)
-        ..headers.addAll({
-          'Accept': 'text/event-stream',
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${target.token}',
-          if (target.modelOverride != null)
-            'x-openclaw-model': target.modelOverride!,
-          'x-openclaw-session-key': 'dacheng:$effectiveConversationId',
-          'x-openclaw-message-channel': 'dacheng-desktop',
-        })
+        ..headers.addAll(headers)
         ..body = body;
       _diag(
         'chat.request',
@@ -195,6 +253,7 @@ class OpenClawAiBridge {
           'messageCount': requestMessages.length,
           'bodyBytes': utf8.encode(body).length,
           'requiresLocalToolExecution': requiresLocalToolExecution,
+          'selectedModelOverride': selectedModelOverride,
         },
       );
 
@@ -220,6 +279,13 @@ class OpenClawAiBridge {
             'body': body,
           },
         );
+        if (response.statusCode >= 500) {
+          throw _OpenClawGatewayUnavailableException(
+            body.trim().isEmpty
+                ? '本机 OpenClaw Gateway 返回 ${response.statusCode}'
+                : body.trim(),
+          );
+        }
         throw StateError(
           body.trim().isEmpty
               ? '本机 OpenClaw 请求失败 (${response.statusCode})'
@@ -398,6 +464,66 @@ class OpenClawAiBridge {
           token: token,
           username: username,
           isMember: isMember,
+          model: model,
+          client: client,
+          startedAt: totalWatch,
+        );
+        return;
+      }
+      if (error is _OpenClawGatewayUnavailableException &&
+          fallbackConversationId != null &&
+          fallbackMessages != null &&
+          !requiresLocalToolExecution) {
+        _diag(
+          'chat.backend-fallback.gateway-unavailable',
+          data: {
+            'requestId': requestId,
+            'elapsedMs': totalWatch.elapsedMilliseconds,
+            'conversationId': fallbackConversationId,
+            'messageCount': fallbackMessages.length,
+          },
+          error: error,
+          stackTrace: stackTrace,
+        );
+        yield* _sendBackendDeepSeekProxyStream(
+          requestId: requestId,
+          conversationId: fallbackConversationId,
+          normalizedMessage: normalizedMessage,
+          messages: fallbackMessages,
+          token: token,
+          username: username,
+          isMember: isMember,
+          model: model,
+          client: client,
+          startedAt: totalWatch,
+        );
+        return;
+      }
+      if (error is OpenClawRuntimeException &&
+          fallbackConversationId != null &&
+          fallbackMessages != null &&
+          !requiresLocalToolExecution) {
+        _diag(
+          'chat.backend-fallback.runtime-unavailable',
+          data: {
+            'requestId': requestId,
+            'elapsedMs': totalWatch.elapsedMilliseconds,
+            'conversationId': fallbackConversationId,
+            'messageCount': fallbackMessages.length,
+          },
+          error: error,
+          stackTrace: stackTrace,
+        );
+        yield* _sendBackendDeepSeekProxyStream(
+          requestId: requestId,
+          conversationId: fallbackConversationId,
+          normalizedMessage: normalizedMessage,
+          messages: fallbackMessages,
+          token: token,
+          username: username,
+          isMember: isMember,
+          model: model,
+          client: client,
           startedAt: totalWatch,
         );
         return;
@@ -405,15 +531,100 @@ class OpenClawAiBridge {
       if (error is _OpenClawDeepSeekBlockedException &&
           requiresLocalToolExecution) {
         _diag(
-          'chat.backend-fallback.skipped-local-tool-request',
+          'chat.backend-fallback.local-tool-blocked',
           data: {
             'requestId': requestId,
             'elapsedMs': totalWatch.elapsedMilliseconds,
+            'conversationId': fallbackConversationId,
+            'messageCount': fallbackMessages?.length,
           },
           error: error,
           stackTrace: stackTrace,
         );
-        throw StateError('本机 OpenClaw 工具调用失败，未降级为纯文本模型：${error.message}');
+        if (fallbackConversationId != null && fallbackMessages != null) {
+          yield* _sendBackendDeepSeekProxyStream(
+            requestId: requestId,
+            conversationId: fallbackConversationId,
+            normalizedMessage: normalizedMessage,
+            messages: _withLocalToolUnavailableNotice(
+              fallbackMessages,
+              error.message,
+            ),
+            token: token,
+            username: username,
+            isMember: isMember,
+            model: model,
+            client: client,
+            startedAt: totalWatch,
+          );
+          return;
+        }
+        throw StateError('本机 OpenClaw 工具调用失败：${error.message}');
+      }
+      if (error is _OpenClawGatewayUnavailableException &&
+          requiresLocalToolExecution) {
+        _diag(
+          'chat.backend-fallback.local-tool-gateway-unavailable',
+          data: {
+            'requestId': requestId,
+            'elapsedMs': totalWatch.elapsedMilliseconds,
+            'conversationId': fallbackConversationId,
+            'messageCount': fallbackMessages?.length,
+          },
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (fallbackConversationId != null && fallbackMessages != null) {
+          yield* _sendBackendDeepSeekProxyStream(
+            requestId: requestId,
+            conversationId: fallbackConversationId,
+            normalizedMessage: normalizedMessage,
+            messages: _withLocalToolUnavailableNotice(
+              fallbackMessages,
+              error.message,
+            ),
+            token: token,
+            username: username,
+            isMember: isMember,
+            model: model,
+            client: client,
+            startedAt: totalWatch,
+          );
+          return;
+        }
+        throw StateError('本机 OpenClaw Gateway 启动异常：${error.message}');
+      }
+      if (error is OpenClawRuntimeException && requiresLocalToolExecution) {
+        _diag(
+          'chat.backend-fallback.local-tool-runtime-unavailable',
+          data: {
+            'requestId': requestId,
+            'elapsedMs': totalWatch.elapsedMilliseconds,
+            'conversationId': fallbackConversationId,
+            'messageCount': fallbackMessages?.length,
+          },
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (fallbackConversationId != null && fallbackMessages != null) {
+          yield* _sendBackendDeepSeekProxyStream(
+            requestId: requestId,
+            conversationId: fallbackConversationId,
+            normalizedMessage: normalizedMessage,
+            messages: _withLocalToolUnavailableNotice(
+              fallbackMessages,
+              error.message,
+            ),
+            token: token,
+            username: username,
+            isMember: isMember,
+            model: model,
+            client: client,
+            startedAt: totalWatch,
+          );
+          return;
+        }
+        throw StateError('本机 OpenClaw Gateway 启动异常：${error.message}');
       }
       _diag(
         'chat.error',
@@ -442,6 +653,70 @@ class OpenClawAiBridge {
         .toList();
   }
 
+  String? _openClawDeepSeekModelRef(String? model) {
+    final trimmed = model?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    if (trimmed == 'openclaw' || trimmed.startsWith('openclaw/')) {
+      return trimmed;
+    }
+    if (trimmed.startsWith('dacheng-deepseek-proxy/')) {
+      return trimmed;
+    }
+    final modelId = trimmed.contains('/')
+        ? trimmed.split('/').last.trim()
+        : trimmed;
+    if (modelId.isEmpty) return null;
+    return 'dacheng-deepseek-proxy/$modelId';
+  }
+
+  String? _deepSeekModelId(String? model) {
+    final trimmed = model?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    final modelId = trimmed.contains('/')
+        ? trimmed.split('/').last.trim()
+        : trimmed;
+    return modelId.isEmpty ? null : modelId;
+  }
+
+  String _clientContextSystemPrompt(Map<String, dynamic>? client) {
+    if (client == null || client.isEmpty) return '';
+    final selectedModel = client['selectedModel']?.toString().trim() ?? '';
+    final rawProject = client['project'];
+    final project = rawProject is Map
+        ? Map<String, dynamic>.from(rawProject)
+        : const <String, dynamic>{};
+    final projectName = project['name']?.toString().trim() ?? '';
+    final projectPath = project['path']?.toString().trim() ?? '';
+    final lines = <String>[
+      '桌面端上下文：',
+      if (selectedModel.isNotEmpty) '用户选择的 DeepSeek 模型：$selectedModel',
+      if (projectPath.isNotEmpty) ...[
+        '当前项目名称：${projectName.isEmpty ? projectPath : projectName}',
+        '当前项目路径：$projectPath',
+        '当用户要求读取、修改、运行、分析或整理项目时，优先在当前项目路径内工作；不要擅自改动其他文件夹。',
+      ],
+    ];
+    return lines.length <= 1 ? '' : lines.join('\n');
+  }
+
+  List<Map<String, dynamic>> _withLocalToolUnavailableNotice(
+    List<Map<String, dynamic>> messages,
+    String reason,
+  ) {
+    final preview = _previewText(reason);
+    return [
+      {
+        'role': 'system',
+        'content':
+            '本机 OpenClaw 工具调用暂不可用，原因：$preview。'
+            '这次回复不能声称已经读取、创建、修改、删除或下载任何本机文件；'
+            '如果用户要求本地文件/项目/桌面操作，请明确说明本次没有实际执行，并给出下一步或可复制命令。'
+            '如果只是普通问题，请直接正常回答。',
+      },
+      ...messages,
+    ];
+  }
+
   Stream<DachengAiStreamEvent> _sendBackendDeepSeekProxyStream({
     required String requestId,
     required String conversationId,
@@ -450,6 +725,8 @@ class OpenClawAiBridge {
     required Stopwatch startedAt,
     String? token,
     String? username,
+    String? model,
+    Map<String, dynamic>? client,
     bool isMember = false,
   }) async* {
     final uri = Uri.parse(
@@ -465,11 +742,12 @@ class OpenClawAiBridge {
     );
 
     final body = jsonEncode({
-      'model': 'deepseek-chat',
+      'model': _deepSeekModelId(model) ?? 'deepseek-chat',
       'stream': true,
       'stream_options': {'include_usage': true},
       'messages': messages,
       if (username != null && username.isNotEmpty) 'username': username,
+      if (client != null && client.isNotEmpty) 'client': client,
       'clientMembershipHint': isMember,
     });
     final request = http.Request('POST', uri)
@@ -488,6 +766,7 @@ class OpenClawAiBridge {
         'uri': uri.toString(),
         'conversationId': conversationId,
         'messageCount': messages.length,
+        'model': _deepSeekModelId(model) ?? 'deepseek-chat',
         'bodyBytes': utf8.encode(body).length,
       },
     );
@@ -657,8 +936,17 @@ class OpenClawAiBridge {
       caseSensitive: false,
     ).hasMatch(text);
     if (hasUrl && hasAction) return true;
+    final hasFileTarget = RegExp(
+      r'(file|folder|directory|project|workspace|path|文件|文件夹|目录|项目|工程|路径|这个文件夹|当前文件夹|本地)',
+      caseSensitive: false,
+    ).hasMatch(text);
+    final hasFileAction = RegExp(
+      r'(create|make|mkdir|write|edit|modify|rename|delete|move|copy|save|download|read|list|生成|创建|新建|写入|编辑|修改|重命名|删除|移动|复制|保存|下载|读取|列出)',
+      caseSensitive: false,
+    ).hasMatch(text);
+    if (hasFileTarget && hasFileAction) return true;
     return RegExp(
-      r'(打开浏览器|访问网页|打开网页|点击页面|操作浏览器|操作chrome|操作桌面|本机.*点击|桌面.*点击|浏览器.*点击)',
+      r'(打开浏览器|访问网页|打开网页|点击页面|操作浏览器|操作chrome|操作桌面|本机.*点击|桌面.*点击|浏览器.*点击|创建.*文件夹|新建.*文件夹|文件夹.*创建|文件夹.*新建|项目.*创建|项目.*修改)',
       caseSensitive: false,
     ).hasMatch(text);
   }
@@ -718,6 +1006,15 @@ class _OpenClawDeepSeekBlockedException implements Exception {
   final String message;
 
   const _OpenClawDeepSeekBlockedException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+class _OpenClawGatewayUnavailableException implements Exception {
+  final String message;
+
+  const _OpenClawGatewayUnavailableException(this.message);
 
   @override
   String toString() => message;

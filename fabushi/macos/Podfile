@@ -28,31 +28,18 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 
 flutter_macos_podfile_setup
 
-def remove_invalid_flutter_sound_macos_pod(application_path)
-  plugins_file = File.join(application_path, '..', '.flutter-plugins-dependencies')
-  return unless File.exist?(plugins_file)
-
-  require 'json'
-  dependencies = JSON.parse(File.read(plugins_file))
-  macos_plugins = dependencies.dig('plugins', 'macos')
-  return unless macos_plugins.is_a?(Array)
-
-  filtered_plugins = macos_plugins.reject { |plugin| plugin['name'] == 'flutter_sound' }
-  return if filtered_plugins.length == macos_plugins.length
-
-  dependencies['plugins']['macos'] = filtered_plugins
-  File.write(plugins_file, JSON.generate(dependencies))
-end
-
 target 'Runner' do
   use_frameworks!
 
   application_path = File.dirname(File.realpath(__FILE__))
-  remove_invalid_flutter_sound_macos_pod application_path
   flutter_install_all_macos_pods application_path
   
   target 'RunnerTests' do
     inherit! :search_paths
+  end
+
+  target 'RunnerUITests' do
+    inherit! :complete
   end
 end
 

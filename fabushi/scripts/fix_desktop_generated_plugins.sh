@@ -38,11 +38,11 @@ patch_linux() {
   local cmake_file="$ROOT_DIR/linux/flutter/generated_plugins.cmake"
 
   if [[ -f "$registrant" ]]; then
-    perl -0pi -e 's/#include <flutter_sound\/flutter_sound_plugin\.h>/#include <taudio\/taudio_plugin.h>/g' "$registrant"
-    perl -0pi -e 's/flutter_sound_plugin_register_with_registrar/taudio_plugin_register_with_registrar/g' "$registrant"
+    perl -0pi -e 's/#include <(?:flutter_sound\/flutter_sound_plugin|taudio\/taudio_plugin)\.h>\n//g' "$registrant"
+    perl -0pi -e 's/\n  g_autoptr\(FlPluginRegistrar\) flutter_sound_registrar =\n      fl_plugin_registry_get_registrar_for_plugin\(registry, "FlutterSoundPlugin"\);\n  (?:flutter_sound_plugin_register_with_registrar|taudio_plugin_register_with_registrar)\(flutter_sound_registrar\);\n/\n/g' "$registrant"
   fi
 
-  patch_cmake_taudio "$cmake_file" linux
+  remove_cmake_flutter_sound "$cmake_file" linux
 }
 
 patch_windows() {
@@ -50,12 +50,11 @@ patch_windows() {
   local cmake_file="$ROOT_DIR/windows/flutter/generated_plugins.cmake"
 
   if [[ -f "$registrant" ]]; then
-    perl -0pi -e 's/#include <flutter_sound\/flutter_sound_plugin_c_api\.h>/#include <taudio\/taudio_plugin_c_api.h>/g' "$registrant"
-    perl -0pi -e 's/FlutterSoundPluginCApiRegisterWithRegistrar/TaudioPluginCApiRegisterWithRegistrar/g' "$registrant"
-    perl -0pi -e 's/"FlutterSoundPluginCApi"/"TaudioPluginCApi"/g' "$registrant"
+    perl -0pi -e 's/#include <(?:flutter_sound\/flutter_sound_plugin_c_api|taudio\/taudio_plugin_c_api)\.h>\n//g' "$registrant"
+    perl -0pi -e 's/\n  (?:FlutterSoundPluginCApiRegisterWithRegistrar|TaudioPluginCApiRegisterWithRegistrar)\(\n      registry->GetRegistrarForPlugin\("(?:FlutterSoundPluginCApi|TaudioPluginCApi)"\)\);\n/\n/g' "$registrant"
   fi
 
-  patch_cmake_taudio "$cmake_file" windows
+  remove_cmake_flutter_sound "$cmake_file" windows
   patch_cmake_rive_common_windows "$cmake_file"
 }
 
@@ -78,7 +77,7 @@ endif()
 EOF
 }
 
-patch_cmake_taudio() {
+remove_cmake_flutter_sound() {
   local cmake_file="$1"
   local platform="$2"
 
@@ -93,25 +92,18 @@ patch_cmake_taudio() {
       next
     }
 
-    /target_link_libraries\(\$\{BINARY_NAME\} PRIVATE taudio_plugin\)/ {
-      has_taudio = 1
+    $0 == "add_subdirectory(flutter/ephemeral/.plugin_symlinks/flutter_sound/" platform " plugins/flutter_sound)" {
+      skip_taudio_block = 4
+      next
+    }
+
+    skip_taudio_block > 0 {
+      skip_taudio_block--
+      next
     }
 
     {
-      lines[++count] = $0
-    }
-
-    END {
-      for (i = 1; i <= count; i++) {
-        print lines[i]
-        if (!has_taudio && lines[i] ~ /^set\(PLUGIN_BUNDLED_LIBRARIES\)/) {
-          print ""
-          print "add_subdirectory(flutter/ephemeral/.plugin_symlinks/flutter_sound/" platform " plugins/flutter_sound)"
-          print "target_link_libraries(${BINARY_NAME} PRIVATE taudio_plugin)"
-          print "list(APPEND PLUGIN_BUNDLED_LIBRARIES $<TARGET_FILE:taudio_plugin>)"
-          print "list(APPEND PLUGIN_BUNDLED_LIBRARIES ${taudio_bundled_libraries})"
-        }
-      }
+      print
     }
   ' "$cmake_file" > "$tmp_file"
   mv "$tmp_file" "$cmake_file"
@@ -121,4 +113,4 @@ patch_macos
 patch_linux
 patch_windows
 
-echo "Patched generated desktop plugin files for flutter_sound taudio targets."
+echo "Patched generated desktop plugin files for stale flutter_sound targets."
