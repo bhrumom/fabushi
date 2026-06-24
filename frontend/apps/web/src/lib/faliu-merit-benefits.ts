@@ -27,7 +27,7 @@ export * from "./faliu-merit-benefits-t0264-juan5-congdiyongchu";
 export * from "./faliu-merit-benefits-t0264-juan5-rulaishouliang";
 export * from "./faliu-merit-benefits-t0264-juan5-fenbiegongde";
 export * from "./faliu-merit-benefits-t0264-juan6-suixi-gongde";
-export * from "./faliu-merit-benefits-t0264-juan6-fashi";
+export * from "./faliu-merit-benefits-t0264-juan6-fashi-gongde";
 export * from "./faliu-merit-benefits-t0264-juan6-changbuqing";
 export * from "./faliu-merit-benefits-t0264-juan6-rulai-shenli";
 export * from "./faliu-merit-benefits-t0264-juan6-dharani";
