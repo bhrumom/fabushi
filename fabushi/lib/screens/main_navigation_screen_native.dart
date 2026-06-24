@@ -1,12 +1,13 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'globe_home_screen.dart';
 import 'meditation_room_screen.dart';
 import 'my_profile_screen.dart';
-import '../core/design_system/app_theme.dart';
-import '../l10n/app_localizations.dart';
 import '../widgets/space_background.dart';
 
 import '../widgets/sidebar/codex_sidebar.dart';
+import '../widgets/sidebar/dacheng_chat_sidebar.dart';
 import 'settings_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -19,25 +20,20 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 3;
   bool _isGlobeReady = false;
+  bool _mobileSidebarOpen = false;
 
-  // 追踪哪些页面已被激活
   final List<bool> _activatedScreens = [false, false, false, true, false];
 
-  // 用于通知各主页面的可见性变化
   final GlobalKey<MeditationRoomScreenState> _meditationKey = GlobalKey();
   final GlobalKey<GlobeHomeScreenState> _globeKey = GlobalKey();
+
+  bool get _isMobileRuntime => Platform.isAndroid || Platform.isIOS;
 
   @override
   void initState() {
     super.initState();
-    // 立即加载，由 GlobeHomeScreen 内部控制延迟
     _isGlobeReady = true;
     _applyInitialTabFromUrl();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
   }
 
   void _applyInitialTabFromUrl() {
@@ -53,14 +49,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _activatedScreens[initialIndex] = true;
   }
 
-  /// 更新禅室页面可见性状态
   void _updateMeditationRoomVisibility() {
     final isZenRoomVisible = _currentIndex == 2 && _activatedScreens[2];
-    // 使用 GlobalKey 通知禅室页面可见性变化
     _meditationKey.currentState?.setVisible(isZenRoomVisible);
   }
 
-  /// 更新地球页面可见性状态
   void _updateGlobeVisibility() {
     final isGlobeVisible = _currentIndex == 0 || _currentIndex == 1;
     _globeKey.currentState?.setVisible(isGlobeVisible);
@@ -74,11 +67,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
   }
 
-  // 保持所有页面实例，按需延迟加载
+  void _selectDestination(int index) {
+    setState(() {
+      _currentIndex = index;
+      _mobileSidebarOpen = false;
+      if (!_activatedScreens[index]) {
+        _activatedScreens[index] = true;
+      }
+    });
+    _notifyScreenVisibility();
+
+    if (index == 0) {
+      _globeKey.currentState?.setGlobeMode(false);
+    } else if (index == 1) {
+      _globeKey.currentState?.setGlobeMode(true);
+    }
+  }
+
   List<Widget> get _screens {
     final screens = <Widget>[];
 
-    // 0: 首页 (聊天视图)
     screens.add(
       TickerMode(
         enabled: _currentIndex == 0 || _currentIndex == 1,
@@ -96,11 +104,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               ),
       ),
     );
-    
-    // 1: 地球视图 (目前和首页复用 GlobeHomeScreen)
-    screens.add(const SizedBox.shrink()); 
 
-    // 2: 禅室 (佛像3D)
+    screens.add(const SizedBox.shrink());
+
     screens.add(
       TickerMode(
         enabled: _currentIndex == 2,
@@ -110,7 +116,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       ),
     );
 
-    // 3: 我的 (个人资料)
     screens.add(
       TickerMode(
         enabled: _currentIndex == 3,
@@ -120,14 +125,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       ),
     );
 
-    // 4: 设置
     screens.add(
       TickerMode(
         enabled: _currentIndex == 4,
         child: _activatedScreens[4]
-            ? SettingsScreen(
-                onClose: () => setState(() => _currentIndex = 0),
-              )
+            ? SettingsScreen(onClose: () => setState(() => _currentIndex = 0))
             : const Center(child: CircularProgressIndicator()),
       ),
     );
@@ -140,36 +142,81 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return SpaceBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: Row(
-          children: [
-            CodexSidebar(
-              selectedIndex: _currentIndex,
-              onDestinationSelected: (index) {
-                setState(() {
-                  _currentIndex = index;
-                  // 标记页面为激活状态
-                  if (!_activatedScreens[index]) {
-                    _activatedScreens[index] = true;
-                  }
-                });
-                _notifyScreenVisibility();
-                
-                if (index == 0) {
-                  _globeKey.currentState?.setGlobeMode(false);
-                } else if (index == 1) {
-                  _globeKey.currentState?.setGlobeMode(true);
-                }
-              },
-            ),
-            Expanded(
-              child: IndexedStack(
-                // 当 currentIndex 为 1 (地球视图) 时，复用 0 的 GlobeHomeScreen
-                index: _currentIndex == 1 ? 0 : _currentIndex, 
-                children: _screens,
-              ),
-            ),
-          ],
+        body: _isMobileRuntime ? _buildMobileShell() : _buildDesktopShell(),
+      ),
+    );
+  }
+
+  Widget _buildDesktopShell() {
+    return Row(
+      children: [
+        CodexSidebar(
+          selectedIndex: _currentIndex,
+          onDestinationSelected: _selectDestination,
         ),
+        Expanded(child: _buildIndexedStack()),
+      ],
+    );
+  }
+
+  Widget _buildMobileShell() {
+    return Stack(
+      children: [
+        Positioned.fill(child: _buildIndexedStack()),
+        Positioned(
+          left: 18,
+          top: 16,
+          child: SafeArea(
+            child: _SidebarOpenButton(
+              onPressed: () => setState(() => _mobileSidebarOpen = true),
+            ),
+          ),
+        ),
+        if (_mobileSidebarOpen)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _mobileSidebarOpen = false),
+              child: ColoredBox(color: Colors.black.withValues(alpha: 0.42)),
+            ),
+          ),
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          left: _mobileSidebarOpen ? 0 : -MediaQuery.sizeOf(context).width,
+          top: 0,
+          bottom: 0,
+          child: DachengChatSidebar(
+            onNewChat: () => _selectDestination(0),
+            onClose: () => setState(() => _mobileSidebarOpen = false),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIndexedStack() {
+    return IndexedStack(
+      index: _currentIndex == 1 ? 0 : _currentIndex,
+      children: _screens,
+    );
+  }
+}
+
+class _SidebarOpenButton extends StatelessWidget {
+  const _SidebarOpenButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xCC222A30),
+      shape: const CircleBorder(),
+      child: IconButton(
+        tooltip: '打开侧边栏',
+        onPressed: onPressed,
+        icon: const Icon(Icons.menu_rounded, color: Colors.white, size: 28),
       ),
     );
   }
