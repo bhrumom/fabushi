@@ -8,6 +8,9 @@ import 'ai_backend_policy.dart';
 import 'diagnostic_log_service.dart';
 import 'openclaw/openclaw_ai_bridge.dart';
 
+const String _dachengAiUnavailableMessage = '大乘 AI 后端暂时不可用，请稍后重试。';
+const int _maxErrorMessageLength = 240;
+
 class DachengAiUsage {
   final int promptTokens;
   final int completionTokens;
@@ -324,7 +327,29 @@ class DachengAiService {
         'cloud.stream.response-error',
         data: {'statusCode': response.statusCode, 'body': body},
       );
-      throw StateError(body.trim().isEmpty ? '请求失败' : body);
+      throw StateError(
+        _messageFromHttpError(statusCode: response.statusCode, body: body),
+      );
+    }
+
+    final contentType = response.headers['content-type'] ?? '';
+    if (_isHtmlContentType(contentType)) {
+      final body = await utf8.decodeStream(response.stream);
+      _diag(
+        'cloud.stream.unexpected-html',
+        data: {
+          'statusCode': response.statusCode,
+          'contentType': contentType,
+          'body': body,
+        },
+      );
+      throw StateError(
+        _messageFromHttpError(
+          statusCode: response.statusCode,
+          body: body,
+          contentType: contentType,
+        ),
+      );
     }
 
     String eventName = 'message';
@@ -522,9 +547,23 @@ class DachengAiService {
 
   Map<String, dynamic> _decodeResponse(http.Response response) {
     final body = utf8.decode(response.bodyBytes, allowMalformed: true);
-    final decoded = body.trim().isEmpty
-        ? <String, dynamic>{}
-        : jsonDecode(body);
+    final decoded = _tryDecodeJsonMap(body);
+    if (decoded == null) {
+      if (response.statusCode >= 200 &&
+          response.statusCode < 300 &&
+          !_isHtmlContentType(response.headers['content-type']) &&
+          !_looksLikeHtml(body) &&
+          !_looksLikeCloudflareTunnelError(body)) {
+        throw StateError('后端返回格式异常');
+      }
+      throw StateError(
+        _messageFromHttpError(
+          statusCode: response.statusCode,
+          body: body,
+          contentType: response.headers['content-type'],
+        ),
+      );
+    }
     if (decoded is! Map<String, dynamic>) {
       throw StateError('后端返回格式异常');
     }
@@ -555,6 +594,72 @@ class DachengAiService {
       ),
     );
   }
+}
+
+Map<String, dynamic>? _tryDecodeJsonMap(String body) {
+  if (body.trim().isEmpty) return <String, dynamic>{};
+  try {
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) return Map<String, dynamic>.from(decoded);
+  } catch (_) {
+    return null;
+  }
+  return null;
+}
+
+String _messageFromHttpError({
+  required int statusCode,
+  required String body,
+  String? contentType,
+}) {
+  final trimmed = body.trim();
+  if (trimmed.isEmpty) {
+    return statusCode >= 500
+        ? _dachengAiUnavailableMessage
+        : '请求失败 (HTTP $statusCode)';
+  }
+
+  final decoded = _tryDecodeJsonMap(trimmed);
+  final jsonMessage = decoded == null
+      ? null
+      : (decoded['message'] ?? decoded['error'])?.toString().trim();
+  if (jsonMessage != null && jsonMessage.isNotEmpty) {
+    return jsonMessage;
+  }
+
+  if (_isHtmlContentType(contentType) ||
+      _looksLikeHtml(trimmed) ||
+      _looksLikeCloudflareTunnelError(trimmed) ||
+      statusCode >= 500) {
+    return _dachengAiUnavailableMessage;
+  }
+
+  return _truncateErrorMessage(trimmed);
+}
+
+bool _isHtmlContentType(String? contentType) {
+  return contentType?.toLowerCase().contains('text/html') ?? false;
+}
+
+bool _looksLikeHtml(String text) {
+  final lower = text.toLowerCase();
+  return lower.startsWith('<!doctype html') ||
+      lower.startsWith('<html') ||
+      lower.contains('<html');
+}
+
+bool _looksLikeCloudflareTunnelError(String text) {
+  final lower = text.toLowerCase();
+  return lower.contains('cloudflare tunnel error') ||
+      lower.contains('error code: 1033') ||
+      lower.contains('cf-error-details');
+}
+
+String _truncateErrorMessage(String text) {
+  final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (normalized.length <= _maxErrorMessageLength) return normalized;
+  return '${normalized.substring(0, _maxErrorMessageLength)}...';
 }
 
 Map<String, dynamic> _readMap(Object? value) {
