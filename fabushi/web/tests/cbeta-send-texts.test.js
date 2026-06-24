@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { handleGetCbetaSendTexts } from '../src/handlers/cbeta.js';
 
-const SELF_HOSTED_API = 'https://api.ombhrum.com/api/cbeta';
+const UPSTREAM_API = 'https://cbdata.dila.edu.tw/stable';
 
 const sampleHtml = `
   <html><head><title>Heart Sutra</title></head><body>
@@ -59,7 +59,7 @@ test('CBETA send texts returns real stripped scripture content and detailed part
     const body = await response.json();
     assert.equal(body.success, true);
     assert.equal(body.count, 1);
-    assert.equal(body.primaryApi, SELF_HOSTED_API);
+    assert.equal(body.primaryApi, UPSTREAM_API);
     assert.equal(body.fallbackApi, null);
     assert.equal(body.errors.length, 1);
     assert.equal(body.errors[0].attempts.length, 3);
@@ -67,7 +67,7 @@ test('CBETA send texts returns real stripped scripture content and detailed part
 
     const item = body.items[0];
     assert.equal(item.work, 'T0251');
-    assert.equal(item.sourceApi, SELF_HOSTED_API);
+    assert.equal(item.sourceApi, UPSTREAM_API);
     assert.match(item.fileName, /^T0251_1_/);
     assert.match(item.content, /Avalokitesvara deeply practiced prajna/);
     assert.doesNotMatch(item.content, /T08n0251/);
@@ -105,7 +105,7 @@ test('CBETA send texts reports full upstream errors when no scripture can be fet
   }
 });
 
-test('CBETA send texts never falls back to official API when self-hosted returns empty content', async () => {
+test('CBETA send texts uses the real upstream instead of proxying back into itself', async () => {
   const attemptedHosts = [];
   const restoreFetch = installFetchMock(async url => {
     const parsed = new URL(url);
@@ -116,6 +116,7 @@ test('CBETA send texts never falls back to official API when self-hosted returns
   try {
     const response = await handleGetCbetaSendTexts(
       new Request('https://api.ombhrum.com/api/cbeta/send-texts?works=T0251&limit=1'),
+      { CBETA_API_ROOT: 'https://api.ombhrum.com/api/cbeta' },
     );
     assert.equal(response.status, 502);
 
@@ -124,9 +125,9 @@ test('CBETA send texts never falls back to official API when self-hosted returns
     assert.equal(body.fallbackApi, null);
     assert.equal(body.errors.length, 1);
     assert.deepEqual(attemptedHosts, [
-      'api.ombhrum.com',
-      'api.ombhrum.com',
-      'api.ombhrum.com',
+      'cbdata.dila.edu.tw',
+      'cbdata.dila.edu.tw',
+      'cbdata.dila.edu.tw',
     ]);
   } finally {
     restoreFetch();
