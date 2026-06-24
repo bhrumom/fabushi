@@ -521,6 +521,15 @@ jobs:
           brew cleanup --prune=all || true
           df -h
 
+      - name: Select macOS compiler toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          xcodebuild -version
+          echo "CC=$(xcrun --find cc)" >> "$GITHUB_ENV"
+          echo "CXX=$(xcrun --find c++)" >> "$GITHUB_ENV"
+
       - name: Enable macOS desktop
         run: flutter config --enable-macos-desktop
 
