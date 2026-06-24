@@ -2,7 +2,8 @@ import { CORS_HEADERS } from '../config/constants.js';
 import { jsonResponse } from '../utils/response.js';
 
 const CBETA_PUBLIC_API_ROOT = 'https://api.ombhrum.com/api/cbeta';
-const CBETA_DEFAULT_UPSTREAM_API_ROOT = 'https://cbdata.dila.edu.tw/stable';
+const CBETA_SELF_HOSTED_API_ROOT = 'https://ai.ombhrum.com/cbeta';
+const CBETA_OFFICIAL_FALLBACK_API_ROOT = 'https://cbdata.dila.edu.tw/stable';
 const DEFAULT_SEND_WORKS = [
   'T0365',
   'T0251',
@@ -35,8 +36,9 @@ function isPublicProxyRoot(apiRoot) {
 function cbetaApiRoots(env = {}) {
   const roots = [
     env?.CBETA_API_ROOT,
+    CBETA_SELF_HOSTED_API_ROOT,
     env?.CBETA_FALLBACK_API_ROOT,
-    CBETA_DEFAULT_UPSTREAM_API_ROOT,
+    CBETA_OFFICIAL_FALLBACK_API_ROOT,
   ]
     .map(normalizeApiRoot)
     .filter(Boolean)
@@ -45,7 +47,7 @@ function cbetaApiRoots(env = {}) {
   return Array.from(new Set(roots));
 }
 
-function buildCbetaUrl(path, params = {}, apiRoot = CBETA_DEFAULT_UPSTREAM_API_ROOT) {
+function buildCbetaUrl(path, params = {}, apiRoot = CBETA_SELF_HOSTED_API_ROOT) {
   const url = new URL(path.replace(/^\/+/, ''), `${apiRoot}/`);
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && `${value}` !== '') {
