@@ -11,7 +11,7 @@ const workspaceSourcePaths = [
 export default {
   projectName: "fabushi-mp-wechat",
   date: "2026-05-06",
-  designWidth: 375,
+  designWidth: 750,
   deviceRatio: {
     375: 2,
     750: 1,

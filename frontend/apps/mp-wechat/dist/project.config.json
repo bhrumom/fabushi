@@ -2,7 +2,7 @@
   "appid": "touristappid",
   "projectname": "fabushi-mp-wechat",
   "compileType": "miniprogram",
-  "miniprogramRoot": "dist/",
+  "miniprogramRoot": "./",
   "setting": {
     "urlCheck": true,
     "es6": true,
