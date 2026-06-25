@@ -27,14 +27,10 @@
   font-weight: 800;
 }
 
-.menu-button,
-.user-pill {
+.menu-button {
   position: absolute;
   top: 16px;
   height: 60px;
-}
-
-.menu-button {
   left: 24px;
   width: 60px;
   display: flex;
@@ -44,20 +40,6 @@
   background: rgba(19, 28, 34, 0.78);
   color: #ffffff;
   font-size: 32px;
-}
-
-.user-pill {
-  right: 24px;
-  min-width: 150px;
-  padding: 0 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #17191f;
-  font-size: 26px;
-  font-weight: 800;
 }
 
 .chat-main {
@@ -233,6 +215,58 @@
   color: #c6c7cc;
   background: transparent;
   font-size: 58px;
+}
+
+.sidebar-user {
+  margin-top: 60px;
+}
+
+.user-profile {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.user-avatar {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: #2a2d33;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.user-name {
+  color: #ffffff;
+  font-size: 36px;
+  font-weight: 800;
+}
+
+.user-membership {
+  color: #7cc8ff;
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.wechat-login-btn {
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  border-radius: 20px;
+  background: #07c160;
+  color: #ffffff;
+  font-size: 32px;
+  font-weight: 800;
+}
+
+.wechat-icon {
+  font-size: 44px;
 }
 
 .new-chat {
