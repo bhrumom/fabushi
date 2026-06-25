@@ -1,14 +1,11 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
-import 'globe_home_screen.dart';
-import 'meditation_room_screen.dart';
-import 'my_profile_screen.dart';
-import '../widgets/space_background.dart';
 
-import '../widgets/sidebar/codex_sidebar.dart';
-import '../widgets/sidebar/dacheng_chat_sidebar.dart';
-import 'settings_screen.dart';
+import '../widgets/social/social_contacts_sidebar.dart';
+import '../widgets/social/social_feature_bot.dart';
+import '../widgets/space_background.dart';
+import 'social_feature_chat_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -18,123 +15,34 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 3;
-  bool _isGlobeReady = false;
+  SocialFeatureBotType _selectedBot = SocialFeatureBotType.globalDharma;
   bool _mobileSidebarOpen = false;
-
-  final List<bool> _activatedScreens = [false, false, false, true, false];
-
-  final GlobalKey<MeditationRoomScreenState> _meditationKey = GlobalKey();
-  final GlobalKey<GlobeHomeScreenState> _globeKey = GlobalKey();
 
   bool get _isMobileRuntime => Platform.isAndroid || Platform.isIOS;
 
   @override
   void initState() {
     super.initState();
-    _isGlobeReady = true;
-    _applyInitialTabFromUrl();
+    _applyInitialBotFromUrl();
   }
 
-  void _applyInitialTabFromUrl() {
+  void _applyInitialBotFromUrl() {
     final tab = Uri.base.queryParameters['tab']?.toLowerCase();
-    final initialIndex = switch (tab) {
-      'home' => 0,
-      'assistant' || 'openclaw' || 'workbench' => 0,
-      'meditation' || 'meditation-room' || 'zen' => 1,
-      'profile' || 'me' || 'mine' => 2,
-      _ => 0,
+    _selectedBot = switch (tab) {
+      'flashcards' || 'cards' || 'beisong' => SocialFeatureBotType.flashcards,
+      'publish' || 'platform' || 'platform-publish' =>
+        SocialFeatureBotType.platformPublish,
+      'global' || 'globe' || 'dharma' || 'home' || null =>
+        SocialFeatureBotType.globalDharma,
+      _ => SocialFeatureBotType.globalDharma,
     };
-    _currentIndex = initialIndex;
-    _activatedScreens[initialIndex] = true;
   }
 
-  void _updateMeditationRoomVisibility() {
-    final isZenRoomVisible = _currentIndex == 2 && _activatedScreens[2];
-    _meditationKey.currentState?.setVisible(isZenRoomVisible);
-  }
-
-  void _updateGlobeVisibility() {
-    final isGlobeVisible = _currentIndex == 0 || _currentIndex == 1;
-    _globeKey.currentState?.setVisible(isGlobeVisible);
-  }
-
-  void _notifyScreenVisibility() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _updateMeditationRoomVisibility();
-      _updateGlobeVisibility();
-    });
-  }
-
-  void _selectDestination(int index) {
+  void _selectBot(SocialFeatureBotType botType) {
     setState(() {
-      _currentIndex = index;
+      _selectedBot = botType;
       _mobileSidebarOpen = false;
-      if (!_activatedScreens[index]) {
-        _activatedScreens[index] = true;
-      }
     });
-    _notifyScreenVisibility();
-
-    if (index == 0) {
-      _globeKey.currentState?.setGlobeMode(false);
-    } else if (index == 1) {
-      _globeKey.currentState?.setGlobeMode(true);
-    }
-  }
-
-  List<Widget> get _screens {
-    final screens = <Widget>[];
-
-    screens.add(
-      TickerMode(
-        enabled: _currentIndex == 0 || _currentIndex == 1,
-        child: _isGlobeReady
-            ? GlobeHomeScreen(key: _globeKey)
-            : const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text('正在加载组件...'),
-                  ],
-                ),
-              ),
-      ),
-    );
-
-    screens.add(const SizedBox.shrink());
-
-    screens.add(
-      TickerMode(
-        enabled: _currentIndex == 2,
-        child: _activatedScreens[2]
-            ? MeditationRoomScreen(key: _meditationKey)
-            : const Center(child: CircularProgressIndicator()),
-      ),
-    );
-
-    screens.add(
-      TickerMode(
-        enabled: _currentIndex == 3,
-        child: _activatedScreens[3]
-            ? const MyProfileScreen()
-            : const Center(child: CircularProgressIndicator()),
-      ),
-    );
-
-    screens.add(
-      TickerMode(
-        enabled: _currentIndex == 4,
-        child: _activatedScreens[4]
-            ? SettingsScreen(onClose: () => setState(() => _currentIndex = 0))
-            : const Center(child: CircularProgressIndicator()),
-      ),
-    );
-
-    return screens;
   }
 
   @override
@@ -150,11 +58,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget _buildDesktopShell() {
     return Row(
       children: [
-        CodexSidebar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: _selectDestination,
+        SocialContactsSidebar(
+          selectedBot: _selectedBot,
+          onBotSelected: _selectBot,
         ),
-        Expanded(child: _buildIndexedStack()),
+        Expanded(
+          child: SocialFeatureChatScreen(botType: _selectedBot),
+        ),
       ],
     );
   }
@@ -162,10 +72,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget _buildMobileShell() {
     return Stack(
       children: [
-        Positioned.fill(child: _buildIndexedStack()),
+        Positioned.fill(
+          child: SocialFeatureChatScreen(botType: _selectedBot),
+        ),
         Positioned(
-          left: 18,
-          top: 16,
+          left: 12,
+          top: 12,
           child: SafeArea(
             child: _SidebarOpenButton(
               onPressed: () => setState(() => _mobileSidebarOpen = true),
@@ -186,19 +98,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           left: _mobileSidebarOpen ? 0 : -MediaQuery.sizeOf(context).width,
           top: 0,
           bottom: 0,
-          child: DachengChatSidebar(
-            onNewChat: () => _selectDestination(0),
+          child: SocialContactsSidebar(
+            selectedBot: _selectedBot,
+            onBotSelected: _selectBot,
             onClose: () => setState(() => _mobileSidebarOpen = false),
+            isMobile: true,
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildIndexedStack() {
-    return IndexedStack(
-      index: _currentIndex == 1 ? 0 : _currentIndex,
-      children: _screens,
     );
   }
 }
@@ -211,12 +118,12 @@ class _SidebarOpenButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xCC222A30),
+      color: const Color(0xCC17212B),
       shape: const CircleBorder(),
       child: IconButton(
-        tooltip: '打开侧边栏',
+        tooltip: '打开联系人',
         onPressed: onPressed,
-        icon: const Icon(Icons.menu_rounded, color: Colors.white, size: 28),
+        icon: const Icon(Icons.menu_rounded, color: Colors.white, size: 26),
       ),
     );
   }
