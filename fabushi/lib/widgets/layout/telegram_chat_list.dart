@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../features/auth/application/auth_model.dart';
+import '../../services/mini_app_registry_service.dart';
 import '../../services/social_friend_service.dart';
 import '../social/social_feature_bot.dart';
 
@@ -14,8 +15,8 @@ class TelegramChatList extends StatefulWidget {
     this.isMobile = false,
   });
 
-  final SocialFeatureBotType selectedBot;
-  final ValueChanged<SocialFeatureBotType> onBotSelected;
+  final String selectedBot;
+  final ValueChanged<SocialFeatureBot> onBotSelected;
   final bool isMobile;
 
   @override
@@ -23,16 +24,12 @@ class TelegramChatList extends StatefulWidget {
 }
 
 class _TelegramChatListState extends State<TelegramChatList> {
-  static const List<SocialFeatureBotType> _fixedBots = [
-    SocialFeatureBotType.globalDharma,
-    SocialFeatureBotType.flashcards,
-    SocialFeatureBotType.platformPublish,
-  ];
-
   final SocialFriendService _friendService = SocialFriendService();
   final TextEditingController _filterController = TextEditingController();
   List<SocialFriendContact> _friends = const [];
+  List<SocialFeatureBot> _bots = defaultSocialMiniAppBots();
   bool _isLoadingFriends = false;
+  bool _isLoadingBots = false;
   String _filter = '';
 
   @override
@@ -41,6 +38,7 @@ class _TelegramChatListState extends State<TelegramChatList> {
     _filterController.addListener(() {
       setState(() => _filter = _filterController.text.trim());
     });
+    unawaited(_loadBots());
     unawaited(_loadFriends());
   }
 
@@ -68,6 +66,26 @@ class _TelegramChatListState extends State<TelegramChatList> {
     });
   }
 
+  Future<void> _loadBots() async {
+    setState(() => _isLoadingBots = true);
+    final service = MiniAppRegistryService(
+      tokenProvider: () async => _authToken,
+    );
+    final registry = await service.loadRegistry(forceRefresh: true);
+    if (!mounted) return;
+    setState(() {
+      _bots = [
+        for (var i = 0; i < registry.bots.length; i++)
+          SocialFeatureBot.fromMiniApp(
+            registry.bots[i],
+            index: i,
+            manifest: registry.manifestFor(registry.bots[i].miniAppId),
+          ),
+      ];
+      _isLoadingBots = false;
+    });
+  }
+
   List<SocialFriendContact> get _filteredFriends {
     final query = _filter.toLowerCase();
     if (query.isEmpty) return _friends;
@@ -80,10 +98,20 @@ class _TelegramChatListState extends State<TelegramChatList> {
         .toList();
   }
 
+  List<SocialFeatureBot> get _filteredBots {
+    final query = _filter.toLowerCase();
+    if (query.isEmpty) return _bots;
+    return _bots.where((bot) {
+      return bot.title.toLowerCase().contains(query) ||
+          bot.subtitle.toLowerCase().contains(query);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = widget.isMobile ? double.infinity : 320.0;
     final friends = _filteredFriends;
+    final bots = _filteredBots;
 
     return Container(
       width: width,
@@ -104,15 +132,18 @@ class _TelegramChatListState extends State<TelegramChatList> {
                 child: ListView(
                   padding: EdgeInsets.zero,
                   children: [
-                    _SectionLabel(label: '固定栏目', trailing: 'PINNED'),
-                    for (final type in _fixedBots)
+                    _SectionLabel(
+                      label: '小程序机器人',
+                      trailing: _isLoadingBots ? '同步中' : 'PINNED',
+                    ),
+                    for (final bot in bots)
                       _ChatTile(
-                        title: type.bot.title,
-                        subtitle: type.bot.subtitle,
-                        avatarColor: type.bot.avatarColor,
-                        icon: type.bot.icon,
-                        selected: widget.selectedBot == type,
-                        onTap: () => widget.onBotSelected(type),
+                        title: bot.title,
+                        subtitle: bot.subtitle,
+                        avatarColor: bot.avatarColor,
+                        icon: bot.icon,
+                        selected: widget.selectedBot == bot.stableBotId,
+                        onTap: () => widget.onBotSelected(bot),
                       ),
                     const SizedBox(height: 8),
                     _SectionLabel(
@@ -127,7 +158,9 @@ class _TelegramChatListState extends State<TelegramChatList> {
                             width: 22,
                             height: 22,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Color(0xFF40A7E3)),
+                              strokeWidth: 2,
+                              color: Color(0xFF40A7E3),
+                            ),
                           ),
                         ),
                       )
@@ -136,7 +169,9 @@ class _TelegramChatListState extends State<TelegramChatList> {
                         padding: const EdgeInsets.all(24.0),
                         child: Text(
                           '暂无好友',
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
                           textAlign: TextAlign.center,
                         ),
                       )
@@ -146,14 +181,20 @@ class _TelegramChatListState extends State<TelegramChatList> {
                           title: friend.displayName,
                           subtitle: friend.status == 'pending'
                               ? '等待通过'
-                              : (friend.username.isEmpty ? '已添加好友' : '@${friend.username}'),
-                          avatarUrl: friend.avatarUrl.isNotEmpty ? friend.avatarUrl : null,
+                              : (friend.username.isEmpty
+                                    ? '已添加好友'
+                                    : '@${friend.username}'),
+                          avatarUrl: friend.avatarUrl.isNotEmpty
+                              ? friend.avatarUrl
+                              : null,
                           avatarColor: const Color(0xFF3D8BFF),
                           selected: false,
                           onTap: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('${friend.displayName} 的私聊会在下一步接入'),
+                                content: Text(
+                                  '${friend.displayName} 的私聊会在下一步接入',
+                                ),
                               ),
                             );
                           },
@@ -188,7 +229,11 @@ class _TelegramChatListState extends State<TelegramChatList> {
               decoration: InputDecoration(
                 hintText: '搜索联系人',
                 hintStyle: const TextStyle(color: Color(0xFF728196)),
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF728196), size: 20),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: Color(0xFF728196),
+                  size: 20,
+                ),
                 isDense: true,
                 filled: true,
                 fillColor: const Color(0xFF242F3D),
@@ -241,15 +286,20 @@ class _ChatTile extends StatelessWidget {
             CircleAvatar(
               radius: 24,
               backgroundColor: avatarColor,
-              backgroundImage: (avatarUrl != null && avatarUrl!.startsWith('http'))
+              backgroundImage:
+                  (avatarUrl != null && avatarUrl!.startsWith('http'))
                   ? NetworkImage(avatarUrl!)
                   : null,
               child: (avatarUrl == null || !avatarUrl!.startsWith('http'))
                   ? (icon != null
-                      ? Icon(icon, color: Colors.white, size: 24)
-                      : Text(initial,
-                          style: const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.w700)))
+                        ? Icon(icon, color: Colors.white, size: 24)
+                        : Text(
+                            initial,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ))
                   : null,
             ),
             const SizedBox(width: 12),
@@ -273,7 +323,9 @@ class _ChatTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: selected ? const Color(0xFFD9ECFF) : const Color(0xFF91A3B7),
+                      color: selected
+                          ? const Color(0xFFD9ECFF)
+                          : const Color(0xFF91A3B7),
                       fontSize: 14,
                     ),
                   ),

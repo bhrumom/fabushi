@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/mini_app_model.dart';
 import '../widgets/layout/telegram_chat_list.dart';
 import '../widgets/layout/telegram_drawer.dart';
 import '../widgets/social/social_feature_bot.dart';
@@ -14,27 +15,37 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  SocialFeatureBotType _selectedBot = SocialFeatureBotType.globalDharma;
+  late SocialFeatureBot _selectedBot;
 
   @override
   void initState() {
     super.initState();
+    _selectedBot = _initialBotFromUrl();
     _applyInitialBotFromUrl();
   }
 
-  void _applyInitialBotFromUrl() {
+  SocialFeatureBot _initialBotFromUrl() {
+    final defaults = defaultSocialMiniAppBots();
     final tab = Uri.base.queryParameters['tab']?.toLowerCase();
-    _selectedBot = switch (tab) {
-      'flashcards' || 'cards' || 'beisong' => SocialFeatureBotType.flashcards,
-      'publish' || 'platform' || 'platform-publish' =>
-        SocialFeatureBotType.platformPublish,
-      'global' || 'globe' || 'dharma' || 'home' || null =>
-        SocialFeatureBotType.globalDharma,
-      _ => SocialFeatureBotType.globalDharma,
+    final kind = switch (tab) {
+      'flashcards' || 'cards' || 'beisong' => MiniAppBotKind.flashcards,
+      'publish' ||
+      'platform' ||
+      'platform-publish' => MiniAppBotKind.platformPublish,
+      'father' || 'botfather' || 'bot-father' => MiniAppBotKind.botFather,
+      _ => MiniAppBotKind.globalDharma,
     };
+    return defaults.firstWhere(
+      (bot) => bot.effectiveKind == kind,
+      orElse: () => defaults.first,
+    );
   }
 
-  void _handleBotSelected(SocialFeatureBotType bot, bool isNarrow) {
+  void _applyInitialBotFromUrl() {
+    _selectedBot = _initialBotFromUrl();
+  }
+
+  void _handleBotSelected(SocialFeatureBot bot, bool isNarrow) {
     setState(() {
       _selectedBot = bot;
     });
@@ -43,8 +54,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => Scaffold(
-            backgroundColor: const Color(0xFF0E1621), // Telegram dark theme chat bg
-            body: SocialFeatureChatScreen(botType: bot),
+            backgroundColor: const Color(
+              0xFF0E1621,
+            ), // Telegram dark theme chat bg
+            body: SocialFeatureChatScreen(bot: bot),
           ),
         ),
       );
@@ -60,9 +73,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           return Scaffold(
             backgroundColor: Colors.transparent,
             drawer: const TelegramDrawer(),
-            body: isNarrow
-                ? _buildNarrowShell()
-                : _buildWideShell(),
+            body: isNarrow ? _buildNarrowShell() : _buildWideShell(),
           );
         },
       ),
@@ -71,7 +82,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   Widget _buildNarrowShell() {
     return TelegramChatList(
-      selectedBot: _selectedBot,
+      selectedBot: _selectedBot.stableBotId,
       onBotSelected: (bot) => _handleBotSelected(bot, true),
       isMobile: true,
     );
@@ -81,14 +92,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return Row(
       children: [
         TelegramChatList(
-          selectedBot: _selectedBot,
+          selectedBot: _selectedBot.stableBotId,
           onBotSelected: (bot) => _handleBotSelected(bot, false),
           isMobile: false,
         ),
         Expanded(
           child: Container(
             color: const Color(0xFF0E1621), // Chat background
-            child: SocialFeatureChatScreen(botType: _selectedBot),
+            child: SocialFeatureChatScreen(bot: _selectedBot),
           ),
         ),
       ],
