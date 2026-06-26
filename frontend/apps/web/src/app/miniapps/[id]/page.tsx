@@ -6,6 +6,14 @@ type MiniAppPageProps = {
   params: Promise<{ id: string }>;
 };
 
+export async function generateStaticParams() {
+  return [
+    { id: "official.global-dharma" },
+    { id: "official.flashcards" },
+    { id: "official.platform-publish" },
+  ];
+}
+
 export default async function MiniAppPage({ params }: MiniAppPageProps) {
   const { id } = await params;
 
