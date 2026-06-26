@@ -103,6 +103,13 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       ),
       child: Row(
         children: [
+          if (Navigator.of(context).canPop())
+            IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.of(context).pop(),
+              padding: const EdgeInsets.only(right: 14),
+              constraints: const BoxConstraints(),
+            ),
           CircleAvatar(
             radius: 24,
             backgroundColor: _bot.avatarColor,
