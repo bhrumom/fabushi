@@ -10,7 +10,7 @@ export default function FlashcardsApp() {
   const [loading, setLoading] = useState(false);
   const [bullets, setBullets] = useState<string[]>([""]);
 
-  const log = (msg: string) => setLogs((prev) => [...prev, \`[\${new Date().toLocaleTimeString()}] \${msg}\`]);
+  const log = (msg: string) => setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
   const handleCreate = async () => {
     const fullText = bullets.filter(b => b.trim()).join("\\n");
@@ -24,7 +24,7 @@ export default function FlashcardsApp() {
     }
     
     setLoading(true);
-    log(\`正在使用 \${mode === 'ai' ? 'AI智能提取' : '随机挖空'} 模式制卡...\`);
+    log(`正在使用 ${mode === 'ai' ? 'AI智能提取' : '随机挖空'} 模式制卡...`);
     
     const res = await window.FabushiMiniApp.invoke("flashcards.createDeck", {
       title: "新闪卡集",
@@ -35,7 +35,7 @@ export default function FlashcardsApp() {
     if (res.ok) {
       log("制卡请求已发送给宿主聊天机器人，请在聊天框查看详细过程。");
     } else {
-      log(\`宿主响应: \${res.message || "请求已发送"}\`);
+      log(`宿主响应: ${res.message || "请求已发送"}`);
     }
     setLoading(false);
   };
@@ -54,7 +54,7 @@ export default function FlashcardsApp() {
       setBullets(newBullets);
       // Let React render the new input then focus it
       setTimeout(() => {
-        const nextInput = document.getElementById(\`bullet-\${index + 1}\`);
+        const nextInput = document.getElementById(`bullet-${index + 1}`);
         nextInput?.focus();
       }, 0);
     } else if (e.key === "Backspace" && bullets[index] === "" && bullets.length > 1) {
@@ -63,7 +63,7 @@ export default function FlashcardsApp() {
       newBullets.splice(index, 1);
       setBullets(newBullets);
       setTimeout(() => {
-        const prevInput = document.getElementById(\`bullet-\${index - 1}\`);
+        const prevInput = document.getElementById(`bullet-${index - 1}`);
         prevInput?.focus();
       }, 0);
     }
@@ -75,8 +75,8 @@ export default function FlashcardsApp() {
       <p className="ma-header-subtitle" style={{ marginBottom: 24, fontSize: 13 }}>RemNote 风格层级记忆编辑器。支持大纲式输入与 AI 自动提取。</p>
 
       <div className="ma-pill-selector">
-        <div className={\`ma-pill \${mode === 'ai' ? 'active' : ''}\`} onClick={() => setMode('ai')}>✨ AI 知识点提取</div>
-        <div className={\`ma-pill \${mode === 'random' ? 'active' : ''}\`} onClick={() => setMode('random')}>🎲 随机填空抽查</div>
+        <div className={`ma-pill ${mode === 'ai' ? 'active' : ''}`} onClick={() => setMode('ai')}>✨ AI 知识点提取</div>
+        <div className={`ma-pill ${mode === 'random' ? 'active' : ''}`} onClick={() => setMode('random')}>🎲 随机填空抽查</div>
       </div>
 
       <div style={{
@@ -92,7 +92,7 @@ export default function FlashcardsApp() {
             <div style={{ marginTop: 8, marginRight: 12, width: 6, height: 6, borderRadius: "50%", background: "#7E57C2", flexShrink: 0 }} />
             <div style={{ flex: 1, borderLeft: "1px solid rgba(126, 87, 194, 0.2)", paddingLeft: 12 }}>
               <input
-                id={\`bullet-\${index}\`}
+                id={`bullet-${index}`}
                 style={{
                   width: "100%", background: "transparent", border: "none", color: "#E2E8F0", 
                   fontSize: 16, outline: "none", fontFamily: "inherit", lineHeight: 1.5

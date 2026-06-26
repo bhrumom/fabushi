@@ -25,25 +25,25 @@ export default function PlatformPublishApp() {
     // unless p.isAbsolute(path) is true. We'll pass an absolute path to test.
     const scriptPath = "/tmp/fabushi_publish_test_script.js"; 
     
-    const scriptContent = \`
+    const scriptContent = `
       console.log("==========================================");
       console.log("[Playwright CLI / 自动化流水线] 已接管进程");
       console.log("==========================================");
       console.log("正在解析发布清单...");
-      console.log("-> 目标平台: \${platform}");
-      console.log("-> 稿件标题: \${title}");
-      console.log("-> 稿件长度: \${text.length} 字符");
+      console.log("-> 目标平台: ${platform}");
+      console.log("-> 稿件标题: ${title}");
+      console.log("-> 稿件长度: ${text.length} 字符");
       
       let progress = 0;
       const interval = setInterval(() => {
         progress += 25;
-        console.log(\`[\${new Date().toISOString()}] 部署进度 \${progress}%...\`);
+        console.log(`[${new Date().toISOString()}] 部署进度 ${progress}%...`);
         if (progress >= 100) {
           clearInterval(interval);
           console.log("✅ 发布任务已成功完成！");
         }
       }, 800);
-    \`;
+    `;
     
     try {
       const fsRes = await window.FabushiMiniApp.invoke("fs.writeFile", {
@@ -55,7 +55,7 @@ export default function PlatformPublishApp() {
       // 2. Shell Execute
       // We pass it to the host, the host will create a Chat component and stream logs!
       const shellRes = await window.FabushiMiniApp.invoke("shell.execute", {
-        title: \`部署流水线 (\${platform})\`,
+        title: `部署流水线 (${platform})`,
         command: "node",
         arguments: [fsRes.path]
       });
@@ -66,7 +66,7 @@ export default function PlatformPublishApp() {
       setDeployTaskId(Date.now().toString()); // Just to show state change
 
     } catch (e: any) {
-      alert(\`流水线异常中断: \${e.message}\`);
+      alert(`流水线异常中断: ${e.message}`);
     } finally {
       setRunning(false);
     }

@@ -28,14 +28,14 @@ export default async function MiniAppPage({ params }: MiniAppPageProps) {
           <p className="ma-header-subtitle">这是一个通用的沙箱小程序环境。</p>
           <pre id="output" className="ma-log-box" style={{ marginTop: 24 }}>等待宿主 API 调用...</pre>
           <script dangerouslySetInnerHTML={{
-            __html: \`
+            __html: `
               const output = document.getElementById("output");
               window.addEventListener("fabushi-miniapp-ready", async () => {
                 output.textContent += "\\n\\nSDK 就绪！正在读取上下文...\\n";
                 const res = await window.FabushiMiniApp.invoke("app.getContext");
                 output.textContent += JSON.stringify(res, null, 2);
               });
-            \`
+            `
           }} />
         </div>
       );

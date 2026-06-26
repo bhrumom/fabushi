@@ -15,7 +15,7 @@ export default function GlobalDharmaApp() {
   const earthRef = useRef<THREE.Mesh | null>(null);
   const particlesRef = useRef<THREE.Points | null>(null);
 
-  const log = (msg: string) => setLogs((prev) => [...prev, \`[\${new Date().toLocaleTimeString()}] \${msg}\`]);
+  const log = (msg: string) => setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
   useEffect(() => {
     // Check initial status
@@ -112,7 +112,7 @@ export default function GlobalDharmaApp() {
       text: text || "愿以此功德，普及于一切。",
     });
     setStatus(res.data);
-    log(res.ok ? "启动成功，正在全网节点传输中。" : \`启动失败: \${res.message}\`);
+    log(res.ok ? "启动成功，正在全网节点传输中。" : `启动失败: ${res.message}`);
   };
 
   const handleStop = async () => {
@@ -131,9 +131,9 @@ export default function GlobalDharmaApp() {
       method: "GET"
     });
     if (res.ok) {
-      log(\`回环响应成功: \${res.data.statusCode}\`);
+      log(`回环响应成功: ${res.data.statusCode}`);
     } else {
-      log(\`回环请求失败: \${res.message}\`);
+      log(`回环请求失败: ${res.message}`);
     }
   };
 
