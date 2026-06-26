@@ -92,6 +92,7 @@ export * from "./faliu-merit-benefits-t0277";
 export * from "./faliu-merit-benefits-t0278";
 export * from "./faliu-merit-benefits-t0278-shiqi-brahma";
 export * from "./faliu-merit-benefits-t0278-juan2";
+export * from "./faliu-merit-benefits-t0278-juan2-lushena-opening";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import * as t0263Juan10 from "./faliu-merit-benefits-t0263-juan10";
@@ -187,6 +188,7 @@ import * as t0277Juan1 from "./faliu-merit-benefits-t0277";
 import * as t0278Juan1 from "./faliu-merit-benefits-t0278";
 import * as t0278Juan1ShiqiBrahma from "./faliu-merit-benefits-t0278-shiqi-brahma";
 import * as t0278Juan2 from "./faliu-merit-benefits-t0278-juan2";
+import * as t0278Juan2LushenaOpening from "./faliu-merit-benefits-t0278-juan2-lushena-opening";
 
 const overrideMeritBenefits = {
   "T0263:10": [
@@ -228,7 +230,7 @@ const overrideMeritBenefits = {
   ],
   "T0264:6": [
     ...t0264Juan6SuixiGongde.T0264_JUAN_6_SUIXI_GONGDE_MERIT_BENEFITS,
-    ...t0264Juan6FashiGongde.T0264_JUAN_6_FASHI_GONGDE_MERIT_BENEFITS,
+    ...t0264Juan6Fashi.T0264_JUAN_6_FASHI_GONGDE_MERIT_BENEFITS,
     ...t0264Juan6Changbuqing.T0264_JUAN_6_CHANGBUQING_MERIT_BENEFITS,
     ...t0264Juan6RulaiShenli.T0264_JUAN_6_RULAI_SHENLI_MERIT_BENEFITS,
     ...t0264Juan6Dharani.T0264_JUAN_6_DHARANI_MERIT_BENEFITS,
@@ -315,7 +317,10 @@ const overrideMeritBenefits = {
     ...t0278Juan1.T0278_JUAN_1_MERIT_BENEFITS,
     ...t0278Juan1ShiqiBrahma.T0278_JUAN_1_SHIQI_BRAHMA_MERIT_BENEFITS,
   ],
-  "T0278:2": t0278Juan2.T0278_JUAN_2_MERIT_BENEFITS,
+  "T0278:2": [
+    ...t0278Juan2.T0278_JUAN_2_MERIT_BENEFITS,
+    ...t0278Juan2LushenaOpening.T0278_JUAN_2_LUSHENA_OPENING_MERIT_BENEFITS,
+  ],
 };
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
