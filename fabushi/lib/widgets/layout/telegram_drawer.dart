@@ -57,7 +57,7 @@ class TelegramDrawer extends StatelessWidget {
                   ),
                 _DrawerItem(
                   icon: Icons.public,
-                  label: '全球法布施主页',
+                  label: '全球法布施主页 (3D Earth)',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.pushNamed(context, '/'); // Or whatever the route is
@@ -71,6 +71,22 @@ class TelegramDrawer extends StatelessWidget {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('侧边栏已整合联系人')),
                     );
+                  },
+                ),
+                _DrawerItem(
+                  icon: Icons.self_improvement,
+                  label: '静修室 (Meditation)',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/meditation');
+                  },
+                ),
+                _DrawerItem(
+                  icon: Icons.menu_book,
+                  label: '读经/听经',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/sutra');
                   },
                 ),
                 _DrawerItem(

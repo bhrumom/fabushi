@@ -6,6 +6,7 @@ import '../../features/auth/application/auth_model.dart';
 import '../../services/mini_app_registry_service.dart';
 import '../../services/social_friend_service.dart';
 import '../social/social_feature_bot.dart';
+import 'telegram_folder_tabs.dart';
 
 class TelegramChatList extends StatefulWidget {
   const TelegramChatList({
@@ -31,6 +32,9 @@ class _TelegramChatListState extends State<TelegramChatList> {
   bool _isLoadingFriends = false;
   bool _isLoadingBots = false;
   String _filter = '';
+  int _selectedTabIndex = 0;
+
+  final List<String> _tabs = ['全部', '个人', '机器人', '法布施'];
 
   @override
   void initState() {
@@ -117,13 +121,21 @@ class _TelegramChatListState extends State<TelegramChatList> {
       width: width,
       decoration: const BoxDecoration(
         color: Color(0xFF17212B),
-        border: Border(right: BorderSide(color: Color(0xFF223040), width: 1)),
       ),
       child: SafeArea(
         right: false,
         child: Column(
           children: [
             _buildSearchRow(context),
+            TelegramFolderTabs(
+              tabs: _tabs,
+              selectedIndex: _selectedTabIndex,
+              onTabChanged: (index) {
+                setState(() {
+                  _selectedTabIndex = index;
+                });
+              },
+            ),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: _loadFriends,
@@ -132,73 +144,80 @@ class _TelegramChatListState extends State<TelegramChatList> {
                 child: ListView(
                   padding: EdgeInsets.zero,
                   children: [
-                    _SectionLabel(
-                      label: '小程序机器人',
-                      trailing: _isLoadingBots ? '同步中' : 'PINNED',
-                    ),
-                    for (final bot in bots)
-                      _ChatTile(
-                        title: bot.title,
-                        subtitle: bot.subtitle,
-                        avatarColor: bot.avatarColor,
-                        icon: bot.icon,
-                        selected: widget.selectedBot == bot.stableBotId,
-                        onTap: () => widget.onBotSelected(bot),
+                    if (_selectedTabIndex == 0 || _selectedTabIndex == 2 || _selectedTabIndex == 3) ...[
+                      _SectionLabel(
+                        label: '小程序机器人',
+                        trailing: _isLoadingBots ? '同步中' : 'PINNED',
                       ),
-                    const SizedBox(height: 8),
-                    _SectionLabel(
-                      label: '好友',
-                      trailing: _isLoadingFriends ? '同步中' : '${friends.length}',
-                    ),
-                    if (_isLoadingFriends)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 28),
-                        child: Center(
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Color(0xFF40A7E3),
+                      for (final bot in bots)
+                        _ChatTile(
+                          title: bot.title,
+                          subtitle: bot.subtitle,
+                          avatarColor: bot.avatarColor,
+                          icon: bot.icon,
+                          selected: widget.selectedBot == bot.stableBotId,
+                          timeString: '10:42', // Placeholder to match Telegram
+                          onTap: () => widget.onBotSelected(bot),
+                        ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (_selectedTabIndex == 0 || _selectedTabIndex == 1) ...[
+                      _SectionLabel(
+                        label: '好友',
+                        trailing: _isLoadingFriends ? '同步中' : '${friends.length}',
+                      ),
+                      if (_isLoadingFriends)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 28),
+                          child: Center(
+                            child: SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF40A7E3),
+                              ),
                             ),
                           ),
-                        ),
-                      )
-                    else if (friends.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Text(
-                          '暂无好友',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
+                        )
+                      else if (friends.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Text(
+                            '暂无好友',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                      )
-                    else
-                      for (final friend in friends)
-                        _ChatTile(
-                          title: friend.displayName,
-                          subtitle: friend.status == 'pending'
-                              ? '等待通过'
-                              : (friend.username.isEmpty
-                                    ? '已添加好友'
-                                    : '@${friend.username}'),
-                          avatarUrl: friend.avatarUrl.isNotEmpty
-                              ? friend.avatarUrl
-                              : null,
-                          avatarColor: const Color(0xFF3D8BFF),
-                          selected: false,
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  '${friend.displayName} 的私聊会在下一步接入',
+                        )
+                      else
+                        for (final friend in friends)
+                          _ChatTile(
+                            title: friend.displayName,
+                            subtitle: friend.status == 'pending'
+                                ? '等待通过'
+                                : (friend.username.isEmpty
+                                      ? '已添加好友'
+                                      : '@${friend.username}'),
+                            avatarUrl: friend.avatarUrl.isNotEmpty
+                                ? friend.avatarUrl
+                                : null,
+                            avatarColor: const Color(0xFF3D8BFF),
+                            selected: false,
+                            timeString: '昨天', // Placeholder to match Telegram
+                            unreadCount: friend.status == 'pending' ? 1 : 0,
+                            onTap: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    '${friend.displayName} 的私聊会在下一步接入',
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
+                              );
+                            },
+                          ),
+                    ],
                   ],
                 ),
               ),
@@ -259,6 +278,8 @@ class _ChatTile extends StatelessWidget {
     this.icon,
     this.avatarUrl,
     required this.selected,
+    this.timeString,
+    this.unreadCount = 0,
     required this.onTap,
   });
 
@@ -268,6 +289,8 @@ class _ChatTile extends StatelessWidget {
   final IconData? icon;
   final String? avatarUrl;
   final bool selected;
+  final String? timeString;
+  final int unreadCount;
   final VoidCallback onTap;
 
   @override
@@ -277,14 +300,15 @@ class _ChatTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFF2B5278) : Colors.transparent,
         ),
         child: Row(
           children: [
+            const SizedBox(width: 4),
             CircleAvatar(
-              radius: 24,
+              radius: 26,
               backgroundColor: avatarColor,
               backgroundImage:
                   (avatarUrl != null && avatarUrl!.startsWith('http'))
@@ -292,46 +316,87 @@ class _ChatTile extends StatelessWidget {
                   : null,
               child: (avatarUrl == null || !avatarUrl!.startsWith('http'))
                   ? (icon != null
-                        ? Icon(icon, color: Colors.white, size: 24)
+                        ? Icon(icon, color: Colors.white, size: 28)
                         : Text(
                             initial,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
                             ),
                           ))
                   : null,
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (timeString != null)
+                        Text(
+                          timeString!,
+                          style: TextStyle(
+                            color: selected
+                                ? const Color(0xFFD9ECFF)
+                                : const Color(0xFF728196),
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: selected
-                          ? const Color(0xFFD9ECFF)
-                          : const Color(0xFF91A3B7),
-                      fontSize: 14,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: selected
+                                ? const Color(0xFFD9ECFF)
+                                : const Color(0xFF91A3B7),
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                      if (unreadCount > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF40A7E3),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            unreadCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ),
             ),
+            const SizedBox(width: 4),
           ],
         ),
       ),
@@ -356,7 +421,7 @@ class _SectionLabel extends StatelessWidget {
               label,
               style: const TextStyle(
                 color: Color(0xFF728196),
-                fontSize: 13,
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -365,8 +430,8 @@ class _SectionLabel extends StatelessWidget {
             trailing,
             style: const TextStyle(
               color: Color(0xFF728196),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

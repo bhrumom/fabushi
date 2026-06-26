@@ -1,4 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -19,10 +24,20 @@ import '../services/project_service.dart';
 import '../widgets/social/social_feature_bot.dart';
 
 class MiniAppHostScreen extends StatefulWidget {
-  const MiniAppHostScreen({super.key, required this.bot, this.inline = false});
+  const MiniAppHostScreen({
+    super.key,
+    required this.bot,
+    this.inline = false,
+    this.messageStream,
+    this.onCliStart,
+    this.onCliLog,
+  });
 
   final SocialFeatureBot bot;
   final bool inline;
+  final Stream<String>? messageStream;
+  final void Function(String title, String taskId)? onCliStart;
+  final void Function(String taskId, String log)? onCliLog;
 
   @override
   State<MiniAppHostScreen> createState() => _MiniAppHostScreenState();
@@ -34,11 +49,41 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   final http.Client _httpClient = http.Client();
   bool _loading = true;
   String? _error;
+  
+  StreamSubscription<String>? _messageSub;
+  InAppWebViewController? _webViewController;
+  bool _hostReady = false;
+  final List<String> _pendingMessages = [];
 
   bool get _trustedOfficial => widget.bot.source == MiniAppSource.official;
 
   @override
+  void initState() {
+    super.initState();
+    _messageSub = widget.messageStream?.listen(_sendMessageToWeb);
+  }
+
+  @override
+  void didUpdateWidget(covariant MiniAppHostScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.messageStream != oldWidget.messageStream) {
+      _messageSub?.cancel();
+      _messageSub = widget.messageStream?.listen(_sendMessageToWeb);
+    }
+  }
+
+  void _sendMessageToWeb(String msg) {
+    if (_hostReady && _webViewController != null) {
+      final script = "window.dispatchEvent(new CustomEvent('fabushi-bot-message', { detail: { text: ${jsonEncode(msg)} } }));";
+      _webViewController!.evaluateJavascript(source: script);
+    } else {
+      _pendingMessages.add(msg);
+    }
+  }
+
+  @override
   void dispose() {
+    _messageSub?.cancel();
     _httpClient.close();
     super.dispose();
   }
@@ -56,6 +101,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
             supportZoom: false,
           ),
           onWebViewCreated: (controller) {
+            _webViewController = controller;
             controller.addJavaScriptHandler(
               handlerName: 'FabushiMiniAppInvoke',
               callback: (args) async {
@@ -75,8 +121,16 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
             }
           },
           onLoadStop: (controller, _) async {
+            _webViewController = controller;
             await controller.evaluateJavascript(source: _hostSdkScript);
+            _hostReady = true;
             if (mounted) setState(() => _loading = false);
+            
+            for (final msg in _pendingMessages) {
+              final script = "window.dispatchEvent(new CustomEvent('fabushi-bot-message', { detail: { text: ${jsonEncode(msg)} } }));";
+              controller.evaluateJavascript(source: script);
+            }
+            _pendingMessages.clear();
           },
           onReceivedError: (controller, request, error) {
             if (mounted) {
@@ -223,6 +277,14 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         return _executeDesktopControl(params);
       case 'localLoopback.fetch':
         return _localLoopbackFetch(params);
+      case 'fs.writeFile':
+        return _fsWriteFile(params);
+      case 'fs.readFile':
+        return _fsReadFile(params);
+      case 'shell.execute':
+        return _shellExecute(params);
+      case 'browser.open':
+        return _browserOpen(params);
       case 'flashcards.createDeck':
       case 'flashcards.openDeck':
         return {
@@ -529,6 +591,118 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
   bool _isLoopbackHost(String host) {
     return host == 'localhost' || host == '127.0.0.1' || host == '::1';
+  }
+
+  Future<Map<String, dynamic>> _fsWriteFile(Map<String, dynamic> params) async {
+    _requirePermission('fs.readWrite');
+    if (!AiBackendPolicy.isDesktopNative) {
+      throw const MiniAppHostException('unsupported_platform', '当前平台不支持本地文件操作');
+    }
+    final path = params['path']?.toString().trim() ?? '';
+    final content = params['content']?.toString() ?? '';
+    if (path.isEmpty) {
+      throw const MiniAppHostException('invalid_request', '路径不能为空');
+    }
+    
+    // Convert to absolute path if relative, storing in Documents
+    final resolvedPath = await _resolvePath(path);
+    final file = File(resolvedPath);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(content);
+    return {'ok': true, 'path': resolvedPath};
+  }
+
+  Future<Map<String, dynamic>> _fsReadFile(Map<String, dynamic> params) async {
+    _requirePermission('fs.readWrite');
+    if (!AiBackendPolicy.isDesktopNative) {
+      throw const MiniAppHostException('unsupported_platform', '当前平台不支持本地文件操作');
+    }
+    final path = params['path']?.toString().trim() ?? '';
+    if (path.isEmpty) {
+      throw const MiniAppHostException('invalid_request', '路径不能为空');
+    }
+    
+    final resolvedPath = await _resolvePath(path);
+    final file = File(resolvedPath);
+    if (!await file.exists()) {
+      throw const MiniAppHostException('file_not_found', '文件不存在');
+    }
+    final content = await file.readAsString();
+    return {'ok': true, 'content': content, 'path': resolvedPath};
+  }
+
+  Future<Map<String, dynamic>> _shellExecute(Map<String, dynamic> params) async {
+    _requirePermission('shell.execute');
+    if (!AiBackendPolicy.isDesktopNative) {
+      throw const MiniAppHostException('unsupported_platform', '当前平台不支持执行终端命令');
+    }
+    final command = params['command']?.toString().trim() ?? '';
+    final arguments = (params['arguments'] as List? ?? const [])
+        .map((e) => e.toString())
+        .toList();
+    final workingDirectory = params['workingDirectory']?.toString();
+    final title = params['title']?.toString() ?? '执行终端命令';
+    
+    if (command.isEmpty) {
+      throw const MiniAppHostException('invalid_request', '命令不能为空');
+    }
+
+    try {
+      final taskId = DateTime.now().millisecondsSinceEpoch.toString();
+      widget.onCliStart?.call(title, taskId);
+      
+      final process = await Process.start(
+        command,
+        arguments,
+        workingDirectory: workingDirectory,
+        runInShell: true,
+      );
+      
+      process.stdout.transform(utf8.decoder).listen((data) {
+        widget.onCliLog?.call(taskId, data);
+      });
+      process.stderr.transform(utf8.decoder).listen((data) {
+        widget.onCliLog?.call(taskId, data);
+      });
+      
+      final exitCode = await process.exitCode;
+      widget.onCliLog?.call(taskId, '\\n[进程已结束，退出码: $exitCode]');
+      
+      return {
+        'ok': exitCode == 0,
+        'exitCode': exitCode,
+      };
+    } catch (e) {
+      throw MiniAppHostException('execution_failed', '执行失败: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> _browserOpen(Map<String, dynamic> params) async {
+    _requirePermission('browser.external');
+    final url = params['url']?.toString().trim() ?? '';
+    if (url.isEmpty) {
+      throw const MiniAppHostException('invalid_request', 'URL不能为空');
+    }
+    // Simple way to open URL on desktop platforms:
+    try {
+      if (Platform.isMacOS) {
+        await Process.run('open', [url]);
+      } else if (Platform.isWindows) {
+        await Process.run('start', [url], runInShell: true);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [url]);
+      }
+      return {'ok': true};
+    } catch (e) {
+      throw MiniAppHostException('browser_open_failed', '打开浏览器失败: $e');
+    }
+  }
+
+  Future<String> _resolvePath(String inputPath) async {
+    if (p.isAbsolute(inputPath)) return inputPath;
+    final docs = await getApplicationDocumentsDirectory();
+    final miniAppDir = Directory(p.join(docs.path, 'fabushi_miniapps', widget.bot.stableMiniAppId));
+    return p.normalize(p.join(miniAppDir.path, inputPath));
   }
 
   void _requirePermission(String permission) {

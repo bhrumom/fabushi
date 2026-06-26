@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/mini_app_model.dart';
 import '../widgets/layout/telegram_chat_list.dart';
 import '../widgets/layout/telegram_drawer.dart';
+import '../widgets/layout/telegram_split_view.dart';
 import '../widgets/social/social_feature_bot.dart';
 import '../widgets/space_background.dart';
 import 'social_feature_chat_screen.dart';
@@ -89,20 +90,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   Widget _buildWideShell() {
-    return Row(
-      children: [
-        TelegramChatList(
-          selectedBot: _selectedBot.stableBotId,
-          onBotSelected: (bot) => _handleBotSelected(bot, false),
-          isMobile: false,
-        ),
-        Expanded(
-          child: Container(
-            color: const Color(0xFF0E1621), // Chat background
-            child: SocialFeatureChatScreen(bot: _selectedBot),
-          ),
-        ),
-      ],
+    return TelegramSplitView(
+      leftMenu: TelegramChatList(
+        selectedBot: _selectedBot.stableBotId,
+        onBotSelected: (bot) => _handleBotSelected(bot, false),
+        isMobile: false,
+      ),
+      rightContent: SocialFeatureChatScreen(bot: _selectedBot),
     );
   }
 }

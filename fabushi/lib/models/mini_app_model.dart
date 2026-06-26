@@ -283,6 +283,9 @@ MiniAppRegistry defaultMiniAppRegistry() {
     'openclaw.chat',
     'local.loopback',
     'desktop.control',
+    'fs.readWrite',
+    'shell.execute',
+    'browser.external',
   ];
   final bots = <MiniAppBot>[
     MiniAppBot(

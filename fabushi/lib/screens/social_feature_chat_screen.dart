@@ -47,6 +47,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   String _activity = '';
   bool _miniAppPanelOpen = false;
   SocialFeatureBot? _panelBot;
+  final StreamController<String> _miniAppMessageController = StreamController<String>.broadcast();
 
   SocialFeatureBot get _bot => widget.bot;
   SocialFeatureBot get _activePanelBot => _panelBot ?? _bot;
@@ -80,6 +81,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
   @override
   void dispose() {
+    _miniAppMessageController.close();
     _httpClient.close();
     _composer.dispose();
     _scroll.dispose();
@@ -110,18 +112,62 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (!_miniAppPanelOpen || constraints.maxWidth < 980) return chat;
-        return Row(
+        final wide = constraints.maxWidth >= 980;
+        final chatPaddingRight = (wide && _miniAppPanelOpen) ? 430.0 : 0.0;
+
+        return Stack(
           children: [
-            Expanded(child: chat),
-            Container(
-              width: 430,
-              padding: const EdgeInsets.all(12),
-              decoration: const BoxDecoration(
-                color: Color(0xFF0B111A),
-                border: Border(left: BorderSide(color: Color(0xFF223040))),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOut,
+              padding: EdgeInsets.only(right: chatPaddingRight),
+              child: chat,
+            ),
+            if (!wide && _miniAppPanelOpen)
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () => setState(() => _miniAppPanelOpen = false),
+                  child: Container(color: Colors.black54),
+                ),
               ),
-              child: MiniAppHostScreen(bot: _activePanelBot, inline: true),
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOut,
+              top: wide ? 0 : (_miniAppPanelOpen ? constraints.maxHeight * 0.14 : constraints.maxHeight),
+              bottom: wide ? 0 : (_miniAppPanelOpen ? 0 : -constraints.maxHeight * 0.86),
+              right: wide ? (_miniAppPanelOpen ? 0 : -430) : 0,
+              left: wide ? null : 0,
+              width: wide ? 430 : null,
+              child: Container(
+                padding: wide ? const EdgeInsets.all(12) : const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0B111A),
+                  border: wide ? const Border(left: BorderSide(color: Color(0xFF223040))) : null,
+                  borderRadius: wide ? null : const BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: MiniAppHostScreen(
+                  bot: _activePanelBot,
+                  inline: true,
+                  messageStream: _miniAppMessageController.stream,
+                  onCliStart: (title, taskId) {
+                    if (!mounted) return;
+                    setState(() {
+                      _botMessages.add(_ChatMessage.cliTask(title, taskId));
+                    });
+                    _scrollBottom();
+                  },
+                  onCliLog: (taskId, log) {
+                    if (!mounted) return;
+                    setState(() {
+                      final msg = _botMessages.lastWhere((m) => m.cliTaskId == taskId, orElse: () => _botMessages.first);
+                      if (msg.cliLogs != null) {
+                        msg.cliLogs!.add(log);
+                      }
+                    });
+                    _scrollBottom();
+                  },
+                ),
+              ),
             ),
           ],
         );
@@ -179,17 +225,27 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
             ),
           ),
           IconButton(
-            tooltip: _miniAppPanelOpen ? '关闭小程序' : '打开小程序',
+            tooltip: '搜索',
+            onPressed: () {},
+            icon: const Icon(Icons.search, color: Color(0xFF91A3B7)),
+          ),
+          IconButton(
+            tooltip: '拨打电话',
+            onPressed: () {},
+            icon: const Icon(Icons.call_outlined, color: Color(0xFF91A3B7)),
+          ),
+          IconButton(
+            tooltip: _miniAppPanelOpen ? '关闭侧栏' : '打开侧栏',
             onPressed: _openMiniAppPanel,
             icon: Icon(
-              _miniAppPanelOpen ? Icons.close_fullscreen : Icons.apps,
+              _miniAppPanelOpen ? Icons.web_asset_off : Icons.web_asset,
               color: const Color(0xFF91A3B7),
             ),
           ),
           IconButton(
-            tooltip: '联系人设置',
+            tooltip: '更多选项',
             onPressed: () => _openCurrentSettings(model),
-            icon: const Icon(Icons.tune, color: Color(0xFF91A3B7)),
+            icon: const Icon(Icons.more_vert, color: Color(0xFF91A3B7)),
           ),
         ],
       ),
@@ -217,47 +273,9 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
   Widget _buildModeBar(FileTransferModel model) {
     final chips = switch (_kind) {
-      MiniAppBotKind.globalDharma => <Widget>[
-        _ControlPill(
-          icon: Icons.public,
-          label: model.isGlobalSendEnabled ? '地区 全球' : '地区 本地',
-          active: true,
-          onTap: () => _showRegionSettings(model),
-        ),
-        _ControlPill(
-          icon: Icons.loop,
-          label: model.isLooping ? '循环发送' : '单轮发送',
-          active: model.isLooping,
-          onTap: () {
-            model.setLooping(!model.isLooping);
-            setState(() {});
-          },
-        ),
-        _ControlPill(
-          icon: Icons.attach_file,
-          label: model.hasFiles ? '已选素材' : '添加素材',
-          active: model.hasFiles,
-          onTap: () => unawaited(model.selectFiles()),
-        ),
-      ],
-      MiniAppBotKind.flashcards => <Widget>[
-        _ControlPill(
-          icon: _flashcardMode == FlashcardCreationMode.aiCards
-              ? Icons.auto_awesome
-              : Icons.auto_fix_high,
-          label: '模式 ${_flashcardMode.label}',
-          active: true,
-          onTap: _showFlashcardModeSelector,
-        ),
-      ],
-      MiniAppBotKind.platformPublish => <Widget>[
-        _ControlPill(
-          icon: Icons.campaign_outlined,
-          label: '平台 ${_platformSummary()}',
-          active: true,
-          onTap: _showPlatformSelector,
-        ),
-      ],
+      MiniAppBotKind.globalDharma => <Widget>[],
+      MiniAppBotKind.flashcards => <Widget>[],
+      MiniAppBotKind.platformPublish => <Widget>[],
       MiniAppBotKind.botFather => <Widget>[
         _ControlPill(
           icon: Icons.construction_outlined,
@@ -281,6 +299,9 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
         ),
       ],
     };
+
+    if (chips.isEmpty) return const SizedBox.shrink();
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
@@ -308,6 +329,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
             message: _botMessages[index],
             bot: _bot,
             onDeck: _openDeck,
+            onOpenMiniApp: () => setState(() => _miniAppPanelOpen = true),
           );
         }
         if (_busy && index == _botMessages.length) {
@@ -319,6 +341,8 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   }
 
   Widget _buildComposer(FileTransferModel model, bool canSend) {
+    final hasMiniApp = _bot.miniAppId != null && _bot.miniAppId!.isNotEmpty;
+    
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
       decoration: const BoxDecoration(
@@ -328,19 +352,35 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          if (hasMiniApp)
+            Padding(
+              padding: const EdgeInsets.only(right: 4.0, bottom: 4),
+              child: ElevatedButton.icon(
+                onPressed: () => _openMiniAppPanel(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF40A7E3),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  elevation: 0,
+                ),
+                icon: const Icon(Icons.web_asset, size: 20),
+                label: const Text(
+                  '打开应用',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+              ),
+            ),
           IconButton(
-            tooltip: _kind == MiniAppBotKind.flashcards ? '选择模式' : '打开小程序',
-            onPressed: _busy
-                ? null
-                : _kind == MiniAppBotKind.flashcards
-                ? _showFlashcardModeSelector
-                : _openMiniAppPanel,
+            tooltip: '附件',
+            onPressed: () {},
             icon: const Icon(
-              Icons.add_circle_outline,
+              Icons.attach_file,
               color: Color(0xFF91A3B7),
             ),
           ),
-          const SizedBox(width: 8),
           Expanded(
             child: TextField(
               controller: _composer,
@@ -350,29 +390,25 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
               textInputAction: TextInputAction.send,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 15,
+                fontSize: 16,
                 height: 1.4,
               ),
               decoration: InputDecoration(
                 hintText: _bot.inputHint,
                 hintStyle: const TextStyle(color: Color(0xFF6E7F92)),
                 filled: true,
-                fillColor: const Color(0xFF101923),
+                fillColor: const Color(0xFF17212B), // Match bg to hide border
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(22),
-                  borderSide: const BorderSide(color: Color(0xFF263445)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(22),
-                  borderSide: const BorderSide(color: Color(0xFF263445)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(22),
-                  borderSide: const BorderSide(color: Color(0xFF4F9DFF)),
+                  borderSide: BorderSide.none,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
-                  vertical: 12,
+                  vertical: 10,
+                ),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.sentiment_satisfied_alt, color: Color(0xFF91A3B7)),
+                  onPressed: () {},
                 ),
               ),
               onChanged: (_) => setState(() {}),
@@ -381,19 +417,27 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
               },
             ),
           ),
-          const SizedBox(width: 10),
-          IconButton.filled(
-            tooltip: '发送',
-            onPressed: canSend ? () => _submit(model) : null,
-            style: IconButton.styleFrom(
-              backgroundColor: const Color(0xFF3390EC),
-              disabledBackgroundColor: const Color(0xFF263445),
+          const SizedBox(width: 8),
+          if (canSend)
+            IconButton(
+              tooltip: '发送',
+              onPressed: () => _submit(model),
+              icon: Icon(
+                _busy ? Icons.more_horiz : Icons.send,
+                color: const Color(0xFF40A7E3),
+                size: 28,
+              ),
+            )
+          else
+            IconButton(
+              tooltip: '语音留言',
+              onPressed: () {},
+              icon: const Icon(
+                Icons.mic_none,
+                color: Color(0xFF91A3B7),
+                size: 28,
+              ),
             ),
-            icon: Icon(
-              _busy ? Icons.more_horiz : Icons.arrow_upward,
-              color: Colors.white,
-            ),
-          ),
         ],
       ),
     );
@@ -403,11 +447,9 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     final text = _composer.text.trim();
     switch (_kind) {
       case MiniAppBotKind.globalDharma:
-        return text.isNotEmpty || model.hasFiles;
       case MiniAppBotKind.flashcards:
-        return text.isNotEmpty;
       case MiniAppBotKind.platformPublish:
-        return _platforms.isNotEmpty && (text.isNotEmpty || model.hasFiles);
+        return text.isNotEmpty;
       case MiniAppBotKind.botFather:
       case MiniAppBotKind.assistant:
       case MiniAppBotKind.thirdParty:
@@ -418,13 +460,9 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   void _submit(FileTransferModel model) {
     switch (_kind) {
       case MiniAppBotKind.globalDharma:
-        unawaited(_startGlobal(model));
-        return;
       case MiniAppBotKind.flashcards:
-        unawaited(_startFlashcards());
-        return;
       case MiniAppBotKind.platformPublish:
-        unawaited(_startPublish(model));
+        _startMiniAppChat();
         return;
       case MiniAppBotKind.botFather:
         unawaited(_startBotFather());
@@ -434,6 +472,23 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
         unawaited(_startGenericBotChat());
         return;
     }
+  }
+
+  void _startMiniAppChat() {
+    final text = _composer.text.trim();
+    if (text.isEmpty) return;
+    _composer.clear();
+    setState(() {
+      _botMessages.add(_ChatMessage.user(text));
+      _botMessages.add(_ChatMessage.miniAppAction(
+        '已收到消息，正在后台静默处理。您随时可以点击下方组件进入应用查看。',
+        '打开 ${_bot.title}',
+      ));
+    });
+    _scrollBottom();
+    
+    // Send to background silent webview
+    _miniAppMessageController.add(text);
   }
 
   Future<void> _startBotFather() async {
@@ -558,36 +613,10 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   }
 
   void _openMiniAppPanel([SocialFeatureBot? panelBot]) {
-    final targetBot = panelBot ?? _activePanelBot;
-    final wide = MediaQuery.sizeOf(context).width >= 980;
-    if (wide) {
-      setState(() {
-        _panelBot = targetBot;
-        _miniAppPanelOpen = panelBot != null ? true : !_miniAppPanelOpen;
-      });
-      return;
-    }
-    setState(() => _panelBot = targetBot);
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.86,
-        minChildSize: 0.45,
-        maxChildSize: 0.96,
-        builder: (context, controller) {
-          return Container(
-            padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-            decoration: const BoxDecoration(
-              color: Color(0xFF0B111A),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: MiniAppHostScreen(bot: targetBot, inline: true),
-          );
-        },
-      ),
-    );
+    setState(() {
+      if (panelBot != null) _panelBot = panelBot;
+      _miniAppPanelOpen = panelBot != null ? true : !_miniAppPanelOpen;
+    });
   }
 
   Future<void> _startGlobal(FileTransferModel model) async {
@@ -1003,17 +1032,30 @@ class _ChatMessage {
     required this.isUser,
     this.isError = false,
     this.deck,
+    this.isMiniAppAction = false,
+    this.actionLabel,
+    this.cliTaskId,
+    this.cliLogs,
   });
   String text;
   final bool isUser;
   final bool isError;
   final FlashcardDeck? deck;
+  final bool isMiniAppAction;
+  final String? actionLabel;
+  final String? cliTaskId;
+  List<String>? cliLogs;
+
   factory _ChatMessage.user(String text) => _ChatMessage(text, isUser: true);
   factory _ChatMessage.bot(String text) => _ChatMessage(text, isUser: false);
   factory _ChatMessage.error(String text) =>
       _ChatMessage(text, isUser: false, isError: true);
   factory _ChatMessage.deck(String text, FlashcardDeck deck) =>
       _ChatMessage(text, isUser: false, deck: deck);
+  factory _ChatMessage.miniAppAction(String text, String actionLabel) =>
+      _ChatMessage(text, isUser: false, isMiniAppAction: true, actionLabel: actionLabel);
+  factory _ChatMessage.cliTask(String text, String taskId) =>
+      _ChatMessage(text, isUser: false, cliTaskId: taskId, cliLogs: []);
 }
 
 class _MessageBubble extends StatelessWidget {
@@ -1021,27 +1063,34 @@ class _MessageBubble extends StatelessWidget {
     required this.message,
     required this.bot,
     required this.onDeck,
+    required this.onOpenMiniApp,
   });
   final _ChatMessage message;
   final SocialFeatureBot bot;
   final ValueChanged<FlashcardDeck> onDeck;
+  final VoidCallback onOpenMiniApp;
+
   @override
   Widget build(BuildContext context) {
     final user = message.isUser;
     return Align(
       alignment: user ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 14),
-        constraints: const BoxConstraints(maxWidth: 620),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        margin: const EdgeInsets.only(bottom: 6),
+        constraints: const BoxConstraints(maxWidth: 420),
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
         decoration: BoxDecoration(
           color: user
               ? const Color(0xFF2B5278)
               : message.isError
               ? const Color(0xFF4B2028)
               : const Color(0xFF182433),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFF263445)),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(user ? 16 : 4),
+            bottomRight: Radius.circular(user ? 4 : 16),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1049,32 +1098,102 @@ class _MessageBubble extends StatelessWidget {
           children: [
             if (!user)
               Padding(
-                padding: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
                   bot.title,
                   style: const TextStyle(
-                    color: Color(0xFF91A3B7),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF40A7E3),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-            Text(
-              message.text,
-              style: TextStyle(
-                color: message.isError ? const Color(0xFFFFD4D8) : Colors.white,
-                fontSize: 15,
-                height: 1.48,
-                fontWeight: user ? FontWeight.w700 : FontWeight.w500,
-              ),
+            Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.end,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 12.0),
+                  child: Text(
+                    message.text,
+                    style: TextStyle(
+                      color: message.isError ? const Color(0xFFFFD4D8) : Colors.white,
+                      fontSize: 15,
+                      height: 1.4,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '10:42', // Placeholder time
+                      style: TextStyle(
+                        color: user ? const Color(0xFF75AEEB) : const Color(0xFF728196),
+                        fontSize: 11,
+                      ),
+                    ),
+                    if (user) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.done_all, color: Color(0xFF40A7E3), size: 14),
+                    ],
+                  ],
+                ),
+              ],
             ),
             if (message.deck != null)
               Padding(
-                padding: const EdgeInsets.only(top: 12),
+                padding: const EdgeInsets.only(top: 8),
                 child: FilledButton.icon(
                   onPressed: () => onDeck(message.deck!),
                   icon: const Icon(Icons.play_arrow_rounded),
                   label: const Text('开始背诵'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF2A394C),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            if (message.isMiniAppAction)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: FilledButton.icon(
+                  onPressed: onOpenMiniApp,
+                  icon: const Icon(Icons.web_asset),
+                  label: Text(message.actionLabel ?? '打开应用'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF2A394C),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 44),
+                  ),
+                ),
+              ),
+            if (message.cliTaskId != null && message.cliLogs != null)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(12),
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF263445)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.terminal, color: Colors.greenAccent, size: 16),
+                        SizedBox(width: 8),
+                        Text('执行日志', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (message.cliLogs!.isEmpty)
+                      const Text('等待输出...', style: TextStyle(color: Colors.grey, fontSize: 13, fontFamily: 'monospace')),
+                    ...message.cliLogs!.map((log) => Text(log, style: const TextStyle(color: Colors.greenAccent, fontSize: 13, fontFamily: 'monospace'))),
+                  ],
                 ),
               ),
           ],
