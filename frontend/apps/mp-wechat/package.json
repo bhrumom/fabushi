@@ -21,15 +21,15 @@
     "@tarojs/runtime": "^4.1.6",
     "@tarojs/shared": "^4.2.0",
     "@tarojs/taro": "^4.1.6",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@babel/preset-react": "^7.29.7",
     "@tarojs/cli": "^4.1.6",
     "@tarojs/plugin-platform-weapp": "^4.1.6",
     "@tarojs/webpack5-runner": "^4.1.6",
-    "@types/react": "^19.1.4",
+    "@types/react": "^18.2.0",
     "babel-preset-taro": "^4.2.0"
   }
 }

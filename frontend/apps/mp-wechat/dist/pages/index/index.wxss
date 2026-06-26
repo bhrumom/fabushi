@@ -1,0 +1,309 @@
+/*!******************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************!*\
+  !*** css ../../node_modules/.pnpm/css-loader@7.1.4_webpack@5.91.0_@swc+core@1.3.96_@swc+helpers@0.5.15__postcss@8.5.15_/node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[1].oneOf[0].use[1]!../../node_modules/.pnpm/postcss-loader@8.2.1_postcss@8.5.15_typescript@5.9.3_webpack@5.91.0_@swc+core@1.3.96_@s_228e585fe9e668d15b027f5bb6b0ad93/node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[1].oneOf[0].use[2]!../../node_modules/.pnpm/resolve-url-loader@5.0.0/node_modules/resolve-url-loader/index.js!../../node_modules/.pnpm/sass-loader@14.2.1_sass@1.101.0_webpack@5.91.0_@swc+core@1.3.96_@swc+helpers@0.5.15__postcss@8.5.15_/node_modules/sass-loader/dist/cjs.js??ruleSet[1].rules[1].oneOf[0].use[4]!./src/pages/index/index.scss ***!
+  \******************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************/
+.chat-page {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 72rpx 28rpx 132rpx;
+  background: radial-gradient(circle at 48% 0%, rgba(34, 75, 86, 0.62), transparent 32%), linear-gradient(180deg, #28313a 0%, #1a2025 48%, #111417 100%);
+}
+
+.topbar {
+  position: fixed;
+  z-index: 8;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 92rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 28rpx;
+}
+
+.brand {
+  color: #ffffff;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.menu-button {
+  position: absolute;
+  top: 16rpx;
+  height: 60rpx;
+  left: 24rpx;
+  width: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(19, 28, 34, 0.78);
+  color: #ffffff;
+  font-size: 32rpx;
+}
+
+.chat-main {
+  min-height: calc(100vh - 204rpx);
+}
+
+.intro {
+  margin-top: 120rpx;
+}
+
+.greeting {
+  display: block;
+  color: #ffffff;
+  font-size: 58rpx;
+  font-weight: 900;
+  line-height: 1.18;
+}
+
+.subtitle {
+  display: block;
+  margin-top: 22rpx;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 44rpx;
+}
+
+.suggestion {
+  height: 72rpx;
+  padding: 0 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  border-radius: 999rpx;
+  background: rgba(31, 32, 37, 0.88);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 27rpx;
+  font-weight: 800;
+}
+
+.suggestion-icon {
+  color: #7cc8ff;
+  font-size: 30rpx;
+}
+
+.messages {
+  margin-top: 50rpx;
+  padding-bottom: 24rpx;
+}
+
+.message {
+  max-width: 86%;
+  margin-top: 18rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 8rpx;
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+
+.message.assistant {
+  color: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.message.user {
+  margin-left: auto;
+  color: #111417;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.composer {
+  position: fixed;
+  z-index: 8;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: 26rpx;
+  min-height: 88rpx;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 10rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.16);
+  border-radius: 44rpx;
+  background: rgba(41, 42, 46, 0.92);
+  box-shadow: 0 18rpx 48rpx rgba(0, 0, 0, 0.32);
+}
+
+.add-button,
+.send-button {
+  width: 68rpx;
+  height: 68rpx;
+  min-width: 68rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #393b40;
+  color: #ffffff;
+  font-size: 42rpx;
+  font-weight: 500;
+}
+
+.send-button {
+  background: #45474d;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.chat-input {
+  flex: 1;
+  height: 64rpx;
+  padding: 0 18rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.16);
+  border-radius: 32rpx;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 27rpx;
+}
+
+.scrim {
+  position: fixed;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.sidebar {
+  position: fixed;
+  z-index: 21;
+  left: -92vw;
+  top: 0;
+  bottom: 0;
+  width: 86vw;
+  padding: 82rpx 42rpx 42rpx;
+  border-top-right-radius: 30rpx;
+  border-bottom-right-radius: 30rpx;
+  background: #1f2025;
+  transition: left 220ms ease;
+}
+
+.sidebar.open {
+  left: 0;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sidebar-title {
+  color: #ffffff;
+  font-size: 58rpx;
+  font-weight: 900;
+}
+
+.close-button {
+  width: 70rpx;
+  height: 70rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c6c7cc;
+  background: transparent;
+  font-size: 58rpx;
+}
+
+.sidebar-user {
+  margin-top: 60rpx;
+}
+
+.user-profile {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.user-avatar {
+  width: 100rpx;
+  height: 100rpx;
+  border-radius: 50%;
+  background: #2a2d33;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.user-name {
+  color: #ffffff;
+  font-size: 36rpx;
+  font-weight: 800;
+}
+
+.user-membership {
+  color: #7cc8ff;
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.wechat-login-btn {
+  height: 100rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16rpx;
+  border-radius: 20rpx;
+  background: #07c160;
+  color: #ffffff;
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.wechat-icon {
+  font-size: 44rpx;
+}
+
+.new-chat {
+  height: 116rpx;
+  margin-top: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22rpx;
+  border-radius: 34rpx;
+  background: #30353a;
+  color: #ffffff;
+  font-size: 36rpx;
+  font-weight: 800;
+}
+
+.new-chat-icon {
+  font-size: 44rpx;
+}
+
+.today {
+  display: block;
+  margin-top: 70rpx;
+  color: #777981;
+  font-size: 40rpx;
+  font-weight: 900;
+}
+
+.empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 58%;
+  display: flex;
+  justify-content: center;
+  color: #bbbcc2;
+  font-size: 38rpx;
+  font-weight: 900;
+}

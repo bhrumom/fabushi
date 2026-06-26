@@ -1029,35 +1029,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildSettingsCategorySidebar() {
     final categories = [
       ('account', Icons.person_outline, '个人资料'),
-      ('system', Icons.settings_outlined, '系统设置'),
-      ('appearance', Icons.light_mode_outlined, '外观'),
-      ('config', Icons.tune_outlined, '配置'),
-      ('personalization', Icons.color_lens_outlined, '个性化'),
-      ('pets', Icons.pets_outlined, 'Pets'),
-      ('shortcuts', Icons.keyboard_outlined, '键盘快捷键'),
-      ('snapshots', Icons.camera_alt_outlined, '应用快照'),
-      ('mcp', Icons.integration_instructions_outlined, 'MCP 服务器'),
-      ('browser', Icons.language_outlined, '浏览器'),
-      ('desktop', Icons.computer_outlined, '电脑操控'),
-      ('hooks', Icons.anchor_outlined, '钩子'),
-      ('connection', Icons.link_outlined, '连接'),
-      ('git', Icons.code_outlined, 'Git'),
-      ('environment', Icons.monitor_outlined, '环境'),
-      ('worktree', Icons.account_tree_outlined, '工作树'),
-      ('agent', Icons.extension_outlined, '智能体设置'),
-      ('memory', Icons.psychology_outlined, '记忆'),
-      ('model', Icons.view_in_ar_outlined, '模型'),
-      ('data', Icons.storage_outlined, '数据管理'),
-      ('security', Icons.shield_outlined, '安全中心'),
+      ('system', Icons.settings_outlined, '通用设置'),
+      ('security', Icons.lock_outline, '隐私与安全'),
+      ('data', Icons.storage_outlined, '数据与存储'),
+      ('advanced', Icons.tune_outlined, '高级设置'),
       ('help', Icons.help_outline, '帮助与反馈'),
     ];
 
     return Container(
       width: 250,
-      color: const Color(0xFFF0F1F0),
-      padding: const EdgeInsets.fromLTRB(12, 34, 12, 20),
+      color: const Color(0xFF17212B),
+      padding: const EdgeInsets.fromLTRB(12, 24, 12, 20),
       child: ListView(
         children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 12, 12, 20),
+            child: Text(
+              '设置',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
           for (final item in categories)
             _SettingsCategoryTile(
               icon: item.$2,
@@ -1072,32 +1067,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildSettingsCategoryContent() {
     final title = switch (_settingsCategory) {
-      'system' => '常规',
+      'system' => '通用设置',
       'account' => '个人资料',
-      'appearance' => '外观',
-      'config' => '配置',
-      'personalization' => '个性化',
-      'pets' => 'Pets',
-      'shortcuts' => '键盘快捷键',
-      'snapshots' => '应用快照',
-      'mcp' => 'MCP 服务器',
-      'browser' => '浏览器',
-      'desktop' => '电脑操控',
-      'hooks' => '钩子',
-      'connection' => '连接',
-      'git' => 'Git',
-      'environment' => '环境',
-      'worktree' => '工作树',
-      'agent' => '智能体设置',
-      'memory' => '记忆',
-      'model' => '模型',
-      'data' => '数据管理',
-      'security' => '安全中心',
+      'security' => '隐私与安全',
+      'data' => '数据与存储',
+      'advanced' => '高级设置',
       'help' => '帮助与反馈',
       _ => '设置',
     };
 
-    return Padding(
+    return Container(
+      color: const Color(0xFF0E1621),
       padding: const EdgeInsets.fromLTRB(36, 34, 36, 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1108,9 +1088,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Text(
                   title,
                   style: const TextStyle(
-                    color: Color(0xFF202124),
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -1123,7 +1103,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Navigator.maybePop(context);
                   }
                 },
-                icon: const Icon(Icons.close),
+                icon: const Icon(Icons.close, color: Color(0xFF91A3B7)),
               ),
             ],
           ),
@@ -1145,10 +1125,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     switch (_settingsCategory) {
       case 'system':
         return [
+          _buildSettingsSectionTitle('常规'),
+          _SettingsLightRow(
+            icon: Icons.language,
+            title: '显示语言',
+            subtitle: '设置应用程序界面的显示语言。',
+            trailing: const Text('中文(简体)', style: TextStyle(color: Color(0xFF91A3B7))),
+          ),
+          _SettingsLightRow(
+            icon: Icons.keyboard_return,
+            title: '发送消息',
+            subtitle: '设置聊天输入框中发送消息的快捷键。',
+            trailing: const Text('Enter', style: TextStyle(color: Color(0xFF91A3B7))),
+          ),
+          _SettingsLightRow(
+            icon: Icons.open_in_full,
+            title: '桌面窗口',
+            subtitle: '已允许调整大小、最大化和系统全屏。',
+          ),
+          const SizedBox(height: 24),
           _buildSettingsSectionTitle('工作模式'),
           const Text(
             '选择 Codex 显示多少技术细节',
-            style: TextStyle(color: Colors.black54, fontSize: 13),
+            style: TextStyle(color: Color(0xFF91A3B7), fontSize: 13),
           ),
           const SizedBox(height: 16),
           Row(
@@ -1160,34 +1159,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 32),
-
-          _buildSettingsSectionTitle('权限'),
-          _buildSettingsSwitchRow(
-            '默认权限',
-            '默认情况下，Codex 可以读取并编辑其工作区中的文件。必要时，它可以请求额外的访问权限',
-            true,
-            (_) {},
-          ),
-          _buildSettingsSwitchRow(
-            '自动审核',
-            'Codex 可以读取和编辑其工作区中的文件。Codex 会自动审核额外的访问权限请求。自动审核可能会出错。',
-            true,
-            (_) {},
-          ),
-          _buildSettingsSwitchRow(
-            '完全访问权限',
-            '当 Codex 以完全访问权限运行时，无需你批准，即可编辑你的电脑上的任何文件并运行联网命令。',
-            true,
-            (_) {},
-          ),
-          const SizedBox(height: 32),
-
-          _buildSettingsSectionTitle('常规'),
-          _buildSettingsDropdownRow('默认打开目标', '默认打开文件和文件夹的位置', 'Default app'),
-          _buildSettingsDropdownRow('语言', '应用 UI 语言', '自动检测'),
-          _buildSettingsSwitchRow('在菜单栏中显示', '', true, (_) {}),
-          const SizedBox(height: 40),
         ];
       case 'account':
         return [
@@ -1207,18 +1178,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           _buildLogoutItem(context),
         ];
-      case 'agent':
+      case 'security':
         return [
-          if (AiBackendPolicy.isDesktopNative) _buildOpenClawSettingCard(),
-          _SettingsLightRow(
-            icon: Icons.auto_awesome,
-            title: '技能自动更新',
-            subtitle: '保持已安装技能为最新版。',
-            trailing: Switch(value: true, onChanged: (_) {}),
+          _buildSettingsSectionTitle('权限'),
+          _buildSettingsSwitchRow(
+            '默认权限',
+            '默认情况下，Codex 可以读取并编辑其工作区中的文件。必要时，它可以请求额外的访问权限',
+            true,
+            (_) {},
           ),
+          _buildSettingsSwitchRow(
+            '自动审核',
+            'Codex 可以读取和编辑其工作区中的文件。Codex 会自动审核额外的访问权限请求。自动审核可能会出错。',
+            true,
+            (_) {},
+          ),
+          _buildSettingsSwitchRow(
+            '完全访问权限',
+            '当 Codex 以完全访问权限运行时，无需你批准，即可编辑你的电脑上的任何文件并运行联网命令。',
+            true,
+            (_) {},
+          ),
+          const SizedBox(height: 24),
+          _buildSettingsSectionTitle('个人隐私'),
+          _SettingsLightRow(
+            icon: Icons.visibility_outlined,
+            title: '修行隐私',
+            subtitle: '控制修行排行榜与公开记录的展示范围。',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PracticePrivacyScreen()),
+            ),
+          ),
+          _buildDeleteAccountItem(context),
         ];
-      case 'memory':
+      case 'data':
         return [
+          _buildSettingsSectionTitle('存储与缓存'),
           _SettingsLightRow(
             icon: Icons.history,
             title: '对话记忆',
@@ -1231,29 +1227,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: '复制或打开 OpenClaw 和桌面控制日志。',
             onTap: _openDiagnosticLogLocation,
           ),
-        ];
-      case 'model':
-        return [_buildModelSettingCard()];
-      case 'data':
-        return [
+          const SizedBox(height: 24),
+          _buildSettingsSectionTitle('数据偏好'),
           _buildTtsMuteSettingItem(),
           _buildRecitationThresholdSettings(),
         ];
-      case 'security':
+      case 'advanced':
         return [
+          _buildSettingsSectionTitle('模型与引擎'),
+          _buildModelSettingCard(),
+          const SizedBox(height: 24),
+          _buildSettingsSectionTitle('智能体控制'),
+          if (AiBackendPolicy.isDesktopNative) _buildOpenClawSettingCard(),
           _SettingsLightRow(
-            icon: Icons.visibility_outlined,
-            title: '修行隐私',
-            subtitle: '控制修行排行榜与公开记录的展示范围。',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PracticePrivacyScreen()),
-            ),
+            icon: Icons.auto_awesome,
+            title: '技能自动更新',
+            subtitle: '保持已安装技能为最新版。',
+            trailing: Switch(value: true, onChanged: (_) {}, activeColor: const Color(0xFF40A7E3)),
           ),
-          _buildDeleteAccountItem(context),
+          if (Platform.isAndroid)
+            _SettingsLightRow(
+              icon: Icons.battery_saver,
+              title: '后台保活设置',
+              subtitle: '防止应用被系统清理。',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const KeepAliveGuideScreen()),
+              ),
+            ),
         ];
       case 'help':
         return [
+          _buildSettingsSectionTitle('支持'),
           _SettingsLightRow(
             icon: Icons.help_outline,
             title: '帮助与反馈',
@@ -1267,55 +1272,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: _showAbout,
           ),
         ];
-      case 'appearance':
-      case 'config':
-      case 'personalization':
-      case 'pets':
-      case 'shortcuts':
-      case 'snapshots':
-      case 'mcp':
-      case 'browser':
-      case 'desktop':
-      case 'hooks':
-      case 'connection':
-      case 'git':
-      case 'environment':
-      case 'worktree':
-        return const [
-          Center(
-            child: Text('此页面正在建设中', style: TextStyle(color: Colors.black54)),
-          ),
-        ];
       default:
-        return [
-          _SettingsLightRow(
-            icon: Icons.language,
-            title: '显示语言',
-            subtitle: '设置应用程序界面的显示语言。',
-            trailing: const Text('中文(简体)'),
-          ),
-          _SettingsLightRow(
-            icon: Icons.keyboard_return,
-            title: '发送消息',
-            subtitle: '设置聊天输入框中发送消息的快捷键。',
-            trailing: const Text('Enter'),
-          ),
-          _SettingsLightRow(
-            icon: Icons.open_in_full,
-            title: '桌面窗口',
-            subtitle: '已允许调整大小、最大化和系统全屏。',
-          ),
-          if (Platform.isAndroid)
-            _SettingsLightRow(
-              icon: Icons.battery_saver,
-              title: '后台保活设置',
-              subtitle: '防止应用被系统清理。',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const KeepAliveGuideScreen()),
-              ),
-            ),
-        ];
+        return const [SizedBox()];
     }
   }
 

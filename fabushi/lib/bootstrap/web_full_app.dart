@@ -8,7 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../models/file_transfer_model.dart'
     if (dart.library.html) '../models/file_transfer_model_web.dart';
 import '../models/settings_model.dart';
-import '../screens/main_navigation_screen_web.dart' deferred as web_login;
+import '../widgets/auth/unified_login_dialog.dart';
 import '../widgets/app_wrapper.dart';
 
 class WebFullApp extends StatelessWidget {
@@ -33,7 +33,7 @@ class WebFullApp extends StatelessWidget {
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             localeListResolutionCallback:
                 AppLocalizations.localeListResolutionCallback,
-            routes: {'/login': (_) => const _DeferredWebLoginScreen()},
+            routes: {'/login': (_) => const _UnifiedLoginRouteScreen()},
             theme: AppTheme.webFastTheme,
             darkTheme: AppTheme.webFastTheme,
             themeMode: ThemeMode.dark,
@@ -45,31 +45,16 @@ class WebFullApp extends StatelessWidget {
   }
 }
 
-class _DeferredWebLoginScreen extends StatefulWidget {
-  const _DeferredWebLoginScreen();
-
-  @override
-  State<_DeferredWebLoginScreen> createState() =>
-      _DeferredWebLoginScreenState();
-}
-
-class _DeferredWebLoginScreenState extends State<_DeferredWebLoginScreen> {
-  late final Future<void> _loader = web_login.loadLibrary();
+class _UnifiedLoginRouteScreen extends StatelessWidget {
+  const _UnifiedLoginRouteScreen();
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
-      future: _loader,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.done) {
-          return web_login.WebLoginRouteScreen();
-        }
-
-        return const Scaffold(
-          backgroundColor: Color(0xFF09070B),
-          body: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-        );
-      },
+    return const Scaffold(
+      backgroundColor: Color(0xFF09070B),
+      body: Center(
+        child: UnifiedLoginDialog(),
+      ),
     );
   }
 }

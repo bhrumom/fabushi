@@ -1,6 +1,17 @@
+:root {
+  --space-deep-blue: #0b0e14;
+  --space-blue: #1b263b;
+  --starlight-white: #e8eaf6;
+  --nebula-purple: #7b1fa2;
+  --nebula-pink: #e91e63;
+  --cosmic-gold: #ffd700;
+  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-surface: rgba(255, 255, 255, 0.1);
+}
+
 page {
-  background: #080b10;
-  color: #fff9eb;
+  background: var(--space-deep-blue);
+  color: var(--starlight-white);
   font-family: "PingFang SC", "Hiragino Sans GB", sans-serif;
 }
 
@@ -21,4 +32,20 @@ button {
 
 button::after {
   border: 0;
+}
+
+/* Glassmorphism Utilities */
+.glass-card {
+  background: var(--glass-surface);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  backdrop-filter: blur(20px);
+}
+
+.cosmic-gradient {
+  background: linear-gradient(135deg, var(--space-deep-blue), #1a237e);
+}
+
+.nebula-gradient {
+  background: linear-gradient(135deg, var(--nebula-purple), var(--nebula-pink));
 }
