@@ -37,7 +37,7 @@ export default function PlatformPublishApp() {
       let progress = 0;
       const interval = setInterval(() => {
         progress += 25;
-        console.log(`[${new Date().toISOString()}] 部署进度 ${progress}%...`);
+        console.log("[" + new Date().toISOString() + "] 部署进度 " + progress + "%...");
         if (progress >= 100) {
           clearInterval(interval);
           console.log("✅ 发布任务已成功完成！");
