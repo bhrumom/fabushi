@@ -94,6 +94,7 @@ export * from "./faliu-merit-benefits-t0278-shiqi-brahma";
 export * from "./faliu-merit-benefits-t0278-juan2";
 export * from "./faliu-merit-benefits-t0278-juan2-lushena-opening";
 export * from "./faliu-merit-benefits-t0278-juan3";
+export * from "./faliu-merit-benefits-t0278-juan3-vajra-enclosure";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import * as t0263Juan10 from "./faliu-merit-benefits-t0263-juan10";
@@ -191,6 +192,7 @@ import * as t0278Juan1ShiqiBrahma from "./faliu-merit-benefits-t0278-shiqi-brahm
 import * as t0278Juan2 from "./faliu-merit-benefits-t0278-juan2";
 import * as t0278Juan2LushenaOpening from "./faliu-merit-benefits-t0278-juan2-lushena-opening";
 import * as t0278Juan3 from "./faliu-merit-benefits-t0278-juan3";
+import * as t0278Juan3VajraEnclosure from "./faliu-merit-benefits-t0278-juan3-vajra-enclosure";
 
 const overrideMeritBenefits = {
   "T0263:10": [
@@ -323,7 +325,10 @@ const overrideMeritBenefits = {
     ...t0278Juan2.T0278_JUAN_2_MERIT_BENEFITS,
     ...t0278Juan2LushenaOpening.T0278_JUAN_2_LUSHENA_OPENING_MERIT_BENEFITS,
   ],
-  "T0278:3": t0278Juan3.T0278_JUAN_3_MERIT_BENEFITS,
+  "T0278:3": [
+    ...t0278Juan3.T0278_JUAN_3_MERIT_BENEFITS,
+    ...t0278Juan3VajraEnclosure.T0278_JUAN_3_VAJRA_ENCLOSURE_MERIT_BENEFITS,
+  ],
 };
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
