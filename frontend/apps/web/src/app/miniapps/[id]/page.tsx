@@ -32,7 +32,7 @@ export default async function MiniAppPage({ params }: MiniAppPageProps) {
               const output = document.getElementById("output");
               window.addEventListener("fabushi-miniapp-ready", async () => {
                 output.textContent += "\\n\\nSDK 就绪！正在读取上下文...\\n";
-                const res = await window.FabushiMiniApp.invoke("app.getContext");
+                const res = await (window as any).FabushiMiniApp.invoke("app.getContext");
                 output.textContent += JSON.stringify(res, null, 2);
               });
             `

@@ -11,7 +11,7 @@ export default function PlatformPublishApp() {
   const [deployTaskId, setDeployTaskId] = useState<string | null>(null);
 
   const handleTestLocalExecution = async () => {
-    if (!window.FabushiMiniApp) {
+    if (!(window as any).FabushiMiniApp) {
       alert("SDK 尚未就绪");
       return;
     }
@@ -46,7 +46,7 @@ export default function PlatformPublishApp() {
     `;
     
     try {
-      const fsRes = await window.FabushiMiniApp.invoke("fs.writeFile", {
+      const fsRes = await (window as any).FabushiMiniApp.invoke("fs.writeFile", {
         path: scriptPath,
         content: scriptContent
       });
@@ -54,7 +54,7 @@ export default function PlatformPublishApp() {
       
       // 2. Shell Execute
       // We pass it to the host, the host will create a Chat component and stream logs!
-      const shellRes = await window.FabushiMiniApp.invoke("shell.execute", {
+      const shellRes = await (window as any).FabushiMiniApp.invoke("shell.execute", {
         title: `部署流水线 (${platform})`,
         command: "node",
         arguments: [fsRes.path]

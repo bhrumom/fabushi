@@ -19,8 +19,8 @@ export default function GlobalDharmaApp() {
 
   useEffect(() => {
     // Check initial status
-    if (window.FabushiMiniApp?.ready) {
-      window.FabushiMiniApp.invoke("dharma.getSendStatus").then((res: any) => {
+    if ((window as any).FabushiMiniApp?.ready) {
+      (window as any).FabushiMiniApp.invoke("dharma.getSendStatus").then((res: any) => {
         setStatus(res);
       });
     }
@@ -102,12 +102,12 @@ export default function GlobalDharmaApp() {
   }, [status?.isTransferring]);
 
   const handleStart = async () => {
-    if (!window.FabushiMiniApp) {
+    if (!(window as any).FabushiMiniApp) {
       log("SDK 尚未就绪");
       return;
     }
     log("正在启动全球法布施传输...");
-    const res = await window.FabushiMiniApp.invoke("dharma.startGlobalSend", {
+    const res = await (window as any).FabushiMiniApp.invoke("dharma.startGlobalSend", {
       title: "小程序全球法布施",
       text: text || "愿以此功德，普及于一切。",
     });
@@ -116,17 +116,17 @@ export default function GlobalDharmaApp() {
   };
 
   const handleStop = async () => {
-    if (!window.FabushiMiniApp) return;
+    if (!(window as any).FabushiMiniApp) return;
     log("正在停止全球传输...");
-    const res = await window.FabushiMiniApp.invoke("dharma.stopGlobalSend");
+    const res = await (window as any).FabushiMiniApp.invoke("dharma.stopGlobalSend");
     setStatus(res.data);
     log("传输已停止。");
   };
 
   const handleTestLoopback = async () => {
-    if (!window.FabushiMiniApp) return;
+    if (!(window as any).FabushiMiniApp) return;
     log("测试本地回环 (127.0.0.1)...");
-    const res = await window.FabushiMiniApp.invoke("localLoopback.fetch", {
+    const res = await (window as any).FabushiMiniApp.invoke("localLoopback.fetch", {
       url: "http://127.0.0.1:8080/health",
       method: "GET"
     });

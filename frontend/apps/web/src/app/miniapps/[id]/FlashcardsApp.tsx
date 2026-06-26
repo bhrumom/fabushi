@@ -18,7 +18,7 @@ export default function FlashcardsApp() {
       log("请输入需要制卡的内容");
       return;
     }
-    if (!window.FabushiMiniApp) {
+    if (!(window as any).FabushiMiniApp) {
       log("SDK 尚未就绪");
       return;
     }
@@ -26,7 +26,7 @@ export default function FlashcardsApp() {
     setLoading(true);
     log(`正在使用 ${mode === 'ai' ? 'AI智能提取' : '随机挖空'} 模式制卡...`);
     
-    const res = await window.FabushiMiniApp.invoke("flashcards.createDeck", {
+    const res = await (window as any).FabushiMiniApp.invoke("flashcards.createDeck", {
       title: "新闪卡集",
       text: fullText,
       mode: mode
