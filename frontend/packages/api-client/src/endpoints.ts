@@ -1,4 +1,5 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_FABUSHI_API_BASE_URL ?? "https://flutter.ombhrum.com";
+const env = typeof process !== "undefined" ? process.env : (globalThis as any).process?.env;
+export const API_BASE_URL = env?.NEXT_PUBLIC_FABUSHI_API_BASE_URL ?? "https://flutter.ombhrum.com";
 
 export const endpoints = {
   health: "/health",

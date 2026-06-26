@@ -92,9 +92,18 @@ class _AlipayWebLoginScreenState extends State<AlipayWebLoginScreen> {
   }
 
   bool _isAppCallbackUrl(String url) {
-    return url.startsWith('com.ombhrum.fabushi://') ||
+    if (url.startsWith('com.ombhrum.fabushi://') ||
         url.startsWith('globaldharma://') ||
-        url.startsWith('fabushi://');
+        url.startsWith('fabushi://')) {
+      return true;
+    }
+    
+    // Intercept web callbacks that contain the auth code
+    if (url.contains('auth_code=') || url.contains('alipay_auth_code=')) {
+      return true;
+    }
+    
+    return false;
   }
 
   bool _isExternalAlipayUrl(Uri uri) {

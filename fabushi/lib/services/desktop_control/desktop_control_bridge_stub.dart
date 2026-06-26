@@ -46,6 +46,7 @@ class DesktopControlBridge {
     String toolName,
     Map<String, dynamic> arguments, {
     String? confirmationId,
+    bool trustedMiniApp = false,
   }) async {
     return DesktopControlToolResult.failure(
       errorCode: 'unsupported_platform',

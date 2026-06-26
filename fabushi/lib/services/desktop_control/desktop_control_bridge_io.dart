@@ -225,6 +225,7 @@ class DesktopControlBridge {
     String toolName,
     Map<String, dynamic> arguments, {
     String? confirmationId,
+    bool trustedMiniApp = false,
   }) async {
     if (!_enabledByBuild()) {
       return DesktopControlToolResult.failure(
@@ -245,7 +246,8 @@ class DesktopControlBridge {
       return DesktopControlPolicy.unsupportedPlatform(platform);
     }
 
-    if (DesktopControlPolicy.requiresConfirmation(toolName)) {
+    if (DesktopControlPolicy.requiresConfirmation(toolName) &&
+        !trustedMiniApp) {
       final approved =
           confirmationId != null &&
           _confirmations.consumeApproved(

@@ -560,7 +560,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     FileTransferModel model,
     AuthModel? authModel,
   ) {
-    final bool isEmpty = _homeChatMessages.isEmpty && !_forceGlobeMode;
+    final bool isEmpty =
+        _homeChatMessages.isEmpty && !_forceGlobeMode && !_showMaterialGallery;
 
     return DecoratedBox(
       decoration: const BoxDecoration(color: Colors.transparent),
@@ -594,18 +595,14 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                       ),
                       const SizedBox(height: 32),
                       _buildDesktopChatComposer(context, model),
-                      const SizedBox(
-                        height: 100,
-                      ),
+                      const SizedBox(height: 100),
                     ],
                   ),
                 ),
               ),
             )
           else ...[
-            Expanded(
-              child: _buildDesktopWorkspace(context, model, authModel),
-            ),
+            Expanded(child: _buildDesktopWorkspace(context, model, authModel)),
             Padding(
               padding: const EdgeInsets.fromLTRB(34, 8, 34, 26),
               child: Align(
@@ -651,6 +648,15 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     FileTransferModel model,
     AuthModel? authModel,
   ) {
+    if (_showMaterialGallery) {
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 980),
+          child: _buildMaterialGallery(model),
+        ),
+      );
+    }
+
     final showChat =
         _homeChatMessages.isNotEmpty ||
         _isAiGenerating ||
@@ -1151,7 +1157,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   label: const Text('新建任务'),
                   style: FilledButton.styleFrom(
                     backgroundColor: buttonBackground,
-                    disabledBackgroundColor: Colors.white.withValues(alpha: 0.08),
+                    disabledBackgroundColor: Colors.white.withValues(
+                      alpha: 0.08,
+                    ),
                     foregroundColor: primaryText,
                     minimumSize: const Size.fromHeight(44),
                     shape: RoundedRectangleBorder(
@@ -2938,7 +2946,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 children: [
                   _ComposerChip(
                     icon: Icons.self_improvement,
-                    label: '法布施',
+                    label:
+                        _dharmaComposerTarget == DharmaComposerTarget.platform
+                        ? '法布施到平台'
+                        : '全球法布施',
                     active: true,
                     onRemove: () => _clearDharmaMode(model),
                   ),
@@ -2954,7 +2965,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   else ...[
                     _ComposerChip(
                       icon: Icons.public,
-                      label: '地区 ${_regionSummary(model)}',
+                      label: '地区模式 ${_regionSummary(model)}',
                       active:
                           model.isGlobalSendEnabled ||
                           model.isFieldEnergyMode ||
@@ -3094,6 +3105,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       controller: _chatInputController,
       isBusy: isBusy,
       canSubmit: canSubmit,
+      topContent: _buildDesktopComposerChips(model, isBusy: isBusy),
+      hintText: _desktopComposerHintText(model),
       onTextChanged: () => setState(() {}),
       onAddActionSelected: (action) => _handleSendMenuAction(model, action),
       modelOptions: _desktopModelOptions,
@@ -3109,6 +3122,136 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         _submitComposer(model);
       },
     );
+  }
+
+  Widget? _buildDesktopComposerChips(
+    FileTransferModel model, {
+    required bool isBusy,
+  }) {
+    if (!_isFlashcardComposerMode && !_isDharmaComposerMode) return null;
+
+    final children = <Widget>[];
+    if (_isFlashcardComposerMode) {
+      children.addAll([
+        _ComposerChip(
+          icon: Icons.style_outlined,
+          label: '背诵闪卡',
+          active: true,
+          onRemove: _isFlashcardGenerating ? null : _clearFlashcardMode,
+        ),
+        _ComposerChip(
+          icon: _flashcardMode == FlashcardCreationMode.aiCards
+              ? Icons.auto_awesome
+              : Icons.auto_fix_high,
+          label: '模式 ${_flashcardMode.label}',
+          active: true,
+          onTap: isBusy ? null : _appendFlashcardModeChoiceMessage,
+        ),
+        if (_activeFlashcardContent != null)
+          _ComposerChip(
+            icon: _activeFlashcardContent!.hasDocument
+                ? Icons.description_outlined
+                : Icons.article_outlined,
+            label: _activeFlashcardContent!.hasDocument
+                ? '文档 ${_activeFlashcardContent!.title}'
+                : '内容 ${_activeFlashcardContent!.title}',
+            active: true,
+            onTap: () => _showPreparedContentDocument(_activeFlashcardContent!),
+            onRemove: isBusy
+                ? null
+                : () => setState(() => _activeFlashcardContent = null),
+          ),
+      ]);
+    } else if (_isDharmaComposerMode) {
+      children.add(
+        _ComposerChip(
+          icon: Icons.self_improvement,
+          label: _dharmaComposerTarget == DharmaComposerTarget.platform
+              ? '法布施到平台'
+              : '全球法布施',
+          active: true,
+          onRemove: () => _clearDharmaMode(model),
+        ),
+      );
+
+      if (_dharmaComposerTarget == DharmaComposerTarget.platform) {
+        children.add(
+          _ComposerChip(
+            icon: Icons.campaign_outlined,
+            label: '平台 ${_platformSummary()}',
+            active: _selectedPublishPlatforms.isNotEmpty,
+            onTap: isBusy ? null : () => _showPublishPlatformSelector(),
+          ),
+        );
+      } else {
+        children.addAll([
+          _ComposerChip(
+            icon: Icons.public,
+            label: '地区模式 ${_regionSummary(model)}',
+            active:
+                model.isGlobalSendEnabled ||
+                model.isFieldEnergyMode ||
+                model.isLocalLoopbackEnabled,
+            onTap: isBusy ? null : () => _showRegionSelector(model),
+          ),
+          _ComposerChip(
+            icon: Icons.loop,
+            label: model.isLooping ? '循环' : '单轮',
+            active: model.isLooping,
+            onTap: isBusy
+                ? null
+                : () {
+                    model.setLooping(!model.isLooping);
+                    setState(() {});
+                  },
+          ),
+        ]);
+      }
+
+      if (model.hasFiles) {
+        children.add(
+          _ComposerChip(
+            icon: _contentIcon(model.selectedContentKind),
+            label: model.selectedContentTitle.isEmpty
+                ? '图片'
+                : model.selectedContentTitle,
+            active: true,
+            onTap: model.hasSelectedContentPreview
+                ? () => _showSelectedContentPreview(model)
+                : null,
+            onRemove: isBusy
+                ? null
+                : () {
+                    model.clearFiles();
+                    setState(() {});
+                  },
+          ),
+        );
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Wrap(spacing: 7, runSpacing: 7, children: children),
+    );
+  }
+
+  String _desktopComposerHintText(FileTransferModel model) {
+    if (_isDharmaComposerMode) {
+      if (_dharmaComposerTarget == DharmaComposerTarget.platform) {
+        return model.hasFiles ? '可继续输入发布说明' : '粘贴要发布的链接或正文';
+      }
+      return model.hasFiles ? '可继续输入法布施文字或链接' : '输入文字或链接';
+    }
+    if (_isFlashcardComposerMode) {
+      if (_flashcardMode == FlashcardCreationMode.aiCards) {
+        return _activeFlashcardContent == null
+            ? '粘贴链接或正文，发送后 AI 制卡'
+            : '输入制卡要求，例如：按重点概念出题';
+      }
+      return '输入链接或正文，发送后自动挖空';
+    }
+    return '随心输入';
   }
 
   // ignore: unused_element
@@ -3517,6 +3660,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       r'^(请|帮我|我要|开始|进行|自动|去|把|将)*全球?法布施(一下|吧|。|！|!)*$',
     ).hasMatch(compact);
   }
+
   void _submitComposer(FileTransferModel model) {
     if (_isFlashcardComposerMode) {
       unawaited(_startFlashcardGeneration(model));

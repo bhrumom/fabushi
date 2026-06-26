@@ -45,6 +45,8 @@ class CodexDesktopChatInput extends StatefulWidget {
   final VoidCallback onSubmit;
   final VoidCallback? onTextChanged;
   final FutureOr<bool> Function(String action)? onAddActionSelected;
+  final Widget? topContent;
+  final String hintText;
   final List<CodexDesktopModelOption> modelOptions;
   final String selectedModelId;
   final ValueChanged<String>? onModelChanged;
@@ -59,6 +61,8 @@ class CodexDesktopChatInput extends StatefulWidget {
     this.canSubmit = false,
     this.onTextChanged,
     this.onAddActionSelected,
+    this.topContent,
+    this.hintText = '随心输入',
     this.modelOptions = defaultModelOptions,
     this.selectedModelId = 'deepseek-chat',
     this.onModelChanged,
@@ -137,6 +141,7 @@ class _CodexDesktopChatInputState extends State<CodexDesktopChatInput> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (widget.topContent != null) widget.topContent!,
               TextField(
                 controller: widget.controller,
                 minLines: 2,
@@ -149,11 +154,19 @@ class _CodexDesktopChatInputState extends State<CodexDesktopChatInput> {
                   height: 1.36,
                 ),
                 cursorColor: Colors.white,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   border: InputBorder.none,
-                  hintText: '随心输入',
-                  hintStyle: TextStyle(color: Color(0xFF747478), fontSize: 16),
-                  contentPadding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  hintText: widget.hintText,
+                  hintStyle: const TextStyle(
+                    color: Color(0xFF747478),
+                    fontSize: 16,
+                  ),
+                  contentPadding: EdgeInsets.fromLTRB(
+                    16,
+                    widget.topContent == null ? 16 : 10,
+                    16,
+                    8,
+                  ),
                 ),
                 onChanged: (_) => widget.onTextChanged?.call(),
                 onSubmitted: (_) {
