@@ -533,13 +533,13 @@ function miniAppEntryUrl(req, miniAppId) {
   return origin ? new URL(pathName, `${origin}/`).toString() : pathName;
 }
 
-function sanitizeMiniAppPermissions(value, _options = {}) {
+function sanitizeMiniAppPermissions(value, { allowHighRisk = false } = {}) {
   const raw = Array.isArray(value) ? value : [];
   const normalized = raw
     .map((item) => readText(item).toLowerCase())
     .filter((item) => /^[a-z][a-z0-9_.:-]{0,64}$/.test(item));
   const deduped = [...new Set(['app.context', 'bot.chat', ...normalized])];
-  return deduped;
+  return deduped.filter((permission) => allowHighRisk || !miniAppHighRiskPermissions.has(permission));
 }
 
 function miniAppScan(permissions, sourceHtml = '') {
