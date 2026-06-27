@@ -163,7 +163,7 @@ class MiniAppRegistry {
   factory MiniAppRegistry.fromJson(Map<String, dynamic> json) {
     return MiniAppRegistry(
       schemaVersion: _readInt(json['schemaVersion']) ?? 1,
-      hostApiVersion: _readString(json, 'hostApiVersion', fallback: '1.0'),
+      hostApiVersion: _readString(json, 'hostApiVersion', fallback: '1.2'),
       bots: (json['bots'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => MiniAppBot.fromJson(Map<String, dynamic>.from(item)))
@@ -274,6 +274,8 @@ MiniAppRegistry defaultMiniAppRegistry() {
   final permissions = <String>[
     'app.context',
     'bot.chat',
+    'auth.session',
+    'payments.alipay',
     'dharma.share',
     'flashcards.create',
     'platform.publish',
@@ -281,6 +283,7 @@ MiniAppRegistry defaultMiniAppRegistry() {
     'projects.read',
     'openclaw.status',
     'openclaw.chat',
+    'wifi.hotspot',
     'local.loopback',
     'desktop.control',
     'fs.readWrite',
@@ -347,7 +350,7 @@ MiniAppRegistry defaultMiniAppRegistry() {
   ];
   return MiniAppRegistry(
     schemaVersion: 1,
-    hostApiVersion: '1.0',
+    hostApiVersion: '1.2',
     bots: bots,
     miniApps: [
       for (final bot in bots)
@@ -357,7 +360,7 @@ MiniAppRegistry defaultMiniAppRegistry() {
           title: bot.title,
           subtitle: bot.subtitle,
           entryUrl: 'https://fabushi.ombhrum.com/miniapps/${bot.miniAppId}',
-          version: '1.0.0',
+          version: '1.2.0',
           permissions: bot.permissions,
           surfaces: const ['homePinned', 'chatPanel'],
           theme: 'telegramDark',

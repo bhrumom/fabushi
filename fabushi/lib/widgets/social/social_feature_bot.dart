@@ -111,6 +111,16 @@ extension SocialFeatureBotTypeX on SocialFeatureBotType {
           botId: 'bot.global-dharma',
           miniAppId: 'official.global-dharma',
           kind: MiniAppBotKind.globalDharma,
+          permissions: [
+            'app.context',
+            'bot.chat',
+            'auth.session',
+            'payments.alipay',
+            'dharma.share',
+            'files.pick',
+            'wifi.hotspot',
+            'local.loopback',
+          ],
         );
       case SocialFeatureBotType.flashcards:
         return const SocialFeatureBot(
@@ -126,6 +136,11 @@ extension SocialFeatureBotTypeX on SocialFeatureBotType {
           botId: 'bot.flashcards',
           miniAppId: 'official.flashcards',
           kind: MiniAppBotKind.flashcards,
+          permissions: [
+            'app.context',
+            'bot.chat',
+            'flashcards.create',
+          ],
         );
       case SocialFeatureBotType.platformPublish:
         return const SocialFeatureBot(
@@ -141,6 +156,15 @@ extension SocialFeatureBotTypeX on SocialFeatureBotType {
           botId: 'bot.platform-publish',
           miniAppId: 'official.platform-publish',
           kind: MiniAppBotKind.platformPublish,
+          permissions: [
+            'app.context',
+            'bot.chat',
+            'platform.publish',
+            'files.pick',
+            'fs.readWrite',
+            'shell.execute',
+            'browser.external',
+          ],
         );
       case SocialFeatureBotType.assistant:
         return const SocialFeatureBot(
