@@ -146,6 +146,9 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                   borderRadius: wide ? null : const BorderRadius.vertical(top: Radius.circular(24)),
                 ),
                 child: MiniAppHostScreen(
+                  key: ValueKey(
+                    '${_activePanelBot.stableBotId}:${_activePanelBot.stableMiniAppId}:${_activePanelBot.stableMiniAppEntryUrl}',
+                  ),
                   bot: _activePanelBot,
                   inline: true,
                   messageStream: _miniAppMessageController.stream,
