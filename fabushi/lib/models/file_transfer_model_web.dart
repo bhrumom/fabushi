@@ -83,6 +83,9 @@ class FileTransferModel extends ChangeNotifier {
   bool get isLocalLoopbackEnabled => _isLocalLoopbackEnabled;
   bool get isFieldEnergyMode => _isFieldEnergyMode;
   bool get needsHotspotGuide => _needsHotspotGuide;
+  String get hotspotMessage => kIsWeb && _isFieldEnergyMode
+      ? 'Web 平台不支持自动开启热点'
+      : '';
   bool get isTransferring => _isTransferring;
   bool get isPreparingSend => _isPreparingSend;
   String get preparingSendMessage => _preparingSendMessage;

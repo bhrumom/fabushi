@@ -1,169 +1,246 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { ExternalLink, FileText, FolderOpen, Play, RefreshCw, Terminal, Upload } from "lucide-react";
 import "./miniapps.css";
 
+type Platform = {
+  id: string;
+  label: string;
+  url: string;
+};
+
+const platforms: Platform[] = [
+  { id: "wechat", label: "微信公众号", url: "https://mp.weixin.qq.com/" },
+  { id: "xiaohongshu", label: "小红书", url: "https://creator.xiaohongshu.com/" },
+  { id: "zhihu", label: "知乎", url: "https://www.zhihu.com/creator" },
+];
+
+class HostInvokeError extends Error {
+  code?: string;
+
+  constructor(response: any) {
+    super(response?.message || "宿主调用失败");
+    this.name = "HostInvokeError";
+    this.code = response?.errorCode;
+  }
+}
+
+async function invokeHost(method: string, params: Record<string, any> = {}) {
+  const sdk = (window as any).FabushiMiniApp;
+  if (!sdk?.invoke) throw new Error("SDK 尚未就绪");
+  const res = await sdk.invoke(method, params);
+  if (!res?.ok) throw new HostInvokeError(res);
+  return res.data;
+}
+
+function slugTime() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
 export default function PlatformPublishApp() {
-  const [title, setTitle] = useState("测试文章标题");
+  const [title, setTitle] = useState("法布施文章");
   const [text, setText] = useState("");
-  const [platform, setPlatform] = useState("wechat");
+  const [platformId, setPlatformId] = useState("wechat");
+  const [draft, setDraft] = useState<any>(null);
+  const [savedPath, setSavedPath] = useState("");
   const [running, setRunning] = useState(false);
-  const [deployTaskId, setDeployTaskId] = useState<string | null>(null);
+  const [capabilities, setCapabilities] = useState<string[]>([]);
+  const [logs, setLogs] = useState<string[]>([]);
 
-  const handleTestLocalExecution = async () => {
-    if (!(window as any).FabushiMiniApp) {
-      alert("SDK 尚未就绪");
-      return;
-    }
-    
-    setRunning(true);
-    
-    // 1. Write File (Testing Unrestricted Path)
-    // We'll write to a relatively safe absolute path on Mac: ~/Documents
-    // Note: JS doesn't natively know ~ so we just use the user-provided generic path.
-    // We'll just pass a generic name, the JS bridge currently uses getApplicationDocumentsDirectory() internally 
-    // unless p.isAbsolute(path) is true. We'll pass an absolute path to test.
-    const scriptPath = "/tmp/fabushi_publish_test_script.js"; 
-    
-    const scriptContent = `
-      console.log("==========================================");
-      console.log("[Playwright CLI / 自动化流水线] 已接管进程");
-      console.log("==========================================");
-      console.log("正在解析发布清单...");
-      console.log("-> 目标平台: ${platform}");
-      console.log("-> 稿件标题: ${title}");
-      console.log("-> 稿件长度: ${text.length} 字符");
-      
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += 25;
-        console.log("[" + new Date().toISOString() + "] 部署进度 " + progress + "%...");
-        if (progress >= 100) {
-          clearInterval(interval);
-          console.log("✅ 发布任务已成功完成！");
-        }
-      }, 800);
-    `;
-    
+  const platform = useMemo(
+    () => platforms.find((item) => item.id === platformId) || platforms[0],
+    [platformId],
+  );
+
+  const log = (message: string) => {
+    setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
+  };
+
+  useEffect(() => {
+    const refresh = () => {
+      if (!(window as any).FabushiMiniApp?.ready) return;
+      invokeHost("app.getCapabilities")
+        .then((data) => setCapabilities(data?.capabilities || []))
+        .catch((error) => log(error.message));
+    };
+    refresh();
+    window.addEventListener("fabushi-miniapp-ready", refresh);
+    return () => window.removeEventListener("fabushi-miniapp-ready", refresh);
+  }, []);
+
+  const hasCapability = (permission: string) => capabilities.includes(permission);
+
+  const handlePickFiles = async () => {
     try {
-      const fsRes = await (window as any).FabushiMiniApp.invoke("fs.writeFile", {
-        path: scriptPath,
-        content: scriptContent
-      });
-      if (!fsRes.ok) throw new Error(fsRes.message);
-      
-      // 2. Shell Execute
-      // We pass it to the host, the host will create a Chat component and stream logs!
-      const shellRes = await (window as any).FabushiMiniApp.invoke("shell.execute", {
-        title: `部署流水线 (${platform})`,
-        command: "node",
-        arguments: [fsRes.path]
-      });
-      
-      if (!shellRes.ok) {
-         // It might fail, but logs are in the chat anyway
-      }
-      setDeployTaskId(Date.now().toString()); // Just to show state change
+      const data = await invokeHost("files.pick", { replaceExisting: false });
+      log(data?.selected ? "已加入本地文件素材。" : "未选择文件。");
+    } catch (error: any) {
+      log(error.message || "选择文件失败");
+    }
+  };
 
-    } catch (e: any) {
-      alert(`流水线异常中断: ${e.message}`);
+  const handleCreateDraft = async () => {
+    setRunning(true);
+    try {
+      const data = await invokeHost("platformPublish.createDraft", { title, text });
+      setDraft(data);
+      setTitle(data?.title || title);
+      if (data?.body) setText(data.body);
+      log("草稿已生成。");
+    } catch (error: any) {
+      log(error.message || "生成草稿失败");
     } finally {
       setRunning(false);
     }
   };
 
+  const handleSaveDraft = async () => {
+    const body = draft?.body || text;
+    if (!body.trim()) {
+      log("请先输入正文或生成草稿。");
+      return;
+    }
+    setRunning(true);
+    try {
+      const markdown = `# ${draft?.title || title}\n\n${body}\n`;
+      const data = await invokeHost("fs.writeFile", {
+        path: `platform-publish/${platform.id}-${slugTime()}.md`,
+        content: markdown,
+      });
+      setSavedPath(data?.path || "");
+      log(`草稿已写入：${data?.path || "本地小程序目录"}`);
+    } catch (error: any) {
+      log(error.message || "写入本地文件失败");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const handleRunPipeline = async () => {
+    const body = draft?.body || text;
+    if (!body.trim()) {
+      log("请先准备草稿正文。");
+      return;
+    }
+    setRunning(true);
+    try {
+      const script = [
+        `console.log("Fabushi platform pipeline: ${platform.label}");`,
+        `console.log("title: ${JSON.stringify(draft?.title || title)}");`,
+        `console.log("body chars: ${body.length}");`,
+        savedPath
+          ? `console.log("draft file: ${JSON.stringify(savedPath)}");`
+          : `console.log("draft file: not saved yet");`,
+        `console.log("ready to hand off to browser automation.");`,
+      ].join("\n");
+      const file = await invokeHost("fs.writeFile", {
+        path: `platform-publish/run-${platform.id}-${slugTime()}.js`,
+        content: script,
+      });
+      await invokeHost("shell.execute", {
+        title: `${platform.label} 发布流水线`,
+        command: "node",
+        arguments: [file.path],
+      });
+      log("终端流水线已交给宿主执行。");
+    } catch (error: any) {
+      log(error.message || "终端流水线启动失败");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const handleOpenPlatform = async () => {
+    try {
+      await invokeHost("browser.open", { url: platform.url });
+      log(`已打开：${platform.label}`);
+    } catch (error: any) {
+      log(error.message || "打开平台失败");
+    }
+  };
+
+  const handleRefreshSpec = async () => {
+    try {
+      const data = await invokeHost("app.getHostApiSpec");
+      log(`宿主 API ${data?.hostApiVersion || ""} 已就绪。`);
+    } catch (error: any) {
+      log(error.message || "读取宿主能力失败");
+    }
+  };
+
   return (
-    <div className="ma-container" style={{ padding: 0, display: "flex", height: "100vh", overflow: "hidden" }}>
-      {/* Sidebar */}
-      <div style={{ 
-        width: 240, 
-        background: "#1C2433", 
-        borderRight: "1px solid #263445",
-        padding: "24px 16px"
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #FF9F43, #E67E22)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-          </div>
-          <span style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>Publish Platform</span>
+    <div className="ma-panel ma-fade-in" style={{ "--accent-start": "#FF9F43", "--accent-end": "#E67E22", "--accent-rgb": "255, 159, 67" } as any}>
+      <div className="ma-title-row">
+        <div>
+          <h1 className="ma-header-title">法布施到平台</h1>
+          <p className="ma-header-subtitle">{platform.label} · {savedPath ? "已保存草稿" : "待准备草稿"}</p>
         </div>
-
-        <div style={{ fontSize: 12, color: "#91A3B7", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>部署目标</div>
-        <div 
-          onClick={() => setPlatform("wechat")}
-          style={{ padding: "10px 14px", borderRadius: 8, background: platform === "wechat" ? "rgba(255,159,67,0.1)" : "transparent", color: platform === "wechat" ? "#FF9F43" : "#91A3B7", cursor: "pointer", fontWeight: 600, marginBottom: 4 }}
-        >
-          WeChat 公众号
-        </div>
-        <div 
-          onClick={() => setPlatform("xiaohongshu")}
-          style={{ padding: "10px 14px", borderRadius: 8, background: platform === "xiaohongshu" ? "rgba(255,159,67,0.1)" : "transparent", color: platform === "xiaohongshu" ? "#FF9F43" : "#91A3B7", cursor: "pointer", fontWeight: 600, marginBottom: 4 }}
-        >
-          Xiaohongshu 小红书
-        </div>
-        <div 
-          onClick={() => setPlatform("zhihu")}
-          style={{ padding: "10px 14px", borderRadius: 8, background: platform === "zhihu" ? "rgba(255,159,67,0.1)" : "transparent", color: platform === "zhihu" ? "#FF9F43" : "#91A3B7", cursor: "pointer", fontWeight: 600 }}
-        >
-          Zhihu 知乎
-        </div>
+        <button className="ma-icon-btn" onClick={handleRefreshSpec} aria-label="刷新宿主能力">
+          <RefreshCw size={18} />
+        </button>
       </div>
 
-      {/* Main Content */}
-      <div style={{ flex: 1, padding: "32px 40px", overflowY: "auto", background: "#0B111A" }}>
-        <div style={{ maxWidth: 800 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 800, margin: "0 0 8px 0" }}>Create Draft</h1>
-          <p style={{ color: "#91A3B7", marginBottom: 32 }}>配置并生成您的多平台发布草稿，准备进行底层 Playwright 自动化调度。</p>
-
-          <div style={{ background: "#17212B", border: "1px solid #263445", borderRadius: 12, padding: 24 }}>
-            <label className="ma-label" style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: 0.5 }}>Draft Title</label>
-            <input 
-              style={{
-                width: "100%", background: "#0B111A", border: "1px solid #263445",
-                borderRadius: "8px", padding: "12px 16px", color: "#fff", marginBottom: "24px",
-                fontFamily: "inherit", fontSize: "15px", boxSizing: "border-box",
-                transition: "border-color 0.2s"
-              }}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-
-            <label className="ma-label" style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: 0.5 }}>Markdown Body</label>
-            <textarea
-              style={{
-                width: "100%", background: "#0B111A", border: "1px solid #263445",
-                borderRadius: "8px", padding: "16px", color: "#fff", marginBottom: "24px",
-                fontFamily: "inherit", fontSize: "15px", boxSizing: "border-box",
-                minHeight: 200, resize: "vertical"
-              }}
-              placeholder="Start writing or paste markdown here..."
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-            />
-
-            {deployTaskId ? (
-              <div style={{ background: "rgba(76, 175, 122, 0.1)", border: "1px solid rgba(76, 175, 122, 0.3)", borderRadius: 8, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#4CAF7A", boxShadow: "0 0 10px #4CAF7A" }} />
-                <div>
-                  <div style={{ color: "#4CAF7A", fontWeight: 700 }}>部署任务已挂起并发送至宿主</div>
-                  <div style={{ color: "#91A3B7", fontSize: 13, marginTop: 4 }}>请将本面板下滑收起，在机器人聊天流中查看实时的终端日志更新。</div>
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button 
-                  className="ma-btn" 
-                  onClick={handleTestLocalExecution} 
-                  disabled={running}
-                  style={{ width: "auto", "--accent-start": "#FF9F43", "--accent-end": "#E67E22" } as any}
-                >
-                  {running ? "Dispatching..." : "Deploy to Platform"}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+      <label className="ma-label">平台</label>
+      <div className="ma-segment-grid">
+        {platforms.map((item) => (
+          <button
+            key={item.id}
+            className={`ma-chip-btn ${platform.id === item.id ? "active" : ""}`}
+            onClick={() => setPlatformId(item.id)}
+          >
+            <Upload size={15} />
+            {item.label}
+          </button>
+        ))}
       </div>
+
+      <label className="ma-label">标题</label>
+      <input className="ma-input" value={title} onChange={(event) => setTitle(event.target.value)} />
+
+      <label className="ma-label">正文</label>
+      <textarea
+        className="ma-textarea ma-textarea-tall"
+        placeholder="粘贴 Markdown、正文或链接。"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+      />
+
+      {savedPath && (
+        <div className="ma-selected-content">
+          <FileText size={15} />
+          <span>{savedPath}</span>
+        </div>
+      )}
+
+      <div className="ma-action-row ma-action-row-wrap">
+        <button className="ma-btn" onClick={handleCreateDraft} disabled={running}>
+          <FileText size={18} />
+          生成草稿
+        </button>
+        <button className="ma-btn ma-btn-secondary" onClick={handleSaveDraft} disabled={running || !hasCapability("fs.readWrite")}>
+          <FolderOpen size={18} />
+          保存文件
+        </button>
+        <button className="ma-btn ma-btn-secondary" onClick={handleRunPipeline} disabled={running || !hasCapability("shell.execute")}>
+          <Terminal size={18} />
+          运行终端
+        </button>
+        <button className="ma-btn ma-btn-secondary" onClick={handleOpenPlatform} disabled={!hasCapability("browser.external")}>
+          <ExternalLink size={18} />
+          打开平台
+        </button>
+        <button className="ma-btn ma-btn-secondary" onClick={handlePickFiles} disabled={!hasCapability("files.pick")}>
+          <Play size={18} />
+          选文件
+        </button>
+      </div>
+
+      {logs.length > 0 && (
+        <div className="ma-log-box">
+          {logs.map((item, index) => <div key={index}>{item}</div>)}
+        </div>
+      )}
     </div>
   );
 }
