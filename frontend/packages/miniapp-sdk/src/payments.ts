@@ -34,7 +34,7 @@ function normalizePayment(raw: AnyRecord, invoiceId?: string): InvoicePaymentRes
     ...raw,
     invoiceId: String(raw.invoiceId ?? raw.id ?? invoiceId ?? ""),
     orderId: typeof raw.orderId === "string" ? raw.orderId : undefined,
-    status: paid ? "paid" : pending ? "pending" : String(raw.status ?? status.toLowerCase() || "unknown"),
+    status: paid ? "paid" : pending ? "pending" : String(raw.status ?? (status.toLowerCase() || "unknown")),
     paid,
     pending,
   };
