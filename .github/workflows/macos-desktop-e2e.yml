@@ -1,0 +1,222 @@
+name: macOS desktop E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Desktop GitHub Release tag to test. Use latest by default.
+        required: false
+        default: latest
+        type: string
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: macos-desktop-e2e-${{ github.event.inputs.release_tag || github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos-release-e2e:
+    name: macOS Release desktop E2E
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'desktop-')
+    runs-on: macos-latest
+    timeout-minutes: 35
+    env:
+      EVIDENCE_DIR: ${{ runner.temp }}/macos-desktop-e2e-evidence
+    steps:
+      - name: Checkout test helpers
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/scripts/assert-openclaw-bundle.sh
+
+      - name: Prepare evidence folders
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR/logs" "$EVIDENCE_DIR/screenshots" "$EVIDENCE_DIR/json" "$EVIDENCE_DIR/release"
+          {
+            echo "# macOS desktop E2E"
+            echo
+            echo "- Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "- Runner: $(sw_vers -productName) $(sw_vers -productVersion) / $(uname -m)"
+            echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } >> "$GITHUB_STEP_SUMMARY"
+          {
+            sw_vers
+            uname -a
+            xcodebuild -version || true
+            gh --version || true
+          } > "$EVIDENCE_DIR/logs/00-environment.log" 2>&1
+
+      - name: Resolve desktop release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag || github.event.release.tag_name || 'latest' }}
+        run: |
+          set -euo pipefail
+          tag="$INPUT_RELEASE_TAG"
+          if [ -z "$tag" ] || [ "$tag" = "latest" ]; then
+            tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          fi
+          if [[ "$tag" != desktop-* ]]; then
+            echo "Resolved release is not a desktop release: $tag" | tee "$EVIDENCE_DIR/logs/01-release-metadata.log"
+            exit 1
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,name,publishedAt,isLatest,assets,targetCommitish,url > "$EVIDENCE_DIR/json/release.json"
+          jq -r '. | "Release: \(.tagName)\nName: \(.name)\nPublished: \(.publishedAt)\nLatest: \(.isLatest)\nURL: \(.url)\nAssets:\n" + ([.assets[].name] | map("- " + .) | join("\n"))' "$EVIDENCE_DIR/json/release.json" | tee "$EVIDENCE_DIR/logs/01-release-metadata.log"
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "- Release: \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download macOS release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*macos-*.zip' --dir "$EVIDENCE_DIR/release" --clobber
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*macos-*.dmg' --dir "$EVIDENCE_DIR/release" --clobber || true
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'SHA256SUMS.txt' --dir "$EVIDENCE_DIR/release" --clobber || true
+          find "$EVIDENCE_DIR/release" -maxdepth 1 -type f -print | sort | tee "$EVIDENCE_DIR/logs/02-downloaded-assets.log"
+
+      - name: Verify checksums and install app
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f "$EVIDENCE_DIR/release/SHA256SUMS.txt" ]; then
+            (cd "$EVIDENCE_DIR/release" && grep -E 'macos-|SHA256SUMS' SHA256SUMS.txt | shasum -a 256 -c -) | tee "$EVIDENCE_DIR/logs/03-sha256.log"
+          else
+            echo "SHA256SUMS.txt was not present in release assets" | tee "$EVIDENCE_DIR/logs/03-sha256.log"
+          fi
+          arch="$(uname -m)"
+          case "$arch" in
+            arm64) zip_pattern='*macos-arm64.zip'; openclaw_platform='macos-arm64' ;;
+            *) zip_pattern='*macos-x64.zip'; openclaw_platform='macos-x64' ;;
+          esac
+          zip_path="$(find "$EVIDENCE_DIR/release" -maxdepth 1 -name "$zip_pattern" -print -quit)"
+          if [ -z "$zip_path" ]; then
+            zip_path="$(find "$EVIDENCE_DIR/release" -maxdepth 1 -name '*macos-*.zip' -print -quit)"
+          fi
+          if [ -z "$zip_path" ]; then
+            echo "No macOS ZIP asset was downloaded" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/installed"
+          ditto -x -k "$zip_path" "$RUNNER_TEMP/installed"
+          app_path="$(find "$RUNNER_TEMP/installed" -maxdepth 3 -name '*.app' -type d -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "No .app bundle found after unzip" >&2
+            find "$RUNNER_TEMP/installed" -maxdepth 4 -print | sort
+            exit 1
+          fi
+          echo "app_path=$app_path" >> "$GITHUB_OUTPUT"
+          echo "openclaw_platform=$openclaw_platform" >> "$GITHUB_OUTPUT"
+          {
+            echo "Installed app: $app_path"
+            find "$app_path" -maxdepth 4 -print | sort | head -200
+            /usr/libexec/PlistBuddy -c Print "$app_path/Contents/Info.plist" || true
+          } > "$EVIDENCE_DIR/logs/04-installed-app-structure.log" 2>&1
+
+      - name: Validate package CLI and gateway
+        id: cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_path='${{ steps.install.outputs.app_path }}'
+          openclaw_platform='${{ steps.install.outputs.openclaw_platform }}'
+          cli="$app_path/Contents/MacOS/global_dharma_sharing_cli"
+          if [ ! -x "$cli" ]; then
+            echo "CLI missing or not executable: $cli" >&2
+            exit 1
+          fi
+          ./.github/scripts/assert-openclaw-bundle.sh "$app_path" "$openclaw_platform" | tee "$EVIDENCE_DIR/logs/05-openclaw-bundle.log"
+          doctor_json="$($cli doctor --json)"
+          echo "$doctor_json" | tee "$EVIDENCE_DIR/json/06-doctor.json"
+          jq -e '.ok == true' <<<"$doctor_json" >/dev/null
+          gateway_json="$($cli gateway-smoke --timeout-seconds 120 --json --verbose 2> >(tee "$EVIDENCE_DIR/logs/07-gateway-stderr.log" >&2))"
+          echo "$gateway_json" | tee "$EVIDENCE_DIR/json/07-gateway-smoke.json"
+          jq -e '.ok == true' <<<"$gateway_json" >/dev/null
+
+      - name: Launch desktop app and capture step screenshots
+        if: always() && steps.install.outputs.app_path != ''
+        shell: bash
+        run: |
+          set -uo pipefail
+          app_path='${{ steps.install.outputs.app_path }}'
+          status=0
+          xattr -dr com.apple.quarantine "$app_path" 2>/dev/null || true
+          screencapture -x "$EVIDENCE_DIR/screenshots/08-before-launch.png" || true
+          open -n "$app_path" > "$EVIDENCE_DIR/logs/08-open-command.log" 2>&1 || status=1
+          sleep 12
+          osascript -e 'tell application "System Events" to get name of every process whose background only is false' > "$EVIDENCE_DIR/logs/09-visible-processes.log" 2>&1 || true
+          screencapture -x "$EVIDENCE_DIR/screenshots/09-after-launch.png" || true
+          pgrep -fl global_dharma_sharing > "$EVIDENCE_DIR/logs/10-process-check.log" 2>&1 || status=1
+          if [ "$status" -ne 0 ]; then
+            echo "Desktop app launch/process check failed; see screenshots and logs." >&2
+            exit "$status"
+          fi
+
+      - name: Record mini app coverage status
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$EVIDENCE_DIR/logs/11-miniapp-coverage.log" <<'EOF'
+Mini app E2E chain required by the hourly guard:
+- enter
+- load
+- core interaction
+- return to desktop
+- exception recovery
+- desktop/mini-app state consistency
+
+Current automated evidence in this workflow:
+- macOS release package download and checksum evidence
+- app bundle structure evidence
+- packaged CLI doctor evidence
+- OpenClaw gateway route evidence
+- GUI launch screenshot evidence when earlier package checks allow the app to launch
+
+Coverage gap:
+No stable macOS accessibility selector map, deep link, CLI test hook, or scripted mini-app route contract is currently available in the release package. This workflow preserves the gap as explicit evidence instead of claiming mini-app coverage passed.
+EOF
+          cat "$EVIDENCE_DIR/logs/11-miniapp-coverage.log" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write result summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo
+            echo "## Evidence"
+            echo "- Artifact: macos-desktop-e2e-evidence"
+            echo "- Logs: logs/*.log"
+            echo "- JSON: json/*.json"
+            echo "- Screenshots: screenshots/*.png"
+            echo
+            echo "## Coverage"
+            echo "- Install/package/checksum: captured"
+            echo "- Startup/process: captured when package checks permit launch"
+            echo "- Gateway core route: captured by packaged CLI"
+            echo "- Mini-app chain: explicit coverage gap recorded in logs/11-miniapp-coverage.log"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-desktop-e2e-evidence
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
