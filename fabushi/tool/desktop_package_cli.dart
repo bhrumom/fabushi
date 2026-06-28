@@ -374,11 +374,11 @@ Examples:
         'status=${models.statusCode} body=${_compact(models.body)}',
       );
 
-      final chat = await _httpPostJson(
+      final chat = await _httpPostRaw(
         baseUri.replace(path: '/v1/chat/completions'),
         token,
-        <String, dynamic>{},
-        const Duration(seconds: 10),
+        '{',
+        const Duration(seconds: 5),
       );
       final chatRouteOk =
           chat.statusCode != 404 &&
@@ -387,7 +387,7 @@ Examples:
       _check(
         'openai chat route',
         chatRouteOk,
-        'status=${chat.statusCode} body=${_compact(chat.body)}',
+        'fast-fail status=${chat.statusCode} body=${_compact(chat.body)}',
       );
     } finally {
       if (process != null) {
@@ -503,10 +503,10 @@ Examples:
     }
   }
 
-  Future<HttpResult> _httpPostJson(
+  Future<HttpResult> _httpPostRaw(
     Uri uri,
     String token,
-    Map<String, dynamic> body,
+    String body,
     Duration timeout,
   ) async {
     final client = HttpClient()..connectionTimeout = timeout;
@@ -517,7 +517,7 @@ Examples:
         HttpHeaders.contentTypeHeader,
         ContentType.json.mimeType,
       );
-      request.write(jsonEncode(body));
+      request.write(body);
       final response = await request.close().timeout(timeout);
       final responseBody = await utf8.decodeStream(response).timeout(timeout);
       return HttpResult(response.statusCode, responseBody);
