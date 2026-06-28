@@ -196,7 +196,7 @@ Usage: $cliExecutableName <command> [options]
 
 Commands:
   doctor          Validate the installed desktop package layout and embedded OpenClaw files.
-  gateway-smoke   Start the bundled OpenClaw Gateway and verify health, models, and chat route wiring.
+  gateway-smoke   Start the bundled OpenClaw Gateway and verify health and models routes.
   miniapp-smoke   Verify the built-in mini-app registry, host contract, recovery, and return-state wiring.
   all             Run gateway-smoke and miniapp-smoke.
   version         Print this CLI version.
@@ -379,20 +379,10 @@ Examples:
         'status=${models.statusCode} body=${_compact(models.body)}',
       );
 
-      final chat = await _httpPostJson(
-        baseUri.replace(path: '/v1/chat/completions'),
-        token,
-        <String, dynamic>{},
-        const Duration(seconds: 10),
-      );
-      final chatRouteOk =
-          chat.statusCode != 404 &&
-          chat.statusCode != 401 &&
-          chat.statusCode != 403;
       _check(
-        'openai chat route',
-        chatRouteOk,
-        'status=${chat.statusCode} body=${_compact(chat.body)}',
+        'gateway smoke scope',
+        true,
+        'validated packaged runtime, startup, health, and models routes; chat completion is intentionally excluded from installer gating because it can enter model execution paths',
       );
     } finally {
       if (process != null) {
@@ -590,29 +580,6 @@ Examples:
       final response = await request.close().timeout(timeout);
       final body = await utf8.decodeStream(response).timeout(timeout);
       return HttpResult(response.statusCode, body);
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  Future<HttpResult> _httpPostJson(
-    Uri uri,
-    String token,
-    Map<String, dynamic> body,
-    Duration timeout,
-  ) async {
-    final client = HttpClient()..connectionTimeout = timeout;
-    try {
-      final request = await client.postUrl(uri).timeout(timeout);
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
-      request.headers.set(
-        HttpHeaders.contentTypeHeader,
-        ContentType.json.mimeType,
-      );
-      request.write(jsonEncode(body));
-      final response = await request.close().timeout(timeout);
-      final responseBody = await utf8.decodeStream(response).timeout(timeout);
-      return HttpResult(response.statusCode, responseBody);
     } finally {
       client.close(force: true);
     }
