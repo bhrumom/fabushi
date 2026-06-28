@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { ExternalLink, FileText, FolderOpen, Play, RefreshCw, Terminal, Upload } from "lucide-react";
+import { bootMiniApp, fbApp, hostErrorMessage } from "./miniapp-runtime";
 import "./miniapps.css";
 
 type Platform = {
@@ -15,24 +16,6 @@ const platforms: Platform[] = [
   { id: "xiaohongshu", label: "小红书", url: "https://creator.xiaohongshu.com/" },
   { id: "zhihu", label: "知乎", url: "https://www.zhihu.com/creator" },
 ];
-
-class HostInvokeError extends Error {
-  code?: string;
-
-  constructor(response: any) {
-    super(response?.message || "宿主调用失败");
-    this.name = "HostInvokeError";
-    this.code = response?.errorCode;
-  }
-}
-
-async function invokeHost(method: string, params: Record<string, any> = {}) {
-  const sdk = (window as any).FabushiMiniApp;
-  if (!sdk?.invoke) throw new Error("SDK 尚未就绪");
-  const res = await sdk.invoke(method, params);
-  if (!res?.ok) throw new HostInvokeError(res);
-  return res.data;
-}
 
 function slugTime() {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -58,38 +41,42 @@ export default function PlatformPublishApp() {
   };
 
   useEffect(() => {
-    const refresh = () => {
-      if (!(window as any).FabushiMiniApp?.ready) return;
-      invokeHost("app.getCapabilities")
-        .then((data) => setCapabilities(data?.capabilities || []))
-        .catch((error) => log(error.message));
+    const refresh = async () => {
+      await bootMiniApp("official.platform-publish", "法布施到平台");
+      try {
+        setCapabilities(await fbApp.getCapabilities());
+      } catch (error) {
+        log(hostErrorMessage(error, "读取宿主能力失败"));
+      }
     };
-    refresh();
-    window.addEventListener("fabushi-miniapp-ready", refresh);
-    return () => window.removeEventListener("fabushi-miniapp-ready", refresh);
+    void refresh();
+    const unsubscribe = fbApp.on("ready", () => {
+      void fbApp.getCapabilities().then(setCapabilities).catch((error) => log(hostErrorMessage(error)));
+    });
+    return unsubscribe;
   }, []);
 
   const hasCapability = (permission: string) => capabilities.includes(permission);
 
   const handlePickFiles = async () => {
     try {
-      const data = await invokeHost("files.pick", { replaceExisting: false });
+      const data = await fbApp.invoke<any>("files.pick", { replaceExisting: false });
       log(data?.selected ? "已加入本地文件素材。" : "未选择文件。");
-    } catch (error: any) {
-      log(error.message || "选择文件失败");
+    } catch (error) {
+      log(hostErrorMessage(error, "选择文件失败"));
     }
   };
 
   const handleCreateDraft = async () => {
     setRunning(true);
     try {
-      const data = await invokeHost("platformPublish.createDraft", { title, text });
+      const data = await fbApp.invoke<any>("platformPublish.createDraft", { title, text });
       setDraft(data);
       setTitle(data?.title || title);
       if (data?.body) setText(data.body);
       log("草稿已生成。");
-    } catch (error: any) {
-      log(error.message || "生成草稿失败");
+    } catch (error) {
+      log(hostErrorMessage(error, "生成草稿失败"));
     } finally {
       setRunning(false);
     }
@@ -104,14 +91,14 @@ export default function PlatformPublishApp() {
     setRunning(true);
     try {
       const markdown = `# ${draft?.title || title}\n\n${body}\n`;
-      const data = await invokeHost("fs.writeFile", {
+      const data = await fbApp.invoke<any>("fs.writeFile", {
         path: `platform-publish/${platform.id}-${slugTime()}.md`,
         content: markdown,
       });
       setSavedPath(data?.path || "");
       log(`草稿已写入：${data?.path || "本地小程序目录"}`);
-    } catch (error: any) {
-      log(error.message || "写入本地文件失败");
+    } catch (error) {
+      log(hostErrorMessage(error, "写入本地文件失败"));
     } finally {
       setRunning(false);
     }
@@ -134,18 +121,18 @@ export default function PlatformPublishApp() {
           : `console.log("draft file: not saved yet");`,
         `console.log("ready to hand off to browser automation.");`,
       ].join("\n");
-      const file = await invokeHost("fs.writeFile", {
+      const file = await fbApp.invoke<any>("fs.writeFile", {
         path: `platform-publish/run-${platform.id}-${slugTime()}.js`,
         content: script,
       });
-      await invokeHost("shell.execute", {
+      await fbApp.invoke("shell.execute", {
         title: `${platform.label} 发布流水线`,
         command: "node",
         arguments: [file.path],
       });
       log("终端流水线已交给宿主执行。");
-    } catch (error: any) {
-      log(error.message || "终端流水线启动失败");
+    } catch (error) {
+      log(hostErrorMessage(error, "终端流水线启动失败"));
     } finally {
       setRunning(false);
     }
@@ -153,19 +140,20 @@ export default function PlatformPublishApp() {
 
   const handleOpenPlatform = async () => {
     try {
-      await invokeHost("browser.open", { url: platform.url });
+      await fbApp.ui.openLink(platform.url);
       log(`已打开：${platform.label}`);
-    } catch (error: any) {
-      log(error.message || "打开平台失败");
+    } catch (error) {
+      log(hostErrorMessage(error, "打开平台失败"));
     }
   };
 
   const handleRefreshSpec = async () => {
     try {
-      const data = await invokeHost("app.getHostApiSpec");
+      const data = await fbApp.getHostApiSpec();
+      setCapabilities(await fbApp.getCapabilities());
       log(`宿主 API ${data?.hostApiVersion || ""} 已就绪。`);
-    } catch (error: any) {
-      log(error.message || "读取宿主能力失败");
+    } catch (error) {
+      log(hostErrorMessage(error, "读取宿主能力失败"));
     }
   };
 
