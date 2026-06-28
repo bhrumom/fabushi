@@ -26,7 +26,7 @@ function createRequestId(): string {
 function normalizeResponse<T>(raw: unknown, requestId: string): HostInvokeResponse<T> {
   const record = asRecord(raw);
   if (!record) return { ok: true, requestId, data: raw as T };
-  if (typeof record.ok === "boolean") return record as HostInvokeResponse<T>;
+  if (typeof record.ok === "boolean") return record as unknown as HostInvokeResponse<T>;
   return { ok: true, requestId, data: raw as T };
 }
 
