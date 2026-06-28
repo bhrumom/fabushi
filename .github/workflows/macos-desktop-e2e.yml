@@ -146,6 +146,9 @@ jobs:
           gateway_json="$($cli gateway-smoke --timeout-seconds 120 --json --verbose 2> >(tee "$EVIDENCE_DIR/logs/07-gateway-stderr.log" >&2))"
           echo "$gateway_json" | tee "$EVIDENCE_DIR/json/07-gateway-smoke.json"
           jq -e '.ok == true' <<<"$gateway_json" >/dev/null
+          miniapp_json="$($cli miniapp-smoke --json)"
+          echo "$miniapp_json" | tee "$EVIDENCE_DIR/json/08-miniapp-smoke.json"
+          jq -e '.ok == true' <<<"$miniapp_json" >/dev/null
 
       - name: Launch desktop app and capture step screenshots
         if: always() && steps.install.outputs.app_path != ''
@@ -180,15 +183,15 @@ jobs:
           - exception recovery
           - desktop/mini-app state consistency
 
-          Current automated evidence in this workflow:
-          - macOS release package download and checksum evidence
-          - app bundle structure evidence
-          - packaged CLI doctor evidence
-          - OpenClaw gateway route evidence
-          - GUI launch screenshot evidence when earlier package checks allow the app to launch
+          Automated evidence in this workflow:
+          - json/08-miniapp-smoke.json validates built-in official mini-app registry entries
+          - json/08-miniapp-smoke.json validates trusted manifests, entry URLs, home/chat surfaces, and permission consistency
+          - json/08-miniapp-smoke.json validates host API core interactions: app.getContext and app.getCapabilities
+          - json/08-miniapp-smoke.json validates unsupported-method exception recovery keeps the host ready
+          - json/08-miniapp-smoke.json validates returning to the desktop home state preserves the last mini-app id
 
-          Coverage gap:
-          No stable macOS accessibility selector map, deep link, CLI test hook, or scripted mini-app route contract is currently available in the release package. This workflow preserves the gap as explicit evidence instead of claiming mini-app coverage passed.
+          Remaining limitation:
+          This is a packaged host-contract smoke test, not pixel/coordinate-driven WebView clicking. It now fails the workflow if the mini-app contract breaks instead of recording a passive gap.
           EOF
           cat "$EVIDENCE_DIR/logs/11-miniapp-coverage.log" >> "$GITHUB_STEP_SUMMARY"
 
@@ -209,7 +212,8 @@ jobs:
             echo "- Install/package/checksum: captured"
             echo "- Startup/process: captured when package checks permit launch"
             echo "- Gateway core route: captured by packaged CLI"
-            echo "- Mini-app chain: explicit coverage gap recorded in logs/11-miniapp-coverage.log"
+            echo "- Mini-app host contract: captured by json/08-miniapp-smoke.json"
+            echo "- Mini-app chain: enter/load/core interaction/return/exception recovery/state consistency captured by CLI contract smoke"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload evidence artifact

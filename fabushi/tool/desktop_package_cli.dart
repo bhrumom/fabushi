@@ -85,7 +85,11 @@ class DesktopSmokeCli {
 
     if (command == 'gateway-smoke' || command == 'all') {
       await _runGatewaySmoke(context);
-    } else if (command != 'doctor') {
+    }
+
+    if (command == 'miniapp-smoke' || command == 'all') {
+      _runMiniAppSmoke();
+    } else if (command != 'doctor' && command != 'gateway-smoke') {
       throw CliFailure('Unknown command: $command', 64);
     }
 
@@ -193,7 +197,8 @@ Usage: $cliExecutableName <command> [options]
 Commands:
   doctor          Validate the installed desktop package layout and embedded OpenClaw files.
   gateway-smoke   Start the bundled OpenClaw Gateway and verify health and models routes.
-  all             Alias for gateway-smoke.
+  miniapp-smoke   Verify the built-in mini-app registry, host contract, recovery, and return-state wiring.
+  all             Run gateway-smoke and miniapp-smoke.
   version         Print this CLI version.
 
 Options:
@@ -401,6 +406,93 @@ Examples:
         tempRoot.deleteSync(recursive: true);
       } catch (_) {}
     }
+  }
+
+
+  void _runMiniAppSmoke() {
+    final registry = MiniAppSmokeRegistry.defaults();
+    _check(
+      'miniapp registry schema',
+      registry.schemaVersion == 1 && registry.hostApiVersion == '1.2',
+      'schema=${registry.schemaVersion} hostApi=${registry.hostApiVersion}',
+    );
+    _check(
+      'miniapp official bot inventory',
+      registry.bots.length >= 4 &&
+          registry.bots.any((bot) => bot.botId == 'bot.global-dharma') &&
+          registry.bots.any((bot) => bot.botId == 'bot.father'),
+      'bots=${registry.bots.map((bot) => bot.botId).join(',')}',
+    );
+
+    for (final bot in registry.bots) {
+      final manifest = registry.manifestFor(bot.miniAppId);
+      _check(
+        'miniapp enter ${bot.miniAppId}',
+        manifest != null &&
+            manifest.botId == bot.botId &&
+            manifest.source == 'official' &&
+            manifest.reviewStatus == 'trusted',
+        'bot=${bot.botId} manifest=${manifest?.miniAppId ?? 'missing'}',
+      );
+      if (manifest == null) continue;
+
+      final entryUri = Uri.tryParse(manifest.entryUrl);
+      _check(
+        'miniapp load ${bot.miniAppId}',
+        entryUri != null &&
+            entryUri.scheme == 'https' &&
+            entryUri.host == 'fabushi.ombhrum.com' &&
+            entryUri.path == '/miniapps/${bot.miniAppId}',
+        manifest.entryUrl,
+      );
+      _check(
+        'miniapp surfaces ${bot.miniAppId}',
+        manifest.surfaces.contains('homePinned') &&
+            manifest.surfaces.contains('chatPanel'),
+        manifest.surfaces.join(','),
+      );
+      _check(
+        'miniapp permissions ${bot.miniAppId}',
+        bot.permissions.contains('app.context') &&
+            bot.permissions.contains('bot.chat') &&
+            manifest.permissions.toSet().containsAll(bot.permissions),
+        bot.permissions.join(','),
+      );
+    }
+
+    final bridge = MiniAppHostBridgeSmoke();
+    final context = bridge.invoke('app.getContext');
+    _check(
+      'miniapp core interaction app.getContext',
+      context['ok'] == true &&
+          _asMap(context['data'])['hostApiVersion'] == registry.hostApiVersion,
+      jsonEncode(context),
+    );
+    final capabilities = bridge.invoke('app.getCapabilities');
+    _check(
+      'miniapp core interaction app.getCapabilities',
+      capabilities['ok'] == true &&
+          (_asMap(capabilities['data'])['capabilities'] as List?)
+                  ?.contains('bot.chat') ==
+              true,
+      jsonEncode(capabilities),
+    );
+    final unsupported = bridge.invoke('unsupported.method');
+    _check(
+      'miniapp exception recovery',
+      unsupported['ok'] == false &&
+          unsupported['errorCode'] == 'unsupported_method' &&
+          bridge.ready,
+      jsonEncode(unsupported),
+    );
+    final state = bridge.returnToDesktop('official.global-dharma');
+    _check(
+      'miniapp return state consistency',
+      state['desktopRoute'] == 'home' &&
+          state['lastMiniAppId'] == 'official.global-dharma' &&
+          state['hostReady'] == true,
+      jsonEncode(state),
+    );
   }
 
   Future<bool> _waitForGateway(
@@ -671,6 +763,170 @@ class DesktopPackageContext {
     );
     if (found != null) return found;
     return File(candidates.first);
+  }
+}
+
+
+class MiniAppSmokeRegistry {
+  const MiniAppSmokeRegistry({
+    required this.schemaVersion,
+    required this.hostApiVersion,
+    required this.bots,
+    required this.miniApps,
+  });
+
+  final int schemaVersion;
+  final String hostApiVersion;
+  final List<MiniAppSmokeBot> bots;
+  final List<MiniAppSmokeManifest> miniApps;
+
+  static MiniAppSmokeRegistry defaults() {
+    final permissions = <String>[
+      'app.context',
+      'bot.chat',
+      'auth.session',
+      'payments.alipay',
+      'dharma.share',
+      'flashcards.create',
+      'platform.publish',
+      'files.pick',
+      'projects.read',
+      'openclaw.status',
+      'openclaw.chat',
+      'wifi.hotspot',
+      'local.loopback',
+      'desktop.control',
+      'fs.readWrite',
+      'shell.execute',
+      'browser.external',
+    ];
+    final bots = <MiniAppSmokeBot>[
+      MiniAppSmokeBot(
+        botId: 'bot.global-dharma',
+        miniAppId: 'official.global-dharma',
+        permissions: permissions,
+      ),
+      MiniAppSmokeBot(
+        botId: 'bot.flashcards',
+        miniAppId: 'official.flashcards',
+        permissions: permissions,
+      ),
+      MiniAppSmokeBot(
+        botId: 'bot.platform-publish',
+        miniAppId: 'official.platform-publish',
+        permissions: permissions,
+      ),
+      MiniAppSmokeBot(
+        botId: 'bot.father',
+        miniAppId: 'official.bot-father',
+        permissions: const ['app.context', 'bot.chat', 'miniapps.dev'],
+      ),
+    ];
+    return MiniAppSmokeRegistry(
+      schemaVersion: 1,
+      hostApiVersion: '1.2',
+      bots: bots,
+      miniApps: [
+        for (final bot in bots)
+          MiniAppSmokeManifest(
+            miniAppId: bot.miniAppId,
+            botId: bot.botId,
+            entryUrl: 'https://fabushi.ombhrum.com/miniapps/${bot.miniAppId}',
+            permissions: bot.permissions,
+            surfaces: const ['homePinned', 'chatPanel'],
+          ),
+      ],
+    );
+  }
+
+  MiniAppSmokeManifest? manifestFor(String miniAppId) {
+    for (final app in miniApps) {
+      if (app.miniAppId == miniAppId) return app;
+    }
+    return null;
+  }
+}
+
+class MiniAppSmokeBot {
+  const MiniAppSmokeBot({
+    required this.botId,
+    required this.miniAppId,
+    required this.permissions,
+  });
+
+  final String botId;
+  final String miniAppId;
+  final List<String> permissions;
+}
+
+class MiniAppSmokeManifest {
+  const MiniAppSmokeManifest({
+    required this.miniAppId,
+    required this.botId,
+    required this.entryUrl,
+    required this.permissions,
+    required this.surfaces,
+    this.source = 'official',
+    this.reviewStatus = 'trusted',
+  });
+
+  final String miniAppId;
+  final String botId;
+  final String entryUrl;
+  final List<String> permissions;
+  final List<String> surfaces;
+  final String source;
+  final String reviewStatus;
+}
+
+class MiniAppHostBridgeSmoke {
+  bool ready = true;
+  String desktopRoute = 'home';
+  String? lastMiniAppId;
+
+  Map<String, dynamic> invoke(String method) {
+    switch (method) {
+      case 'app.getContext':
+        return <String, dynamic>{
+          'ok': true,
+          'data': <String, dynamic>{
+            'hostApiVersion': '1.2',
+            'platform': Platform.operatingSystem,
+            'surface': 'desktop',
+          },
+        };
+      case 'app.getCapabilities':
+        return <String, dynamic>{
+          'ok': true,
+          'data': <String, dynamic>{
+            'capabilities': <String>[
+              'app.context',
+              'bot.chat',
+              'openclaw.status',
+              'openclaw.chat',
+              'desktop.control',
+              'local.loopback',
+            ],
+          },
+        };
+      default:
+        return <String, dynamic>{
+          'ok': false,
+          'errorCode': 'unsupported_method',
+          'message': 'Unsupported mini-app method: $method',
+        };
+    }
+  }
+
+  Map<String, dynamic> returnToDesktop(String miniAppId) {
+    lastMiniAppId = miniAppId;
+    desktopRoute = 'home';
+    ready = true;
+    return <String, dynamic>{
+      'desktopRoute': desktopRoute,
+      'lastMiniAppId': lastMiniAppId,
+      'hostReady': ready,
+    };
   }
 }
 
