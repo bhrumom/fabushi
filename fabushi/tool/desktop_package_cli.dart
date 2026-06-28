@@ -6,10 +6,11 @@ import 'dart:io';
 const String appExecutableName = 'global_dharma_sharing';
 const String cliExecutableName = 'global_dharma_sharing_cli';
 
-Future<int> main(List<String> args) async {
+Future<void> main(List<String> args) async {
   final cli = DesktopSmokeCli(args);
   try {
-    return await cli.run();
+    exitCode = await cli.run();
+    return;
   } on CliFailure catch (error) {
     if (cli.jsonOutput) {
       cli.writeJson({
@@ -29,7 +30,8 @@ Future<int> main(List<String> args) async {
         }
       }
     }
-    return error.exitCode;
+    exitCode = error.exitCode;
+    return;
   } catch (error, stackTrace) {
     if (cli.jsonOutput) {
       cli.writeJson({
@@ -43,7 +45,7 @@ Future<int> main(List<String> args) async {
       stderr.writeln('ERROR: $error');
       stderr.writeln(stackTrace);
     }
-    return 1;
+    exitCode = 1;
   }
 }
 
