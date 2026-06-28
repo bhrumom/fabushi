@@ -15,6 +15,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            frontend/apps/web/**
+            frontend/packages/**
+            frontend/package.json
+            frontend/pnpm-lock.yaml
+            frontend/pnpm-workspace.yaml
+            frontend/tsconfig.base.json
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -27,9 +36,11 @@ jobs:
           version: 10
 
       - name: Install dependencies
+        working-directory: frontend
         run: pnpm install --frozen-lockfile
 
       - name: Build Web App
+        working-directory: frontend
         run: pnpm --filter @fabushi/web build
 
       - name: Deploy to Cloudflare Pages
