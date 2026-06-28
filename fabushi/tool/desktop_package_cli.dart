@@ -376,18 +376,15 @@ Examples:
 
       final chat = await _httpPostRaw(
         baseUri.replace(path: '/v1/chat/completions'),
-        token,
-        '{',
+        '$token-invalid',
+        '{"model":"openclaw","messages":[]}',
         const Duration(seconds: 5),
       );
-      final chatRouteOk =
-          chat.statusCode != 404 &&
-          chat.statusCode != 401 &&
-          chat.statusCode != 403;
+      final chatRouteOk = chat.statusCode == 401 || chat.statusCode == 403;
       _check(
-        'openai chat route',
+        'openai chat route auth guard',
         chatRouteOk,
-        'fast-fail status=${chat.statusCode} body=${_compact(chat.body)}',
+        'unauthorized fast-fail status=${chat.statusCode} body=${_compact(chat.body)}',
       );
     } finally {
       if (process != null) {
