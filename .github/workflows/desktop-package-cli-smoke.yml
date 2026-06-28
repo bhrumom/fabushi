@@ -84,8 +84,12 @@ jobs:
             exit 1
           fi
           ./.github/scripts/assert-openclaw-bundle.sh "$RUNNER_TEMP/installed" linux-x64
-          "$cli" doctor --json
-          "$cli" gateway-smoke --timeout-seconds 120 --json
+          doctor_json="$($cli doctor --json)"
+          echo "$doctor_json"
+          jq -e '.ok == true' <<<"$doctor_json" >/dev/null
+          gateway_json="$($cli gateway-smoke --timeout-seconds 120 --json)"
+          echo "$gateway_json"
+          jq -e '.ok == true' <<<"$gateway_json" >/dev/null
 
       - name: Install macOS package and smoke CLI
         if: matrix.target == 'macos'
@@ -117,8 +121,12 @@ jobs:
             exit 1
           fi
           ./.github/scripts/assert-openclaw-bundle.sh "$RUNNER_TEMP/installed/global_dharma_sharing.app" "$openclaw_platform"
-          "$cli" doctor --json
-          "$cli" gateway-smoke --timeout-seconds 120 --json
+          doctor_json="$($cli doctor --json)"
+          echo "$doctor_json"
+          jq -e '.ok == true' <<<"$doctor_json" >/dev/null
+          gateway_json="$($cli gateway-smoke --timeout-seconds 120 --json)"
+          echo "$gateway_json"
+          jq -e '.ok == true' <<<"$gateway_json" >/dev/null
 
       - name: Install Windows package and smoke CLI
         if: matrix.target == 'windows'
@@ -132,5 +140,11 @@ jobs:
           Expand-Archive -Path $zip.FullName -DestinationPath $installDir -Force
           $cli = Join-Path $installDir "${{ matrix.cli }}"
           if (-not (Test-Path $cli)) { throw "Installed package CLI not found: $cli" }
-          & $cli doctor --json
-          & $cli gateway-smoke --timeout-seconds 120 --json
+          $doctorJson = & $cli doctor --json | Out-String
+          Write-Output $doctorJson
+          $doctorResult = $doctorJson | ConvertFrom-Json
+          if (-not $doctorResult.ok) { throw "doctor returned ok=false" }
+          $gatewayJson = & $cli gateway-smoke --timeout-seconds 120 --json | Out-String
+          Write-Output $gatewayJson
+          $gatewayResult = $gatewayJson | ConvertFrom-Json
+          if (-not $gatewayResult.ok) { throw "gateway-smoke returned ok=false" }
