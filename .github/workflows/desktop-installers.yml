@@ -419,6 +419,7 @@ jobs:
         if: matrix.target == 'macos'
         shell: bash
         run: build/macos/Build/Products/Release/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli gateway-smoke --timeout-seconds 120 --json
+          build/macos/Build/Products/Release/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli miniapp-smoke --json
 
       - name: Import macOS Developer ID certificate
         if: >-
@@ -493,6 +494,7 @@ jobs:
           ../.github/scripts/assert-openclaw-bundle.sh "$install_dir/global_dharma_sharing.app" "${{ steps.openclaw.outputs.platform }}"
           "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" doctor --json
           "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" gateway-smoke --timeout-seconds 120 --json
+          "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" miniapp-smoke --json
 
       - name: Notarize macOS DMG
         if: >-
@@ -540,6 +542,7 @@ jobs:
         if: matrix.target == 'linux'
         shell: bash
         run: build/linux/x64/release/bundle/global_dharma_sharing_cli gateway-smoke --timeout-seconds 120 --json
+          build/linux/x64/release/bundle/global_dharma_sharing_cli miniapp-smoke --json
 
       - name: Package Linux installers
         if: matrix.target == 'linux'
@@ -562,6 +565,7 @@ jobs:
           sudo apt-get install -y "$deb_path"
           global-dharma-sharing-cli doctor --json
           global-dharma-sharing-cli gateway-smoke --timeout-seconds 120 --json
+          global-dharma-sharing-cli miniapp-smoke --json
 
       - name: Build Windows release app
         if: matrix.target == 'windows'
@@ -586,6 +590,7 @@ jobs:
         if: matrix.target == 'windows'
         shell: pwsh
         run: .\build\windows\x64\runner\Release\global_dharma_sharing_cli.exe gateway-smoke --timeout-seconds 120 --json
+          .\build\windows\x64\runner\Release\global_dharma_sharing_cli.exe miniapp-smoke --json
 
       - name: Package Windows installer
         if: matrix.target == 'windows'
@@ -606,6 +611,7 @@ jobs:
           if (-not (Test-Path $cli)) { throw "Installed package CLI not found: $cli" }
           & $cli doctor --json
           & $cli gateway-smoke --timeout-seconds 120 --json
+          & $cli miniapp-smoke --json
 
       - name: Upload desktop installer artifacts
         uses: actions/upload-artifact@v7
