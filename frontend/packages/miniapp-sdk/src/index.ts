@@ -1,3 +1,5 @@
+import { createFbApp } from "./core";
+
 export { FbApp, createFbApp, type FbAppOptions } from "./core";
 export { MiniAppHostError, isMiniAppHostError } from "./errors";
 export { SDK_VERSION } from "./host-bridge";
